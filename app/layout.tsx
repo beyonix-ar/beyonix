@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { Montserrat, Manrope } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
+import { AuthProvider } from "@/context/auth-context"
 import { LayoutShell } from "@/components/layout-shell"
 import { CartWrapper } from "@/components/cart/cart-wrapper"
 import "./globals.css"
@@ -49,13 +50,15 @@ export default function RootLayout({
       <body
         className={`${montserrat.variable} ${manrope.variable} antialiased`}
       >
-        <CartProvider>
-          <LayoutShell>
-            {children}
-          </LayoutShell>
+        <AuthProvider>
+          <CartProvider>
+            <LayoutShell>
+              {children}
+            </LayoutShell>
 
-          <CartWrapper />
-        </CartProvider>
+            <CartWrapper />
+          </CartProvider>
+        </AuthProvider>
 
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>

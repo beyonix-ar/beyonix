@@ -1,156 +1,156 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Instagram, Mail, MapPin, Phone } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 
-const footerLinks = {
-  tienda: [
-    { id: "productos", label: "Audio y accesorios" },
-    { id: "productos", label: "Celulares y soportes" },
-    { id: "productos", label: "Iluminación LED" },
-    { id: "productos", label: "Hogar inteligente" },
-    { id: "productos", label: "Mate y comodidad" },
-  ],
-  info: [
-    { id: "inicio", label: "Sobre nosotros" },
-    { id: "contacto", label: "Contacto" },
-    { id: "beneficios", label: "Envíos y entregas" },
-    { id: "beneficios", label: "Devoluciones" },
-    { id: "beneficios", label: "Preguntas frecuentes" },
-  ],
-}
+const tiendaLinks = [
+  { label: "Audio y conectividad", href: "/categorias/audio-conectividad" },
+  { label: "Confort y bienestar", href: "/categorias/confort-bienestar" },
+  { label: "Setup y escritorio", href: "/categorias/setup-escritorio" },
+  { label: "Ver todos los productos", href: "/productos" },
+]
+
+const infoLinks = [
+  { label: "Sobre nosotros", href: "/#inicio" },
+  { label: "Contacto", href: "/#contacto" },
+  { label: "Envíos y entregas", href: "/#beneficios" },
+  { label: "Preguntas frecuentes", href: "/#beneficios" },
+]
 
 export function Footer() {
   const [email, setEmail] = useState("")
-
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id)
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" })
-    }
-  }
+  const [sent, setSent] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // Handle newsletter signup
+    if (!email.trim()) return
+    setSent(true)
     setEmail("")
-    alert("¡Gracias por suscribirte!")
+    setTimeout(() => setSent(false), 4000)
   }
 
   return (
-    <footer className="bg-card border-t border-border">
-      <div className="container mx-auto px-4 lg:px-8 py-12 lg:py-16">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
+    <footer id="contacto" className="bg-[#050505] border-t border-white/[6%] scroll-mt-20">
+      <div className="container mx-auto px-4 lg:px-8 py-14 lg:py-16">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-12">
+
           {/* Brand */}
           <div className="sm:col-span-2 lg:col-span-1">
-            <button onClick={() => scrollToSection("inicio")} className="inline-block mb-4">
-              <span className="text-2xl font-bold tracking-tight text-foreground">
-                BEYONIX
-              </span>
-            </button>
-            <p className="text-sm text-muted-foreground mb-6 max-w-xs">
+            <Link href="/" className="inline-block mb-4">
+              <span className="text-xl font-bold tracking-tight text-white">BEYONIX</span>
+            </Link>
+            <p className="text-sm text-white/40 mb-6 max-w-xs leading-relaxed">
               Tecnología para tu comodidad. Productos premium para mejorar tu día a día.
             </p>
-            
-            {/* Social */}
-            <div className="flex gap-3">
+
+            <div className="flex gap-2.5">
               <a
                 href="https://instagram.com/beyonix.ar"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="size-10 rounded-full bg-secondary flex items-center justify-center text-foreground hover:bg-accent transition-colors"
-                aria-label="Instagram"
+                aria-label="Instagram de BEYONIX"
+                className="size-9 rounded-lg border border-white/10 flex items-center justify-center text-white/50 hover:text-white hover:border-white/25 transition-colors"
               >
                 <Instagram className="size-4" />
               </a>
               <a
                 href="mailto:hola@beyonix.com.ar"
-                className="size-10 rounded-full bg-secondary flex items-center justify-center text-foreground hover:bg-accent transition-colors"
-                aria-label="Email"
+                aria-label="Enviar email a BEYONIX"
+                className="size-9 rounded-lg border border-white/10 flex items-center justify-center text-white/50 hover:text-white hover:border-white/25 transition-colors"
               >
                 <Mail className="size-4" />
               </a>
             </div>
           </div>
 
-          {/* Tienda Links */}
+          {/* Tienda */}
           <div>
-            <h3 className="font-semibold text-foreground mb-4">Tienda</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40 mb-5">
+              Tienda
+            </h3>
             <ul className="space-y-3">
-              {footerLinks.tienda.map((link, index) => (
-                <li key={`tienda-${index}`}>
-                  <button
-                    onClick={() => scrollToSection(link.id)}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors text-left"
+              {tiendaLinks.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-white/55 hover:text-white transition-colors"
                   >
                     {link.label}
-                  </button>
+                  </Link>
                 </li>
               ))}
             </ul>
           </div>
 
-          {/* Info Links */}
+          {/* Info */}
           <div>
-            <h3 className="font-semibold text-foreground mb-4">Información</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40 mb-5">
+              Información
+            </h3>
             <ul className="space-y-3">
-              {footerLinks.info.map((link, index) => (
-                <li key={`info-${index}`}>
-                  <button
-                    onClick={() => scrollToSection(link.id)}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors text-left"
+              {infoLinks.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-white/55 hover:text-white transition-colors"
                   >
                     {link.label}
-                  </button>
+                  </Link>
                 </li>
               ))}
             </ul>
           </div>
 
-          {/* Newsletter */}
+          {/* Newsletter + contacto */}
           <div>
-            <h3 className="font-semibold text-foreground mb-4">Newsletter</h3>
-            <p className="text-sm text-muted-foreground mb-4">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40 mb-5">
+              Novedades
+            </h3>
+            <p className="text-sm text-white/40 mb-4 leading-relaxed">
               Suscribite para recibir ofertas exclusivas y novedades.
             </p>
+
             <form onSubmit={handleSubmit} className="flex gap-2">
-              <Input
+              <input
                 type="email"
                 placeholder="tu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="flex-1"
+                className="flex-1 h-9 rounded-lg border border-white/10 bg-white/[3%] px-3 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#1E4D7B] transition-colors"
               />
-              <Button type="submit">OK</Button>
+              <button
+                type="submit"
+                className="h-9 px-4 rounded-lg bg-[#112A43] border border-[#1E4D7B]/50 text-sm font-medium text-white hover:bg-[#1E4D7B] transition-colors cursor-pointer"
+              >
+                {sent ? "✓" : "OK"}
+              </button>
             </form>
 
-            {/* Contact Info */}
-            <div className="mt-6 space-y-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Phone className="size-4" />
+            <div className="mt-6 space-y-2.5">
+              <div className="flex items-center gap-2.5 text-sm text-white/40">
+                <Phone className="size-3.5 shrink-0" />
                 <span>+54 341 2626 527</span>
               </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <MapPin className="size-4" />
+              <div className="flex items-center gap-2.5 text-sm text-white/40">
+                <MapPin className="size-3.5 shrink-0" />
                 <span>Rosario, Santa Fe</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Bottom Bar */}
-        <div className="mt-12 pt-8 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
+        {/* Bottom bar */}
+        <div className="mt-12 pt-8 border-t border-white/[6%] flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-sm text-white/30">
             © {new Date().getFullYear()} BEYONIX. Todos los derechos reservados.
           </p>
-          <div className="flex gap-4">
-            <span className="text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+          <div className="flex gap-5">
+            <span className="text-sm text-white/30 cursor-default">
               Términos y condiciones
             </span>
-            <span className="text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+            <span className="text-sm text-white/30 cursor-default">
               Política de privacidad
             </span>
           </div>
