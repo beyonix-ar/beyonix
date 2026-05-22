@@ -1,18 +1,37 @@
 "use client"
 
+import { usePathname } from "next/navigation"
+
 import { SiteHeader } from "@/components/site-header"
-import { CartWrapper } from "@/components/cart/cart-wrapper"
 
-interface LayoutShellProps {
+import { Footer } from "@/components/footer"
+
+export function LayoutShell({
+  children,
+}: {
   children: React.ReactNode
-}
+}) {
+  const pathname =
+    usePathname()
 
-export function LayoutShell({ children }: LayoutShellProps) {
+  const isAdmin =
+    pathname.startsWith(
+      "/admin"
+    )
+
+  // Admin layout
+  if (isAdmin) {
+    return children
+  }
+
+  // Store layout
   return (
     <>
       <SiteHeader />
+
       {children}
-      <CartWrapper />
+
+      <Footer />
     </>
   )
 }

@@ -2,7 +2,18 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Eye, EyeOff, User, Mail, Lock, LogOut, ShoppingBag, ChevronRight, ChevronLeft } from "lucide-react"
+import {
+  Eye,
+  EyeOff,
+  User,
+  Mail,
+  Lock,
+  LogOut,
+  ShoppingBag,
+  ChevronRight,
+  ChevronLeft,
+  Shield,
+} from "lucide-react"
 import { useAuth } from "@/context/auth-context"
 
 // ─── Input reutilizable ───────────────────────────────────────────────────────
@@ -161,9 +172,9 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   )
 }
 
-// ─── Vista: Mis pedidos ───────────────────────────────────────────────────────
+// ─── Vista: Mis ordenes ───────────────────────────────────────────────────────
 
-function MisPedidos({ onBack }: { onBack: () => void }) {
+function Misordenes({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-5">
       <button type="button" onClick={onBack}
@@ -173,7 +184,7 @@ function MisPedidos({ onBack }: { onBack: () => void }) {
 
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[#4A90B8] mb-1">
-          Mis pedidos
+          Mis ordenes
         </p>
         <h2 className="text-xl font-bold text-white">Historial de compras</h2>
       </div>
@@ -256,16 +267,20 @@ function MisDatos({ onBack }: { onBack: () => void }) {
 
 // ─── Panel principal del perfil ───────────────────────────────────────────────
 
-type ProfileView = "home" | "pedidos" | "datos"
+type ProfileView = "home" | "ordenes" | "datos"
 
 function ProfilePanel({ initialView }: { initialView: ProfileView }) {
-  const { user, logout } = useAuth()
+  const {
+    user,
+    logout,
+    isAdmin,
+  } = useAuth()
   const router = useRouter()
   const [view, setView] = useState<ProfileView>(initialView)
 
   if (!user) return null
 
-  if (view === "pedidos") return <MisPedidos onBack={() => setView("home")} />
+  if (view === "ordenes") return <Misordenes onBack={() => setView("home")} />
   if (view === "datos") return <MisDatos onBack={() => setView("home")} />
 
   const initials = user.name
@@ -276,7 +291,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
     .slice(0, 2)
 
   const menuItems = [
-    { icon: ShoppingBag, label: "Mis pedidos", sub: "Historial de compras", view: "pedidos" as ProfileView },
+    { icon: ShoppingBag, label: "Mis ordenes", sub: "Historial de compras", view: "ordenes" as ProfileView },
     { icon: User, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
   ]
 
@@ -315,6 +330,34 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
         ))}
       </div>
 
+      {/* Panel admin */}
+      {isAdmin && (
+        <button
+          type="button"
+          title="Ir al panel admin"
+          onClick={() =>
+            router.push("/admin")
+          }
+          className="w-full flex items-center gap-4 p-4 rounded-xl border border-[#1E4D7B]/25 bg-[#0A1624] hover:bg-[#112A43] hover:border-[#1E4D7B]/50 transition-all group cursor-pointer text-left"
+        >
+          <div className="size-9 rounded-lg bg-[#112A43]/60 border border-[#1E4D7B]/40 flex items-center justify-center shrink-0">
+            <Shield className="size-4 text-[#4A90B8]" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-white">
+              Panel Admin
+            </p>
+
+            <p className="text-xs text-white/45">
+              Gestión de tienda
+            </p>
+          </div>
+
+          <ChevronRight className="size-4 text-white/25 group-hover:text-white/60 transition-colors shrink-0" />
+        </button>
+      )}
+
       {/* Cerrar sesión */}
       <button
         type="button"
@@ -335,9 +378,9 @@ export function CuentaClient() {
   const [tab, setTab] = useState<"login" | "register">("login")
   const searchParams = useSearchParams()
 
-  // Lee ?tab=pedidos desde el navbar
+  // Lee ?tab=ordenes desde el navbar
   const tabParam = searchParams.get("tab") as ProfileView | null
-  const initialView: ProfileView = tabParam === "pedidos" ? "pedidos" : tabParam === "datos" ? "datos" : "home"
+  const initialView: ProfileView = tabParam === "ordenes" ? "ordenes" : tabParam === "datos" ? "datos" : "home"
 
   if (isLoading) {
     return (
@@ -373,7 +416,7 @@ export function CuentaClient() {
               </h1>
               <p className="text-sm text-white/40">
                 {tab === "login"
-                  ? "Ingresá para ver tus pedidos y datos."
+                  ? "Ingresá para ver tus ordenes y datos."
                   : "Es gratis y tarda menos de un minuto."}
               </p>
             </div>

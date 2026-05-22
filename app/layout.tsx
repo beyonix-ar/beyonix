@@ -27,8 +27,7 @@ export const metadata: Metadata = {
     "tecnología, hogar inteligente, auriculares, LED, accesorios celular, mate térmico, Argentina",
   openGraph: {
     title: "BEYONIX | Tecnología para tu comodidad",
-    description:
-      "Productos premium de tecnología y confort para tu vida diaria",
+    description: "Productos premium de tecnología y confort para tu vida diaria",
     type: "website",
     locale: "es_AR",
   },
@@ -42,24 +41,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
-      <body
-        className={`${montserrat.variable} ${manrope.variable} antialiased`}
-      >
+      <body className={`${montserrat.variable} ${manrope.variable} antialiased`}>
         <AuthProvider>
           <CartProvider>
-            <LayoutShell>
-              {children}
-            </LayoutShell>
-
+            <LayoutShell>{children}</LayoutShell>
             <CartWrapper />
           </CartProvider>
         </AuthProvider>
-
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
     </html>

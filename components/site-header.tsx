@@ -156,12 +156,12 @@ export function SiteHeader() {
                         Mi cuenta
                       </Link>
                       <Link
-                        href="/cuenta?tab=pedidos"
+                        href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
                         className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/65 hover:bg-white/5 hover:text-white transition-colors border-b border-white/[6%]"
                       >
                         <Package className="size-3.5 shrink-0" />
-                        Mis pedidos
+                        Mis ordenes
                       </Link>
                       <button
                         type="button"

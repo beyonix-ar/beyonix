@@ -8,61 +8,44 @@ import {
   useCallback,
   type ReactNode,
 } from "react"
+import { supabase } from "@/lib/supabase/client"
 
-// ─── Tipos ───────────────────────────────────────────────────────────────────
+import type {
+  SupabaseProfile,
+} from "@/lib/supabase/types"
+import type { User } from "@supabase/supabase-js"
 
 export interface BeyonixUser {
   id: string
   name: string
   email: string
-  createdAt: string
-  // Se completa en el checkout
+  rol: "cliente" | "admin"
   phone?: string
-  province?: string
   city?: string
+  province?: string
   address?: string
-  // Compras verificadas (habilitan reseñas)
-  verifiedPurchaseIds?: number[]
+  createdAt: string
 }
 
 interface AuthContextType {
   user: BeyonixUser | null
   isLoading: boolean
+  isAdmin: boolean
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
   register: (name: string, email: string, password: string) => Promise<{ ok: boolean; error?: string }>
-  logout: () => void
-  updateUser: (data: Partial<BeyonixUser>) => void
+  logout: () => Promise<void>
+  updateUser: (data: Partial<BeyonixUser>) => Promise<void>
 }
 
-// ─── Helpers de storage ──────────────────────────────────────────────────────
-
-const USERS_KEY = "beyonix_users"
-const SESSION_KEY = "beyonix_session"
-
-function getUsers(): Record<string, { hash: string; user: BeyonixUser }> {
-  try {
-    return JSON.parse(localStorage.getItem(USERS_KEY) || "{}")
-  } catch {
-    return {}
+function profileToUser(profile: SupabaseProfile, email: string): BeyonixUser {
+  return {
+    id: profile.id,
+    name: profile.nombre,
+    email,
+    rol: profile.rol ?? "cliente",
+    createdAt: profile.created_at,
   }
 }
-
-// Hash muy simple para demo (en producción usar bcrypt via API route)
-function hashPassword(password: string): string {
-  let hash = 0
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i)
-    hash = (hash << 5) - hash + char
-    hash = hash & hash
-  }
-  return `bx_${Math.abs(hash).toString(36)}_${password.length}`
-}
-
-function generateId(): string {
-  return `u_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-}
-
-// ─── Context ─────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
@@ -70,106 +53,111 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<BeyonixUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Carga sesión guardada al montar
-  useEffect(() => {
-    try {
-      const sessionId = localStorage.getItem(SESSION_KEY)
-      if (sessionId) {
-        const users = getUsers()
-        const entry = users[sessionId]
-        if (entry) setUser(entry.user)
-      }
-    } catch {
-      // silencia errores de SSR
-    } finally {
-      setIsLoading(false)
+  const loadProfile = useCallback(async (supabaseUser: User) => {
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", supabaseUser.id)
+      .single()
+
+    if (error || !profile) {
+      console.error("No se encontró el perfil:", error)
+
+      setUser({
+        id: supabaseUser.id,
+        name: supabaseUser.user_metadata?.nombre || "Usuario",
+        email: supabaseUser.email ?? "",
+        rol: "cliente",
+        createdAt: new Date().toISOString(),
+      })
+
+      return
     }
+
+    setUser(profileToUser(profile, supabaseUser.email ?? ""))
   }, [])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadProfile(session.user).finally(() => setIsLoading(false))
+      } else {
+        setIsLoading(false)
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          loadProfile(session.user)
+        } else {
+          setUser(null)
+        }
+      }
+    )
+
+    return () => subscription.unsubscribe()
+  }, [loadProfile])
 
   const login = useCallback(
     async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
-      const normalizedEmail = email.trim().toLowerCase()
-      const users = getUsers()
-
-      // Busca por email
-      const entry = Object.values(users).find(
-        (e) => e.user.email === normalizedEmail
-      )
-
-      if (!entry) {
-        return { ok: false, error: "No encontramos una cuenta con ese email." }
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      })
+      if (error) {
+        if (error.message.includes("Invalid login")) {
+          return { ok: false, error: "Email o contraseña incorrectos." }
+        }
+        return { ok: false, error: "Ocurrió un error al iniciar sesión." }
       }
-
-      if (entry.hash !== hashPassword(password)) {
-        return { ok: false, error: "La contraseña es incorrecta." }
-      }
-
-      localStorage.setItem(SESSION_KEY, entry.user.id)
-      setUser(entry.user)
+      if (data.user) await loadProfile(data.user)
       return { ok: true }
     },
-    []
+    [loadProfile]
   )
 
   const register = useCallback(
-    async (
-      name: string,
-      email: string,
-      password: string
-    ): Promise<{ ok: boolean; error?: string }> => {
-      const normalizedEmail = email.trim().toLowerCase()
-      const users = getUsers()
-
-      const exists = Object.values(users).some(
-        (e) => e.user.email === normalizedEmail
-      )
-
-      if (exists) {
-        return { ok: false, error: "Ya existe una cuenta con ese email." }
-      }
-
+    async (name: string, email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
       if (password.length < 6) {
         return { ok: false, error: "La contraseña debe tener al menos 6 caracteres." }
       }
-
-      const newUser: BeyonixUser = {
-        id: generateId(),
-        name: name.trim(),
-        email: normalizedEmail,
-        createdAt: new Date().toISOString(),
-        verifiedPurchaseIds: [],
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: { data: { nombre: name.trim() } },
+      })
+      if (error) {
+        if (error.message.includes("already registered")) {
+          return { ok: false, error: "Ya existe una cuenta con ese email." }
+        }
+        return { ok: false, error: "Ocurrió un error al crear la cuenta." }
       }
-
-      users[newUser.id] = { hash: hashPassword(password), user: newUser }
-      localStorage.setItem(USERS_KEY, JSON.stringify(users))
-      localStorage.setItem(SESSION_KEY, newUser.id)
-      setUser(newUser)
+      if (data.user) await loadProfile(data.user)
       return { ok: true }
     },
-    []
+    [loadProfile]
   )
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(SESSION_KEY)
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut()
     setUser(null)
   }, [])
 
-  const updateUser = useCallback((data: Partial<BeyonixUser>) => {
-    setUser((prev) => {
-      if (!prev) return prev
-      const updated = { ...prev, ...data }
-      // Persiste cambios
-      const users = getUsers()
-      if (users[prev.id]) {
-        users[prev.id].user = updated
-        localStorage.setItem(USERS_KEY, JSON.stringify(users))
-      }
-      return updated
-    })
-  }, [])
+  const updateUser = useCallback(
+    async (data: Partial<BeyonixUser>) => {
+      if (!user) return
+      const payload: Record<string, unknown> = {}
+      if (data.name !== undefined) payload.nombre = data.name
+      if (data.rol !== undefined) payload.rol = data.rol
+      await supabase.from("profiles").update(payload).eq("id", user.id)
+      setUser((prev) => (prev ? { ...prev, ...data } : prev))
+    },
+    [user]
+  )
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, isLoading, isAdmin: user?.rol === "admin", login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )
