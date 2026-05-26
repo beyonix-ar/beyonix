@@ -133,10 +133,49 @@ export async function updateProducto(
 export async function deleteProducto(
   id: number
 ) {
-  const { error } = await supabase
-    .from("productos")
+  const { data: imagenes } =
+    await supabase
+      .from(
+        "imagenes_producto"
+      )
+      .select("url")
+      .eq(
+        "producto_id",
+        id
+      )
+
+  const paths =
+    imagenes
+      ?.map((img) =>
+        img.url.split(
+          "/imagenes-productos/"
+        )[1]
+      )
+      .filter(Boolean) || []
+
+  if (paths.length) {
+    await supabase.storage
+      .from(
+        "imagenes-productos"
+      )
+      .remove(paths)
+  }
+
+  await supabase
+    .from(
+      "imagenes_producto"
+    )
     .delete()
-    .eq("id", id)
+    .eq(
+      "producto_id",
+      id
+    )
+
+  const { error } =
+    await supabase
+      .from("productos")
+      .delete()
+      .eq("id", id)
 
   if (error) {
     throw error

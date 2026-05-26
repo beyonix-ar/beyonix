@@ -1,48 +1,75 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
+
 import { useSearchParams } from "next/navigation"
 
-import { useCart } from "@/context/cart-context"
-
-import type { SupabaseProducto } from "@/lib/supabase/types"
+import type {
+  SupabaseProducto,
+} from "@/lib/supabase/types"
 
 import { getProductos } from "@/lib/supabase/queries/productos"
+
+import { useCart } from "@/context/cart-context"
 
 import { useProductDetails } from "@/components/category/use-product-details"
 
 import { GlobalSearchBar } from "@/components/global-search-bar"
+
 import { ProductDetailsModal } from "@/components/products/product-details-modal"
 
 import { ProductsFiltersSidebar } from "./products-filters-sidebar"
+
 import { ProductsGrid } from "./products-grid"
+
 import { ProductsToolbar } from "./products-toolbar"
 
 export function ProductsPageLayout() {
-  const searchParams = useSearchParams()
+  const searchParams =
+    useSearchParams()
 
-  const [products, setProducts] = useState<
-    SupabaseProducto[]
-  >([])
+  const [products, setProducts] =
+    useState<
+      SupabaseProducto[]
+    >([])
 
-  const [search, setSearch] = useState("")
+  const [search, setSearch] =
+    useState("")
+
   const [sortBy, setSortBy] =
     useState("relevance")
 
-  const [selectedCategories, setSelectedCategories] =
-    useState<string[]>([])
+  const [
+    selectedCategories,
+    setSelectedCategories,
+  ] = useState<string[]>([])
 
   const [onlyOffers, setOnlyOffers] =
     useState(false)
 
-  const [onlyBestSellers, setOnlyBestSellers] =
-    useState(false)
+  const [
+    onlyBestSellers,
+    setOnlyBestSellers,
+  ] = useState(false)
 
   const [minPrice, setMinPrice] =
     useState(1000)
 
   const [maxPrice, setMaxPrice] =
     useState(150000)
+
+  const {
+    addToCart,
+    removeFromCart,
+    decreaseQuantity,
+    getQuantity,
+    isInCart,
+    openCart,
+  } = useCart()
 
   const {
     isOpen,
@@ -58,99 +85,84 @@ export function ProductsPageLayout() {
     setSelectedImage,
   } = useProductDetails()
 
-  const {
-    addToCart,
-    removeFromCart,
-    decreaseQuantity,
-    getQuantity,
-    isInCart,
-    openCart,
-  } = useCart()
-
   useEffect(() => {
     setSearch(
-      searchParams.get("search") || ""
+      searchParams.get("search") ||
+        ""
+    )
+
+    getProductos().then(
+      setProducts
     )
   }, [searchParams])
 
-  useEffect(() => {
-    const loadProducts = async () => {
-      setProducts(await getProductos())
-    }
+  const filteredProducts =
+    useMemo(
+      () =>
+        products
+          .filter(
+            (product) =>
+              (!selectedCategories.length ||
+                selectedCategories.includes(
+                  product.categorias
+                    ?.slug || ""
+                )) &&
+              (!onlyOffers ||
+                !!product.precio_anterior) &&
+              (!onlyBestSellers ||
+                product.destacado) &&
+              product.precio >=
+                minPrice &&
+              product.precio <=
+                maxPrice &&
+              product.nombre
+                .toLowerCase()
+                .includes(
+                  search.toLowerCase()
+                )
+          )
+          .sort((a, b) => {
+            if (
+              sortBy ===
+              "price-asc"
+            ) {
+              return (
+                a.precio -
+                b.precio
+              )
+            }
 
-    loadProducts()
-  }, [])
+            if (
+              sortBy ===
+              "price-desc"
+            ) {
+              return (
+                b.precio -
+                a.precio
+              )
+            }
 
-  const filteredProducts = useMemo(() => {
-    return products
-      .filter((product) => {
-        return (
-          (!selectedCategories.length ||
-            selectedCategories.includes(
-              product.categorias?.slug || ""
-            )) &&
-          (!onlyOffers ||
-            !!product.precio_anterior) &&
-          (!onlyBestSellers ||
-            product.destacado) &&
-          product.precio >= minPrice &&
-          product.precio <= maxPrice &&
-          product.nombre
-            .toLowerCase()
-            .includes(
-              search.toLowerCase()
-            )
-        )
-      })
-      .sort((a, b) => {
-        if (sortBy === "price-asc") {
-          return a.precio - b.precio
-        }
-
-        if (sortBy === "price-desc") {
-          return b.precio - a.precio
-        }
-
-        return 0
-      })
-  }, [
-    products,
-    selectedCategories,
-    onlyOffers,
-    onlyBestSellers,
-    minPrice,
-    maxPrice,
-    search,
-    sortBy,
-  ])
-
-  const availableColors = useMemo(() => {
-    return ["default"]
-  }, [])
-
-  const handleAddToCart = (
-    quantity: number = 1
-  ) => {
-    if (!product) return
-
-    Array.from({
-      length: quantity,
-    }).forEach(() => {
-      addToCart(
-        product,
-        selectedColor,
-        images?.[0]
-      )
-    })
-  }
+            return 0
+          }),
+      [
+        products,
+        selectedCategories,
+        onlyOffers,
+        onlyBestSellers,
+        minPrice,
+        maxPrice,
+        search,
+        sortBy,
+      ]
+    )
 
   return (
     <main className="min-h-screen bg-black pt-20 text-white">
       <section className="container mx-auto px-4 lg:px-8">
-        <div className="mb-10 mt-8 border-b border-white/[0.06] pb-8">
+        <div className="mb-10 mt-8 border-b border-white/6 pb-8">
           <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[auto_1fr] lg:items-end lg:gap-12">
             <div>
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.3em] text-[#4A90B8]">
+              <p className="mb-1.5 text-11px font-semibold uppercase tracking-[0.3em] text-[#4A90B8]">
                 Productos
               </p>
 
@@ -166,13 +178,22 @@ export function ProductsPageLayout() {
 
             <GlobalSearchBar
               search={search}
-              products={products.map(
-                (product) => ({
-                  id: String(product.id),
-                  name: product.nombre,
-                })
-              )}
-              onSearchChange={setSearch}
+              onSearchChange={
+                setSearch
+              }
+            products={products.map(
+              (product) => ({
+                id: String(
+                  product.id
+                ),
+
+                nombre:
+                  product.nombre,
+
+                slug:
+                  product.slug,
+              })
+            )}
             />
           </div>
         </div>
@@ -187,17 +208,21 @@ export function ProductsPageLayout() {
             }
             selectedColors={[]}
             setSelectedColors={() => {}}
-            availableColors={
-              availableColors
+            availableColors={[]}
+            onlyOffers={
+              onlyOffers
             }
-            onlyOffers={onlyOffers}
             setOnlyOffers={
               setOnlyOffers
             }
             minPrice={minPrice}
-            setMinPrice={setMinPrice}
+            setMinPrice={
+              setMinPrice
+            }
             maxPrice={maxPrice}
-            setMaxPrice={setMaxPrice}
+            setMaxPrice={
+              setMaxPrice
+            }
             onlyBestSellers={
               onlyBestSellers
             }
@@ -218,10 +243,24 @@ export function ProductsPageLayout() {
             />
 
             <ProductsGrid
-              products={filteredProducts}
+              products={
+                filteredProducts as never
+              }
               selectedColors={[]}
-              onOpenPreview={openDetails}
-              onAddToCart={addToCart}
+              onOpenPreview={
+                openDetails
+              }
+              onAddToCart={(
+                product
+              ) =>
+                addToCart(
+                  product,
+                  "default",
+                  product
+                    .imagenes_producto?.[0]
+                    ?.url
+                )
+              }
             />
           </div>
         </div>
@@ -231,32 +270,50 @@ export function ProductsPageLayout() {
         open={isOpen}
         product={product}
         images={images}
-        selectedImage={selectedImage}
-        selectedColor={selectedColor}
+        selectedImage={
+          selectedImage
+        }
+        selectedColor={
+          selectedColor
+        }
         onClose={closeDetails}
         onNext={nextImage}
         onPrev={prevImage}
         onSelectImage={
           setSelectedImage
         }
-        onColorChange={changeColor}
-        onAddToCart={
-          handleAddToCart
+        onColorChange={
+          changeColor
         }
+        onAddToCart={() => {
+          if (!product) {
+            return
+          }
+
+          addToCart(
+            product,
+            "default",
+            images?.[0]
+          )
+        }}
         onDecreaseCart={() => {
-          if (!product) return
+          if (!product) {
+            return
+          }
 
           decreaseQuantity(
             product.id,
-            selectedColor
+            "default"
           )
         }}
         onRemoveFromCart={() => {
-          if (!product) return
+          if (!product) {
+            return
+          }
 
           removeFromCart(
             product.id,
-            selectedColor
+            "default"
           )
         }}
         onViewCart={openCart}
@@ -264,7 +321,7 @@ export function ProductsPageLayout() {
           product
             ? isInCart(
                 product.id,
-                selectedColor
+                "default"
               )
             : false
         }
@@ -272,7 +329,7 @@ export function ProductsPageLayout() {
           product
             ? getQuantity(
                 product.id,
-                selectedColor
+                "default"
               )
             : 0
         }

@@ -16,6 +16,9 @@ interface Props {
   productoId: number
 }
 
+const BUCKET =
+  "imagenes-productos"
+
 export function useImageUploader({
   productoId,
 }: Props) {
@@ -35,7 +38,7 @@ export function useImageUploader({
 
   const loadImages =
     useCallback(async () => {
-      const { data } =
+      const { data, error } =
         await supabase
           .from(
             "imagenes_producto"
@@ -47,12 +50,82 @@ export function useImageUploader({
           )
           .order("orden")
 
+      if (error) {
+        setError(
+          "Error cargando imágenes."
+        )
+
+        return
+      }
+
       setImagenes(data || [])
     }, [productoId])
 
   useEffect(() => {
     loadImages()
   }, [loadImages])
+
+  const getFilePath = (
+    file: File
+  ) => {
+    const ext =
+      file.name
+        .split(".")
+        .pop()
+
+    return `productos/${productoId}/${crypto.randomUUID()}.${ext}`
+  }
+
+  const uploadSingleFile =
+    async (
+      file: File,
+      orden: number
+    ) => {
+      const path =
+        getFilePath(file)
+
+      const {
+        data,
+        error: uploadError,
+      } =
+        await supabase.storage
+          .from(BUCKET)
+          .upload(path, file)
+
+      if (uploadError) {
+        throw uploadError
+      }
+
+      const {
+        data: {
+          publicUrl,
+        },
+      } =
+        supabase.storage
+          .from(BUCKET)
+          .getPublicUrl(
+            data.path
+          )
+
+      const {
+        error: dbError,
+      } = await supabase
+        .from(
+          "imagenes_producto"
+        )
+        .insert({
+          producto_id:
+            productoId,
+
+          url: publicUrl,
+
+          orden,
+        })
+
+      if (dbError) {
+        throw dbError
+      }
+    }
 
   const uploadFiles =
     async (files: File[]) => {
@@ -88,63 +161,16 @@ export function useImageUploader({
 
         await Promise.all(
           validFiles.map(
-            async (
+            (
               file,
               index
-            ) => {
-              const ext =
-                file.name
-                  .split(".")
-                  .pop()
-
-              const path = `productos/${productoId}/${crypto.randomUUID()}.${ext}`
-
-              const {
-                data,
-                error,
-              } =
-                await supabase.storage
-                  .from(
-                    "imagenes-productos"
-                  )
-                  .upload(
-                    path,
-                    file
-                  )
-
-              if (error) {
-                throw error
-              }
-
-              const {
-                data: {
-                  publicUrl,
-                },
-              } =
-                supabase.storage
-                  .from(
-                    "imagenes-productos"
-                  )
-                  .getPublicUrl(
-                    data.path
-                  )
-
-              await supabase
-                .from(
-                  "imagenes_producto"
-                )
-                .insert({
-                  producto_id:
-                    productoId,
-
-                  url: publicUrl,
-
-                  orden:
-                    maxOrden +
-                    index +
-                    1,
-                })
-            }
+            ) =>
+              uploadSingleFile(
+                file,
+                maxOrden +
+                  index +
+                  1
+              )
           )
         )
 
@@ -164,40 +190,54 @@ export function useImageUploader({
     async (
       image: SupabaseImagenProducto
     ) => {
-      await supabase
-        .from(
-          "imagenes_producto"
+      try {
+        const path =
+          image.url.split(
+            `/${BUCKET}/`
+          )[1]
+
+        await Promise.all([
+          supabase
+            .from(
+              "imagenes_producto"
+            )
+            .delete()
+            .eq("id", image.id),
+
+          path
+            ? supabase.storage
+                .from(BUCKET)
+                .remove([path])
+            : Promise.resolve(),
+        ])
+
+        loadImages()
+      } catch (err) {
+        console.error(err)
+
+        setError(
+          "Error eliminando imagen."
         )
-        .delete()
-        .eq("id", image.id)
-
-      const path =
-        image.url.split(
-          "/imagenes-productos/"
-        )[1]
-
-      if (path) {
-        await supabase.storage
-          .from(
-            "imagenes-productos"
-          )
-          .remove([path])
       }
-
-      loadImages()
     }
 
   const setPrincipal =
     async (url: string) => {
-      await supabase
-        .from("productos")
-        .update({
-          imagen_principal:
-            url,
-        })
-        .eq("id", productoId)
+      try {
+        await supabase
+          .from("productos")
+          .update({
+            imagen_principal:
+              url,
+          })
+          .eq("id", productoId)
+      } catch (err) {
+        console.error(err)
 
-      loadImages()
+        setError(
+          "Error actualizando imagen principal."
+        )
+      }
     }
 
   return {
