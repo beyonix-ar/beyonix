@@ -1,28 +1,38 @@
 "use client"
 
-import { ProductDetailsModal } from "../../products/product-details-modal"
-import { useProductDetails } from "../use-product-details"
-import { StoreProduct } from "@/lib/types/product"
 import { useCart } from "@/context/cart-context"
+
+import type { SupabaseProducto } from "@/lib/supabase/types"
+
+import { ProductDetailsModal } from "../../products/product-details-modal"
+
 import { GlobalSearchBar } from "@/components/global-search-bar"
+
 import { CategorySort } from "../category-sort"
-import { CategoryProductsGrid } from "./category-products-grid"
 import { useCategoryProducts } from "../hooks/use-category-products"
+import { useProductDetails } from "../use-product-details"
+
+import { CategoryProductsGrid } from "./category-products-grid"
 
 interface CategoryPageLayoutProps {
   title: string
   description: string
   currentSlug: string
-  products: StoreProduct[]
+  products: SupabaseProducto[]
 }
 
 export function CategoryPageLayout({
   title,
   description,
-  currentSlug,
   products,
 }: CategoryPageLayoutProps) {
-  const { addToCart, removeFromCart, isInCart, openCart } = useCart()
+  const {
+    addToCart,
+    removeFromCart,
+    decreaseQuantity,
+    isInCart,
+    openCart,
+  } = useCart()
 
   const {
     search,
@@ -50,32 +60,10 @@ export function CategoryPageLayout({
     if (!product) return
 
     addToCart(
-      {
-        id: product.id,
-        slug: product.slug ?? "",
-        name: product.name,
-        price: product.price,
-        originalPrice: product.originalPrice,
-        category: product.category,
-        categorySlug: product.categorySlug ?? "",
-        colors: product.colors,
-      },
-      selectedColor
+      product,
+      selectedColor,
+      images?.[0]
     )
-  }
-
-  const handleRemoveFromCart = () => {
-    if (!product) return
-    removeFromCart(product.id, selectedColor)
-  }
-
-  const handleIsInCart = () => {
-    if (!product) return false
-    return isInCart(product.id, selectedColor)
-  }
-
-  const handleOpenCart = () => {
-    openCart()
   }
 
   return (
@@ -85,6 +73,10 @@ export function CategoryPageLayout({
       <div className="global-search-wrapper absolute left-0 right-0 top-24 z-40">
         <GlobalSearchBar
           search={search}
+          products={products.map((product) => ({
+            id: String(product.id),
+            nombre: product.nombre,
+          }))}
           onSearchChange={setSearch}
         />
       </div>
@@ -133,9 +125,31 @@ export function CategoryPageLayout({
         onSelectImage={setSelectedImage}
         onColorChange={changeColor}
         onAddToCart={handleAddToCart}
-        onRemoveFromCart={handleRemoveFromCart}
-        onViewCart={handleOpenCart}
-        isInCart={handleIsInCart()}
+        onDecreaseCart={() => {
+          if (!product) return
+
+          decreaseQuantity(
+            product.id,
+            selectedColor
+          )
+        }}
+        onRemoveFromCart={() => {
+          if (!product) return
+
+          removeFromCart(
+            product.id,
+            selectedColor
+          )
+        }}
+        onViewCart={openCart}
+        isInCart={
+          product
+            ? isInCart(
+                product.id,
+                selectedColor
+              )
+            : false
+        }
       />
     </section>
   )

@@ -1,20 +1,30 @@
 "use client"
 
-import { createContext, useContext, useState } from "react"
-import type { StoreProduct } from "@/lib/types/product"
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+} from "react"
 
-type CartItem = {
-  product: StoreProduct
+import type { SupabaseProducto } from "@/lib/supabase/types"
+
+interface CartItem {
+  product: SupabaseProducto
   color: string
   image: string
   quantity: number
 }
 
-type CartContextType = {
+interface CartContextType {
   cart: CartItem[]
 
+  total: number
+
+  isOpen: boolean
+
   addToCart: (
-    product: StoreProduct,
+    product: SupabaseProducto,
     color: string,
     image?: string
   ) => void
@@ -45,90 +55,112 @@ type CartContextType = {
     color: string
   ) => number
 
-  clearCart: () => void
-
-  total: number
-
-  isOpen: boolean
-
-  openCart: () => void
-  closeCart: () => void
-
   isInCart: (
     productId: number,
     color: string
   ) => boolean
+
+  clearCart: () => void
+
+  openCart: () => void
+  closeCart: () => void
 }
 
-const CartContext = createContext<CartContextType | null>(null)
+const CartContext =
+  createContext<CartContextType | null>(
+    null
+  )
 
 export function CartProvider({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [isOpen, setIsOpen] = useState(false)
+  const [cart, setCart] = useState<
+    CartItem[]
+  >([])
 
-  // ➕ AGREGAR
+  const [isOpen, setIsOpen] =
+    useState(false)
+
   const addToCart = (
-    product: StoreProduct,
+    product: SupabaseProducto,
     color: string,
     image?: string
   ) => {
     setCart((prev) => {
-      const existing = prev.find(
+      const exists = prev.find(
         (item) =>
-          item.product.id === product.id &&
+          item.product.id ===
+            product.id &&
           item.color === color
       )
 
-      if (existing) {
+      if (exists) {
         return prev.map((item) =>
-          item.product.id === product.id &&
+          item.product.id ===
+            product.id &&
           item.color === color
             ? {
                 ...item,
-                quantity: item.quantity + 1,
+                quantity:
+                  item.quantity + 1,
               }
             : item
         )
       }
-
-      const fallbackImage =
-        image ||
-        product.colors?.find(
-          (c) => c.value === color
-        )?.images?.[0] ||
-        product.colors?.[0]?.images?.[0] ||
-        "/placeholder.svg"
 
       return [
         ...prev,
         {
           product,
           color,
-          image: fallbackImage,
+          image:
+            image ||
+            product
+              .imagenes_producto?.[0]
+              ?.url ||
+            "/placeholder.svg",
           quantity: 1,
         },
       ]
     })
   }
 
-  // 🔁 UPDATE DIRECTO
+  const removeFromCart = (
+    productId: number,
+    color: string
+  ) => {
+    setCart((prev) =>
+      prev.filter(
+        (item) =>
+          !(
+            item.product.id ===
+              productId &&
+            item.color === color
+          )
+      )
+    )
+  }
+
   const updateQuantity = (
     productId: number,
     color: string,
     quantity: number
   ) => {
     if (quantity <= 0) {
-      removeFromCart(productId, color)
+      removeFromCart(
+        productId,
+        color
+      )
+
       return
     }
 
     setCart((prev) =>
       prev.map((item) =>
-        item.product.id === productId &&
+        item.product.id ===
+          productId &&
         item.color === color
           ? {
               ...item,
@@ -139,125 +171,101 @@ export function CartProvider({
     )
   }
 
-  // ➕ INCREMENTAR
   const increaseQuantity = (
     productId: number,
     color: string
   ) => {
-    setCart((prev) =>
-      prev.map((item) =>
-        item.product.id === productId &&
-        item.color === color
-          ? {
-              ...item,
-              quantity: item.quantity + 1,
-            }
-          : item
-      )
+    updateQuantity(
+      productId,
+      color,
+      getQuantity(
+        productId,
+        color
+      ) + 1
     )
   }
 
-  // ➖ DISMINUIR
   const decreaseQuantity = (
     productId: number,
     color: string
   ) => {
-    setCart((prev) =>
-      prev
-        .map((item) => {
-          if (
-            item.product.id === productId &&
-            item.color === color
-          ) {
-            return {
-              ...item,
-              quantity: item.quantity - 1,
-            }
-          }
-
-          return item
-        })
-        .filter((item) => item.quantity > 0)
+    updateQuantity(
+      productId,
+      color,
+      getQuantity(
+        productId,
+        color
+      ) - 1
     )
   }
 
-  // 🔢 OBTENER CANTIDAD
   const getQuantity = (
     productId: number,
     color: string
   ) => {
-    const item = cart.find(
-      (item) =>
-        item.product.id === productId &&
-        item.color === color
-    )
-
-    return item?.quantity || 0
-  }
-
-  // 🗑 ELIMINAR
-  const removeFromCart = (
-    productId: number,
-    color: string
-  ) => {
-    setCart((prev) =>
-      prev.filter(
+    return (
+      cart.find(
         (item) =>
-          !(
-            item.product.id === productId &&
-            item.color === color
-          )
-      )
+          item.product.id ===
+            productId &&
+          item.color === color
+      )?.quantity || 0
     )
   }
 
-  // 🔍 CHECK
   const isInCart = (
     productId: number,
     color: string
-  ) =>
-    cart.some(
+  ) => {
+    return cart.some(
       (item) =>
-        item.product.id === productId &&
+        item.product.id ===
+          productId &&
         item.color === color
     )
+  }
 
-  // 🧹 CLEAR
-  const clearCart = () => setCart([])
+  const clearCart = () => {
+    setCart([])
+  }
 
-  // 💰 TOTAL
-  const total = cart.reduce(
-    (sum, item) =>
-      sum + item.product.price * item.quantity,
-    0
-  )
-
-  // 🛒 SIDEBAR
-  const openCart = () => setIsOpen(true)
-  const closeCart = () => setIsOpen(false)
+  const total = useMemo(() => {
+    return cart.reduce(
+      (sum, item) =>
+        sum +
+        item.product.precio *
+          item.quantity,
+      0
+    )
+  }, [cart])
 
   return (
     <CartContext.Provider
       value={{
         cart,
 
+        total,
+
+        isOpen,
+
         addToCart,
         removeFromCart,
+
         updateQuantity,
 
         increaseQuantity,
         decreaseQuantity,
+
         getQuantity,
+        isInCart,
 
         clearCart,
 
-        total,
+        openCart: () =>
+          setIsOpen(true),
 
-        isOpen,
-        openCart,
-        closeCart,
-
-        isInCart,
+        closeCart: () =>
+          setIsOpen(false),
       }}
     >
       {children}
@@ -266,7 +274,8 @@ export function CartProvider({
 }
 
 export function useCart() {
-  const context = useContext(CartContext)
+  const context =
+    useContext(CartContext)
 
   if (!context) {
     throw new Error(

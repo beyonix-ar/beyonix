@@ -1,10 +1,6 @@
 "use client"
 
-import {
-  useEffect,
-  useState,
-  useCallback,
-} from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import type {
   SupabaseProducto,
@@ -16,10 +12,6 @@ import {
   toggleProductoActivo,
 } from "@/lib/supabase/queries/productos"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hook
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function useProductos() {
   const [productos, setProductos] =
     useState<SupabaseProducto[]>([])
@@ -30,19 +22,14 @@ export function useProductos() {
   const [error, setError] =
     useState<string | null>(null)
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Load productos
-  // ───────────────────────────────────────────────────────────────────────────
-
   const loadProductos =
     useCallback(async () => {
       try {
         setLoading(true)
 
-        const data =
+        setProductos(
           await getProductos()
-
-        setProductos(data)
+        )
 
         setError(null)
       } catch (err) {
@@ -56,76 +43,54 @@ export function useProductos() {
       }
     }, [])
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // First load
-  // ───────────────────────────────────────────────────────────────────────────
-
   useEffect(() => {
     loadProductos()
   }, [loadProductos])
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Delete
-  // ───────────────────────────────────────────────────────────────────────────
+  const handleDelete =
+    async (id: number) => {
+      try {
+        await deleteProducto(id)
 
-  const removeProducto =
-    useCallback(
-      async (id: number) => {
-        try {
-          await deleteProducto(id)
+        setProductos((prev) =>
+          prev.filter(
+            (p) => p.id !== id
+          )
+        )
 
-          setProductos((prev) =>
-            prev.filter(
-              (p) => p.id !== id
-            )
+        return true
+      } catch (err) {
+        console.error(err)
+
+        return false
+      }
+    }
+
+  const handleToggle =
+    async (
+      producto: SupabaseProducto
+    ) => {
+      try {
+        const updated =
+          await toggleProductoActivo(
+            producto
           )
 
-          return true
-        } catch (err) {
-          console.error(err)
-
-          return false
-        }
-      },
-      []
-    )
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Toggle activo
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const toggleActivo =
-    useCallback(
-      async (
-        producto: SupabaseProducto
-      ) => {
-        try {
-          const updated =
-            await toggleProductoActivo(
-              producto
-            )
-
-          setProductos((prev) =>
-            prev.map((p) =>
-              p.id === updated.id
-                ? updated
-                : p
-            )
+        setProductos((prev) =>
+          prev.map((p) =>
+            p.id === updated.id
+              ? updated
+              : p
           )
+        )
 
-          return true
-        } catch (err) {
-          console.error(err)
+        return true
+      } catch (err) {
+        console.error(err)
 
-          return false
-        }
-      },
-      []
-    )
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Return
-  // ───────────────────────────────────────────────────────────────────────────
+        return false
+      }
+    }
 
   return {
     productos,
@@ -136,9 +101,9 @@ export function useProductos() {
       loadProductos,
 
     deleteProducto:
-      removeProducto,
+      handleDelete,
 
     toggleProductoActivo:
-      toggleActivo,
+      handleToggle,
   }
 }

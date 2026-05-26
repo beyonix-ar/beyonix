@@ -1,17 +1,49 @@
 "use client"
 
-import { useMemo, useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { productsData } from "@/lib/products"
-import { ProductsFiltersSidebar } from "./products-filters-sidebar"
-import { ProductsToolbar } from "./products-toolbar"
-import { ProductsGrid } from "./products-grid"
-import { ProductDetailsModal } from "@/components/products/product-details-modal"
-import { useProductDetails } from "@/components/category/use-product-details"
+
 import { useCart } from "@/context/cart-context"
+
+import type { SupabaseProducto } from "@/lib/supabase/types"
+
+import { getProductos } from "@/lib/supabase/queries/productos"
+
+import { useProductDetails } from "@/components/category/use-product-details"
+
 import { GlobalSearchBar } from "@/components/global-search-bar"
+import { ProductDetailsModal } from "@/components/products/product-details-modal"
+
+import { ProductsFiltersSidebar } from "./products-filters-sidebar"
+import { ProductsGrid } from "./products-grid"
+import { ProductsToolbar } from "./products-toolbar"
 
 export function ProductsPageLayout() {
+  const searchParams = useSearchParams()
+
+  const [products, setProducts] = useState<
+    SupabaseProducto[]
+  >([])
+
+  const [search, setSearch] = useState("")
+  const [sortBy, setSortBy] =
+    useState("relevance")
+
+  const [selectedCategories, setSelectedCategories] =
+    useState<string[]>([])
+
+  const [onlyOffers, setOnlyOffers] =
+    useState(false)
+
+  const [onlyBestSellers, setOnlyBestSellers] =
+    useState(false)
+
+  const [minPrice, setMinPrice] =
+    useState(1000)
+
+  const [maxPrice, setMaxPrice] =
+    useState(150000)
+
   const {
     isOpen,
     product,
@@ -35,191 +67,159 @@ export function ProductsPageLayout() {
     openCart,
   } = useCart()
 
-  const searchParams = useSearchParams()
-
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [selectedColors, setSelectedColors] = useState<string[]>([])
-  const [onlyOffers, setOnlyOffers] = useState(false)
-  const [onlyBestSellers, setOnlyBestSellers] = useState(false)
-  const [onlyNew, setOnlyNew] = useState(false)
-  const [minPrice, setMinPrice] = useState(1000)
-  const [maxPrice, setMaxPrice] = useState(150000)
-  const [sortBy, setSortBy] = useState("relevance")
-  const [search, setSearch] = useState("")
-
   useEffect(() => {
-    const query = searchParams.get("search") || ""
-    setSearch(query)
+    setSearch(
+      searchParams.get("search") || ""
+    )
   }, [searchParams])
 
+  useEffect(() => {
+    const loadProducts = async () => {
+      setProducts(await getProductos())
+    }
+
+    loadProducts()
+  }, [])
+
   const filteredProducts = useMemo(() => {
-    let result = productsData.filter((product) => {
-      const matchesCategory =
-        selectedCategories.length === 0 ||
-        selectedCategories.includes(product.categorySlug)
-
-      const matchesOffer =
-        !onlyOffers || Boolean(product.originalPrice)
-
-      const matchesPrice =
-        product.price >= minPrice &&
-        product.price <= maxPrice
-
-      const productColors = product.colors.map((c) =>
-        c.name.trim().toLowerCase()
-      )
-
-      const matchesColor =
-        selectedColors.length === 0 ||
-        selectedColors.some((c) =>
-          productColors.includes(c.trim().toLowerCase())
+    return products
+      .filter((product) => {
+        return (
+          (!selectedCategories.length ||
+            selectedCategories.includes(
+              product.categorias?.slug || ""
+            )) &&
+          (!onlyOffers ||
+            !!product.precio_anterior) &&
+          (!onlyBestSellers ||
+            product.destacado) &&
+          product.precio >= minPrice &&
+          product.precio <= maxPrice &&
+          product.nombre
+            .toLowerCase()
+            .includes(
+              search.toLowerCase()
+            )
         )
+      })
+      .sort((a, b) => {
+        if (sortBy === "price-asc") {
+          return a.precio - b.precio
+        }
 
-      const matchesBestSeller =
-        !onlyBestSellers || product.featured
+        if (sortBy === "price-desc") {
+          return b.precio - a.precio
+        }
 
-      const matchesNew =
-        !onlyNew || product.featured
-
-      const matchesSearch =
-        product.name.toLowerCase().includes(search.toLowerCase())
-
-      return (
-        matchesCategory &&
-        matchesOffer &&
-        matchesPrice &&
-        matchesColor &&
-        matchesBestSeller &&
-        matchesNew &&
-        matchesSearch
-      )
-    })
-
-    if (sortBy === "price-asc") {
-      result = [...result].sort((a, b) => a.price - b.price)
-    }
-
-    if (sortBy === "price-desc") {
-      result = [...result].sort((a, b) => b.price - a.price)
-    }
-
-    return result
+        return 0
+      })
   }, [
+    products,
     selectedCategories,
-    selectedColors,
     onlyOffers,
     onlyBestSellers,
-    onlyNew,
     minPrice,
     maxPrice,
-    sortBy,
     search,
+    sortBy,
   ])
 
   const availableColors = useMemo(() => {
-    const set = new Set<string>()
-    productsData.forEach((p) =>
-      p.colors.forEach((c) =>
-        set.add(c.name.trim().toLowerCase())
-      )
-    )
-    return Array.from(set)
+    return ["default"]
   }, [])
 
-  const handleAddToCart = (quantity: number = 1) => {
+  const handleAddToCart = (
+    quantity: number = 1
+  ) => {
     if (!product) return
-    const selectedVariant = product.colors.find(
-      (c) => c.name === selectedColor
-    )
-    const image =
-      selectedVariant?.images?.[0] ||
-      product.colors?.[0]?.images?.[0] ||
-      "/placeholder.png"
 
-    for (let i = 0; i < quantity; i++) {
-      addToCart(product, selectedColor, image)
-    }
-  }
-
-  const handleDecreaseCart = () => {
-    if (!product) return
-    decreaseQuantity(product.id, selectedColor)
-  }
-
-  const handleRemoveFromCart = () => {
-    if (!product) return
-    removeFromCart(product.id, selectedColor)
-  }
-
-  const handleViewCart = () => {
-    openCart()
+    Array.from({
+      length: quantity,
+    }).forEach(() => {
+      addToCart(
+        product,
+        selectedColor,
+        images?.[0]
+      )
+    })
   }
 
   return (
-    <main className="min-h-screen bg-black text-white pt-20">
-      {/* Header con línea separadora sutil */}
+    <main className="min-h-screen bg-black pt-20 text-white">
       <section className="container mx-auto px-4 lg:px-8">
-
-        {/* Cabecera de página */}
-        <div className="mt-8 mb-10 pb-8 border-b border-white/[0.06]">
-
-          {/* Fila superior: título a la izquierda, buscador centrado en el espacio restante */}
+        <div className="mb-10 mt-8 border-b border-white/[0.06] pb-8">
           <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[auto_1fr] lg:items-end lg:gap-12">
-
-            <div className="shrink-0">
+            <div>
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.3em] text-[#4A90B8]">
                 Productos
               </p>
-              <h1 className="text-3xl font-bold tracking-tight lg:text-4xl text-white">
+
+              <h1 className="text-3xl font-bold tracking-tight lg:text-4xl">
                 Todos los productos
               </h1>
-              <p className="mt-1.5 text-sm text-white/50 tracking-wide">
-                Explorá el catálogo completo de BEYONIX.
+
+              <p className="mt-1.5 text-sm tracking-wide text-white/50">
+                Explorá el catálogo completo de
+                BEYONIX.
               </p>
             </div>
 
-            {/* El buscador ocupa el espacio restante de la fila */}
-            <div className="w-full">
-              <GlobalSearchBar
-                search={search}
-                onSearchChange={setSearch}
-              />
-            </div>
-
+            <GlobalSearchBar
+              search={search}
+              products={products.map(
+                (product) => ({
+                  id: String(product.id),
+                  name: product.nombre,
+                })
+              )}
+              onSearchChange={setSearch}
+            />
           </div>
         </div>
 
-        {/* Grid principal */}
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[260px_1fr] pb-16">
-
+        <div className="grid grid-cols-1 gap-8 pb-16 lg:grid-cols-[260px_1fr]">
           <ProductsFiltersSidebar
-            selectedCategories={selectedCategories}
-            setSelectedCategories={setSelectedCategories}
-            selectedColors={selectedColors}
-            setSelectedColors={setSelectedColors}
-            availableColors={availableColors}
+            selectedCategories={
+              selectedCategories
+            }
+            setSelectedCategories={
+              setSelectedCategories
+            }
+            selectedColors={[]}
+            setSelectedColors={() => {}}
+            availableColors={
+              availableColors
+            }
             onlyOffers={onlyOffers}
-            setOnlyOffers={setOnlyOffers}
+            setOnlyOffers={
+              setOnlyOffers
+            }
             minPrice={minPrice}
             setMinPrice={setMinPrice}
             maxPrice={maxPrice}
             setMaxPrice={setMaxPrice}
-            onlyBestSellers={onlyBestSellers}
-            setOnlyBestSellers={setOnlyBestSellers}
-            onlyNew={onlyNew}
-            setOnlyNew={setOnlyNew}
+            onlyBestSellers={
+              onlyBestSellers
+            }
+            setOnlyBestSellers={
+              setOnlyBestSellers
+            }
+            onlyNew={false}
+            setOnlyNew={() => {}}
           />
 
           <div>
             <ProductsToolbar
-              total={filteredProducts.length}
+              total={
+                filteredProducts.length
+              }
               sortBy={sortBy}
               setSortBy={setSortBy}
             />
 
             <ProductsGrid
               products={filteredProducts}
-              selectedColors={selectedColors}
+              selectedColors={[]}
               onOpenPreview={openDetails}
               onAddToCart={addToCart}
             />
@@ -236,14 +236,46 @@ export function ProductsPageLayout() {
         onClose={closeDetails}
         onNext={nextImage}
         onPrev={prevImage}
-        onSelectImage={setSelectedImage}
+        onSelectImage={
+          setSelectedImage
+        }
         onColorChange={changeColor}
-        onAddToCart={handleAddToCart}
-        onDecreaseCart={handleDecreaseCart}
-        onRemoveFromCart={handleRemoveFromCart}
-        onViewCart={handleViewCart}
-        isInCart={product ? isInCart(product.id, selectedColor) : false}
-        cartQuantity={product ? getQuantity(product.id, selectedColor) : 0}
+        onAddToCart={
+          handleAddToCart
+        }
+        onDecreaseCart={() => {
+          if (!product) return
+
+          decreaseQuantity(
+            product.id,
+            selectedColor
+          )
+        }}
+        onRemoveFromCart={() => {
+          if (!product) return
+
+          removeFromCart(
+            product.id,
+            selectedColor
+          )
+        }}
+        onViewCart={openCart}
+        isInCart={
+          product
+            ? isInCart(
+                product.id,
+                selectedColor
+              )
+            : false
+        }
+        cartQuantity={
+          product
+            ? getQuantity(
+                product.id,
+                selectedColor
+              )
+            : 0
+        }
       />
     </main>
   )

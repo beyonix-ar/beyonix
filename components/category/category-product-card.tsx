@@ -2,15 +2,24 @@
 
 import { useMemo, useState } from "react"
 import { ShoppingBag } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
+
+import { useCart } from "@/context/cart-context"
+
 import { ProductImageCarousel } from "./product-image-carousel"
 import { ColorSelector } from "../products/color-selector"
-import { useCart } from "@/context/cart-context"
-import { StoreProduct } from "@/lib/types/product"
+
+import type { SupabaseProducto } from "@/lib/supabase/types"
 
 interface CategoryProductCardProps {
-  product: StoreProduct
-  onOpenPreview: (product: StoreProduct & { selectedColor: string }) => void
+  product: SupabaseProducto
+
+  onOpenPreview: (
+    product: SupabaseProducto & {
+      selectedColor: string
+    }
+  ) => void
 }
 
 const formatPrice = (price: number) =>
@@ -26,112 +35,116 @@ export function CategoryProductCard({
 }: CategoryProductCardProps) {
   const { addToCart } = useCart()
 
-  const {
-    id,
-    name,
-    category,
-    price,
-    originalPrice,
-    colors,
-    details,
-    slug,
-    categorySlug,
-  } = product
+  const colors =
+    product.imagenes_producto?.length
+      ? [
+          {
+            name: "default",
+            value: "default",
+            images: product.imagenes_producto.map(
+              (image) => image.url
+            ),
+          },
+        ]
+      : [
+          {
+            name: "default",
+            value: "default",
+            images: ["/placeholder.svg"],
+          },
+        ]
 
-  const [selectedColor, setSelectedColor] = useState(colors[0].name)
+  const [selectedColor, setSelectedColor] =
+    useState("default")
 
   const activeVariant = useMemo(
-    () => colors.find((c) => c.name === selectedColor) ?? colors[0],
+    () =>
+      colors.find(
+        (color) =>
+          color.name === selectedColor
+      ) || colors[0],
     [colors, selectedColor]
   )
 
-  const images =
-    activeVariant.images?.length > 0
-      ? activeVariant.images
-      : ["/placeholder.svg"]
+  const images = activeVariant.images
 
   const handleAddToCart = () => {
     addToCart(
-      {
-        id,
-        slug,
-        name,
-        price,
-        originalPrice,
-        category,
-        categorySlug,
-        colors,
-      },
-      selectedColor
-    )
-  }
-
-  const handleOpenPreview = () => {
-    onOpenPreview({
-      ...product,
+      product,
       selectedColor,
-    })
+      images[0]
+    )
   }
 
   return (
     <div className="group relative">
-      <div className="pointer-events-none absolute top-1/2 -left-10 z-0 h-60 w-3 -translate-y-1/2 rounded-full bg-white/50 blur-3xl opacity-0 transition-all duration-500 group-hover:opacity-100" />
-      <div className="pointer-events-none absolute top-1/2 -right-10 z-0 h-60 w-3 -translate-y-1/2 rounded-full bg-white/50 blur-3xl opacity-0 transition-all duration-500 group-hover:opacity-100" />
+      <div className="pointer-events-none absolute -left-10 top-1/2 z-0 h-60 w-3 -translate-y-1/2 rounded-full bg-white/50 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-100" />
+
+      <div className="pointer-events-none absolute -right-10 top-1/2 z-0 h-60 w-3 -translate-y-1/2 rounded-full bg-white/50 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-100" />
 
       <article className="relative z-10 flex h-full min-h-screen-small flex-col rounded-lg border border-border bg-card transition-all duration-500 hover:border-muted-foreground/30">
-        
-        {/* IMAGE */}
-        <div
-          className="relative z-10 h-320px cursor-pointer overflow-hidden rounded-t-lg"
-          onClick={handleOpenPreview}
+        <button
+          type="button"
+          aria-label={`Ver ${product.nombre}`}
+          title={`Ver ${product.nombre}`}
+          onClick={() =>
+            onOpenPreview({
+              ...product,
+              selectedColor,
+            })
+          }
+          className="relative z-10 h-320px overflow-hidden rounded-t-lg"
         >
-          <ProductImageCarousel images={images} alt={name} />
-        </div>
+          <ProductImageCarousel
+            images={images}
+            alt={product.nombre}
+          />
+        </button>
 
-        <div className="flex flex-1 flex-col bg-[#111111] pt-4 px-4 pb-4">
-          
+        <div className="flex flex-1 flex-col bg-[#111111] px-4 pb-4 pt-4">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-13px uppercase tracking-wider text-muted-foreground">
-              {category}
+              {product.categorias?.nombre}
             </p>
 
-            <div onClick={(e) => e.stopPropagation()}>
-              <ColorSelector
-                colors={colors.map((c) => ({
-                  name: c.name,
-                  value: c.value as never,
-                }))}
-                selectedColor={selectedColor}
-                onSelect={setSelectedColor}
-              />
-            </div>
+            <ColorSelector
+              colors={colors.map((color) => ({
+                name: color.name,
+                value: color.value as never,
+              }))}
+              selectedColor={selectedColor}
+              onSelect={setSelectedColor}
+            />
           </div>
 
-          <h3 className="mt-2 mb-3 min-h-48px text-16px font-bold leading-tight text-foreground line-clamp-2">
-            {name}
+          <h3 className="mb-3 mt-2 min-h-48px line-clamp-2 text-16px font-bold leading-tight text-foreground">
+            {product.nombre}
           </h3>
 
           <div className="space-y-1">
             <span className="block text-18px font-bold text-foreground">
-              {formatPrice(price)}
+              {formatPrice(product.precio)}
             </span>
 
-            {originalPrice ? (
-              <span className="block min-h-28px mb-2 text-14px line-through text-muted-foreground/70">
-                {formatPrice(originalPrice)}
+            {product.precio_anterior ? (
+              <span className="mb-2 block min-h-28px text-14px line-through text-muted-foreground/70">
+                {formatPrice(
+                  product.precio_anterior
+                )}
               </span>
             ) : (
               <div className="min-h-28px" />
             )}
           </div>
 
-          {/* BOTÓN */}
           <Button
             type="button"
-            aria-label="Añadir al carrito"
+            aria-label={`Añadir ${product.nombre} al carrito`}
+            title={`Añadir ${product.nombre} al carrito`}
             className="mt-auto w-full cursor-pointer"
             onClick={(e) => {
               e.stopPropagation()
+
               handleAddToCart()
             }}
           >

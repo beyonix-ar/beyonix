@@ -1,123 +1,195 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+} from "react"
+
 import Image from "next/image"
+
 import { useRouter } from "next/navigation"
-import { Minus, Plus, Trash2, X } from "lucide-react"
+
+import {
+  Minus,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+
 import { cn } from "@/lib/utils"
-import type { StoreProduct } from "@/lib/types/product"
+
+import type { SupabaseProducto } from "@/lib/supabase/types"
+
 import {
   FREE_SHIPPING_MIN,
   SHIPPING_COST,
-  getProductDiscount,
 } from "@/lib/store-config"
 
 export interface CartItem {
-  product: StoreProduct
+  product: SupabaseProducto
   color: string
+  image: string
   quantity: number
-}
-
-function formatPrice(price: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    minimumFractionDigits: 0,
-  }).format(price)
 }
 
 interface CartDrawerProps {
   isOpen: boolean
-  onClose: () => void
+
   items: CartItem[]
+
+  onClose: () => void
+
   onUpdateQuantity: (
     productId: number,
     color: string,
     quantity: number
   ) => void
-  onRemoveItem: (productId: number, color: string) => void
+
+  onRemoveItem: (
+    productId: number,
+    color: string
+  ) => void
 }
+
+const formatPrice = (
+  price: number
+) =>
+  new Intl.NumberFormat(
+    "es-AR",
+    {
+      style: "currency",
+      currency: "ARS",
+      minimumFractionDigits: 0,
+    }
+  ).format(price)
 
 export function CartDrawer({
   isOpen,
-  onClose,
   items,
+  onClose,
   onUpdateQuantity,
   onRemoveItem,
 }: CartDrawerProps) {
   const router = useRouter()
-  const drawerRef = useRef<HTMLDivElement>(null)
 
-  const subtotal = items.reduce((sum, item) => {
-    const priceWithDiscount = Math.round(
-      item.product.price *
-        (1 - getProductDiscount(item.product.id))
+  const drawerRef =
+    useRef<HTMLDivElement>(null)
+
+  const subtotal = useMemo(() => {
+    return items.reduce(
+      (sum, item) =>
+        sum +
+        item.product.precio *
+          item.quantity,
+      0
     )
-    return sum + priceWithDiscount * item.quantity
-  }, 0)
+  }, [items])
 
-  const shipping = subtotal >= FREE_SHIPPING_MIN ? 0 : SHIPPING_COST
-  const total = subtotal + shipping
+  const shipping =
+    subtotal >=
+    FREE_SHIPPING_MIN
+      ? 0
+      : SHIPPING_COST
 
-  const remainingForFreeShipping = Math.max(
-    FREE_SHIPPING_MIN - subtotal,
-    0
-  )
+  const total =
+    subtotal + shipping
 
-  const freeShippingProgress = Math.min(
-    (subtotal / FREE_SHIPPING_MIN) * 100,
-    100
-  )
+  const freeShippingProgress =
+    Math.min(
+      (subtotal /
+        FREE_SHIPPING_MIN) *
+        100,
+      100
+    )
+
+  const remainingForFreeShipping =
+    Math.max(
+      FREE_SHIPPING_MIN -
+        subtotal,
+      0
+    )
 
   const handleCheckout = () => {
-    localStorage.setItem("beyonix-cart", JSON.stringify(items))
+    localStorage.setItem(
+      "beyonix-cart",
+      JSON.stringify(items)
+    )
+
     onClose()
+
     router.push("/checkout")
   }
 
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose()
+    const handleEscape = (
+      event: KeyboardEvent
+    ) => {
+      if (
+        event.key ===
+        "Escape"
+      ) {
+        onClose()
+      }
     }
 
     if (isOpen) {
-      document.addEventListener("keydown", handleEscape)
-      document.body.style.overflow = "hidden"
+      document.body.style.overflow =
+        "hidden"
+
+      document.addEventListener(
+        "keydown",
+        handleEscape
+      )
     }
 
     return () => {
-      document.removeEventListener("keydown", handleEscape)
-      document.body.style.overflow = ""
+      document.body.style.overflow =
+        ""
+
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      )
     }
   }, [isOpen, onClose])
 
-  if (!isOpen) return null
+  if (!isOpen) {
+    return null
+  }
 
   return (
     <div className="fixed inset-0 z-50">
-      <div
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+      <button
+        type="button"
+        aria-label="Cerrar carrito"
+        title="Cerrar carrito"
         onClick={onClose}
+        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
       />
 
       <div
         ref={drawerRef}
         className={cn(
-          "absolute right-0 top-0 h-full w-full sm:max-w-md bg-background border-l border-border shadow-xl flex flex-col",
+          "absolute right-0 top-0 flex h-full w-full flex-col border-l border-border bg-background shadow-xl sm:max-w-md",
           "animate-in slide-in-from-right duration-300"
         )}
       >
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-lg font-semibold text-foreground">
-            Tu carrito ({items.length})
+            Tu carrito (
+            {items.length})
           </h2>
 
           <Button
             type="button"
             variant="ghost"
             size="icon"
+            aria-label="Cerrar carrito"
+            title="Cerrar carrito"
             onClick={onClose}
             className="cursor-pointer"
           >
@@ -125,105 +197,182 @@ export function CartDrawer({
           </Button>
         </div>
 
-        {items.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p>Tu carrito está vacío</p>
+        {!items.length ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p>
+              Tu carrito está vacío
+            </p>
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {items.map((item, index) => (
-                <div key={index} className="flex gap-4">
-                  <div className="relative size-20 rounded-lg overflow-hidden bg-muted shrink-0">
-                    <Image
-                      src={
-                        item.product.colors?.find(
-                          (c) => c.name === item.color
-                        )?.images?.[0] || "/placeholder.svg"
-                      }
-                      alt={item.product.name}
-                      fill
-                      className="object-cover"
-                    />
-                  </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              {items.map(
+                (item, index) => (
+                  <div
+                    key={`${item.product.id}-${item.color}-${index}`}
+                    className="flex gap-4"
+                  >
+                    <div className="relative size-20 shrink-0 overflow-hidden rounded-lg bg-muted">
+                      <Image
+                        src={
+                          item.image ||
+                          "/placeholder.svg"
+                        }
+                        alt={
+                          item.product
+                            .nombre
+                        }
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
 
-                  <div className="flex-1">
-                    <h4 className="text-sm font-medium">
-                      {item.product.name}
-                    </h4>
+                    <div className="flex flex-1 flex-col">
+                      <h4 className="text-sm font-medium">
+                        {
+                          item
+                            .product
+                            .nombre
+                        }
+                      </h4>
 
-                    <p className="text-sm text-muted-foreground">
-                      {formatPrice(item.product.price)}
-                    </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatPrice(
+                          item
+                            .product
+                            .precio
+                        )}
+                      </p>
 
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center gap-2">
+                      <div className="mt-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            aria-label="Disminuir cantidad"
+                            title="Disminuir cantidad"
+                            disabled={
+                              item.quantity <=
+                              1
+                            }
+                            onClick={() =>
+                              onUpdateQuantity(
+                                item
+                                  .product
+                                  .id,
+                                item.color,
+                                item.quantity -
+                                  1
+                              )
+                            }
+                            className="h-9 w-9 cursor-pointer"
+                          >
+                            <Minus className="size-4" />
+                          </Button>
+
+                          <span>
+                            {
+                              item.quantity
+                            }
+                          </span>
+
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            aria-label="Aumentar cantidad"
+                            title="Aumentar cantidad"
+                            onClick={() =>
+                              onUpdateQuantity(
+                                item
+                                  .product
+                                  .id,
+                                item.color,
+                                item.quantity +
+                                  1
+                              )
+                            }
+                            className="h-9 w-9 cursor-pointer"
+                          >
+                            <Plus className="size-4" />
+                          </Button>
+                        </div>
+
                         <Button
                           type="button"
                           size="icon"
-                          variant="outline"
+                          variant="ghost"
+                          aria-label="Eliminar producto"
+                          title="Eliminar producto"
                           onClick={() =>
-                            onUpdateQuantity(
-                              item.product.id,
-                              item.color,
-                              item.quantity - 1
+                            onRemoveItem(
+                              item
+                                .product
+                                .id,
+                              item.color
                             )
                           }
-                          disabled={item.quantity <= 1}
-                          className="cursor-pointer h-9 w-9"
+                          className="cursor-pointer"
                         >
-                          <Minus className="size-4" />
-                        </Button>
-
-                        <span>{item.quantity}</span>
-
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="outline"
-                          onClick={() =>
-                            onUpdateQuantity(
-                              item.product.id,
-                              item.color,
-                              item.quantity + 1
-                            )
-                          }
-                          className="cursor-pointer h-9 w-9"
-                        >
-                          <Plus className="size-4" />
+                          <Trash2 className="size-4" />
                         </Button>
                       </div>
-
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        onClick={() =>
-                          onRemoveItem(
-                            item.product.id,
-                            item.color
-                          )
-                        }
-                        className="cursor-pointer"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              )}
             </div>
 
-            <div className="p-4 border-t space-y-3">
+            <div className="space-y-3 border-t p-4">
+              {shipping > 0 && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>
+                      Te faltan
+                    </span>
+
+                    <span className="font-medium">
+                      {formatPrice(
+                        remainingForFreeShipping
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      style={{
+                        width: `${freeShippingProgress}%`,
+                      }}
+                      className="h-full rounded-full bg-white transition-all duration-300"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{formatPrice(subtotal)}</span>
+                <span>
+                  Subtotal
+                </span>
+
+                <span>
+                  {formatPrice(
+                    subtotal
+                  )}
+                </span>
               </div>
 
               <div className="flex justify-between">
-                <span>Envío</span>
                 <span>
-                  {shipping === 0 ? "Gratis" : formatPrice(shipping)}
+                  Envío
+                </span>
+
+                <span>
+                  {shipping === 0
+                    ? "Gratis"
+                    : formatPrice(
+                        shipping
+                      )}
                 </span>
               </div>
 
@@ -231,12 +380,20 @@ export function CartDrawer({
 
               <div className="flex justify-between font-bold">
                 <span>Total</span>
-                <span>{formatPrice(total)}</span>
+
+                <span>
+                  {formatPrice(total)}
+                </span>
               </div>
 
               <Button
-                onClick={handleCheckout}
-                className="w-full h-12 text-base font-semibold cursor-pointer"
+                type="button"
+                aria-label="Finalizar compra"
+                title="Finalizar compra"
+                onClick={
+                  handleCheckout
+                }
+                className="h-12 w-full cursor-pointer text-base font-semibold"
               >
                 Finalizar compra
               </Button>

@@ -1,22 +1,21 @@
 import { supabase } from "@/lib/supabase/client"
 
 import type {
-  SupabaseProducto,
   SupabaseCategoria,
+  SupabaseProducto,
 } from "@/lib/supabase/types"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get productos
-// ─────────────────────────────────────────────────────────────────────────────
+const PRODUCT_SELECT = `
+  *,
+  categorias(*),
+  imagenes_producto(*)
+`
 
 export async function getStoreProductos() {
   const { data, error } =
     await supabase
       .from("productos")
-      .select(`
-        *,
-        categorias(*)
-      `)
+      .select(PRODUCT_SELECT)
       .eq("activo", true)
       .order("created_at", {
         ascending: false,
@@ -26,22 +25,15 @@ export async function getStoreProductos() {
     throw error
   }
 
-  return (data ??
+  return (data ||
     []) as SupabaseProducto[]
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Get destacados
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getFeaturedProductos() {
   const { data, error } =
     await supabase
       .from("productos")
-      .select(`
-        *,
-        categorias(*)
-      `)
+      .select(PRODUCT_SELECT)
       .eq("activo", true)
       .eq("destacado", true)
       .order("created_at", {
@@ -53,13 +45,9 @@ export async function getFeaturedProductos() {
     throw error
   }
 
-  return (data ??
+  return (data ||
     []) as SupabaseProducto[]
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Get producto by slug
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getProductoBySlug(
   slug: string
@@ -67,11 +55,7 @@ export async function getProductoBySlug(
   const { data, error } =
     await supabase
       .from("productos")
-      .select(`
-        *,
-        categorias(*),
-        imagenes_producto(*)
-      `)
+      .select(PRODUCT_SELECT)
       .eq("slug", slug)
       .eq("activo", true)
       .single()
@@ -83,20 +67,15 @@ export async function getProductoBySlug(
   return data as SupabaseProducto
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get productos by categoría
-// ─────────────────────────────────────────────────────────────────────────────
-
 export async function getProductosByCategoria(
   categoriaSlug: string
 ) {
-  // Buscar categoría
   const {
     data: categoria,
     error: categoriaError,
   } = await supabase
     .from("categorias")
-    .select("*")
+    .select("id")
     .eq("slug", categoriaSlug)
     .single()
 
@@ -104,14 +83,10 @@ export async function getProductosByCategoria(
     throw categoriaError
   }
 
-  // Buscar productos
   const { data, error } =
     await supabase
       .from("productos")
-      .select(`
-        *,
-        categorias(*)
-      `)
+      .select(PRODUCT_SELECT)
       .eq(
         "categoria_id",
         categoria.id
@@ -125,13 +100,9 @@ export async function getProductosByCategoria(
     throw error
   }
 
-  return (data ??
+  return (data ||
     []) as SupabaseProducto[]
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Search productos
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function searchProductos(
   query: string
@@ -139,10 +110,7 @@ export async function searchProductos(
   const { data, error } =
     await supabase
       .from("productos")
-      .select(`
-        *,
-        categorias(*)
-      `)
+      .select(PRODUCT_SELECT)
       .eq("activo", true)
       .ilike(
         "nombre",
@@ -156,13 +124,9 @@ export async function searchProductos(
     throw error
   }
 
-  return (data ??
+  return (data ||
     []) as SupabaseProducto[]
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Get categorías
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getStoreCategorias() {
   const { data, error } =
@@ -175,13 +139,9 @@ export async function getStoreCategorias() {
     throw error
   }
 
-  return (data ??
+  return (data ||
     []) as SupabaseCategoria[]
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Get related productos
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getRelatedProductos(
   productoId: number,
@@ -194,10 +154,7 @@ export async function getRelatedProductos(
   const { data, error } =
     await supabase
       .from("productos")
-      .select(`
-        *,
-        categorias(*)
-      `)
+      .select(PRODUCT_SELECT)
       .eq("activo", true)
       .eq(
         "categoria_id",
@@ -210,6 +167,6 @@ export async function getRelatedProductos(
     throw error
   }
 
-  return (data ??
+  return (data ||
     []) as SupabaseProducto[]
 }

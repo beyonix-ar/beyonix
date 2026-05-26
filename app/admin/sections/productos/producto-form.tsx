@@ -1,7 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
-
 import {
   ArrowLeft,
   Loader2,
@@ -11,22 +9,10 @@ import {
 
 import type {
   SupabaseProducto,
-  SupabaseCategoria,
 } from "@/lib/supabase/types"
 
-import {
-  createProducto,
-  updateProducto,
-  getCategorias,
-} from "@/lib/supabase/queries/productos"
-
-import { slugify } from "./helpers"
-
 import { ImageUploader } from "./image-uploader"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Props
-// ─────────────────────────────────────────────────────────────────────────────
+import { useProductoForm } from "./use-producto-form"
 
 interface ProductoFormProps {
   producto?: SupabaseProducto | null
@@ -36,264 +22,39 @@ interface ProductoFormProps {
   onCancel: () => void
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────────
+const inputCls =
+  "w-full rounded-2xl border border-white/8 bg-[#0A0A0A] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#1E4D7B]"
 
-interface ProductoFormState {
-  nombre: string
-  slug: string
-  descripcion: string
-  precio: string
-  precio_anterior: string
-  stock: string
-  categoria_id: string
-  destacado: boolean
-  activo: boolean
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
+const labelCls =
+  "mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-white/40"
 
 export function ProductoForm({
   producto,
   onSaved,
   onCancel,
 }: ProductoFormProps) {
-  const [categorias, setCategorias] =
-    useState<SupabaseCategoria[]>([])
+  const {
+    form,
+    error,
+    saving,
+    savedId,
+    categorias,
 
-  const [saving, setSaving] =
-    useState(false)
+    setField,
 
-  const [error, setError] =
-    useState("")
+    submit,
 
-  const [savedId, setSavedId] =
-    useState<number | null>(
-      producto?.id ?? null
-    )
-
-  const [form, setForm] =
-    useState<ProductoFormState>({
-      nombre: producto?.nombre ?? "",
-      slug: producto?.slug ?? "",
-      descripcion:
-        producto?.descripcion ?? "",
-      precio: producto?.precio
-        ? String(producto.precio)
-        : "",
-      precio_anterior:
-        producto?.precio_anterior
-          ? String(
-              producto.precio_anterior
-            )
-          : "",
-      stock: producto?.stock
-        ? String(producto.stock)
-        : "0",
-      categoria_id:
-        producto?.categoria_id
-          ? String(producto.categoria_id)
-          : "",
-      destacado:
-        producto?.destacado ?? false,
-      activo: producto?.activo ?? true,
-    })
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Load categorías
-  // ───────────────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const data =
-          await getCategorias()
-
-        setCategorias(data)
-      } catch (err) {
-        console.error(err)
-      }
-    }
-
-    load()
-  }, [])
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Set helper
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const set = <
-    K extends keyof ProductoFormState
-  >(
-    key: K,
-    value: ProductoFormState[K]
-  ) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: value,
-    }))
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Nombre change
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const handleNombreChange = (
-    value: string
-  ) => {
-    set("nombre", value)
-
-    if (!producto) {
-      set(
-        "slug",
-        slugify(value)
-      )
-    }
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Submit
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const handleSubmit = async (
-    e: React.FormEvent
-  ) => {
-    e.preventDefault()
-
-    setError("")
-
-    if (!form.nombre.trim()) {
-      setError(
-        "El nombre es obligatorio."
-      )
-
-      return
-    }
-
-    if (
-      !form.precio ||
-      isNaN(Number(form.precio))
-    ) {
-      setError(
-        "El precio es obligatorio."
-      )
-
-      return
-    }
-
-    try {
-      setSaving(true)
-
-      const precio =
-        Number(form.precio)
-
-      const precioAnterior =
-        form.precio_anterior
-          ? Number(
-              form.precio_anterior
-            )
-          : null
-
-      const descuento =
-        precioAnterior &&
-        precioAnterior > precio
-          ? Math.round(
-              ((precioAnterior -
-                precio) /
-                precioAnterior) *
-                100
-            )
-          : null
-
-      const payload = {
-        nombre:
-          form.nombre.trim(),
-
-        slug:
-          form.slug.trim() ||
-          slugify(form.nombre),
-
-        descripcion:
-          form.descripcion.trim() ||
-          null,
-
-        precio,
-
-        precio_anterior:
-          precioAnterior,
-
-        descuento,
-
-        stock:
-          Number(form.stock) || 0,
-
-        categoria_id:
-          form.categoria_id
-            ? Number(
-                form.categoria_id
-              )
-            : null,
-
-        destacado:
-          form.destacado,
-
-        activo:
-          form.activo,
-      }
-
-      // Editar
-      if (producto) {
-        await updateProducto(
-          producto.id,
-          payload
-        )
-      }
-
-      // Crear
-      else {
-        const created =
-          await createProducto(
-            payload
-          )
-
-        setSavedId(created.id)
-      }
-
-      onSaved()
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        "Ocurrió un error guardando el producto."
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Styles
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const inputCls =
-    "w-full bg-[#0A0A0A] border border-white/8 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:border-[#1E4D7B] transition-colors"
-
-  const labelCls =
-    "block text-xs font-semibold uppercase tracking-[0.15em] text-white/40 mb-2"
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // UI
-  // ───────────────────────────────────────────────────────────────────────────
+    handleNombreChange,
+  } = useProductoForm({
+    producto,
+    onSaved,
+  })
 
   return (
-    <div className="max-w-3xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-8 flex items-center justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[#4A90B8] mb-1">
+          <p className="mb-1 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
             Productos
           </p>
 
@@ -307,304 +68,281 @@ export function ProductoForm({
         <button
           type="button"
           title="Volver"
+          aria-label="Volver"
           onClick={onCancel}
-          className="h-11 px-4 rounded-2xl border border-white/8 text-white/60 hover:text-white transition-colors inline-flex items-center gap-2 cursor-pointer"
+          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/60 transition-colors hover:text-white cursor-pointer"
         >
           <ArrowLeft className="size-4" />
+
           Volver
         </button>
       </div>
 
-      {/* Card */}
-      <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-6">
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-6"
-        >
-          {/* Nombre + slug */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label
-                htmlFor="nombre-input"
-                className={labelCls}
-              >
-                Nombre *
-              </label>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
 
-              <input
-                id="nombre-input"
-                type="text"
-                title="Nombre"
-                placeholder="Auriculares..."
-                className={inputCls}
-                value={form.nombre}
-                onChange={(e) =>
-                  handleNombreChange(
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="slug-input"
-                className={labelCls}
-              >
-                Slug
-              </label>
-
-              <input
-                id="slug-input"
-                type="text"
-                title="Slug"
-                placeholder="auriculares..."
-                className={inputCls}
-                value={form.slug}
-                onChange={(e) =>
-                  set(
-                    "slug",
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-          </div>
-
-          {/* Descripción */}
+          submit()
+        }}
+        className="space-y-6 rounded-3xl border border-white/7 bg-[#0A0A0A] p-6"
+      >
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label
-              htmlFor="descripcion-input"
+              htmlFor="nombre"
               className={labelCls}
             >
-              Descripción
+              Nombre *
             </label>
 
-            <textarea
-              id="descripcion-input"
-              title="Descripción"
-              placeholder="Descripción del producto..."
-              className={`${inputCls} resize-none min-h-120px`}
-              value={form.descripcion}
+            <input
+              id="nombre"
+              type="text"
+              title="Nombre"
+              value={form.nombre}
+              placeholder="Auriculares..."
               onChange={(e) =>
-                set(
-                  "descripcion",
+                handleNombreChange(
                   e.target.value
                 )
               }
+              className={inputCls}
             />
           </div>
 
-          {/* Precio */}
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label
-                htmlFor="precio-input"
-                className={labelCls}
-              >
-                Precio
-              </label>
-
-              <input
-                id="precio-input"
-                type="number"
-                title="Precio"
-                placeholder="0"
-                className={inputCls}
-                value={form.precio}
-                onChange={(e) =>
-                  set(
-                    "precio",
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="precio-anterior-input"
-                className={labelCls}
-              >
-                Precio anterior
-              </label>
-
-              <input
-                id="precio-anterior-input"
-                type="number"
-                title="Precio anterior"
-                placeholder="0"
-                className={inputCls}
-                value={
-                  form.precio_anterior
-                }
-                onChange={(e) =>
-                  set(
-                    "precio_anterior",
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="stock-input"
-                className={labelCls}
-              >
-                Stock
-              </label>
-
-              <input
-                id="stock-input"
-                type="number"
-                min="0"
-                title="Stock"
-                placeholder="0"
-                className={inputCls}
-                value={form.stock}
-                onChange={(e) =>
-                  set(
-                    "stock",
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-          </div>
-
-          {/* Categoría */}
           <div>
             <label
-              htmlFor="categoria-select"
+              htmlFor="slug"
               className={labelCls}
             >
-              Categoría
+              Slug
             </label>
 
-            <select
-              id="categoria-select"
-              className={inputCls}
-              value={form.categoria_id}
+            <input
+              id="slug"
+              type="text"
+              title="Slug"
+              value={form.slug}
+              placeholder="auriculares..."
               onChange={(e) =>
-                set(
-                  "categoria_id",
+                setField(
+                  "slug",
                   e.target.value
                 )
               }
-            >
-              <option value="">
-                Sin categoría
-              </option>
-
-              {categorias.map((cat) => (
-                <option
-                  key={cat.id}
-                  value={cat.id}
-                >
-                  {cat.nombre}
-                </option>
-              ))}
-            </select>
+              className={inputCls}
+            />
           </div>
+        </div>
 
-          {/* Toggles */}
-          <div className="flex items-center gap-8">
-            <button
-              type="button"
-              title="Producto destacado"
-              onClick={() =>
-                set(
-                  "destacado",
-                  !form.destacado
-                )
-              }
-              className="flex items-center gap-2 cursor-pointer"
-            >
-              {form.destacado ? (
-                <ToggleRight className="size-6 text-[#4A90B8]" />
-              ) : (
-                <ToggleLeft className="size-6 text-white/35" />
-              )}
+        <div>
+          <label
+            htmlFor="descripcion"
+            className={labelCls}
+          >
+            Descripción
+          </label>
 
-              <span className="text-sm text-white/70">
-                Producto destacado
-              </span>
-            </button>
+          <textarea
+            id="descripcion"
+            title="Descripción"
+            value={form.descripcion}
+            placeholder="Descripción del producto..."
+            onChange={(e) =>
+              setField(
+                "descripcion",
+                e.target.value
+              )
+            }
+            className={`${inputCls} min-h-120px resize-none`}
+          />
+        </div>
 
-            <button
-              type="button"
-              title="Producto activo"
-              onClick={() =>
-                set(
-                  "activo",
-                  !form.activo
-                )
-              }
-              className="flex items-center gap-2 cursor-pointer"
-            >
-              {form.activo ? (
-                <ToggleRight className="size-6 text-green-400" />
-              ) : (
-                <ToggleLeft className="size-6 text-white/35" />
-              )}
-
-              <span className="text-sm text-white/70">
-                Producto activo
-              </span>
-            </button>
-          </div>
-
-          {/* Upload */}
-          {savedId && (
-            <div>
-              <label className={labelCls}>
-                Imágenes
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            {
+              id: "precio",
+              label: "Precio",
+            },
+            {
+              id: "precio_anterior",
+              label:
+                "Precio anterior",
+            },
+            {
+              id: "stock",
+              label: "Stock",
+            },
+          ].map((field) => (
+            <div key={field.id}>
+              <label
+                htmlFor={field.id}
+                className={labelCls}
+              >
+                {field.label}
               </label>
 
-              <ImageUploader
-                productoId={savedId}
+              <input
+                min="0"
+                type="number"
+                id={field.id}
+                title={field.label}
+                placeholder="0"
+                value={
+                  form[
+                    field.id as keyof typeof form
+                  ] as string
+                }
+                onChange={(e) =>
+                  setField(
+                    field.id as keyof typeof form,
+                    e.target.value
+                  )
+                }
+                className={inputCls}
               />
             </div>
-          )}
+          ))}
+        </div>
 
-          {/* Error */}
-          {error && (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
-              <p className="text-sm text-red-400">
-                {error}
-              </p>
-            </div>
-          )}
+        <div>
+          <label
+            htmlFor="categoria"
+            className={labelCls}
+          >
+            Categoría
+          </label>
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <select
+            id="categoria"
+            title="Categoría"
+            value={form.categoria_id}
+            onChange={(e) =>
+              setField(
+                "categoria_id",
+                e.target.value
+              )
+            }
+            className={inputCls}
+          >
+            <option value="">
+              Sin categoría
+            </option>
+
+            {categorias.map((cat) => (
+              <option
+                key={cat.id}
+                value={cat.id}
+              >
+                {cat.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex gap-8">
+          {[
+            {
+              key: "destacado",
+              label:
+                "Producto destacado",
+              active:
+                form.destacado,
+              color:
+                "text-[#4A90B8]",
+            },
+            {
+              key: "activo",
+              label:
+                "Producto activo",
+              active:
+                form.activo,
+              color:
+                "text-green-400",
+            },
+          ].map((toggle) => (
             <button
-              type="submit"
-              disabled={saving}
-              title="Guardar producto"
-              className="flex-1 h-12 rounded-2xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all cursor-pointer"
-            >
-              {saving ? (
-                <Loader2 className="size-4 animate-spin mx-auto" />
-              ) : producto ? (
-                "Guardar cambios"
-              ) : (
-                "Crear producto"
-              )}
-            </button>
-
-            <button
+              key={toggle.key}
               type="button"
-              title="Cancelar"
-              onClick={onCancel}
-              className="h-12 px-6 rounded-2xl border border-white/10 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
+              title={toggle.label}
+              aria-label={
+                toggle.label
+              }
+              onClick={() =>
+                setField(
+                  toggle.key as
+                    | "destacado"
+                    | "activo",
+                  !toggle.active
+                )
+              }
+              className="flex items-center gap-2 cursor-pointer"
             >
-              Cancelar
+              {toggle.active ? (
+                <ToggleRight
+                  className={`size-6 ${toggle.color}`}
+                />
+              ) : (
+                <ToggleLeft className="size-6 text-white/35" />
+              )}
+
+              <span className="text-sm text-white/70">
+                {toggle.label}
+              </span>
             </button>
+          ))}
+        </div>
+
+        {savedId && (
+          <div>
+            <label
+              className={labelCls}
+            >
+              Imágenes
+            </label>
+
+            <ImageUploader
+              productoId={savedId}
+            />
           </div>
-        </form>
-      </div>
+        )}
+
+        {error && (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
+            <p className="text-sm text-red-400">
+              {error}
+            </p>
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="submit"
+            disabled={saving}
+            title="Guardar producto"
+            aria-label="Guardar producto"
+            className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : producto ? (
+              "Guardar cambios"
+            ) : (
+              "Crear producto"
+            )}
+          </button>
+
+          <button
+            type="button"
+            title="Cancelar"
+            aria-label="Cancelar"
+            onClick={onCancel}
+            className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/60 transition-colors hover:text-white cursor-pointer"
+          >
+            Cancelar
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

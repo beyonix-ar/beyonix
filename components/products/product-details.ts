@@ -1,3 +1,5 @@
+import type { SupabaseProducto } from "@/lib/supabase/types"
+
 export interface ProductVariant {
   name: string
   value: string
@@ -21,21 +23,8 @@ export interface ProductDetailsContent {
   specifications: ProductSpecification[]
 }
 
-export interface ProductItem {
-  id: number
-  name: string
-  category: string
-  price: number
-  originalPrice?: number
-  colors: ProductVariant[]
-  slug: string
-  categorySlug: string
-  featured?: boolean
-  details?: ProductDetailsContent
-}
-
 export interface ActiveProductDetails {
-  product: ProductItem
+  product: SupabaseProducto
   selectedColor: string
   selectedImage: number
 }

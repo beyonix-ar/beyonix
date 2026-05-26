@@ -1,38 +1,68 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import {
+  useMemo,
+  useState,
+} from "react"
+
 import { Search } from "lucide-react"
+
 import { useRouter } from "next/navigation"
-import { productsData } from "@/lib/products"
+
+interface SearchProduct {
+  id: string
+  nombre: string
+}
 
 interface GlobalSearchBarProps {
   search: string
-  onSearchChange: (value: string) => void
+
+  products: SearchProduct[]
+
+  onSearchChange: (
+    value: string
+  ) => void
 }
 
 export function GlobalSearchBar({
   search,
+  products,
   onSearchChange,
 }: GlobalSearchBarProps) {
   const router = useRouter()
 
-  const [isFocused, setIsFocused] = useState(false)
-  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const [isFocused, setIsFocused] =
+    useState(false)
+
+  const [selectedIndex, setSelectedIndex] =
+    useState(-1)
 
   const suggestions = useMemo(() => {
-    if (!search.trim()) return []
+    const value =
+      search
+        .trim()
+        .toLowerCase()
 
-    return productsData
+    if (!value) {
+      return []
+    }
+
+    return products
       .filter((product) =>
-        product.name
+        product.nombre
           .toLowerCase()
-          .includes(search.toLowerCase())
+          .includes(value)
       )
       .slice(0, 5)
-  }, [search])
+  }, [products, search])
 
-  const handleSearch = () => {
-    router.push(`/productos?search=${encodeURIComponent(search)}`)
+  const redirectSearch = (
+    value: string
+  ) => {
+    router.push(
+      `/productos?search=${encodeURIComponent(value)}`
+    )
+
     setIsFocused(false)
   }
 
@@ -41,7 +71,7 @@ export function GlobalSearchBar({
       <div
         className={`flex overflow-hidden rounded-xl border bg-[#0A0A0A] transition-all duration-200 ${
           isFocused
-            ? "border-[#1E4D7B] shadow-[0_0_0_3px_rgba(17,42,67,0.4)]"
+            ? "border-[#1E4D7B] shadow-lg"
             : "border-white/[0.08] hover:border-white/[0.15]"
         }`}
       >
@@ -49,93 +79,145 @@ export function GlobalSearchBar({
           type="text"
           placeholder="Buscá tecnología pensada para vos..."
           value={search}
-          onChange={(e) => {
-            onSearchChange(e.target.value)
+          onChange={(event) => {
+            onSearchChange(
+              event.target.value
+            )
+
             setSelectedIndex(-1)
           }}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => {
-            // Delay para permitir click en sugerencias
-            setTimeout(() => setIsFocused(false), 150)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown") {
-              e.preventDefault()
-              setSelectedIndex((prev) =>
-                prev < suggestions.length - 1 ? prev + 1 : prev
+          onFocus={() =>
+            setIsFocused(true)
+          }
+          onBlur={() =>
+            setTimeout(
+              () =>
+                setIsFocused(
+                  false
+                ),
+              150
+            )
+          }
+          onKeyDown={(event) => {
+            if (
+              event.key ===
+              "ArrowDown"
+            ) {
+              event.preventDefault()
+
+              setSelectedIndex(
+                (prev) =>
+                  prev <
+                  suggestions.length -
+                    1
+                    ? prev + 1
+                    : prev
               )
             }
 
-            if (e.key === "ArrowUp") {
-              e.preventDefault()
-              setSelectedIndex((prev) =>
-                prev > 0 ? prev - 1 : prev
+            if (
+              event.key ===
+              "ArrowUp"
+            ) {
+              event.preventDefault()
+
+              setSelectedIndex(
+                (prev) =>
+                  prev > 0
+                    ? prev - 1
+                    : prev
               )
             }
 
-            if (e.key === "Enter") {
-              if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-                const selected = suggestions[selectedIndex]
-                onSearchChange(selected.name)
-
-                router.push(
-                  `/productos?search=${encodeURIComponent(selected.name)}`
-                )
-              } else {
-                handleSearch()
-              }
-
+            if (
+              event.key ===
+              "Escape"
+            ) {
               setIsFocused(false)
             }
 
-            if (e.key === "Escape") {
-              setIsFocused(false)
+            if (
+              event.key ===
+              "Enter"
+            ) {
+              redirectSearch(
+                suggestions[
+                  selectedIndex
+                ]?.nombre ||
+                  search
+              )
             }
           }}
-          className="w-full bg-transparent px-5 py-3.5 text-sm text-white placeholder:text-white/35 outline-none"
+          className="w-full bg-transparent px-5 py-3.5 text-sm text-white outline-none placeholder:text-white/35"
         />
 
         <button
-          onClick={handleSearch}
+          type="button"
           aria-label="Buscar productos"
-          className="border-l border-white/[0.08] px-5 text-white/40 transition-colors hover:text-white/80 cursor-pointer"
+          title="Buscar productos"
+          onClick={() =>
+            redirectSearch(
+              search
+            )
+          }
+          className="cursor-pointer border-l border-white/[0.08] px-5 text-white/40 transition-colors hover:text-white/80"
         >
           <Search className="size-4" />
         </button>
       </div>
 
-      {/* SUGERENCIAS */}
-      {isFocused && suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 mt-1.5 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0D0D0D] shadow-2xl shadow-black/70 z-50">
-          {suggestions.map((product, index) => (
-            <button
-              key={product.id}
-              type="button"
-              onClick={() => {
-                onSearchChange(product.name)
+      {isFocused &&
+        suggestions.length >
+          0 && (
+          <div className="absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0D0D0D] shadow-2xl shadow-black/70">
+            {suggestions.map(
+              (
+                product,
+                index
+              ) => (
+                <button
+                  key={
+                    product.id
+                  }
+                  type="button"
+                  aria-label={
+                    product.nombre
+                  }
+                  title={
+                    product.nombre
+                  }
+                  onClick={() => {
+                    onSearchChange(
+                      product.nombre
+                    )
 
-                router.push(
-                  `/productos?search=${encodeURIComponent(product.name)}`
-                )
+                    redirectSearch(
+                      product.nombre
+                    )
+                  }}
+                  className={`flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left text-sm transition-colors ${
+                    index <
+                    suggestions.length -
+                      1
+                      ? "border-b border-white/[0.05]"
+                      : ""
+                  } ${
+                    index ===
+                    selectedIndex
+                      ? "bg-[#112A43]/60 text-white"
+                      : "text-white/60 hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  <Search className="size-3.5 shrink-0 text-white/25" />
 
-                setIsFocused(false)
-              }}
-              className={`flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left text-sm transition-colors ${
-                index < suggestions.length - 1
-                  ? "border-b border-white/[0.05]"
-                  : ""
-              } ${
-                index === selectedIndex
-                  ? "bg-[#112A43]/60 text-white"
-                  : "text-white/60 hover:bg-white/[0.04] hover:text-white"
-              }`}
-            >
-              <Search className="size-3.5 shrink-0 text-white/25" />
-              {product.name}
-            </button>
-          ))}
-        </div>
-      )}
+                  {
+                    product.nombre
+                  }
+                </button>
+              )
+            )}
+          </div>
+        )}
     </div>
   )
 }

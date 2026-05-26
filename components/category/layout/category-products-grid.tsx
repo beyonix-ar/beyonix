@@ -1,11 +1,17 @@
 "use client"
 
+import type { SupabaseProducto } from "@/lib/supabase/types"
+
 import { CategoryProductCard } from "../category-product-card"
-import { StoreProduct } from "@/lib/types/product"
 
 interface CategoryProductsGridProps {
-  products: StoreProduct[]
-  onOpenPreview: (product: StoreProduct & { selectedColor: string }) => void
+  products: SupabaseProducto[]
+
+  onOpenPreview: (
+    product: SupabaseProducto & {
+      selectedColor: string
+    }
+  ) => void
 }
 
 export function CategoryProductsGrid({
@@ -14,12 +20,14 @@ export function CategoryProductsGrid({
 }: CategoryProductsGridProps) {
   return (
     <div className="category-products container relative z-0 mx-auto px-4 pb-20 lg:px-8">
-      <div className="grid grid-cols-1 gap-10 -mt-8 items-stretch sm:grid-cols-2 xl:grid-cols-4">
+      <div className="-mt-8 grid grid-cols-1 items-stretch gap-10 sm:grid-cols-2 xl:grid-cols-4">
         {products.map((product) => (
           <CategoryProductCard
             key={product.id}
             product={product}
-            onOpenPreview={onOpenPreview}
+            onOpenPreview={
+              onOpenPreview
+            }
           />
         ))}
       </div>

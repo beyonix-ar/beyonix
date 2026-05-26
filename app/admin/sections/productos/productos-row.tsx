@@ -3,19 +3,15 @@
 import Link from "next/link"
 
 import {
+  ImageIcon,
+  Package,
   Pencil,
   Trash2,
-  Package,
-  ImageIcon,
 } from "lucide-react"
 
 import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Props
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface ProductosRowProps {
   producto: SupabaseProducto
@@ -35,9 +31,19 @@ interface ProductosRowProps {
   ) => void
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
+const stockColor = (
+  stock: number
+) => {
+  if (stock <= 0) {
+    return "text-red-400"
+  }
+
+  if (stock < 5) {
+    return "text-amber-400"
+  }
+
+  return "text-green-400"
+}
 
 export function ProductosRow({
   producto,
@@ -48,70 +54,68 @@ export function ProductosRow({
 }: ProductosRowProps) {
   return (
     <div
-      className={`grid grid-cols-[2fr_1fr_1fr_110px_120px] gap-4 px-5 py-4 items-center transition-colors hover:bg-white/2 ${
+      className={`grid grid-cols-[2fr_1fr_1fr_110px_120px] items-center gap-4 px-5 py-4 transition-colors hover:bg-white/2 ${
         !isLast
           ? "border-b border-white/5"
           : ""
       }`}
     >
-      {/* Producto */}
-      <div className="flex items-center gap-3 min-w-0">
-        {/* Imagen */}
-        <div className="size-10 rounded-xl border border-white/6 bg-white flex items-center justify-center shrink-0 overflow-hidden">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/6 bg-white">
           {producto.imagen_principal ? (
             <img
-              src={producto.imagen_principal}
-              alt={producto.nombre}
-              className="w-full h-full object-cover"
+              alt={
+                producto.nombre
+              }
+              src={
+                producto.imagen_principal
+              }
+              className="h-full w-full object-cover"
             />
           ) : (
             <ImageIcon className="size-4 text-black/20" />
           )}
         </div>
 
-        {/* Info */}
         <div className="min-w-0">
-          <p className="text-sm font-medium text-white truncate">
+          <p className="truncate text-sm font-medium text-white">
             {producto.nombre}
           </p>
 
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            {/* Destacado */}
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             {producto.destacado && (
-              <span className="text-[10px] text-amber-400 font-semibold">
-                ★ Destacado
+              <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-10px font-semibold text-amber-400">
+                Destacado
               </span>
             )}
 
-            {/* Stock */}
             <span
-              className={`text-[10px] font-semibold ${
-                producto.stock <= 0
-                  ? "text-red-400"
-                  : producto.stock < 5
-                  ? "text-amber-400"
-                  : "text-green-400"
-              }`}
+              className={`text-10px font-semibold ${stockColor(
+                producto.stock
+              )}`}
             >
-              Stock: {producto.stock}
+              Stock:{" "}
+              {producto.stock}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Categoría */}
-      <span className="text-sm text-white/50 truncate">
-        {producto.categorias?.nombre ?? "—"}
+      <span className="truncate text-sm text-white/50">
+        {producto.categorias
+          ?.nombre || "—"}
       </span>
 
-      {/* Precio */}
       <div>
-        <span className="text-sm font-semibold text-white tabular-nums">
-          ${producto.precio.toLocaleString("es-AR")}
-        </span>
+        <p className="text-sm font-semibold tabular-nums text-white">
+          $
+          {producto.precio.toLocaleString(
+            "es-AR"
+          )}
+        </p>
 
-        {producto.precio_anterior && (
-          <p className="text-[11px] text-white/30 line-through tabular-nums">
+        {!!producto.precio_anterior && (
+          <p className="text-11px tabular-nums text-white/30 line-through">
             $
             {producto.precio_anterior.toLocaleString(
               "es-AR"
@@ -119,65 +123,96 @@ export function ProductosRow({
           </p>
         )}
 
-        {producto.descuento && (
-          <p className="text-[10px] text-green-400 font-semibold mt-0.5">
-            -{producto.descuento}% OFF
+        {!!producto.descuento && (
+          <p className="mt-0.5 text-10px font-semibold text-green-400">
+            -
+            {
+              producto.descuento
+            }
+            % OFF
           </p>
         )}
       </div>
 
-      {/* Estado */}
       <button
         type="button"
-        onClick={() =>
-          onToggleActivo(producto)
+        title={
+          producto.activo
+            ? "Desactivar producto"
+            : "Activar producto"
         }
-        className="cursor-pointer"
+        aria-label={
+          producto.activo
+            ? "Desactivar producto"
+            : "Activar producto"
+        }
+        onClick={() =>
+          onToggleActivo(
+            producto
+          )
+        }
+        className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-11px font-semibold transition-colors cursor-pointer ${
+          producto.activo
+            ? "border-green-500/20 bg-green-500/10 text-green-400"
+            : "border-white/10 bg-white/5 text-white/35"
+        }`}
       >
-        {producto.activo ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 border border-green-500/20 px-2.5 py-1 text-[11px] font-semibold text-green-400">
-            <span className="size-1.5 rounded-full bg-green-400" />
-            Activo
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/35">
-            <span className="size-1.5 rounded-full bg-white/25" />
-            Inactivo
-          </span>
-        )}
+        <span
+          className={`size-1.5 rounded-full ${
+            producto.activo
+              ? "bg-green-400"
+              : "bg-white/25"
+          }`}
+        />
+
+        {producto.activo
+          ? "Activo"
+          : "Inactivo"}
       </button>
 
-      {/* Acciones */}
       <div className="flex items-center justify-end gap-1.5">
-        {/* Preview */}
-        <Link
-          href={`/producto/${producto.slug}`}
-          title="Ver producto"
-          className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/50 hover:text-[#4A90B8] hover:border-[#4A90B8]/30 transition-colors cursor-pointer"
-        >
-          <Package className="size-3.5" />
-        </Link>
+        {[
+          {
+            href: `/producto/${producto.slug}`,
+            title:
+              "Ver producto",
+            icon: (
+              <Package className="size-3.5" />
+            ),
+            hover:
+              "hover:text-[#4A90B8] hover:border-[#4A90B8]/30",
+          },
+        ].map((item) => (
+          <Link
+            key={item.title}
+            href={item.href}
+            title={item.title}
+            className={`flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/50 transition-colors cursor-pointer ${item.hover}`}
+          >
+            {item.icon}
+          </Link>
+        ))}
 
-        {/* Editar */}
         <button
           type="button"
           title="Editar"
+          aria-label="Editar"
           onClick={() =>
             onEdit(producto)
           }
-          className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/50 hover:text-white hover:border-white/20 transition-colors cursor-pointer"
+          className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/50 transition-colors hover:border-white/20 hover:text-white cursor-pointer"
         >
           <Pencil className="size-3.5" />
         </button>
 
-        {/* Eliminar */}
         <button
           type="button"
           title="Eliminar"
+          aria-label="Eliminar"
           onClick={() =>
             onDelete(producto.id)
           }
-          className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/50 hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer"
+          className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/50 transition-colors hover:border-red-500/30 hover:text-red-400 cursor-pointer"
         >
           <Trash2 className="size-3.5" />
         </button>

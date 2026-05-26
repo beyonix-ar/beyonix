@@ -18,10 +18,6 @@ import {
 
 import { slugify } from "../productos/helpers"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Props
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface CategoriaFormProps {
   categoria?: SupabaseCategoria | null
 
@@ -29,19 +25,6 @@ interface CategoriaFormProps {
 
   onCancel: () => void
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface CategoriaFormState {
-  nombre: string
-  slug: string
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function CategoriaForm({
   categoria,
@@ -54,51 +37,25 @@ export function CategoriaForm({
   const [error, setError] =
     useState("")
 
-  const [form, setForm] =
-    useState<CategoriaFormState>({
-      nombre:
-        categoria?.nombre ?? "",
+  const [nombre, setNombre] =
+    useState(
+      categoria?.nombre || ""
+    )
 
-      slug:
-        categoria?.slug ?? "",
-    })
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Set helper
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const set = <
-    K extends keyof CategoriaFormState
-  >(
-    key: K,
-    value: CategoriaFormState[K]
-  ) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: value,
-    }))
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Nombre change
-  // ───────────────────────────────────────────────────────────────────────────
+  const [slug, setSlug] =
+    useState(
+      categoria?.slug || ""
+    )
 
   const handleNombreChange = (
     value: string
   ) => {
-    set("nombre", value)
+    setNombre(value)
 
     if (!categoria) {
-      set(
-        "slug",
-        slugify(value)
-      )
+      setSlug(slugify(value))
     }
   }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Submit
-  // ───────────────────────────────────────────────────────────────────────────
 
   const handleSubmit = async (
     e: React.FormEvent
@@ -107,7 +64,7 @@ export function CategoriaForm({
 
     setError("")
 
-    if (!form.nombre.trim()) {
+    if (!nombre.trim()) {
       setError(
         "El nombre es obligatorio."
       )
@@ -120,23 +77,19 @@ export function CategoriaForm({
 
       const payload = {
         nombre:
-          form.nombre.trim(),
+          nombre.trim(),
 
         slug:
-          form.slug.trim() ||
-          slugify(form.nombre),
+          slug.trim() ||
+          slugify(nombre),
       }
 
-      // Editar
       if (categoria) {
         await updateCategoria(
           categoria.id,
           payload
         )
-      }
-
-      // Crear
-      else {
+      } else {
         await createCategoria(
           payload
         )
@@ -147,33 +100,24 @@ export function CategoriaForm({
       console.error(err)
 
       setError(
-        "Ocurrió un error guardando la categoría."
+        "Error guardando categoría."
       )
     } finally {
       setSaving(false)
     }
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Styles
-  // ───────────────────────────────────────────────────────────────────────────
+  const inputClass =
+    "w-full rounded-2xl border border-white/8 bg-[#0A0A0A] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#1E4D7B]"
 
-  const inputCls =
-    "w-full bg-[#0A0A0A] border border-white/8 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:border-[#1E4D7B] transition-colors"
-
-  const labelCls =
-    "block text-xs font-semibold uppercase tracking-[0.15em] text-white/40 mb-2"
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // UI
-  // ───────────────────────────────────────────────────────────────────────────
+  const labelClass =
+    "mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-white/40"
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-8 flex items-center justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[#4A90B8] mb-1">
+          <p className="mb-1 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
             Categorías
           </p>
 
@@ -187,70 +131,65 @@ export function CategoriaForm({
         <button
           type="button"
           title="Volver"
+          aria-label="Volver"
           onClick={onCancel}
-          className="h-11 px-4 rounded-2xl border border-white/8 text-white/60 hover:text-white transition-colors inline-flex items-center gap-2 cursor-pointer"
+          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/60 transition-colors hover:text-white cursor-pointer"
         >
           <ArrowLeft className="size-4" />
+
           Volver
         </button>
       </div>
 
-      {/* Card */}
       <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-6">
         <form
           onSubmit={handleSubmit}
           className="space-y-6"
         >
-          {/* Nombre */}
           <div>
             <label
-              htmlFor="nombre-categoria-input"
-              className={labelCls}
+              htmlFor="categoria-nombre"
+              className={labelClass}
             >
               Nombre *
             </label>
 
             <input
-              id="nombre-categoria-input"
+              id="categoria-nombre"
               type="text"
-              title="Nombre categoría"
+              value={nombre}
               placeholder="Auriculares..."
-              className={inputCls}
-              value={form.nombre}
               onChange={(e) =>
                 handleNombreChange(
                   e.target.value
                 )
               }
+              className={inputClass}
             />
           </div>
 
-          {/* Slug */}
           <div>
             <label
-              htmlFor="slug-categoria-input"
-              className={labelCls}
+              htmlFor="categoria-slug"
+              className={labelClass}
             >
               Slug
             </label>
 
             <input
-              id="slug-categoria-input"
+              id="categoria-slug"
               type="text"
-              title="Slug categoría"
+              value={slug}
               placeholder="auriculares..."
-              className={inputCls}
-              value={form.slug}
               onChange={(e) =>
-                set(
-                  "slug",
+                setSlug(
                   e.target.value
                 )
               }
+              className={inputClass}
             />
           </div>
 
-          {/* Error */}
           {error && (
             <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
               <p className="text-sm text-red-400">
@@ -259,16 +198,16 @@ export function CategoriaForm({
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button
               type="submit"
               disabled={saving}
               title="Guardar categoría"
-              className="flex-1 h-12 rounded-2xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all cursor-pointer"
+              aria-label="Guardar categoría"
+              className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
             >
               {saving ? (
-                <Loader2 className="size-4 animate-spin mx-auto" />
+                <Loader2 className="size-4 animate-spin" />
               ) : categoria ? (
                 "Guardar cambios"
               ) : (
@@ -279,8 +218,9 @@ export function CategoriaForm({
             <button
               type="button"
               title="Cancelar"
+              aria-label="Cancelar"
               onClick={onCancel}
-              className="h-12 px-6 rounded-2xl border border-white/10 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
+              className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/60 transition-colors hover:text-white cursor-pointer"
             >
               Cancelar
             </button>

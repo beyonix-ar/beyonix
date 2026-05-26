@@ -1,31 +1,29 @@
 "use client"
 
-import { Plus, Search } from "lucide-react"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Props
-// ─────────────────────────────────────────────────────────────────────────────
+import {
+  Plus,
+  Search,
+} from "lucide-react"
 
 interface ProductosToolbarProps {
   search: string
-  onSearchChange: (value: string) => void
-  onCreate: () => void
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
+  onCreate: () => void
+
+  onSearchChange: (
+    value: string
+  ) => void
+}
 
 export function ProductosToolbar({
   search,
-  onSearchChange,
   onCreate,
+  onSearchChange,
 }: ProductosToolbarProps) {
   return (
-    <div className="flex items-center justify-between gap-4 mb-6">
-      {/* Left */}
+    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[#4A90B8] mb-1">
+        <p className="mb-1 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
           Gestión
         </p>
 
@@ -34,31 +32,35 @@ export function ProductosToolbar({
         </h2>
       </div>
 
-      {/* Search */}
-      <div className="flex-1 max-w-md relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-white/25" />
+      <div className="flex flex-1 gap-3 lg:max-w-2xl">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/25" />
 
-        <input
-          type="text"
-          value={search}
-          placeholder="Buscar producto..."
-          onChange={(e) =>
-            onSearchChange(e.target.value)
-          }
-          className="w-full h-11 rounded-2xl border border-white/8 bg-[#0A0A0A] pl-11 pr-4 text-sm text-white placeholder:text-white/25 outline-none focus:border-[#1E4D7B] transition-colors"
-        />
+          <input
+            type="text"
+            value={search}
+            placeholder="Buscar producto..."
+            onChange={(e) =>
+              onSearchChange(
+                e.target.value
+              )
+            }
+            className="h-11 w-full rounded-2xl border border-white/8 bg-[#0A0A0A] pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#1E4D7B]"
+          />
+        </div>
+
+        <button
+          type="button"
+          title="Nuevo producto"
+          aria-label="Nuevo producto"
+          onClick={onCreate}
+          className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-black transition-all hover:bg-white/90 cursor-pointer"
+        >
+          <Plus className="size-4" />
+
+          Nuevo producto
+        </button>
       </div>
-
-      {/* Button */}
-      <button
-        type="button"
-        onClick={onCreate}
-        className="inline-flex items-center gap-2 h-11 px-5 rounded-2xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-all cursor-pointer"
-      >
-        <Plus className="size-4" />
-
-        Nuevo producto
-      </button>
     </div>
   )
 }

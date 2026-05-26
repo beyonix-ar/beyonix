@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import type {
   SupabaseCategoria,
@@ -8,13 +8,9 @@ import type {
 
 import { useCategorias } from "@/hooks/use-categorias"
 
-import { CategoriasToolbar } from "./categorias-toolbar"
-import { CategoriasTable } from "./categorias-table"
 import { CategoriaForm } from "./categorias-form"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
+import { CategoriasTable } from "./categorias-table"
+import { CategoriasToolbar } from "./categorias-toolbar"
 
 export function AdminCategorias() {
   const {
@@ -30,54 +26,27 @@ export function AdminCategorias() {
   const [editando, setEditando] =
     useState<
       SupabaseCategoria | null | undefined
-    >(undefined)
-
-  // undefined = cerrado
-  // null = nueva categoría
-  // categoría = edición
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Search
-  // ───────────────────────────────────────────────────────────────────────────
+    >()
 
   const categoriasFiltradas =
-    categorias.filter((c) =>
-      c.nombre
-        .toLowerCase()
-        .includes(
-          search.toLowerCase()
-        )
+    useMemo(
+      () =>
+        categorias.filter((c) =>
+          c.nombre
+            .toLowerCase()
+            .includes(
+              search.toLowerCase()
+            )
+        ),
+      [categorias, search]
     )
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Delete
-  // ───────────────────────────────────────────────────────────────────────────
+  const handleSaved =
+    async () => {
+      await reloadCategorias()
 
-  const handleDelete = async (
-    id: number
-  ) => {
-    const ok = confirm(
-      "¿Eliminar esta categoría?"
-    )
-
-    if (!ok) return
-
-    await deleteCategoria(id)
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Saved
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const handleSaved = async () => {
-    await reloadCategorias()
-
-    setEditando(undefined)
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Form abierto
-  // ───────────────────────────────────────────────────────────────────────────
+      setEditando(undefined)
+    }
 
   if (editando !== undefined) {
     return (
@@ -85,21 +54,21 @@ export function AdminCategorias() {
         categoria={editando}
         onSaved={handleSaved}
         onCancel={() =>
-          setEditando(undefined)
+          setEditando(
+            undefined
+          )
         }
       />
     )
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // UI
-  // ───────────────────────────────────────────────────────────────────────────
-
   return (
     <div className="p-8">
       <CategoriasToolbar
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={
+          setSearch
+        }
         onCreate={() =>
           setEditando(null)
         }
@@ -110,10 +79,22 @@ export function AdminCategorias() {
           categoriasFiltradas
         }
         loading={loading}
-        onEdit={(categoria) =>
-          setEditando(categoria)
-        }
-        onDelete={handleDelete}
+        onEdit={setEditando}
+        onDelete={async (
+          id
+        ) => {
+          if (
+            !confirm(
+              "¿Eliminar esta categoría?"
+            )
+          ) {
+            return
+          }
+
+          await deleteCategoria(
+            id
+          )
+        }}
       />
     </div>
   )

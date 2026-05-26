@@ -1,65 +1,11 @@
 import { supabase } from "@/lib/supabase/client"
 
 import type {
-  SupabaseProducto,
   SupabaseCategoria,
+  SupabaseProducto,
 } from "@/lib/supabase/types"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get productos
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function getProductos() {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .select(`
-        *,
-        categorias(*),
-        imagenes_producto(*)
-      `)
-      .order("id", {
-        ascending: false,
-      })
-
-  if (error) {
-    throw error
-  }
-
-  return (data ??
-    []) as SupabaseProducto[]
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Get producto
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function getProducto(
-  id: number
-) {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .select(`
-        *,
-        categorias(*),
-        imagenes_producto(*)
-      `)
-      .eq("id", id)
-      .single()
-
-  if (error) {
-    throw error
-  }
-
-  return data as SupabaseProducto
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Create producto
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface CreateProductoPayload {
+interface ProductoPayload {
   nombre: string
   slug: string
   descripcion?: string | null
@@ -72,15 +18,39 @@ interface CreateProductoPayload {
   activo?: boolean
 }
 
-export async function createProducto(
-  payload: CreateProductoPayload
+const PRODUCTO_SELECT = `
+  *,
+  categorias(*),
+  imagenes_producto(*)
+`
+
+// ─────────────────────────────────────────────────────────────
+// Productos
+// ─────────────────────────────────────────────────────────────
+
+export async function getProductos() {
+  const { data, error } = await supabase
+    .from("productos")
+    .select(PRODUCTO_SELECT)
+    .order("id", {
+      ascending: false,
+    })
+
+  if (error) {
+    throw error
+  }
+
+  return (data || []) as SupabaseProducto[]
+}
+
+export async function getProductoById(
+  id: number
 ) {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .insert(payload)
-      .select()
-      .single()
+  const { data, error } = await supabase
+    .from("productos")
+    .select(PRODUCTO_SELECT)
+    .eq("id", id)
+    .single()
 
   if (error) {
     throw error
@@ -89,21 +59,69 @@ export async function createProducto(
   return data as SupabaseProducto
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Update producto
-// ─────────────────────────────────────────────────────────────────────────────
+export async function getProductoBySlug(
+  slug: string
+) {
+  const { data, error } = await supabase
+    .from("productos")
+    .select(PRODUCTO_SELECT)
+    .eq("slug", slug)
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data as SupabaseProducto
+}
+
+export async function getFeaturedProductos() {
+  const { data, error } = await supabase
+    .from("productos")
+    .select(PRODUCTO_SELECT)
+    .eq("destacado", true)
+    .eq("activo", true)
+    .order("id", {
+      ascending: false,
+    })
+
+  if (error) {
+    throw error
+  }
+
+  return (data || []) as SupabaseProducto[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// CRUD
+// ─────────────────────────────────────────────────────────────
+
+export async function createProducto(
+  payload: ProductoPayload
+) {
+  const { data, error } = await supabase
+    .from("productos")
+    .insert(payload)
+    .select()
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data as SupabaseProducto
+}
 
 export async function updateProducto(
   id: number,
-  payload: Partial<CreateProductoPayload>
+  payload: Partial<ProductoPayload>
 ) {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .update(payload)
-      .eq("id", id)
-      .select()
-      .single()
+  const { data, error } = await supabase
+    .from("productos")
+    .update(payload)
+    .eq("id", id)
+    .select()
+    .single()
 
   if (error) {
     throw error
@@ -111,19 +129,14 @@ export async function updateProducto(
 
   return data as SupabaseProducto
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Delete producto
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function deleteProducto(
   id: number
 ) {
-  const { error } =
-    await supabase
-      .from("productos")
-      .delete()
-      .eq("id", id)
+  const { error } = await supabase
+    .from("productos")
+    .delete()
+    .eq("id", id)
 
   if (error) {
     throw error
@@ -132,45 +145,43 @@ export async function deleteProducto(
   return true
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Toggle activo
-// ─────────────────────────────────────────────────────────────────────────────
-
 export async function toggleProductoActivo(
   producto: SupabaseProducto
 ) {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .update({
-        activo: !producto.activo,
-      })
-      .eq("id", producto.id)
-      .select()
-      .single()
-
-  if (error) {
-    throw error
-  }
-
-  return data as SupabaseProducto
+  return updateProducto(producto.id, {
+    activo: !producto.activo,
+  })
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get categorías
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Categorías
+// ─────────────────────────────────────────────────────────────
 
 export async function getCategorias() {
-  const { data, error } =
-    await supabase
-      .from("categorias")
-      .select("*")
-      .order("nombre")
+  const { data, error } = await supabase
+    .from("categorias")
+    .select("*")
+    .order("nombre")
 
   if (error) {
     throw error
   }
 
-  return (data ??
-    []) as SupabaseCategoria[]
+  return (data || []) as SupabaseCategoria[]
+}
+
+export async function getCategoriaBySlug(
+  slug: string
+) {
+  const { data, error } = await supabase
+    .from("categorias")
+    .select("*")
+    .eq("slug", slug)
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data as SupabaseCategoria
 }
