@@ -55,7 +55,6 @@ interface AuthContextType {
     password: string
   ) => Promise<{
     ok: boolean
-
     error?: string
   }>
 
@@ -65,7 +64,6 @@ interface AuthContextType {
     password: string
   ) => Promise<{
     ok: boolean
-
     error?: string
   }>
 
@@ -263,7 +261,6 @@ export function AuthProvider({
         password: string
       ): Promise<{
         ok: boolean
-
         error?: string
       }> => {
         const {
@@ -328,7 +325,6 @@ export function AuthProvider({
         password: string
       ): Promise<{
         ok: boolean
-
         error?: string
       }> => {
         if (

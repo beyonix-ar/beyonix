@@ -3,11 +3,14 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react"
 
-import type { SupabaseProducto } from "@/lib/supabase/types"
+import type {
+  SupabaseProducto,
+} from "@/lib/supabase/types"
 
 interface CartItem {
   product: SupabaseProducto
@@ -63,6 +66,7 @@ interface CartContextType {
   clearCart: () => void
 
   openCart: () => void
+
   closeCart: () => void
 }
 
@@ -70,6 +74,9 @@ const CartContext =
   createContext<CartContextType | null>(
     null
   )
+
+const STORAGE_KEY =
+  "beyonix-cart"
 
 export function CartProvider({
   children,
@@ -82,6 +89,63 @@ export function CartProvider({
 
   const [isOpen, setIsOpen] =
     useState(false)
+
+  // ─────────────────────────────────────
+  // Hydration
+  // ─────────────────────────────────────
+
+  useEffect(() => {
+    try {
+      const stored =
+        localStorage.getItem(
+          STORAGE_KEY
+        )
+
+      if (!stored) {
+        return
+      }
+
+      const parsed =
+        JSON.parse(stored)
+
+      if (!Array.isArray(parsed)) {
+        return
+      }
+
+      const validCart =
+        parsed.filter(
+          (item) =>
+            item?.product?.id &&
+            item?.product?.nombre &&
+            typeof item?.product
+              ?.precio ===
+              "number"
+        )
+
+      setCart(validCart)
+    } catch (error) {
+      console.error(error)
+
+      localStorage.removeItem(
+        STORAGE_KEY
+      )
+    }
+  }, [])
+
+  // ─────────────────────────────────────
+  // Persist
+  // ─────────────────────────────────────
+
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(cart)
+    )
+  }, [cart])
+
+  // ─────────────────────────────────────
+  // Add
+  // ─────────────────────────────────────
 
   const addToCart = (
     product: SupabaseProducto,
@@ -115,17 +179,25 @@ export function CartProvider({
         {
           product,
           color,
+
           image:
             image ||
+            product
+              .imagen_principal ||
             product
               .imagenes_producto?.[0]
               ?.url ||
             "/placeholder.svg",
+
           quantity: 1,
         },
       ]
     })
   }
+
+  // ─────────────────────────────────────
+  // Remove
+  // ─────────────────────────────────────
 
   const removeFromCart = (
     productId: number,
@@ -142,6 +214,10 @@ export function CartProvider({
       )
     )
   }
+
+  // ─────────────────────────────────────
+  // Update quantity
+  // ─────────────────────────────────────
 
   const updateQuantity = (
     productId: number,
@@ -199,6 +275,10 @@ export function CartProvider({
     )
   }
 
+  // ─────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────
+
   const getQuantity = (
     productId: number,
     color: string
@@ -229,6 +309,10 @@ export function CartProvider({
     setCart([])
   }
 
+  // ─────────────────────────────────────
+  // Total
+  // ─────────────────────────────────────
+
   const total = useMemo(() => {
     return cart.reduce(
       (sum, item) =>
@@ -249,14 +333,17 @@ export function CartProvider({
         isOpen,
 
         addToCart,
+
         removeFromCart,
 
         updateQuantity,
 
         increaseQuantity,
+
         decreaseQuantity,
 
         getQuantity,
+
         isInCart,
 
         clearCart,

@@ -33,27 +33,44 @@ export async function createOrder({
   }
 
   // ─────────────────────────────────────
-  // Productos actuales
+  // IDs productos
   // ─────────────────────────────────────
 
   const productIds = items.map(
     (item) => item.productId
   )
 
-  const { data: products, error } =
-    await supabase
-      .from("productos")
-      .select(`
-        id,
-        nombre,
-        precio,
-        stock
-      `)
-      .in("id", productIds)
+  // ─────────────────────────────────────
+  // Obtener productos reales
+  // ─────────────────────────────────────
 
-  if (error || !products) {
+  const {
+    data: products,
+    error,
+  } = await supabase
+    .from("productos")
+    .select(`
+      id,
+      nombre,
+      precio,
+      stock
+    `)
+    .in("id", productIds)
+
+  if (error) {
+    console.error(
+      "SUPABASE ERROR:",
+      error
+    )
+
     throw new Error(
-      "No se pudieron obtener los productos"
+      JSON.stringify(error)
+    )
+  }
+
+  if (!products?.length) {
+    throw new Error(
+      "Productos inexistentes"
     )
   }
 
@@ -63,7 +80,8 @@ export async function createOrder({
 
   for (const item of items) {
     const product = products.find(
-      (p) => p.id === item.productId
+      (p) =>
+        p.id === item.productId
     )
 
     if (!product) {
@@ -83,13 +101,26 @@ export async function createOrder({
   }
 
   // ─────────────────────────────────────
-  // Total
+  // Total real
   // ─────────────────────────────────────
 
   const total = items.reduce(
-    (sum, item) =>
-      sum +
-      item.price * item.quantity,
+    (sum, item) => {
+      const product = products.find(
+        (p) =>
+          p.id === item.productId
+      )
+
+      if (!product) {
+        return sum
+      }
+
+      return (
+        sum +
+        product.precio *
+          item.quantity
+      )
+    },
     0
   )
 
@@ -111,6 +142,8 @@ export async function createOrder({
     .single()
 
   if (orderError || !order) {
+    console.error(orderError)
+
     throw new Error(
       "No se pudo crear la orden"
     )
@@ -121,12 +154,24 @@ export async function createOrder({
   // ─────────────────────────────────────
 
   const orderItems = items.map(
-    (item) => ({
-      orden_id: order.id,
-      producto_id: item.productId,
-      cantidad: item.quantity,
-      precio: item.price,
-    })
+    (item) => {
+      const product =
+        products.find(
+          (p) =>
+            p.id ===
+            item.productId
+        )
+
+      return {
+        orden_id: order.id,
+        producto_id:
+          item.productId,
+        cantidad:
+          item.quantity,
+        precio:
+          product?.precio || 0,
+      }
+    }
   )
 
   const {
@@ -136,21 +181,26 @@ export async function createOrder({
     .insert(orderItems)
 
   if (itemsError) {
+    console.error(itemsError)
+
     throw new Error(
       "No se pudieron crear los items"
     )
   }
 
   // ─────────────────────────────────────
-  // Descontar stock
+  // Actualizar stock
   // ─────────────────────────────────────
 
   for (const item of items) {
     const product = products.find(
-      (p) => p.id === item.productId
+      (p) =>
+        p.id === item.productId
     )
 
-    if (!product) continue
+    if (!product) {
+      continue
+    }
 
     const newStock =
       product.stock -
@@ -166,6 +216,8 @@ export async function createOrder({
       .eq("id", product.id)
 
     if (stockError) {
+      console.error(stockError)
+
       throw new Error(
         `No se pudo actualizar stock de ${product.nombre}`
       )

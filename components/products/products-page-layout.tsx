@@ -63,6 +63,7 @@ export function ProductsPageLayout() {
     useState(150000)
 
   const {
+    cart,
     addToCart,
     removeFromCart,
     decreaseQuantity,
@@ -85,84 +86,165 @@ export function ProductsPageLayout() {
     setSelectedImage,
   } = useProductDetails()
 
+  // ─────────────────────────────────────
+  // Load products
+  // ─────────────────────────────────────
+
   useEffect(() => {
     setSearch(
       searchParams.get("search") ||
         ""
     )
 
-    getProductos().then(
-      setProducts
-    )
+    async function loadProducts() {
+      try {
+        const data =
+          await getProductos()
+
+        setProducts(data)
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    loadProducts()
   }, [searchParams])
 
-  const filteredProducts =
-    useMemo(
-      () =>
-        products
-          .filter(
-            (product) =>
-              (!selectedCategories.length ||
-                selectedCategories.includes(
-                  product.categorias
-                    ?.slug || ""
-                )) &&
-              (!onlyOffers ||
-                !!product.precio_anterior) &&
-              (!onlyBestSellers ||
-                product.destacado) &&
-              product.precio >=
-                minPrice &&
-              product.precio <=
-                maxPrice &&
-              product.nombre
-                .toLowerCase()
-                .includes(
-                  search.toLowerCase()
-                )
-          )
-          .sort((a, b) => {
-            if (
-              sortBy ===
-              "price-asc"
-            ) {
-              return (
-                a.precio -
-                b.precio
-              )
-            }
+  // ─────────────────────────────────────
+  // Sync localStorage cart
+  // ─────────────────────────────────────
 
-            if (
-              sortBy ===
-              "price-desc"
-            ) {
-              return (
-                b.precio -
-                a.precio
-              )
-            }
-
-            return 0
-          }),
-      [
-        products,
-        selectedCategories,
-        onlyOffers,
-        onlyBestSellers,
-        minPrice,
-        maxPrice,
-        search,
-        sortBy,
-      ]
+  useEffect(() => {
+    localStorage.setItem(
+      "beyonix-cart",
+      JSON.stringify(cart)
     )
+  }, [cart])
+
+  // ─────────────────────────────────────
+  // Filters
+  // ─────────────────────────────────────
+
+  const filteredProducts =
+    useMemo(() => {
+      return products
+        .filter((product) => {
+          const matchCategory =
+            !selectedCategories.length ||
+            selectedCategories.includes(
+              product.categorias
+                ?.slug || ""
+            )
+
+          const matchOffers =
+            !onlyOffers ||
+            !!product.precio_anterior
+
+          const matchBestSellers =
+            !onlyBestSellers ||
+            product.destacado
+
+          const matchPrice =
+            product.precio >=
+              minPrice &&
+            product.precio <=
+              maxPrice
+
+          const matchSearch =
+            product.nombre
+              .toLowerCase()
+              .includes(
+                search.toLowerCase()
+              )
+
+          return (
+            matchCategory &&
+            matchOffers &&
+            matchBestSellers &&
+            matchPrice &&
+            matchSearch
+          )
+        })
+        .sort((a, b) => {
+          if (
+            sortBy ===
+            "price-asc"
+          ) {
+            return (
+              a.precio -
+              b.precio
+            )
+          }
+
+          if (
+            sortBy ===
+            "price-desc"
+          ) {
+            return (
+              b.precio -
+              a.precio
+            )
+          }
+
+          return 0
+        })
+    }, [
+      products,
+      selectedCategories,
+      onlyOffers,
+      onlyBestSellers,
+      minPrice,
+      maxPrice,
+      search,
+      sortBy,
+    ])
+
+  // ─────────────────────────────────────
+  // Cart helpers
+  // ─────────────────────────────────────
+
+  const handleAddToCart = (
+    product: SupabaseProducto
+  ) => {
+    addToCart(
+      product,
+      "default",
+      product.imagen_principal ||
+        product
+          .imagenes_producto?.[0]
+          ?.url ||
+        "/placeholder.png"
+    )
+  }
+
+  const modalProductQuantity =
+    product
+      ? getQuantity(
+          product.id,
+          "default"
+        )
+      : 0
+
+  const modalProductInCart =
+    product
+      ? isInCart(
+          product.id,
+          "default"
+        )
+      : false
+
+  // ─────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-black pt-20 text-white">
+    <main className="min-h-screen bg-black pt-24 text-white">
       <section className="container mx-auto px-4 lg:px-8">
-        <div className="mb-10 mt-8 border-b border-white/6 pb-8">
-          <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[auto_1fr] lg:items-end lg:gap-12">
+        {/* Header */}
+        <div className="mb-10 border-b border-white/6 pb-8">
+          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[auto_1fr] lg:items-end lg:gap-12">
             <div>
-              <p className="mb-1.5 text-11px font-semibold uppercase tracking-[0.3em] text-[#4A90B8]">
+              <p className="mb-2 text-11px font-semibold uppercase tracking-[0.3em] text-[#4A90B8]">
                 Productos
               </p>
 
@@ -170,7 +252,7 @@ export function ProductsPageLayout() {
                 Todos los productos
               </h1>
 
-              <p className="mt-1.5 text-sm tracking-wide text-white/50">
+              <p className="mt-2 text-sm tracking-wide text-white/50">
                 Explorá el catálogo completo de
                 BEYONIX.
               </p>
@@ -181,23 +263,24 @@ export function ProductsPageLayout() {
               onSearchChange={
                 setSearch
               }
-            products={products.map(
-              (product) => ({
-                id: String(
-                  product.id
-                ),
+              products={products.map(
+                (product) => ({
+                  id: String(
+                    product.id
+                  ),
 
-                nombre:
-                  product.nombre,
+                  nombre:
+                    product.nombre,
 
-                slug:
-                  product.slug,
-              })
-            )}
+                  slug:
+                    product.slug,
+                })
+              )}
             />
           </div>
         </div>
 
+        {/* Content */}
         <div className="grid grid-cols-1 gap-8 pb-16 lg:grid-cols-[260px_1fr]">
           <ProductsFiltersSidebar
             selectedCategories={
@@ -250,22 +333,15 @@ export function ProductsPageLayout() {
               onOpenPreview={
                 openDetails
               }
-              onAddToCart={(
-                product
-              ) =>
-                addToCart(
-                  product,
-                  "default",
-                  product
-                    .imagenes_producto?.[0]
-                    ?.url
-                )
+              onAddToCart={
+                handleAddToCart
               }
             />
           </div>
         </div>
       </section>
 
+      {/* Product modal */}
       <ProductDetailsModal
         open={isOpen}
         product={product}
@@ -290,10 +366,8 @@ export function ProductsPageLayout() {
             return
           }
 
-          addToCart(
-            product,
-            "default",
-            images?.[0]
+          handleAddToCart(
+            product
           )
         }}
         onDecreaseCart={() => {
@@ -318,20 +392,10 @@ export function ProductsPageLayout() {
         }}
         onViewCart={openCart}
         isInCart={
-          product
-            ? isInCart(
-                product.id,
-                "default"
-              )
-            : false
+          modalProductInCart
         }
         cartQuantity={
-          product
-            ? getQuantity(
-                product.id,
-                "default"
-              )
-            : 0
+          modalProductQuantity
         }
       />
     </main>
