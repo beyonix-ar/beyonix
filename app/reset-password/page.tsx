@@ -30,21 +30,11 @@ function ResetPasswordContent() {
   const [hasSession, setHasSession] = useState(false)
 
   const goHome = () => {
-    window.location.href = "/"
+    window.location.replace("/")
   }
 
   useEffect(() => {
     const prepareSession = async () => {
-      const {
-        data: { session: existingSession },
-      } = await supabase.auth.getSession()
-
-      if (existingSession) {
-        setHasSession(true)
-        setCheckingSession(false)
-        return
-      }
-
       const hashParams = new URLSearchParams(
         window.location.hash.replace(/^#/, "")
       )
@@ -115,7 +105,7 @@ function ResetPasswordContent() {
       setCheckingSession(false)
 
       if (code || tokenHash || accessToken) {
-        window.history.replaceState(null, "", window.location.pathname)
+        window.history.replaceState(null, "", "/reset-password")
       }
     }
 
@@ -148,14 +138,10 @@ function ResetPasswordContent() {
 
     setLoading(true)
 
-    const fallbackRedirect = window.setTimeout(goHome, 5000)
-
     try {
       const { error: updateError } = await supabase.auth.updateUser({
         password,
       })
-
-      window.clearTimeout(fallbackRedirect)
 
       if (updateError) {
         setError(getPasswordUpdateMessage(updateError.message))
@@ -165,7 +151,6 @@ function ResetPasswordContent() {
 
       goHome()
     } catch {
-      window.clearTimeout(fallbackRedirect)
       setError("No se pudo actualizar la contraseña. Intentá nuevamente.")
       setLoading(false)
     }
@@ -241,21 +226,10 @@ function ResetPasswordContent() {
                 "Guardar contraseña"
               )}
             </button>
-
           </form>
         ) : (
-          <div className="space-y-5">
-            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-              El enlace no es válido o expiró. Pedí un nuevo email de recuperación.
-            </div>
-            <a
-              href="/"
-              aria-label="Volver al inicio"
-              title="Volver al inicio"
-              className="flex h-12 w-full items-center justify-center rounded-xl bg-white font-semibold text-black transition-opacity hover:opacity-90 cursor-pointer"
-            >
-              Volver al inicio
-            </a>
+          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            {error || "El enlace no es válido o expiró. Pedí un nuevo email de recuperación."}
           </div>
         )}
       </div>

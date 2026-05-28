@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Star, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { validatePublicText } from "@/lib/validation/content-filter"
 
 type Review = {
   id: number
@@ -11,26 +12,17 @@ type Review = {
   comment: string
   name: string
   province: string
+  productName?: string
 }
-
-const badWordPatterns = [
-  /p[\W_]*u[\W_]*t[\W_]*[oa0@]/i,
-  /b[\W_]*o[\W_]*l[\W_]*u[\W_]*d[\W_]*[oa0@]/i,
-  /p[\W_]*e[\W_]*l[\W_]*o[\W_]*t[\W_]*u[\W_]*d[\W_]*[oa0@]/i,
-  /f[\W_]*o[\W_]*r[\W_]*r[\W_]*[oa0@]/i,
-  /m[\W_]*i[\W_]*e[\W_]*r[\W_]*d[\W_]*a/i,
-  /i[\W_]*d[\W_]*i[\W_]*o[\W_]*t[\W_]*a/i,
-]
 
 export function ReviewsSection() {
   const [reviews, setReviews] = useState<Review[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
-
   const [approvedBuyer, setApprovedBuyer] = useState<{
     name: string
     province: string
+    productName?: string
   } | null>(null)
-
   const [rating, setRating] = useState(5)
   const [hover, setHover] = useState(0)
   const [comment, setComment] = useState("")
@@ -48,23 +40,13 @@ export function ReviewsSection() {
 
       if (parsed.approved && parsed.canReview) {
         setApprovedBuyer({
-          name: parsed.name,
-          province: parsed.province,
+          name: parsed.customerName || parsed.cliente_nombre || parsed.userName || "Cliente Beyonix",
+          province: parsed.province || parsed.provincia || "Argentina",
+          productName: parsed.productName || parsed.producto_nombre,
         })
       }
     }
   }, [])
-
-  const hasBadWords = (text: string) => {
-    const normalized = text
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-
-    return badWordPatterns.some((pattern) =>
-      pattern.test(normalized)
-    )
-  }
 
   const handleAddReview = () => {
     if (!approvedBuyer) return
@@ -72,8 +54,9 @@ export function ReviewsSection() {
     if (comment.length > 150) return
     if (rating < 1 || rating > 5) return
 
-    if (hasBadWords(comment)) {
-      alert("El comentario contiene palabras no permitidas")
+    const publicTextError = validatePublicText(comment)
+    if (publicTextError) {
+      alert(publicTextError)
       return
     }
 
@@ -83,20 +66,13 @@ export function ReviewsSection() {
       comment,
       name: approvedBuyer.name,
       province: approvedBuyer.province,
+      productName: approvedBuyer.productName,
     }
 
     const updated = [newReview, ...reviews]
 
     setReviews(updated)
-    localStorage.setItem(
-      "beyonix-reviews",
-      JSON.stringify(updated)
-    )
-
-    setComment("")
-    setRating(5)
-
-    // 🔒 evita múltiples reseñas por la misma compra
+    localStorage.setItem("beyonix-reviews", JSON.stringify(updated))
     localStorage.setItem(
       "beyonix-last-order",
       JSON.stringify({
@@ -106,6 +82,8 @@ export function ReviewsSection() {
       })
     )
 
+    setComment("")
+    setRating(5)
     setApprovedBuyer(null)
   }
 
@@ -114,15 +92,15 @@ export function ReviewsSection() {
   const averageRating =
     reviews.length > 0
       ? (
-          reviews.reduce((sum, r) => sum + r.rating, 0) /
+          reviews.reduce((sum, review) => sum + review.rating, 0) /
           reviews.length
         ).toFixed(1)
       : "0.0"
 
-  const ReviewCard = ({ r }: { r: Review }) => (
+  const ReviewCard = ({ review }: { review: Review }) => (
     <div className="bg-card border border-border rounded-lg p-6">
       <div className="flex gap-1 mb-3">
-        {Array.from({ length: r.rating }).map((_, i) => (
+        {Array.from({ length: review.rating }).map((_, i) => (
           <Star
             key={i}
             className="size-4 fill-foreground text-foreground"
@@ -131,15 +109,21 @@ export function ReviewsSection() {
       </div>
 
       <p className="text-foreground mb-3 leading-relaxed">
-        "{r.comment}"
+        “{review.comment}”
       </p>
 
       <p className="text-sm text-muted-foreground">
-        ✔ Compra verificada
+        Compra verificada
       </p>
 
+      {review.productName && (
+        <p className="mt-1 text-sm text-white/60">
+          Producto: {review.productName}
+        </p>
+      )}
+
       <p className="text-sm font-medium text-foreground mt-2">
-        — {r.name}, {r.province}
+        {review.name} · {review.province}
       </p>
     </div>
   )
@@ -158,19 +142,23 @@ export function ReviewsSection() {
 
           {reviews.length > 0 && (
             <p className="text-sm text-muted-foreground">
-              ⭐ {averageRating}/5 basado en {reviews.length} reseñas verificadas
+              {averageRating}/5 basado en {reviews.length} reseñas verificadas
             </p>
           )}
         </div>
 
-        {/* ✅ SOLO APARECE SI COMPRÓ */}
         {approvedBuyer && (
           <div className="max-w-xl mx-auto mb-12 bg-card border border-border rounded-lg p-6 space-y-4">
-            <div className="space-y-2">
-              <p className="text-sm text-foreground">
-                Cliente: {approvedBuyer.name}
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">
+                Compra verificada
               </p>
-              <p className="text-sm text-foreground">
+              {approvedBuyer.productName && (
+                <p className="text-sm text-white/65">
+                  Producto: {approvedBuyer.productName}
+                </p>
+              )}
+              <p className="text-sm text-white/65">
                 Provincia: {approvedBuyer.province}
               </p>
             </div>
@@ -179,23 +167,30 @@ export function ReviewsSection() {
               {Array.from({ length: 5 }).map((_, i) => {
                 const value = i + 1
                 return (
-                  <Star
-                    key={i}
-                    className={`size-6 cursor-pointer transition-all ${
-                      value <= (hover || rating)
-                        ? "fill-foreground text-foreground"
-                        : "text-muted-foreground"
-                    }`}
+                  <button
+                    key={value}
+                    type="button"
+                    aria-label={`Calificar con ${value} estrellas`}
+                    title={`Calificar con ${value} estrellas`}
                     onClick={() => setRating(value)}
                     onMouseEnter={() => setHover(value)}
                     onMouseLeave={() => setHover(0)}
-                  />
+                    className="cursor-pointer"
+                  >
+                    <Star
+                      className={`size-6 transition-all ${
+                        value <= (hover || rating)
+                          ? "fill-foreground text-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    />
+                  </button>
                 )
               })}
             </div>
 
             <Textarea
-              placeholder="Comentá tu experiencia (máx 150 caracteres)"
+              placeholder="Comentá tu experiencia (máx. 150 caracteres)"
               maxLength={150}
               rows={4}
               className="resize-none min-h-110px max-h-110px"
@@ -207,7 +202,13 @@ export function ReviewsSection() {
               {comment.length}/150
             </p>
 
-            <Button onClick={handleAddReview} className="w-full">
+            <Button
+              type="button"
+              aria-label="Enviar reseña"
+              title="Enviar reseña"
+              onClick={handleAddReview}
+              className="w-full"
+            >
               Enviar reseña
             </Button>
           </div>
@@ -215,19 +216,22 @@ export function ReviewsSection() {
 
         {reviews.length === 0 ? (
           <div className="text-center text-muted-foreground">
-            Sé el primero en dejar una reseña ⭐⭐⭐⭐⭐
+            Sé el primero en dejar una reseña.
           </div>
         ) : (
           <>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {visibleReviews.map((r) => (
-                <ReviewCard key={r.id} r={r} />
+              {visibleReviews.map((review) => (
+                <ReviewCard key={review.id} review={review} />
               ))}
             </div>
 
             {reviews.length > 3 && (
               <div className="text-center mt-8">
                 <Button
+                  type="button"
+                  aria-label="Ver todas las reseñas"
+                  title="Ver todas las reseñas"
                   variant="outline"
                   onClick={() => setIsModalOpen(true)}
                 >
@@ -242,6 +246,9 @@ export function ReviewsSection() {
           <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-card border border-border rounded-xl w-full max-w-4xl max-h-80vh overflow-y-auto p-6 relative">
               <Button
+                type="button"
+                aria-label="Cerrar reseñas"
+                title="Cerrar reseñas"
                 variant="ghost"
                 size="icon"
                 className="absolute top-4 right-4"
@@ -255,8 +262,8 @@ export function ReviewsSection() {
               </h3>
 
               <div className="grid sm:grid-cols-2 gap-6">
-                {reviews.map((r) => (
-                  <ReviewCard key={r.id} r={r} />
+                {reviews.map((review) => (
+                  <ReviewCard key={review.id} review={review} />
                 ))}
               </div>
             </div>

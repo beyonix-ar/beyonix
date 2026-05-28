@@ -26,6 +26,8 @@ import type {
 export interface BeyonixUser {
   id: string
 
+  username?: string
+
   name: string
 
   email: string
@@ -40,7 +42,20 @@ export interface BeyonixUser {
 
   address?: string
 
+  postalCode?: string
+
   createdAt: string
+}
+
+export interface RegisterPayload {
+  username: string
+  name: string
+  email: string
+  password: string
+  address: string
+  postalCode: string
+  phone: string
+  province: string
 }
 
 interface AuthContextType {
@@ -60,9 +75,7 @@ interface AuthContextType {
   }>
 
   register: (
-    name: string,
-    email: string,
-    password: string
+    data: RegisterPayload
   ) => Promise<{
     ok: boolean
     error?: string
@@ -86,6 +99,9 @@ function profileToUser(
   return {
     id: profile.id,
 
+    username:
+      profile.username ?? undefined,
+
     name: profile.nombre,
 
     email,
@@ -98,6 +114,18 @@ function profileToUser(
 
     createdAt:
       profile.created_at,
+
+    phone:
+      profile.telefono ?? undefined,
+
+    province:
+      profile.provincia ?? undefined,
+
+    address:
+      profile.direccion ?? undefined,
+
+    postalCode:
+      profile.codigo_postal ?? undefined,
   }
 }
 
@@ -312,15 +340,13 @@ export function AuthProvider({
   const register =
     useCallback(
       async (
-        name: string,
-        email: string,
-        password: string
+        form: RegisterPayload
       ): Promise<{
         ok: boolean
         error?: string
       }> => {
         if (
-          password.length < 6
+          form.password.length < 6
         ) {
           return {
             ok: false,
@@ -337,16 +363,27 @@ export function AuthProvider({
           await supabase.auth.signUp(
             {
               email:
-                email
+                form.email
                   .trim()
                   .toLowerCase(),
 
-              password,
+              password:
+                form.password,
 
               options: {
                 data: {
                   nombre:
-                    name.trim(),
+                    form.name.trim(),
+                  username:
+                    form.username.trim(),
+                  telefono:
+                    form.phone.trim(),
+                  direccion:
+                    form.address.trim(),
+                  codigo_postal:
+                    form.postalCode.trim(),
+                  provincia:
+                    form.province.trim(),
                 },
               },
             }
@@ -375,6 +412,33 @@ export function AuthProvider({
         }
 
         if (data.user) {
+          const { error: profileError } =
+            await supabase
+              .from("profiles")
+              .update({
+                username:
+                  form.username.trim(),
+                nombre:
+                  form.name.trim(),
+                telefono:
+                  form.phone.trim(),
+                direccion:
+                  form.address.trim(),
+                codigo_postal:
+                  form.postalCode.trim(),
+                provincia:
+                  form.province.trim(),
+              } as never)
+              .eq("id", data.user.id)
+
+          if (profileError) {
+            return {
+              ok: false,
+              error:
+                "La cuenta se creó, pero faltan columnas de perfil en Supabase. Ejecutá el SQL de perfiles.",
+            }
+          }
+
           await loadProfile(
             data.user
           )
@@ -436,6 +500,30 @@ export function AuthProvider({
         ) {
           payload.rol =
             data.rol
+        }
+
+        if (data.username !== undefined) {
+          payload.username = data.username
+        }
+
+        if (data.phone !== undefined) {
+          payload.telefono = data.phone
+        }
+
+        if (data.address !== undefined) {
+          payload.direccion = data.address
+        }
+
+        if (data.postalCode !== undefined) {
+          payload.codigo_postal = data.postalCode
+        }
+
+        if (data.province !== undefined) {
+          payload.provincia = data.province
+        }
+
+        if (data.city !== undefined) {
+          payload.provincia = data.city
         }
 
         await supabase

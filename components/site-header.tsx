@@ -50,7 +50,7 @@ export function SiteHeader() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-black/85 backdrop-blur-md border-b border-white/10">
       <nav className="container mx-auto px-4 lg:px-8">
-        <div className="flex items-center justify-between h-16 lg:h-20">
+        <div className="grid grid-cols-site-header items-center h-16 lg:h-20">
 
           {/* ── Logo ── */}
           <Link
@@ -61,7 +61,7 @@ export function SiteHeader() {
           </Link>
 
           {/* ── Nav desktop ── */}
-          <div className="hidden lg:flex items-center gap-8">
+          <div className="hidden lg:flex items-center justify-center gap-8">
             <Link
               href="/"
               className="text-sm font-medium text-white/80 hover:text-white transition-colors"
@@ -125,7 +125,7 @@ export function SiteHeader() {
           </div>
 
           {/* ── Acciones derecha ── */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
 
             {/* Usuario desktop */}
             <div ref={userRef} className="hidden lg:block relative">
@@ -197,7 +197,7 @@ export function SiteHeader() {
               onClick={openCart}
               aria-label="Abrir carrito"
               title="Abrir carrito"
-              className="relative flex items-center gap-3 h-10 pl-3 pr-4 rounded-xl border border-white/8 bg-white/3 hover:bg-white/6 hover:border-white/15 transition-all cursor-pointer"
+              className="relative flex items-center gap-2.5 h-9 pl-3 pr-3 rounded-lg border border-white/8 bg-white/3 hover:bg-white/6 hover:border-white/15 transition-all cursor-pointer"
             >
               <ShoppingBag className="size-4.5 shrink-0 text-white/80" />
 

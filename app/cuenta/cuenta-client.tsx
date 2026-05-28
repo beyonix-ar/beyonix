@@ -1,23 +1,26 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  ChevronLeft,
+  ChevronRight,
   Eye,
   EyeOff,
-  User,
-  Mail,
+  Hash,
   Lock,
   LogOut,
-  ShoppingBag,
-  ChevronRight,
-  ChevronLeft,
+  Mail,
+  MapPin,
+  Phone,
   Shield,
+  ShoppingBag,
+  User,
 } from "lucide-react"
+
 import { useAuth } from "@/context/auth-context"
 import { supabase } from "@/lib/supabase/client"
-
-// ─── Input reutilizable ───────────────────────────────────────────────────────
+import { validateUsername } from "@/lib/validation/content-filter"
 
 function InputField({
   label,
@@ -32,7 +35,7 @@ function InputField({
   label: string
   type: string
   value: string
-  onChange: (v: string) => void
+  onChange: (value: string) => void
   placeholder?: string
   icon: React.ElementType
   rightElement?: React.ReactNode
@@ -63,8 +66,6 @@ function InputField({
   )
 }
 
-// ─── Formulario login ─────────────────────────────────────────────────────────
-
 function LoginForm({ onSwitch }: { onSwitch: () => void }) {
   const { login } = useAuth()
   const router = useRouter()
@@ -81,9 +82,15 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
     setError("")
     setSuccess("")
     setLoading(true)
+
     const result = await login(email, password)
     setLoading(false)
-    if (!result.ok) { setError(result.error || "Ocurrió un error."); return }
+
+    if (!result.ok) {
+      setError(result.error || "Ocurrió un error.")
+      return
+    }
+
     router.push("/cuenta")
   }
 
@@ -104,7 +111,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         normalizedEmail,
         {
-          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+          redirectTo: `${window.location.origin}/reset-password`,
         }
       )
 
@@ -123,16 +130,34 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <InputField label="Email" type="email" value={email} onChange={setEmail}
-        placeholder="tu@email.com" icon={Mail} />
-      <InputField label="Contraseña" type={showPass ? "text" : "password"}
-        value={password} onChange={setPassword} placeholder="••••••••" icon={Lock}
+      <InputField
+        label="Email"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        placeholder="tu@email.com"
+        icon={Mail}
+      />
+      <InputField
+        label="Contraseña"
+        type={showPass ? "text" : "password"}
+        value={password}
+        onChange={setPassword}
+        placeholder="••••••••"
+        icon={Lock}
         rightElement={
-          <button type="button" aria-label="Mostrar u ocultar contrasena" title="Mostrar u ocultar contrasena" onClick={() => setShowPass((v) => !v)}
-            className="text-white/40 hover:text-white/70 transition-colors cursor-pointer">
+          <button
+            type="button"
+            aria-label="Mostrar u ocultar contraseña"
+            title="Mostrar u ocultar contraseña"
+            onClick={() => setShowPass((value) => !value)}
+            className="text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+          >
             {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
-        } />
+        }
+      />
+
       <div className="flex justify-end">
         <button
           type="button"
@@ -145,6 +170,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
           {resetLoading ? "Enviando..." : "¿Olvidaste tu contraseña?"}
         </button>
       </div>
+
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
           <p className="text-sm text-red-400">{error}</p>
@@ -155,14 +181,26 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
           <p className="text-sm text-emerald-400">{success}</p>
         </div>
       )}
-      <button type="submit" aria-label="Iniciar sesión" title="Iniciar sesión" disabled={loading}
-        className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all active:scale-95 cursor-pointer">
+
+      <button
+        type="submit"
+        aria-label="Iniciar sesión"
+        title="Iniciar sesión"
+        disabled={loading}
+        className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all active:scale-95 cursor-pointer"
+      >
         {loading ? "Ingresando..." : "Iniciar sesión"}
       </button>
+
       <p className="text-center text-sm text-white/50">
         ¿No tenés cuenta?{" "}
-        <button type="button" aria-label="Ir a registro" title="Ir a registro" onClick={onSwitch}
-          className="text-beyonix-cyan hover:text-white transition-colors cursor-pointer font-medium">
+        <button
+          type="button"
+          aria-label="Ir a registro"
+          title="Ir a registro"
+          onClick={onSwitch}
+          className="text-beyonix-cyan hover:text-white transition-colors cursor-pointer font-medium"
+        >
           Registrate gratis
         </button>
       </p>
@@ -170,13 +208,16 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
   )
 }
 
-// ─── Formulario registro ──────────────────────────────────────────────────────
-
 function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const { register } = useAuth()
   const router = useRouter()
+  const [username, setUsername] = useState("")
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
+  const [address, setAddress] = useState("")
+  const [province, setProvince] = useState("")
+  const [postalCode, setPostalCode] = useState("")
+  const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState("")
@@ -185,41 +226,90 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    if (!name.trim()) { setError("Ingresá tu nombre."); return }
+
+    const usernameError = validateUsername(username)
+    if (usernameError) { setError(usernameError); return }
+    if (!name.trim()) { setError("Ingresá tu nombre y apellido."); return }
+    if (!address.trim()) { setError("Ingresá tu dirección."); return }
+    if (!province.trim()) { setError("Ingresá tu provincia."); return }
+    if (!postalCode.trim()) { setError("Ingresá tu código postal."); return }
+    if (!phone.trim()) { setError("Ingresá tu teléfono móvil."); return }
+
     setLoading(true)
-    const result = await register(name, email, password)
+    const result = await register({
+      username,
+      name,
+      email,
+      password,
+      address,
+      province,
+      postalCode,
+      phone,
+    })
     setLoading(false)
-    if (!result.ok) { setError(result.error || "Ocurrió un error."); return }
+
+    if (!result.ok) {
+      setError(result.error || "Ocurrió un error.")
+      return
+    }
+
     router.push("/cuenta")
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <InputField label="Nombre completo" type="text" value={name} onChange={setName}
-        placeholder="Juan García" icon={User} />
-      <InputField label="Email" type="email" value={email} onChange={setEmail}
-        placeholder="tu@email.com" icon={Mail} />
-      <InputField label="Contraseña" type={showPass ? "text" : "password"}
-        value={password} onChange={setPassword} placeholder="Mínimo 6 caracteres" icon={Lock}
+      <InputField label="Nombre de usuario" type="text" value={username} onChange={setUsername} placeholder="lucas.espinosa" icon={User} />
+      <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Juan García" icon={User} />
+      <InputField label="Email" type="email" value={email} onChange={setEmail} placeholder="tu@email.com" icon={Mail} />
+      <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} />
+      <InputField label="Provincia" type="text" value={province} onChange={setProvince} placeholder="Santa Fe" icon={MapPin} />
+      <InputField label="Código postal" type="text" value={postalCode} onChange={setPostalCode} placeholder="2000" icon={Hash} />
+      <InputField label="Teléfono móvil" type="tel" value={phone} onChange={setPhone} placeholder="Ej: 3411234567" icon={Phone} />
+      <InputField
+        label="Contraseña"
+        type={showPass ? "text" : "password"}
+        value={password}
+        onChange={setPassword}
+        placeholder="Mínimo 6 caracteres"
+        icon={Lock}
         rightElement={
-          <button type="button" aria-label="Mostrar u ocultar contrasena" title="Mostrar u ocultar contrasena" onClick={() => setShowPass((v) => !v)}
-            className="text-white/40 hover:text-white/70 transition-colors cursor-pointer">
+          <button
+            type="button"
+            aria-label="Mostrar u ocultar contraseña"
+            title="Mostrar u ocultar contraseña"
+            onClick={() => setShowPass((value) => !value)}
+            className="text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+          >
             {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
-        } />
+        }
+      />
+
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
           <p className="text-sm text-red-400">{error}</p>
         </div>
       )}
-      <button type="submit" aria-label="Crear cuenta" title="Crear cuenta" disabled={loading}
-        className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all active:scale-95 cursor-pointer">
+
+      <button
+        type="submit"
+        aria-label="Crear cuenta"
+        title="Crear cuenta"
+        disabled={loading}
+        className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all active:scale-95 cursor-pointer"
+      >
         {loading ? "Creando cuenta..." : "Crear cuenta"}
       </button>
+
       <p className="text-center text-sm text-white/50">
         ¿Ya tenés cuenta?{" "}
-        <button type="button" aria-label="Ir a inicio de sesión" title="Ir a inicio de sesión" onClick={onSwitch}
-          className="text-beyonix-cyan hover:text-white transition-colors cursor-pointer font-medium">
+        <button
+          type="button"
+          aria-label="Ir a inicio de sesión"
+          title="Ir a inicio de sesión"
+          onClick={onSwitch}
+          className="text-beyonix-cyan hover:text-white transition-colors cursor-pointer font-medium"
+        >
           Iniciá sesión
         </button>
       </p>
@@ -227,9 +317,9 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   )
 }
 
-// ─── Vista: Mis órdenes ───────────────────────────────────────────────────────
+type ProfileView = "home" | "ordenes" | "datos"
 
-function Misordenes({ onBack }: { onBack: () => void }) {
+function MisOrdenes({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-5">
       <button type="button" aria-label="Volver a mi cuenta" title="Volver a mi cuenta" onClick={onBack}
@@ -253,19 +343,18 @@ function Misordenes({ onBack }: { onBack: () => void }) {
   )
 }
 
-// ─── Vista: Mis datos ─────────────────────────────────────────────────────────
-
 function MisDatos({ onBack }: { onBack: () => void }) {
   const { user, updateUser } = useAuth()
   const [name, setName] = useState(user?.name ?? "")
   const [phone, setPhone] = useState(user?.phone ?? "")
-  const [city, setCity] = useState(user?.city ?? "")
+  const [province, setProvince] = useState(user?.province ?? "")
   const [address, setAddress] = useState(user?.address ?? "")
+  const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
   const [saved, setSaved] = useState(false)
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
-    updateUser({ name, phone, city, address })
+    updateUser({ name, phone, province, address, postalCode })
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -286,7 +375,6 @@ function MisDatos({ onBack }: { onBack: () => void }) {
 
       <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-6">
         <form onSubmit={handleSave} className="space-y-4">
-          {/* Email — solo lectura */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
               Email
@@ -298,21 +386,15 @@ function MisDatos({ onBack }: { onBack: () => void }) {
             <p className="text-11px text-white/25">El email no se puede cambiar.</p>
           </div>
 
-          <InputField label="Nombre completo" type="text" value={name}
-            onChange={setName} placeholder="Juan García" icon={User} />
-
-          <InputField label="Teléfono" type="tel" value={phone}
-            onChange={setPhone} placeholder="Ej: 3411234567 (sin el 0)" icon={User} />
-
-          <InputField label="Ciudad" type="text" value={city}
-            onChange={setCity} placeholder="Rosario" icon={User} />
-
-          <InputField label="Dirección" type="text" value={address}
-            onChange={setAddress} placeholder="Av. Siempreverde 1234, Piso 2" icon={User} />
+          <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Juan García" icon={User} />
+          <InputField label="Teléfono móvil" type="tel" value={phone} onChange={setPhone} placeholder="Ej: 3411234567" icon={Phone} />
+          <InputField label="Provincia" type="text" value={province} onChange={setProvince} placeholder="Santa Fe" icon={MapPin} />
+          <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Av. Siempreverde 1234, Piso 2" icon={MapPin} />
+          <InputField label="Código postal" type="text" value={postalCode} onChange={setPostalCode} placeholder="2000" icon={Hash} />
 
           <button type="submit" aria-label="Guardar cambios" title="Guardar cambios"
             className="w-full h-10 rounded-xl bg-beyonix-blue border border-beyonix-blue-light/60 text-sm font-semibold text-white hover:bg-beyonix-blue-light transition-colors cursor-pointer mt-2">
-            {saved ? "✓ Guardado" : "Guardar cambios"}
+            {saved ? "Guardado" : "Guardar cambios"}
           </button>
         </form>
       </div>
@@ -320,27 +402,19 @@ function MisDatos({ onBack }: { onBack: () => void }) {
   )
 }
 
-// ─── Panel principal del perfil ───────────────────────────────────────────────
-
-type ProfileView = "home" | "ordenes" | "datos"
-
 function ProfilePanel({ initialView }: { initialView: ProfileView }) {
-  const {
-    user,
-    logout,
-    isAdmin,
-  } = useAuth()
+  const { user, logout, isAdmin } = useAuth()
   const router = useRouter()
   const [view, setView] = useState<ProfileView>(initialView)
 
   if (!user) return null
 
-  if (view === "ordenes") return <Misordenes onBack={() => setView("home")} />
+  if (view === "ordenes") return <MisOrdenes onBack={() => setView("home")} />
   if (view === "datos") return <MisDatos onBack={() => setView("home")} />
 
   const initials = user.name
     .split(" ")
-    .map((n: string) => n[0])
+    .map((part) => part[0])
     .join("")
     .toUpperCase()
     .slice(0, 2)
@@ -352,7 +426,6 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
 
   return (
     <div className="space-y-6">
-      {/* Avatar */}
       <div className="flex items-center gap-4 p-5 rounded-2xl border border-white/7 bg-white/2">
         <div className="size-14 rounded-xl bg-beyonix-blue border border-beyonix-blue-light/50 flex items-center justify-center text-lg font-bold text-white shrink-0">
           {initials}
@@ -364,7 +437,6 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
         </div>
       </div>
 
-      {/* Menú */}
       <div className="space-y-2">
         {menuItems.map((item) => (
           <button
@@ -387,36 +459,25 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
         ))}
       </div>
 
-      {/* Panel admin */}
       {isAdmin && (
         <button
           type="button"
           aria-label="Ir al panel admin"
           title="Ir al panel admin"
-          onClick={() =>
-            router.push("/admin")
-          }
+          onClick={() => router.push("/admin")}
           className="w-full flex items-center gap-4 p-4 rounded-xl border border-beyonix-blue-light/25 bg-beyonix-account hover:bg-beyonix-blue hover:border-beyonix-blue-light/50 transition-all group cursor-pointer text-left"
         >
           <div className="size-9 rounded-lg bg-beyonix-blue/60 border border-beyonix-blue-light/40 flex items-center justify-center shrink-0">
             <Shield className="size-4 text-beyonix-cyan" />
           </div>
-
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white">
-              Panel Admin
-            </p>
-
-            <p className="text-xs text-white/55">
-              Gestión de tienda
-            </p>
+            <p className="text-sm font-semibold text-white">Panel Admin</p>
+            <p className="text-xs text-white/55">Gestión de tienda</p>
           </div>
-
           <ChevronRight className="size-4 text-white/25 group-hover:text-white/70 transition-colors shrink-0" />
         </button>
       )}
 
-      {/* Cerrar sesión */}
       <button
         type="button"
         aria-label="Cerrar sesión"
@@ -431,16 +492,17 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   )
 }
 
-// ─── Página principal ─────────────────────────────────────────────────────────
-
 export function CuentaClient() {
   const { user, isLoading } = useAuth()
   const [tab, setTab] = useState<"login" | "register">("login")
   const searchParams = useSearchParams()
 
-  // Lee ?tab=ordenes desde el navbar
   const tabParam = searchParams.get("tab") as ProfileView | null
   const initialView: ProfileView = tabParam === "ordenes" ? "ordenes" : tabParam === "datos" ? "datos" : "home"
+
+  useEffect(() => {
+    if (user) setTab("login")
+  }, [user])
 
   if (isLoading) {
     return (
@@ -460,7 +522,7 @@ export function CuentaClient() {
                 Mi cuenta
               </p>
               <h1 className="text-2xl font-bold text-white tracking-tight">
-                Hola, {user.name.split(" ")[0]} 👋
+                Hola, {user.name.split(" ")[0]}
               </h1>
             </div>
             <ProfilePanel initialView={initialView} />
@@ -477,26 +539,25 @@ export function CuentaClient() {
               <p className="text-sm text-white/50">
                 {tab === "login"
                   ? "Ingresá para ver tus órdenes y datos."
-                  : "Es gratis y tarda menos de un minuto."}
+                  : "Registrate para comprar en BEYONIX."}
               </p>
             </div>
 
-            {/* Tabs */}
             <div className="flex rounded-xl border border-white/7 bg-white/2 p-1 mb-7">
-              {(["login", "register"] as const).map((t) => (
+              {(["login", "register"] as const).map((value) => (
                 <button
-                  key={t}
+                  key={value}
                   type="button"
-                  aria-label={t === "login" ? "Iniciar sesión" : "Registrarse"}
-                  title={t === "login" ? "Iniciar sesión" : "Registrarse"}
-                  onClick={() => setTab(t)}
+                  aria-label={value === "login" ? "Iniciar sesión" : "Registrarse"}
+                  title={value === "login" ? "Iniciar sesión" : "Registrarse"}
+                  onClick={() => setTab(value)}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                    tab === t
+                    tab === value
                       ? "bg-beyonix-blue border border-beyonix-blue-light/60 text-white shadow-sm"
                       : "text-white/50 hover:text-white/80"
                   }`}
                 >
-                  {t === "login" ? "Iniciar sesión" : "Registrarse"}
+                  {value === "login" ? "Iniciar sesión" : "Registrarse"}
                 </button>
               ))}
             </div>

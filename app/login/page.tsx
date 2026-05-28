@@ -115,11 +115,16 @@ function LoginContent() {
     }
 
     const result =
-      await register(
+      await register({
+        username: name.trim().replace(/\s+/g, ".").toLowerCase(),
         name,
         email,
-        password
-      )
+        password,
+        address: "",
+        postalCode: "",
+        phone: "",
+        province: "",
+      })
 
     setLoading(false)
 
@@ -164,7 +169,7 @@ function LoginContent() {
       } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
         {
-          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+          redirectTo: `${window.location.origin}/reset-password`,
         }
       )
 

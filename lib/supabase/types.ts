@@ -74,7 +74,12 @@ export interface SupabaseProducto {
 
 export interface SupabaseProfile {
   id: string
+  username?: string | null
   nombre: string
+  telefono?: string | null
+  direccion?: string | null
+  codigo_postal?: string | null
+  provincia?: string | null
   rol: "cliente" | "admin" | "super_admin"
   created_at: string
 }

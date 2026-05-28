@@ -200,6 +200,10 @@
   grid-template-columns: auto minmax(0, 1fr);
 }
 
+@utility grid-cols-site-header {
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr);
+}
+
 @utility aspect-category-featured {
   aspect-ratio: 16 / 9.2;
 }
