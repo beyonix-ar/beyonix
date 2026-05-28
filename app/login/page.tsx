@@ -164,6 +164,8 @@ function LoginContent() {
       setError("")
       setSuccess("")
 
+      localStorage.setItem("beyonix-password-recovery", "true")
+
       const {
         error: resetError,
       } = await supabase.auth.resetPasswordForEmail(
@@ -174,6 +176,7 @@ function LoginContent() {
       )
 
       if (resetError) {
+        localStorage.removeItem("beyonix-password-recovery")
         setError(
           "No se pudo enviar el email."
         )

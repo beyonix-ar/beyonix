@@ -108,6 +108,8 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
     setResetLoading(true)
 
     try {
+      localStorage.setItem("beyonix-password-recovery", "true")
+
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         normalizedEmail,
         {
@@ -116,6 +118,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
       )
 
       if (resetError) {
+        localStorage.removeItem("beyonix-password-recovery")
         setError("No se pudo enviar el email.")
         return
       }

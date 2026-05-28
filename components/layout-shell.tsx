@@ -19,8 +19,13 @@ export function LayoutShell({
       "/admin"
     )
 
+  const isPasswordReset =
+    pathname.startsWith(
+      "/reset-password"
+    )
+
   // Admin layout
-  if (isAdmin) {
+  if (isAdmin || isPasswordReset) {
     return children
   }
 

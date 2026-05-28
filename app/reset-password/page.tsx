@@ -20,6 +20,10 @@ function getPasswordUpdateMessage(message: string) {
   return "No se pudo actualizar la contraseña. Intentá nuevamente."
 }
 
+function getInvalidLinkMessage() {
+  return "El enlace no es válido o expiró. Pedí un nuevo email de recuperación."
+}
+
 function ResetPasswordContent() {
   const searchParams = useSearchParams()
   const [password, setPassword] = useState("")
@@ -27,13 +31,25 @@ function ResetPasswordContent() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
-  const [hasSession, setHasSession] = useState(false)
+  const [canChangePassword, setCanChangePassword] = useState(false)
 
-  const goHome = () => {
+  const goHomeLoggedOut = async () => {
+    localStorage.removeItem("beyonix-password-recovery")
+    await supabase.auth.signOut()
     window.location.replace("/")
   }
 
   useEffect(() => {
+    let mounted = true
+
+    const markValidRecovery = () => {
+      localStorage.setItem("beyonix-password-recovery", "true")
+      if (mounted) {
+        setCanChangePassword(true)
+        setCheckingSession(false)
+      }
+    }
+
     const prepareSession = async () => {
       const hashParams = new URLSearchParams(
         window.location.hash.replace(/^#/, "")
@@ -43,17 +59,32 @@ function ResetPasswordContent() {
       const type = searchParams.get("type")
       const accessToken = hashParams.get("access_token")
       const refreshToken = hashParams.get("refresh_token")
+      const hashType = hashParams.get("type")
       const hashError =
         hashParams.get("error_description") ||
         hashParams.get("error")
       const queryError =
         searchParams.get("error_description") ||
         searchParams.get("error")
+      const hasRecoveryMarker =
+        localStorage.getItem("beyonix-password-recovery") === "true"
+      const hasRecoveryToken =
+        Boolean(code || tokenHash || accessToken || refreshToken) ||
+        type === "recovery" ||
+        hashType === "recovery"
 
       if (hashError || queryError) {
-        setError("El enlace no es válido o expiró. Pedí un nuevo email de recuperación.")
-        setHasSession(false)
+        setError(getInvalidLinkMessage())
+        setCanChangePassword(false)
         setCheckingSession(false)
+        return
+      }
+
+      const { data: existingData } = await supabase.auth.getSession()
+
+      if (existingData.session && (hasRecoveryMarker || hasRecoveryToken)) {
+        markValidRecovery()
+        window.history.replaceState(null, "", "/reset-password")
         return
       }
 
@@ -62,11 +93,15 @@ function ResetPasswordContent() {
           await supabase.auth.exchangeCodeForSession(code)
 
         if (exchangeError) {
-          setError("El enlace no es válido o expiró. Pedí un nuevo email de recuperación.")
-          setHasSession(false)
+          setError(getInvalidLinkMessage())
+          setCanChangePassword(false)
           setCheckingSession(false)
           return
         }
+
+        markValidRecovery()
+        window.history.replaceState(null, "", "/reset-password")
+        return
       }
 
       if (tokenHash && type === "recovery") {
@@ -76,11 +111,15 @@ function ResetPasswordContent() {
         })
 
         if (verifyError) {
-          setError("El enlace no es válido o expiró. Pedí un nuevo email de recuperación.")
-          setHasSession(false)
+          setError(getInvalidLinkMessage())
+          setCanChangePassword(false)
           setCheckingSession(false)
           return
         }
+
+        markValidRecovery()
+        window.history.replaceState(null, "", "/reset-password")
+        return
       }
 
       if (accessToken && refreshToken) {
@@ -90,26 +129,41 @@ function ResetPasswordContent() {
         })
 
         if (sessionError) {
-          setError("El enlace no es válido o expiró. Pedí un nuevo email de recuperación.")
-          setHasSession(false)
+          setError(getInvalidLinkMessage())
+          setCanChangePassword(false)
           setCheckingSession(false)
           return
         }
-      }
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      setHasSession(Boolean(session))
-      setCheckingSession(false)
-
-      if (code || tokenHash || accessToken) {
+        markValidRecovery()
         window.history.replaceState(null, "", "/reset-password")
+        return
       }
+
+      if (existingData.session && hasRecoveryMarker) {
+        markValidRecovery()
+        return
+      }
+
+      setError(getInvalidLinkMessage())
+      setCanChangePassword(false)
+      setCheckingSession(false)
     }
 
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        markValidRecovery()
+      }
+    })
+
     prepareSession()
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -149,7 +203,7 @@ function ResetPasswordContent() {
         return
       }
 
-      goHome()
+      await goHomeLoggedOut()
     } catch {
       setError("No se pudo actualizar la contraseña. Intentá nuevamente.")
       setLoading(false)
@@ -157,7 +211,7 @@ function ResetPasswordContent() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-black px-4 pb-10 pt-24">
+    <main className="flex min-h-screen items-center justify-center bg-black px-4 py-10">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-beyonix-surface p-8 shadow-2xl">
         <div className="mb-8">
           <p className="mb-2 text-11px font-medium uppercase tracking-widest text-beyonix-focus">
@@ -175,7 +229,7 @@ function ResetPasswordContent() {
           <div className="flex h-28 items-center justify-center">
             <Loader2 className="size-6 animate-spin text-white" />
           </div>
-        ) : hasSession ? (
+        ) : canChangePassword ? (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="mb-2 block text-sm text-white/80">
@@ -229,7 +283,7 @@ function ResetPasswordContent() {
           </form>
         ) : (
           <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {error || "El enlace no es válido o expiró. Pedí un nuevo email de recuperación."}
+            {error || getInvalidLinkMessage()}
           </div>
         )}
       </div>
