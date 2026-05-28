@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect } from "react"
+
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
 import { useCart } from "@/context/cart-context"
@@ -9,12 +11,17 @@ import { CategoriesSection } from "@/components/categories-section"
 import { ProductsSection } from "@/components/products-section"
 import { BenefitsSection } from "@/components/benefits-section"
 import { ReviewsSection } from "@/components/reviews-section"
-import { Footer } from "@/components/footer"
 import { WhatsAppButton } from "@/components/whatsapp-button"
 
 export function HomeClient() {
   const { addToCart } =
     useCart()
+
+  useEffect(() => {
+    if (window.location.pathname !== "/") {
+      window.history.replaceState(null, "", "/")
+    }
+  }, [])
 
   const handleAddToCart = (
     product: SupabaseProducto,
@@ -53,8 +60,6 @@ export function HomeClient() {
       <section id="reseñas">
         <ReviewsSection />
       </section>
-
-      <Footer />
 
       <WhatsAppButton />
     </>

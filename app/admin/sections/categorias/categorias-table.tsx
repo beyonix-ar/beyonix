@@ -11,6 +11,14 @@ import { CategoriasRow } from "./categorias-row"
 interface CategoriasTableProps {
   categorias: SupabaseCategoria[]
 
+  categoryStats: Map<
+    number,
+    {
+      articulos: number
+      stock: number
+    }
+  >
+
   loading: boolean
 
   onEdit: (
@@ -24,6 +32,7 @@ interface CategoriasTableProps {
 
 export function CategoriasTable({
   categorias,
+  categoryStats,
   loading,
   onEdit,
   onDelete,
@@ -45,15 +54,15 @@ export function CategoriasTable({
 
   if (!categorias.length) {
     return (
-      <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-12 text-center">
+      <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-12 text-center">
         <FolderOpen className="mx-auto mb-3 size-10 text-white/15" />
 
-        <p className="text-sm font-medium text-white/50">
+        <p className="text-sm font-medium text-white/60">
           No hay categorías
           cargadas.
         </p>
 
-        <p className="mt-1 text-xs text-white/30">
+        <p className="mt-1 text-xs text-white/40">
           Creá una categoría para
           empezar.
         </p>
@@ -63,15 +72,17 @@ export function CategoriasTable({
 
   return (
     <div className="overflow-hidden rounded-3xl border border-white/7">
-      <div className="grid grid-cols-[1fr_1fr_120px] gap-4 border-b border-white/6 bg-[#0A0A0A] px-5 py-3">
+      <div className="grid grid-cols-admin-categories gap-4 border-b border-white/6 bg-beyonix-surface px-5 py-3">
         {[
           "Nombre",
           "Slug",
+          "Artículos",
+          "Stock",
           "Acciones",
         ].map((label) => (
           <span
             key={label}
-            className={`text-10px font-semibold uppercase tracking-[0.2em] text-white/35 ${
+            className={`text-11px font-semibold uppercase tracking-widest text-white/55 ${
               label ===
               "Acciones"
                 ? "text-right"
@@ -88,6 +99,14 @@ export function CategoriasTable({
           <CategoriasRow
             key={categoria.id}
             categoria={categoria}
+            stats={
+              categoryStats.get(
+                categoria.id
+              ) || {
+                articulos: 0,
+                stock: 0,
+              }
+            }
             isLast={
               index ===
               categorias.length -

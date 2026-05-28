@@ -108,16 +108,16 @@ export function CategoriaForm({
   }
 
   const inputClass =
-    "w-full rounded-2xl border border-white/8 bg-[#0A0A0A] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#1E4D7B]"
+    "w-full rounded-2xl border border-white/8 bg-beyonix-surface px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
 
   const labelClass =
-    "mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-white/40"
+    "mb-2 block text-xs font-semibold uppercase tracking-widest text-white/50"
 
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <p className="mb-1 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
+          <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             Categorías
           </p>
 
@@ -133,7 +133,7 @@ export function CategoriaForm({
           title="Volver"
           aria-label="Volver"
           onClick={onCancel}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/60 transition-colors hover:text-white cursor-pointer"
+          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/70 transition-colors hover:text-white cursor-pointer"
         >
           <ArrowLeft className="size-4" />
 
@@ -141,7 +141,7 @@ export function CategoriaForm({
         </button>
       </div>
 
-      <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-6">
+      <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-6">
         <form
           onSubmit={handleSubmit}
           className="space-y-6"
@@ -220,7 +220,7 @@ export function CategoriaForm({
               title="Cancelar"
               aria-label="Cancelar"
               onClick={onCancel}
-              className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/60 transition-colors hover:text-white cursor-pointer"
+              className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
             >
               Cancelar
             </button>

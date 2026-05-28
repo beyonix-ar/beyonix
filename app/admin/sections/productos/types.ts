@@ -98,6 +98,14 @@ export interface ImageUploaderProps {
   productoId: number
 }
 
+export interface DraftProductoVariante {
+  tempId: string
+  nombre: string
+  color_hex: string
+  stock: number | null
+  imagenes: File[]
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Toast
 // ─────────────────────────────────────────────────────────────────────────────

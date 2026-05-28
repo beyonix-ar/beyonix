@@ -1,6 +1,8 @@
 "use client"
 
 import {
+  Suspense,
+  useEffect,
   useState,
 } from "react"
 
@@ -12,8 +14,21 @@ import {
 import { Loader2 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { supabase } from "@/lib/supabase/client"
 
-export default function LoginPage() {
+function getSafeRedirect(redirect: string | null) {
+  if (!redirect || redirect.startsWith("/login")) {
+    return "/"
+  }
+
+  if (!redirect.startsWith("/")) {
+    return "/"
+  }
+
+  return redirect
+}
+
+function LoginContent() {
   const router = useRouter()
 
   const searchParams =
@@ -22,6 +37,8 @@ export default function LoginPage() {
   const {
     login,
     register,
+    user,
+    isLoading,
   } = useAuth()
 
   const [mode, setMode] =
@@ -46,6 +63,16 @@ export default function LoginPage() {
 
   const [loading, setLoading] =
     useState(false)
+
+  useEffect(() => {
+    if (isLoading || !user) return
+
+    router.replace("/")
+  }, [isLoading, router, user])
+
+  if (isLoading || user) {
+    return null
+  }
 
   const handleSubmit = async (
     e: React.FormEvent
@@ -80,8 +107,8 @@ export default function LoginPage() {
           "redirect"
         )
 
-      router.push(
-        redirect || "/"
+      router.replace(
+        getSafeRedirect(redirect)
       )
 
       return
@@ -114,8 +141,8 @@ export default function LoginPage() {
         "redirect"
       )
 
-    router.push(
-      redirect || "/"
+    router.replace(
+      getSafeRedirect(redirect)
     )
   }
 
@@ -132,30 +159,18 @@ export default function LoginPage() {
       setError("")
       setSuccess("")
 
-      const response =
-        await fetch(
-          "/api/auth/reset-password",
-          {
-            method: "POST",
+      const {
+        error: resetError,
+      } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        {
+          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        }
+      )
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              email,
-            }),
-          }
-        )
-
-      const data =
-        await response.json()
-
-      if (!response.ok) {
+      if (resetError) {
         setError(
-          data.error ||
-            "No se pudo enviar el email."
+          "No se pudo enviar el email."
         )
 
         return
@@ -168,9 +183,9 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-black px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0f0f0f] p-8 shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-beyonix-surface-4 p-8 shadow-2xl">
         <div className="mb-8">
-          <p className="mb-2 text-11px font-medium uppercase tracking-[0.3em] text-[#3b82f6]">
+          <p className="mb-2 text-11px font-medium uppercase tracking-widest text-beyonix-focus">
             BEYONIX
           </p>
 
@@ -180,7 +195,7 @@ export default function LoginPage() {
               : "Crear cuenta"}
           </h1>
 
-          <p className="mt-2 text-sm text-white/55">
+          <p className="mt-2 text-sm text-white/65">
             {mode === "login"
               ? "Accedé a tu cuenta para continuar la compra."
               : "Registrate para comprar en BEYONIX."}
@@ -199,7 +214,7 @@ export default function LoginPage() {
             className={`h-11 rounded-lg text-sm font-medium transition-all ${
               mode === "login"
                 ? "bg-white text-black"
-                : "text-white/60 hover:text-white"
+                : "text-white/70 hover:text-white"
             }`}
           >
             Iniciar sesión
@@ -217,7 +232,7 @@ export default function LoginPage() {
             className={`h-11 rounded-lg text-sm font-medium transition-all ${
               mode === "register"
                 ? "bg-white text-black"
-                : "text-white/60 hover:text-white"
+                : "text-white/70 hover:text-white"
             }`}
           >
             Registrarme
@@ -233,7 +248,7 @@ export default function LoginPage() {
           {mode ===
             "register" && (
             <div>
-              <label className="mb-2 block text-sm text-white/70">
+              <label className="mb-2 block text-sm text-white/80">
                 Nombre
               </label>
 
@@ -248,13 +263,13 @@ export default function LoginPage() {
                     e.target.value
                   )
                 }
-                className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors focus:border-[#3b82f6]"
+                className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors focus:border-beyonix-focus"
               />
             </div>
           )}
 
           <div>
-            <label className="mb-2 block text-sm text-white/70">
+            <label className="mb-2 block text-sm text-white/80">
               Email
             </label>
 
@@ -269,12 +284,12 @@ export default function LoginPage() {
                   e.target.value
                 )
               }
-              className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors focus:border-[#3b82f6]"
+              className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors focus:border-beyonix-focus"
             />
           </div>
 
           <div>
-            <label className="mb-2 block text-sm text-white/70">
+            <label className="mb-2 block text-sm text-white/80">
               Contraseña
             </label>
 
@@ -289,7 +304,7 @@ export default function LoginPage() {
                   e.target.value
                 )
               }
-              className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors focus:border-[#3b82f6]"
+              className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors focus:border-beyonix-focus"
             />
           </div>
 
@@ -301,7 +316,7 @@ export default function LoginPage() {
               onClick={
                 handleForgotPassword
               }
-              className="text-sm text-[#3b82f6] transition-opacity hover:opacity-80"
+              className="text-sm text-beyonix-focus transition-opacity hover:opacity-80"
             >
               ¿Olvidaste tu contraseña?
             </button>
@@ -346,5 +361,13 @@ export default function LoginPage() {
         </form>
       </div>
     </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   )
 }

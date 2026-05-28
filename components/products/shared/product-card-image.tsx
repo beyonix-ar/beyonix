@@ -42,7 +42,8 @@ export function ProductCardImage({
               onPrev()
             }}
             aria-label="Imagen anterior"
-            className="absolute left-2 top-1/2 z-10 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-[#112A43]/90 text-white shadow-lg backdrop-blur-sm border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110 hover:bg-[#1E4D7B] cursor-pointer"
+            title="Imagen anterior"
+            className="absolute left-2 top-1/2 z-10 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-beyonix-blue/90 text-white shadow-lg backdrop-blur-sm border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110 hover:bg-beyonix-blue-light cursor-pointer"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -54,7 +55,8 @@ export function ProductCardImage({
               onNext()
             }}
             aria-label="Imagen siguiente"
-            className="absolute right-2 top-1/2 z-10 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-[#112A43]/90 text-white shadow-lg backdrop-blur-sm border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110 hover:bg-[#1E4D7B] cursor-pointer"
+            title="Imagen siguiente"
+            className="absolute right-2 top-1/2 z-10 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-beyonix-blue/90 text-white shadow-lg backdrop-blur-sm border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110 hover:bg-beyonix-blue-light cursor-pointer"
           >
             <ChevronRight className="size-4" />
           </button>

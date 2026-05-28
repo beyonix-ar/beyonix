@@ -27,7 +27,7 @@ interface ProductPreviewModalProps {
 }
 
 const actionButtonClass =
-  "absolute z-30 rounded-full bg-[#112A43] p-3 shadow-lg transition-all duration-300 hover:bg-[#163552] hover:scale-105 active:scale-95"
+  "absolute z-30 rounded-full bg-beyonix-blue p-3 shadow-lg transition-all duration-300 hover:bg-beyonix-blue-hover hover:scale-105 active:scale-95"
 
 export function ProductPreviewModal({
   open,
@@ -58,16 +58,18 @@ export function ProductPreviewModal({
       <button
         type="button"
         aria-label="Cerrar modal"
+        title="Cerrar modal"
         className="absolute inset-0 z-0"
         onClick={onClose}
       />
 
       {/* panel */}
-      <div className="relative z-10 w-full max-w-5xl h-[78vh] rounded-3xl border border-white/10 bg-white shadow-2xl overflow-hidden">
+      <div className="relative z-10 w-full max-w-5xl h-78vh rounded-3xl border border-white/10 bg-white shadow-2xl overflow-hidden">
         {/* cerrar */}
         <button
           type="button"
           aria-label="Cerrar vista previa"
+          title="Cerrar vista previa"
           onClick={onClose}
           className={`${actionButtonClass} top-4 right-4`}
         >
@@ -79,6 +81,7 @@ export function ProductPreviewModal({
           <button
             type="button"
             aria-label="Imagen anterior"
+            title="Imagen anterior"
             onClick={onPrev}
             className={`${actionButtonClass} left-4 top-1/2 -translate-y-1/2`}
           >
@@ -91,6 +94,7 @@ export function ProductPreviewModal({
           <button
             type="button"
             aria-label="Imagen siguiente"
+            title="Imagen siguiente"
             onClick={onNext}
             className={`${actionButtonClass} right-4 top-1/2 -translate-y-1/2`}
           >
@@ -131,7 +135,7 @@ export function ProductPreviewModal({
 
         {/* contador */}
         {images.length > 1 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 rounded-full bg-[#112A43] px-4 py-2 text-sm text-white shadow-lg">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 rounded-full bg-beyonix-blue px-4 py-2 text-sm text-white shadow-lg">
             {selectedImage + 1} / {images.length}
           </div>
         )}

@@ -58,18 +58,18 @@ export function ProductsFiltersSidebar({
   }
 
   return (
-    <aside className="h-fit rounded-2xl border border-white/[0.07] bg-[#0A0A0A] overflow-hidden">
+    <aside className="h-fit rounded-2xl border border-white/7 bg-beyonix-surface overflow-hidden">
 
       {/* Encabezado del panel */}
-      <div className="px-5 py-4 border-b border-white/[0.07] flex items-center gap-2.5">
+      <div className="px-5 py-4 border-b border-white/7 flex items-center gap-2.5">
         {/* Acento de color de marca */}
-        <span className="block h-4 w-[3px] rounded-full bg-[#1E4D7B]" />
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/50">
+        <span className="block h-4 w-3px rounded-full bg-beyonix-blue-light" />
+        <h3 className="text-11px font-semibold uppercase tracking-widest text-white/60">
           Filtros
         </h3>
       </div>
 
-      <div className="px-5 py-5 space-y-0 divide-y divide-white/[0.05]">
+      <div className="px-5 py-5 space-y-0 divide-y divide-white/5">
 
         <div className="pb-6">
           <CommerceFilter

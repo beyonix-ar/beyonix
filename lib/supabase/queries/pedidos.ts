@@ -59,9 +59,10 @@ export async function getPedidoItems(
       .from("orden_items")
       .select(`
         *,
-        productos(*)
+        productos(*),
+        producto_variantes(*)
       `)
-      .eq("pedido_id", pedidoId)
+      .eq("orden_id", pedidoId)
 
   if (error) {
     throw error
@@ -76,11 +77,19 @@ export async function getPedidoItems(
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface CreatePedidoPayload {
-  user_id?: string | null
+  usuario_id?: string | null
 
   estado?: string
 
   total: number
+
+  cliente_nombre?: string | null
+
+  cliente_email?: string | null
+
+  cliente_telefono?: string | null
+
+  cliente_direccion?: string | null
 }
 
 export async function createPedido(
@@ -108,13 +117,15 @@ export async function createPedido(
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface CreatePedidoItemPayload {
-  pedido_id: number
+  orden_id: number
 
   producto_id: number
 
+  variante_id?: number | null
+
   cantidad: number
 
-  precio_unitario: number
+  precio: number
 }
 
 export async function createPedidoItem(
@@ -140,12 +151,21 @@ export async function createPedidoItem(
 
 export async function updatePedidoEstado(
   id: number,
-  estado: string
+  estado: string,
+  tracking?: {
+    tracking_number?: string | null
+    tracking_url?: string | null
+  }
 ) {
+  const payload = {
+    estado,
+    ...(tracking ?? {}),
+  }
+
   const { data, error } =
     await supabase
       .from("ordenes")
-      .update({ estado })
+      .update(payload)
       .eq("id", id)
       .select()
       .single()

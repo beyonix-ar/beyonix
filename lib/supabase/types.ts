@@ -24,6 +24,18 @@ export interface SupabaseImagenProducto {
   created_at: string
 }
 
+export interface SupabaseProductoVariante {
+  id: number
+  producto_id: number
+  nombre: string
+  color_hex: string
+  stock: number | null
+  imagenes: string[]
+  activo: boolean
+  orden: number
+  created_at: string
+}
+
 // ─────────────────────────────────────────────────────────────
 // Productos
 // ─────────────────────────────────────────────────────────────
@@ -53,6 +65,7 @@ export interface SupabaseProducto {
   categorias?: SupabaseCategoria | null
 
   imagenes_producto?: SupabaseImagenProducto[]
+  producto_variantes?: SupabaseProductoVariante[]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -62,8 +75,24 @@ export interface SupabaseProducto {
 export interface SupabaseProfile {
   id: string
   nombre: string
-  rol: "cliente" | "admin"
+  rol: "cliente" | "admin" | "super_admin"
   created_at: string
+}
+
+// Auditoria
+
+export interface SupabaseAuditLog {
+  id: number
+  table_name: string
+  action: "INSERT" | "UPDATE" | "DELETE"
+  record_id: string | null
+  actor_user_id: string | null
+  actor_email: string | null
+  before_data: Record<string, unknown> | null
+  after_data: Record<string, unknown> | null
+  created_at: string
+  undone_at: string | null
+  undone_by: string | null
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -72,18 +101,30 @@ export interface SupabaseProfile {
 
 export interface SupabasePedido {
   id: number
-  user_id: string | null
+  usuario_id: string | null
+  cliente_nombre?: string | null
+  cliente_email?: string | null
+  cliente_telefono?: string | null
+  cliente_direccion?: string | null
   estado: string
   total: number
+  payment_id?: string | null
+  payment_status?: string | null
+  payment_method_id?: string | null
+  payment_type_id?: string | null
+  paid_at?: string | null
+  tracking_number?: string | null
+  tracking_url?: string | null
   created_at: string
 }
 
 export interface SupabasePedidoItem {
   id: number
-  pedido_id: number
+  orden_id: number
   producto_id: number
+  variante_id?: number | null
   cantidad: number
-  precio_unitario: number
+  precio: number
 }
 
 // ─────────────────────────────────────────────────────────────

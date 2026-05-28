@@ -9,6 +9,11 @@ import { useCart } from "@/context/cart-context"
 
 import { ProductImageCarousel } from "./product-image-carousel"
 import { ColorSelector } from "../products/color-selector"
+import {
+  getDefaultVariantValue,
+  getProductVariantOptions,
+  getVariantOptionByValue,
+} from "@/lib/products/product-variants"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -35,35 +40,23 @@ export function CategoryProductCard({
 }: CategoryProductCardProps) {
   const { addToCart } = useCart()
 
-  const colors =
-    product.imagenes_producto?.length
-      ? [
-          {
-            name: "default",
-            value: "default",
-            images: product.imagenes_producto.map(
-              (image) => image.url
-            ),
-          },
-        ]
-      : [
-          {
-            name: "default",
-            value: "default",
-            images: ["/placeholder.svg"],
-          },
-        ]
+  const colors = useMemo(
+    () => getProductVariantOptions(product),
+    [product]
+  )
 
   const [selectedColor, setSelectedColor] =
-    useState("default")
+    useState(() =>
+      getDefaultVariantValue(product)
+    )
 
   const activeVariant = useMemo(
     () =>
-      colors.find(
-        (color) =>
-          color.name === selectedColor
-      ) || colors[0],
-    [colors, selectedColor]
+      getVariantOptionByValue(
+        product,
+        selectedColor
+      ),
+    [product, selectedColor]
   )
 
   const images = activeVariant.images
@@ -101,7 +94,7 @@ export function CategoryProductCard({
           />
         </button>
 
-        <div className="flex flex-1 flex-col bg-[#111111] px-4 pb-4 pt-4">
+        <div className="flex flex-1 flex-col bg-beyonix-surface-3 px-4 pb-4 pt-4">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-13px uppercase tracking-wider text-muted-foreground">
               {product.categorias?.nombre}
@@ -110,7 +103,8 @@ export function CategoryProductCard({
             <ColorSelector
               colors={colors.map((color) => ({
                 name: color.name,
-                value: color.value as never,
+                value: color.value,
+                colorHex: color.colorHex,
               }))}
               selectedColor={selectedColor}
               onSelect={setSelectedColor}

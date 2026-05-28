@@ -1,8 +1,18 @@
-// ENVIO GRATIS A PARTIR DE:
-export const FREE_SHIPPING_MIN = 90000
+// Envio gratis a partir de este subtotal.
+export const FREE_SHIPPING_MIN = 1000
 
-// COSTO DE ENVIO AL CLIENTE
+// Costo de envio al cliente cuando no supera el minimo.
 export const SHIPPING_COST = 14000
+
+export function getShippingCost(subtotal: number) {
+  const safeSubtotal = Number.isFinite(subtotal) ? subtotal : 0
+
+  return safeSubtotal >= FREE_SHIPPING_MIN ? 0 : SHIPPING_COST
+}
+
+export function hasFreeShipping(subtotal: number) {
+  return getShippingCost(subtotal) === 0
+}
 
 // DESCUENTO DE TRANSFERENCIA: 5%
 export const TRANSFER_DISCOUNT = 0.05
@@ -11,10 +21,10 @@ export const TRANSFER_DISCOUNT = 0.05
 export const TRANSFER_DISCOUNT_LABEL = `${TRANSFER_DISCOUNT * 100}%`
 
 // ================================
-// CAMPAÑAS FUTURAS
+// CAMPANAS FUTURAS
 // SOLO UNA DEBE ESTAR ACTIVA = 1
 // ================================
-export const ACTIVE_SALE_EVENT: string = "hotsale" // "hotsale" | "cyber" | "blackfriday" | "navidad" | "padre" | "madre" | "evento" | "none = desactiva campañas"
+export const ACTIVE_SALE_EVENT: string = "hotsale" // "hotsale" | "cyber" | "blackfriday" | "navidad" | "padre" | "madre" | "evento" | "none = desactiva campanas"
 
 // DESCUENTOS POR EVENTO Y PRODUCTO
 export const SALE_EVENTS: Record<string, Record<number, number>> = {

@@ -6,320 +6,337 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ReactNode,
 } from "react"
 
-import type {
-  SupabaseProducto,
-} from "@/lib/supabase/types"
+import type { SupabaseProducto } from "@/lib/supabase/types"
+import { supabase } from "@/lib/supabase/client"
+import {
+  DEFAULT_VARIANT_VALUE,
+  FALLBACK_PRODUCT_IMAGE,
+  getDefaultVariantValue,
+  getProductImagesByVariant,
+  getVariantOptionByValue,
+} from "@/lib/products/product-variants"
 
-interface CartItem {
+export interface CartItem {
   product: SupabaseProducto
   color: string
   image: string
   quantity: number
+  variantId: number | null
+  variantName: string | null
+  colorHex: string | null
 }
 
 interface CartContextType {
   cart: CartItem[]
-
   total: number
-
+  itemCount: number
+  cartSessionId: string
   isOpen: boolean
-
-  addToCart: (
-    product: SupabaseProducto,
-    color: string,
-    image?: string
-  ) => void
-
-  removeFromCart: (
-    productId: number,
-    color: string
-  ) => void
-
-  updateQuantity: (
-    productId: number,
-    color: string,
-    quantity: number
-  ) => void
-
-  increaseQuantity: (
-    productId: number,
-    color: string
-  ) => void
-
-  decreaseQuantity: (
-    productId: number,
-    color: string
-  ) => void
-
-  getQuantity: (
-    productId: number,
-    color: string
-  ) => number
-
-  isInCart: (
-    productId: number,
-    color: string
-  ) => boolean
-
+  isReady: boolean
+  addToCart: (product: SupabaseProducto, color: string, image?: string) => void
+  removeFromCart: (productId: number, color: string) => void
+  updateQuantity: (productId: number, color: string, quantity: number) => void
+  increaseQuantity: (productId: number, color: string) => void
+  decreaseQuantity: (productId: number, color: string) => void
+  getQuantity: (productId: number, color: string) => number
+  isInCart: (productId: number, color: string) => boolean
   clearCart: () => void
-
   openCart: () => void
-
   closeCart: () => void
 }
 
-const CartContext =
-  createContext<CartContextType | null>(
-    null
-  )
+const CartContext = createContext<CartContextType | null>(null)
 
-const STORAGE_KEY =
-  "beyonix-cart"
+export const CART_STORAGE_KEY = "beyonix-cart"
+export const CART_SESSION_STORAGE_KEY = "beyonix-cart-session"
 
-export function CartProvider({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const [cart, setCart] = useState<
-    CartItem[]
-  >([])
+function createCartSessionId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID()
+  }
 
-  const [isOpen, setIsOpen] =
-    useState(false)
+  return `cart-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
-  // ─────────────────────────────────────
-  // Hydration
-  // ─────────────────────────────────────
+function toFiniteNumber(value: unknown, fallback = 0) {
+  const numberValue = typeof value === "number" ? value : Number(value)
+
+  return Number.isFinite(numberValue) ? numberValue : fallback
+}
+
+function getProductImage(product: SupabaseProducto, image?: string) {
+  return image || getProductImagesByVariant(product)[0] || FALLBACK_PRODUCT_IMAGE
+}
+
+function resolveCartVariant(product: SupabaseProducto, color?: string) {
+  const value =
+    color && color !== DEFAULT_VARIANT_VALUE
+      ? color
+      : getDefaultVariantValue(product)
+
+  return getVariantOptionByValue(product, value)
+}
+
+function normalizeCartItem(item: unknown): CartItem | null {
+  if (!item || typeof item !== "object") return null
+
+  const rawItem = item as Record<string, unknown>
+  const rawProduct = rawItem.product
+
+  if (!rawProduct || typeof rawProduct !== "object") return null
+
+  const productRecord = rawProduct as Record<string, unknown>
+  const id = toFiniteNumber(productRecord.id, NaN)
+  const precio = toFiniteNumber(productRecord.precio, NaN)
+  const quantity = Math.trunc(toFiniteNumber(rawItem.quantity, 1))
+  const nombre = productRecord.nombre
+
+  if (
+    !Number.isFinite(id) ||
+    !Number.isFinite(precio) ||
+    typeof nombre !== "string" ||
+    quantity < 1
+  ) {
+    return null
+  }
+
+  const product = {
+    ...productRecord,
+    id,
+    nombre,
+    precio,
+  } as SupabaseProducto
+
+  const rawColor =
+    typeof rawItem.color === "string"
+      ? rawItem.color
+      : DEFAULT_VARIANT_VALUE
+  const variant = resolveCartVariant(product, rawColor)
+  const variantId = toFiniteNumber(rawItem.variantId, variant?.id ?? NaN)
+
+  return {
+    product,
+    color: variant?.value ?? rawColor,
+    image:
+      typeof rawItem.image === "string" && rawItem.image.trim()
+        ? rawItem.image
+        : variant?.images[0] ?? getProductImage(product),
+    quantity,
+    variantId: Number.isFinite(variantId) ? variantId : null,
+    variantName:
+      typeof rawItem.variantName === "string"
+        ? rawItem.variantName
+        : variant?.name ?? null,
+    colorHex:
+      typeof rawItem.colorHex === "string"
+        ? rawItem.colorHex
+        : variant?.colorHex ?? null,
+  }
+}
+
+function normalizeCart(items: unknown) {
+  if (!Array.isArray(items)) return []
+
+  return items.reduce<CartItem[]>((acc, item) => {
+    const normalized = normalizeCartItem(item)
+
+    if (!normalized) return acc
+
+    const existing = acc.find(
+      (cartItem) =>
+        cartItem.product.id === normalized.product.id &&
+        cartItem.color === normalized.color,
+    )
+
+    if (existing) {
+      existing.quantity += normalized.quantity
+      return acc
+    }
+
+    acc.push(normalized)
+    return acc
+  }, [])
+}
+
+export function CartProvider({ children }: { children: ReactNode }) {
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [cartSessionId, setCartSessionId] = useState("")
+  const [isOpen, setIsOpen] = useState(false)
+  const [hasHydrated, setHasHydrated] = useState(false)
 
   useEffect(() => {
     try {
-      const stored =
-        localStorage.getItem(
-          STORAGE_KEY
-        )
+      localStorage.removeItem(CART_STORAGE_KEY)
 
-      if (!stored) {
-        return
-      }
+      const storedSessionId = sessionStorage.getItem(CART_SESSION_STORAGE_KEY)
+      const nextSessionId = storedSessionId || createCartSessionId()
 
-      const parsed =
-        JSON.parse(stored)
+      sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
+      setCartSessionId(nextSessionId)
 
-      if (!Array.isArray(parsed)) {
-        return
-      }
-
-      const validCart =
-        parsed.filter(
-          (item) =>
-            item?.product?.id &&
-            item?.product?.nombre &&
-            typeof item?.product
-              ?.precio ===
-              "number"
-        )
-
-      setCart(validCart)
-    } catch (error) {
-      console.error(error)
-
-      localStorage.removeItem(
-        STORAGE_KEY
-      )
+      const stored = sessionStorage.getItem(CART_STORAGE_KEY)
+      setCart(stored ? normalizeCart(JSON.parse(stored)) : [])
+    } catch {
+      localStorage.removeItem(CART_STORAGE_KEY)
+      sessionStorage.removeItem(CART_STORAGE_KEY)
+      sessionStorage.removeItem(CART_SESSION_STORAGE_KEY)
+      const nextSessionId = createCartSessionId()
+      sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
+      setCartSessionId(nextSessionId)
+      setCart([])
+    } finally {
+      setHasHydrated(true)
     }
   }, [])
 
-  // ─────────────────────────────────────
-  // Persist
-  // ─────────────────────────────────────
+  useEffect(() => {
+    if (!hasHydrated) return
+
+    if (cart.length === 0) {
+      sessionStorage.removeItem(CART_STORAGE_KEY)
+      return
+    }
+
+    sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart))
+  }, [cart, hasHydrated])
 
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(cart)
-    )
-  }, [cart])
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_OUT") return
 
-  // ─────────────────────────────────────
-  // Add
-  // ─────────────────────────────────────
+      setCart([])
+      setIsOpen(false)
+      localStorage.removeItem(CART_STORAGE_KEY)
+      sessionStorage.removeItem(CART_STORAGE_KEY)
+      sessionStorage.removeItem(CART_SESSION_STORAGE_KEY)
+      const nextSessionId = createCartSessionId()
+      sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
+      setCartSessionId(nextSessionId)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   const addToCart = (
     product: SupabaseProducto,
     color: string,
-    image?: string
+    image?: string,
   ) => {
+    const variant = resolveCartVariant(product, color)
+    const variantColor = variant?.value ?? DEFAULT_VARIANT_VALUE
+    const normalizedProduct = {
+      ...product,
+      precio: toFiniteNumber(product.precio),
+    }
+
     setCart((prev) => {
-      const exists = prev.find(
+      const existing = prev.find(
         (item) =>
-          item.product.id ===
-            product.id &&
-          item.color === color
+          item.product.id === normalizedProduct.id &&
+          item.color === variantColor,
       )
 
-      if (exists) {
+      if (existing) {
         return prev.map((item) =>
-          item.product.id ===
-            product.id &&
-          item.color === color
-            ? {
-                ...item,
-                quantity:
-                  item.quantity + 1,
-              }
-            : item
+          item.product.id === normalizedProduct.id &&
+          item.color === variantColor
+            ? { ...item, quantity: item.quantity + 1 }
+            : item,
         )
       }
 
       return [
         ...prev,
         {
-          product,
-          color,
-
+          product: normalizedProduct,
+          color: variantColor,
           image:
             image ||
-            product
-              .imagen_principal ||
-            product
-              .imagenes_producto?.[0]
-              ?.url ||
-            "/placeholder.svg",
-
+            variant?.images[0] ||
+            getProductImage(normalizedProduct),
           quantity: 1,
+          variantId: variant?.id ?? null,
+          variantName: variant?.name ?? null,
+          colorHex: variant?.colorHex ?? null,
         },
       ]
     })
   }
 
-  // ─────────────────────────────────────
-  // Remove
-  // ─────────────────────────────────────
-
-  const removeFromCart = (
-    productId: number,
-    color: string
-  ) => {
+  const removeFromCart = (productId: number, color: string) => {
     setCart((prev) =>
       prev.filter(
-        (item) =>
-          !(
-            item.product.id ===
-              productId &&
-            item.color === color
-          )
-      )
+        (item) => !(item.product.id === productId && item.color === color),
+      ),
     )
   }
-
-  // ─────────────────────────────────────
-  // Update quantity
-  // ─────────────────────────────────────
 
   const updateQuantity = (
     productId: number,
     color: string,
-    quantity: number
+    quantity: number,
   ) => {
-    if (quantity <= 0) {
-      removeFromCart(
-        productId,
-        color
-      )
+    const nextQuantity = Math.trunc(toFiniteNumber(quantity))
 
+    if (nextQuantity < 1) {
+      removeFromCart(productId, color)
       return
     }
 
     setCart((prev) =>
       prev.map((item) =>
-        item.product.id ===
-          productId &&
-        item.color === color
-          ? {
-              ...item,
-              quantity,
-            }
-          : item
-      )
+        item.product.id === productId && item.color === color
+          ? { ...item, quantity: nextQuantity }
+          : item,
+      ),
     )
   }
 
-  const increaseQuantity = (
-    productId: number,
-    color: string
-  ) => {
-    updateQuantity(
-      productId,
-      color,
-      getQuantity(
-        productId,
-        color
-      ) + 1
-    )
-  }
-
-  const decreaseQuantity = (
-    productId: number,
-    color: string
-  ) => {
-    updateQuantity(
-      productId,
-      color,
-      getQuantity(
-        productId,
-        color
-      ) - 1
-    )
-  }
-
-  // ─────────────────────────────────────
-  // Helpers
-  // ─────────────────────────────────────
-
-  const getQuantity = (
-    productId: number,
-    color: string
-  ) => {
+  const getQuantity = (productId: number, color: string) => {
     return (
       cart.find(
-        (item) =>
-          item.product.id ===
-            productId &&
-          item.color === color
-      )?.quantity || 0
+        (item) => item.product.id === productId && item.color === color,
+      )?.quantity ?? 0
     )
   }
 
-  const isInCart = (
-    productId: number,
-    color: string
-  ) => {
+  const increaseQuantity = (productId: number, color: string) => {
+    updateQuantity(productId, color, getQuantity(productId, color) + 1)
+  }
+
+  const decreaseQuantity = (productId: number, color: string) => {
+    updateQuantity(productId, color, getQuantity(productId, color) - 1)
+  }
+
+  const isInCart = (productId: number, color: string) => {
     return cart.some(
-      (item) =>
-        item.product.id ===
-          productId &&
-        item.color === color
+      (item) => item.product.id === productId && item.color === color,
     )
   }
 
   const clearCart = () => {
     setCart([])
+    localStorage.removeItem(CART_STORAGE_KEY)
+    sessionStorage.removeItem(CART_STORAGE_KEY)
+    sessionStorage.removeItem(CART_SESSION_STORAGE_KEY)
+    const nextSessionId = createCartSessionId()
+    sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
+    setCartSessionId(nextSessionId)
   }
 
-  // ─────────────────────────────────────
-  // Total
-  // ─────────────────────────────────────
-
-  const total = useMemo(() => {
+  const { total, itemCount } = useMemo(() => {
     return cart.reduce(
-      (sum, item) =>
-        sum +
-        item.product.precio *
-          item.quantity,
-      0
+      (acc, item) => {
+        acc.total += item.product.precio * item.quantity
+        acc.itemCount += item.quantity
+        return acc
+      },
+      { total: 0, itemCount: 0 },
     )
   }, [cart])
 
@@ -327,32 +344,21 @@ export function CartProvider({
     <CartContext.Provider
       value={{
         cart,
-
         total,
-
+        itemCount,
+        cartSessionId,
         isOpen,
-
+        isReady: hasHydrated,
         addToCart,
-
         removeFromCart,
-
         updateQuantity,
-
         increaseQuantity,
-
         decreaseQuantity,
-
         getQuantity,
-
         isInCart,
-
         clearCart,
-
-        openCart: () =>
-          setIsOpen(true),
-
-        closeCart: () =>
-          setIsOpen(false),
+        openCart: () => setIsOpen(true),
+        closeCart: () => setIsOpen(false),
       }}
     >
       {children}
@@ -361,13 +367,10 @@ export function CartProvider({
 }
 
 export function useCart() {
-  const context =
-    useContext(CartContext)
+  const context = useContext(CartContext)
 
   if (!context) {
-    throw new Error(
-      "useCart must be used inside CartProvider"
-    )
+    throw new Error("useCart must be used inside CartProvider")
   }
 
   return context

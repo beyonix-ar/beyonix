@@ -8,6 +8,11 @@ import {
 
 import { supabase } from "@/lib/supabase/client"
 
+import {
+  PRODUCTO_IMAGES_BUCKET,
+  uploadProductoImages,
+} from "@/lib/supabase/queries/producto-imagenes"
+
 import type {
   SupabaseImagenProducto,
 } from "@/lib/supabase/types"
@@ -15,9 +20,6 @@ import type {
 interface Props {
   productoId: number
 }
-
-const BUCKET =
-  "imagenes-productos"
 
 export function useImageUploader({
   productoId,
@@ -65,68 +67,6 @@ export function useImageUploader({
     loadImages()
   }, [loadImages])
 
-  const getFilePath = (
-    file: File
-  ) => {
-    const ext =
-      file.name
-        .split(".")
-        .pop()
-
-    return `productos/${productoId}/${crypto.randomUUID()}.${ext}`
-  }
-
-  const uploadSingleFile =
-    async (
-      file: File,
-      orden: number
-    ) => {
-      const path =
-        getFilePath(file)
-
-      const {
-        data,
-        error: uploadError,
-      } =
-        await supabase.storage
-          .from(BUCKET)
-          .upload(path, file)
-
-      if (uploadError) {
-        throw uploadError
-      }
-
-      const {
-        data: {
-          publicUrl,
-        },
-      } =
-        supabase.storage
-          .from(BUCKET)
-          .getPublicUrl(
-            data.path
-          )
-
-      const {
-        error: dbError,
-      } = await supabase
-        .from(
-          "imagenes_producto"
-        )
-        .insert({
-          producto_id:
-            productoId,
-
-          url: publicUrl,
-
-          orden,
-        })
-
-      if (dbError) {
-        throw dbError
-      }
-    }
-
   const uploadFiles =
     async (files: File[]) => {
       const validFiles =
@@ -159,19 +99,10 @@ export function useImageUploader({
               )
             : 0
 
-        await Promise.all(
-          validFiles.map(
-            (
-              file,
-              index
-            ) =>
-              uploadSingleFile(
-                file,
-                maxOrden +
-                  index +
-                  1
-              )
-          )
+        await uploadProductoImages(
+          productoId,
+          validFiles,
+          maxOrden
         )
 
         await loadImages()
@@ -193,7 +124,7 @@ export function useImageUploader({
       try {
         const path =
           image.url.split(
-            `/${BUCKET}/`
+            `/${PRODUCTO_IMAGES_BUCKET}/`
           )[1]
 
         await Promise.all([
@@ -206,7 +137,7 @@ export function useImageUploader({
 
           path
             ? supabase.storage
-                .from(BUCKET)
+                .from(PRODUCTO_IMAGES_BUCKET)
                 .remove([path])
             : Promise.resolve(),
         ])

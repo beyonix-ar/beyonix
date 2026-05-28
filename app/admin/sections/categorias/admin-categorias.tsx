@@ -7,6 +7,7 @@ import type {
 } from "@/lib/supabase/types"
 
 import { useCategorias } from "@/hooks/use-categorias"
+import { useProductos } from "@/hooks/use-productos"
 
 import { CategoriaForm } from "./categorias-form"
 import { CategoriasTable } from "./categorias-table"
@@ -19,6 +20,9 @@ export function AdminCategorias() {
     deleteCategoria,
     reloadCategorias,
   } = useCategorias()
+
+  const { productos } =
+    useProductos()
 
   const [search, setSearch] =
     useState("")
@@ -40,6 +44,56 @@ export function AdminCategorias() {
         ),
       [categorias, search]
     )
+
+  const categoryStats =
+    useMemo(() => {
+      const stats = new Map<
+        number,
+        {
+          articulos: number
+          stock: number
+        }
+      >()
+
+      productos.forEach((producto) => {
+        if (!producto.categoria_id) {
+          return
+        }
+
+        const current =
+          stats.get(
+            producto.categoria_id
+          ) || {
+            articulos: 0,
+            stock: 0,
+          }
+
+        const variantes =
+          producto.producto_variantes || []
+
+        const stock =
+          variantes.length
+            ? variantes.reduce(
+                (total, variante) =>
+                  total +
+                  (variante.stock ?? 0),
+                0
+              )
+            : producto.stock
+
+        stats.set(
+          producto.categoria_id,
+          {
+            articulos:
+              current.articulos + 1,
+            stock:
+              current.stock + stock,
+          }
+        )
+      })
+
+      return stats
+    }, [productos])
 
   const handleSaved =
     async () => {
@@ -77,6 +131,9 @@ export function AdminCategorias() {
       <CategoriasTable
         categorias={
           categoriasFiltradas
+        }
+        categoryStats={
+          categoryStats
         }
         loading={loading}
         onEdit={setEditando}

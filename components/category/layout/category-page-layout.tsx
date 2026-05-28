@@ -30,6 +30,7 @@ export function CategoryPageLayout({
     addToCart,
     removeFromCart,
     decreaseQuantity,
+    getQuantity,
     isInCart,
     openCart,
   } = useCart()
@@ -68,7 +69,7 @@ export function CategoryPageLayout({
 
   return (
     <section className="relative min-h-screen overflow-visible text-white">
-      <div className="absolute inset-0 -z-10 h-full w-full [background:radial-gradient(70%_50%_at_50%_0%,rgba(17,42,67,0.5)_0%,#000000_85%)]" />
+      <div className="absolute inset-0 -z-10 h-full w-full beyonix-category-radial-bg" />
 
       <div className="global-search-wrapper absolute left-0 right-0 top-24 z-40">
         <GlobalSearchBar
@@ -88,7 +89,7 @@ export function CategoryPageLayout({
               {title}
             </h1>
 
-            <p className="mt-4 text-lg text-white/60 lg:text-xl">
+            <p className="mt-4 text-lg text-white/70 lg:text-xl">
               {description}
             </p>
           </div>
@@ -106,12 +107,6 @@ export function CategoryPageLayout({
         products={filteredProducts}
         onOpenPreview={openDetails}
       />
-
-      <footer className="border-t border-white/10 py-8">
-        <div className="container mx-auto px-4 text-sm text-white/50 lg:px-8">
-          © 2026 BEYONIX. Todos los derechos reservados.
-        </div>
-      </footer>
 
       <ProductDetailsModal
         open={isOpen}
@@ -149,6 +144,14 @@ export function CategoryPageLayout({
                 selectedColor
               )
             : false
+        }
+        cartQuantity={
+          product
+            ? getQuantity(
+                product.id,
+                selectedColor
+              )
+            : 0
         }
       />
     </section>

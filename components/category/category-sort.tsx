@@ -46,26 +46,30 @@ export function CategorySort({
       ref={wrapperRef}
       className="relative flex items-center gap-3"
     >
-      <span className="text-sm font-medium tracking-wide text-white/60">
+      <span className="text-sm font-medium tracking-wide text-white/70">
         Filtrar por:
       </span>
 
       <div className="relative">
         <button
           type="button"
+          aria-label="Abrir orden de categoria"
+          title="Ordenar productos"
           onClick={() => setIsOpen((prev) => !prev)}
           className="flex min-w-180px items-center justify-between rounded-2xl border border-white/10 bg-black/60 px-5 py-2 text-sm font-medium text-white backdrop-blur-md transition hover:border-white/20"
         >
           <span>{selected.label}</span>
-          <span className="ml-4 text-white/70">▼</span>
+          <span className="ml-4 text-white/80">▼</span>
         </button>
 
         {isOpen && (
-          <div className="absolute right-0 mt-2 w-full overflow-hidden rounded-lg border border-white/10 bg-[#112A43]/95 backdrop-blur-xl shadow-2xl z-50">
+          <div className="absolute right-0 mt-2 w-full overflow-hidden rounded-lg border border-white/10 bg-beyonix-blue/95 backdrop-blur-xl shadow-2xl z-50">
             {options.map((option) => (
               <button
                 key={option.value}
                 type="button"
+                aria-label={`Ordenar por ${option.label}`}
+                title={`Ordenar por ${option.label}`}
                 onClick={() => {
                   onSortChange(option.value)
                   setIsOpen(false)

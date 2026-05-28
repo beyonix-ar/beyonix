@@ -1,10 +1,14 @@
 "use client"
 
 import { productColors } from "@/lib/product-colors"
-import type { ProductItem } from "@/components/products/product-details"
+
+interface ProductColor {
+  name: string
+  value: string
+}
 
 interface ProductCardColorsProps {
-  colors: ProductItem["colors"]
+  colors: ProductColor[]
   selectedIndex: number
   onSelectColor: (index: number) => void
 }
@@ -31,7 +35,7 @@ export function ProductCardColors({
             ] || "bg-white"
           } ${
             selectedIndex === index
-              ? "border-[#4A90B8] ring-2 ring-[#4A90B8]/50 ring-offset-1 ring-offset-[#0A0A0A]"
+              ? "border-beyonix-cyan ring-2 ring-beyonix-cyan/50 ring-offset-1 ring-offset-beyonix-surface"
               : "border-white/15 hover:border-white/40"
           }`}
         />

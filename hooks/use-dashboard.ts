@@ -7,7 +7,6 @@ import {
 } from "react"
 
 import type {
-  SupabaseProducto,
   SupabasePedido,
   SupabaseProfile,
 } from "@/lib/supabase/types"
@@ -18,6 +17,7 @@ import {
   getRecentOrders,
   getRecentClients,
   getTotalRevenue,
+  type LowStockItem,
   type DashboardStats,
 } from "@/lib/supabase/queries/dashboard"
 
@@ -28,7 +28,7 @@ export function useDashboard() {
     )
 
   const [lowStock, setLowStock] =
-    useState<SupabaseProducto[]>([])
+    useState<LowStockItem[]>([])
 
   const [recentOrders, setRecentOrders] =
     useState<SupabasePedido[]>([])

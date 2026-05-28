@@ -1,101 +1,67 @@
-"use client"
-
 import Image from "next/image"
 import { Minus, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { ProductItem } from "@/components/products/product-details"
-import { productColors } from "@/lib/product-colors"
-
-type CartItem = {
-  product?: ProductItem
-  id?: number
-  name?: string
-  price?: number
-  image?: string
-  color?: string
-  quantity: number
-}
+import type { CartItem } from "@/context/cart-context"
 
 interface Props {
   item: CartItem
-  onUpdateQuantity: (
-    productId: number,
-    color: string,
-    quantity: number
-  ) => void
+  onUpdateQuantity: (productId: number, color: string, quantity: number) => void
   onRemove: (productId: number, color: string) => void
 }
 
-export function CartItemRow({
-  item,
-  onUpdateQuantity,
-  onRemove,
-}: Props) {
-  const productId = item.product?.id ?? item.id
-  const name = item.product?.name ?? item.name ?? "Producto"
-  const price = item.product?.price ?? item.price ?? 0
+const formatPrice = (price: number) =>
+  new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 0,
+  }).format(price)
 
-  // 🔥 COLOR VALUE (solo UI)
-  const colorValue =
-    item.product?.colors?.find((c) => c.name === item.color)?.value ||
-    item.color ||
-    "default"
-
-  // 🔥 imagen segura
-  const image =
-    item.image ??
-    item.product?.colors?.find((c) => c.value === colorValue)?.images?.[0] ??
-    "/placeholder.png"
-
-  // 🔥 nombre lindo del color
-  const colorName =
-    item.product?.colors?.find((c) => c.value === colorValue)?.name ||
-    item.color ||
-    "Color"
-
-  // 🔥 COLOR REAL (lógica carrito)
-  const cartColor = item.color ?? "default"
-
-  if (!productId) return null
+export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
+  const { product, color, image, quantity, variantName, colorHex } = item
+  const price = product.precio
+  const colorName = variantName || (color !== "default" ? color : null)
+  const hasColor = Boolean(colorHex)
 
   return (
-    <div className="flex gap-4">
-      {/* Imagen */}
-      <div className="relative size-20 rounded-lg overflow-hidden bg-white shrink-0 p-2">
+    <div className="flex gap-4 rounded-xl border border-white/6 bg-white/2 p-3">
+      <div className="relative size-20 shrink-0 overflow-hidden rounded-lg bg-white p-2">
         <Image
-          src={image}
-          alt={name}
+          src={image || "/placeholder.svg"}
+          alt={product.nombre}
           fill
           className="object-cover"
         />
       </div>
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <h4 className="text-sm font-medium line-clamp-2">
-          {name}
-        </h4>
+      <div className="min-w-0 flex-1">
+        <div className="grid grid-cols-product-cart gap-x-3 gap-y-1 text-sm">
+          <span className="text-white/55">Producto:</span>
+          <h4 className="line-clamp-2 font-semibold text-white">
+            {product.nombre}
+          </h4>
 
-        <p className="text-sm text-white/80 mt-1">
-          ${price}
-        </p>
+          <span className="text-white/55">Precio:</span>
+          <p className="font-semibold text-white/90">{formatPrice(price)}</p>
 
-        {/* COLOR */}
-        <div className="flex items-center gap-2 mt-1">
-          <span
-            className={`size-3 rounded-full border border-white/20 ${
-              productColors[
-                colorValue as keyof typeof productColors
-              ] || "bg-white"
-            }`}
-          />
-          <span className="text-xs text-white/60">
-            {colorName}
-          </span>
+          <span className="text-white/55">Unidades:</span>
+          <p className="font-semibold text-white">x{quantity}</p>
         </div>
 
-        <div className="flex items-center justify-between mt-2">
-          {/* Cantidad */}
+        {colorName && (
+          <div className="mt-1 flex items-center gap-2">
+            {hasColor && (
+              <span
+                style={{
+                  backgroundColor: colorHex ?? undefined,
+                }}
+                className="size-3 rounded-full border border-white/20"
+              />
+            )}
+            <span className="text-xs capitalize text-white/70">{colorName}</span>
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -103,20 +69,15 @@ export function CartItemRow({
               size="icon"
               className="size-8"
               aria-label="Disminuir cantidad"
-              onClick={() =>
-                onUpdateQuantity(
-                  productId,
-                  cartColor,
-                  item.quantity - 1
-                )
-              }
-              disabled={item.quantity <= 1}
+              title="Disminuir cantidad"
+              onClick={() => onUpdateQuantity(product.id, color, quantity - 1)}
+              disabled={quantity <= 1}
             >
               <Minus className="size-3" />
             </Button>
 
-            <span className="text-sm font-medium w-6 text-center">
-              {item.quantity}
+            <span className="w-6 text-center text-sm font-medium text-white">
+              {quantity}
             </span>
 
             <Button
@@ -125,28 +86,21 @@ export function CartItemRow({
               size="icon"
               className="size-8"
               aria-label="Aumentar cantidad"
-              onClick={() =>
-                onUpdateQuantity(
-                  productId,
-                  cartColor,
-                  item.quantity + 1
-                )
-              }
+              title="Aumentar cantidad"
+              onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
             >
               <Plus className="size-3" />
             </Button>
           </div>
 
-          {/* Eliminar */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="size-8 text-muted-foreground hover:text-destructive"
             aria-label="Eliminar producto"
-            onClick={() =>
-              onRemove(productId, cartColor)
-            }
+            title="Eliminar producto"
+            onClick={() => onRemove(product.id, color)}
           >
             <Trash2 className="size-4" />
           </Button>

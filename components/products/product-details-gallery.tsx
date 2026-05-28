@@ -57,7 +57,7 @@ export function ProductDetailsGallery({
   }, [safeIndex])
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0a0a0a]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-beyonix-surface">
       <div className="relative flex flex-1 items-center justify-center px-4">
         {images.length > 1 && (
           <button
@@ -121,7 +121,7 @@ export function ProductDetailsGallery({
 
       {images.length > 1 && (
         <div className="flex shrink-0 flex-col items-center gap-3 pb-6 pt-3">
-          <span className="tabular-nums text-[13px] font-medium tracking-widest text-white/85">
+          <span className="tabular-nums text-13px font-medium tracking-widest text-white/85">
             {safeIndex + 1} /{" "}
             {images.length}
           </span>

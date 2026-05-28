@@ -21,6 +21,9 @@ import type {
 import { getFeaturedProductos } from "@/lib/supabase/queries/store"
 
 import { getProductDiscount } from "@/lib/store-config"
+import {
+  getDefaultVariantOption,
+} from "@/lib/products/product-variants"
 
 interface ProductsSectionProps {
   onAddToCart: (
@@ -59,12 +62,12 @@ export function ProductsSection({
   return (
     <section
       id="productos"
-      className="scroll-mt-20 bg-[#030303] py-16 lg:py-24"
+      className="scroll-mt-20 bg-beyonix-section py-16 lg:py-24"
     >
       <div className="container mx-auto px-4 lg:px-8">
         <div className="mb-12 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="mb-2 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
+            <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
               Destacados
             </p>
 
@@ -75,7 +78,7 @@ export function ProductsSection({
 
           <Link
             href="/productos"
-            className="inline-flex h-10 items-center gap-2 self-start rounded-xl border border-white/15 px-5 text-sm font-medium text-white/70 transition-colors hover:border-white/30 hover:text-white lg:self-auto"
+            className="inline-flex h-10 items-center gap-2 self-start rounded-xl border border-white/15 px-5 text-sm font-medium text-white/80 transition-colors hover:border-white/30 hover:text-white lg:self-auto"
           >
             Ver todos los
             productos
@@ -102,19 +105,18 @@ export function ProductsSection({
                       discount)
                 )
 
+              const defaultVariant =
+                getDefaultVariantOption(product)
+
               const image =
-                product
-                  .imagenes_producto?.[0]
-                  ?.url ||
-                product.imagen_principal ||
-                "/placeholder.png"
+                defaultVariant.images[0]
 
               return (
                 <article
                   key={
                     product.id
                   }
-                  className="group overflow-hidden rounded-2xl border border-white/6 bg-[#0A0A0A] transition-all duration-300 hover:border-white/12 hover:shadow-xl hover:shadow-black/50"
+                  className="group overflow-hidden rounded-2xl border border-white/6 bg-beyonix-surface transition-all duration-300 hover:border-white/12 hover:shadow-xl hover:shadow-black/50"
                 >
                   <div className="relative aspect-square overflow-hidden bg-white">
                     <Image
@@ -128,7 +130,7 @@ export function ProductsSection({
                   </div>
 
                   <div className="flex flex-col p-4">
-                    <p className="truncate text-10px font-semibold uppercase tracking-[0.2em] text-white/35">
+                    <p className="truncate text-10px font-semibold uppercase tracking-widest text-white/45">
                       {
                         product
                           .categorias
@@ -136,7 +138,7 @@ export function ProductsSection({
                       }
                     </p>
 
-                    <h3 className="mt-1.5 min-h-44px line-clamp-2 text-15px font-semibold leading-[1.375rem] text-white">
+                    <h3 className="mt-1.5 min-h-44px line-clamp-2 text-15px font-semibold leading-product-title text-white">
                       {
                         product.nombre
                       }
@@ -168,7 +170,7 @@ export function ProductsSection({
                         </div>
 
                         {hasSale && (
-                          <p className="mt-1 text-13px leading-none text-white/35 line-through">
+                          <p className="mt-1 text-13px leading-none text-white/45 line-through">
                             {formatPrice(
                               product.precio
                             )}
@@ -183,7 +185,7 @@ export function ProductsSection({
                         onClick={() =>
                           onAddToCart(
                             product,
-                            "default",
+                            defaultVariant.value,
                             image
                           )
                         }

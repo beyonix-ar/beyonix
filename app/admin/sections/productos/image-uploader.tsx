@@ -66,22 +66,22 @@ export function ImageUploader({
         }
         className={`flex h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed transition-colors ${
           dragging
-            ? "border-[#4A90B8] bg-[#112A43]/30"
+            ? "border-beyonix-cyan bg-beyonix-blue/30"
             : "border-white/10 bg-white/2 hover:border-white/20"
         }`}
       >
         {uploading ? (
-          <Loader2 className="size-7 animate-spin text-white/40" />
+          <Loader2 className="size-7 animate-spin text-white/50" />
         ) : (
           <>
             <Upload className="size-6 text-white/25" />
 
             <div className="text-center">
-              <p className="text-sm font-medium text-white/65">
+              <p className="text-sm font-medium text-white/75">
                 Arrastrá imágenes acá
               </p>
 
-              <p className="mt-1 text-xs text-white/30">
+              <p className="mt-1 text-xs text-white/40">
                 o hacé click para
                 seleccionar
               </p>
@@ -121,7 +121,7 @@ export function ImageUploader({
           <div className="rounded-2xl border border-white/6 bg-white/2 px-5 py-10 text-center">
             <ImageIcon className="mx-auto mb-3 size-8 text-white/15" />
 
-            <p className="text-sm text-white/45">
+            <p className="text-sm text-white/55">
               No hay imágenes
               cargadas.
             </p>
@@ -133,7 +133,7 @@ export function ImageUploader({
           {imagenes.map((img) => (
             <div
               key={img.id}
-              className="group relative aspect-square overflow-hidden rounded-2xl border border-white/7 bg-[#111]"
+              className="group relative aspect-square overflow-hidden rounded-2xl border border-white/7 bg-beyonix-surface-3"
             >
               <img
                 alt=""

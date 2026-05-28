@@ -1,5 +1,7 @@
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
+export type ProductItem = SupabaseProducto
+
 export interface ProductVariant {
   name: string
   value: string

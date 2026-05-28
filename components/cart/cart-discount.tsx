@@ -17,7 +17,7 @@ export function CartDiscount({ discount, label }: Props) {
 
   return (
     <div className="flex justify-between text-sm items-center">
-      <span className="text-white/40 flex items-center gap-2">
+      <span className="text-white/50 flex items-center gap-2">
         Descuento
         {label && (
           <span className="text-9px text-emerald-400/80 tracking-wide">

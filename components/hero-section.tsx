@@ -12,7 +12,7 @@ const trustItems = [
 
 export function HeroSection() {
   return (
-    <section className="relative min-h-[92vh] flex items-center overflow-hidden pt-20">
+    <section className="relative min-h-92vh flex items-center overflow-hidden pt-20">
 
       {/* Fondo */}
       <div className="absolute inset-0 z-0">
@@ -35,20 +35,20 @@ export function HeroSection() {
 
           {/* Label */}
           <div className="mb-6">
-            <span className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.25em] text-white/60 uppercase border border-white/15 px-4 py-2 rounded-full">
-              <span className="size-1.5 rounded-full bg-[#4A90B8] inline-block" />
+            <span className="inline-flex items-center gap-2 text-11px font-semibold tracking-widest text-white/70 uppercase border border-white/15 px-4 py-2 rounded-full">
+              <span className="size-1.5 rounded-full bg-beyonix-cyan inline-block" />
               Tecnología Premium
             </span>
           </div>
 
           {/* Título */}
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-white mb-6 leading-[1.1]">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight text-white mb-6 leading-1-1">
             Tecnología pensada{" "}
-            <span className="text-white/75">para tu comodidad</span>
+            <span className="text-white/85">para tu comodidad</span>
           </h1>
 
           {/* Subtítulo */}
-          <p className="text-base lg:text-lg text-white/55 max-w-md mb-10 leading-relaxed">
+          <p className="text-base lg:text-lg text-white/65 max-w-md mb-10 leading-relaxed">
             Descubrí productos premium que transforman tu espacio
             y mejoran tu día a día.
           </p>
@@ -77,10 +77,10 @@ export function HeroSection() {
               {trustItems.map((item, i) => (
                 <div key={item.title} className="flex items-center gap-6 sm:gap-0">
                   <div className="flex flex-col">
-                    <span className="text-[15px] font-semibold text-white">
+                    <span className="text-15px font-semibold text-white">
                       {item.title}
                     </span>
-                    <span className="text-[13px] text-white/50">
+                    <span className="text-13px text-white/60">
                       {item.sub}
                     </span>
                   </div>

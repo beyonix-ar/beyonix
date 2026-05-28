@@ -71,18 +71,18 @@ export function ProductPurchaseBox({
     <div className="px-8 py-5">
 
       <div className="mb-4 flex items-baseline gap-2.5">
-        <span className="text-[22px] font-bold tracking-tight text-white leading-none">
+        <span className="text-22px font-bold tracking-tight text-white leading-none">
           {formatPrice(price)}
         </span>
 
         {discount && (
-          <span className="text-[14px] font-semibold text-emerald-400 bg-emerald-500/[0.12] border border-emerald-500/25 px-1.5 py-0.5 rounded leading-none">
+          <span className="text-14px font-semibold text-emerald-400 bg-emerald-500/12 border border-emerald-500/25 px-1.5 py-0.5 rounded leading-none">
             -{discount}%
           </span>
         )}
 
         {originalPrice && originalPrice > price && (
-          <span className="text-[14px] text-white/65 line-through leading-none">
+          <span className="text-14px text-white/75 line-through leading-none">
             {formatPrice(originalPrice)}
           </span>
         )}
@@ -101,7 +101,7 @@ export function ProductPurchaseBox({
           aria-label="Ver carrito"
           title="Ver carrito"
           onClick={onViewCart}
-          className="w-full h-10 rounded-md border border-white/15 bg-white/[0.05] text-[14px] font-medium text-white/75 transition-colors hover:bg-white/[0.09] hover:text-white/85 hover:border-white/25 cursor-pointer"
+          className="w-full h-10 rounded-md border border-white/15 bg-white/5 text-14px font-medium text-white/85 transition-colors hover:bg-white/9 hover:text-white/85 hover:border-white/25 cursor-pointer"
         >
           Ver carrito
         </button>

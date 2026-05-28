@@ -15,6 +15,10 @@ import type {
 
 interface CategoriasRowProps {
   categoria: SupabaseCategoria
+  stats: {
+    articulos: number
+    stock: number
+  }
 
   isLast?: boolean
 
@@ -33,13 +37,14 @@ interface CategoriasRowProps {
 
 export function CategoriasRow({
   categoria,
+  stats,
   isLast,
   onEdit,
   onDelete,
 }: CategoriasRowProps) {
   return (
     <div
-      className={`grid grid-cols-[1fr_1fr_120px] gap-4 px-5 py-4 items-center transition-colors hover:bg-white/2 ${
+      className={`grid grid-cols-admin-categories gap-4 px-5 py-4 items-center transition-colors hover:bg-white/2 ${
         !isLast
           ? "border-b border-white/5"
           : ""
@@ -47,27 +52,44 @@ export function CategoriasRow({
     >
       {/* Nombre */}
       <div className="min-w-0">
-        <p className="text-sm font-medium text-white truncate">
+        <p className="truncate text-base font-bold text-white">
           {categoria.nombre}
         </p>
       </div>
 
       {/* Slug */}
       <div className="min-w-0">
-        <p className="text-sm text-white/45 truncate">
+        <p className="truncate text-sm font-medium text-white/70">
           {categoria.slug}
         </p>
       </div>
+
+      <p className="text-base font-bold text-white">
+        {stats.articulos}
+      </p>
+
+      <p
+        className={`text-base font-bold ${
+          stats.stock <= 0
+            ? "text-red-400"
+            : stats.stock < 5
+              ? "text-amber-400"
+              : "text-green-400"
+        }`}
+      >
+        {stats.stock}
+      </p>
 
       {/* Acciones */}
       <div className="flex items-center justify-end gap-1.5">
         <button
           type="button"
           title="Editar categoría"
+          aria-label="Editar categoría"
           onClick={() =>
             onEdit(categoria)
           }
-          className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/50 hover:text-white hover:border-white/20 transition-colors cursor-pointer"
+          className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/60 hover:text-white hover:border-white/20 transition-colors cursor-pointer"
         >
           <Pencil className="size-3.5" />
         </button>
@@ -75,10 +97,11 @@ export function CategoriasRow({
         <button
           type="button"
           title="Eliminar categoría"
+          aria-label="Eliminar categoría"
           onClick={() =>
             onDelete(categoria.id)
           }
-          className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/50 hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer"
+          className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/60 hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer"
         >
           <Trash2 className="size-3.5" />
         </button>

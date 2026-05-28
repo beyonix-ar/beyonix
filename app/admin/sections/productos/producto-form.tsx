@@ -1,5 +1,7 @@
 "use client"
 
+import { useState } from "react"
+
 import {
   ArrowLeft,
   Loader2,
@@ -11,7 +13,11 @@ import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
 
-import { ImageUploader } from "./image-uploader"
+import type {
+  DraftProductoVariante,
+} from "./types"
+
+import { ProductVariantsEditor } from "./product-variants-editor"
 import { useProductoForm } from "./use-producto-form"
 
 interface ProductoFormProps {
@@ -23,19 +29,25 @@ interface ProductoFormProps {
 }
 
 const inputCls =
-  "w-full rounded-2xl border border-white/8 bg-[#0A0A0A] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#1E4D7B]"
+  "w-full rounded-2xl border border-white/8 bg-beyonix-surface px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
 
 const labelCls =
-  "mb-2 block text-xs font-semibold uppercase tracking-[0.15em] text-white/40"
+  "mb-2 block text-xs font-semibold uppercase tracking-widest text-white/50"
 
 export function ProductoForm({
   producto,
   onSaved,
   onCancel,
 }: ProductoFormProps) {
+  const [
+    draftVariants,
+    setDraftVariants,
+  ] = useState<DraftProductoVariante[]>([])
+
   const {
     form,
     error,
+    success,
     saving,
     savedId,
     categorias,
@@ -50,11 +62,14 @@ export function ProductoForm({
     onSaved,
   })
 
+  const currentProductoId =
+    producto?.id || savedId
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <p className="mb-1 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
+          <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             Productos
           </p>
 
@@ -70,7 +85,7 @@ export function ProductoForm({
           title="Volver"
           aria-label="Volver"
           onClick={onCancel}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/60 transition-colors hover:text-white cursor-pointer"
+          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/70 transition-colors hover:text-white cursor-pointer"
         >
           <ArrowLeft className="size-4" />
 
@@ -82,9 +97,14 @@ export function ProductoForm({
         onSubmit={(e) => {
           e.preventDefault()
 
-          submit()
+          submit({
+            draftVariants,
+            onDraftSaved: () => {
+              setDraftVariants([])
+            },
+          })
         }}
-        className="space-y-6 rounded-3xl border border-white/7 bg-[#0A0A0A] p-6"
+        className="space-y-6 rounded-3xl border border-white/7 bg-beyonix-surface p-6"
       >
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -158,7 +178,7 @@ export function ProductoForm({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           {[
             {
               id: "precio",
@@ -168,10 +188,6 @@ export function ProductoForm({
               id: "precio_anterior",
               label:
                 "Precio anterior",
-            },
-            {
-              id: "stock",
-              label: "Stock",
             },
           ].map((field) => (
             <div key={field.id}>
@@ -240,6 +256,25 @@ export function ProductoForm({
           </select>
         </div>
 
+        <div>
+          <label className={labelCls}>
+            Variantes
+          </label>
+
+          <ProductVariantsEditor
+            productoId={
+              currentProductoId ||
+              undefined
+            }
+            draftVariants={
+              draftVariants
+            }
+            onDraftVariantsChange={
+              setDraftVariants
+            }
+          />
+        </div>
+
         <div className="flex gap-8">
           {[
             {
@@ -249,7 +284,7 @@ export function ProductoForm({
               active:
                 form.destacado,
               color:
-                "text-[#4A90B8]",
+                "text-beyonix-cyan",
             },
             {
               key: "activo",
@@ -283,34 +318,28 @@ export function ProductoForm({
                   className={`size-6 ${toggle.color}`}
                 />
               ) : (
-                <ToggleLeft className="size-6 text-white/35" />
+                <ToggleLeft className="size-6 text-white/45" />
               )}
 
-              <span className="text-sm text-white/70">
+              <span className="text-sm text-white/80">
                 {toggle.label}
               </span>
             </button>
           ))}
         </div>
 
-        {savedId && (
-          <div>
-            <label
-              className={labelCls}
-            >
-              Imágenes
-            </label>
-
-            <ImageUploader
-              productoId={savedId}
-            />
-          </div>
-        )}
-
         {error && (
           <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
             <p className="text-sm text-red-400">
               {error}
+            </p>
+          </div>
+        )}
+
+        {success && (
+          <div className="rounded-2xl border border-green-500/20 bg-green-500/8 px-4 py-3">
+            <p className="text-sm text-green-300">
+              {success}
             </p>
           </div>
         )}
@@ -327,6 +356,8 @@ export function ProductoForm({
               <Loader2 className="size-4 animate-spin" />
             ) : producto ? (
               "Guardar cambios"
+            ) : savedId ? (
+              "Finalizar producto"
             ) : (
               "Crear producto"
             )}
@@ -337,7 +368,7 @@ export function ProductoForm({
             title="Cancelar"
             aria-label="Cancelar"
             onClick={onCancel}
-            className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/60 transition-colors hover:text-white cursor-pointer"
+            className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
           >
             Cancelar
           </button>

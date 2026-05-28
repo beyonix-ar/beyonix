@@ -36,12 +36,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Package managers
-pnpm-lock.yaml
-
-# Vercel
-.vercel/
-
 # Editor / local config
 .vs/
 .vscode/

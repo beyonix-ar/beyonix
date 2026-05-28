@@ -98,13 +98,18 @@ export function usePedidos() {
     useCallback(
       async (
         id: number,
-        estado: string
+        estado: string,
+        tracking?: {
+          tracking_number?: string | null
+          tracking_url?: string | null
+        }
       ) => {
         try {
           const updated =
             await updatePedidoEstado(
               id,
-              estado
+              estado,
+              tracking
             )
 
           setPedidos((prev) =>

@@ -120,7 +120,7 @@ export function ProductDetailsModal({
         className="absolute inset-0"
       />
 
-      <div className="relative z-10 h-[90vh] w-full max-w-6xl overflow-hidden rounded-2xl border border-white/[0.12] bg-[#0a0a0a] shadow-[0_32px_80px_rgba(0,0,0,0.8)] lg:grid lg:grid-cols-[55fr_45fr] lg:items-stretch">
+      <div className="relative z-10 h-90vh w-full max-w-6xl overflow-hidden rounded-2xl border border-white/12 bg-beyonix-surface shadow-beyonix-modal lg:grid lg:grid-cols-product-modal lg:items-stretch">
         <button
           type="button"
           aria-label="Cerrar detalle del producto"
@@ -140,7 +140,7 @@ export function ProductDetailsModal({
           onSelectImage={onSelectImage}
         />
 
-        <div className="absolute inset-y-0 left-[55%] hidden w-px bg-white/[0.08] lg:block" />
+        <div className="absolute inset-y-0 left-55pct hidden w-px bg-white/8 lg:block" />
 
         <ProductDetailsPanel
           product={product}

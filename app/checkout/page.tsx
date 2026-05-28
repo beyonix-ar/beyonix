@@ -6,6 +6,7 @@ import {
 } from "react"
 
 import Image from "next/image"
+import Link from "next/link"
 
 import {
   useRouter,
@@ -13,17 +14,18 @@ import {
 
 import {
   ArrowLeft,
-  Building2,
-  CheckCircle2,
-  CreditCard,
-  Shield,
   Smartphone,
-  Truck,
 } from "lucide-react"
 
 import {
   Button,
 } from "@/components/ui/button"
+import {
+  useAuth,
+} from "@/context/auth-context"
+import {
+  useCart,
+} from "@/context/cart-context"
 
 import {
   Input,
@@ -38,32 +40,22 @@ import {
 } from "@/components/ui/separator"
 
 import {
-  createOrder,
-} from "@/lib/orders/create-order"
+  reserveCartStock,
+} from "@/lib/cart/stock-reservations"
 
 import {
-  FREE_SHIPPING_MIN,
-  getProductDiscount,
-  SHIPPING_COST,
-  TRANSFER_DISCOUNT,
-  TRANSFER_DISCOUNT_LABEL,
-} from "@/lib/store-config"
+  calculateCartTotals,
+} from "@/lib/cart/cart-totals"
 
 import {
   cn,
 } from "@/lib/utils"
 
-interface CartItem {
-  id: number
-  name: string
-  price: number
-  image: string
-  quantity: number
-}
-
 function formatPrice(
   price: number
 ): string {
+  const safePrice = Number.isFinite(price) ? price : 0
+
   return new Intl.NumberFormat(
     "es-AR",
     {
@@ -71,48 +63,32 @@ function formatPrice(
       currency: "ARS",
       minimumFractionDigits: 0,
     }
-  ).format(price)
+  ).format(safePrice)
 }
 
 const paymentMethods = [
   {
     id: "mercadopago",
     name: "Mercado Pago",
-    description:
-      "Pagá con tu cuenta o tarjeta",
+    description: "Pagá con tu cuenta, tarjeta o dinero disponible",
     icon: Smartphone,
   },
-
-  {
-    id: "transfer",
-
-    name: "Transferencia Bancaria",
-
-    description: `CBU/Alias - ${TRANSFER_DISCOUNT_LABEL} de descuento`,
-
-    icon: Building2,
-  },
-
-  {
-    id: "card",
-
-    name: "Tarjeta de Crédito/Débito",
-
-    description:
-      "Visa, Mastercard, AMEX",
-
-    icon: CreditCard,
-  },
 ]
-
 export default function CheckoutPage() {
   const router = useRouter()
+  const {
+    user,
+    isLoading,
+  } = useAuth()
+  const {
+    cart: items,
+    cartSessionId,
+    clearCart,
+    isReady: isCartReady,
+  } = useCart()
 
   const [mounted, setMounted] =
     useState(false)
-
-  const [items, setItems] =
-    useState<CartItem[]>([])
 
   const [
     selectedPayment,
@@ -132,59 +108,76 @@ export default function CheckoutPage() {
       direccion: "",
     })
 
+  const [stockError, setStockError] =
+    useState("")
+  const [checkoutError, setCheckoutError] =
+    useState("")
+
   useEffect(() => {
     setMounted(true)
-
-    const savedCart =
-      localStorage.getItem(
-        "beyonix-cart"
-      )
-
-    if (!savedCart) return
-
-    try {
-      setItems(
-        JSON.parse(savedCart)
-      )
-    } catch {
-      setItems([])
-    }
   }, [])
 
-  const subtotal = items.reduce(
-    (sum, item) =>
-      sum +
-      Math.round(
-        item.price *
-          (1 -
-            getProductDiscount(
-              item.id
-            ))
-      ) *
-        item.quantity,
-    0
-  )
+  useEffect(() => {
+    if (!mounted || isLoading || user) return
 
-  const discount =
-    selectedPayment ===
-    "transfer"
-      ? Math.round(
-          subtotal *
-            TRANSFER_DISCOUNT
+    router.replace("/login?redirect=/checkout")
+  }, [isLoading, mounted, router, user])
+
+  useEffect(() => {
+    if (
+      !mounted ||
+      isLoading ||
+      !user ||
+      !isCartReady ||
+      !cartSessionId ||
+      items.length === 0
+    ) {
+      return
+    }
+
+    let cancelled = false
+
+    setStockError("")
+
+    reserveCartStock({
+      sessionId: cartSessionId,
+      items: items.map((item) => ({
+        productId: item.product.id,
+        quantity: item.quantity,
+        variantId: item.variantId,
+      })),
+    })
+      .then((result) => {
+        if (cancelled) return
+
+        if (!result.success) {
+          setStockError(
+            result.message ||
+              "No hay stock suficiente para reservar este carrito.",
+          )
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+
+        setStockError(
+          "No pudimos validar el stock del carrito. Probá nuevamente.",
         )
-      : 0
+      })
 
-  const discountedSubtotal =
-    subtotal - discount
+    return () => {
+      cancelled = true
+    }
+  }, [
+    cartSessionId,
+    isCartReady,
+    isLoading,
+    items,
+    mounted,
+    user,
+  ])
 
-  const shipping =
-    discountedSubtotal >=
-    FREE_SHIPPING_MIN
-      ? 0
-      : SHIPPING_COST
-
-  const total =
-    discountedSubtotal + shipping
+  const totals = calculateCartTotals(items)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement>
@@ -212,63 +205,47 @@ export default function CheckoutPage() {
     if (!isFormValid) return
 
     setIsProcessing(true)
+    setCheckoutError("")
 
     try {
-      const result =
-        await createOrder({
-          items: items.map(
-            (item) => ({
-              productId: item.id,
+      const response = await fetch("/api/mercadopago/create-preference", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reservationSessionId: cartSessionId,
+          customer: formData,
+          items: items.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+            variantId: item.variantId,
+            color: item.color,
+          })),
+        }),
+      })
 
-              quantity:
-                item.quantity,
+      const data = await response.json()
 
-              price: item.price,
-            })
-          ),
-        })
-
-      if (!result.success) {
-        throw new Error(
-          "No se pudo crear la orden"
+      if (!response.ok || !data.init_point) {
+        setCheckoutError(
+          data.error ||
+            "No pudimos completar la compra. Revisá el stock e intentá nuevamente.",
         )
+        return
       }
 
-      localStorage.setItem(
-        "beyonix-last-order",
-        JSON.stringify({
-          name: formData.nombre,
-
-          province:
-            formData.direccion,
-
-          approved: true,
-
-          canReview: true,
-        })
-      )
-
-      localStorage.removeItem(
-        "beyonix-cart"
-      )
-
-      router.push(
-        `/checkout/success?order=${result.orderId}`
-      )
-    } catch (error) {
-      console.error(error)
-
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Error al crear la orden"
+      clearCart()
+      window.location.href = data.init_point
+    } catch {
+      setCheckoutError(
+        "No pudimos completar la compra. Revisá el stock e intentá nuevamente.",
       )
     } finally {
       setIsProcessing(false)
     }
   }
-
-  if (!mounted) {
+  if (!mounted || isLoading || !user || !isCartReady) {
     return null
   }
 
@@ -277,33 +254,9 @@ export default function CheckoutPage() {
       <main className="min-h-screen bg-background">
         <div className="container mx-auto px-4 py-16 lg:py-24">
           <div className="max-w-md mx-auto text-center">
-            <div className="size-20 rounded-full bg-secondary flex items-center justify-center mx-auto mb-6">
-              <svg
-                className="size-10 text-muted-foreground"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                />
-              </svg>
-            </div>
-
             <h1 className="text-2xl font-bold text-foreground mb-4">
               Tu carrito está vacío
             </h1>
-
-            <p className="text-muted-foreground mb-8">
-              Agregá productos a tu
-              carrito antes de
-              continuar con el
-              checkout.
-            </p>
 
             <Button
               type="button"
@@ -328,8 +281,8 @@ export default function CheckoutPage() {
           <div className="flex items-center justify-between h-16 lg:h-20">
             <button
               type="button"
-              aria-label="Volver"
-              title="Volver"
+              aria-label="Volver a la tienda"
+              title="Volver a la tienda"
               onClick={() =>
                 router.push("/")
               }
@@ -342,9 +295,14 @@ export default function CheckoutPage() {
               </span>
             </button>
 
-            <span className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">
+            <Link
+              href="/"
+              aria-label="Ir al inicio de BEYONIX"
+              title="Ir al inicio de BEYONIX"
+              className="font-heading text-26px lg:text-28px font-bold tracking-tight text-foreground transition-colors hover:text-white/80"
+            >
               BEYONIX
-            </span>
+            </Link>
 
             <div className="w-20" />
           </div>
@@ -380,7 +338,6 @@ export default function CheckoutPage() {
                       <Input
                         id="nombre"
                         name="nombre"
-                        placeholder="Juan Pérez"
                         value={
                           formData.nombre
                         }
@@ -388,7 +345,6 @@ export default function CheckoutPage() {
                           handleInputChange
                         }
                         required
-                        className="bg-secondary border-border"
                       />
                     </div>
 
@@ -401,7 +357,6 @@ export default function CheckoutPage() {
                         id="email"
                         name="email"
                         type="email"
-                        placeholder="juan@email.com"
                         value={
                           formData.email
                         }
@@ -409,7 +364,6 @@ export default function CheckoutPage() {
                           handleInputChange
                         }
                         required
-                        className="bg-secondary border-border"
                       />
                     </div>
                   </div>
@@ -424,7 +378,6 @@ export default function CheckoutPage() {
                         id="telefono"
                         name="telefono"
                         type="tel"
-                        placeholder="+54 11 1234-5678"
                         value={
                           formData.telefono
                         }
@@ -432,20 +385,17 @@ export default function CheckoutPage() {
                           handleInputChange
                         }
                         required
-                        className="bg-secondary border-border"
                       />
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="direccion">
-                        Dirección de
-                        envío
+                        Dirección
                       </Label>
 
                       <Input
                         id="direccion"
                         name="direccion"
-                        placeholder="Av. Corrientes 1234, CABA"
                         value={
                           formData.direccion
                         }
@@ -453,7 +403,6 @@ export default function CheckoutPage() {
                           handleInputChange
                         }
                         required
-                        className="bg-secondary border-border"
                       />
                     </div>
                   </div>
@@ -473,12 +422,8 @@ export default function CheckoutPage() {
                           method.id
                         }
                         type="button"
-                        aria-label={
-                          method.name
-                        }
-                        title={
-                          method.name
-                        }
+                        aria-label={`Seleccionar ${method.name}`}
+                        title={`Seleccionar ${method.name}`}
                         onClick={() =>
                           setSelectedPayment(
                             method.id
@@ -519,47 +464,11 @@ export default function CheckoutPage() {
                             }
                           </p>
                         </div>
-
-                        <div
-                          className={cn(
-                            "size-5 rounded-full border-2 transition-colors",
-
-                            selectedPayment ===
-                              method.id
-                              ? "border-primary bg-primary"
-                              : "border-muted-foreground/30"
-                          )}
-                        >
-                          {selectedPayment ===
-                            method.id && (
-                            <CheckCircle2 className="size-full text-primary-foreground" />
-                          )}
-                        </div>
                       </button>
                     )
                   )}
                 </div>
               </section>
-
-              <div className="flex flex-wrap items-center justify-center gap-6 py-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Shield className="size-5" />
-
-                  <span className="text-sm">
-                    Compra 100%
-                    segura
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Truck className="size-5" />
-
-                  <span className="text-sm">
-                    Envío a todo el
-                    país
-                  </span>
-                </div>
-              </div>
             </div>
 
             <div className="lg:col-span-1">
@@ -572,35 +481,54 @@ export default function CheckoutPage() {
                   {items.map(
                     (item) => (
                       <div
-                        key={item.id}
-                        className="flex gap-3"
+                        key={`${item.product.id}-${item.variantId ?? item.color}`}
+                        className="flex gap-3 rounded-xl border border-white/6 bg-white/2 p-3"
                       >
                         <div className="relative size-16 rounded-lg overflow-hidden bg-muted shrink-0">
                           <Image
                             fill
-                            src={item.image}
-                            alt={item.name}
+                            src={
+                              item.image
+                            }
+                            alt={
+                              item.product.nombre
+                                ? `${item.product.nombre} en carrito`
+                                : "Producto en carrito"
+                            }
                             className="object-cover"
                           />
-
-                          <span className="absolute -top-1 -right-1 size-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">
-                            {
-                              item.quantity
-                            }
-                          </span>
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground line-clamp-2">
+                          <p className="text-xs text-muted-foreground">
+                            Producto:
+                          </p>
+
+                          <p className="text-sm font-semibold text-foreground line-clamp-2">
                             {
-                              item.name
+                              item.product
+                                .nombre
                             }
                           </p>
 
+                          <p className="mt-1 text-sm text-foreground">
+                            Precio:{" "}
+                            <span className="font-semibold">
+                              {formatPrice(
+                                item.product
+                                  .precio
+                              )}
+                            </span>
+                          </p>
+
                           <p className="text-sm text-muted-foreground">
-                            {formatPrice(
-                              item.price
-                            )}
+                            Unidades:{" "}
+                            <span className="font-semibold text-foreground">
+                              x{item.quantity}{" "}
+                              {item.quantity === 1
+                                ? "unidad"
+                                : "unidades"}
+                            </span>
                           </p>
                         </div>
                       </div>
@@ -618,46 +546,43 @@ export default function CheckoutPage() {
 
                     <span className="text-foreground">
                       {formatPrice(
-                        subtotal
+                        totals.subtotal
                       )}
                     </span>
                   </div>
+
+                  {totals.discount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Descuento
+                      </span>
+
+                      <span className="font-semibold text-emerald-400">
+                        -{formatPrice(totals.discount)}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">
                       Envío
                     </span>
 
-                    <span className="text-foreground">
-                      {shipping ===
+                    <span
+                      className={
+                        totals.shipping === 0
+                          ? "font-semibold text-emerald-400"
+                          : "text-foreground"
+                      }
+                    >
+                      {totals.shipping ===
                       0
-                        ? "Gratis"
+                        ? "GRATIS"
                         : formatPrice(
-                            shipping
+                            totals.shipping
                           )}
                     </span>
                   </div>
-
-                  {discount >
-                    0 && (
-                    <div className="flex justify-between text-sm text-green-500">
-                      <span>
-                        Descuento
-                        transferencia (
-                        {
-                          TRANSFER_DISCOUNT_LABEL
-                        }
-                        )
-                      </span>
-
-                      <span>
-                        -
-                        {formatPrice(
-                          discount
-                        )}
-                      </span>
-                    </div>
-                  )}
 
                   <Separator />
 
@@ -668,11 +593,23 @@ export default function CheckoutPage() {
 
                     <span className="font-bold text-foreground text-xl">
                       {formatPrice(
-                        total
+                        totals.total
                       )}
                     </span>
                   </div>
                 </div>
+
+                {stockError && (
+                  <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3 text-sm text-red-300">
+                    {stockError}
+                  </div>
+                )}
+
+                {checkoutError && (
+                  <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3 text-sm text-red-300">
+                    {checkoutError}
+                  </div>
+                )}
 
                 <Button
                   type="submit"
@@ -683,44 +620,26 @@ export default function CheckoutPage() {
                   size="lg"
                   disabled={
                     !isFormValid ||
-                    isProcessing
+                    isProcessing ||
+                    Boolean(stockError)
                   }
                 >
-                  {isProcessing ? (
-                    <span className="flex items-center gap-2">
-                      <svg
-                        className="animate-spin size-4"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          className="opacity-25"
-                        />
-
-                        <path
-                          fill="currentColor"
-                          className="opacity-75"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-
-                      Procesando...
-                    </span>
-                  ) : (
-                    "Pagar ahora"
-                  )}
+                  {isProcessing
+                    ? "Procesando..."
+                    : "Pagar ahora"}
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center mt-4">
                   Al completar tu
                   compra aceptás
-                  nuestros términos y
-                  condiciones.
+                  nuestros{" "}
+                  <Link
+                    href="/terminos"
+                    className="font-medium text-foreground underline underline-offset-4 transition-colors hover:text-white"
+                  >
+                    términos y condiciones
+                  </Link>
+                  .
                 </p>
               </div>
             </div>

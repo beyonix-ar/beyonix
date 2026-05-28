@@ -1,18 +1,16 @@
 "use client"
 
 import SharedProductCard from "@/components/products/shared/shared-product-card"
-import type { ProductItem } from "@/components/products/product-details"
+import type { SupabaseProducto } from "@/lib/supabase/types"
 
 interface ProductsGridProps {
-  products: ProductItem[]
-  selectedColors: string[]
-  onOpenPreview: (product: ProductItem) => void
-  onAddToCart: (product: ProductItem, color: string) => void
+  products: SupabaseProducto[]
+  onOpenPreview: (product: SupabaseProducto) => void
+  onAddToCart: (product: SupabaseProducto, color: string, image?: string) => void
 }
 
 export function ProductsGrid({
   products,
-  selectedColors,
   onOpenPreview,
   onAddToCart,
 }: ProductsGridProps) {
@@ -22,7 +20,6 @@ export function ProductsGrid({
         <SharedProductCard
           key={product.id}
           product={product}
-          selectedColors={selectedColors}
           onOpenPreview={onOpenPreview}
           onAddToCart={onAddToCart}
         />

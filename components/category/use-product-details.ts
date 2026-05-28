@@ -7,6 +7,11 @@ import {
 } from "react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
+import {
+  DEFAULT_VARIANT_VALUE,
+  getDefaultVariantValue,
+  getProductImagesByVariant,
+} from "@/lib/products/product-variants"
 
 export function useProductDetails() {
   const [isOpen, setIsOpen] =
@@ -21,19 +26,18 @@ export function useProductDetails() {
     useState(0)
 
   const [selectedColor, setSelectedColor] =
-    useState("default")
+    useState(DEFAULT_VARIANT_VALUE)
 
   const images = useMemo(() => {
     if (!product) {
       return []
     }
 
-    return (
-      product.imagenes_producto?.map(
-        (image) => image.url
-      ) || ["/placeholder.png"]
+    return getProductImagesByVariant(
+      product,
+      selectedColor
     )
-  }, [product])
+  }, [product, selectedColor])
 
   const openDetails = useCallback(
     (
@@ -43,9 +47,7 @@ export function useProductDetails() {
 
       setSelectedImage(0)
 
-      setSelectedColor(
-        "default"
-      )
+      setSelectedColor(getDefaultVariantValue(nextProduct))
 
       setIsOpen(true)
     },

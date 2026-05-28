@@ -43,14 +43,14 @@ export function ProductsToolbar({
   }, [])
 
   return (
-    <div className="mb-5 flex items-center justify-between rounded-xl border border-white/[0.07] bg-[#0A0A0A] px-5 py-3.5">
+    <div className="mb-5 flex items-center justify-between rounded-xl border border-white/7 bg-beyonix-surface px-5 py-3.5">
 
       {/* Contador */}
       <div className="flex items-baseline gap-2">
         <span className="text-2xl font-bold tracking-tight text-white tabular-nums">
           {total}
         </span>
-        <span className="text-sm text-white/40">
+        <span className="text-sm text-white/50">
           {total === 1 ? "producto" : "productos"}
         </span>
       </div>
@@ -60,11 +60,12 @@ export function ProductsToolbar({
         <button
           type="button"
           aria-label="Ordenar productos"
+          title="Ordenar productos"
           onClick={() => setOpen(!open)}
           className={`flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm transition-all duration-150 cursor-pointer ${
             open
-              ? "border-[#1E4D7B] bg-[#0D2035] text-white"
-              : "border-white/10 bg-white/[0.04] text-white/70 hover:border-white/20 hover:text-white"
+              ? "border-beyonix-blue-light bg-beyonix-account-active text-white"
+              : "border-white/10 bg-white/4 text-white/80 hover:border-white/20 hover:text-white"
           }`}
         >
           <span className="font-medium">{selected}</span>
@@ -74,26 +75,28 @@ export function ProductsToolbar({
         </button>
 
         {open && (
-          <div className="absolute right-0 mt-2 w-44 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0D0D0D] shadow-2xl shadow-black/60 z-50">
+          <div className="absolute right-0 mt-2 w-44 overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface-2 shadow-2xl shadow-black/60 z-50">
             {options.map((option, i) => (
               <button
                 key={option.value}
                 type="button"
+                aria-label={`Ordenar por ${option.label}`}
+                title={`Ordenar por ${option.label}`}
                 onClick={() => {
                   setSortBy(option.value)
                   setOpen(false)
                 }}
                 className={`flex w-full items-center justify-between px-4 py-2.5 text-sm transition-colors cursor-pointer ${
-                  i < options.length - 1 ? "border-b border-white/[0.05]" : ""
+                  i < options.length - 1 ? "border-b border-white/5" : ""
                 } ${
                   option.value === sortBy
-                    ? "bg-[#112A43]/60 text-white"
-                    : "text-white/60 hover:bg-white/[0.04] hover:text-white"
+                    ? "bg-beyonix-blue/60 text-white"
+                    : "text-white/70 hover:bg-white/4 hover:text-white"
                 }`}
               >
                 {option.label}
                 {option.value === sortBy && (
-                  <Check className="size-3.5 text-[#4A90B8]" />
+                  <Check className="size-3.5 text-beyonix-cyan" />
                 )}
               </button>
             ))}

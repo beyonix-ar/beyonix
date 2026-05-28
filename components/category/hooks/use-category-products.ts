@@ -1,9 +1,9 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { ProductItem } from "../../products/product-details"
+import type { SupabaseProducto } from "@/lib/supabase/types"
 
-export function useCategoryProducts(products: ProductItem[]) {
+export function useCategoryProducts(products: SupabaseProducto[]) {
   const [search, setSearch] = useState("")
   const [sortBy, setSortBy] = useState("default")
 
@@ -11,7 +11,7 @@ export function useCategoryProducts(products: ProductItem[]) {
     const normalizedSearch = search.toLowerCase().trim()
 
     const filtered = products.filter((product) =>
-      product.name
+      product.nombre
         .toLowerCase()
         .includes(normalizedSearch)
     )
@@ -21,11 +21,11 @@ export function useCategoryProducts(products: ProductItem[]) {
     }
 
     if (sortBy === "price-asc") {
-      return [...filtered].sort((a, b) => a.price - b.price)
+      return [...filtered].sort((a, b) => a.precio - b.precio)
     }
 
     if (sortBy === "price-desc") {
-      return [...filtered].sort((a, b) => b.price - a.price)
+      return [...filtered].sort((a, b) => b.precio - a.precio)
     }
 
     return filtered

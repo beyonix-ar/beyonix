@@ -28,10 +28,10 @@ function StatCard({
   icon,
 }: StatCardProps) {
   return (
-    <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-5">
+    <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-5">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.15em] text-white/35 font-semibold mb-2">
+          <p className="text-xs uppercase tracking-widest text-white/45 font-semibold mb-2">
             {title}
           </p>
 
@@ -40,7 +40,7 @@ function StatCard({
           </h3>
         </div>
 
-        <div className="size-11 rounded-2xl bg-white/5 border border-white/6 flex items-center justify-center text-white/70">
+        <div className="size-11 rounded-2xl bg-white/5 border border-white/6 flex items-center justify-center text-white/80">
           {icon}
         </div>
       </div>
@@ -97,7 +97,7 @@ export function AdminDashboard() {
     <div className="p-8 space-y-6">
       {/* Header */}
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[#4A90B8] mb-1">
+        <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan mb-1">
           Dashboard
         </p>
 
@@ -129,7 +129,7 @@ export function AdminDashboard() {
         />
 
         <StatCard
-          title="ordenes"
+          title="Órdenes"
           value={
             stats.totalordenes
           }
@@ -150,8 +150,8 @@ export function AdminDashboard() {
       </div>
 
       {/* Revenue */}
-      <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-6">
-        <p className="text-xs uppercase tracking-[0.15em] text-white/35 font-semibold mb-2">
+      <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-6">
+        <p className="text-xs uppercase tracking-widest text-white/45 font-semibold mb-2">
           Facturación total
         </p>
 
@@ -163,7 +163,7 @@ export function AdminDashboard() {
       {/* Grid */}
       <div className="grid grid-cols-2 gap-6">
         {/* Low stock */}
-        <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-6">
+        <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-6">
           <div className="flex items-center gap-2 mb-5">
             <AlertTriangle className="size-4 text-amber-400" />
 
@@ -174,7 +174,7 @@ export function AdminDashboard() {
 
           <div className="space-y-3">
             {lowStock.length === 0 ? (
-              <p className="text-sm text-white/40">
+              <p className="text-sm text-white/50">
                 No hay productos con stock bajo.
               </p>
             ) : (
@@ -183,17 +183,40 @@ export function AdminDashboard() {
                   key={p.id}
                   className="flex items-center justify-between rounded-2xl border border-white/6 bg-white/2 px-4 py-3"
                 >
-                  <div>
-                    <p className="text-sm font-medium text-white">
-                      {p.nombre}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    {p.color_hex && (
+                      <span
+                        className="size-4 rounded-full border border-white/20"
+                        style={{
+                          backgroundColor:
+                            p.color_hex,
+                        }}
+                      />
+                    )}
 
-                    <p className="text-xs text-white/35 mt-1">
-                      Stock restante
-                    </p>
+                    <div>
+                      <p className="text-sm font-medium text-white">
+                        {p.tipo === "variante" &&
+                        p.producto_nombre
+                          ? p.producto_nombre
+                          : p.nombre}
+                      </p>
+
+                      <p className="text-xs text-white/45 mt-1">
+                        {p.tipo === "variante"
+                          ? `Variante: ${p.nombre}`
+                          : "Producto sin variantes"}
+                      </p>
+                    </div>
                   </div>
 
-                  <span className="text-sm font-semibold text-amber-400">
+                  <span
+                    className={`text-sm font-semibold ${
+                      p.stock <= 0
+                        ? "text-red-400"
+                        : "text-amber-400"
+                    }`}
+                  >
                     {p.stock}
                   </span>
                 </div>
@@ -203,19 +226,19 @@ export function AdminDashboard() {
         </div>
 
         {/* Recent orders */}
-        <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-6">
+        <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-6">
           <div className="flex items-center gap-2 mb-5">
-            <ShoppingCart className="size-4 text-[#4A90B8]" />
+            <ShoppingCart className="size-4 text-beyonix-cyan" />
 
             <h2 className="text-lg font-semibold text-white">
-              Últimos ordenes
+              Últimas órdenes
             </h2>
           </div>
 
           <div className="space-y-3">
             {recentOrders.length === 0 ? (
-              <p className="text-sm text-white/40">
-                No hay ordenes todavía.
+              <p className="text-sm text-white/50">
+                No hay órdenes todavía.
               </p>
             ) : (
               recentOrders.map((pedido) => (
@@ -228,7 +251,7 @@ export function AdminDashboard() {
                       Pedido #{pedido.id}
                     </p>
 
-                    <p className="text-xs text-white/35 mt-1">
+                    <p className="text-xs text-white/45 mt-1">
                       {pedido.estado}
                     </p>
                   </div>

@@ -240,7 +240,7 @@ export function ReviewsSection() {
 
         {isModalOpen && (
           <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-card border border-border rounded-xl w-full max-w-4xl max-h-[80vh] overflow-y-auto p-6 relative">
+            <div className="bg-card border border-border rounded-xl w-full max-w-4xl max-h-80vh overflow-y-auto p-6 relative">
               <Button
                 variant="ghost"
                 size="icon"

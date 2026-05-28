@@ -55,7 +55,7 @@ export function SiteHeader() {
           {/* ── Logo ── */}
           <Link
             href="/"
-            className="shrink-0 font-[Montserrat] text-[26px] lg:text-[28px] font-bold tracking-[-0.02em] uppercase text-white hover:text-white/90 transition-colors"
+            className="shrink-0 font-heading text-26px lg:text-28px font-bold tracking-tight uppercase text-white hover:text-white/90 transition-colors"
           >
             BEYONIX
           </Link>
@@ -64,14 +64,14 @@ export function SiteHeader() {
           <div className="hidden lg:flex items-center gap-8">
             <Link
               href="/"
-              className="text-sm font-medium text-white/70 hover:text-white transition-colors"
+              className="text-sm font-medium text-white/80 hover:text-white transition-colors"
             >
               Inicio
             </Link>
 
             <Link
               href="/productos"
-              className="text-sm font-medium text-white/70 hover:text-white transition-colors"
+              className="text-sm font-medium text-white/80 hover:text-white transition-colors"
             >
               Productos
             </Link>
@@ -80,8 +80,10 @@ export function SiteHeader() {
             <div ref={catRef} className="relative">
               <button
                 type="button"
+                aria-label="Abrir categorias"
+                title="Abrir categorias"
                 onClick={() => setCatOpen((v) => !v)}
-                className="flex items-center gap-1.5 text-sm font-medium text-white/70 hover:text-white transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 text-sm font-medium text-white/80 hover:text-white transition-colors cursor-pointer"
               >
                 Categorías
                 <ChevronDown
@@ -90,14 +92,14 @@ export function SiteHeader() {
               </button>
 
               {catOpen && (
-                <div className="absolute left-0 mt-3 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D0D] shadow-2xl shadow-black/60 z-50">
+                <div className="absolute left-0 mt-3 w-52 overflow-hidden rounded-xl border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60 z-50">
                   {categoryLinks.map((link, i) => (
                     <Link
                       key={link.href}
                       href={link.href}
                       onClick={() => setCatOpen(false)}
-                      className={`block px-4 py-3 text-sm text-white/65 hover:bg-white/5 hover:text-white transition-colors ${
-                        i < categoryLinks.length - 1 ? "border-b border-white/[6%]" : ""
+                      className={`block px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors ${
+                        i < categoryLinks.length - 1 ? "border-b border-white/6" : ""
                       }`}
                     >
                       {link.label}
@@ -106,7 +108,7 @@ export function SiteHeader() {
                   <Link
                     href="/categorias"
                     onClick={() => setCatOpen(false)}
-                    className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-[#4A90B8] hover:bg-white/5 transition-colors border-t border-white/[6%]"
+                    className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-beyonix-cyan hover:bg-white/5 transition-colors border-t border-white/6"
                   >
                     Ver todas →
                   </Link>
@@ -116,7 +118,7 @@ export function SiteHeader() {
 
             <Link
               href="/#contacto"
-              className="text-sm font-medium text-white/70 hover:text-white transition-colors"
+              className="text-sm font-medium text-white/80 hover:text-white transition-colors"
             >
               Contacto
             </Link>
@@ -131,26 +133,28 @@ export function SiteHeader() {
                 <>
                   <button
                     type="button"
+                    aria-label="Abrir menu de usuario"
+                    title="Abrir menu de usuario"
                     onClick={() => setUserOpen((v) => !v)}
-                    className="flex items-center gap-2 h-9 px-3 rounded-lg border border-white/[8%] bg-white/[3%] hover:bg-white/[6%] hover:border-white/15 transition-all cursor-pointer"
+                    className="flex items-center gap-2 h-9 px-3 rounded-lg border border-white/8 bg-white/3 hover:bg-white/6 hover:border-white/15 transition-all cursor-pointer"
                   >
-                    <div className="size-6 rounded-md bg-[#112A43] border border-[#1E4D7B]/50 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                    <div className="size-6 rounded-md bg-beyonix-blue border border-beyonix-blue-light/50 flex items-center justify-center text-10px font-bold text-white shrink-0">
                       {userInitials}
                     </div>
-                    <span className="text-sm font-medium text-white/80 max-w-[90px] truncate">
+                    <span className="text-sm font-medium text-white/80 max-w-90px truncate">
                       {user.name.split(" ")[0]}
                     </span>
                     <ChevronDown
-                      className={`size-3 text-white/40 transition-transform duration-200 ${userOpen ? "rotate-180" : ""}`}
+                      className={`size-3 text-white/50 transition-transform duration-200 ${userOpen ? "rotate-180" : ""}`}
                     />
                   </button>
 
                   {userOpen && (
-                    <div className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D0D] shadow-2xl shadow-black/60 z-50">
+                    <div className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60 z-50">
                       <Link
                         href="/cuenta"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/65 hover:bg-white/5 hover:text-white transition-colors border-b border-white/[6%]"
+                        className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors border-b border-white/6"
                       >
                         <User className="size-3.5 shrink-0" />
                         Mi cuenta
@@ -158,15 +162,17 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/65 hover:bg-white/5 hover:text-white transition-colors border-b border-white/[6%]"
+                        className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors border-b border-white/6"
                       >
                         <Package className="size-3.5 shrink-0" />
-                        Mis ordenes
+                        Mis órdenes
                       </Link>
                       <button
                         type="button"
+                        aria-label="Cerrar sesión"
+                        title="Cerrar sesión"
                         onClick={() => { logout(); setUserOpen(false) }}
-                        className="flex w-full items-center gap-2.5 px-4 py-3 text-sm text-white/65 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
+                        className="flex w-full items-center gap-2.5 px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
                       >
                         <LogOut className="size-3.5 shrink-0" />
                         Cerrar sesión
@@ -177,7 +183,7 @@ export function SiteHeader() {
               ) : (
                 <Link
                   href="/cuenta"
-                  className="flex items-center gap-2 h-9 px-3.5 rounded-lg border border-white/[8%] text-sm font-medium text-white/60 hover:text-white hover:border-white/20 transition-colors"
+                  className="flex items-center gap-2 h-9 px-3.5 rounded-lg border border-white/8 text-sm font-medium text-white/70 hover:text-white hover:border-white/20 transition-colors"
                 >
                   <User className="size-3.5" />
                   Iniciar sesión
@@ -190,12 +196,13 @@ export function SiteHeader() {
               type="button"
               onClick={openCart}
               aria-label="Abrir carrito"
-              className="relative flex items-center gap-3 h-10 pl-3 pr-4 rounded-xl border border-white/[8%] bg-white/[3%] hover:bg-white/[6%] hover:border-white/15 transition-all cursor-pointer"
+              title="Abrir carrito"
+              className="relative flex items-center gap-3 h-10 pl-3 pr-4 rounded-xl border border-white/8 bg-white/3 hover:bg-white/6 hover:border-white/15 transition-all cursor-pointer"
             >
               <ShoppingBag className="size-4.5 shrink-0 text-white/80" />
 
               <div className="hidden sm:flex flex-col items-start leading-none gap-0.5">
-                <span className="text-[10px] font-medium text-white/40 uppercase tracking-wide">
+                <span className="text-10px font-medium text-white/50 uppercase tracking-wide">
                   Tu carrito
                 </span>
                 <span className="text-sm font-bold text-white tabular-nums">
@@ -208,7 +215,7 @@ export function SiteHeader() {
               </div>
 
               {itemCount > 0 && (
-                <Badge className="absolute -top-1.5 -right-1.5 size-5 p-0 flex items-center justify-center text-[10px] font-bold bg-[#112A43] border border-[#1E4D7B] text-white rounded-full">
+                <Badge className="absolute -top-1.5 -right-1.5 size-5 p-0 flex items-center justify-center text-10px font-bold bg-beyonix-blue border border-beyonix-blue-light text-white rounded-full">
                   {itemCount}
                 </Badge>
               )}
@@ -218,8 +225,9 @@ export function SiteHeader() {
             <button
               type="button"
               onClick={() => setMobileOpen((v) => !v)}
-              aria-label="Abrir menú"
-              className="lg:hidden flex items-center justify-center size-10 rounded-lg text-white/70 hover:text-white hover:bg-white/8 transition-colors cursor-pointer"
+              aria-label="Abrir menu"
+              title="Abrir menu"
+              className="lg:hidden flex items-center justify-center size-10 rounded-lg text-white/80 hover:text-white hover:bg-white/8 transition-colors cursor-pointer"
             >
               {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
             </button>
@@ -228,7 +236,7 @@ export function SiteHeader() {
 
         {/* ── Mobile menu ── */}
         {mobileOpen && (
-          <div className="lg:hidden border-t border-white/[6%] py-4 space-y-1">
+          <div className="lg:hidden border-t border-white/6 py-4 space-y-1">
             {[
               { label: "Inicio", href: "/" },
               { label: "Productos", href: "/productos" },
@@ -239,26 +247,28 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileOpen(false)}
-                className="block px-2 py-3 text-sm font-medium text-white/70 hover:text-white transition-colors"
+                className="block px-2 py-3 text-sm font-medium text-white/80 hover:text-white transition-colors"
               >
                 {link.label}
               </Link>
             ))}
 
-            <div className="pt-2 border-t border-white/[6%] mt-2">
+            <div className="pt-2 border-t border-white/6 mt-2">
               {user ? (
                 <>
                   <Link
                     href="/cuenta"
                     onClick={() => setMobileOpen(false)}
-                    className="block px-2 py-3 text-sm font-medium text-white/70 hover:text-white transition-colors"
+                    className="block px-2 py-3 text-sm font-medium text-white/80 hover:text-white transition-colors"
                   >
                     Mi cuenta ({user.name.split(" ")[0]})
                   </Link>
                   <button
                     type="button"
+                    aria-label="Cerrar sesión"
+                    title="Cerrar sesión"
                     onClick={() => { logout(); setMobileOpen(false) }}
-                    className="block w-full text-left px-2 py-3 text-sm font-medium text-white/50 hover:text-white transition-colors cursor-pointer"
+                    className="block w-full text-left px-2 py-3 text-sm font-medium text-white/60 hover:text-white transition-colors cursor-pointer"
                   >
                     Cerrar sesión
                   </button>
@@ -267,7 +277,7 @@ export function SiteHeader() {
                 <Link
                   href="/cuenta"
                   onClick={() => setMobileOpen(false)}
-                  className="block px-2 py-3 text-sm font-medium text-[#4A90B8] hover:text-white transition-colors"
+                  className="block px-2 py-3 text-sm font-medium text-beyonix-cyan hover:text-white transition-colors"
                 >
                   Iniciar sesión / Registrarse
                 </Link>

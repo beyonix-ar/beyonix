@@ -10,7 +10,7 @@ interface ProductImageCarouselProps {
 }
 
 const arrowButtonClass =
-  "absolute top-1/2 -translate-y-1/2 z-10 size-10 rounded-full bg-[#112A43] hover:bg-[#163552] transition-colors duration-200 flex items-center justify-center shadow-lg"
+  "absolute top-1/2 -translate-y-1/2 z-10 size-10 rounded-full bg-beyonix-blue hover:bg-beyonix-blue-hover transition-colors duration-200 flex items-center justify-center shadow-lg"
 
 export function ProductImageCarousel({
   images,
@@ -35,7 +35,7 @@ export function ProductImageCarousel({
   }
 
   return (
-    <div className="product-card-image group relative bg-[#111111] overflow-hidden rounded-lg">
+    <div className="product-card-image group relative bg-beyonix-surface-3 overflow-hidden rounded-lg">
       <Image
         src={images[currentIndex]}
         alt={alt}
@@ -49,25 +49,27 @@ export function ProductImageCarousel({
           <button
             type="button"
             aria-label="Imagen anterior"
+            title="Imagen anterior"
             onClick={(e) => {
               e.stopPropagation()
               prevImage()
             }}
             className={`${arrowButtonClass} left-1`}
           >
-            <ChevronLeft className="size-6 text-white stroke-[2.8]" />
+            <ChevronLeft className="size-6 text-white stroke-2-8" />
           </button>
 
           <button
             type="button"
             aria-label="Imagen siguiente"
+            title="Imagen siguiente"
             onClick={(e) => {
               e.stopPropagation()
               nextImage()
             }}
             className={`${arrowButtonClass} right-1`}
           >
-            <ChevronRight className="size-6 text-white stroke-[2.8]" />
+            <ChevronRight className="size-6 text-white stroke-2-8" />
           </button>
         </>
       )}

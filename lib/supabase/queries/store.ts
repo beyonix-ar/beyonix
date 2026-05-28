@@ -8,7 +8,8 @@ import type {
 const PRODUCT_SELECT = `
   *,
   categorias(*),
-  imagenes_producto(*)
+  imagenes_producto(*),
+  producto_variantes(*)
 `
 
 export async function getStoreProductos() {

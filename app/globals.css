@@ -18,7 +18,7 @@
   --secondary: oklch(0.18 0 0);
   --secondary-foreground: oklch(0.98 0 0);
   --muted: oklch(0.15 0 0);
-  --muted-foreground: oklch(0.65 0 0);
+  --muted-foreground: oklch(0.75 0 0);
   --accent: oklch(0.22 0 0);
   --accent-foreground: oklch(0.98 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -54,7 +54,7 @@
   --secondary: oklch(0.18 0 0);
   --secondary-foreground: oklch(0.98 0 0);
   --muted: oklch(0.15 0 0);
-  --muted-foreground: oklch(0.65 0 0);
+  --muted-foreground: oklch(0.75 0 0);
   --accent: oklch(0.22 0 0);
   --accent-foreground: oklch(0.98 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -124,10 +124,116 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* ✅ TOKENS CUSTOM DE ALTURA */
+  --color-beyonix-page: #050505;
+  --color-beyonix-section: #030303;
+  --color-beyonix-surface: #0A0A0A;
+  --color-beyonix-surface-2: #0D0D0D;
+  --color-beyonix-surface-3: #111111;
+  --color-beyonix-surface-4: #0f0f0f;
+  --color-beyonix-blue: #112A43;
+  --color-beyonix-blue-light: #1E4D7B;
+  --color-beyonix-blue-hover: #163552;
+  --color-beyonix-cyan: #4A90B8;
+  --color-beyonix-sky: #8CC8F2;
+  --color-beyonix-focus: #3b82f6;
+  --color-beyonix-slider: #005E94;
+  --color-beyonix-account: #0A1624;
+  --color-beyonix-account-active: #0D2035;
+  --color-whatsapp: #25D366;
+  --color-product-azul-lavanda: #8797BF;
+  --color-product-verde-sage: #79A885;
+  --color-product-verde-aqua: #97DBC0;
+  --color-product-rosa-terracota: #CC7B5F;
+  --color-product-rosa-durazno: #D3876F;
+
+  /* Tokens custom de medidas */
+  --spacing-3px: 3px;
+  --spacing-55pct: 55%;
   --spacing-56px: 56px;
+  --spacing-78vh: 78vh;
+  --spacing-80vh: 80vh;
+  --spacing-90px: 90px;
+  --spacing-90vh: 90vh;
+  --spacing-92vh: 92vh;
   --spacing-220px: 220px;
   --spacing-250px: 250px;
+
+  --text-12-5px: 12.5px;
+  --text-13-5px: 13.5px;
+  --text-26px: 26px;
+  --text-28px: 28px;
+
+  --shadow-beyonix-color-selected: 0 0 10px rgba(74, 144, 184, 0.3);
+  --shadow-beyonix-slider: 0 0 6px rgba(0, 174, 239, 0.22);
+  --shadow-beyonix-modal: 0 32px 80px rgba(0, 0, 0, 0.8);
+}
+
+@utility grid-cols-admin-products {
+  grid-template-columns: 2fr 1fr 1fr 110px 120px;
+}
+
+@utility grid-cols-admin-categories {
+  grid-template-columns: 1fr 1fr 120px 120px 120px;
+}
+
+@utility grid-cols-admin-orders {
+  grid-template-columns: 100px 1.5fr 1fr 120px 140px 120px;
+}
+
+@utility grid-cols-admin-variant-row {
+  grid-template-columns: 1fr 120px 120px 120px;
+}
+
+@utility grid-cols-products-layout {
+  grid-template-columns: 260px 1fr;
+}
+
+@utility grid-cols-product-modal {
+  grid-template-columns: 55fr 45fr;
+}
+
+@utility grid-cols-auto-content {
+  grid-template-columns: auto 1fr;
+}
+
+@utility grid-cols-product-cart {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+@utility aspect-category-featured {
+  aspect-ratio: 16 / 9.2;
+}
+
+@utility leading-1-1 {
+  line-height: 1.1;
+}
+
+@utility leading-1-6 {
+  line-height: 1.6;
+}
+
+@utility leading-1-8 {
+  line-height: 1.8;
+}
+
+@utility leading-product-title {
+  line-height: 1.375rem;
+}
+
+@utility transition-color-shadow {
+  transition-property: color, box-shadow;
+}
+
+@utility stroke-2-8 {
+  stroke-width: 2.8;
+}
+
+@utility beyonix-category-radial-bg {
+  background: radial-gradient(
+    70% 50% at 50% 0%,
+    rgba(17, 42, 67, 0.5) 0%,
+    #000000 85%
+  );
 }
 
 /* =========================
@@ -220,6 +326,16 @@ body.product-modal-open .category-hero {
 /* Progress bar sin inline width */
 .custom-progress {
   width: var(--progress);
+}
+
+.beyonix-success-glow {
+  text-shadow: 0 0 6px rgba(16, 185, 129, 0.45);
+}
+
+.beyonix-success-bar-glow {
+  box-shadow:
+    0 0 8px rgba(16, 185, 129, 0.7),
+    0 0 16px rgba(16, 185, 129, 0.4);
 }
 
 /* 🔵 Glow Beyonix barra progreso */

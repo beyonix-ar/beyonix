@@ -4,8 +4,8 @@ import { CategoryPageLayout } from "@/components/category/layout/category-page-l
 
 import {
   getCategoriaBySlug,
-  getProductos,
 } from "@/lib/supabase/queries/productos"
+import { getProductosByCategoria } from "@/lib/supabase/queries/store"
 
 export default async function CategoryPage({
   params,
@@ -22,12 +22,7 @@ export default async function CategoryPage({
     notFound()
   }
 
-  const products = await getProductos()
-
-  const categoryProducts = products.filter(
-    (product) =>
-      product.categorias?.slug === params.slug
-  )
+  const categoryProducts = await getProductosByCategoria(params.slug)
 
   return (
     <CategoryPageLayout

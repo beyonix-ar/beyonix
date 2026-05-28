@@ -6,6 +6,11 @@ import { ColorSelector } from "./color-selector"
 import { ProductDescription } from "./product-description"
 import { ProductPurchaseBox } from "./product-purchase-box"
 import { ProductSpecs } from "./product-specs"
+import {
+  DEFAULT_VARIANT_VALUE,
+  getProductVariantOptions,
+  getVariantOptionByValue,
+} from "@/lib/products/product-variants"
 
 interface ProductDetailsPanelProps {
   product: SupabaseProducto
@@ -41,22 +46,20 @@ export function ProductDetailsPanel({
   isInCart = false,
   cartQuantity = 0,
 }: ProductDetailsPanelProps) {
-  const colors = [
-    {
-      name: "default",
-      value: "default",
-    },
-  ]
+  const colors = getProductVariantOptions(product)
+  const selectedVariant = getVariantOptionByValue(product, selectedColor)
+  const hasVariants =
+    colors.length > 1 || colors[0]?.value !== DEFAULT_VARIANT_VALUE
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-[#0a0a0a] text-white">
+    <aside className="flex h-full min-h-0 flex-col bg-beyonix-surface text-white">
       <div className="custom-scrollbar flex-1 overflow-x-hidden overflow-y-auto">
-        <div className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#0a0a0a] px-8 pb-5 pt-8">
-          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.3em] text-white/45">
+        <div className="sticky top-0 z-10 border-b border-white/8 bg-beyonix-surface px-8 pb-5 pt-8">
+          <p className="mb-1.5 text-10px font-medium uppercase tracking-widest text-white/55">
             {product.categorias?.nombre}
           </p>
 
-          <h2 className="text-[22px] font-semibold leading-snug tracking-tight text-white">
+          <h2 className="text-22px font-semibold leading-snug tracking-tight text-white">
             {product.nombre}
           </h2>
         </div>
@@ -72,43 +75,36 @@ export function ProductDetailsPanel({
             />
           )}
 
-          <div>
-            <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.25em] text-white/45">
-              Variante
-            </p>
+          {hasVariants && (
+            <div>
+              <p className="mb-3 text-10px font-medium uppercase tracking-widest text-white/55">
+                Variante
+              </p>
 
-            <ColorSelector
-              colors={colors.map(
-                (color) => ({
+              <ColorSelector
+                colors={colors.map((color) => ({
                   name: color.name,
-                  value:
-                    color.value as never,
-                })
-              )}
-              selectedColor={
-                selectedColor
-              }
-              onSelect={
-                onColorChange
-              }
-            />
-          </div>
+                  value: color.value,
+                  colorHex: color.colorHex,
+                }))}
+                selectedColor={selectedColor}
+                onSelect={onColorChange}
+              />
+            </div>
+          )}
 
           <ProductSpecs
             specifications={[
               {
                 label: "Stock",
-                value:
-                  String(
-                    product.stock
-                  ),
+                value: String(selectedVariant?.stock ?? product.stock),
               },
             ]}
           />
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-white/[0.08]">
+      <div className="shrink-0 border-t border-white/8">
         <ProductPurchaseBox
           price={product.precio}
           originalPrice={

@@ -9,6 +9,9 @@ import { useCart } from "@/context/cart-context"
 import { ProductCardImage } from "./product-card-image"
 
 import { ProductCardPricing } from "./product-card-pricing"
+import {
+  getDefaultVariantOption,
+} from "@/lib/products/product-variants"
 
 interface SharedProductCardProps {
   product: SupabaseProducto
@@ -35,17 +38,16 @@ export default function SharedProductCard({
     decreaseQuantity,
   } = useCart()
 
+  const defaultVariant =
+    getDefaultVariantOption(product)
+
   const image =
-    product.imagen_principal ||
-    product
-      .imagenes_producto?.[0]
-      ?.url ||
-    "/placeholder.png"
+    defaultVariant.images[0]
 
   const quantity =
     getQuantity(
       product.id,
-      "default"
+      defaultVariant.value
     )
 
   const discountPercentage =
@@ -63,13 +65,13 @@ export default function SharedProductCard({
   const handleAddToCart = () => {
     onAddToCart?.(
       product,
-      "default",
+      defaultVariant.value,
       image
     )
   }
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-white/7 bg-[#0A0A0A] transition-all duration-300 hover:border-white/13 hover:shadow-xl hover:shadow-black/50">
+    <article className="group overflow-hidden rounded-2xl border border-white/7 bg-beyonix-surface transition-all duration-300 hover:border-white/13 hover:shadow-xl hover:shadow-black/50">
       <ProductCardImage
         image={image}
         canNavigate={false}
@@ -86,7 +88,7 @@ export default function SharedProductCard({
       />
 
       <div className="flex flex-col p-4 pt-3.5">
-        <p className="h-4 truncate text-10px font-semibold uppercase tracking-[0.22em] text-white/35">
+        <p className="h-4 truncate text-10px font-semibold uppercase tracking-widest text-white/45">
           {
             product.categorias
               ?.nombre
@@ -99,7 +101,7 @@ export default function SharedProductCard({
               product
             )
           }
-          className="mt-1.5 min-h-44px cursor-pointer line-clamp-2 text-15px font-semibold leading-[1.375rem] text-white transition-colors hover:text-white/80"
+          className="mt-1.5 min-h-44px cursor-pointer line-clamp-2 text-15px font-semibold leading-product-title text-white transition-colors hover:text-white/80"
         >
           {product.nombre}
         </h3>
@@ -121,13 +123,13 @@ export default function SharedProductCard({
             onIncrease={() =>
               increaseQuantity(
                 product.id,
-                "default"
+                defaultVariant.value
               )
             }
             onDecrease={() =>
               decreaseQuantity(
                 product.id,
-                "default"
+                defaultVariant.value
               )
             }
           />

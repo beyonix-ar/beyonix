@@ -79,7 +79,12 @@ export function useProductos() {
         setProductos((prev) =>
           prev.map((p) =>
             p.id === updated.id
-              ? updated
+              ? {
+                  ...p,
+                  ...updated,
+                  producto_variantes:
+                    p.producto_variantes,
+                }
               : p
           )
         )

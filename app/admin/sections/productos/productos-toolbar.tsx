@@ -23,7 +23,7 @@ export function ProductosToolbar({
   return (
     <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p className="mb-1 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
+        <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
           Gestión
         </p>
 
@@ -45,7 +45,7 @@ export function ProductosToolbar({
                 e.target.value
               )
             }
-            className="h-11 w-full rounded-2xl border border-white/8 bg-[#0A0A0A] pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#1E4D7B]"
+            className="h-11 w-full rounded-2xl border border-white/8 bg-beyonix-surface pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
           />
         </div>
 

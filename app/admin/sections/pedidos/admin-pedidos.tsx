@@ -11,6 +11,14 @@ import { usePedidos } from "@/hooks/use-pedidos"
 
 import { formatPrice } from "../productos/helpers"
 
+function formatOrderDate(value: string) {
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(value))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Badge
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,9 +47,9 @@ function EstadoBadge({
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[11px] font-semibold capitalize ${
+      className={`inline-flex items-center px-2.5 py-1 rounded-full border text-11px font-semibold capitalize ${
         styles[estado] ??
-        "bg-white/5 border-white/10 text-white/40"
+        "bg-white/5 border-white/10 text-white/50"
       }`}
     >
       {estado}
@@ -68,9 +76,15 @@ export function AdminPedidos() {
     useMemo(
       () =>
         pedidos.filter((p) =>
-          String(p.id).includes(
-            search
-          )
+          [
+            String(p.id),
+            p.cliente_nombre ?? "",
+            p.cliente_email ?? "",
+            p.cliente_telefono ?? "",
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(search.toLowerCase())
         ),
       [pedidos, search]
     )
@@ -87,12 +101,43 @@ export function AdminPedidos() {
     await deletePedido(id)
   }
 
+  const handleEstadoChange = async (
+    pedidoId: number,
+    estadoActual: string,
+    nextEstado: string
+  ) => {
+    if (estadoActual === nextEstado) return
+
+    if (
+      nextEstado === "pagado" &&
+      estadoActual !== "pagado"
+    ) {
+      alert("El estado pagado se actualiza automáticamente desde Mercado Pago.")
+      return
+    }
+
+    if (nextEstado === "enviado") {
+      const trackingNumber =
+        prompt("Número de seguimiento (opcional)")?.trim() || null
+      const trackingUrl =
+        prompt("Link de seguimiento (opcional)")?.trim() || null
+
+      await updatePedidoEstado(pedidoId, nextEstado, {
+        tracking_number: trackingNumber,
+        tracking_url: trackingUrl,
+      })
+      return
+    }
+
+    await updatePedidoEstado(pedidoId, nextEstado)
+  }
+
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-[#4A90B8] mb-1">
+          <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan mb-1">
             Pedidos
           </p>
 
@@ -111,7 +156,7 @@ export function AdminPedidos() {
               e.target.value
             )
           }
-          className="w-72 h-12 bg-[#0A0A0A] border border-white/8 rounded-2xl px-4 text-sm text-white placeholder:text-white/25 outline-none focus:border-[#1E4D7B] transition-colors"
+          className="w-72 h-12 bg-beyonix-surface border border-white/8 rounded-2xl px-4 text-sm text-white placeholder:text-white/25 outline-none focus:border-beyonix-blue-light transition-colors"
         />
       </div>
 
@@ -127,34 +172,38 @@ export function AdminPedidos() {
         </div>
       ) : pedidosFiltrados.length ===
         0 ? (
-        <div className="rounded-3xl border border-white/7 bg-[#0A0A0A] p-12 text-center">
+        <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-12 text-center">
           <ShoppingCart className="size-10 text-white/15 mx-auto mb-3" />
 
-          <p className="text-sm font-medium text-white/50">
+          <p className="text-sm font-medium text-white/60">
             No hay pedidos todavía.
           </p>
         </div>
       ) : (
         <div className="rounded-3xl border border-white/7 overflow-hidden">
           {/* Header */}
-          <div className="grid grid-cols-[120px_1fr_180px_140px_120px] gap-4 px-5 py-3 border-b border-white/6 bg-[#0A0A0A]">
-            <span className="text-[10px] uppercase tracking-[0.2em] text-white/35 font-semibold">
+          <div className="grid grid-cols-admin-orders gap-4 px-5 py-3 border-b border-white/6 bg-beyonix-surface">
+            <span className="text-10px uppercase tracking-widest text-white/45 font-semibold">
               Pedido
             </span>
 
-            <span className="text-[10px] uppercase tracking-[0.2em] text-white/35 font-semibold">
+            <span className="text-10px uppercase tracking-widest text-white/45 font-semibold">
+              Cliente
+            </span>
+
+            <span className="text-10px uppercase tracking-widest text-white/45 font-semibold">
               Fecha
             </span>
 
-            <span className="text-[10px] uppercase tracking-[0.2em] text-white/35 font-semibold">
+            <span className="text-10px uppercase tracking-widest text-white/45 font-semibold">
               Estado
             </span>
 
-            <span className="text-[10px] uppercase tracking-[0.2em] text-white/35 font-semibold">
+            <span className="text-10px uppercase tracking-widest text-white/45 font-semibold">
               Total
             </span>
 
-            <span className="text-[10px] uppercase tracking-[0.2em] text-white/35 font-semibold text-right">
+            <span className="text-10px uppercase tracking-widest text-white/45 font-semibold text-right">
               Acciones
             </span>
           </div>
@@ -164,7 +213,7 @@ export function AdminPedidos() {
             (pedido, i) => (
               <div
                 key={pedido.id}
-                className={`grid grid-cols-[120px_1fr_180px_140px_120px] gap-4 px-5 py-4 items-center hover:bg-white/2 transition-colors ${
+                className={`grid grid-cols-admin-orders gap-4 px-5 py-4 items-center hover:bg-white/2 transition-colors ${
                   i <
                   pedidosFiltrados.length -
                     1
@@ -179,13 +228,25 @@ export function AdminPedidos() {
                   </p>
                 </div>
 
+                {/* Cliente */}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">
+                    {pedido.cliente_nombre ||
+                      "Cliente sin nombre"}
+                  </p>
+
+                  <p className="truncate text-11px text-white/45">
+                    {pedido.cliente_email ||
+                      pedido.cliente_telefono ||
+                      pedido.usuario_id}
+                  </p>
+                </div>
+
                 {/* Fecha */}
                 <div>
-                  <p className="text-sm text-white/65">
-                    {new Date(
+                  <p className="text-sm text-white/75">
+                    {formatOrderDate(
                       pedido.created_at
-                    ).toLocaleDateString(
-                      "es-AR"
                     )}
                   </p>
                 </div>
@@ -197,12 +258,13 @@ export function AdminPedidos() {
                     aria-label="Estado del pedido"
                     value={pedido.estado}
                     onChange={(e) =>
-                      updatePedidoEstado(
+                      handleEstadoChange(
                         pedido.id,
+                        pedido.estado,
                         e.target.value
                       )
                     }
-                    className="h-10 bg-[#050505] border border-white/8 rounded-xl px-3 text-sm text-white outline-none"
+                    className="h-10 bg-beyonix-page border border-white/8 rounded-xl px-3 text-sm text-white outline-none"
                   >
                     <option value="pendiente">
                       Pendiente
@@ -229,6 +291,16 @@ export function AdminPedidos() {
                       pedido.total
                     )}
                   </p>
+                  {pedido.tracking_url && (
+                    <a
+                      href={pedido.tracking_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 block text-11px text-beyonix-cyan underline underline-offset-4"
+                    >
+                      Ver seguimiento
+                    </a>
+                  )}
                 </div>
 
                 {/* Actions */}
@@ -241,13 +313,14 @@ export function AdminPedidos() {
 
                   <button
                     type="button"
+                    aria-label={`Eliminar pedido ${pedido.id}`}
                     title="Eliminar pedido"
                     onClick={() =>
                       handleDelete(
                         pedido.id
                       )
                     }
-                    className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/50 hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer"
+                    className="size-8 rounded-xl border border-white/8 flex items-center justify-center text-white/60 hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer"
                   >
                     <Trash2 className="size-3.5" />
                   </button>

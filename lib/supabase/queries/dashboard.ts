@@ -6,6 +6,15 @@ import type {
   SupabaseProfile,
 } from "@/lib/supabase/types"
 
+export interface LowStockItem {
+  id: string
+  nombre: string
+  stock: number
+  tipo: "producto" | "variante"
+  producto_nombre?: string
+  color_hex?: string
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard stats
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,24 +115,75 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 // Get low stock products
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getLowStockProducts() {
+export async function getLowStockProducts(): Promise<
+  LowStockItem[]
+> {
   const { data, error } =
     await supabase
       .from("productos")
-      .select("*")
-      .lte("stock", 5)
+      .select(
+        "*, producto_variantes(*)"
+      )
       .eq("activo", true)
-      .order("stock", {
-        ascending: true,
-      })
-      .limit(10)
 
   if (error) {
     throw error
   }
 
-  return (data ??
-    []) as SupabaseProducto[]
+  const productos =
+    (data ?? []) as SupabaseProducto[]
+
+  const lowStockItems =
+    productos.reduce<LowStockItem[]>(
+      (items, producto) => {
+      const variantes =
+        producto.producto_variantes || []
+
+      if (variantes.length) {
+        const variantItems =
+          variantes
+          .filter(
+            (variante) =>
+              variante.activo &&
+              (variante.stock ?? 0) <= 5
+          )
+          .map((variante) => ({
+            id: `variante-${variante.id}`,
+            nombre: variante.nombre,
+            stock: variante.stock ?? 0,
+            tipo: "variante" as const,
+            producto_nombre:
+              producto.nombre,
+            color_hex:
+              variante.color_hex,
+          } satisfies LowStockItem))
+
+        return [
+          ...items,
+          ...variantItems,
+        ]
+      }
+
+      if (producto.stock <= 5) {
+        return [
+          ...items,
+          {
+            id: `producto-${producto.id}`,
+            nombre: producto.nombre,
+            stock: producto.stock,
+            tipo: "producto" as const,
+          } satisfies LowStockItem,
+        ]
+      }
+
+      return items
+    },
+    []
+  )
+
+  return lowStockItems
+    .sort((a, b) => a.stock - b.stock)
+    .slice(0, 10)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -17,13 +17,13 @@ export function ProductDescription({
     <div className="space-y-5">
 
       {shortDescription && (
-        <p className="text-[13.5px] leading-[1.8] text-white/65 font-normal">
+        <p className="text-13-5px leading-1-8 text-white/75 font-normal">
           {shortDescription}
         </p>
       )}
 
       {longDescription && (
-        <p className="text-[13px] leading-7 text-white/50">
+        <p className="text-13px leading-7 text-white/60">
           {longDescription}
         </p>
       )}
@@ -33,12 +33,12 @@ export function ProductDescription({
           {features.map((feature, index) => (
             <div
               key={`${feature.title}-${index}`}
-              className="rounded-lg border border-white/[0.1] bg-white/[0.04] px-4 py-3 transition-colors hover:border-white/[0.15] hover:bg-white/[0.07]"
+              className="rounded-lg border border-white/10 bg-white/4 px-4 py-3 transition-colors hover:border-white/15 hover:bg-white/7"
             >
-              <p className="text-[12.5px] font-semibold text-white/90 leading-none mb-1">
+              <p className="text-12-5px font-semibold text-white/90 leading-none mb-1">
                 {feature.title}
               </p>
-              <p className="text-[12px] leading-[1.6] text-white/55">
+              <p className="text-12px leading-1-6 text-white/65">
                 {feature.description}
               </p>
             </div>

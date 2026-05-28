@@ -18,18 +18,8 @@ import { CartItemRow } from "./cart-item"
 import { CartSummary } from "./cart-summary"
 
 import type {
-  SupabaseProducto,
-} from "@/lib/supabase/types"
-
-interface CartItem {
-  product: SupabaseProducto
-
-  color: string
-
-  image: string
-
-  quantity: number
-}
+  CartItem,
+} from "@/context/cart-context"
 
 interface CartDrawerProps {
   isOpen: boolean
@@ -130,7 +120,7 @@ export function CartDrawer({
       <div
         ref={drawerRef}
         className={cn(
-          "absolute right-0 top-0 z-10 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-[#111111] shadow-xl",
+          "absolute right-0 top-0 z-10 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-neutral-950 shadow-xl",
           "animate-in slide-in-from-right duration-300"
         )}
       >
@@ -155,7 +145,7 @@ export function CartDrawer({
 
         {/* Empty */}
         {items.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center text-white/60">
+          <div className="flex flex-1 items-center justify-center text-white/70">
             Tu carrito está vacío
           </div>
         ) : (
@@ -185,7 +175,7 @@ export function CartDrawer({
                 (item) => ({
                   product: {
                     id: item.product.id,
-                    price:
+                    precio:
                       item.product
                         .precio,
                   },
@@ -197,21 +187,9 @@ export function CartDrawer({
               onCheckout={() => {
                 onClose()
 
-                const hasSession =
-                  localStorage.getItem(
-                    "supabase.auth.token"
-                  )
-
-                if (!hasSession) {
-                  router.push(
-                    "/login?redirect=/checkout"
-                  )
-
-                  return
-                }
-
                 router.push("/checkout")
               }}
+              onContinueShopping={onClose}
             />
           </>
         )}

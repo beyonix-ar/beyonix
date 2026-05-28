@@ -46,3 +46,5 @@ export function ReviewsSection() {
     </section>
   )
 }
+
+export default ReviewsSection

@@ -30,7 +30,7 @@ export interface BeyonixUser {
 
   email: string
 
-  rol: "cliente" | "admin"
+  rol: "cliente" | "admin" | "super_admin"
 
   phone?: string
 
@@ -49,6 +49,7 @@ interface AuthContextType {
   isLoading: boolean
 
   isAdmin: boolean
+  isSuperAdmin: boolean
 
   login: (
     email: string,
@@ -90,8 +91,9 @@ function profileToUser(
     email,
 
     rol:
-      profile.rol === "admin"
-        ? "admin"
+      profile.rol === "admin" ||
+      profile.rol === "super_admin"
+        ? profile.rol
         : "cliente",
 
     createdAt:
@@ -146,20 +148,10 @@ export function AuthProvider({
           )
           .single()
 
-        console.log(
-          "PROFILE:",
-          profile
-        )
-
         if (
           error ||
           !profile
         ) {
-          console.error(
-            "No se encontró el perfil:",
-            error
-          )
-
           setUser({
             id: supabaseUser.id,
 
@@ -404,6 +396,9 @@ export function AuthProvider({
       async () => {
         await supabase.auth.signOut()
 
+        localStorage.removeItem("beyonix-cart")
+        sessionStorage.removeItem("beyonix-cart")
+
         setUser(null)
       },
       []
@@ -470,9 +465,14 @@ export function AuthProvider({
   // Admin
   // ───────────────────────────────────────────────────────────────────────────
 
+  const isSuperAdmin =
+    user?.rol?.toLowerCase() ===
+    "super_admin"
+
   const isAdmin =
     user?.rol?.toLowerCase() ===
-    "admin"
+      "admin" ||
+    isSuperAdmin
 
   // ───────────────────────────────────────────────────────────────────────────
   // Provider
@@ -486,6 +486,7 @@ export function AuthProvider({
         isLoading,
 
         isAdmin,
+        isSuperAdmin,
 
         login,
 

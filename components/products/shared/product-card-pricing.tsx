@@ -59,7 +59,7 @@ export function ProductCardPricing({
           {!!originalPrice &&
             originalPrice >
               price && (
-              <p className="mt-0.5 text-xs text-white/30 line-through tabular-nums">
+              <p className="mt-0.5 text-xs text-white/40 line-through tabular-nums">
                 {formatPrice(
                   originalPrice
                 )}

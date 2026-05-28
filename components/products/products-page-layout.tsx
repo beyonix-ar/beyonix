@@ -12,7 +12,7 @@ import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
 
-import { getProductos } from "@/lib/supabase/queries/productos"
+import { getStoreProductos } from "@/lib/supabase/queries/store"
 
 import { useCart } from "@/context/cart-context"
 
@@ -27,6 +27,9 @@ import { ProductsFiltersSidebar } from "./products-filters-sidebar"
 import { ProductsGrid } from "./products-grid"
 
 import { ProductsToolbar } from "./products-toolbar"
+import {
+  getDefaultVariantOption,
+} from "@/lib/products/product-variants"
 
 export function ProductsPageLayout() {
   const searchParams =
@@ -63,7 +66,6 @@ export function ProductsPageLayout() {
     useState(150000)
 
   const {
-    cart,
     addToCart,
     removeFromCart,
     decreaseQuantity,
@@ -99,7 +101,7 @@ export function ProductsPageLayout() {
     async function loadProducts() {
       try {
         const data =
-          await getProductos()
+          await getStoreProductos()
 
         setProducts(data)
       } catch (error) {
@@ -109,17 +111,6 @@ export function ProductsPageLayout() {
 
     loadProducts()
   }, [searchParams])
-
-  // ─────────────────────────────────────
-  // Sync localStorage cart
-  // ─────────────────────────────────────
-
-  useEffect(() => {
-    localStorage.setItem(
-      "beyonix-cart",
-      JSON.stringify(cart)
-    )
-  }, [cart])
 
   // ─────────────────────────────────────
   // Filters
@@ -204,16 +195,17 @@ export function ProductsPageLayout() {
   // ─────────────────────────────────────
 
   const handleAddToCart = (
-    product: SupabaseProducto
+    product: SupabaseProducto,
+    color?: string,
+    image?: string
   ) => {
+    const fallbackVariant =
+      getDefaultVariantOption(product)
+
     addToCart(
       product,
-      "default",
-      product.imagen_principal ||
-        product
-          .imagenes_producto?.[0]
-          ?.url ||
-        "/placeholder.png"
+      color ?? fallbackVariant.value,
+      image ?? fallbackVariant.images[0]
     )
   }
 
@@ -221,7 +213,7 @@ export function ProductsPageLayout() {
     product
       ? getQuantity(
           product.id,
-          "default"
+          selectedColor
         )
       : 0
 
@@ -229,7 +221,7 @@ export function ProductsPageLayout() {
     product
       ? isInCart(
           product.id,
-          "default"
+          selectedColor
         )
       : false
 
@@ -242,9 +234,9 @@ export function ProductsPageLayout() {
       <section className="container mx-auto px-4 lg:px-8">
         {/* Header */}
         <div className="mb-10 border-b border-white/6 pb-8">
-          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[auto_1fr] lg:items-end lg:gap-12">
+          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-auto-content lg:items-end lg:gap-12">
             <div>
-              <p className="mb-2 text-11px font-semibold uppercase tracking-[0.3em] text-[#4A90B8]">
+              <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                 Productos
               </p>
 
@@ -252,7 +244,7 @@ export function ProductsPageLayout() {
                 Todos los productos
               </h1>
 
-              <p className="mt-2 text-sm tracking-wide text-white/50">
+              <p className="mt-2 text-sm tracking-wide text-white/60">
                 Explorá el catálogo completo de
                 BEYONIX.
               </p>
@@ -281,7 +273,7 @@ export function ProductsPageLayout() {
         </div>
 
         {/* Content */}
-        <div className="grid grid-cols-1 gap-8 pb-16 lg:grid-cols-[260px_1fr]">
+        <div className="grid grid-cols-1 gap-8 pb-16 lg:grid-cols-products-layout">
           <ProductsFiltersSidebar
             selectedCategories={
               selectedCategories
@@ -327,9 +319,8 @@ export function ProductsPageLayout() {
 
             <ProductsGrid
               products={
-                filteredProducts as never
+                filteredProducts
               }
-              selectedColors={[]}
               onOpenPreview={
                 openDetails
               }
@@ -377,7 +368,7 @@ export function ProductsPageLayout() {
 
           decreaseQuantity(
             product.id,
-            "default"
+            selectedColor
           )
         }}
         onRemoveFromCart={() => {
@@ -387,7 +378,7 @@ export function ProductsPageLayout() {
 
           removeFromCart(
             product.id,
-            "default"
+            selectedColor
           )
         }}
         onViewCart={openCart}

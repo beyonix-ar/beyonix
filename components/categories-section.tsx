@@ -64,7 +64,7 @@ export function CategoriesSection() {
                 }
                 className={`group relative overflow-hidden rounded-3xl border border-border bg-card text-left transition-all duration-500 hover:-translate-y-1 ${
                   index === 0
-                    ? "aspect-[16/9.2] lg:col-span-2"
+                    ? "aspect-category-featured lg:col-span-2"
                     : "aspect-video"
                 }`}
               >

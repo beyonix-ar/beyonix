@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation"
 
 import {
   FolderOpen,
+  History,
   LayoutDashboard,
   LogOut,
   Package,
@@ -19,6 +20,7 @@ import {
 import { useAuth } from "@/context/auth-context"
 
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
+import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
 import { AdminCategorias } from "./sections/categorias/admin-categorias"
 import { AdminPedidos } from "./sections/pedidos/admin-pedidos"
 import { AdminProductos } from "./sections/productos/admin-productos"
@@ -28,6 +30,7 @@ type AdminSection =
   | "productos"
   | "categorias"
   | "pedidos"
+  | "auditoria"
 
 interface NavigationItem {
   key: AdminSection
@@ -53,7 +56,7 @@ function SidebarItem({
       className={`flex h-11 w-full items-center gap-3 rounded-xl px-4 transition-all cursor-pointer ${
         active
           ? "bg-white text-black"
-          : "text-white/55 hover:bg-white/5 hover:text-white"
+          : "text-white/65 hover:bg-white/5 hover:text-white"
       }`}
     >
       {item.icon}
@@ -72,6 +75,7 @@ export function AdminClient() {
     user,
     isLoading,
     isAdmin,
+    isSuperAdmin,
     logout,
   } = useAuth()
 
@@ -144,8 +148,19 @@ export function AdminClient() {
             <ShoppingCart className="size-4" />
           ),
         },
+        ...(isSuperAdmin
+          ? [
+              {
+                key: "auditoria" as const,
+                label: "Auditoría",
+                icon: (
+                  <History className="size-4" />
+                ),
+              },
+            ]
+          : []),
       ],
-      []
+      [isSuperAdmin]
     )
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -167,6 +182,11 @@ export function AdminClient() {
 
     pedidos:
       <AdminPedidos />,
+
+    auditoria:
+      isSuperAdmin ? (
+        <AdminAuditoria />
+      ) : null,
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -201,11 +221,11 @@ export function AdminClient() {
   // ───────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex min-h-screen bg-[#050505]">
+    <div className="flex min-h-screen bg-beyonix-page">
       <aside className="flex w-72 flex-col border-r border-white/6 bg-black/40 backdrop-blur-xl">
         <div className="flex h-20 items-center border-b border-white/6 px-6">
           <div>
-            <p className="mb-1 text-11px font-semibold uppercase tracking-[0.25em] text-[#4A90B8]">
+            <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
               Panel
             </p>
 
@@ -218,7 +238,7 @@ export function AdminClient() {
               }
               className="group text-left"
             >
-              <h1 className="text-xl font-bold text-white transition-colors group-hover:text-[#4A90B8]">
+              <h1 className="text-xl font-bold text-white transition-colors group-hover:text-beyonix-cyan">
                 BEYONIX Admin
               </h1>
             </button>
@@ -231,15 +251,18 @@ export function AdminClient() {
               {user.name}
             </p>
 
-            <p className="mt-1 truncate text-xs text-white/40">
+            <p className="mt-1 truncate text-xs text-white/50">
               {user.email}
             </p>
 
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[#1E4D7B]/40 bg-[#112A43] px-2.5 py-1">
-              <span className="size-1.5 rounded-full bg-[#4A90B8]" />
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-beyonix-blue-light/40 bg-beyonix-blue px-2.5 py-1">
+              <span className="size-1.5 rounded-full bg-beyonix-cyan" />
 
-              <span className="text-10px font-semibold uppercase tracking-[0.15em] text-[#8CC8F2]">
+              <span className="text-10px font-semibold uppercase tracking-widest text-beyonix-sky">
                 Administrador
+                {isSuperAdmin
+                  ? " total"
+                  : ""}
               </span>
             </div>
           </div>
@@ -266,7 +289,7 @@ export function AdminClient() {
             title="Cerrar sesión"
             aria-label="Cerrar sesión"
             onClick={handleLogout}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/8 text-white/55 transition-all hover:border-red-500/30 hover:text-red-400 cursor-pointer"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/8 text-white/65 transition-all hover:border-red-500/30 hover:text-red-400 cursor-pointer"
           >
             <LogOut className="size-4" />
 

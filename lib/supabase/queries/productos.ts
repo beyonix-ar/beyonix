@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/client"
 import type {
   SupabaseCategoria,
   SupabaseProducto,
+  SupabaseProductoVariante,
 } from "@/lib/supabase/types"
 
 interface ProductoPayload {
@@ -16,12 +17,14 @@ interface ProductoPayload {
   categoria_id?: number | null
   destacado?: boolean
   activo?: boolean
+  imagen_principal?: string | null
 }
 
 const PRODUCTO_SELECT = `
   *,
   categorias(*),
-  imagenes_producto(*)
+  imagenes_producto(*),
+  producto_variantes(*)
 `
 
 // ─────────────────────────────────────────────────────────────
@@ -40,7 +43,54 @@ export async function getProductos() {
     throw error
   }
 
-  return (data || []) as SupabaseProducto[]
+  const productos =
+    (data || []) as SupabaseProducto[]
+
+  const {
+    data: variantes,
+    error: variantesError,
+  } = await supabase
+    .from("producto_variantes")
+    .select("*")
+    .order("orden", {
+      ascending: true,
+    })
+    .order("id", {
+      ascending: true,
+    })
+
+  if (variantesError) {
+    throw variantesError
+  }
+
+  const variantesByProducto =
+    (
+      variantes ||
+      []
+    ).reduce<
+      Record<
+        number,
+        SupabaseProductoVariante[]
+      >
+    >((acc, variante) => {
+      const item =
+        variante as SupabaseProductoVariante
+
+      acc[item.producto_id] = [
+        ...(acc[item.producto_id] || []),
+        item,
+      ]
+
+      return acc
+    }, {})
+
+  return productos.map((producto) => ({
+    ...producto,
+    producto_variantes:
+      variantesByProducto[
+        producto.id
+      ] || [],
+  }))
 }
 
 export async function getProductoById(
@@ -164,6 +214,16 @@ export async function deleteProducto(
   await supabase
     .from(
       "imagenes_producto"
+    )
+    .delete()
+    .eq(
+      "producto_id",
+      id
+    )
+
+  await supabase
+    .from(
+      "producto_variantes"
     )
     .delete()
     .eq(

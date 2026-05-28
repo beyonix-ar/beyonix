@@ -14,10 +14,10 @@ export const productColors = {
   azulClaro: "bg-blue-400", // #60A5FA
   azulOscuro: "bg-blue-900", // #1E3A8A
   azulPastel: "bg-blue-300", // #93C5FD
-  beyonixBlue: "bg-[#112A43]", // #112A43
+  beyonixBlue: "bg-beyonix-blue", // #112A43
   celeste: "bg-sky-400", // #38BDF8
   turquesa: "bg-cyan-400", // #22D3EE
-  azulLavanda: "bg-[#8797BF]", // #8797BF
+  azulLavanda: "bg-product-azul-lavanda", // #8797BF
 
   rojo: "bg-red-500", // #EF4444
   rojoOscuro: "bg-red-700", // #B91C1C
@@ -37,12 +37,12 @@ export const productColors = {
   verdeMintAuricular: "bg-emerald-200", // #A7F3D0
   oliva: "bg-lime-700", // #4D7C0F
   menta: "bg-emerald-300", // #6EE7B7
-  verdeSage: "bg-[#79A885]", // #79A885
-  verdeAqua: "bg-[#97DBC0]", // #97DBC0
+  verdeSage: "bg-product-verde-sage", // #79A885
+  verdeAqua: "bg-product-verde-aqua", // #97DBC0
 
   rosa: "bg-pink-500", // #EC4899
-  rosaTerracota: "bg-[#CC7B5F]", // #CC7B5F
-  rosaDurazno: "bg-[#D3876F]", // #D3876F
+  rosaTerracota: "bg-product-rosa-terracota", // #CC7B5F
+  rosaDurazno: "bg-product-rosa-durazno", // #D3876F
   rosaClaro: "bg-pink-300", // #F9A8D4
   rosaSalmon: "bg-rose-300", // #FDA4AF
   fucsia: "bg-fuchsia-500", // #D946EF
