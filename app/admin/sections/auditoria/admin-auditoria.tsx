@@ -14,11 +14,13 @@ import type { SupabaseAuditLog } from "@/lib/supabase/types"
 
 const tableLabels: Record<string, string> = {
   categorias: "Categorias",
+  admin_events: "Eventos admin",
   imagenes_producto: "Imagenes",
   orden_items: "Items de pedido",
   ordenes: "Pedidos",
   producto_variantes: "Variantes",
   productos: "Productos",
+  profiles: "Usuarios",
 }
 
 const actionLabels: Record<SupabaseAuditLog["action"], string> = {
@@ -35,6 +37,7 @@ const fieldLabels: Record<string, string> = {
   destacado: "Destacado",
   descuento: "Descuento",
   estado: "Estado",
+  last_sign_in_at: "Ultimo inicio",
   imagen_principal: "Imagen principal",
   imagenes: "Imagenes",
   nombre: "Nombre",
@@ -46,6 +49,7 @@ const fieldLabels: Record<string, string> = {
   stock: "Stock",
   total: "Total",
   url: "Imagen",
+  rol: "Permisos",
 }
 
 const ignoredFields = new Set(["created_at", "updated_at"])
@@ -205,7 +209,7 @@ export function AdminAuditoria() {
             setLoading(true)
             void loadLogs()
           }}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-5 py-3 text-sm font-bold text-black transition hover:bg-white/90"
+          className="inline-flex min-h-48px min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-6 py-3 text-sm font-bold text-black transition hover:bg-white/90"
         >
           <RefreshCw className="size-4" />
           Actualizar
@@ -224,7 +228,7 @@ export function AdminAuditoria() {
             </h2>
 
             <p className="mt-1 text-sm text-white/65">
-              Fecha, usuario, accion, tabla afectada y cambios detectados.
+              Fecha, usuario, accion, tabla afectada y cambios detectados. Preparado para productos, stock, pedidos, permisos, admins y errores relevantes.
             </p>
           </div>
         </div>
@@ -315,7 +319,7 @@ export function AdminAuditoria() {
                         title="Deshacer movimiento"
                         disabled={isUndone || undoingId === log.id}
                         onClick={() => void handleUndo(log)}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-4 py-2 text-sm font-bold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+                        className="inline-flex min-h-44px min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-5 py-2 text-sm font-bold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
                       >
                         <RotateCcw className="size-4" />
                         {undoingId === log.id ? "Deshaciendo..." : "Deshacer"}

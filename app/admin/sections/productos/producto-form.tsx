@@ -19,6 +19,7 @@ import type {
 
 import { ProductVariantsEditor } from "./product-variants-editor"
 import { useProductoForm } from "./use-producto-form"
+import { AdminSelect } from "../../components/admin-controls"
 
 interface ProductoFormProps {
   producto?: SupabaseProducto | null
@@ -85,7 +86,7 @@ export function ProductoForm({
           title="Volver"
           aria-label="Volver"
           onClick={onCancel}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/70 transition-colors hover:text-white cursor-pointer"
+          className="inline-flex h-12 min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/8 px-6 text-white/70 transition-colors hover:text-white cursor-pointer"
         >
           <ArrowLeft className="size-4" />
 
@@ -229,17 +230,15 @@ export function ProductoForm({
             Categoría
           </label>
 
-          <select
-            id="categoria"
+          <AdminSelect
             title="Categoría"
             value={form.categoria_id}
-            onChange={(e) =>
+            onChange={(value) =>
               setField(
                 "categoria_id",
-                e.target.value
+                value
               )
             }
-            className={inputCls}
           >
             <option value="">
               Sin categoría
@@ -253,7 +252,7 @@ export function ProductoForm({
                 {cat.nombre}
               </option>
             ))}
-          </select>
+          </AdminSelect>
         </div>
 
         <div>
@@ -350,7 +349,7 @@ export function ProductoForm({
             disabled={saving}
             title="Guardar producto"
             aria-label="Guardar producto"
-            className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
+            className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
           >
             {saving ? (
               <Loader2 className="size-4 animate-spin" />
@@ -368,7 +367,7 @@ export function ProductoForm({
             title="Cancelar"
             aria-label="Cancelar"
             onClick={onCancel}
-            className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
+            className="h-12 min-w-140px rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
           >
             Cancelar
           </button>

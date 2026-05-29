@@ -507,7 +507,7 @@ export function ProductVariantsEditor({
           title="Usar cuenta gotas"
           aria-label="Usar cuenta gotas"
           onClick={pickColor}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/10 px-4 text-sm text-white/75 transition-colors hover:text-white cursor-pointer"
+          className="inline-flex h-12 min-w-150px items-center justify-center gap-2 rounded-2xl border border-white/10 px-6 text-sm text-white/75 transition-colors hover:text-white cursor-pointer"
         >
           <Pipette className="size-4" />
           Cuenta gotas
@@ -519,7 +519,7 @@ export function ProductVariantsEditor({
           aria-label="Crear variante"
           onClick={addVariant}
           disabled={saving}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-4 text-sm font-semibold text-black transition-colors hover:bg-white/90 cursor-pointer disabled:opacity-50"
+          className="inline-flex h-12 min-w-160px items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90 cursor-pointer disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="size-4 animate-spin" />
@@ -537,7 +537,7 @@ export function ProductVariantsEditor({
             title="Cancelar edición"
             aria-label="Cancelar edición"
             onClick={resetFields}
-            className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
+            className="inline-flex h-12 min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
           >
             <X className="size-4" />
             Cancelar

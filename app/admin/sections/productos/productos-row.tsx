@@ -471,7 +471,7 @@ export function ProductosRow({
                               variante
                             )
                           }
-                          className="h-8 rounded-xl bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-white/90 cursor-pointer"
+                          className="h-9 min-w-90px rounded-xl bg-white px-4 text-xs font-semibold text-black transition-colors hover:bg-white/90 cursor-pointer"
                         >
                           Guardar
                         </button>
@@ -485,7 +485,7 @@ export function ProductosRow({
                               null
                             )
                           }
-                          className="h-8 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white/70 transition-colors hover:text-white cursor-pointer"
+                          className="h-9 min-w-90px rounded-xl border border-white/10 px-4 text-xs font-semibold text-white/70 transition-colors hover:text-white cursor-pointer"
                         >
                           Cancelar
                         </button>
@@ -654,7 +654,7 @@ function VariantModal({
             title="Cerrar"
             aria-label="Cerrar"
             onClick={onClose}
-            className="rounded-2xl border border-white/10 px-4 py-2 text-sm font-semibold text-white/70 transition-colors hover:text-white cursor-pointer"
+            className="min-h-44px min-w-120px rounded-2xl border border-white/10 px-5 py-2 text-sm font-semibold text-white/70 transition-colors hover:text-white cursor-pointer"
           >
             Cerrar
           </button>

@@ -54,7 +54,7 @@ export function CategoriasToolbar({
           title="Nueva categoría"
           aria-label="Nueva categoría"
           onClick={onCreate}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-black transition-all hover:bg-white/90 cursor-pointer"
+          className="inline-flex h-12 min-w-160px items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-white/90 cursor-pointer"
         >
           <Plus className="size-4" />
 

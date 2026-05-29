@@ -124,6 +124,7 @@ export interface SupabasePedido {
   tracking_number?: string | null
   tracking_url?: string | null
   created_at: string
+  orden_items?: SupabasePedidoItem[]
 }
 
 export interface SupabasePedidoItem {
@@ -133,6 +134,8 @@ export interface SupabasePedidoItem {
   variante_id?: number | null
   cantidad: number
   precio: number
+  productos?: SupabaseProducto | null
+  producto_variantes?: SupabaseProductoVariante | null
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -142,7 +145,22 @@ export interface SupabasePedidoItem {
 export interface SupabaseCliente {
   id: string
   nombre: string
-  email: string
+  apellido?: string | null
+  username?: string | null
+  email?: string | null
   telefono?: string | null
+  direccion?: string | null
+  codigo_postal?: string | null
+  provincia?: string | null
+  referencias?: string | null
+  avatar_url?: string | null
+  rol?: "cliente" | "admin" | "super_admin"
   created_at: string
+  last_seen_at?: string | null
+  is_active?: boolean
+  current_cart?: Record<string, unknown> | unknown[] | null
+  last_order?: SupabasePedido | null
+  total_spent: number
+  order_count: number
+  status: "activo" | "inactivo" | "sin_compras"
 }

@@ -1,8 +1,9 @@
 import { supabase } from "@/lib/supabase/client"
 
 import type {
-  SupabaseProducto,
   SupabasePedido,
+  SupabasePedidoItem,
+  SupabaseProducto,
   SupabaseProfile,
 } from "@/lib/supabase/types"
 
@@ -15,242 +16,211 @@ export interface LowStockItem {
   color_hex?: string
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Dashboard stats
-// ─────────────────────────────────────────────────────────────────────────────
+export interface TopSellingProduct {
+  id: number
+  nombre: string
+  cantidad: number
+  total: number
+}
 
 export interface DashboardStats {
   totalProductos: number
-
-  totalClientes: number
-
-  totalordenes: number
-
   productosActivos: number
+  productosBajoStock: number
+  totalClientes: number
+  clientesActivos: number
+  totalOrdenes: number
+  pedidosPendientes: number
+  pedidosPagados: number
+  pedidosCancelados: number
+  facturacionTotal: number
+  facturacionDia: number
+  facturacionSemana: number
+  facturacionMes: number
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get dashboard stats
-// ─────────────────────────────────────────────────────────────────────────────
+const PAID_STATES = new Set(["pagado", "enviado", "entregado", "approved"])
 
-export async function getDashboardStats(): Promise<DashboardStats> {
-  // Productos
-  const {
-    count: totalProductos,
-    error: productosError,
-  } = await supabase
-    .from("productos")
-    .select("*", {
-      count: "exact",
-      head: true,
-    })
-
-  if (productosError) {
-    throw productosError
-  }
-
-  // Productos activos
-  const {
-    count: productosActivos,
-    error: activosError,
-  } = await supabase
-    .from("productos")
-    .select("*", {
-      count: "exact",
-      head: true,
-    })
-    .eq("activo", true)
-
-  if (activosError) {
-    throw activosError
-  }
-
-  // Clientes
-  const {
-    count: totalClientes,
-    error: clientesError,
-  } = await supabase
-    .from("profiles")
-    .select("*", {
-      count: "exact",
-      head: true,
-    })
-    .eq("rol", "cliente")
-
-  if (clientesError) {
-    throw clientesError
-  }
-
-  // ordenes
-  const {
-    count: totalordenes,
-    error: ordenesError,
-  } = await supabase
-    .from("ordenes")
-    .select("*", {
-      count: "exact",
-      head: true,
-    })
-
-  if (ordenesError) {
-    throw ordenesError
-  }
-
-  return {
-    totalProductos:
-      totalProductos ?? 0,
-
-    totalClientes:
-      totalClientes ?? 0,
-
-    totalordenes:
-      totalordenes ?? 0,
-
-    productosActivos:
-      productosActivos ?? 0,
-  }
+function getStartOfDay() {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  return date
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get low stock products
-// ─────────────────────────────────────────────────────────────────────────────
+function getStartOfWeek() {
+  const date = getStartOfDay()
+  const day = date.getDay()
+  const diff = day === 0 ? 6 : day - 1
+  date.setDate(date.getDate() - diff)
+  return date
+}
 
-export async function getLowStockProducts(): Promise<
-  LowStockItem[]
-> {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .select(
-        "*, producto_variantes(*)"
-      )
-      .eq("activo", true)
+function getStartOfMonth() {
+  const date = getStartOfDay()
+  date.setDate(1)
+  return date
+}
 
-  if (error) {
-    throw error
-  }
+function isPaidOrder(order: SupabasePedido) {
+  return PAID_STATES.has(order.estado) || order.payment_status === "approved"
+}
 
-  const productos =
-    (data ?? []) as SupabaseProducto[]
+function getOrderRevenue(order: SupabasePedido) {
+  return isPaidOrder(order) ? Number(order.total ?? 0) : 0
+}
 
-  const lowStockItems =
-    productos.reduce<LowStockItem[]>(
-      (items, producto) => {
-      const variantes =
-        producto.producto_variantes || []
+function getStock(producto: SupabaseProducto) {
+  const variantes = producto.producto_variantes ?? []
+  if (!variantes.length) return producto.stock ?? 0
+
+  return variantes.reduce((total, variante) => total + (variante.stock ?? 0), 0)
+}
+
+function getLowStock(productos: SupabaseProducto[]) {
+  return productos
+    .filter((producto) => producto.activo)
+    .reduce<LowStockItem[]>((items, producto) => {
+      const variantes = producto.producto_variantes ?? []
 
       if (variantes.length) {
-        const variantItems =
-          variantes
-          .filter(
-            (variante) =>
-              variante.activo &&
-              (variante.stock ?? 0) <= 5
-          )
-          .map((variante) => ({
-            id: `variante-${variante.id}`,
-            nombre: variante.nombre,
-            stock: variante.stock ?? 0,
-            tipo: "variante" as const,
-            producto_nombre:
-              producto.nombre,
-            color_hex:
-              variante.color_hex,
-          } satisfies LowStockItem))
-
         return [
           ...items,
-          ...variantItems,
+          ...variantes
+            .filter((variante) => variante.activo && (variante.stock ?? 0) <= 5)
+            .map((variante) => ({
+              id: `variante-${variante.id}`,
+              nombre: variante.nombre,
+              stock: variante.stock ?? 0,
+              tipo: "variante" as const,
+              producto_nombre: producto.nombre,
+              color_hex: variante.color_hex,
+            })),
         ]
       }
 
-      if (producto.stock <= 5) {
+      if ((producto.stock ?? 0) <= 5) {
         return [
           ...items,
           {
             id: `producto-${producto.id}`,
             nombre: producto.nombre,
-            stock: producto.stock,
-            tipo: "producto" as const,
-          } satisfies LowStockItem,
+            stock: producto.stock ?? 0,
+            tipo: "producto",
+          },
         ]
       }
 
       return items
+    }, [])
+    .sort((a, b) => a.stock - b.stock)
+}
+
+function getTopSellingProducts(items: SupabasePedidoItem[]) {
+  const byProduct = items.reduce<Record<number, TopSellingProduct>>((acc, item) => {
+    const productId = item.producto_id
+    const productName = item.productos?.nombre ?? `Producto #${productId}`
+    const quantity = Number(item.cantidad ?? 0)
+    const total = quantity * Number(item.precio ?? 0)
+
+    acc[productId] = {
+      id: productId,
+      nombre: productName,
+      cantidad: (acc[productId]?.cantidad ?? 0) + quantity,
+      total: (acc[productId]?.total ?? 0) + total,
+    }
+
+    return acc
+  }, {})
+
+  return Object.values(byProduct)
+    .sort((a, b) => b.cantidad - a.cantidad)
+    .slice(0, 6)
+}
+
+export async function getDashboardData() {
+  const [productosResult, clientesResult, ordenesResult, itemsResult, presenceResult] =
+    await Promise.all([
+      supabase
+        .from("productos")
+        .select("*, categorias(*), imagenes_producto(*), producto_variantes(*)"),
+      supabase
+        .from("profiles")
+        .select("*")
+        .eq("rol", "cliente")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("ordenes")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("orden_items")
+        .select("*, productos(*), producto_variantes(*)"),
+      supabase.from("client_presence").select("user_id, last_seen_at"),
+    ])
+
+  if (productosResult.error) throw productosResult.error
+  if (clientesResult.error) throw clientesResult.error
+  if (ordenesResult.error) throw ordenesResult.error
+  if (itemsResult.error) throw itemsResult.error
+
+  const productos = (productosResult.data ?? []) as SupabaseProducto[]
+  const clientes = (clientesResult.data ?? []) as SupabaseProfile[]
+  const ordenes = (ordenesResult.data ?? []) as SupabasePedido[]
+  const items = (itemsResult.data ?? []) as SupabasePedidoItem[]
+  const activeSince = Date.now() - 5 * 60 * 1000
+  const activeClients = presenceResult.error
+    ? 0
+    : (presenceResult.data ?? []).filter((row) =>
+        row.last_seen_at
+          ? new Date(row.last_seen_at).getTime() >= activeSince
+          : false
+      ).length
+
+  const itemsByOrder = items.reduce<Record<number, SupabasePedidoItem[]>>(
+    (acc, item) => {
+      acc[item.orden_id] = [...(acc[item.orden_id] ?? []), item]
+      return acc
     },
-    []
+    {}
   )
 
-  return lowStockItems
-    .sort((a, b) => a.stock - b.stock)
-    .slice(0, 10)
-}
+  const ordersWithItems = ordenes.map((order) => ({
+    ...order,
+    orden_items: itemsByOrder[order.id] ?? [],
+  }))
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get recent orders
-// ─────────────────────────────────────────────────────────────────────────────
+  const lowStock = getLowStock(productos)
+  const dayStart = getStartOfDay()
+  const weekStart = getStartOfWeek()
+  const monthStart = getStartOfMonth()
 
-export async function getRecentOrders() {
-  const { data, error } =
-    await supabase
-      .from("ordenes")
-      .select("*")
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(10)
-
-  if (error) {
-    throw error
+  const stats: DashboardStats = {
+    totalProductos: productos.length,
+    productosActivos: productos.filter((producto) => producto.activo).length,
+    productosBajoStock: lowStock.length,
+    totalClientes: clientes.length,
+    clientesActivos: activeClients,
+    totalOrdenes: ordenes.length,
+    pedidosPendientes: ordenes.filter((order) => order.estado === "pendiente").length,
+    pedidosPagados: ordenes.filter((order) => isPaidOrder(order)).length,
+    pedidosCancelados: ordenes.filter((order) => order.estado === "cancelado").length,
+    facturacionTotal: ordenes.reduce((total, order) => total + getOrderRevenue(order), 0),
+    facturacionDia: ordenes
+      .filter((order) => new Date(order.created_at) >= dayStart)
+      .reduce((total, order) => total + getOrderRevenue(order), 0),
+    facturacionSemana: ordenes
+      .filter((order) => new Date(order.created_at) >= weekStart)
+      .reduce((total, order) => total + getOrderRevenue(order), 0),
+    facturacionMes: ordenes
+      .filter((order) => new Date(order.created_at) >= monthStart)
+      .reduce((total, order) => total + getOrderRevenue(order), 0),
   }
 
-  return (data ??
-    []) as SupabasePedido[]
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Get recent clients
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function getRecentClients() {
-  const { data, error } =
-    await supabase
-      .from("profiles")
-      .select("*")
-      .eq("rol", "cliente")
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(10)
-
-  if (error) {
-    throw error
+  return {
+    stats,
+    lowStock: lowStock.slice(0, 10),
+    recentOrders: ordersWithItems.slice(0, 8),
+    recentClients: clientes.slice(0, 8),
+    topSellingProducts: getTopSellingProducts(items),
   }
-
-  return (data ??
-    []) as SupabaseProfile[]
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Get total revenue
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function getTotalRevenue() {
-  const { data, error } =
-    await supabase
-      .from("ordenes")
-      .select("total")
-
-  if (error) {
-    throw error
-  }
-
-  const total =
-    (data ?? []).reduce(
-      (acc, pedido) =>
-        acc + Number(pedido.total),
-      0
-    )
-
-  return total
 }

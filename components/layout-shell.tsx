@@ -5,12 +5,15 @@ import { usePathname } from "next/navigation"
 import { SiteHeader } from "@/components/site-header"
 
 import { Footer } from "@/components/footer"
+import { useClientPresence } from "@/hooks/use-client-presence"
 
 export function LayoutShell({
   children,
 }: {
   children: React.ReactNode
 }) {
+  useClientPresence()
+
   const pathname =
     usePathname()
 

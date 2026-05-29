@@ -1,136 +1,151 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
-import type {
-  SupabaseProducto,
-} from "@/lib/supabase/types"
-
+import type { SupabaseProducto } from "@/lib/supabase/types"
 import { useProductos } from "@/hooks/use-productos"
 
-import { ProductosToolbar } from "./productos-toolbar"
-import { ProductosTable } from "./productos-table"
 import { ProductoForm } from "./producto-form"
+import { ProductosTable } from "./productos-table"
+import { ProductosToolbar } from "./productos-toolbar"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
+type StockFilter = "todos" | "sin_stock" | "bajo_stock" | "disponible"
+type ActiveFilter = "todos" | "activos" | "inactivos"
+type FeaturedFilter = "todos" | "destacados" | "normales"
+
+function getStockTotal(producto: SupabaseProducto) {
+  const variantes = producto.producto_variantes ?? []
+  if (!variantes.length) return producto.stock ?? 0
+
+  return variantes.reduce((total, variante) => total + (variante.stock ?? 0), 0)
+}
 
 export function AdminProductos() {
   const {
     productos,
     loading,
+    error,
     deleteProducto,
     toggleProductoActivo,
     reloadProductos,
   } = useProductos()
 
-  const [search, setSearch] =
-    useState("")
+  const [search, setSearch] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState("todos")
+  const [stockFilter, setStockFilter] = useState<StockFilter>("todos")
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("todos")
+  const [featuredFilter, setFeaturedFilter] = useState<FeaturedFilter>("todos")
+  const [editando, setEditando] = useState<SupabaseProducto | null | undefined>(
+    undefined
+  )
 
-  const [editando, setEditando] =
-    useState<
-      SupabaseProducto | null | undefined
-    >(undefined)
+  const categorias = useMemo(() => {
+    const byId = new Map<number, string>()
+    productos.forEach((producto) => {
+      if (producto.categoria_id && producto.categorias?.nombre) {
+        byId.set(producto.categoria_id, producto.categorias.nombre)
+      }
+    })
 
-  // undefined = cerrado
-  // null = nuevo producto
-  // producto = edición
+    return Array.from(byId.entries()).map(([id, nombre]) => ({ id, nombre }))
+  }, [productos])
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Search
-  // ───────────────────────────────────────────────────────────────────────────
+  const productosFiltrados = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase()
 
-  const productosFiltrados =
-    productos.filter((p) =>
-      p.nombre
+    return productos.filter((producto) => {
+      const stock = getStockTotal(producto)
+      const matchesSearch = [
+        producto.nombre,
+        producto.slug,
+        producto.categorias?.nombre ?? "",
+      ]
+        .join(" ")
         .toLowerCase()
-        .includes(
-          search.toLowerCase()
-        )
-    )
+        .includes(normalizedSearch)
+      const matchesCategory =
+        categoryFilter === "todos" || String(producto.categoria_id) === categoryFilter
+      const matchesStock =
+        stockFilter === "todos" ||
+        (stockFilter === "sin_stock" && stock <= 0) ||
+        (stockFilter === "bajo_stock" && stock > 0 && stock <= 5) ||
+        (stockFilter === "disponible" && stock > 5)
+      const matchesActive =
+        activeFilter === "todos" ||
+        (activeFilter === "activos" && producto.activo) ||
+        (activeFilter === "inactivos" && !producto.activo)
+      const matchesFeatured =
+        featuredFilter === "todos" ||
+        (featuredFilter === "destacados" && producto.destacado) ||
+        (featuredFilter === "normales" && !producto.destacado)
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Delete
-  // ───────────────────────────────────────────────────────────────────────────
+      return (
+        matchesSearch &&
+        matchesCategory &&
+        matchesStock &&
+        matchesActive &&
+        matchesFeatured
+      )
+    })
+  }, [
+    activeFilter,
+    categoryFilter,
+    featuredFilter,
+    productos,
+    search,
+    stockFilter,
+  ])
 
-  const handleDelete = async (
-    id: number
-  ) => {
-    const ok = confirm(
-      "¿Eliminar este producto?"
-    )
-
+  const handleDelete = async (id: number) => {
+    const ok = confirm("¿Eliminar este producto?")
     if (!ok) return
-
     await deleteProducto(id)
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Toggle activo
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const handleToggleActivo =
-    async (
-      producto: SupabaseProducto
-    ) => {
-      await toggleProductoActivo(
-        producto
-      )
-    }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Saved
-  // ───────────────────────────────────────────────────────────────────────────
-
   const handleSaved = async () => {
     await reloadProductos()
-
     setEditando(undefined)
   }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Form abierto
-  // ───────────────────────────────────────────────────────────────────────────
 
   if (editando !== undefined) {
     return (
       <ProductoForm
         producto={editando}
         onSaved={handleSaved}
-        onCancel={() =>
-          setEditando(undefined)
-        }
+        onCancel={() => setEditando(undefined)}
       />
     )
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // UI
-  // ───────────────────────────────────────────────────────────────────────────
-
   return (
-    <div className="p-8">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <ProductosToolbar
         search={search}
+        categorias={categorias}
+        categoryFilter={categoryFilter}
+        stockFilter={stockFilter}
+        activeFilter={activeFilter}
+        featuredFilter={featuredFilter}
         onSearchChange={setSearch}
-        onCreate={() =>
-          setEditando(null)
-        }
+        onCategoryFilterChange={setCategoryFilter}
+        onStockFilterChange={setStockFilter}
+        onActiveFilterChange={setActiveFilter}
+        onFeaturedFilterChange={setFeaturedFilter}
+        onCreate={() => setEditando(null)}
       />
 
+      {error && (
+        <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
       <ProductosTable
-        productos={
-          productosFiltrados
-        }
+        productos={productosFiltrados}
         loading={loading}
-        onEdit={(producto) =>
-          setEditando(producto)
-        }
+        onEdit={(producto) => setEditando(producto)}
         onDelete={handleDelete}
-        onToggleActivo={
-          handleToggleActivo
-        }
+        onToggleActivo={toggleProductoActivo}
       />
     </div>
   )

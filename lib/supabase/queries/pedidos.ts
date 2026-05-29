@@ -13,7 +13,7 @@ export async function getPedidos() {
   const { data, error } =
     await supabase
       .from("ordenes")
-      .select("*")
+      .select("*, orden_items(*, productos(*), producto_variantes(*))")
       .order("created_at", {
         ascending: false,
       })

@@ -1,95 +1,55 @@
 "use client"
 
-import {
-  useEffect,
-  useState,
-  useCallback,
-} from "react"
-
-import type {
-  SupabasePedido,
-  SupabaseProfile,
-} from "@/lib/supabase/types"
+import { useCallback, useEffect, useState } from "react"
 
 import {
-  getDashboardStats,
-  getLowStockProducts,
-  getRecentOrders,
-  getRecentClients,
-  getTotalRevenue,
-  type LowStockItem,
+  getDashboardData,
   type DashboardStats,
+  type LowStockItem,
+  type TopSellingProduct,
 } from "@/lib/supabase/queries/dashboard"
+import type { SupabasePedido, SupabaseProfile } from "@/lib/supabase/types"
+
+interface DashboardState {
+  stats: DashboardStats | null
+  lowStock: LowStockItem[]
+  recentOrders: SupabasePedido[]
+  recentClients: SupabaseProfile[]
+  topSellingProducts: TopSellingProduct[]
+}
 
 export function useDashboard() {
-  const [stats, setStats] =
-    useState<DashboardStats | null>(
-      null
-    )
+  const [data, setData] = useState<DashboardState>({
+    stats: null,
+    lowStock: [],
+    recentOrders: [],
+    recentClients: [],
+    topSellingProducts: [],
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const [lowStock, setLowStock] =
-    useState<LowStockItem[]>([])
-
-  const [recentOrders, setRecentOrders] =
-    useState<SupabasePedido[]>([])
-
-  const [recentClients, setRecentClients] =
-    useState<SupabaseProfile[]>([])
-
-  const [revenue, setRevenue] =
-    useState(0)
-
-  const [loading, setLoading] =
-    useState(true)
-
-  const loadDashboard =
-    useCallback(async () => {
-      try {
-        setLoading(true)
-
-        const [
-          statsData,
-          lowStockData,
-          ordersData,
-          clientsData,
-          revenueData,
-        ] = await Promise.all([
-          getDashboardStats(),
-          getLowStockProducts(),
-          getRecentOrders(),
-          getRecentClients(),
-          getTotalRevenue(),
-        ])
-
-        setStats(statsData)
-
-        setLowStock(lowStockData)
-
-        setRecentOrders(ordersData)
-
-        setRecentClients(clientsData)
-
-        setRevenue(revenueData)
-      } catch (err) {
-        console.error(err)
-      } finally {
-        setLoading(false)
-      }
-    }, [])
+  const loadDashboard = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      setData(await getDashboardData())
+    } catch (err) {
+      console.error(err)
+      setError("No se pudo cargar el dashboard.")
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    loadDashboard()
+    void loadDashboard()
   }, [loadDashboard])
 
   return {
-    stats,
-    lowStock,
-    recentOrders,
-    recentClients,
-    revenue,
+    ...data,
     loading,
-
-    reloadDashboard:
-      loadDashboard,
+    error,
+    reloadDashboard: loadDashboard,
   }
 }

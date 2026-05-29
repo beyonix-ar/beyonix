@@ -133,7 +133,7 @@ export function CategoriaForm({
           title="Volver"
           aria-label="Volver"
           onClick={onCancel}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 px-4 text-white/70 transition-colors hover:text-white cursor-pointer"
+          className="inline-flex h-12 min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/8 px-6 text-white/70 transition-colors hover:text-white cursor-pointer"
         >
           <ArrowLeft className="size-4" />
 
@@ -204,7 +204,7 @@ export function CategoriaForm({
               disabled={saving}
               title="Guardar categoría"
               aria-label="Guardar categoría"
-              className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
+              className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
             >
               {saving ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -220,7 +220,7 @@ export function CategoriaForm({
               title="Cancelar"
               aria-label="Cancelar"
               onClick={onCancel}
-              className="h-12 rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
+              className="h-12 min-w-140px rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
             >
               Cancelar
             </button>

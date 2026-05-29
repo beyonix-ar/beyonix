@@ -149,14 +149,23 @@
   /* Tokens custom de medidas */
   --spacing-3px: 3px;
   --spacing-55pct: 55%;
+  --spacing-44px: 44px;
   --spacing-56px: 56px;
+  --spacing-88px: 88px;
+  --spacing-112px: 112px;
   --spacing-78vh: 78vh;
   --spacing-80vh: 80vh;
   --spacing-90px: 90px;
+  --spacing-120px: 120px;
+  --spacing-140px: 140px;
+  --spacing-150px: 150px;
+  --spacing-160px: 160px;
   --spacing-90vh: 90vh;
   --spacing-92vh: 92vh;
   --spacing-220px: 220px;
   --spacing-250px: 250px;
+  --spacing-280px: 280px;
+  --spacing-320px: 320px;
 
   --text-12-5px: 12.5px;
   --text-13-5px: 13.5px;
@@ -178,6 +187,22 @@
 
 @utility grid-cols-admin-orders {
   grid-template-columns: 100px 1.5fr 1fr 120px 140px 120px;
+}
+
+@utility grid-cols-admin-orders-pro {
+  grid-template-columns: 90px 1.2fr 1.35fr 140px 140px 140px 130px 90px;
+}
+
+@utility grid-cols-admin-clients {
+  grid-template-columns: 1.1fr 1fr 110px 1.2fr 110px 110px;
+}
+
+@utility grid-cols-admin-client-filters {
+  grid-template-columns: 1.8fr 130px 150px 120px 120px 150px 150px;
+}
+
+@utility grid-cols-admin-product-filters {
+  grid-template-columns: 1.8fr 1fr 130px 120px 140px;
 }
 
 @utility grid-cols-admin-variant-row {
