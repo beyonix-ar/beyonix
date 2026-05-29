@@ -1,10 +1,19 @@
-﻿import Link from "next/link"
+"use client"
 
+import { useEffect } from "react"
+import Link from "next/link"
 import { CheckCircle2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useCart } from "@/context/cart-context"
 
 export default function CheckoutSuccessPage() {
+  const { clearCart } = useCart()
+
+  useEffect(() => {
+    clearCart()
+  }, [])
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-black px-4 text-white">
       <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-beyonix-surface p-8 text-center shadow-2xl">
@@ -34,9 +43,7 @@ export default function CheckoutSuccessPage() {
             title="Ir a productos"
             className="h-12 w-full text-base font-semibold"
           >
-            <Link href="/productos">
-              Seguir comprando
-            </Link>
+            <Link href="/productos">Seguir comprando</Link>
           </Button>
 
           <Button
@@ -47,9 +54,7 @@ export default function CheckoutSuccessPage() {
             variant="outline"
             className="h-12 w-full border-white/15 bg-transparent text-white hover:bg-white/10"
           >
-            <Link href="/">
-              Volver al inicio
-            </Link>
+            <Link href="/">Volver al inicio</Link>
           </Button>
         </div>
       </div>

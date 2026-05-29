@@ -81,6 +81,7 @@ export interface SupabaseProfile {
   direccion?: string | null
   codigo_postal?: string | null
   provincia?: string | null
+  referencias?: string | null
   avatar_url?: string | null
   rol: "cliente" | "admin" | "super_admin"
   created_at: string

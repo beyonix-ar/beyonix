@@ -24,8 +24,13 @@ export function LayoutShell({
       "/reset-password"
     )
 
+  const isAuthPage =
+    pathname.startsWith(
+      "/login"
+    )
+
   // Admin layout
-  if (isAdmin || isPasswordReset) {
+  if (isAdmin || isPasswordReset || isAuthPage) {
     return children
   }
 

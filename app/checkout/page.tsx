@@ -47,6 +47,9 @@ import {
 import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
+import {
+  hasBlockedWords,
+} from "@/lib/validation/content-filter"
 
 import {
   cn,
@@ -84,7 +87,6 @@ export default function CheckoutPage() {
   const {
     cart: items,
     cartSessionId,
-    clearCart,
     isReady: isCartReady,
   } = useCart()
 
@@ -216,6 +218,11 @@ export default function CheckoutPage() {
 
     if (!isFormValid) return
 
+    if (hasBlockedWords(formData.direccion)) {
+      setCheckoutError("La dirección contiene texto no permitido.")
+      return
+    }
+
     setIsProcessing(true)
     setCheckoutError("")
 
@@ -247,7 +254,6 @@ export default function CheckoutPage() {
         return
       }
 
-      clearCart()
       window.location.href = data.init_point
     } catch {
       setCheckoutError(

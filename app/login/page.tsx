@@ -27,6 +27,7 @@ function getSafeRedirect(redirect: string | null) {
 }
 
 function Field({
+  name,
   label,
   type,
   value,
@@ -34,7 +35,9 @@ function Field({
   placeholder,
   maxLength,
   inputMode,
+  autoComplete,
 }: {
+  name: string
   label: string
   type: string
   value: string
@@ -42,11 +45,16 @@ function Field({
   placeholder?: string
   maxLength?: number
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"]
+  autoComplete?: string
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm text-white/80">{label}</label>
+      <label htmlFor={name} className="mb-2 block text-sm text-white/80">
+        {label}
+      </label>
       <input
+        id={name}
+        name={name}
         type={type}
         aria-label={label}
         title={label}
@@ -55,8 +63,44 @@ function Field({
         placeholder={placeholder}
         maxLength={maxLength}
         inputMode={inputMode}
+        autoComplete={autoComplete}
         onChange={(e) => onChange(e.target.value)}
         className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus"
+      />
+    </div>
+  )
+}
+
+function TextareaField({
+  name,
+  label,
+  value,
+  onChange,
+  placeholder,
+  maxLength,
+}: {
+  name: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  maxLength?: number
+}) {
+  return (
+    <div className="md:col-span-2">
+      <label htmlFor={name} className="mb-2 block text-sm text-white/80">
+        {label}
+      </label>
+      <textarea
+        id={name}
+        name={name}
+        aria-label={label}
+        title={label}
+        value={value}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        onChange={(e) => onChange(e.target.value)}
+        className="min-h-24 w-full resize-none rounded-xl border border-white/10 bg-black px-4 py-3 text-sm leading-6 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus"
       />
     </div>
   )
@@ -77,6 +121,7 @@ function LoginContent() {
   const [postalCode, setPostalCode] = useState("")
   const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
+  const [references, setReferences] = useState("")
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
@@ -121,6 +166,7 @@ function LoginContent() {
       postalCode,
       phone,
       password,
+      references,
     })
 
     if (validationError) {
@@ -138,6 +184,7 @@ function LoginContent() {
       postalCode,
       phone,
       province,
+      references,
     })
 
     setLoading(false)
@@ -184,9 +231,20 @@ function LoginContent() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-black px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-beyonix-surface-4 p-8 shadow-2xl">
-        <div className="mb-8">
+    <main className="flex min-h-screen items-center justify-center bg-black px-4 py-8">
+      <div
+        className={`w-full rounded-2xl border border-white/10 bg-beyonix-surface-4 p-6 shadow-2xl lg:p-8 ${
+          mode === "login" ? "max-w-md" : "max-w-5xl"
+        }`}
+      >
+        <div
+          className={
+            mode === "login"
+              ? "mb-6 space-y-5"
+              : "mb-7 grid gap-5 lg:grid-cols-[1fr_360px] lg:items-end"
+          }
+        >
+          <div>
           <p className="mb-2 text-11px font-medium uppercase tracking-widest text-beyonix-focus">
             BEYONIX
           </p>
@@ -198,9 +256,9 @@ function LoginContent() {
               ? "Accedé a tu cuenta para continuar la compra."
               : "Registrate para comprar en BEYONIX."}
           </p>
-        </div>
+          </div>
 
-        <div className="mb-6 grid grid-cols-2 rounded-xl border border-white/10 bg-black p-1">
+        <div className="grid grid-cols-2 rounded-xl border border-white/10 bg-black p-1">
           <button
             type="button"
             aria-label="Iniciar sesión"
@@ -230,57 +288,96 @@ function LoginContent() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className={mode === "register" ? "grid gap-5 md:grid-cols-2" : "space-y-4"}
+        >
           {mode === "register" && (
             <>
               <Field
+                name="username"
                 label="Nombre de usuario"
                 type="text"
                 value={username}
                 onChange={setUsername}
                 placeholder="usuario.tech"
                 maxLength={FIELD_LIMITS.username}
+                autoComplete="username"
               />
               <Field
+                name="name"
                 label="Nombre y apellido"
                 type="text"
                 value={name}
                 onChange={setName}
                 placeholder="Nombre Apellido"
                 maxLength={FIELD_LIMITS.name}
+                autoComplete="name"
               />
             </>
           )}
 
           {mode === "login" ? (
-            <Field
-              label="Email o usuario"
-              type="text"
-              value={identifier}
-              onChange={setIdentifier}
-              placeholder="usuario.tech o nombre@email.com"
-              maxLength={FIELD_LIMITS.loginIdentifier}
-            />
+            <>
+              <Field
+                name="login-identifier"
+                label="Email o usuario"
+                type="text"
+                value={identifier}
+                onChange={setIdentifier}
+                placeholder="usuario.tech o nombre@email.com"
+                maxLength={FIELD_LIMITS.loginIdentifier}
+                autoComplete="username"
+              />
+              <Field
+                name="current-password"
+                label="Contraseña"
+                type="password"
+                value={password}
+                onChange={setPassword}
+                placeholder="Contraseña"
+                maxLength={FIELD_LIMITS.password}
+                autoComplete="current-password"
+              />
+            </>
           ) : (
-            <Field
-              label="Email"
-              type="email"
-              value={email}
-              onChange={setEmail}
-              placeholder="nombre@email.com"
-              maxLength={FIELD_LIMITS.email}
-            />
+            <>
+              <Field
+                name="new-password"
+                label="Contraseña"
+                type="password"
+                value={password}
+                onChange={setPassword}
+                placeholder="Mínimo 6 caracteres"
+                maxLength={FIELD_LIMITS.password}
+                autoComplete="new-password"
+              />
+              <Field
+                name="email"
+                label="Email"
+                type="email"
+                value={email}
+                onChange={setEmail}
+                placeholder="nombre@email.com"
+                maxLength={FIELD_LIMITS.email}
+                autoComplete="email"
+              />
+            </>
           )}
 
           {mode === "register" && (
             <>
               <Field
+                name="address"
                 label="Dirección"
                 type="text"
                 value={address}
                 onChange={setAddress}
                 placeholder="Calle 1234, piso/depto"
                 maxLength={FIELD_LIMITS.address}
+                autoComplete="street-address"
               />
               <div>
                 <label className="mb-2 block text-sm text-white/80">
@@ -289,6 +386,7 @@ function LoginContent() {
                 <ProvinceSelect value={province} onChange={setProvince} />
               </div>
               <Field
+                name="postal-code"
                 label="Código postal"
                 type="tel"
                 value={postalCode}
@@ -298,8 +396,10 @@ function LoginContent() {
                 placeholder="1001"
                 maxLength={FIELD_LIMITS.postalCode}
                 inputMode="numeric"
+                autoComplete="postal-code"
               />
               <Field
+                name="phone"
                 label="Teléfono móvil"
                 type="tel"
                 value={phone}
@@ -309,18 +409,18 @@ function LoginContent() {
                 placeholder="1100000000"
                 maxLength={FIELD_LIMITS.phone}
                 inputMode="numeric"
+                autoComplete="tel"
+              />
+              <TextareaField
+                name="references"
+                label="Referencias"
+                value={references}
+                onChange={setReferences}
+                placeholder="Entre Córdoba y Entre Ríos, fachada blanca, portón negro, antes de llegar a la esquina."
+                maxLength={FIELD_LIMITS.references}
               />
             </>
           )}
-
-          <Field
-            label="Contraseña"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            placeholder={mode === "register" ? "Mínimo 6 caracteres" : ""}
-            maxLength={FIELD_LIMITS.password}
-          />
 
           {mode === "login" && (
             <button
@@ -335,13 +435,13 @@ function LoginContent() {
           )}
 
           {error && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400 md:col-span-2">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400">
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400 md:col-span-2">
               {success}
             </div>
           )}
@@ -351,7 +451,7 @@ function LoginContent() {
             aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
             title={mode === "login" ? "Ingresar" : "Crear cuenta"}
             disabled={loading}
-            className="flex h-12 w-full cursor-pointer items-center justify-center rounded-xl bg-white font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex h-12 w-full cursor-pointer items-center justify-center rounded-xl bg-white font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50 md:col-span-2"
           >
             {loading ? (
               <Loader2 className="size-5 animate-spin" />

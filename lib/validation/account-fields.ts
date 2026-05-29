@@ -37,6 +37,7 @@ export const FIELD_LIMITS = {
   phone: 15,
   password: 20,
   loginIdentifier: 120,
+  references: 180,
 }
 
 export type RegisterValidationPayload = {
@@ -48,6 +49,16 @@ export type RegisterValidationPayload = {
   postalCode: string
   phone: string
   password: string
+  references?: string
+}
+
+export type ProfileValidationPayload = {
+  name: string
+  address: string
+  province: string
+  postalCode: string
+  phone: string
+  references?: string
 }
 
 export function onlyDigits(value: string, maxLength: number) {
@@ -173,8 +184,76 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
   const passwordError = validatePassword(data.password)
   if (passwordError) return passwordError
 
+  if (data.references?.trim()) {
+    const referencesError = validateCleanText(
+      data.references,
+      "las referencias",
+      FIELD_LIMITS.references,
+      {
+        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        allowedHint:
+          "Usá solo letras, números y signos comunes en las referencias.",
+      }
+    )
+    if (referencesError) return referencesError
+  }
+
   if (!hasCommonAllowedChars(data.address)) {
     return "La dirección contiene caracteres no permitidos."
+  }
+
+  return ""
+}
+
+export function validateProfilePayload(data: ProfileValidationPayload) {
+  const nameError = validateCleanText(
+    data.name,
+    "tu nombre y apellido",
+    FIELD_LIMITS.name,
+    {
+      minLength: 3,
+      pattern: /^[a-zA-ZÀ-ÿ\s'-]+$/,
+      allowedHint: "Usá solo letras, espacios, apóstrofe o guion en el nombre.",
+    }
+  )
+  if (nameError) return nameError
+
+  const addressError = validateCleanText(
+    data.address,
+    "tu dirección",
+    FIELD_LIMITS.address,
+    {
+      minLength: 5,
+      pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+      allowedHint: "Usá solo letras, números y signos comunes de dirección.",
+    }
+  )
+  if (addressError) return addressError
+
+  if (!ARGENTINA_PROVINCES.includes(data.province)) {
+    return "Seleccioná una provincia válida."
+  }
+
+  if (!/^\d{4,8}$/.test(data.postalCode)) {
+    return "El código postal debe tener entre 4 y 8 números."
+  }
+
+  if (!/^\d{8,15}$/.test(data.phone)) {
+    return "El teléfono móvil debe tener entre 8 y 15 números."
+  }
+
+  if (data.references?.trim()) {
+    const referencesError = validateCleanText(
+      data.references,
+      "las referencias",
+      FIELD_LIMITS.references,
+      {
+        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        allowedHint:
+          "Usá solo letras, números y signos comunes en las referencias.",
+      }
+    )
+    if (referencesError) return referencesError
   }
 
   return ""

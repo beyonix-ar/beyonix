@@ -203,7 +203,7 @@ export function SiteHeader() {
                 </>
               ) : (
                 <Link
-                  href="/cuenta"
+                  href="/login?redirect=/cuenta"
                   className="flex h-10 items-center gap-2 rounded-full border border-white/10 px-3.5 text-sm font-medium text-white/72 transition-colors hover:border-white/20 hover:text-white"
                 >
                   <User className="size-3.5" />
@@ -293,7 +293,7 @@ export function SiteHeader() {
                 </>
               ) : (
                 <Link
-                  href="/cuenta"
+                  href="/login?redirect=/cuenta"
                   onClick={() => setMobileOpen(false)}
                   className="block px-2 py-3 text-sm font-medium text-beyonix-cyan transition-colors hover:text-white"
                 >

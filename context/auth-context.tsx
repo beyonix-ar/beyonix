@@ -64,6 +64,8 @@ export interface BeyonixUser {
 
   postalCode?: string
 
+  references?: string
+
   avatarUrl?: string
 
   createdAt: string
@@ -78,6 +80,7 @@ export interface RegisterPayload {
   postalCode: string
   phone: string
   province: string
+  references?: string
 }
 
 interface AuthContextType {
@@ -149,6 +152,9 @@ function profileToUser(
     postalCode:
       profile.codigo_postal ?? undefined,
 
+    references:
+      profile.referencias ?? undefined,
+
     avatarUrl:
       profile.avatar_url ?? undefined,
   }
@@ -207,6 +213,11 @@ export function AuthProvider({
         ) {
           setUser({
             id: supabaseUser.id,
+
+            username:
+              supabaseUser
+                .user_metadata
+                ?.username ?? undefined,
 
             name:
               supabaseUser
@@ -446,6 +457,8 @@ export function AuthProvider({
               form.phone,
             password:
               form.password,
+            references:
+              form.references,
           })
 
         if (validationError) {
@@ -484,6 +497,8 @@ export function AuthProvider({
                     form.postalCode.trim(),
                   provincia:
                     form.province.trim(),
+                  referencias:
+                    form.references?.trim() ?? "",
                 },
               },
             }
@@ -512,24 +527,48 @@ export function AuthProvider({
         }
 
         if (data.user) {
-          const { error: profileError } =
+          const profilePayload = {
+            username:
+              form.username.trim().toLowerCase(),
+            nombre:
+              form.name.trim(),
+            telefono:
+              form.phone.trim(),
+            direccion:
+              form.address.trim(),
+            codigo_postal:
+              form.postalCode.trim(),
+            provincia:
+              form.province.trim(),
+            referencias:
+              form.references?.trim() ?? "",
+          }
+
+          let { error: profileError } =
             await supabase
               .from("profiles")
-              .update({
-                username:
-                  form.username.trim().toLowerCase(),
-                nombre:
-                  form.name.trim(),
-                telefono:
-                  form.phone.trim(),
-                direccion:
-                  form.address.trim(),
-                codigo_postal:
-                  form.postalCode.trim(),
-                provincia:
-                  form.province.trim(),
-              } as never)
+              .update(profilePayload as never)
               .eq("id", data.user.id)
+
+          if (
+            profileError &&
+            profileError.message
+              .toLowerCase()
+              .includes("referencias")
+          ) {
+            const {
+              referencias,
+              ...profilePayloadWithoutReferences
+            } = profilePayload
+
+            const retry =
+              await supabase
+                .from("profiles")
+                .update(profilePayloadWithoutReferences as never)
+                .eq("id", data.user.id)
+
+            profileError = retry.error
+          }
 
           if (profileError) {
             return {
@@ -629,6 +668,10 @@ export function AuthProvider({
 
         if (data.avatarUrl !== undefined) {
           payload.avatar_url = data.avatarUrl
+        }
+
+        if (data.references !== undefined) {
+          payload.referencias = data.references
         }
 
         await supabase

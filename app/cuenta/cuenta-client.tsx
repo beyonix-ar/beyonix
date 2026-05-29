@@ -26,6 +26,7 @@ import { supabase } from "@/lib/supabase/client"
 import {
   FIELD_LIMITS,
   onlyDigits,
+  validateProfilePayload,
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
 
@@ -385,11 +386,27 @@ function MisDatos({ onBack }: { onBack: () => void }) {
   const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? "")
   const [saved, setSaved] = useState(false)
+  const [profileError, setProfileError] = useState("")
   const [avatarLoading, setAvatarLoading] = useState(false)
   const [avatarError, setAvatarError] = useState("")
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
+    setProfileError("")
+
+    const validationError = validateProfilePayload({
+      name,
+      phone,
+      province,
+      address,
+      postalCode,
+    })
+
+    if (validationError) {
+      setProfileError(validationError)
+      return
+    }
+
     updateUser({ name, phone, province, address, postalCode })
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
@@ -517,6 +534,12 @@ function MisDatos({ onBack }: { onBack: () => void }) {
           <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} maxLength={FIELD_LIMITS.address} />
           <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
 
+          {profileError && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
+              <p className="text-sm text-red-400">{profileError}</p>
+            </div>
+          )}
+
           <button type="submit" aria-label="Guardar cambios" title="Guardar cambios"
             className="w-full h-10 rounded-xl bg-beyonix-blue border border-beyonix-blue-light/60 text-sm font-semibold text-white hover:bg-beyonix-blue-light transition-colors cursor-pointer mt-2">
             {saved ? "Guardado" : "Guardar cambios"}
@@ -626,7 +649,21 @@ export function CuentaClient() {
     if (user) setTab("login")
   }, [user])
 
+  useEffect(() => {
+    if (isLoading || user) return
+
+    window.location.replace("/login?redirect=/cuenta")
+  }, [isLoading, user])
+
   if (isLoading) {
+    return (
+      <main className="min-h-screen bg-black flex items-center justify-center pt-20">
+        <div className="size-8 rounded-full border-2 border-white/10 border-t-white/60 animate-spin" />
+      </main>
+    )
+  }
+
+  if (!user) {
     return (
       <main className="min-h-screen bg-black flex items-center justify-center pt-20">
         <div className="size-8 rounded-full border-2 border-white/10 border-t-white/60 animate-spin" />
@@ -649,7 +686,8 @@ export function CuentaClient() {
             </div>
             <ProfilePanel initialView={initialView} />
           </>
-        ) : (
+        ) : null}
+        {false && (
           <>
             <div className="mb-8 text-center">
               <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan mb-2">
