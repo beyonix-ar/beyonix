@@ -9,11 +9,15 @@ import type {
 interface PresenceRow {
   user_id: string
   last_seen_at: string | null
+  current_path?: string | null
+  updated_at?: string | null
 }
 
 interface CartRow {
   user_id: string
   payload: Record<string, unknown> | unknown[] | null
+  updated_at?: string | null
+  expires_at?: string | null
 }
 
 function getApellido(nombre: string | null | undefined) {
@@ -33,17 +37,13 @@ function isPaidOrder(order: SupabasePedido) {
 
 export async function getClientes() {
   const [profilesResult, ordersResult, presenceResult, cartsResult] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("*")
-      .eq("rol", "cliente")
-      .order("created_at", { ascending: false }),
+    supabase.rpc("admin_get_client_profiles"),
     supabase
       .from("ordenes")
       .select("*, orden_items(*, productos(*), producto_variantes(*))")
       .order("created_at", { ascending: false }),
-    supabase.from("client_presence").select("user_id, last_seen_at"),
-    supabase.from("client_carts").select("user_id, payload"),
+    supabase.rpc("admin_get_client_presence"),
+    supabase.rpc("admin_get_client_carts"),
   ])
 
   if (profilesResult.error) throw profilesResult.error

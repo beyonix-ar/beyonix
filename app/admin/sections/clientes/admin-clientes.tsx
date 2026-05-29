@@ -377,8 +377,11 @@ export function AdminClientes({
       </div>
 
       <div className="rounded-2xl border border-beyonix-blue-light/25 bg-beyonix-blue px-4 py-3 text-sm text-beyonix-sky">
-        Usuarios activos se conectan desde `client_presence`. Si no aparecen, falta
-        que el sitio escriba presencia del cliente o que Supabase permita lectura admin.
+        {activeCount > 0
+          ? `${activeCount} cliente${activeCount === 1 ? "" : "s"} activo${
+              activeCount === 1 ? "" : "s"
+            } detectado${activeCount === 1 ? "" : "s"} en los últimos 5 minutos.`
+          : "Sin clientes activos detectados en los últimos 5 minutos."}
       </div>
 
       {error && (

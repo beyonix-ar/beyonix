@@ -23,6 +23,11 @@ export interface TopSellingProduct {
   total: number
 }
 
+interface PresenceRow {
+  user_id: string
+  last_seen_at: string | null
+}
+
 export interface DashboardStats {
   totalProductos: number
   productosActivos: number
@@ -143,11 +148,7 @@ export async function getDashboardData() {
       supabase
         .from("productos")
         .select("*, categorias(*), imagenes_producto(*), producto_variantes(*)"),
-      supabase
-        .from("profiles")
-        .select("*")
-        .eq("rol", "cliente")
-        .order("created_at", { ascending: false }),
+      supabase.rpc("admin_get_client_profiles"),
       supabase
         .from("ordenes")
         .select("*")
@@ -155,7 +156,7 @@ export async function getDashboardData() {
       supabase
         .from("orden_items")
         .select("*, productos(*), producto_variantes(*)"),
-      supabase.from("client_presence").select("user_id, last_seen_at"),
+      supabase.rpc("admin_get_client_presence"),
     ])
 
   if (productosResult.error) throw productosResult.error
@@ -168,13 +169,15 @@ export async function getDashboardData() {
   const ordenes = (ordenesResult.data ?? []) as SupabasePedido[]
   const items = (itemsResult.data ?? []) as SupabasePedidoItem[]
   const activeSince = Date.now() - 5 * 60 * 1000
-  const activeClients = presenceResult.error
-    ? 0
-    : (presenceResult.data ?? []).filter((row) =>
-        row.last_seen_at
-          ? new Date(row.last_seen_at).getTime() >= activeSince
-          : false
-      ).length
+  const presenceRows = presenceResult.error
+    ? []
+    : ((presenceResult.data ?? []) as PresenceRow[])
+  const activeClients = presenceRows
+    .filter((row) =>
+      row.last_seen_at
+        ? new Date(row.last_seen_at).getTime() >= activeSince
+        : false
+    ).length
 
   const itemsByOrder = items.reduce<Record<number, SupabasePedidoItem[]>>(
     (acc, item) => {

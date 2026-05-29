@@ -28,13 +28,18 @@ export function useClientPresence() {
     if (!user?.id) return
 
     const updatePresence = async () => {
-      await supabase.from("client_presence").upsert({
-        user_id: user.id,
-        last_seen_at: new Date().toISOString(),
-        current_path: window.location.pathname,
-        user_agent: navigator.userAgent,
-        updated_at: new Date().toISOString(),
-      })
+      await supabase
+        .from("client_presence")
+        .upsert(
+          {
+            user_id: user.id,
+            last_seen_at: new Date().toISOString(),
+            current_path: window.location.pathname,
+            user_agent: navigator.userAgent,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        )
     }
 
     void updatePresence()
@@ -56,12 +61,17 @@ export function useClientPresence() {
     if (!user?.id || !isReady) return
 
     const saveCart = async () => {
-      await supabase.from("client_carts").upsert({
-        user_id: user.id,
-        payload: cartPayload,
-        updated_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      })
+      await supabase
+        .from("client_carts")
+        .upsert(
+          {
+            user_id: user.id,
+            payload: cartPayload,
+            updated_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          },
+          { onConflict: "user_id" }
+        )
     }
 
     void saveCart()

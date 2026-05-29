@@ -273,9 +273,30 @@
     @apply border-border outline-ring/50;
   }
 
+  html {
+    background: #000000;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-body);
+    background: #000000;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  main.bg-black,
+  main.bg-background,
+  main.bg-beyonix-page,
+  main.bg-beyonix-section,
+  section.bg-background,
+  section.bg-black,
+  section.bg-beyonix-section,
+  div.min-h-screen.bg-black,
+  div.min-h-screen.bg-beyonix-page,
+  footer.bg-beyonix-page {
+    background-color: transparent;
   }
 
   h1,
@@ -289,6 +310,41 @@
     font-family: var(--font-heading);
     letter-spacing: -0.02em;
   }
+}
+
+.beyonix-electric-background {
+  background: #000000;
+  height: 100vh;
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  width: 100vw;
+  z-index: 0;
+}
+
+.beyonix-electric-background,
+.beyonix-electric-background canvas,
+.beyonix-electric-background .vanta-canvas {
+  height: 100vh !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  position: fixed !important;
+  width: 100vw !important;
+}
+
+.beyonix-electric-background canvas,
+.beyonix-electric-background .vanta-canvas {
+  opacity: 1 !important;
+}
+
+main[class*="bg-"],
+section[class*="bg-"],
+footer[class*="bg-"],
+body > div.relative.z-10 main,
+body > div.relative.z-10 section,
+body > div.relative.z-10 footer,
+body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
+  background-color: transparent !important;
 }
 
 /* =========================
