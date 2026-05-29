@@ -2,7 +2,15 @@
 
 import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
-import { ShoppingBag, User, ChevronDown, Menu, X, LogOut, Package } from "lucide-react"
+import {
+  ChevronDown,
+  LogOut,
+  Menu,
+  Package,
+  ShoppingBag,
+  User,
+  X,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
@@ -27,14 +35,24 @@ export function SiteHeader() {
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
   const userInitials = user
-    ? user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+    ? user.name
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
     : null
 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
-      if (catRef.current && !catRef.current.contains(e.target as Node)) setCatOpen(false)
-      if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false)
+      if (catRef.current && !catRef.current.contains(e.target as Node)) {
+        setCatOpen(false)
+      }
+      if (userRef.current && !userRef.current.contains(e.target as Node)) {
+        setUserOpen(false)
+      }
     }
+
     document.addEventListener("mousedown", handleOutside)
     return () => document.removeEventListener("mousedown", handleOutside)
   }, [])
@@ -43,63 +61,64 @@ export function SiteHeader() {
     function handleResize() {
       if (window.innerWidth >= 1024) setMobileOpen(false)
     }
+
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [])
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-black/85 backdrop-blur-md border-b border-white/10">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black">
       <nav className="container mx-auto px-4 lg:px-8">
-        <div className="grid grid-cols-site-header items-center h-16 lg:h-20">
-
-          {/* ── Logo ── */}
+        <div className="grid h-16 grid-cols-site-header items-center lg:h-20">
           <Link
             href="/"
-            className="shrink-0 font-heading text-26px lg:text-28px font-bold tracking-tight uppercase text-white hover:text-white/90 transition-colors"
+            className="shrink-0 font-heading text-26px font-bold uppercase tracking-tight text-white transition-colors hover:text-white/90 lg:text-28px"
           >
             BEYONIX
           </Link>
 
-          {/* ── Nav desktop ── */}
-          <div className="hidden lg:flex items-center justify-center gap-8">
+          <div className="hidden items-center justify-center gap-8 lg:flex">
             <Link
               href="/"
-              className="text-sm font-medium text-white/80 hover:text-white transition-colors"
+              className="text-sm font-medium text-white/78 transition-colors hover:text-white"
             >
               Inicio
             </Link>
 
             <Link
               href="/productos"
-              className="text-sm font-medium text-white/80 hover:text-white transition-colors"
+              className="text-sm font-medium text-white/78 transition-colors hover:text-white"
             >
               Productos
             </Link>
 
-            {/* Dropdown Categorías */}
             <div ref={catRef} className="relative">
               <button
                 type="button"
-                aria-label="Abrir categorias"
-                title="Abrir categorias"
+                aria-label="Abrir categorías"
+                title="Abrir categorías"
                 onClick={() => setCatOpen((v) => !v)}
-                className="flex items-center gap-1.5 text-sm font-medium text-white/80 hover:text-white transition-colors cursor-pointer"
+                className="flex cursor-pointer items-center gap-1.5 text-sm font-medium text-white/78 transition-colors hover:text-white"
               >
                 Categorías
                 <ChevronDown
-                  className={`size-3.5 transition-transform duration-200 ${catOpen ? "rotate-180" : ""}`}
+                  className={`size-3.5 transition-transform duration-200 ${
+                    catOpen ? "rotate-180" : ""
+                  }`}
                 />
               </button>
 
               {catOpen && (
-                <div className="absolute left-0 mt-3 w-52 overflow-hidden rounded-xl border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60 z-50">
+                <div className="absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-lg border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
                   {categoryLinks.map((link, i) => (
                     <Link
                       key={link.href}
                       href={link.href}
                       onClick={() => setCatOpen(false)}
-                      className={`block px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors ${
-                        i < categoryLinks.length - 1 ? "border-b border-white/6" : ""
+                      className={`block px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white ${
+                        i < categoryLinks.length - 1
+                          ? "border-b border-white/6"
+                          : ""
                       }`}
                     >
                       {link.label}
@@ -108,7 +127,7 @@ export function SiteHeader() {
                   <Link
                     href="/categorias"
                     onClick={() => setCatOpen(false)}
-                    className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-beyonix-cyan hover:bg-white/5 transition-colors border-t border-white/6"
+                    className="flex items-center gap-2 border-t border-white/6 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-white/5"
                   >
                     Ver todas →
                   </Link>
@@ -118,43 +137,42 @@ export function SiteHeader() {
 
             <Link
               href="/#contacto"
-              className="text-sm font-medium text-white/80 hover:text-white transition-colors"
+              className="text-sm font-medium text-white/78 transition-colors hover:text-white"
             >
               Contacto
             </Link>
           </div>
 
-          {/* ── Acciones derecha ── */}
           <div className="flex items-center justify-end gap-2">
-
-            {/* Usuario desktop */}
-            <div ref={userRef} className="hidden lg:block relative">
+            <div ref={userRef} className="relative hidden lg:block">
               {user ? (
                 <>
                   <button
                     type="button"
-                    aria-label="Abrir menu de usuario"
-                    title="Abrir menu de usuario"
+                    aria-label="Abrir menú de usuario"
+                    title="Abrir menú de usuario"
                     onClick={() => setUserOpen((v) => !v)}
-                    className="flex items-center gap-2 h-9 px-3 rounded-lg border border-white/8 bg-white/3 hover:bg-white/6 hover:border-white/15 transition-all cursor-pointer"
+                    className="flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/4 px-3 text-white transition-all hover:border-white/20 hover:bg-white/7"
                   >
-                    <div className="size-6 rounded-md bg-beyonix-blue border border-beyonix-blue-light/50 flex items-center justify-center text-10px font-bold text-white shrink-0">
+                    <div className="flex size-6 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/50 bg-beyonix-blue text-10px font-bold text-white">
                       {userInitials}
                     </div>
-                    <span className="text-sm font-medium text-white/80 max-w-90px truncate">
+                    <span className="max-w-90px truncate text-sm font-medium text-white/82">
                       {user.name.split(" ")[0]}
                     </span>
                     <ChevronDown
-                      className={`size-3 text-white/50 transition-transform duration-200 ${userOpen ? "rotate-180" : ""}`}
+                      className={`size-3 text-white/52 transition-transform duration-200 ${
+                        userOpen ? "rotate-180" : ""
+                      }`}
                     />
                   </button>
 
                   {userOpen && (
-                    <div className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60 z-50">
+                    <div className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-lg border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
                       <Link
                         href="/cuenta"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors border-b border-white/6"
+                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
                       >
                         <User className="size-3.5 shrink-0" />
                         Mi cuenta
@@ -162,7 +180,7 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors border-b border-white/6"
+                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
                       >
                         <Package className="size-3.5 shrink-0" />
                         Mis órdenes
@@ -171,8 +189,11 @@ export function SiteHeader() {
                         type="button"
                         aria-label="Cerrar sesión"
                         title="Cerrar sesión"
-                        onClick={() => { logout(); setUserOpen(false) }}
-                        className="flex w-full items-center gap-2.5 px-4 py-3 text-sm text-white/75 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
+                        onClick={() => {
+                          logout()
+                          setUserOpen(false)
+                        }}
+                        className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
                       >
                         <LogOut className="size-3.5 shrink-0" />
                         Cerrar sesión
@@ -183,7 +204,7 @@ export function SiteHeader() {
               ) : (
                 <Link
                   href="/cuenta"
-                  className="flex items-center gap-2 h-9 px-3.5 rounded-lg border border-white/8 text-sm font-medium text-white/70 hover:text-white hover:border-white/20 transition-colors"
+                  className="flex h-10 items-center gap-2 rounded-lg border border-white/10 px-3.5 text-sm font-medium text-white/72 transition-colors hover:border-white/20 hover:text-white"
                 >
                   <User className="size-3.5" />
                   Iniciar sesión
@@ -191,21 +212,20 @@ export function SiteHeader() {
               )}
             </div>
 
-            {/* Carrito */}
             <button
               type="button"
               onClick={openCart}
               aria-label="Abrir carrito"
               title="Abrir carrito"
-              className="relative flex items-center gap-2.5 h-9 pl-3 pr-3 rounded-lg border border-white/8 bg-white/3 hover:bg-white/6 hover:border-white/15 transition-all cursor-pointer"
+              className="relative flex h-10 min-w-36 cursor-pointer items-center gap-2.5 rounded-lg border border-white/10 bg-white/4 px-3 transition-all hover:border-white/20 hover:bg-white/7"
             >
-              <ShoppingBag className="size-4.5 shrink-0 text-white/80" />
+              <ShoppingBag className="size-4.5 shrink-0 text-white/82" />
 
-              <div className="hidden sm:flex flex-col items-start leading-none gap-0.5">
-                <span className="text-10px font-medium text-white/50 uppercase tracking-wide">
-                  Tu carrito
+              <div className="hidden min-w-0 flex-col items-start gap-0.5 leading-none sm:flex">
+                <span className="text-10px font-semibold uppercase tracking-wide text-white/48">
+                  Carrito
                 </span>
-                <span className="text-sm font-bold text-white tabular-nums">
+                <span className="max-w-24 truncate text-sm font-bold tabular-nums text-white">
                   {total.toLocaleString("es-AR", {
                     style: "currency",
                     currency: "ARS",
@@ -215,28 +235,26 @@ export function SiteHeader() {
               </div>
 
               {itemCount > 0 && (
-                <Badge className="absolute -top-1.5 -right-1.5 size-5 p-0 flex items-center justify-center text-10px font-bold bg-beyonix-blue border border-beyonix-blue-light text-white rounded-full">
+                <Badge className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-beyonix-blue-light bg-beyonix-blue p-0 text-10px font-bold text-white">
                   {itemCount}
                 </Badge>
               )}
             </button>
 
-            {/* Hamburger */}
             <button
               type="button"
               onClick={() => setMobileOpen((v) => !v)}
-              aria-label="Abrir menu"
-              title="Abrir menu"
-              className="lg:hidden flex items-center justify-center size-10 rounded-lg text-white/80 hover:text-white hover:bg-white/8 transition-colors cursor-pointer"
+              aria-label="Abrir menú"
+              title="Abrir menú"
+              className="flex size-10 cursor-pointer items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/8 hover:text-white lg:hidden"
             >
               {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
             </button>
           </div>
         </div>
 
-        {/* ── Mobile menu ── */}
         {mobileOpen && (
-          <div className="lg:hidden border-t border-white/6 py-4 space-y-1">
+          <div className="space-y-1 border-t border-white/6 py-4 lg:hidden">
             {[
               { label: "Inicio", href: "/" },
               { label: "Productos", href: "/productos" },
@@ -247,19 +265,19 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileOpen(false)}
-                className="block px-2 py-3 text-sm font-medium text-white/80 hover:text-white transition-colors"
+                className="block px-2 py-3 text-sm font-medium text-white/80 transition-colors hover:text-white"
               >
                 {link.label}
               </Link>
             ))}
 
-            <div className="pt-2 border-t border-white/6 mt-2">
+            <div className="mt-2 border-t border-white/6 pt-2">
               {user ? (
                 <>
                   <Link
                     href="/cuenta"
                     onClick={() => setMobileOpen(false)}
-                    className="block px-2 py-3 text-sm font-medium text-white/80 hover:text-white transition-colors"
+                    className="block px-2 py-3 text-sm font-medium text-white/80 transition-colors hover:text-white"
                   >
                     Mi cuenta ({user.name.split(" ")[0]})
                   </Link>
@@ -267,8 +285,11 @@ export function SiteHeader() {
                     type="button"
                     aria-label="Cerrar sesión"
                     title="Cerrar sesión"
-                    onClick={() => { logout(); setMobileOpen(false) }}
-                    className="block w-full text-left px-2 py-3 text-sm font-medium text-white/60 hover:text-white transition-colors cursor-pointer"
+                    onClick={() => {
+                      logout()
+                      setMobileOpen(false)
+                    }}
+                    className="block w-full cursor-pointer px-2 py-3 text-left text-sm font-medium text-white/60 transition-colors hover:text-white"
                   >
                     Cerrar sesión
                   </button>
@@ -277,7 +298,7 @@ export function SiteHeader() {
                 <Link
                   href="/cuenta"
                   onClick={() => setMobileOpen(false)}
-                  className="block px-2 py-3 text-sm font-medium text-beyonix-cyan hover:text-white transition-colors"
+                  className="block px-2 py-3 text-sm font-medium text-beyonix-cyan transition-colors hover:text-white"
                 >
                   Iniciar sesión / Registrarse
                 </Link>

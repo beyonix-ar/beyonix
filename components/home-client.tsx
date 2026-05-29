@@ -6,16 +6,15 @@ import type { SupabaseProducto } from "@/lib/supabase/types"
 
 import { useCart } from "@/context/cart-context"
 
-import { HeroSection } from "@/components/hero-section"
-import { CategoriesSection } from "@/components/categories-section"
-import { ProductsSection } from "@/components/products-section"
 import { BenefitsSection } from "@/components/benefits-section"
+import { CategoriesSection } from "@/components/categories-section"
+import { HeroSection } from "@/components/hero-section"
+import { ProductsSection } from "@/components/products-section"
 import { ReviewsSection } from "@/components/reviews-section"
 import { WhatsAppButton } from "@/components/whatsapp-button"
 
 export function HomeClient() {
-  const { addToCart } =
-    useCart()
+  const { addToCart } = useCart()
 
   useEffect(() => {
     if (window.location.pathname !== "/") {
@@ -28,11 +27,7 @@ export function HomeClient() {
     color: string,
     image?: string
   ) => {
-    addToCart(
-      product,
-      color,
-      image
-    )
+    addToCart(product, color, image)
   }
 
   return (
@@ -46,11 +41,7 @@ export function HomeClient() {
       </section>
 
       <section id="productos">
-        <ProductsSection
-          onAddToCart={
-            handleAddToCart
-          }
-        />
+        <ProductsSection onAddToCart={handleAddToCart} />
       </section>
 
       <section id="beneficios">

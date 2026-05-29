@@ -2,7 +2,7 @@ import { HomeClient } from "@/components/home-client"
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-black">
       <HomeClient />
     </main>
   )
