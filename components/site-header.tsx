@@ -9,6 +9,7 @@ import {
   Package,
   ShoppingBag,
   User,
+  CircleUserRound,
   X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -33,15 +34,6 @@ export function SiteHeader() {
   const userRef = useRef<HTMLDivElement>(null)
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
-
-  const userInitials = user
-    ? user.name
-        .split(" ")
-        .map((n: string) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : null
 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
@@ -152,13 +144,21 @@ export function SiteHeader() {
                     aria-label="Abrir menú de usuario"
                     title="Abrir menú de usuario"
                     onClick={() => setUserOpen((v) => !v)}
-                    className="flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/4 px-3 text-white transition-all hover:border-white/20 hover:bg-white/7"
+                    className="flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
                   >
-                    <div className="flex size-6 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/50 bg-beyonix-blue text-10px font-bold text-white">
-                      {userInitials}
-                    </div>
-                    <span className="max-w-90px truncate text-sm font-medium text-white/82">
-                      {user.name.split(" ")[0]}
+                    <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
+                      {user.avatarUrl ? (
+                        <img
+                          src={user.avatarUrl}
+                          alt=""
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        <CircleUserRound className="size-5" />
+                      )}
+                    </span>
+                    <span className="max-w-90px truncate text-sm font-medium uppercase text-white/86">
+                      {(user.username || user.name.split(" ")[0]).toUpperCase()}
                     </span>
                     <ChevronDown
                       className={`size-3 text-white/52 transition-transform duration-200 ${
@@ -204,7 +204,7 @@ export function SiteHeader() {
               ) : (
                 <Link
                   href="/cuenta"
-                  className="flex h-10 items-center gap-2 rounded-lg border border-white/10 px-3.5 text-sm font-medium text-white/72 transition-colors hover:border-white/20 hover:text-white"
+                  className="flex h-10 items-center gap-2 rounded-full border border-white/10 px-3.5 text-sm font-medium text-white/72 transition-colors hover:border-white/20 hover:text-white"
                 >
                   <User className="size-3.5" />
                   Iniciar sesión
@@ -217,22 +217,19 @@ export function SiteHeader() {
               onClick={openCart}
               aria-label="Abrir carrito"
               title="Abrir carrito"
-              className="relative flex h-10 min-w-36 cursor-pointer items-center gap-2.5 rounded-lg border border-white/10 bg-white/4 px-3 transition-all hover:border-white/20 hover:bg-white/7"
+              className="relative flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 px-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
             >
-              <ShoppingBag className="size-4.5 shrink-0 text-white/82" />
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white text-black">
+                <ShoppingBag className="size-3.5" />
+              </span>
 
-              <div className="hidden min-w-0 flex-col items-start gap-0.5 leading-none sm:flex">
-                <span className="text-10px font-semibold uppercase tracking-wide text-white/48">
-                  Carrito
-                </span>
-                <span className="max-w-24 truncate text-sm font-bold tabular-nums text-white">
-                  {total.toLocaleString("es-AR", {
-                    style: "currency",
-                    currency: "ARS",
-                    minimumFractionDigits: 0,
-                  })}
-                </span>
-              </div>
+              <span className="hidden max-w-24 truncate text-sm font-semibold tabular-nums text-white sm:block">
+                {total.toLocaleString("es-AR", {
+                  style: "currency",
+                  currency: "ARS",
+                  minimumFractionDigits: 0,
+                })}
+              </span>
 
               {itemCount > 0 && (
                 <Badge className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-beyonix-blue-light bg-beyonix-blue p-0 text-10px font-bold text-white">
@@ -279,7 +276,7 @@ export function SiteHeader() {
                     onClick={() => setMobileOpen(false)}
                     className="block px-2 py-3 text-sm font-medium text-white/80 transition-colors hover:text-white"
                   >
-                    Mi cuenta ({user.name.split(" ")[0]})
+                    Mi cuenta ({(user.username || user.name.split(" ")[0]).toUpperCase()})
                   </Link>
                   <button
                     type="button"

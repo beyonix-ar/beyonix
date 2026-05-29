@@ -1,12 +1,48 @@
-const badWordPatterns = [
-  /p[\W_]*u[\W_]*t[\W_]*[oa0@]/i,
-  /b[\W_]*o[\W_]*l[\W_]*u[\W_]*d[\W_]*[oa0@]/i,
-  /p[\W_]*e[\W_]*l[\W_]*o[\W_]*t[\W_]*u[\W_]*d[\W_]*[oa0@]/i,
-  /f[\W_]*o[\W_]*r[\W_]*r[\W_]*[oa0@]/i,
-  /m[\W_]*i[\W_]*e[\W_]*r[\W_]*d[\W_]*a/i,
-  /i[\W_]*d[\W_]*i[\W_]*o[\W_]*t[\W_]*a/i,
-  /g[\W_]*i[\W_]*l/i,
-  /p[\W_]*a[\W_]*j[\W_]*e[\W_]*r[\W_]*[oa0@]/i,
+const letterAliases: Record<string, string> = {
+  "0": "o",
+  "1": "i",
+  "!": "i",
+  "|": "i",
+  "3": "e",
+  "4": "a",
+  "@": "a",
+  "5": "s",
+  "$": "s",
+  "7": "t",
+  "+": "t",
+  "8": "b",
+  "9": "g",
+}
+
+const blockedRoots = [
+  "anal",
+  "ano",
+  "ass",
+  "bitch",
+  "bolud",
+  "chot",
+  "concha",
+  "culo",
+  "dick",
+  "forr",
+  "fuck",
+  "gil",
+  "idiot",
+  "mierda",
+  "ort",
+  "pajer",
+  "pelotud",
+  "pene",
+  "poronga",
+  "pussy",
+  "put",
+  "verga",
+  "vagina",
+  "vagin",
+  "vag1n",
+  "v4gin",
+  "v4g1n",
+  "whore",
 ]
 
 export function normalizeText(value: string) {
@@ -17,10 +53,16 @@ export function normalizeText(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
 }
 
-export function hasBlockedWords(value: string) {
-  const normalized = normalizeText(value)
+function normalizeForModeration(value: string) {
+  return normalizeText(value)
+    .replace(/[014@!|35$7+89]/g, (char) => letterAliases[char] ?? char)
+    .replace(/[^a-z]/g, "")
+}
 
-  return badWordPatterns.some((pattern) => pattern.test(normalized))
+export function hasBlockedWords(value: string) {
+  const compact = normalizeForModeration(value)
+
+  return blockedRoots.some((word) => compact.includes(word))
 }
 
 export function validateUsername(username: string) {
@@ -28,6 +70,10 @@ export function validateUsername(username: string) {
 
   if (cleanUsername.length < 5) {
     return "El nombre de usuario debe tener al menos 5 caracteres."
+  }
+
+  if (cleanUsername.length > 24) {
+    return "El nombre de usuario no puede superar los 24 caracteres."
   }
 
   if (!/^[a-zA-Z0-9._-]+$/.test(cleanUsername)) {

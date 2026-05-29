@@ -18,6 +18,9 @@ import type {
 import type {
   User,
 } from "@supabase/supabase-js"
+import {
+  validateRegisterPayload,
+} from "@/lib/validation/account-fields"
 const PASSWORD_RECOVERY_KEY = "beyonix-password-recovery"
 
 function isPasswordRecoveryInProgress() {
@@ -61,6 +64,8 @@ export interface BeyonixUser {
 
   postalCode?: string
 
+  avatarUrl?: string
+
   createdAt: string
 }
 
@@ -84,7 +89,7 @@ interface AuthContextType {
   isSuperAdmin: boolean
 
   login: (
-    email: string,
+    identifier: string,
     password: string
   ) => Promise<{
     ok: boolean
@@ -143,6 +148,9 @@ function profileToUser(
 
     postalCode:
       profile.codigo_postal ?? undefined,
+
+    avatarUrl:
+      profile.avatar_url ?? undefined,
   }
 }
 
@@ -321,13 +329,42 @@ export function AuthProvider({
   const login =
     useCallback(
       async (
-        email: string,
+        identifier: string,
         password: string
       ): Promise<{
         ok: boolean
         error?: string
       }> => {
         localStorage.removeItem(PASSWORD_RECOVERY_KEY)
+
+        const normalizedIdentifier =
+          identifier.trim().toLowerCase()
+
+        let loginEmail =
+          normalizedIdentifier
+
+        if (!normalizedIdentifier.includes("@")) {
+          const { data: profileEmail } =
+            await supabase
+              .rpc(
+                "get_profile_email_by_username",
+                {
+                  username_input:
+                    normalizedIdentifier,
+                }
+              )
+
+          if (!profileEmail) {
+            return {
+              ok: false,
+              error:
+                "Email, usuario o contraseña incorrectos.",
+            }
+          }
+
+          loginEmail =
+            String(profileEmail).trim().toLowerCase()
+        }
 
         const {
           data,
@@ -336,9 +373,7 @@ export function AuthProvider({
           await supabase.auth.signInWithPassword(
             {
               email:
-                email
-                  .trim()
-                  .toLowerCase(),
+                loginEmail,
 
               password,
             }
@@ -354,7 +389,7 @@ export function AuthProvider({
               ok: false,
 
               error:
-                "Email o contraseÃ±a incorrectos.",
+                "Email, usuario o contraseña incorrectos.",
             }
           }
 
@@ -362,7 +397,7 @@ export function AuthProvider({
             ok: false,
 
             error:
-              "OcurriÃ³ un error al iniciar sesiÃ³n.",
+              "Ocurrió un error al iniciar sesión.",
           }
         }
 
@@ -393,14 +428,31 @@ export function AuthProvider({
       }> => {
         localStorage.removeItem(PASSWORD_RECOVERY_KEY)
 
-        if (
-          form.password.length < 6
-        ) {
+        const validationError =
+          validateRegisterPayload({
+            username:
+              form.username,
+            name:
+              form.name,
+            email:
+              form.email,
+            address:
+              form.address,
+            province:
+              form.province,
+            postalCode:
+              form.postalCode,
+            phone:
+              form.phone,
+            password:
+              form.password,
+          })
+
+        if (validationError) {
           return {
             ok: false,
-
             error:
-              "La contraseÃ±a debe tener al menos 6 caracteres.",
+              validationError,
           }
         }
 
@@ -423,7 +475,7 @@ export function AuthProvider({
                   nombre:
                     form.name.trim(),
                   username:
-                    form.username.trim(),
+                    form.username.trim().toLowerCase(),
                   telefono:
                     form.phone.trim(),
                   direccion:
@@ -465,7 +517,7 @@ export function AuthProvider({
               .from("profiles")
               .update({
                 username:
-                  form.username.trim(),
+                  form.username.trim().toLowerCase(),
                 nombre:
                   form.name.trim(),
                 telefono:
@@ -483,7 +535,7 @@ export function AuthProvider({
             return {
               ok: false,
               error:
-                "La cuenta se creÃ³, pero faltan columnas de perfil en Supabase. EjecutÃ¡ el SQL de perfiles.",
+                "La cuenta se creó, pero faltan columnas de perfil en Supabase. Ejecutá el SQL de perfiles.",
             }
           }
 
@@ -573,6 +625,10 @@ export function AuthProvider({
 
         if (data.city !== undefined) {
           payload.provincia = data.city
+        }
+
+        if (data.avatarUrl !== undefined) {
+          payload.avatar_url = data.avatarUrl
         }
 
         await supabase

@@ -14,6 +14,7 @@ import {
 
 import {
   ArrowLeft,
+  CircleUserRound,
   Smartphone,
 } from "lucide-react"
 
@@ -122,6 +123,17 @@ export default function CheckoutPage() {
 
     router.replace("/login?redirect=/checkout")
   }, [isLoading, mounted, router, user])
+
+  useEffect(() => {
+    if (!user) return
+
+    setFormData({
+      nombre: user.name ?? "",
+      email: user.email ?? "",
+      telefono: user.phone ?? "",
+      direccion: user.address ?? "",
+    })
+  }, [user])
 
   useEffect(() => {
     if (
@@ -304,7 +316,25 @@ export default function CheckoutPage() {
               BEYONIX
             </Link>
 
-            <div className="w-20" />
+            <div className="flex min-w-20 justify-end">
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/3 py-1.5 pl-1.5 pr-2 sm:pr-3">
+                <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
+                  {user.avatarUrl ? (
+                    <img
+                      src={user.avatarUrl}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <CircleUserRound className="size-5" />
+                  )}
+                </span>
+
+                <span className="hidden max-w-32 truncate text-sm font-medium uppercase text-white/86 sm:block">
+                  {(user.username || user.name.split(" ")[0]).toUpperCase()}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </header>

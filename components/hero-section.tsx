@@ -16,7 +16,7 @@ const trustItems = [
   },
   {
     title: "Envío a todo el país",
-    sub: "Por Andreani",
+    sub: "Entrega rápida, segura y con seguimiento",
     icon: PackageCheck,
   },
 ]
@@ -67,7 +67,7 @@ export function HeroSection() {
                 return (
                   <div
                     key={item.title}
-                    className="flex min-h-20 items-start gap-3 rounded-lg border border-white/10 bg-white/3 p-4"
+                    className="flex min-h-22 items-center gap-3 rounded-lg border border-white/10 bg-white/3 p-4"
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-beyonix-cyan/25 bg-beyonix-blue/35 text-beyonix-sky">
                       <Icon className="size-4" />
@@ -85,18 +85,6 @@ export function HeroSection() {
                 )
               })}
             </div>
-          </div>
-
-          <div className="mt-14 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:grid-cols-4">
-            {["Audio", "Setup", "Bienestar", "Smart home"].map((label) => (
-              <Link
-                key={label}
-                href="/categorias"
-                className="bg-black px-4 py-3 text-center text-12-5px font-medium uppercase tracking-wide text-white/52 transition-colors hover:text-white"
-              >
-                {label}
-              </Link>
-            ))}
           </div>
         </div>
       </div>

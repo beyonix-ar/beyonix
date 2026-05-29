@@ -1,10 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ChevronLeft,
   ChevronRight,
+  Camera,
   Eye,
   EyeOff,
   Hash,
@@ -19,8 +21,13 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
-import { validateUsername } from "@/lib/validation/content-filter"
+import {
+  FIELD_LIMITS,
+  onlyDigits,
+  validateRegisterPayload,
+} from "@/lib/validation/account-fields"
 
 function InputField({
   label,
@@ -31,6 +38,8 @@ function InputField({
   icon: Icon,
   rightElement,
   error,
+  maxLength,
+  inputMode,
 }: {
   label: string
   type: string
@@ -40,6 +49,8 @@ function InputField({
   icon: React.ElementType
   rightElement?: React.ReactNode
   error?: string
+  maxLength?: number
+  inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"]
 }) {
   return (
     <div className="space-y-1.5">
@@ -57,6 +68,8 @@ function InputField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          maxLength={maxLength}
+          inputMode={inputMode}
           className="w-full bg-transparent py-3 pl-10 pr-10 text-sm text-white placeholder:text-white/25 outline-none"
         />
         {rightElement && <div className="absolute right-3">{rightElement}</div>}
@@ -69,7 +82,7 @@ function InputField({
 function LoginForm({ onSwitch }: { onSwitch: () => void }) {
   const { login } = useAuth()
   const router = useRouter()
-  const [email, setEmail] = useState("")
+  const [identifier, setIdentifier] = useState("")
   const [password, setPassword] = useState("")
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState("")
@@ -83,7 +96,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
     setSuccess("")
     setLoading(true)
 
-    const result = await login(email, password)
+    const result = await login(identifier, password)
     setLoading(false)
 
     if (!result.ok) {
@@ -95,9 +108,9 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
   }
 
   const handleForgotPassword = async () => {
-    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedEmail = identifier.trim().toLowerCase()
 
-    if (!normalizedEmail) {
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
       setError("Ingresá tu email primero.")
       setSuccess("")
       return
@@ -134,12 +147,13 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <InputField
-        label="Email"
-        type="email"
-        value={email}
-        onChange={setEmail}
-        placeholder="tu@email.com"
+        label="Email o usuario"
+        type="text"
+        value={identifier}
+        onChange={setIdentifier}
+        placeholder="usuario.tech o nombre@email.com"
         icon={Mail}
+        maxLength={FIELD_LIMITS.loginIdentifier}
       />
       <InputField
         label="Contraseña"
@@ -148,6 +162,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
         onChange={setPassword}
         placeholder="••••••••"
         icon={Lock}
+        maxLength={FIELD_LIMITS.password}
         rightElement={
           <button
             type="button"
@@ -230,13 +245,21 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
     e.preventDefault()
     setError("")
 
-    const usernameError = validateUsername(username)
-    if (usernameError) { setError(usernameError); return }
-    if (!name.trim()) { setError("Ingresá tu nombre y apellido."); return }
-    if (!address.trim()) { setError("Ingresá tu dirección."); return }
-    if (!province.trim()) { setError("Ingresá tu provincia."); return }
-    if (!postalCode.trim()) { setError("Ingresá tu código postal."); return }
-    if (!phone.trim()) { setError("Ingresá tu teléfono móvil."); return }
+    const validationError = validateRegisterPayload({
+      username,
+      name,
+      email,
+      address,
+      province,
+      postalCode,
+      phone,
+      password,
+    })
+
+    if (validationError) {
+      setError(validationError)
+      return
+    }
 
     setLoading(true)
     const result = await register({
@@ -261,13 +284,18 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <InputField label="Nombre de usuario" type="text" value={username} onChange={setUsername} placeholder="lucas.espinosa" icon={User} />
-      <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Juan García" icon={User} />
-      <InputField label="Email" type="email" value={email} onChange={setEmail} placeholder="tu@email.com" icon={Mail} />
-      <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} />
-      <InputField label="Provincia" type="text" value={province} onChange={setProvince} placeholder="Santa Fe" icon={MapPin} />
-      <InputField label="Código postal" type="text" value={postalCode} onChange={setPostalCode} placeholder="2000" icon={Hash} />
-      <InputField label="Teléfono móvil" type="tel" value={phone} onChange={setPhone} placeholder="Ej: 3411234567" icon={Phone} />
+      <InputField label="Nombre de usuario" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" icon={User} maxLength={FIELD_LIMITS.username} />
+      <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
+      <InputField label="Email" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" icon={Mail} maxLength={FIELD_LIMITS.email} />
+      <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} maxLength={FIELD_LIMITS.address} />
+      <div className="space-y-1.5">
+        <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
+          Provincia
+        </label>
+        <ProvinceSelect value={province} onChange={setProvince} />
+      </div>
+      <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
+      <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
       <InputField
         label="Contraseña"
         type={showPass ? "text" : "password"}
@@ -275,6 +303,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
         onChange={setPassword}
         placeholder="Mínimo 6 caracteres"
         icon={Lock}
+        maxLength={FIELD_LIMITS.password}
         rightElement={
           <button
             type="button"
@@ -348,18 +377,67 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
 
 function MisDatos({ onBack }: { onBack: () => void }) {
   const { user, updateUser } = useAuth()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(user?.name ?? "")
   const [phone, setPhone] = useState(user?.phone ?? "")
   const [province, setProvince] = useState(user?.province ?? "")
   const [address, setAddress] = useState(user?.address ?? "")
   const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? "")
   const [saved, setSaved] = useState(false)
+  const [avatarLoading, setAvatarLoading] = useState(false)
+  const [avatarError, setAvatarError] = useState("")
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
     updateUser({ name, phone, province, address, postalCode })
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+  }
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+
+    if (!file || !user) return
+
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Subí una imagen válida.")
+      return
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarError("La imagen no puede superar los 2 MB.")
+      return
+    }
+
+    setAvatarLoading(true)
+    setAvatarError("")
+
+    const fileExt = file.name.split(".").pop() || "jpg"
+    const filePath = `${user.id}/avatar.${fileExt}`
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+      })
+
+    if (uploadError) {
+      setAvatarLoading(false)
+      setAvatarError(
+        "No se pudo subir la foto. Revisá que el SQL 09-profile-avatar esté aplicado."
+      )
+      return
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("avatars").getPublicUrl(filePath)
+
+    await updateUser({ avatarUrl: publicUrl })
+    setAvatarUrl(publicUrl)
+    setAvatarLoading(false)
   }
 
   return (
@@ -378,6 +456,45 @@ function MisDatos({ onBack }: { onBack: () => void }) {
 
       <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-6">
         <form onSubmit={handleSave} className="space-y-4">
+          <div className="flex items-center gap-4 rounded-xl border border-white/7 bg-white/2 p-4">
+            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="size-full object-cover" />
+              ) : (
+                <User className="size-9" />
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-white">Foto de perfil</p>
+              <p className="mt-1 text-xs text-white/45">
+                JPG o PNG, hasta 2 MB.
+              </p>
+              {avatarError && (
+                <p className="mt-2 text-xs text-red-400">{avatarError}</p>
+              )}
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              aria-label="Subir foto de perfil"
+              title="Subir foto de perfil"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={avatarLoading}
+              className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/10 text-white/70 transition-colors hover:border-white/22 hover:text-white disabled:opacity-50"
+            >
+              <Camera className="size-4" />
+            </button>
+          </div>
+
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
               Email
@@ -389,11 +506,16 @@ function MisDatos({ onBack }: { onBack: () => void }) {
             <p className="text-11px text-white/25">El email no se puede cambiar.</p>
           </div>
 
-          <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Juan García" icon={User} />
-          <InputField label="Teléfono móvil" type="tel" value={phone} onChange={setPhone} placeholder="Ej: 3411234567" icon={Phone} />
-          <InputField label="Provincia" type="text" value={province} onChange={setProvince} placeholder="Santa Fe" icon={MapPin} />
-          <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Av. Siempreverde 1234, Piso 2" icon={MapPin} />
-          <InputField label="Código postal" type="text" value={postalCode} onChange={setPostalCode} placeholder="2000" icon={Hash} />
+          <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
+          <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
+              Provincia
+            </label>
+            <ProvinceSelect value={province} onChange={setProvince} />
+          </div>
+          <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} maxLength={FIELD_LIMITS.address} />
+          <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
 
           <button type="submit" aria-label="Guardar cambios" title="Guardar cambios"
             className="w-full h-10 rounded-xl bg-beyonix-blue border border-beyonix-blue-light/60 text-sm font-semibold text-white hover:bg-beyonix-blue-light transition-colors cursor-pointer mt-2">
@@ -415,13 +537,6 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   if (view === "ordenes") return <MisOrdenes onBack={() => setView("home")} />
   if (view === "datos") return <MisDatos onBack={() => setView("home")} />
 
-  const initials = user.name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2)
-
   const menuItems = [
     { icon: ShoppingBag, label: "Mis órdenes", sub: "Historial de compras", view: "ordenes" as ProfileView },
     { icon: User, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
@@ -430,8 +545,12 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4 p-5 rounded-2xl border border-white/7 bg-white/2">
-        <div className="size-14 rounded-xl bg-beyonix-blue border border-beyonix-blue-light/50 flex items-center justify-center text-lg font-bold text-white shrink-0">
-          {initials}
+        <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
+          {user.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" className="size-full object-cover" />
+          ) : (
+            <User className="size-8" />
+          )}
         </div>
         <div className="min-w-0">
           <p className="font-semibold text-white truncate">{user.name}</p>
@@ -525,7 +644,7 @@ export function CuentaClient() {
                 Mi cuenta
               </p>
               <h1 className="text-2xl font-bold text-white tracking-tight">
-                Hola, {user.name.split(" ")[0]}
+                Hola, {(user.username || user.name.split(" ")[0]).toUpperCase()}
               </h1>
             </div>
             <ProfilePanel initialView={initialView} />
