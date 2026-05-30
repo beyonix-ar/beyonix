@@ -67,7 +67,7 @@ function makeShootingStarStyle(index: number): StarStyle {
   const dy = endY - startY
   const angle = Math.atan2(dy, dx)
 
-  const duration = 7.2 + (index % 7) * 0.55
+  const duration = 14 + (index % 7) * 0.9
   const delay = -1 * ((index * 0.91) % 9)
   const width = 78 + (index % 7) * 14
   const opacity = 0.2 + (index % 5) * 0.055
