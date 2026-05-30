@@ -1,12 +1,15 @@
 import type { CSSProperties } from "react"
 
 type StarStyle = CSSProperties & {
+  "--end-x": string
+  "--end-y": string
+  "--star-angle": string
   "--star-delay": string
   "--star-duration": string
-  "--star-left": string
-  "--star-top": string
   "--star-width": string
   "--star-opacity": string
+  "--start-x": string
+  "--start-y": string
 }
 
 type DotStyle = CSSProperties & {
@@ -17,24 +20,68 @@ type DotStyle = CSSProperties & {
   "--dot-delay": string
 }
 
-const SHOOTING_STAR_COUNT = 72
+type MeteorRoute = {
+  startX: number
+  startY: number
+  endX: number
+  endY: number
+}
+
+const SHOOTING_STAR_COUNT = 18
 const BACKGROUND_DOT_COUNT = 96
 
+const meteorRoutes: MeteorRoute[] = [
+  { startX: -12, startY: 14, endX: 72, endY: 84 },
+  { startX: 18, startY: -10, endX: 96, endY: 58 },
+  { startX: 112, startY: 8, endX: 28, endY: 76 },
+  { startX: 86, startY: -8, endX: 18, endY: 64 },
+
+  { startX: -10, startY: 42, endX: 84, endY: 12 },
+  { startX: 112, startY: 44, endX: 24, endY: 96 },
+  { startX: 12, startY: 108, endX: 88, endY: 26 },
+  { startX: 92, startY: 112, endX: 18, endY: 32 },
+
+  { startX: -14, startY: 78, endX: 68, endY: 108 },
+  { startX: 116, startY: 82, endX: 42, endY: 16 },
+  { startX: 34, startY: 112, endX: 104, endY: 46 },
+  { startX: 104, startY: 106, endX: 30, endY: 38 },
+
+  { startX: 24, startY: 22, endX: 94, endY: 92 },
+  { startX: 76, startY: 18, endX: 8, endY: 88 },
+  { startX: 42, startY: 88, endX: 108, endY: 18 },
+  { startX: 88, startY: 72, endX: 16, endY: 8 },
+
+  { startX: 4, startY: 58, endX: 98, endY: 34 },
+  { startX: 98, startY: 28, endX: 6, endY: 62 },
+]
+
 function makeShootingStarStyle(index: number): StarStyle {
-  const left = (index * 37 + 11) % 118
-  const top = (index * 19 + 7) % 96
-  const duration = 4.8 + (index % 9) * 0.28
-  const delay = -1 * ((index * 0.31) % 6.4)
-  const width = 110 + (index % 8) * 13
-  const opacity = 0.36 + (index % 5) * 0.08
+  const route = meteorRoutes[index % meteorRoutes.length]
+
+  const startX = route.startX
+  const startY = route.startY
+  const endX = route.endX
+  const endY = route.endY
+
+  const dx = endX - startX
+  const dy = endY - startY
+  const angle = Math.atan2(dy, dx)
+
+  const duration = 7.2 + (index % 7) * 0.55
+  const delay = -1 * ((index * 0.91) % 9)
+  const width = 78 + (index % 7) * 14
+  const opacity = 0.2 + (index % 5) * 0.055
 
   return {
+    "--end-x": `${endX}vw`,
+    "--end-y": `${endY}vh`,
+    "--star-angle": `${angle}rad`,
     "--star-delay": `${delay}s`,
     "--star-duration": `${duration}s`,
-    "--star-left": `${left}%`,
-    "--star-top": `${top}%`,
     "--star-width": `${width}px`,
     "--star-opacity": `${opacity}`,
+    "--start-x": `${startX}vw`,
+    "--start-y": `${startY}vh`,
   }
 }
 
@@ -54,12 +101,14 @@ function makeDotStyle(index: number): DotStyle {
   }
 }
 
-const shootingStars = Array.from({ length: SHOOTING_STAR_COUNT }, (_, index) =>
-  makeShootingStarStyle(index)
+const shootingStars = Array.from(
+  { length: SHOOTING_STAR_COUNT },
+  (_, index) => makeShootingStarStyle(index)
 )
 
-const backgroundDots = Array.from({ length: BACKGROUND_DOT_COUNT }, (_, index) =>
-  makeDotStyle(index)
+const backgroundDots = Array.from(
+  { length: BACKGROUND_DOT_COUNT },
+  (_, index) => makeDotStyle(index)
 )
 
 export function BeyonixShootingStarsBackground() {
@@ -84,7 +133,9 @@ export function BeyonixShootingStarsBackground() {
             key={`shooting-star-${index}`}
             className="beyonix-shooting-star"
             style={style}
-          />
+          >
+            <span className="beyonix-shooting-star-line" />
+          </span>
         ))}
       </div>
     </div>

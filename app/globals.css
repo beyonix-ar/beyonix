@@ -313,9 +313,9 @@
 }
 
 .beyonix-shooting-stars-background {
-  --shooting-star-color: #2768ff;
-  --shooting-star-soft: rgba(17, 42, 67, 0.5);
-  --shooting-star-glow: rgba(39, 104, 255, 0.58);
+  --shooting-star-color: #2f7cff;
+  --shooting-star-soft: rgba(17, 42, 67, 0.34);
+  --shooting-star-glow: rgba(47, 124, 255, 0.42);
   background:
     radial-gradient(circle at 18% 18%, rgba(17, 42, 67, 0.34), transparent 32%),
     radial-gradient(circle at 82% 12%, rgba(39, 104, 255, 0.15), transparent 30%),
@@ -366,46 +366,54 @@
 }
 
 .beyonix-shooting-stars-field {
-  opacity: 0.96;
+  opacity: 0.78;
 }
 
 .beyonix-shooting-star {
   animation: beyonix-shooting-star-flight var(--star-duration) linear infinite;
   animation-delay: var(--star-delay);
+  height: 1px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  transform: translate3d(var(--start-x), var(--start-y), 0);
+  width: var(--star-width);
+}
+
+.beyonix-shooting-star-line {
   background:
     linear-gradient(
       90deg,
       transparent,
-      rgba(39, 104, 255, 0.08),
+      rgba(47, 124, 255, 0.05),
       var(--shooting-star-color),
-      rgba(140, 200, 242, 0.96)
+      rgba(140, 200, 242, 0.72)
     );
   border-radius: 9999px;
   box-shadow:
     0 0 10px var(--shooting-star-glow),
     0 0 22px var(--shooting-star-soft);
-  height: 2px;
-  left: var(--star-left);
-  opacity: 0;
-  position: absolute;
-  top: var(--star-top);
-  transform: rotate(136deg) translate3d(0, 0, 0);
-  transform-origin: right center;
+  display: block;
+  height: 1px;
+  position: relative;
+  transform: rotate(var(--star-angle));
+  transform-origin: left center;
   width: var(--star-width);
 }
 
-.beyonix-shooting-star::after {
-  background: #dcecff;
+.beyonix-shooting-star-line::after {
+  background: #cde3ff;
   border-radius: 9999px;
   box-shadow:
-    0 0 10px rgba(140, 200, 242, 0.96),
-    0 0 20px rgba(39, 104, 255, 0.8);
+    0 0 8px rgba(140, 200, 242, 0.7),
+    0 0 18px rgba(47, 124, 255, 0.52);
   content: "";
-  height: 4px;
+  height: 3px;
+  left: 0;
   position: absolute;
-  right: 0;
   top: -1px;
-  width: 4px;
+  width: 3px;
 }
 
 main[class*="bg-"],
@@ -421,21 +429,21 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 @keyframes beyonix-shooting-star-flight {
   0% {
     opacity: 0;
-    transform: rotate(136deg) translate3d(260px, -260px, 0) scaleX(0.62);
+    transform: translate3d(var(--start-x), var(--start-y), 0) scaleX(0.72);
   }
 
-  8% {
+  12% {
     opacity: var(--star-opacity);
   }
 
-  36% {
+  46% {
     opacity: calc(var(--star-opacity) * 0.92);
   }
 
-  70%,
+  76%,
   100% {
     opacity: 0;
-    transform: rotate(136deg) translate3d(-860px, 860px, 0) scaleX(1);
+    transform: translate3d(var(--end-x), var(--end-y), 0) scaleX(1);
   }
 }
 
@@ -451,14 +459,17 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .beyonix-static-star,
+  .beyonix-shooting-star {
+    opacity: 0.16;
+    transform: translate3d(var(--start-x), var(--start-y), 0);
+  }
   .beyonix-shooting-star {
     animation: none;
   }
 
   .beyonix-shooting-star {
-    opacity: 0.22;
-    transform: rotate(136deg) translate3d(0, 0, 0);
+    opacity: 0.16;
+    transform: translate3d(var(--start-x), var(--start-y), 0) rotate(var(--star-angle));
   }
 }
 
