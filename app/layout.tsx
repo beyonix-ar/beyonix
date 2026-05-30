@@ -3,7 +3,7 @@ import { Montserrat, Manrope } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
 import { AuthProvider } from "@/context/auth-context"
-import { ElectricBackground } from "@/components/electric-background"
+import { BeyonixShootingStarsBackground } from "@/components/backgrounds/beyonix-shooting-stars-background"
 import { LayoutShell } from "@/components/layout-shell"
 import { CartWrapper } from "@/components/cart/cart-wrapper"
 import "./globals.css"
@@ -46,7 +46,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${montserrat.variable} ${manrope.variable} antialiased`}>
-        <ElectricBackground />
+        <BeyonixShootingStarsBackground />
         <div className="relative z-10">
           <AuthProvider>
             <CartProvider>
