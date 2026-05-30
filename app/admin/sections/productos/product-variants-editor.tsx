@@ -422,7 +422,7 @@ export function ProductVariantsEditor({
   }
 
   return (
-    <div className="space-y-5 rounded-2xl border border-white/8 bg-white/2 p-4">
+    <div className="space-y-5 rounded-2xl border border-white/8 bg-black p-4">
       <div>
         <h2 className="text-sm font-semibold text-white">
           Variante

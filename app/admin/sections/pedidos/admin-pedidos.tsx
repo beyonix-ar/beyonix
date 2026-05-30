@@ -178,7 +178,7 @@ export function AdminPedidos() {
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid w-full gap-3 sm:grid-cols-admin-order-filters xl:max-w-2xl">
           <AdminTextInput
             title="Buscar pedido"
             ariaLabel="Buscar pedido"
@@ -218,7 +218,7 @@ export function AdminPedidos() {
           ))}
         </div>
       ) : pedidosFiltrados.length === 0 ? (
-        <div className="rounded-3xl border border-white/8 bg-beyonix-surface p-12 text-center">
+        <div className="rounded-3xl border border-white/8 bg-black p-12 text-center">
           <ShoppingCart className="mx-auto mb-4 size-11 text-white/24" />
           <p className="text-sm font-bold text-white/72">
             No hay pedidos para los filtros seleccionados.
@@ -226,7 +226,7 @@ export function AdminPedidos() {
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="hidden grid-cols-admin-orders-pro gap-4 rounded-2xl border border-white/8 bg-beyonix-surface px-5 py-3 xl:grid">
+          <div className="hidden grid-cols-admin-orders-pro gap-4 rounded-2xl border border-white/8 bg-black px-5 py-3 xl:grid">
             {[
               "Pedido",
               "Cliente",
@@ -259,7 +259,7 @@ export function AdminPedidos() {
             return (
               <article
                 key={pedido.id}
-                className="rounded-3xl border border-white/8 bg-beyonix-surface px-5 py-4 transition hover:border-beyonix-blue-light/45"
+                className="rounded-3xl border border-white/8 bg-black px-5 py-4 transition hover:border-beyonix-blue-light/45"
               >
                 <div className="grid gap-4 xl:grid-cols-admin-orders-pro xl:items-center">
                   <div>

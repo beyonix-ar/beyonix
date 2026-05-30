@@ -67,7 +67,7 @@ export function ImageUploader({
         className={`flex h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed transition-colors ${
           dragging
             ? "border-beyonix-cyan bg-beyonix-blue/30"
-            : "border-white/10 bg-white/2 hover:border-white/20"
+            : "border-white/10 bg-black hover:border-white/20"
         }`}
       >
         {uploading ? (
@@ -118,7 +118,7 @@ export function ImageUploader({
 
       {!uploading &&
         !imagenes.length && (
-          <div className="rounded-2xl border border-white/6 bg-white/2 px-5 py-10 text-center">
+          <div className="rounded-2xl border border-white/6 bg-black px-5 py-10 text-center">
             <ImageIcon className="mx-auto mb-3 size-8 text-white/15" />
 
             <p className="text-sm text-white/55">
@@ -133,7 +133,7 @@ export function ImageUploader({
           {imagenes.map((img) => (
             <div
               key={img.id}
-              className="group relative aspect-square overflow-hidden rounded-2xl border border-white/7 bg-beyonix-surface-3"
+              className="group relative aspect-square overflow-hidden rounded-2xl border border-white/7 bg-black"
             >
               <img
                 alt=""

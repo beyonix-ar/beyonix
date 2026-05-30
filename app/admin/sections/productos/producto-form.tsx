@@ -30,7 +30,7 @@ interface ProductoFormProps {
 }
 
 const inputCls =
-  "w-full rounded-2xl border border-white/8 bg-beyonix-surface px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
+  "w-full rounded-2xl border border-white/8 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
 
 const labelCls =
   "mb-2 block text-xs font-semibold uppercase tracking-widest text-white/50"
@@ -105,7 +105,7 @@ export function ProductoForm({
             },
           })
         }}
-        className="space-y-6 rounded-3xl border border-white/7 bg-beyonix-surface p-6"
+        className="space-y-6 rounded-3xl border border-white/7 bg-black p-6"
       >
         <div className="grid grid-cols-2 gap-4">
           <div>

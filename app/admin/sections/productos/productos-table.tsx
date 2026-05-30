@@ -50,7 +50,7 @@ export function ProductosTable({
 
   if (!productos.length) {
     return (
-      <div className="rounded-3xl border border-white/6 bg-beyonix-surface p-14 text-center">
+      <div className="rounded-3xl border border-white/6 bg-black p-14 text-center">
         <Package className="mx-auto mb-4 size-10 text-white/15" />
 
         <p className="text-sm font-medium text-white/60">
@@ -67,8 +67,8 @@ export function ProductosTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-white/7">
-      <div className="grid grid-cols-admin-products gap-4 border-b border-white/6 bg-black/85 px-5 py-3">
+    <div className="overflow-hidden rounded-3xl border border-white/7 bg-black">
+      <div className="grid grid-cols-admin-products gap-4 border-b border-white/6 bg-black px-5 py-3">
         {[
           "Producto",
           "Categoría",
@@ -80,8 +80,10 @@ export function ProductosTable({
             key={label}
             className={`text-10px font-semibold uppercase tracking-widest text-white/45 ${
               label ===
+              "Estado" ||
+              label ===
               "Acciones"
-                ? "text-right"
+                ? "text-center"
                 : ""
             }`}
           >

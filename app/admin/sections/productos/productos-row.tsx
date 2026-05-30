@@ -218,7 +218,7 @@ export function ProductosRow({
 
   return (
     <div
-      className={`bg-black/85 transition-colors hover:bg-black ${
+      className={`bg-black transition-colors hover:bg-[#02070d] ${
         !isLast
           ? "border-b border-white/5"
           : ""
@@ -341,7 +341,7 @@ export function ProductosRow({
           onClick={() =>
             onToggleActivo(producto)
           }
-          className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-11px font-semibold transition-colors cursor-pointer ${
+          className={`inline-flex w-fit justify-self-center items-center gap-1.5 rounded-full border px-2.5 py-1 text-11px font-semibold transition-colors cursor-pointer ${
             producto.activo
               ? "border-green-500/20 bg-green-500/10 text-green-400"
               : "border-white/10 bg-white/5 text-white/45"
@@ -360,7 +360,7 @@ export function ProductosRow({
             : "Inactivo"}
         </button>
 
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="flex items-center justify-center gap-1.5">
           <Link
             href={`/productos/${producto.slug}`}
             title="Ver producto"
@@ -409,7 +409,7 @@ export function ProductosRow({
               return (
                 <div
                   key={variante.id}
-                  className="grid grid-cols-admin-variant-row items-center gap-3 rounded-2xl border border-white/7 bg-white/2 px-4 py-3"
+                  className="grid grid-cols-admin-variant-row items-center gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
                     <span
@@ -556,7 +556,7 @@ export function ProductosRow({
               )
             })
             ) : (
-              <div className="rounded-2xl border border-white/7 bg-white/2 px-4 py-3">
+              <div className="rounded-2xl border border-white/7 bg-black px-4 py-3">
                 <p className="text-sm text-white/60">
                   Este producto no tiene variantes cargadas.
                 </p>
@@ -676,7 +676,7 @@ function VariantModal({
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-white/8 bg-white/2 px-5 py-10 text-center">
+          <div className="rounded-2xl border border-white/8 bg-black px-5 py-10 text-center">
             <p className="text-sm text-white/55">
               Esta variante no tiene imágenes cargadas.
             </p>

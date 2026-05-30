@@ -44,7 +44,7 @@ export function CategoriasRow({
 }: CategoriasRowProps) {
   return (
     <div
-      className={`grid grid-cols-admin-categories gap-4 px-5 py-4 items-center transition-colors hover:bg-white/2 ${
+      className={`grid grid-cols-admin-categories gap-4 bg-black px-5 py-4 items-center transition-colors hover:bg-[#02070d] ${
         !isLast
           ? "border-b border-white/5"
           : ""
@@ -54,13 +54,6 @@ export function CategoriasRow({
       <div className="min-w-0">
         <p className="truncate text-base font-bold text-white">
           {categoria.nombre}
-        </p>
-      </div>
-
-      {/* Slug */}
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-white/70">
-          {categoria.slug}
         </p>
       </div>
 
@@ -81,7 +74,7 @@ export function CategoriasRow({
       </p>
 
       {/* Acciones */}
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="flex items-center justify-center gap-1.5">
         <button
           type="button"
           title="Editar categoría"

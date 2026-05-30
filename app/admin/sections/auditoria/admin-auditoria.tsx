@@ -216,7 +216,7 @@ export function AdminAuditoria() {
         </button>
       </div>
 
-      <div className="rounded-3xl border border-white/7 bg-zinc-950 p-6">
+      <div className="rounded-3xl border border-white/7 bg-black p-6">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex size-12 items-center justify-center rounded-2xl border border-sky-300/25 bg-sky-300/10 text-sky-300">
             <ShieldCheck className="size-5" />
@@ -263,7 +263,7 @@ export function AdminAuditoria() {
               return (
                 <article
                   key={log.id}
-                  className="rounded-2xl border border-white/7 bg-black p-4 transition hover:border-sky-300/35 hover:bg-white/5"
+                  className="rounded-2xl border border-white/7 bg-black p-4 transition hover:border-sky-300/35 hover:bg-[#02070d]"
                 >
                   <div className="grid gap-4 xl:grid-cols-4 xl:items-center">
                     <div>

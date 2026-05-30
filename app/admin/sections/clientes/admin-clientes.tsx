@@ -283,19 +283,19 @@ export function AdminClientes({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-2xl border border-white/8 bg-beyonix-surface px-4 py-3">
+          <div className="rounded-2xl border border-white/8 bg-black px-4 py-3">
             <p className="text-11px font-bold uppercase tracking-widest text-white/48">
               Total
             </p>
             <p className="mt-1 text-2xl font-black text-white/92">{clientes.length}</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-beyonix-surface px-4 py-3">
+          <div className="rounded-2xl border border-white/8 bg-black px-4 py-3">
             <p className="text-11px font-bold uppercase tracking-widest text-white/48">
               Activos
             </p>
             <p className="mt-1 text-2xl font-black text-white/92">{activeCount}</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-beyonix-surface px-4 py-3">
+          <div className="rounded-2xl border border-white/8 bg-black px-4 py-3">
             <p className="text-11px font-bold uppercase tracking-widest text-white/48">
               Con compras
             </p>
@@ -307,7 +307,7 @@ export function AdminClientes({
       </div>
 
       <div className="rounded-3xl border border-white/8 bg-transparent p-4">
-        <div className="grid gap-3 lg:grid-cols-admin-client-filters">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-admin-client-filters">
           <AdminTextInput
             title="Buscar cliente"
             ariaLabel="Buscar cliente"
@@ -345,7 +345,7 @@ export function AdminClientes({
             value={minSpent}
             placeholder="Gasto mín."
             onChange={(event) => setMinSpent(event.target.value)}
-            className="h-11 rounded-2xl border border-white/10 bg-black px-4 text-sm font-medium text-white/82 outline-none placeholder:text-white/32 hover:border-white/18 focus:border-beyonix-blue-light"
+            className="h-11 rounded-[18px] border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
 
           <input
@@ -356,7 +356,7 @@ export function AdminClientes({
             value={minOrders}
             placeholder="Pedidos mín."
             onChange={(event) => setMinOrders(event.target.value)}
-            className="h-11 rounded-2xl border border-white/10 bg-black px-4 text-sm font-medium text-white/82 outline-none placeholder:text-white/32 hover:border-white/18 focus:border-beyonix-blue-light"
+            className="h-11 rounded-[18px] border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
 
           <AdminDatePicker
@@ -419,7 +419,7 @@ export function AdminClientes({
           ))}
         </div>
       ) : (
-        <div className="rounded-3xl border border-white/8 bg-beyonix-surface px-6 py-12 text-center">
+        <div className="rounded-3xl border border-white/8 bg-black px-6 py-12 text-center">
           {initialActiveOnly ? (
             <UserCheck className="mx-auto mb-4 size-11 text-white/24" />
           ) : (

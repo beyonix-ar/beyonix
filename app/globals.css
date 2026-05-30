@@ -178,11 +178,11 @@
 }
 
 @utility grid-cols-admin-products {
-  grid-template-columns: 2fr 1fr 1fr 110px 120px;
+  grid-template-columns: minmax(340px, 1.35fr) minmax(150px, 0.56fr) minmax(135px, 0.5fr) minmax(128px, 0.46fr) 112px;
 }
 
 @utility grid-cols-admin-categories {
-  grid-template-columns: 1fr 1fr 120px 120px 120px;
+  grid-template-columns: minmax(280px, 1.2fr) minmax(140px, 0.45fr) minmax(120px, 0.38fr) minmax(120px, 0.42fr);
 }
 
 @utility grid-cols-admin-orders {
@@ -190,19 +190,23 @@
 }
 
 @utility grid-cols-admin-orders-pro {
-  grid-template-columns: 90px 1.2fr 1.35fr 140px 140px 140px 130px 90px;
+  grid-template-columns: 78px minmax(150px, 1fr) minmax(190px, 1.15fr) 128px 130px 122px 112px 76px;
 }
 
 @utility grid-cols-admin-clients {
-  grid-template-columns: 1.1fr 1fr 110px 1.2fr 110px 110px;
+  grid-template-columns: minmax(150px, 1fr) minmax(140px, 0.9fr) 108px minmax(170px, 1fr) 104px 104px;
 }
 
 @utility grid-cols-admin-client-filters {
-  grid-template-columns: 1.8fr 130px 150px 120px 120px 150px 150px;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(124px, 0.38fr) minmax(150px, 0.46fr) minmax(124px, 0.38fr) minmax(124px, 0.38fr) minmax(146px, 0.45fr) minmax(146px, 0.45fr);
 }
 
 @utility grid-cols-admin-product-filters {
-  grid-template-columns: 1.8fr 1fr 130px 120px 140px;
+  grid-template-columns: minmax(250px, 31fr) minmax(205px, 24fr) minmax(150px, 15fr) minmax(136px, 13fr) minmax(176px, 17fr);
+}
+
+@utility grid-cols-admin-order-filters {
+  grid-template-columns: minmax(300px, 1.3fr) minmax(220px, 0.8fr);
 }
 
 @utility grid-cols-admin-variant-row {
@@ -424,6 +428,27 @@ body > div.relative.z-10 section,
 body > div.relative.z-10 footer,
 body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   background-color: transparent !important;
+}
+
+.admin-solid-surface {
+  background-color: #000000 !important;
+}
+
+.admin-solid-surface main[class*="bg-"],
+.admin-solid-surface section[class*="bg-"],
+.admin-solid-surface div[class*="bg-beyonix-surface"],
+.admin-solid-surface div[class*="bg-zinc-950"],
+.admin-solid-surface article[class*="bg-beyonix-surface"] {
+  background-color: #000000 !important;
+}
+
+.admin-control-select {
+  color-scheme: dark;
+}
+
+.admin-control-select option {
+  background-color: #02070d;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 @keyframes beyonix-shooting-star-flight {

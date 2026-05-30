@@ -200,7 +200,7 @@ export function AdminDatePicker({
           spellCheck={false}
           onFocus={() => setOpen(true)}
           onChange={(event) => handleManualChange(event.target.value)}
-          className="h-11 w-full rounded-2xl border border-white/10 bg-black px-4 pr-11 text-sm font-medium text-white/82 outline-none placeholder:text-white/32 hover:border-white/18 focus:border-beyonix-blue-light"
+          className="h-11 w-full rounded-[18px] border border-white/12 bg-black px-4 pr-11 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
         />
 
         <button

@@ -32,8 +32,8 @@ export function CategoriasToolbar({
         </h2>
       </div>
 
-      <div className="flex flex-1 gap-3 lg:max-w-2xl">
-        <div className="relative flex-1 lg:max-w-420px">
+      <div className="flex flex-1 gap-3 lg:max-w-xl">
+        <div className="relative flex-1 lg:max-w-sm">
           <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/25" />
 
           <input
@@ -45,7 +45,7 @@ export function CategoriasToolbar({
                 e.target.value
               )
             }
-            className="h-11 w-full rounded-2xl border border-white/8 bg-beyonix-surface pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
+            className="h-11 w-full rounded-[18px] border border-white/12 bg-black pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/30 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
         </div>
 

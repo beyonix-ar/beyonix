@@ -62,8 +62,8 @@ export function ProductosToolbar({
         </button>
       </div>
 
-      <div className="rounded-3xl border border-white/8 bg-black/5 p-4">
-        <div className="grid gap-3 lg:grid-cols-admin-product-filters">
+      <div className="rounded-3xl border border-white/8 bg-transparent p-4">
+        <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-admin-product-filters">
           <AdminTextInput
             title="Buscar producto"
             ariaLabel="Buscar producto"
@@ -112,7 +112,7 @@ export function ProductosToolbar({
             value={featuredFilter}
             onChange={(value) => onFeaturedFilterChange(value as FeaturedFilter)}
           >
-            <option value="todos">Destacados</option>
+            <option value="todos">Todos los productos</option>
             <option value="destacados">Solo destacados</option>
             <option value="normales">No destacados</option>
           </AdminSelect>

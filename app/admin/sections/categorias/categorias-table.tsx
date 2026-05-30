@@ -54,7 +54,7 @@ export function CategoriasTable({
 
   if (!categorias.length) {
     return (
-      <div className="rounded-3xl border border-white/7 bg-beyonix-surface p-12 text-center">
+      <div className="rounded-3xl border border-white/7 bg-black p-12 text-center">
         <FolderOpen className="mx-auto mb-3 size-10 text-white/15" />
 
         <p className="text-sm font-medium text-white/60">
@@ -71,11 +71,10 @@ export function CategoriasTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-white/7">
-      <div className="grid grid-cols-admin-categories gap-4 border-b border-white/6 bg-beyonix-surface px-5 py-3">
+    <div className="overflow-hidden rounded-3xl border border-white/7 bg-black">
+      <div className="grid grid-cols-admin-categories gap-4 border-b border-white/6 bg-black px-5 py-3">
         {[
           "Nombre",
-          "Slug",
           "Artículos",
           "Stock",
           "Acciones",
@@ -85,7 +84,7 @@ export function CategoriasTable({
             className={`text-11px font-semibold uppercase tracking-widest text-white/55 ${
               label ===
               "Acciones"
-                ? "text-right"
+                ? "text-center"
                 : ""
             }`}
           >

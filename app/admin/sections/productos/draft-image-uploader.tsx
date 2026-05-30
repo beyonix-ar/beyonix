@@ -97,7 +97,7 @@ export function DraftImageUploader({
         className={`flex h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed transition-colors ${
           dragging
             ? "border-blue-400 bg-sky-950/30"
-            : "border-white/10 bg-white/2 hover:border-white/20"
+            : "border-white/10 bg-black hover:border-white/20"
         }`}
       >
         <Upload className="size-6 text-white/25" />
@@ -135,7 +135,7 @@ export function DraftImageUploader({
       </div>
 
       {!files.length && (
-        <div className="rounded-2xl border border-white/6 bg-white/2 px-5 py-10 text-center">
+        <div className="rounded-2xl border border-white/6 bg-black px-5 py-10 text-center">
           <ImageIcon className="mx-auto mb-3 size-8 text-white/15" />
 
           <p className="text-sm text-white/55">

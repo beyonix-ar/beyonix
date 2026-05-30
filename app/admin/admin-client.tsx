@@ -283,7 +283,11 @@ export function AdminClient() {
         </div>
       )}
 
-      <main className="min-w-0 flex-1 bg-beyonix-page">
+      <main
+        className={`min-w-0 flex-1 bg-beyonix-page ${
+          section === "dashboard" ? "" : "admin-solid-surface"
+        }`}
+      >
         {sections[section]}
       </main>
     </div>
