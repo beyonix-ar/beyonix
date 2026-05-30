@@ -165,14 +165,18 @@ export async function getDashboardData() {
   if (itemsResult.error) throw itemsResult.error
 
   const productos = (productosResult.data ?? []) as SupabaseProducto[]
-  const clientes = (clientesResult.data ?? []) as SupabaseProfile[]
+  const clientes = ((clientesResult.data ?? []) as SupabaseProfile[]).filter(
+    (profile) => profile.rol === "cliente"
+  )
   const ordenes = (ordenesResult.data ?? []) as SupabasePedido[]
   const items = (itemsResult.data ?? []) as SupabasePedidoItem[]
   const activeSince = Date.now() - 5 * 60 * 1000
   const presenceRows = presenceResult.error
     ? []
     : ((presenceResult.data ?? []) as PresenceRow[])
+  const clientIds = new Set(clientes.map((cliente) => cliente.id))
   const activeClients = presenceRows
+    .filter((row) => clientIds.has(row.user_id))
     .filter((row) =>
       row.last_seen_at
         ? new Date(row.last_seen_at).getTime() >= activeSince

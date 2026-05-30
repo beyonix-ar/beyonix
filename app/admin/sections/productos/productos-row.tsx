@@ -4,7 +4,6 @@ import {
   useEffect,
   useState,
 } from "react"
-import Link from "next/link"
 
 import {
   ChevronDown,
@@ -29,6 +28,8 @@ import {
 import {
   updateProducto,
 } from "@/lib/supabase/queries/productos"
+
+import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 
 interface ProductosRowProps {
   producto: SupabaseProducto
@@ -106,6 +107,8 @@ export function ProductosRow({
     useState<SupabaseProductoVariante | null>(
       null
     )
+  const [previewOpen, setPreviewOpen] =
+    useState(false)
 
   const [editColor, setEditColor] =
     useState("")
@@ -361,13 +364,15 @@ export function ProductosRow({
         </button>
 
         <div className="flex items-center justify-center gap-1.5">
-          <Link
-            href={`/productos/${producto.slug}`}
+          <button
+            type="button"
             title="Ver producto"
+            aria-label={`Ver producto ${producto.nombre}`}
+            onClick={() => setPreviewOpen(true)}
             className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400 cursor-pointer"
           >
             <Package className="size-3.5" />
-          </Link>
+          </button>
 
           <button
             type="button"
@@ -573,6 +578,16 @@ export function ProductosRow({
           onClose={() =>
             setViewingVariant(null)
           }
+        />
+      )}
+
+      {previewOpen && (
+        <AdminProductPreviewModal
+          product={{
+            ...producto,
+            producto_variantes: variantes,
+          }}
+          onClose={() => setPreviewOpen(false)}
         />
       )}
     </div>

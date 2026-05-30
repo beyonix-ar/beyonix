@@ -66,6 +66,10 @@ function getLastOrderSummary(cliente: SupabaseCliente) {
   }`
 }
 
+function getCartItemCount(cart: SupabaseCliente["current_cart"]) {
+  return Array.isArray(cart) ? cart.length : 0
+}
+
 function ClientStatus({ cliente }: { cliente: SupabaseCliente }) {
   const hasOrders = cliente.order_count > 0
   const active = Boolean(cliente.is_active)
@@ -266,6 +270,9 @@ export function AdminClientes({
   ])
 
   const activeCount = clientes.filter((cliente) => cliente.is_active).length
+  const clientsWithCart = clientes.filter(
+    (cliente) => getCartItemCount(cliente.current_cart) > 0
+  )
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -332,7 +339,7 @@ export function AdminClientes({
             value={purchaseFilter}
             onChange={(value) => setPurchaseFilter(value as PurchaseFilter)}
           >
-            <option value="todos">Compras</option>
+            <option value="todos">Todos</option>
             <option value="con_compras">Con compras</option>
             <option value="sin_compras">Sin compras</option>
           </AdminSelect>
@@ -440,16 +447,49 @@ export function AdminClientes({
             <ShoppingBag className="size-4 text-beyonix-sky" />
             <h2 className="text-lg font-black">Carritos actuales</h2>
           </div>
-          <details className="rounded-2xl border border-white/7 bg-black px-4 py-3">
-            <summary className="flex cursor-pointer items-center justify-between text-sm font-bold text-white/78">
-              Estructura preparada
-              <ChevronDown className="size-4" />
-            </summary>
-            <p className="mt-3 text-sm leading-6 text-white/62">
-              Para mostrar carritos actuales con datos reales, el sitio tiene que
-              escribir `client_carts` cuando el usuario modifica el carrito.
-            </p>
-          </details>
+          {clientsWithCart.length ? (
+            <div className="space-y-3">
+              {clientsWithCart.map((cliente) => (
+                <details
+                  key={cliente.id}
+                  className="rounded-2xl border border-white/7 bg-black px-4 py-3"
+                >
+                  <summary className="flex cursor-pointer items-center justify-between gap-4 text-sm font-bold text-white/78">
+                    <span className="min-w-0 truncate">
+                      {cliente.username || cliente.nombre} ·{" "}
+                      {getCartItemCount(cliente.current_cart)} item
+                      {getCartItemCount(cliente.current_cart) === 1 ? "" : "s"}
+                    </span>
+                    <ChevronDown className="size-4 shrink-0" />
+                  </summary>
+                  <div className="mt-3 space-y-2">
+                    {(cliente.current_cart as Array<Record<string, unknown>>).map(
+                      (item, index) => (
+                        <div
+                          key={`${cliente.id}-${index}`}
+                          className="grid gap-2 rounded-xl border border-white/7 bg-black px-3 py-2 text-xs text-white/62 sm:grid-cols-3"
+                        >
+                          <span className="truncate font-bold text-white/82">
+                            {String(item.name ?? "Producto")}
+                          </span>
+                          <span>
+                            Cantidad: {String(item.quantity ?? "-")}
+                          </span>
+                          <span className="truncate">
+                            Variante: {String(item.variant_name ?? item.color ?? "-")}
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </details>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/7 bg-black px-4 py-3 text-sm text-white/58">
+              No hay carritos activos guardados en este momento.
+            </div>
+          )}
         </div>
       )}
     </div>

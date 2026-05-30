@@ -49,7 +49,9 @@ export async function getClientes() {
   if (profilesResult.error) throw profilesResult.error
   if (ordersResult.error) throw ordersResult.error
 
-  const profiles = (profilesResult.data ?? []) as SupabaseProfile[]
+  const profiles = ((profilesResult.data ?? []) as SupabaseProfile[]).filter(
+    (profile) => profile.rol === "cliente"
+  )
   const orders = (ordersResult.data ?? []) as SupabasePedido[]
   const presenceRows = presenceResult.error
     ? []

@@ -162,9 +162,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     stats.pedidosPendientes > 0
       ? `${stats.pedidosPendientes} pedidos pendientes requieren seguimiento.`
       : null,
-    stats.clientesActivos === 0
-      ? "Usuarios activos en tiempo real no está disponible sin tabla de sesiones."
-      : null,
   ].filter(Boolean)
 
   return (
@@ -229,7 +226,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         <MetricCard
           title="Activos"
           value={stats.clientesActivos}
-          helper="Requiere sesiones en base"
+          helper="Clientes conectados"
           icon={<BadgeCheck className="size-5" />}
           onClick={() => onNavigate("activos")}
         />

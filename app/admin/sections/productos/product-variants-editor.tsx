@@ -8,7 +8,6 @@ import {
 import {
   Loader2,
   Pencil,
-  Pipette,
   Plus,
   X,
   Trash2,
@@ -45,18 +44,6 @@ interface ProductVariantsEditorProps {
   onDraftVariantsChange?: (
     variants: DraftProductoVariante[]
   ) => void
-}
-
-type EyeDropperResult = {
-  sRGBHex: string
-}
-
-type EyeDropperApi = {
-  open: () => Promise<EyeDropperResult>
-}
-
-type EyeDropperWindow = Window & {
-  EyeDropper?: new () => EyeDropperApi
 }
 
 const inputCls =
@@ -118,9 +105,6 @@ export function ProductVariantsEditor({
   const [error, setError] =
     useState("")
 
-  const [notice, setNotice] =
-    useState("")
-
   const loadVariantes =
     useCallback(async () => {
       if (!productoId) {
@@ -178,40 +162,8 @@ export function ProductVariantsEditor({
     })
   }
 
-  const pickColor = async () => {
-    setNotice("")
-    setError("")
-
-    const EyeDropper = (
-      window as EyeDropperWindow
-    ).EyeDropper
-
-    if (!EyeDropper) {
-      setNotice(
-        "Tu navegador no soporta cuenta gotas. Usá el selector manual de color."
-      )
-
-      return
-    }
-
-    try {
-      const result =
-        await new EyeDropper().open()
-
-      setColorHex(
-        normalizeHex(result.sRGBHex)
-      )
-    } catch {
-      setNotice(
-        "Selección de color cancelada."
-      )
-    }
-  }
-
   const addVariant = async () => {
     setError("")
-    setNotice("")
-
     const cleanName =
       nombre.trim()
 
@@ -360,8 +312,6 @@ export function ProductVariantsEditor({
     async (id: number) => {
       try {
         setError("")
-        setNotice("")
-
         await deleteProductoVariante(id)
 
         const nextVariantes =
@@ -504,17 +454,6 @@ export function ProductVariantsEditor({
       <div className="flex gap-3">
         <button
           type="button"
-          title="Usar cuenta gotas"
-          aria-label="Usar cuenta gotas"
-          onClick={pickColor}
-          className="inline-flex h-12 min-w-150px items-center justify-center gap-2 rounded-2xl border border-white/10 px-6 text-sm text-white/75 transition-colors hover:text-white cursor-pointer"
-        >
-          <Pipette className="size-4" />
-          Cuenta gotas
-        </button>
-
-        <button
-          type="button"
           title="Crear variante"
           aria-label="Crear variante"
           onClick={addVariant}
@@ -544,12 +483,6 @@ export function ProductVariantsEditor({
           </button>
         )}
       </div>
-
-      {notice && (
-        <p className="text-xs text-white/55">
-          {notice}
-        </p>
-      )}
 
       {error && (
         <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">

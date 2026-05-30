@@ -120,7 +120,7 @@ export function useProductoForm({
     destacado:
       producto?.destacado ?? false,
     activo:
-      producto?.activo ?? true,
+      producto?.activo ?? false,
   })
 
   useEffect(() => {
