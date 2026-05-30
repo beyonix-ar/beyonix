@@ -218,7 +218,7 @@ export function ProductosRow({
 
   return (
     <div
-      className={`transition-colors hover:bg-white/6 ${
+      className={`bg-black/85 transition-colors hover:bg-black ${
         !isLast
           ? "border-b border-white/5"
           : ""

@@ -62,7 +62,7 @@ export function ProductosToolbar({
         </button>
       </div>
 
-      <div className="rounded-3xl border border-white/8 bg-beyonix-surface p-4">
+      <div className="rounded-3xl border border-white/8 bg-black/5 p-4">
         <div className="grid gap-3 lg:grid-cols-admin-product-filters">
           <AdminTextInput
             title="Buscar producto"

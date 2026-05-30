@@ -6,7 +6,10 @@ import { ChevronDown, Search, ShoppingBag, UserCheck, Users } from "lucide-react
 import { useClientes } from "@/hooks/use-clientes"
 import type { SupabaseCliente } from "@/lib/supabase/types"
 import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
+import { AdminDatePicker } from "../../components/admin-date-picker"
 import { formatPrice } from "../productos/helpers"
+
+
 
 type PurchaseFilter = "todos" | "con_compras" | "sin_compras"
 type ActiveFilter = "todos" | "activos" | "inactivos"
@@ -91,7 +94,7 @@ function ClientCard({ cliente }: { cliente: SupabaseCliente }) {
   const username = cliente.username || cliente.nombre
 
   return (
-    <details className="rounded-3xl border border-white/8 bg-beyonix-surface">
+    <details className="rounded-3xl border border-white/8 bg-black">
       <summary className="grid cursor-pointer gap-4 px-4 py-4 lg:grid-cols-admin-clients lg:items-center">
         <div className="min-w-0">
           <p title={username} className="truncate text-sm font-black uppercase text-white/92">
@@ -303,7 +306,7 @@ export function AdminClientes({
         </div>
       </div>
 
-      <div className="rounded-3xl border border-white/8 bg-beyonix-surface p-4">
+      <div className="rounded-3xl border border-white/8 bg-transparent p-4">
         <div className="grid gap-3 lg:grid-cols-admin-client-filters">
           <AdminTextInput
             title="Buscar cliente"
@@ -356,21 +359,19 @@ export function AdminClientes({
             className="h-11 rounded-2xl border border-white/10 bg-black px-4 text-sm font-medium text-white/82 outline-none placeholder:text-white/32 hover:border-white/18 focus:border-beyonix-blue-light"
           />
 
-          <AdminTextInput
+          <AdminDatePicker
             title="Fecha de registro desde"
             ariaLabel="Fecha de registro desde"
             value={registeredFrom}
-            placeholder="Desde dd/mm/aaaa"
-            inputMode="numeric"
+            placeholder="Desde"
             onChange={setRegisteredFrom}
           />
 
-          <AdminTextInput
+          <AdminDatePicker
             title="Fecha de registro hasta"
             ariaLabel="Fecha de registro hasta"
             value={registeredTo}
-            placeholder="Hasta dd/mm/aaaa"
-            inputMode="numeric"
+            placeholder="Hasta"
             onChange={setRegisteredTo}
           />
         </div>
@@ -401,7 +402,7 @@ export function AdminClientes({
         </div>
       ) : filteredClients.length ? (
         <div className="space-y-3">
-          <div className="hidden grid-cols-admin-clients gap-4 rounded-2xl border border-white/8 bg-beyonix-surface px-4 py-3 lg:grid">
+          <div className="hidden grid-cols-admin-clients gap-4 rounded-2xl border border-white/8 bg-black/85 px-4 py-3 lg:grid">
             {["Usuario", "Nombre", "Teléfono", "Dirección", "Compras", "Estado"].map(
               (label) => (
                 <span
@@ -434,7 +435,7 @@ export function AdminClientes({
       )}
 
       {initialActiveOnly && (
-        <div className="rounded-3xl border border-white/8 bg-beyonix-surface p-5">
+        <div className="rounded-3xl border border-white/8 bg-black p-5">
           <div className="mb-3 flex items-center gap-2 text-white/92">
             <ShoppingBag className="size-4 text-beyonix-sky" />
             <h2 className="text-lg font-black">Carritos actuales</h2>

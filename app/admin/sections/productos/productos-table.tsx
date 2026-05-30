@@ -68,7 +68,7 @@ export function ProductosTable({
 
   return (
     <div className="overflow-hidden rounded-3xl border border-white/7">
-      <div className="grid grid-cols-admin-products gap-4 border-b border-white/6 bg-beyonix-surface px-5 py-3">
+      <div className="grid grid-cols-admin-products gap-4 border-b border-white/6 bg-black/85 px-5 py-3">
         {[
           "Producto",
           "Categoría",

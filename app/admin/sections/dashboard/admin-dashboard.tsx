@@ -69,11 +69,11 @@ function MetricCard({
   onClick?: () => void
 }) {
   const toneClass = {
-    default: "border-white/8 bg-beyonix-surface",
-    blue: "border-beyonix-blue-light/35 bg-beyonix-blue",
-    green: "border-emerald-400/20 bg-emerald-400/8",
-    amber: "border-amber-400/22 bg-amber-400/8",
-    red: "border-red-400/22 bg-red-400/8",
+    default: "border-white/8 bg-black/85",
+    blue: "border-white/8 bg-black/85",
+    green: "border-white/8 bg-black/85",
+    amber: "border-white/8 bg-black/85",
+    red: "border-white/8 bg-black/85",
   }[tone]
 
   const content = (
