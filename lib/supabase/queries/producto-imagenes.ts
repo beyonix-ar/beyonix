@@ -65,3 +65,53 @@ export async function uploadProductoImages(
 
   return urls
 }
+
+function getStoragePathFromUrl(url: string) {
+  return url.split(`/${PRODUCTO_IMAGES_BUCKET}/`)[1] ?? null
+}
+
+export async function deleteProductoImageByUrl(url: string) {
+  const { error: dbError } = await supabase
+    .from("imagenes_producto")
+    .delete()
+    .eq("url", url)
+
+  if (dbError) {
+    throw dbError
+  }
+
+  const path = getStoragePathFromUrl(url)
+
+  if (path) {
+    const { error: storageError } = await supabase.storage
+      .from(PRODUCTO_IMAGES_BUCKET)
+      .remove([path])
+
+    if (storageError) {
+      throw storageError
+    }
+  }
+
+  return true
+}
+
+export async function updateProductoImageOrder(
+  urls: string[]
+) {
+  const results = await Promise.all(
+    urls.map((url, index) =>
+      supabase
+        .from("imagenes_producto")
+        .update({
+          orden: index + 1,
+        })
+        .eq("url", url)
+    )
+  )
+
+  const error = results.find((result) => result.error)?.error
+
+  if (error) {
+    throw error
+  }
+}

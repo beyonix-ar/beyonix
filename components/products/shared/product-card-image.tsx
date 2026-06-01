@@ -22,7 +22,7 @@ export function ProductCardImage({
   return (
     <div
       onClick={onOpenPreview}
-      className="relative aspect-square overflow-hidden bg-white cursor-pointer"
+      className="relative aspect-square cursor-pointer overflow-hidden bg-beyonix-surface-3"
     >
       <img
         src={image}

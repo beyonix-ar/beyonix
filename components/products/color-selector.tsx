@@ -26,12 +26,12 @@ export function ColorSelector({
   onSelect,
   showLabels = false,
 }: ColorSelectorProps) {
-  if (colors.length <= 1) {
+  if (colors.length <= 1 && !showLabels) {
     return null
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2.5">
+    <div className="custom-scrollbar flex h-full flex-wrap items-start gap-2 overflow-y-auto pr-1">
       {colors.map((color) => {
         const value = color.value || color.name
         const isSelected =
@@ -49,10 +49,6 @@ export function ColorSelector({
           <button
             key={value}
             type="button"
-            aria-label={
-              color.name
-            }
-            title={color.name}
             onClick={() =>
               onSelect(
                 value
@@ -60,7 +56,7 @@ export function ColorSelector({
             }
             className={
               showLabels
-                ? `relative flex min-h-40px cursor-pointer items-center gap-2 rounded-lg border px-3 text-13px font-semibold transition-all duration-200 ${
+                ? `relative flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2 text-11px font-medium transition-all duration-200 ${
                     isSelected
                       ? "border-beyonix-sky bg-beyonix-blue text-white shadow-beyonix-color-selected"
                       : "border-white/10 bg-white/4 text-white/70 hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white"
@@ -80,7 +76,7 @@ export function ColorSelector({
                 boxShadow:
                   "inset 0 0 0 1.5px rgba(255,255,255,0.2)",
               }}
-              className={`block size-5 shrink-0 rounded-full ${colorClass}`}
+              className={`block size-3.5 shrink-0 rounded-full ${colorClass}`}
             />
             {showLabels && <span>{color.name}</span>}
           </button>

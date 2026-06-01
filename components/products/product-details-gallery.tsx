@@ -7,6 +7,7 @@ import Image from "next/image"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { ProductPreviewThumbnails } from "./product-preview-thumbnails"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 export function getStockBadge(stock: number) {
   if (stock <= 0) {
@@ -16,9 +17,16 @@ export function getStockBadge(stock: number) {
     }
   }
 
-  if (stock <= 5) {
+  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) {
     return {
-      text: "Poco stock",
+      text: "Últimas unidades",
+      className: "border-red-400/25 bg-red-500/12 text-red-100",
+    }
+  }
+
+  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) {
+    return {
+      text: "Últimas unidades",
       className: "border-amber-300/25 bg-amber-400/12 text-amber-100",
     }
   }

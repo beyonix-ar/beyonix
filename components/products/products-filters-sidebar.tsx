@@ -3,22 +3,26 @@
 import { CommerceFilter } from "./filters/commerce-filter"
 import { PriceFilter } from "./filters/price-filter"
 import { CategoryFilter } from "./filters/category-filter"
-import { ColorFilter } from "./filters/color-filter"
+import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 interface ProductsFiltersSidebarProps {
+  categories: SupabaseCategoria[]
   selectedCategories: string[]
   setSelectedCategories: (value: string[]) => void
-  selectedColors: string[]
-  setSelectedColors: (value: string[]) => void
-  availableColors: string[]
 
   onlyOffers: boolean
   setOnlyOffers: (value: boolean) => void
 
   onlyBestSellers: boolean
   setOnlyBestSellers: (value: boolean) => void
-  onlyNew: boolean
-  setOnlyNew: (value: boolean) => void
+  onlyInstallments: boolean
+  setOnlyInstallments: (value: boolean) => void
+
+  showInstallmentsFilter: boolean
+  showFeaturedFilter: boolean
+  showOfferFilter: boolean
+  showPriceFilter: boolean
+  showCategoryFilter: boolean
 
   minPrice: number
   setMinPrice: (value: number) => void
@@ -27,36 +31,29 @@ interface ProductsFiltersSidebarProps {
 }
 
 export function ProductsFiltersSidebar({
+  categories,
   selectedCategories,
   setSelectedCategories,
-  selectedColors,
-  setSelectedColors,
-  availableColors,
 
   onlyOffers,
   setOnlyOffers,
 
   onlyBestSellers,
   setOnlyBestSellers,
-  onlyNew,
-  setOnlyNew,
+  onlyInstallments,
+  setOnlyInstallments,
+
+  showInstallmentsFilter,
+  showFeaturedFilter,
+  showOfferFilter,
+  showPriceFilter,
+  showCategoryFilter,
 
   minPrice,
   setMinPrice,
   maxPrice,
   setMaxPrice,
 }: ProductsFiltersSidebarProps) {
-  const toggleColor = (color: string) => {
-    if (selectedColors.includes(color)) {
-      setSelectedColors(
-        selectedColors.filter((item) => item !== color)
-      )
-      return
-    }
-
-    setSelectedColors([...selectedColors, color])
-  }
-
   return (
     <aside className="h-fit rounded-2xl border border-white/7 bg-beyonix-surface overflow-hidden">
 
@@ -71,17 +68,25 @@ export function ProductsFiltersSidebar({
 
       <div className="px-5 py-5 space-y-0 divide-y divide-white/5">
 
+        {(showOfferFilter ||
+          showFeaturedFilter ||
+          showInstallmentsFilter) && (
         <div className="pb-6">
           <CommerceFilter
             onlyOffers={onlyOffers}
             setOnlyOffers={setOnlyOffers}
             onlyBestSellers={onlyBestSellers}
             setOnlyBestSellers={setOnlyBestSellers}
-            onlyNew={onlyNew}
-            setOnlyNew={setOnlyNew}
+            onlyInstallments={onlyInstallments}
+            setOnlyInstallments={setOnlyInstallments}
+            showOfferFilter={showOfferFilter}
+            showFeaturedFilter={showFeaturedFilter}
+            showInstallmentsFilter={showInstallmentsFilter}
           />
         </div>
+        )}
 
+        {showPriceFilter && (
         <div className="py-6">
           <PriceFilter
             minPrice={minPrice}
@@ -90,21 +95,17 @@ export function ProductsFiltersSidebar({
             setMaxPrice={setMaxPrice}
           />
         </div>
+        )}
 
+        {showCategoryFilter && (
         <div className="py-6">
           <CategoryFilter
+            categories={categories}
             selectedCategories={selectedCategories}
             setSelectedCategories={setSelectedCategories}
           />
         </div>
-
-        <div className="pt-6">
-          <ColorFilter
-            selectedColors={selectedColors}
-            availableColors={availableColors}
-            onToggleColor={toggleColor}
-          />
-        </div>
+        )}
 
       </div>
     </aside>

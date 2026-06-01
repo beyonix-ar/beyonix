@@ -1,19 +1,17 @@
 "use client"
 
+import type { SupabaseCategoria } from "@/lib/supabase/types"
+
 interface CategoryFilterProps {
   selectedCategories: string[]
   setSelectedCategories: (value: string[]) => void
+  categories: SupabaseCategoria[]
 }
-
-const categories = [
-  { slug: "audio-conectividad", label: "Audio y conectividad" },
-  { slug: "confort-bienestar", label: "Confort y bienestar" },
-  { slug: "setup-escritorio", label: "Setup y escritorio" },
-]
 
 export function CategoryFilter({
   selectedCategories,
   setSelectedCategories,
+  categories,
 }: CategoryFilterProps) {
   const toggleCategory = (category: string) => {
     if (selectedCategories.includes(category)) {
@@ -33,12 +31,18 @@ export function CategoryFilter({
       </p>
 
       <div className="space-y-2.5">
-        {categories.map(({ slug, label }) => {
+        {categories.length === 0 && (
+          <p className="text-sm text-white/45">
+            No hay categor&iacute;as disponibles.
+          </p>
+        )}
+
+        {categories.map(({ slug, nombre }) => {
           const isChecked = selectedCategories.includes(slug)
           return (
             <label
               key={slug}
-              className="flex items-center gap-3 cursor-pointer group"
+              className="group flex cursor-pointer items-center gap-3"
             >
               {/* Checkbox personalizado */}
               <span
@@ -67,7 +71,7 @@ export function CategoryFilter({
                   type="checkbox"
                   checked={isChecked}
                   onChange={() => toggleCategory(slug)}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  className="absolute inset-0 cursor-pointer opacity-0"
                 />
               </span>
 
@@ -76,7 +80,7 @@ export function CategoryFilter({
                   isChecked ? "text-white" : "text-white/70 group-hover:text-white/80"
                 }`}
               >
-                {label}
+                {nombre}
               </span>
             </label>
           )

@@ -14,6 +14,7 @@ import {
   getProductVariantOptions,
   getVariantOptionByValue,
 } from "@/lib/products/product-variants"
+import { getInstallmentsLabel } from "@/lib/products/installments"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -60,6 +61,8 @@ export function CategoryProductCard({
   )
 
   const images = activeVariant.images
+  const installmentsLabel =
+    getInstallmentsLabel(product)
 
   const handleAddToCart = () => {
     addToCart(
@@ -128,6 +131,12 @@ export function CategoryProductCard({
               </span>
             ) : (
               <div className="min-h-28px" />
+            )}
+
+            {installmentsLabel && (
+              <span className="inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2.5 py-1 text-11px font-medium text-beyonix-cyan">
+                {installmentsLabel}
+              </span>
             )}
           </div>
 

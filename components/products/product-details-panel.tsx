@@ -3,11 +3,21 @@
 import {
   BatteryCharging,
   Bluetooth,
+  Cable,
+  Clock,
+  Headphones,
+  Home,
   Mic,
   Music,
+  Package,
   Radio,
+  Shield,
+  Star,
+  Truck,
   Volume2,
+  Zap,
 } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -18,6 +28,7 @@ import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
 } from "@/lib/products/product-variants"
+import { getInstallmentsLabel } from "@/lib/products/installments"
 
 interface ProductDetailsPanelProps {
   product: SupabaseProducto
@@ -69,6 +80,24 @@ const productFeatures = [
   },
 ]
 
+const iconMap: Record<string, LucideIcon> = {
+  BatteryCharging,
+  Bluetooth,
+  Cable,
+  Clock,
+  Headphones,
+  Home,
+  Mic,
+  Music,
+  Package,
+  Radio,
+  Shield,
+  Star,
+  Truck,
+  Volume2,
+  Zap,
+}
+
 export function ProductDetailsPanel({
   product,
   selectedColor,
@@ -81,14 +110,39 @@ export function ProductDetailsPanel({
   cartQuantity = 0,
 }: ProductDetailsPanelProps) {
   const colors = getProductVariantOptions(product)
+  const installmentsLabel =
+    getInstallmentsLabel(product)
   const hasVariants =
     colors.length > 1 || colors[0]?.value !== DEFAULT_VARIANT_VALUE
+  const productSpecifications =
+    product.producto_especificaciones
+      ?.filter((specification) => specification.activo !== false)
+      .sort((a, b) => {
+        if (a.orden !== b.orden) return a.orden - b.orden
+        return a.id - b.id
+      }) ?? []
+  const visibleFeatures =
+    productSpecifications.length > 0
+      ? productSpecifications.map((specification) => ({
+          icon: iconMap[specification.icono] ?? Music,
+          text: specification.texto,
+        }))
+      : productFeatures
+  const limitedFeatures = visibleFeatures.slice(0, 10)
+  const featureColumns =
+    limitedFeatures.length >= 4
+      ? [
+          limitedFeatures.slice(0, Math.ceil(limitedFeatures.length / 2)),
+          limitedFeatures.slice(Math.ceil(limitedFeatures.length / 2)),
+        ]
+      : [limitedFeatures]
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-beyonix-surface text-white">
-      <div className="custom-scrollbar flex-1 overflow-x-hidden overflow-y-auto">
-        <div className="px-8 pb-4 pt-8">
-          <p className="mb-1.5 text-10px font-bold uppercase tracking-widest text-beyonix-sky">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Header */}
+        <div className="shrink-0 px-8 pb-5 pt-8">
+          <p className="mb-2 text-10px font-bold uppercase tracking-widest text-beyonix-sky">
             {product.categorias?.nombre}
           </p>
 
@@ -97,88 +151,103 @@ export function ProductDetailsPanel({
           </h2>
         </div>
 
-        <div className="space-y-5 px-8 pb-5">
-          {product.descripcion && (
-            <ProductDescription
-              shortDescription={
-                product.descripcion
-              }
-              longDescription=""
-              features={[]}
-            />
-          )}
+        <div className="h-px bg-white/8" />
 
-          <div className="h-px bg-white/8" />
+        <div
+          className={`grid min-h-0 flex-1 ${
+            hasVariants
+              ? "grid-rows-product-info"
+              : "grid-rows-product-info-no-variant"
+          }`}
+        >
+          <section className="flex min-h-0 flex-col border-b border-white/8 px-8 py-4">
+            <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
+              Descripcion
+            </p>
 
-          <section>
-            <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/50">
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
+              {product.descripcion && (
+                <ProductDescription
+                  shortDescription={product.descripcion}
+                  longDescription=""
+                  features={[]}
+                />
+              )}
+            </div>
+          </section>
+
+          <section className="flex min-h-0 flex-col border-b border-white/8 px-8 py-4">
+            <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
               Especificaciones
             </p>
 
-            <ul className="grid gap-2">
-              {productFeatures.map((feature) => {
-                const Icon = feature.icon
-
-                return (
-                  <li
-                    key={feature.text}
-                    className="flex items-center gap-2.5 text-13px leading-5 text-white/72"
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
+              <div
+                className={`grid items-start gap-4 ${
+                  featureColumns.length > 1 ? "grid-cols-2" : "grid-cols-1"
+                }`}
+              >
+                {featureColumns.map((column, columnIndex) => (
+                  <ul
+                    key={`feature-column-${columnIndex}`}
+                    className="grid content-start gap-y-2.5 self-start"
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/20 bg-beyonix-blue/35 text-beyonix-sky">
-                      <Icon className="size-3.5" />
-                    </span>
-                    <span>{feature.text}</span>
-                  </li>
-                )
-              })}
-            </ul>
+                    {column.map((feature) => {
+                      const Icon = feature.icon
+
+                      return (
+                        <li
+                          key={feature.text}
+                          className="flex items-center gap-2.5 text-12px leading-5 text-white/70"
+                        >
+                          <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/20 bg-beyonix-blue/30 text-beyonix-sky">
+                            <Icon className="size-3" />
+                          </span>
+                          <span className="leading-tight">{feature.text}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ))}
+              </div>
+            </div>
           </section>
 
           {hasVariants && (
-            <div>
-              <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/50">
+            <section className="flex min-h-0 flex-col px-8 py-3">
+              <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/40">
                 Variante
               </p>
 
-              <ColorSelector
-                colors={colors.map((color) => ({
-                  name: color.name,
-                  value: color.value,
-                  colorHex: color.colorHex,
-                }))}
-                selectedColor={selectedColor}
-                onSelect={onColorChange}
-                showLabels
-              />
-            </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ColorSelector
+                  colors={colors.map((color) => ({
+                    name: color.name,
+                    value: color.value,
+                    colorHex: color.colorHex,
+                  }))}
+                  selectedColor={selectedColor}
+                  onSelect={onColorChange}
+                  showLabels
+                />
+              </div>
+            </section>
           )}
-
         </div>
       </div>
 
+      {/* Purchase footer */}
       <div className="shrink-0 border-t border-white/8 bg-beyonix-surface">
         <ProductPurchaseBox
           price={product.precio}
-          originalPrice={
-            product.precio_anterior ||
-            undefined
-          }
+          originalPrice={product.precio_anterior || undefined}
+          installmentsLabel={installmentsLabel}
           isInCart={isInCart}
-          cartQuantity={
-            cartQuantity
-          }
-          onAddToCart={
-            onAddToCart
-          }
-          onDecreaseCart={
-            onDecreaseCart
-          }
-          onRemoveFromCart={
-            onRemoveFromCart
-          }
-          onViewCart={
-            onViewCart
-          }
+          cartQuantity={cartQuantity}
+          onAddToCart={onAddToCart}
+          onDecreaseCart={onDecreaseCart}
+          onRemoveFromCart={onRemoveFromCart}
+          onViewCart={onViewCart}
         />
       </div>
     </aside>

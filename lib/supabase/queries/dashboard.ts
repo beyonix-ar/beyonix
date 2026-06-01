@@ -6,6 +6,7 @@ import type {
   SupabaseProducto,
   SupabaseProfile,
 } from "@/lib/supabase/types"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 export interface LowStockItem {
   id: string
@@ -91,7 +92,12 @@ function getLowStock(productos: SupabaseProducto[]) {
         return [
           ...items,
           ...variantes
-            .filter((variante) => variante.activo && (variante.stock ?? 0) <= 5)
+            .filter(
+              (variante) =>
+                variante.activo &&
+                (variante.stock ?? 0) <=
+                  SITE_SETTINGS.stock.lowStockThreshold
+            )
             .map((variante) => ({
               id: `variante-${variante.id}`,
               nombre: variante.nombre,
@@ -103,7 +109,7 @@ function getLowStock(productos: SupabaseProducto[]) {
         ]
       }
 
-      if ((producto.stock ?? 0) <= 5) {
+      if ((producto.stock ?? 0) <= SITE_SETTINGS.stock.lowStockThreshold) {
         return [
           ...items,
           {

@@ -13,6 +13,8 @@ interface ProductoPayload {
   precio: number
   precio_anterior?: number | null
   descuento?: number | null
+  cuotas_sin_interes?: boolean
+  cuotas_maximas?: 3 | 6 | null
   stock?: number
   categoria_id?: number | null
   destacado?: boolean
@@ -24,7 +26,8 @@ const PRODUCTO_SELECT = `
   *,
   categorias(*),
   imagenes_producto(*),
-  producto_variantes(*)
+  producto_variantes(*),
+  producto_especificaciones(*)
 `
 
 // ─────────────────────────────────────────────────────────────

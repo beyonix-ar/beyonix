@@ -9,10 +9,14 @@ import {
 import { useSearchParams } from "next/navigation"
 
 import type {
+  SupabaseCategoria,
   SupabaseProducto,
 } from "@/lib/supabase/types"
 
-import { getStoreProductos } from "@/lib/supabase/queries/store"
+import {
+  getStoreCategorias,
+  getStoreProductos,
+} from "@/lib/supabase/queries/store"
 
 import { useCart } from "@/context/cart-context"
 
@@ -30,6 +34,7 @@ import { ProductsToolbar } from "./products-toolbar"
 import {
   getDefaultVariantOption,
 } from "@/lib/products/product-variants"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 export function ProductsPageLayout() {
   const searchParams =
@@ -39,6 +44,9 @@ export function ProductsPageLayout() {
     useState<
       SupabaseProducto[]
     >([])
+
+  const [categories, setCategories] =
+    useState<SupabaseCategoria[]>([])
 
   const [search, setSearch] =
     useState("")
@@ -57,6 +65,11 @@ export function ProductsPageLayout() {
   const [
     onlyBestSellers,
     setOnlyBestSellers,
+  ] = useState(false)
+
+  const [
+    onlyInstallments,
+    setOnlyInstallments,
   ] = useState(false)
 
   const [minPrice, setMinPrice] =
@@ -100,10 +113,16 @@ export function ProductsPageLayout() {
 
     async function loadProducts() {
       try {
-        const data =
-          await getStoreProductos()
+        const [
+          productsData,
+          categoriesData,
+        ] = await Promise.all([
+          getStoreProductos(),
+          getStoreCategorias(),
+        ])
 
-        setProducts(data)
+        setProducts(productsData)
+        setCategories(categoriesData)
       } catch (error) {
         console.error(error)
       }
@@ -111,6 +130,16 @@ export function ProductsPageLayout() {
 
     loadProducts()
   }, [searchParams])
+
+  useEffect(() => {
+    const activeSlugs = new Set(
+      categories.map((category) => category.slug)
+    )
+
+    setSelectedCategories((current) =>
+      current.filter((slug) => activeSlugs.has(slug))
+    )
+  }, [categories])
 
   // ─────────────────────────────────────
   // Filters
@@ -121,6 +150,7 @@ export function ProductsPageLayout() {
       return products
         .filter((product) => {
           const matchCategory =
+            !SITE_SETTINGS.filters.showCategoryFilter ||
             !selectedCategories.length ||
             selectedCategories.includes(
               product.categorias
@@ -128,14 +158,22 @@ export function ProductsPageLayout() {
             )
 
           const matchOffers =
+            !SITE_SETTINGS.filters.showOfferFilter ||
             !onlyOffers ||
             !!product.precio_anterior
 
           const matchBestSellers =
+            !SITE_SETTINGS.filters.showFeaturedFilter ||
             !onlyBestSellers ||
             product.destacado
 
+          const matchInstallments =
+            !SITE_SETTINGS.filters.showInstallmentsFilter ||
+            !onlyInstallments ||
+            product.cuotas_sin_interes === true
+
           const matchPrice =
+            !SITE_SETTINGS.filters.showPriceFilter ||
             product.precio >=
               minPrice &&
             product.precio <=
@@ -152,6 +190,7 @@ export function ProductsPageLayout() {
             matchCategory &&
             matchOffers &&
             matchBestSellers &&
+            matchInstallments &&
             matchPrice &&
             matchSearch
           )
@@ -184,6 +223,7 @@ export function ProductsPageLayout() {
       selectedCategories,
       onlyOffers,
       onlyBestSellers,
+      onlyInstallments,
       minPrice,
       maxPrice,
       search,
@@ -275,15 +315,13 @@ export function ProductsPageLayout() {
         {/* Content */}
         <div className="grid grid-cols-1 gap-8 pb-16 lg:grid-cols-products-layout">
           <ProductsFiltersSidebar
+            categories={categories}
             selectedCategories={
               selectedCategories
             }
             setSelectedCategories={
               setSelectedCategories
             }
-            selectedColors={[]}
-            setSelectedColors={() => {}}
-            availableColors={[]}
             onlyOffers={
               onlyOffers
             }
@@ -304,8 +342,32 @@ export function ProductsPageLayout() {
             setOnlyBestSellers={
               setOnlyBestSellers
             }
-            onlyNew={false}
-            setOnlyNew={() => {}}
+            onlyInstallments={
+              onlyInstallments
+            }
+            setOnlyInstallments={
+              setOnlyInstallments
+            }
+            showInstallmentsFilter={
+              SITE_SETTINGS.filters
+                .showInstallmentsFilter
+            }
+            showFeaturedFilter={
+              SITE_SETTINGS.filters
+                .showFeaturedFilter
+            }
+            showOfferFilter={
+              SITE_SETTINGS.filters
+                .showOfferFilter
+            }
+            showPriceFilter={
+              SITE_SETTINGS.filters
+                .showPriceFilter
+            }
+            showCategoryFilter={
+              SITE_SETTINGS.filters
+                .showCategoryFilter
+            }
           />
 
           <div>
@@ -358,7 +420,9 @@ export function ProductsPageLayout() {
           }
 
           handleAddToCart(
-            product
+            product,
+            selectedColor,
+            images[selectedImage]
           )
         }}
         onDecreaseCart={() => {

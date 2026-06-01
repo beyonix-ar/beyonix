@@ -8,6 +8,7 @@ import {
 import type {
   SupabaseCategoria,
 } from "@/lib/supabase/types"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -65,7 +66,9 @@ export function CategoriasRow({
         className={`text-base font-bold ${
           stats.stock <= 0
             ? "text-red-400"
-            : stats.stock < 5
+            : stats.stock <= SITE_SETTINGS.stock.criticalStockThreshold
+              ? "text-red-400"
+              : stats.stock <= SITE_SETTINGS.stock.lowStockThreshold
               ? "text-amber-400"
               : "text-green-400"
         }`}

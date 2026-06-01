@@ -14,6 +14,7 @@ export interface ProductoFormState {
   descripcion: string
   precio: string
   precio_anterior: string
+  cuotas: "sin_cuotas" | "3" | "6"
   stock: string
   categoria_id: string
   destacado: boolean
@@ -104,6 +105,14 @@ export interface DraftProductoVariante {
   color_hex: string
   stock: number | null
   imagenes: File[]
+}
+
+export interface DraftProductoEspecificacion {
+  tempId: string
+  icono: string
+  texto: string
+  orden: number
+  activo: boolean
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

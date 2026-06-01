@@ -12,6 +12,7 @@ import { ProductCardPricing } from "./product-card-pricing"
 import {
   getDefaultVariantOption,
 } from "@/lib/products/product-variants"
+import { getInstallmentsLabel } from "@/lib/products/installments"
 
 interface SharedProductCardProps {
   product: SupabaseProducto
@@ -61,6 +62,8 @@ export default function SharedProductCard({
             100
         )
       : null
+  const installmentsLabel =
+    getInstallmentsLabel(product)
 
   const handleAddToCart = () => {
     onAddToCart?.(
@@ -71,7 +74,14 @@ export default function SharedProductCard({
   }
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-white/7 bg-beyonix-surface transition-all duration-300 hover:border-white/13 hover:shadow-xl hover:shadow-black/50">
+    <article
+      onClick={() =>
+        onOpenPreview?.(
+          product
+        )
+      }
+      className="group cursor-pointer overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface transition-all duration-300 hover:border-beyonix-blue-light/30 hover:shadow-xl hover:shadow-black/50"
+    >
       <ProductCardImage
         image={image}
         canNavigate={false}
@@ -80,15 +90,10 @@ export default function SharedProductCard({
         productName={
           product.nombre
         }
-        onOpenPreview={() =>
-          onOpenPreview?.(
-            product
-          )
-        }
       />
 
-      <div className="flex flex-col p-4 pt-3.5">
-        <p className="h-4 truncate text-10px font-semibold uppercase tracking-widest text-white/45">
+      <div className="flex flex-col p-5 pt-4">
+        <p className="min-h-18px truncate text-11px font-semibold uppercase tracking-widest text-beyonix-cyan/80">
           {
             product.categorias
               ?.nombre
@@ -96,17 +101,12 @@ export default function SharedProductCard({
         </p>
 
         <h3
-          onClick={() =>
-            onOpenPreview?.(
-              product
-            )
-          }
-          className="mt-1.5 min-h-44px cursor-pointer line-clamp-2 text-15px font-semibold leading-product-title text-white transition-colors hover:text-white/80"
+          className="mt-2 min-h-48px line-clamp-2 text-16px font-semibold leading-product-title text-white transition-colors group-hover:text-white/88"
         >
           {product.nombre}
         </h3>
 
-        <div className="mt-3 border-t border-white/5 pt-3">
+        <div className="mt-4 border-t border-white/6 pt-4">
           <ProductCardPricing
             price={product.precio}
             originalPrice={
@@ -115,6 +115,9 @@ export default function SharedProductCard({
             }
             discountPercentage={
               discountPercentage
+            }
+            installmentsLabel={
+              installmentsLabel
             }
             quantity={quantity}
             onAddToCart={

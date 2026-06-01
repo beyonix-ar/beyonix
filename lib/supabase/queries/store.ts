@@ -9,7 +9,8 @@ const PRODUCT_SELECT = `
   *,
   categorias(*),
   imagenes_producto(*),
-  producto_variantes(*)
+  producto_variantes(*),
+  producto_especificaciones(*)
 `
 
 export async function getStoreProductos() {
@@ -140,8 +141,17 @@ export async function getStoreCategorias() {
     throw error
   }
 
-  return (data ||
-    []) as SupabaseCategoria[]
+  return (
+    data || []
+  ).filter((categoria) => {
+    const activeValue = (
+      categoria as SupabaseCategoria & {
+        activo?: boolean | null
+      }
+    ).activo
+
+    return activeValue !== false
+  }) as SupabaseCategoria[]
 }
 
 export async function getRelatedProductos(

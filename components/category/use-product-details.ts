@@ -11,7 +11,12 @@ import {
   DEFAULT_VARIANT_VALUE,
   getDefaultVariantValue,
   getProductImagesByVariant,
+  getVariantOptionByValue,
 } from "@/lib/products/product-variants"
+
+type ProductDetailsInput = SupabaseProducto & {
+  selectedColor?: string
+}
 
 export function useProductDetails() {
   const [isOpen, setIsOpen] =
@@ -41,13 +46,24 @@ export function useProductDetails() {
 
   const openDetails = useCallback(
     (
-      nextProduct: SupabaseProducto
+      nextProduct: ProductDetailsInput
     ) => {
       setProduct(nextProduct)
 
       setSelectedImage(0)
 
-      setSelectedColor(getDefaultVariantValue(nextProduct))
+      const selectedVariant =
+        nextProduct.selectedColor
+          ? getVariantOptionByValue(
+              nextProduct,
+              nextProduct.selectedColor
+            )
+          : null
+
+      setSelectedColor(
+        selectedVariant?.value ??
+          getDefaultVariantValue(nextProduct)
+      )
 
       setIsOpen(true)
     },

@@ -5,15 +5,21 @@ interface CommerceFilterProps {
   setOnlyOffers: (value: boolean) => void
   onlyBestSellers: boolean
   setOnlyBestSellers: (value: boolean) => void
-  onlyNew: boolean
-  setOnlyNew: (value: boolean) => void
+  onlyInstallments: boolean
+  setOnlyInstallments: (value: boolean) => void
+  showOfferFilter: boolean
+  showFeaturedFilter: boolean
+  showInstallmentsFilter: boolean
 }
 
 const options = [
-  { label: "En oferta", key: "offers" },
-  { label: "Cuotas sin interés", key: "installments" },
-  { label: "Más vendidos", key: "bestsellers" },
-  { label: "Nuevos ingresos", key: "new" },
+  { label: "En oferta", key: "offers", visibleKey: "showOfferFilter" },
+  { label: "Destacados", key: "featured", visibleKey: "showFeaturedFilter" },
+  {
+    label: "Cuotas sin interes",
+    key: "installments",
+    visibleKey: "showInstallmentsFilter",
+  },
 ] as const
 
 export function CommerceFilter({
@@ -21,21 +27,36 @@ export function CommerceFilter({
   setOnlyOffers,
   onlyBestSellers,
   setOnlyBestSellers,
-  onlyNew,
-  setOnlyNew,
+  onlyInstallments,
+  setOnlyInstallments,
+  showOfferFilter,
+  showFeaturedFilter,
+  showInstallmentsFilter,
 }: CommerceFilterProps) {
   const checkedMap: Record<string, boolean> = {
     offers: onlyOffers,
-    installments: false,
-    bestsellers: onlyBestSellers,
-    new: onlyNew,
+    featured: onlyBestSellers,
+    installments: onlyInstallments,
   }
 
-  const setterMap: Record<string, (v: boolean) => void> = {
+  const setterMap: Record<string, (value: boolean) => void> = {
     offers: setOnlyOffers,
-    bestsellers: setOnlyBestSellers,
-    new: setOnlyNew,
-    installments: () => {},
+    featured: setOnlyBestSellers,
+    installments: setOnlyInstallments,
+  }
+
+  const visibilityMap: Record<string, boolean> = {
+    showOfferFilter,
+    showFeaturedFilter,
+    showInstallmentsFilter,
+  }
+
+  const visibleOptions = options.filter(
+    (option) => visibilityMap[option.visibleKey]
+  )
+
+  if (!visibleOptions.length) {
+    return null
   }
 
   return (
@@ -45,14 +66,14 @@ export function CommerceFilter({
       </p>
 
       <div className="space-y-2.5">
-        {options.map(({ label, key }) => {
+        {visibleOptions.map(({ label, key }) => {
           const isChecked = checkedMap[key]
+
           return (
             <label
               key={key}
-              className="flex items-center gap-3 cursor-pointer group"
+              className="group flex cursor-pointer items-center gap-3"
             >
-              {/* Checkbox personalizado */}
               <span
                 className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
                   isChecked
@@ -75,17 +96,22 @@ export function CommerceFilter({
                     />
                   </svg>
                 )}
+
                 <input
                   type="checkbox"
                   checked={isChecked}
-                  onChange={(e) => setterMap[key]?.(e.target.checked)}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  onChange={(event) =>
+                    setterMap[key]?.(event.target.checked)
+                  }
+                  className="absolute inset-0 cursor-pointer opacity-0"
                 />
               </span>
 
               <span
                 className={`text-sm transition-colors duration-150 ${
-                  isChecked ? "text-white" : "text-white/70 group-hover:text-white/80"
+                  isChecked
+                    ? "text-white"
+                    : "text-white/70 group-hover:text-white/80"
                 }`}
               >
                 {label}

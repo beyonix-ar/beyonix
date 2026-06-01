@@ -36,6 +36,16 @@ export interface SupabaseProductoVariante {
   created_at: string
 }
 
+export interface SupabaseProductoEspecificacion {
+  id: number
+  producto_id: number
+  icono: string
+  texto: string
+  orden: number
+  activo: boolean
+  created_at: string
+}
+
 // ─────────────────────────────────────────────────────────────
 // Productos
 // ─────────────────────────────────────────────────────────────
@@ -50,6 +60,8 @@ export interface SupabaseProducto {
   precio: number
   precio_anterior: number | null
   descuento: number | null
+  cuotas_sin_interes: boolean
+  cuotas_maximas: 3 | 6 | null
 
   stock: number
 
@@ -66,6 +78,7 @@ export interface SupabaseProducto {
 
   imagenes_producto?: SupabaseImagenProducto[]
   producto_variantes?: SupabaseProductoVariante[]
+  producto_especificaciones?: SupabaseProductoEspecificacion[]
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -12,8 +12,15 @@ import type {
 } from "@/lib/supabase/types"
 
 import type {
+  DraftProductoEspecificacion,
   DraftProductoVariante,
+  ProductoFormState,
 } from "./types"
+
+import {
+  saveDraftProductoEspecificaciones,
+} from "@/lib/supabase/queries/producto-especificaciones"
+import { isAllowedLucideIcon } from "./lucide-icon-picker"
 
 import {
   uploadProductoImages,
@@ -39,6 +46,7 @@ interface Props {
 
 interface SubmitOptions {
   draftVariants?: DraftProductoVariante[]
+  draftSpecifications?: DraftProductoEspecificacion[]
   onDraftSaved?: () => void
 }
 
@@ -101,7 +109,7 @@ export function useProductoForm({
       producto?.id ?? null
     )
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<ProductoFormState>({
     nombre: producto?.nombre ?? "",
     slug: producto?.slug ?? "",
     descripcion:
@@ -111,6 +119,11 @@ export function useProductoForm({
     precio_anterior: String(
       producto?.precio_anterior ?? ""
     ),
+    cuotas:
+      producto?.cuotas_sin_interes &&
+      producto.cuotas_maximas
+        ? String(producto.cuotas_maximas) as "3" | "6"
+        : "sin_cuotas",
     stock: String(
       producto?.stock ?? 0
     ),
@@ -169,6 +182,12 @@ export function useProductoForm({
             form.precio_anterior
           )
         : null
+    const cuotasMaximas: 3 | 6 | null =
+      form.cuotas === "3"
+        ? 3
+        : form.cuotas === "6"
+          ? 6
+          : null
 
     return {
       nombre:
@@ -198,6 +217,12 @@ export function useProductoForm({
             )
           : null,
 
+      cuotas_sin_interes:
+        cuotasMaximas !== null,
+
+      cuotas_maximas:
+        cuotasMaximas,
+
       stock:
         Number(form.stock) || 0,
 
@@ -218,6 +243,7 @@ export function useProductoForm({
 
   const submit = async ({
     draftVariants = [],
+    draftSpecifications = [],
     onDraftSaved,
   }: SubmitOptions = {}) => {
     setError("")
@@ -245,6 +271,27 @@ export function useProductoForm({
     if (!payload.slug) {
       setError(
         "El slug es obligatorio."
+      )
+
+      return
+    }
+
+    const hasInvalidDraftSpecification =
+      draftSpecifications.some(
+        (specification) =>
+          !specification.icono.trim() ||
+          !isAllowedLucideIcon(
+            specification.icono.trim()
+          ) ||
+          !specification.texto.trim() ||
+          !Number.isFinite(
+            Number(specification.orden)
+          )
+      )
+
+    if (hasInvalidDraftSpecification) {
+      setError(
+        "Completa icono, texto y orden en todas las especificaciones."
       )
 
       return
@@ -305,6 +352,13 @@ export function useProductoForm({
           savedId,
           nextPayload
         )
+
+        if (draftSpecifications.length) {
+          await saveDraftProductoEspecificaciones(
+            savedId,
+            draftSpecifications
+          )
+        }
 
         setSuccess(
           "Producto actualizado correctamente."
@@ -370,6 +424,11 @@ export function useProductoForm({
           }
         )
       }
+
+      await saveDraftProductoEspecificaciones(
+        created.id,
+        draftSpecifications
+      )
 
       setSavedId(created.id)
       onDraftSaved?.()

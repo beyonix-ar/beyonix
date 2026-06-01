@@ -16,6 +16,7 @@ import {
 import type { AdminSection } from "../../admin-client"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { formatPrice } from "../productos/helpers"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 interface AdminDashboardProps {
   onNavigate: (section: AdminSection) => void
@@ -430,6 +431,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   className={`rounded-full border px-3 py-1 text-xs font-black ${
                     item.stock <= 0
                       ? "border-red-400/25 bg-red-400/10 text-red-300"
+                      : item.stock <= SITE_SETTINGS.stock.criticalStockThreshold
+                        ? "border-red-400/25 bg-red-400/10 text-red-300"
                       : "border-amber-400/25 bg-amber-400/10 text-amber-200"
                   }`}
                 >

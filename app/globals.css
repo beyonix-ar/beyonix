@@ -183,7 +183,7 @@
 }
 
 @utility grid-cols-admin-products {
-  grid-template-columns: minmax(340px, 1.35fr) minmax(150px, 0.56fr) minmax(135px, 0.5fr) minmax(128px, 0.46fr) 112px;
+  grid-template-columns: minmax(340px, 1.3fr) minmax(135px, 0.5fr) minmax(120px, 0.42fr) minmax(112px, 0.36fr) minmax(118px, 0.38fr) 124px;
 }
 
 @utility grid-cols-admin-categories {
@@ -210,6 +210,10 @@
   grid-template-columns: minmax(250px, 31fr) minmax(205px, 24fr) minmax(150px, 15fr) minmax(136px, 13fr) minmax(176px, 17fr);
 }
 
+@utility grid-cols-admin-product-form {
+  grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+}
+
 @utility grid-cols-admin-order-filters {
   grid-template-columns: minmax(300px, 1.3fr) minmax(220px, 0.8fr);
 }
@@ -224,6 +228,14 @@
 
 @utility grid-cols-product-modal {
   grid-template-columns: 55fr 45fr;
+}
+
+@utility grid-rows-product-info {
+  grid-template-rows: minmax(0, 4fr) minmax(0, 6fr) 96px;
+}
+
+@utility grid-rows-product-info-no-variant {
+  grid-template-rows: 40fr 60fr;
 }
 
 @utility grid-cols-auto-content {

@@ -12,6 +12,7 @@ import {
   ImageIcon,
   Package,
   Pencil,
+  Star,
   Trash2,
 } from "lucide-react"
 
@@ -30,6 +31,7 @@ import {
 } from "@/lib/supabase/queries/productos"
 
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 interface ProductosRowProps {
   producto: SupabaseProducto
@@ -45,7 +47,8 @@ interface ProductosRowProps {
 
 const stockColor = (stock: number) => {
   if (stock <= 0) return "text-red-400"
-  if (stock < 5) return "text-amber-400"
+  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) return "text-red-400"
+  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) return "text-amber-400"
   return "text-green-400"
 }
 
@@ -58,7 +61,15 @@ const stockStatus = (stock: number) => {
     }
   }
 
-  if (stock < 5) {
+  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) {
+    return {
+      label: "Stock critico",
+      className:
+        "border-red-500/20 bg-red-500/10 text-red-400",
+    }
+  }
+
+  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) {
     return {
       label: "Stock bajo",
       className:
@@ -88,6 +99,26 @@ const getStockTotal = (
       total + (variante.stock ?? 0),
     0
   )
+}
+
+const getInstallmentsLabel = (
+  producto: SupabaseProducto
+) => {
+  if (
+    producto.cuotas_sin_interes &&
+    producto.cuotas_maximas === 3
+  ) {
+    return "3 cuotas"
+  }
+
+  if (
+    producto.cuotas_sin_interes &&
+    producto.cuotas_maximas === 6
+  ) {
+    return "6 cuotas"
+  }
+
+  return "Sin cuotas"
 }
 
 export function ProductosRow({
@@ -278,7 +309,8 @@ export function ProductosRow({
 
             <div className="mt-1 flex flex-wrap items-center gap-2">
               {producto.destacado && (
-                <span className="rounded-full border border-amber-500/15 bg-amber-500/8 px-1.5 py-px text-8px font-semibold text-amber-400">
+                <span className="inline-flex items-center gap-1 rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-1.5 py-px text-8px font-semibold text-beyonix-cyan">
+                  <Star className="size-2.5 fill-beyonix-cyan/70 text-beyonix-cyan" />
                   Destacado
                 </span>
               )}
@@ -329,6 +361,16 @@ export function ProductosRow({
           )}
         </div>
 
+        <span
+          className={`w-fit justify-self-center rounded-full border px-2.5 py-1 text-11px font-semibold ${
+            producto.cuotas_sin_interes
+              ? "border-beyonix-blue-light/20 bg-beyonix-blue/18 text-beyonix-cyan"
+              : "border-white/10 bg-white/5 text-white/45"
+          }`}
+        >
+          {getInstallmentsLabel(producto)}
+        </span>
+
         <button
           type="button"
           title={
@@ -363,7 +405,7 @@ export function ProductosRow({
             : "Inactivo"}
         </button>
 
-        <div className="flex items-center justify-center gap-1.5">
+        <div className="flex items-center justify-end gap-1.5 pr-2">
           <button
             type="button"
             title="Ver producto"

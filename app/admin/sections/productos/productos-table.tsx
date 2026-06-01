@@ -73,12 +73,15 @@ export function ProductosTable({
           "Producto",
           "Categoría",
           "Precio",
+          "Cuotas",
           "Estado",
           "Acciones",
         ].map((label) => (
           <span
             key={label}
             className={`text-10px font-semibold uppercase tracking-widest text-white/45 ${
+              label ===
+              "Cuotas" ||
               label ===
               "Estado" ||
               label ===

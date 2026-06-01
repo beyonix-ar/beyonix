@@ -63,7 +63,7 @@ export function CategoryPageLayout({
     addToCart(
       product,
       selectedColor,
-      images?.[0]
+      images[selectedImage]
     )
   }
 

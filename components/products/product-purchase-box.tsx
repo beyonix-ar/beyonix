@@ -7,6 +7,7 @@ import { ProductCartToggleButton } from "./product-cart-toggle-button"
 interface ProductPurchaseBoxProps {
   price: number
   originalPrice?: number
+  installmentsLabel?: string | null
   isInCart?: boolean
   cartQuantity?: number
   onAddToCart: (quantity?: number) => void
@@ -26,6 +27,7 @@ function formatPrice(price: number) {
 export function ProductPurchaseBox({
   price,
   originalPrice,
+  installmentsLabel,
   isInCart = false,
   cartQuantity = 0,
   onAddToCart,
@@ -66,26 +68,36 @@ export function ProductPurchaseBox({
       : null
 
   return (
-    <div className="px-8 pb-7 pt-4">
-      <div className="mb-4 flex items-baseline gap-2.5">
-        <span className="text-28px font-bold leading-none tracking-tight text-white">
+    <div className="px-8 pb-7 pt-5">
+      {/* Price row */}
+      <div className="mb-5 flex items-baseline gap-3">
+        <span className="text-26px font-bold leading-none tracking-tight text-white">
           {formatPrice(price)}
         </span>
 
         {discount && (
-          <span className="rounded border border-emerald-500/25 bg-emerald-500/12 px-1.5 py-0.5 text-14px font-semibold leading-none text-emerald-400">
+          <span className="rounded border border-emerald-500/25 bg-emerald-500/12 px-2 py-0.5 text-13px font-semibold leading-none text-emerald-400">
             -{discount}%
           </span>
         )}
 
         {originalPrice && originalPrice > price && (
-          <span className="text-14px leading-none text-white/55 line-through">
+          <span className="text-14px leading-none text-white/45 line-through">
             {formatPrice(originalPrice)}
           </span>
         )}
       </div>
 
-      <div className="flex max-w-320px items-center gap-2">
+      {installmentsLabel && (
+        <div className="mb-5">
+          <span className="inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-3 py-1.5 text-12px font-medium text-beyonix-cyan">
+            {installmentsLabel}
+          </span>
+        </div>
+      )}
+
+      {/* Buttons row */}
+      <div className="flex items-center gap-3">
         <div className="flex-1">
           <ProductCartToggleButton
             quantity={quantity}
@@ -100,7 +112,7 @@ export function ProductPurchaseBox({
           aria-label="Ver carrito"
           title="Ver carrito"
           onClick={onViewCart}
-          className="h-9 flex-1 cursor-pointer rounded-lg border border-white/15 bg-white/5 text-13px font-medium text-white/85 transition-colors hover:border-white/25 hover:bg-white/9 hover:text-white/85"
+          className="flex h-11 shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-lg border border-white/12 bg-black/45 px-6 text-13px font-medium text-white/85 transition-colors hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white active:scale-95"
         >
           Ver carrito
         </button>

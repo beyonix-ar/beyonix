@@ -2,6 +2,8 @@
 // Slugify
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { SITE_SETTINGS } from "@/config/site-settings"
+
 export function slugify(text: string) {
   return text
     .toLowerCase()
@@ -62,7 +64,11 @@ export function getStockColor(
     return "text-red-400"
   }
 
-  if (stock < 5) {
+  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) {
+    return "text-red-400"
+  }
+
+  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) {
     return "text-amber-400"
   }
 
@@ -80,7 +86,11 @@ export function getStockLabel(
     return "Sin stock"
   }
 
-  if (stock < 5) {
+  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) {
+    return "Stock critico"
+  }
+
+  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) {
     return "Stock bajo"
   }
 

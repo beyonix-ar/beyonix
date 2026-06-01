@@ -15,17 +15,14 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
-
-const categoryLinks = [
-  { label: "Audio y conectividad", href: "/categorias/audio-conectividad" },
-  { label: "Confort y bienestar", href: "/categorias/confort-bienestar" },
-  { label: "Setup y escritorio", href: "/categorias/setup-escritorio" },
-]
+import { getStoreCategorias } from "@/lib/supabase/queries/store"
+import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 export function SiteHeader() {
   const { cart, total, openCart } = useCart()
   const { user, logout } = useAuth()
 
+  const [categories, setCategories] = useState<SupabaseCategoria[]>([])
   const [catOpen, setCatOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -34,6 +31,32 @@ export function SiteHeader() {
   const userRef = useRef<HTMLDivElement>(null)
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
+  const userLabel =
+    user?.username?.trim() ||
+    user?.email?.split("@")[0] ||
+    "Mi cuenta"
+
+  useEffect(() => {
+    let active = true
+
+    async function loadCategories() {
+      try {
+        const data = await getStoreCategorias()
+
+        if (active) {
+          setCategories(data)
+        }
+      } catch (error) {
+        console.error("Error cargando categorías del navbar:", error)
+      }
+    }
+
+    loadCategories()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
@@ -102,20 +125,25 @@ export function SiteHeader() {
 
               {catOpen && (
                 <div className="absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-lg border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
-                  {categoryLinks.map((link, i) => (
+                  {categories.map((category, i) => (
                     <Link
-                      key={link.href}
-                      href={link.href}
+                      key={category.id}
+                      href={`/categorias/${category.slug}`}
                       onClick={() => setCatOpen(false)}
                       className={`block px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white ${
-                        i < categoryLinks.length - 1
+                        i < categories.length - 1
                           ? "border-b border-white/6"
                           : ""
                       }`}
                     >
-                      {link.label}
+                      {category.nombre}
                     </Link>
                   ))}
+                  {!categories.length && (
+                    <p className="px-4 py-3 text-sm text-white/45">
+                      No hay categor&iacute;as disponibles.
+                    </p>
+                  )}
                   <Link
                     href="/categorias"
                     onClick={() => setCatOpen(false)}
@@ -144,9 +172,9 @@ export function SiteHeader() {
                     aria-label="Abrir menú de usuario"
                     title="Abrir menú de usuario"
                     onClick={() => setUserOpen((v) => !v)}
-                    className="flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
+                    className="flex h-11 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
                   >
-                    <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
+                    <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white text-black shadow-sm shadow-black/40">
                       {user.avatarUrl ? (
                         <img
                           src={user.avatarUrl}
@@ -158,7 +186,7 @@ export function SiteHeader() {
                       )}
                     </span>
                     <span className="max-w-90px truncate text-sm font-medium uppercase text-white/86">
-                      {(user.username || user.name.split(" ")[0]).toUpperCase()}
+                      {userLabel.toUpperCase()}
                     </span>
                     <ChevronDown
                       className={`size-3 text-white/52 transition-transform duration-200 ${
@@ -268,6 +296,21 @@ export function SiteHeader() {
               </Link>
             ))}
 
+            {categories.length > 0 && (
+              <div className="border-t border-white/6 pt-2">
+                {categories.map((category) => (
+                  <Link
+                    key={category.id}
+                    href={`/categorias/${category.slug}`}
+                    onClick={() => setMobileOpen(false)}
+                    className="block px-2 py-2.5 text-sm font-medium text-white/62 transition-colors hover:text-white"
+                  >
+                    {category.nombre}
+                  </Link>
+                ))}
+              </div>
+            )}
+
             <div className="mt-2 border-t border-white/6 pt-2">
               {user ? (
                 <>
@@ -276,7 +319,7 @@ export function SiteHeader() {
                     onClick={() => setMobileOpen(false)}
                     className="block px-2 py-3 text-sm font-medium text-white/80 transition-colors hover:text-white"
                   >
-                    Mi cuenta ({(user.username || user.name.split(" ")[0]).toUpperCase()})
+                    Mi cuenta ({userLabel.toUpperCase()})
                   </Link>
                   <button
                     type="button"

@@ -5,7 +5,11 @@ import { ArrowLeft, Loader2, ToggleLeft, ToggleRight } from "lucide-react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
-import type { DraftProductoVariante } from "./types"
+import type {
+  DraftProductoEspecificacion,
+  DraftProductoVariante,
+} from "./types"
+import { ProductSpecificationsEditor } from "./product-specifications-editor"
 import { ProductVariantsEditor } from "./product-variants-editor"
 import { useProductoForm } from "./use-producto-form"
 import { AdminSelect } from "../../components/admin-controls"
@@ -24,6 +28,10 @@ const labelCls =
 
 export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps) {
   const [draftVariants, setDraftVariants] = useState<DraftProductoVariante[]>([])
+  const [
+    draftSpecifications,
+    setDraftSpecifications,
+  ] = useState<DraftProductoEspecificacion[]>([])
 
   const {
     form,
@@ -72,12 +80,16 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             event.preventDefault()
             submit({
               draftVariants,
-              onDraftSaved: () => setDraftVariants([]),
+              draftSpecifications,
+              onDraftSaved: () => {
+                setDraftVariants([])
+                setDraftSpecifications([])
+              },
             })
           }}
           className="rounded-3xl border border-white/7 bg-black p-5 shadow-2xl shadow-black/30 sm:p-6"
         >
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)] xl:items-start">
+          <div className="grid gap-6 xl:grid-cols-admin-product-form xl:items-start">
             <section className="space-y-4 rounded-2xl border border-white/7 bg-black p-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
@@ -123,6 +135,9 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   onChange={(event) => setField("descripcion", event.target.value)}
                   className={`${inputCls} min-h-112px resize-none leading-6`}
                 />
+                <p className="mt-2 text-xs leading-5 text-white/45">
+                  La descripcion debe ser un texto breve y vendedor. Las caracteristicas tecnicas van en Especificaciones.
+                </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -159,6 +174,21 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     className={inputCls}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="cuotas" className={labelCls}>
+                  Cuotas sin interes
+                </label>
+                <AdminSelect
+                  title="Cuotas sin interes"
+                  value={form.cuotas}
+                  onChange={(value) => setField("cuotas", value)}
+                >
+                  <option value="sin_cuotas">Sin cuotas</option>
+                  <option value="3">3 cuotas sin interes</option>
+                  <option value="6">6 cuotas sin interes</option>
+                </AdminSelect>
               </div>
 
               <div>
@@ -213,13 +243,24 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section>
-              <label className={labelCls}>Variantes</label>
-              <ProductVariantsEditor
-                productoId={currentProductoId || undefined}
-                draftVariants={draftVariants}
-                onDraftVariantsChange={setDraftVariants}
-              />
+            <section className="space-y-6">
+              <div>
+                <label className={labelCls}>Variantes</label>
+                <ProductVariantsEditor
+                  productoId={currentProductoId || undefined}
+                  draftVariants={draftVariants}
+                  onDraftVariantsChange={setDraftVariants}
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Especificaciones</label>
+                <ProductSpecificationsEditor
+                  productoId={currentProductoId || undefined}
+                  draftSpecifications={draftSpecifications}
+                  onDraftSpecificationsChange={setDraftSpecifications}
+                />
+              </div>
             </section>
           </div>
 

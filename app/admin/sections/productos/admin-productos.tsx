@@ -8,6 +8,7 @@ import { useProductos } from "@/hooks/use-productos"
 import { ProductoForm } from "./producto-form"
 import { ProductosTable } from "./productos-table"
 import { ProductosToolbar } from "./productos-toolbar"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 type StockFilter = "todos" | "sin_stock" | "bajo_stock" | "disponible"
 type ActiveFilter = "todos" | "activos" | "inactivos"
@@ -68,8 +69,11 @@ export function AdminProductos() {
       const matchesStock =
         stockFilter === "todos" ||
         (stockFilter === "sin_stock" && stock <= 0) ||
-        (stockFilter === "bajo_stock" && stock > 0 && stock <= 5) ||
-        (stockFilter === "disponible" && stock > 5)
+        (stockFilter === "bajo_stock" &&
+          stock > 0 &&
+          stock <= SITE_SETTINGS.stock.lowStockThreshold) ||
+        (stockFilter === "disponible" &&
+          stock > SITE_SETTINGS.stock.lowStockThreshold)
       const matchesActive =
         activeFilter === "todos" ||
         (activeFilter === "activos" && producto.activo) ||

@@ -6,6 +6,7 @@ interface ProductCardPricingProps {
   price?: number
   originalPrice?: number
   discountPercentage?: number | null
+  installmentsLabel?: string | null
 
   quantity: number
 
@@ -25,6 +26,7 @@ export function ProductCardPricing({
   price = 0,
   originalPrice,
   discountPercentage,
+  installmentsLabel,
 
   quantity,
 
@@ -38,10 +40,10 @@ export function ProductCardPricing({
         e.stopPropagation()
       }
     >
-      <div className="mb-3 flex items-end justify-between">
+      <div className="mb-4 flex items-end justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-18px font-semibold tracking-tight text-white tabular-nums">
+            <p className="text-21px font-semibold tracking-tight text-white tabular-nums">
               {formatPrice(price)}
             </p>
 
@@ -59,12 +61,18 @@ export function ProductCardPricing({
           {!!originalPrice &&
             originalPrice >
               price && (
-              <p className="mt-0.5 text-xs text-white/40 line-through tabular-nums">
+              <p className="mt-1 text-xs text-white/42 line-through tabular-nums">
                 {formatPrice(
                   originalPrice
                 )}
               </p>
             )}
+
+          {installmentsLabel && (
+            <p className="mt-2 inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2.5 py-1 text-11px font-medium text-beyonix-cyan">
+              {installmentsLabel}
+            </p>
+          )}
         </div>
       </div>
 
