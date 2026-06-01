@@ -149,7 +149,9 @@
   /* Tokens custom de medidas */
   --spacing-3px: 3px;
   --spacing-55pct: 55%;
+  --spacing-32px: 32px;
   --spacing-44px: 44px;
+  --spacing-40px: 40px;
   --spacing-56px: 56px;
   --spacing-88px: 88px;
   --spacing-112px: 112px;
@@ -166,6 +168,9 @@
   --spacing-250px: 250px;
   --spacing-280px: 280px;
   --spacing-320px: 320px;
+  --spacing-product-gallery-main: 85%;
+  --spacing-product-gallery-spacer: 5%;
+  --spacing-product-gallery-thumbs: 10%;
 
   --text-12-5px: 12.5px;
   --text-13-5px: 13.5px;

@@ -7,6 +7,7 @@ import { useCart } from "@/context/cart-context"
 import {
   getDefaultVariantValue,
   getProductImagesByVariant,
+  getVariantOptionByValue,
 } from "@/lib/products/product-variants"
 
 import { ProductDetailsGallery } from "./product-details-gallery"
@@ -31,6 +32,8 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
   } = useCart()
 
   const images = getProductImagesByVariant(producto, selectedColor)
+  const selectedVariant = getVariantOptionByValue(producto, selectedColor)
+  const selectedStock = selectedVariant?.stock ?? producto.stock
   const cartQuantity = getQuantity(producto.id, selectedColor)
 
   const handleColorChange = (color: string) => {
@@ -54,6 +57,7 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
         images={images}
         selectedImage={selectedImage}
         productName={producto.nombre}
+        selectedStock={selectedStock}
         onNext={nextImage}
         onPrev={prevImage}
         onSelectImage={setSelectedImage}

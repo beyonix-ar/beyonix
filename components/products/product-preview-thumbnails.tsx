@@ -15,7 +15,7 @@ export function ProductPreviewThumbnails({
   onSelectImage,
   productName,
 }: ProductPreviewThumbnailsProps) {
-  if (images.length <= 1) return null
+  if (images.length === 0) return null
 
   return (
     <div className="flex items-center justify-center gap-2">
@@ -29,10 +29,10 @@ export function ProductPreviewThumbnails({
             title={`Ver imagen ${index + 1}`}
             aria-label={`Ver imagen ${index + 1}`}
             onClick={() => onSelectImage(index)}
-            className={`group relative h-14 w-14 overflow-hidden rounded-lg border transition-all duration-200 cursor-pointer ${
+            className={`group relative h-12 w-12 cursor-pointer overflow-hidden rounded-lg border bg-beyonix-surface-2 transition-all duration-200 ${
               isActive
-                ? "border-white/50 bg-white shadow-md scale-105"
-                : "border-white/10 bg-white/90 hover:border-white/30 hover:scale-105"
+                ? "scale-105 border-beyonix-sky shadow-beyonix-color-selected"
+                : "border-white/10 hover:scale-105 hover:border-white/30"
             }`}
           >
             <Image

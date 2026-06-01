@@ -1,20 +1,33 @@
 "use client"
 
-import {
-  useEffect,
-  useState,
-} from "react"
+import { useEffect, useState } from "react"
 
 import Image from "next/image"
 
-import {
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { ProductPreviewThumbnails } from "./product-preview-thumbnails"
 
-const IMAGE_SIZE_PERCENT = 82
+export function getStockBadge(stock: number) {
+  if (stock <= 0) {
+    return {
+      text: "Sin stock",
+      className: "border-red-400/25 bg-red-500/12 text-red-100",
+    }
+  }
+
+  if (stock <= 5) {
+    return {
+      text: "Poco stock",
+      className: "border-amber-300/25 bg-amber-400/12 text-amber-100",
+    }
+  }
+
+  return {
+    text: "Stock disponible",
+    className: "border-emerald-300/25 bg-emerald-400/12 text-emerald-100",
+  }
+}
 
 interface ProductDetailsGalleryProps {
   images: string[]
@@ -22,6 +35,7 @@ interface ProductDetailsGalleryProps {
   selectedImage: number
 
   productName: string
+  selectedStock: number
 
   onNext: () => void
   onPrev: () => void
@@ -35,6 +49,7 @@ export function ProductDetailsGallery({
   images,
   selectedImage,
   productName,
+  selectedStock,
   onNext,
   onPrev,
   onSelectImage,
@@ -51,41 +66,23 @@ export function ProductDetailsGallery({
   const currentImage =
     images[safeIndex] ||
     "/placeholder.png"
+  const visibleImages = images.slice(0, 5)
+  const stockBadge = getStockBadge(selectedStock)
 
   useEffect(() => {
     setIsLoaded(false)
   }, [safeIndex])
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-beyonix-surface">
-      <div className="relative flex flex-1 items-center justify-center px-4">
-        {images.length > 1 && (
-          <button
-            type="button"
-            aria-label="Imagen anterior"
-            title="Imagen anterior"
-            onClick={onPrev}
-            style={{
-              left: "calc((100% - 82%) / 2 - 44px)",
-            }}
-            className="absolute z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-white/25 bg-white/15 text-white/80 transition-all hover:border-white/40 hover:bg-white/25 hover:text-white active:scale-95"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-        )}
-
-        <div
-          style={{
-            width: `${IMAGE_SIZE_PERCENT}%`,
-          }}
-          className="flex min-h-0 items-center justify-center"
-        >
-          <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl bg-white">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-beyonix-surface px-6 pb-6 pt-6">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-white/8 bg-beyonix-surface-3 p-5">
+        <div className="flex h-full min-h-0 w-full items-center justify-center">
+          <div className="relative flex aspect-square h-full max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-beyonix-surface-2">
             <Image
               src={currentImage}
               alt={`${productName} imagen ${safeIndex + 1}`}
-              width={400}
-              height={400}
+              width={2000}
+              height={2000}
               priority
               onLoad={() =>
                 setIsLoaded(true)
@@ -96,38 +93,54 @@ export function ProductDetailsGallery({
                   : "opacity-0"
               }`}
             />
+
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Imagen anterior"
+                  title="Imagen anterior"
+                  onClick={onPrev}
+                  className="absolute left-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/18 bg-black/55 text-white/85 transition-all hover:border-beyonix-sky/50 hover:bg-black/75 hover:text-white active:scale-95"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+
+                <button
+                  type="button"
+                  aria-label="Imagen siguiente"
+                  title="Imagen siguiente"
+                  onClick={onNext}
+                  className="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/18 bg-black/55 text-white/85 transition-all hover:border-beyonix-sky/50 hover:bg-black/75 hover:text-white active:scale-95"
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              </>
+            )}
+
+            <span
+              className={`absolute right-3 top-3 rounded-full border px-3 py-1 text-11px font-semibold tracking-wide ${stockBadge.className}`}
+            >
+              {stockBadge.text}
+            </span>
           </div>
         </div>
 
-        {images.length > 1 && (
-          <button
-            type="button"
-            aria-label="Imagen siguiente"
-            title="Imagen siguiente"
-            onClick={onNext}
-            style={{
-              right: "calc((100% - 82%) / 2 - 44px)",
-            }}
-            className="absolute z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-white/25 bg-white/15 text-white/80 transition-all hover:border-white/40 hover:bg-white/25 hover:text-white active:scale-95"
-          >
-            <ChevronRight className="size-4" />
-          </button>
-        )}
-
         {!isLoaded && (
-          <div className="absolute inset-0 animate-pulse bg-white/5" />
+          <div className="pointer-events-none absolute inset-0 animate-pulse bg-white/5" />
         )}
       </div>
 
-      {images.length > 1 && (
-        <div className="flex shrink-0 flex-col items-center gap-3 pb-6 pt-3">
-          <span className="tabular-nums text-13px font-medium tracking-widest text-white/85">
-            {safeIndex + 1} /{" "}
-            {images.length}
-          </span>
+      <div className="flex h-40px shrink-0 items-center justify-center">
+        <span className="text-12px font-semibold tabular-nums tracking-widest text-white/70">
+          {safeIndex + 1} / {images.length || 1}
+        </span>
+      </div>
 
+      {visibleImages.length > 0 && (
+        <div className="flex h-56px shrink-0 items-center justify-center">
           <ProductPreviewThumbnails
-            images={images}
+            images={visibleImages}
             selectedImage={safeIndex}
             onSelectImage={
               onSelectImage

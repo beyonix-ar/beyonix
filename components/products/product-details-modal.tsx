@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { X } from "lucide-react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
+import { getVariantOptionByValue } from "@/lib/products/product-variants"
 
 import { ProductDetailsGallery } from "./product-details-gallery"
 import { ProductDetailsPanel } from "./product-details-panel"
@@ -110,6 +111,9 @@ export function ProductDetailsModal({
     return null
   }
 
+  const selectedVariant = getVariantOptionByValue(product, selectedColor)
+  const selectedStock = selectedVariant?.stock ?? product.stock
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
       <button
@@ -117,7 +121,7 @@ export function ProductDetailsModal({
         aria-label="Cerrar modal"
         title="Cerrar modal"
         onClick={onClose}
-        className="absolute inset-0"
+        className="absolute inset-0 cursor-pointer"
       />
 
       <div className="relative z-10 h-90vh w-full max-w-6xl overflow-hidden rounded-2xl border border-white/12 bg-beyonix-surface shadow-beyonix-modal lg:grid lg:grid-cols-product-modal lg:items-stretch">
@@ -135,6 +139,7 @@ export function ProductDetailsModal({
           images={images}
           selectedImage={selectedImage}
           productName={product.nombre}
+          selectedStock={selectedStock}
           onNext={onNext}
           onPrev={onPrev}
           onSelectImage={onSelectImage}

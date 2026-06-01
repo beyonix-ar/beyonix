@@ -14,10 +14,10 @@ export function ProductDescription({
   features,
 }: ProductDescriptionProps) {
   return (
-    <div className="space-y-5">
+    <div>
 
       {shortDescription && (
-        <p className="text-13-5px leading-1-8 text-white/75 font-normal">
+        <p className="text-14px font-normal leading-1-8 text-white/70">
           {shortDescription}
         </p>
       )}
