@@ -5,24 +5,41 @@ import { CategoryPageLayout } from "@/components/category/layout/category-page-l
 import {
   getCategoriaBySlug,
 } from "@/lib/supabase/queries/productos"
-import { getProductosByCategoria } from "@/lib/supabase/queries/store"
+import { getProductosByCategoriaId } from "@/lib/supabase/queries/store"
 
-export default async function CategoryPage({
+export const dynamic = "force-dynamic"
+
+type CategoryPageParams =
+  | {
+      slug?: string
+    }
+  | Promise<{
+      slug?: string
+    }>
+
+export default async function Page({
   params,
 }: {
-  params: {
-    slug: string
-  }
+  params: CategoryPageParams
 }) {
+  const resolvedParams =
+    await Promise.resolve(params)
+
+  const slug =
+    resolvedParams?.slug || ""
+
   const categoria = await getCategoriaBySlug(
-    params.slug
+    slug
   )
 
   if (!categoria) {
     notFound()
   }
 
-  const categoryProducts = await getProductosByCategoria(params.slug)
+  const categoryProducts =
+    await getProductosByCategoriaId(
+      categoria.id
+    )
 
   return (
     <CategoryPageLayout
@@ -30,6 +47,7 @@ export default async function CategoryPage({
       description={
         categoria.descripcion || ""
       }
+      image={categoria.imagen || null}
       currentSlug={categoria.slug}
       products={categoryProducts}
     />

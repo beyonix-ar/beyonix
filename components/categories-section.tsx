@@ -1,122 +1,119 @@
 "use client"
 
 import Image from "next/image"
-
-import {
-  ArrowUpRight,
-} from "lucide-react"
-
-import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { ArrowRight, ArrowUpRight, Boxes } from "lucide-react"
 
 import { useStore } from "@/hooks/use-store"
 
+function CategoryFallback() {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-beyonix-surface-3">
+      <div className="flex size-16 items-center justify-center rounded-2xl border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-cyan">
+        <Boxes className="size-7" />
+      </div>
+    </div>
+  )
+}
+
+function getFeaturedPosition(
+  position?: number | null
+) {
+  return position ?? 99
+}
+
 export function CategoriesSection() {
-  const router = useRouter()
+  const { categorias } = useStore()
+  const featuredCategories = categorias
+    .filter((categoria) => categoria.destacado === true)
+    .sort(
+      (a, b) =>
+        getFeaturedPosition(a.posicion_destacada) -
+          getFeaturedPosition(b.posicion_destacada) ||
+        a.nombre.localeCompare(b.nombre)
+    )
+    .slice(0, 3)
 
-  const { categorias } =
-    useStore()
+  const visibleCategories =
+    featuredCategories.length > 0
+      ? featuredCategories
+      : categorias.slice(0, 3)
 
-  const featured =
-    categorias.slice(0, 3)
-
-  if (!featured.length) {
+  if (!visibleCategories.length) {
     return null
   }
 
   return (
     <section
       id="categorias"
-      className="scroll-mt-24 bg-background py-16 lg:py-24"
+      className="scroll-mt-24 border-y border-white/6 bg-beyonix-page py-16 lg:py-24"
     >
       <div className="container mx-auto px-4 lg:px-8">
-        <div className="mb-16 text-center lg:mb-24">
-          <p className="mb-3 text-sm font-medium uppercase tracking-widest text-muted-foreground">
-            Categorías
-          </p>
+        <div className="mb-10 flex flex-col gap-4 lg:mb-14 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+              Categorias
+            </p>
 
-          <h2 className="text-balance text-3xl font-bold tracking-tight text-foreground lg:text-5xl">
-            Explorá nuestras
-            categorías
-          </h2>
+            <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-white lg:text-5xl">
+              Exploracion rapida por categoria
+            </h2>
+
+            <p className="mt-3 max-w-xl text-sm leading-6 text-white/58">
+              Elegi la categoria que mas va con vos y encontra productos pensados para tu dia a dia.
+            </p>
+          </div>
+
+          <Link
+            href="/categorias"
+            className="inline-flex h-11 cursor-pointer items-center gap-2 self-start rounded-xl border border-white/12 px-5 text-sm font-medium text-white/72 transition-colors hover:border-beyonix-blue-light/35 hover:text-white lg:self-auto"
+          >
+            Ver todas
+            <ArrowRight className="size-3.5" />
+          </Link>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
-          {featured.map(
-            (
-              categoria,
-              index
-            ) => (
-              <button
-                key={
-                  categoria.id
-                }
-                type="button"
-                title={
-                  categoria.nombre
-                }
-                aria-label={
-                  categoria.nombre
-                }
-                onClick={() =>
-                  router.push(
-                    `/categorias/${categoria.slug}`
-                  )
-                }
-                className={`group relative overflow-hidden rounded-3xl border border-border bg-card text-left transition-all duration-500 hover:-translate-y-1 ${
-                  index === 0
-                    ? "aspect-category-featured lg:col-span-2"
-                    : "aspect-video"
-                }`}
-              >
-                <div className="absolute inset-0">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {visibleCategories.map((categoria, index) => (
+            <Link
+              key={categoria.id}
+              href={`/categorias/${categoria.slug}`}
+              className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface text-left shadow-xl shadow-black/20 transition-all duration-300 hover:-translate-y-1 hover:border-beyonix-blue-light/35 hover:shadow-black/45 ${
+                index === 0 ? "md:col-span-2 xl:col-span-1" : ""
+              }`}
+            >
+              <div className="relative aspect-category-featured overflow-hidden bg-beyonix-surface-3">
+                {categoria.imagen ? (
                   <Image
                     fill
-                    alt={
-                      categoria.nombre
-                    }
-                    src={
-                      categoria.imagen ||
-                      "/placeholder.png"
-                    }
-                    className={`object-cover transition-transform duration-500 ${
-                      index === 0
-                        ? "group-hover:scale-105"
-                        : "group-hover:scale-100"
-                    }`}
+                    alt={categoria.nombre}
+                    src={categoria.imagen}
+                    sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
                   />
-                </div>
+                ) : (
+                  <CategoryFallback />
+                )}
 
-                <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/20 to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/28 to-black/5" />
+                <div className="absolute inset-x-0 bottom-0 p-5">
+                  <div className="mb-3 flex items-center justify-between gap-4">
+                    <h3 className="line-clamp-2 text-2xl font-semibold tracking-tight text-white">
+                      {categoria.nombre}
+                    </h3>
 
-                <div className="absolute inset-0 flex flex-col justify-end px-6 pb-6">
-                  <div className="flex items-end justify-between gap-4">
-                    <div>
-                      <h3
-                        className={`mb-1 font-semibold text-foreground ${
-                          index === 0
-                            ? "text-2xl lg:text-3xl"
-                            : "text-base lg:text-lg"
-                        }`}
-                      >
-                        {
-                          categoria.nombre
-                        }
-                      </h3>
-
-                      <p className="text-sm text-muted-foreground">
-                        {categoria.descripcion ||
-                          "Explorar categoría"}
-                      </p>
-                    </div>
-
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                      <ArrowUpRight className="size-5" />
-                    </div>
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/14 bg-black/45 text-beyonix-cyan opacity-80 transition-all group-hover:border-beyonix-blue-light/45 group-hover:bg-beyonix-blue/60 group-hover:opacity-100">
+                      <ArrowUpRight className="size-4" />
+                    </span>
                   </div>
+
+                  <p className="line-clamp-2 min-h-40px text-sm leading-5 text-white/62">
+                    {categoria.descripcion || "Explora productos seleccionados para esta categoria."}
+                  </p>
                 </div>
-              </button>
-            )
-          )}
+              </div>
+            </Link>
+          ))}
         </div>
       </div>
     </section>

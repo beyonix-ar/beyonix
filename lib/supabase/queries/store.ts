@@ -79,19 +79,29 @@ export async function getProductosByCategoria(
     .from("categorias")
     .select("id")
     .eq("slug", categoriaSlug)
-    .single()
+    .maybeSingle()
 
   if (categoriaError) {
     throw categoriaError
   }
 
+  if (!categoria) {
+    return []
+  }
+
+  return getProductosByCategoriaId(categoria.id)
+}
+
+export async function getProductosByCategoriaId(
+  categoriaId: number
+) {
   const { data, error } =
     await supabase
       .from("productos")
       .select(PRODUCT_SELECT)
       .eq(
         "categoria_id",
-        categoria.id
+        categoriaId
       )
       .eq("activo", true)
       .order("created_at", {

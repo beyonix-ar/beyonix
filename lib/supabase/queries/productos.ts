@@ -30,6 +30,18 @@ const PRODUCTO_SELECT = `
   producto_especificaciones(*)
 `
 
+function normalizeSlug(
+  value: string | null | undefined
+) {
+  return (value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
 // ─────────────────────────────────────────────────────────────
 // Productos
 // ─────────────────────────────────────────────────────────────
@@ -273,17 +285,33 @@ export async function getCategorias() {
 }
 
 export async function getCategoriaBySlug(
-  slug: string
+  slug: string | null | undefined
 ) {
+  const normalizedSlug =
+    normalizeSlug(slug)
+
+  if (!normalizedSlug) {
+    return null
+  }
+
   const { data, error } = await supabase
     .from("categorias")
     .select("*")
-    .eq("slug", slug)
-    .single()
 
   if (error) {
     throw error
   }
 
-  return data as SupabaseCategoria
+  const categorias =
+    (data || []) as SupabaseCategoria[]
+
+  return (
+    categorias.find(
+      (categoria) =>
+        normalizeSlug(categoria.slug) ===
+          normalizedSlug ||
+        normalizeSlug(categoria.nombre) ===
+          normalizedSlug
+    ) || null
+  )
 }

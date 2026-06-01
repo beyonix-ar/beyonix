@@ -1,5 +1,8 @@
 "use client"
 
+import Image from "next/image"
+import { Boxes } from "lucide-react"
+
 import { useCart } from "@/context/cart-context"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
@@ -13,10 +16,13 @@ import { useCategoryProducts } from "../hooks/use-category-products"
 import { useProductDetails } from "../use-product-details"
 
 import { CategoryProductsGrid } from "./category-products-grid"
+import { ProductsFiltersSidebar } from "@/components/products/products-filters-sidebar"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 interface CategoryPageLayoutProps {
   title: string
   description: string
+  image?: string | null
   currentSlug: string
   products: SupabaseProducto[]
 }
@@ -24,6 +30,7 @@ interface CategoryPageLayoutProps {
 export function CategoryPageLayout({
   title,
   description,
+  image,
   products,
 }: CategoryPageLayoutProps) {
   const {
@@ -40,6 +47,16 @@ export function CategoryPageLayout({
     setSearch,
     sortBy,
     setSortBy,
+    onlyOffers,
+    setOnlyOffers,
+    onlyBestSellers,
+    setOnlyBestSellers,
+    onlyInstallments,
+    setOnlyInstallments,
+    minPrice,
+    setMinPrice,
+    maxPrice,
+    setMaxPrice,
     filteredProducts,
   } = useCategoryProducts(products)
 
@@ -83,18 +100,45 @@ export function CategoryPageLayout({
       </div>
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-14 pt-50 lg:px-8">
-        <div className="flex items-start justify-between gap-6">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight lg:text-5xl">
+        <div className="grid gap-8 lg:grid-cols-category-hero lg:items-end">
+          <div className="min-w-0">
+            <p className="mb-3 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+              Categoria
+            </p>
+
+            <h1 className="text-4xl font-bold tracking-tight lg:text-6xl">
               {title}
             </h1>
 
-            <p className="mt-4 text-lg text-white/70 lg:text-xl">
-              {description}
+            {description && (
+              <p className="mt-4 max-w-2xl text-base leading-7 text-white/68 lg:text-lg">
+                {description}
+              </p>
+            )}
+
+            <p className="mt-4 text-sm font-medium text-white/45">
+              {filteredProducts.length} producto{filteredProducts.length === 1 ? "" : "s"} disponible{filteredProducts.length === 1 ? "" : "s"}
             </p>
           </div>
 
-          <div className="pt-4">
+          <div className="relative min-h-220px overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface-3">
+            {image ? (
+              <Image
+                fill
+                src={image}
+                alt={title}
+                sizes="(min-width: 1024px) 420px, 100vw"
+                className="object-cover"
+              />
+            ) : (
+              <div className="flex h-full min-h-220px items-center justify-center">
+                <Boxes className="size-10 text-beyonix-cyan/45" />
+              </div>
+            )}
+            <div className="absolute inset-0 bg-linear-to-t from-black/55 via-transparent to-transparent" />
+          </div>
+
+          <div className="lg:col-span-2">
             <CategorySort
               sortBy={sortBy}
               onSortChange={setSortBy}
@@ -103,10 +147,41 @@ export function CategoryPageLayout({
         </div>
       </div>
 
-      <CategoryProductsGrid
-        products={filteredProducts}
-        onOpenPreview={openDetails}
-      />
+      <div className="category-products container relative z-0 mx-auto grid grid-cols-1 gap-8 px-4 pb-20 lg:grid-cols-products-layout lg:px-8">
+        <ProductsFiltersSidebar
+          categories={[]}
+          selectedCategories={[]}
+          setSelectedCategories={() => {}}
+          onlyOffers={onlyOffers}
+          setOnlyOffers={setOnlyOffers}
+          onlyBestSellers={onlyBestSellers}
+          setOnlyBestSellers={setOnlyBestSellers}
+          onlyInstallments={onlyInstallments}
+          setOnlyInstallments={setOnlyInstallments}
+          minPrice={minPrice}
+          setMinPrice={setMinPrice}
+          maxPrice={maxPrice}
+          setMaxPrice={setMaxPrice}
+          showInstallmentsFilter={
+            SITE_SETTINGS.filters.showInstallmentsFilter
+          }
+          showFeaturedFilter={
+            SITE_SETTINGS.filters.showFeaturedFilter
+          }
+          showOfferFilter={
+            SITE_SETTINGS.filters.showOfferFilter
+          }
+          showPriceFilter={
+            SITE_SETTINGS.filters.showPriceFilter
+          }
+          showCategoryFilter={false}
+        />
+
+        <CategoryProductsGrid
+          products={filteredProducts}
+          onOpenPreview={openDetails}
+        />
+      </div>
 
       <ProductDetailsModal
         open={isOpen}

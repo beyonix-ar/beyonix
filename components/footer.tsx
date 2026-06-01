@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import Link from "next/link"
 
@@ -10,25 +10,8 @@ import {
   MapPin,
   Phone,
 } from "lucide-react"
-
-const tiendaLinks = [
-  {
-    label: "Audio y conectividad",
-    href: "/categorias/audio-conectividad",
-  },
-  {
-    label: "Confort y bienestar",
-    href: "/categorias/confort-bienestar",
-  },
-  {
-    label: "Setup y escritorio",
-    href: "/categorias/setup-escritorio",
-  },
-  {
-    label: "Ver todos los productos",
-    href: "/productos",
-  },
-]
+import type { SupabaseCategoria } from "@/lib/supabase/types"
+import { getStoreCategorias } from "@/lib/supabase/queries/store"
 
 const infoLinks = [
   {
@@ -55,6 +38,27 @@ export function Footer() {
 
   const [sent, setSent] =
     useState(false)
+
+  const [categorias, setCategorias] =
+    useState<SupabaseCategoria[]>([])
+
+  useEffect(() => {
+    let active = true
+
+    getStoreCategorias()
+      .then((data) => {
+        if (active) {
+          setCategorias(data.slice(0, 4))
+        }
+      })
+      .catch((error) => {
+        console.error("Error cargando categorias del footer:", error)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const handleSubmit = (
     e: React.FormEvent
@@ -125,18 +129,27 @@ export function Footer() {
             </h3>
 
             <ul className="space-y-3">
-              {tiendaLinks.map(
-                (link) => (
-                  <li key={link.label}>
+              {categorias.map(
+                (categoria) => (
+                  <li key={categoria.id}>
                     <Link
-                      href={link.href}
+                      href={`/categorias/${categoria.slug}`}
                       className="text-sm text-white/65 transition-colors hover:text-white"
                     >
-                      {link.label}
+                      {categoria.nombre}
                     </Link>
                   </li>
                 )
               )}
+
+              <li>
+                <Link
+                  href="/productos"
+                  className="text-sm text-white/65 transition-colors hover:text-white"
+                >
+                  Ver todos los productos
+                </Link>
+              </li>
             </ul>
           </div>
 

@@ -45,7 +45,7 @@ export function CategoriasToolbar({
                 e.target.value
               )
             }
-            className="h-11 w-full rounded-[18px] border border-white/12 bg-black pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/30 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
+            className="h-11 w-full rounded-2xl border border-white/12 bg-black pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/30 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
         </div>
 

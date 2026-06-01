@@ -8,6 +8,7 @@ import type {
 
 import { useCategorias } from "@/hooks/use-categorias"
 import { useProductos } from "@/hooks/use-productos"
+import { updateCategoria } from "@/lib/supabase/queries/categorias"
 
 import { CategoriaForm } from "./categorias-form"
 import { CategoriasTable } from "./categorias-table"
@@ -102,6 +103,41 @@ export function AdminCategorias() {
       setEditando(undefined)
     }
 
+  const handleToggleDestacado =
+    async (
+      categoria: SupabaseCategoria
+    ) => {
+      await updateCategoria(
+        categoria.id,
+        {
+          destacado:
+            !categoria.destacado,
+          posicion_destacada:
+            categoria.destacado
+              ? null
+              : categoria.posicion_destacada ?? null,
+        }
+      )
+
+      await reloadCategorias()
+    }
+
+  const handlePositionChange =
+    async (
+      categoria: SupabaseCategoria,
+      position: 1 | 2 | 3 | null
+    ) => {
+      await updateCategoria(
+        categoria.id,
+        {
+          posicion_destacada:
+            position,
+        }
+      )
+
+      await reloadCategorias()
+    }
+
   if (editando !== undefined) {
     return (
       <CategoriaForm
@@ -137,12 +173,18 @@ export function AdminCategorias() {
         }
         loading={loading}
         onEdit={setEditando}
+        onToggleDestacado={
+          handleToggleDestacado
+        }
+        onPositionChange={
+          handlePositionChange
+        }
         onDelete={async (
           id
         ) => {
           if (
             !confirm(
-              "¿Eliminar esta categoría?"
+              "Eliminar esta categoria?"
             )
           ) {
             return

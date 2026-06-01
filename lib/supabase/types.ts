@@ -9,6 +9,7 @@ export interface SupabaseCategoria {
   descripcion?: string | null
   imagen?: string | null
   destacado?: boolean
+  posicion_destacada?: 1 | 2 | 3 | null
   created_at: string
 }
 

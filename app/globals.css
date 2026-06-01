@@ -187,7 +187,11 @@
 }
 
 @utility grid-cols-admin-categories {
-  grid-template-columns: minmax(280px, 1.2fr) minmax(140px, 0.45fr) minmax(120px, 0.38fr) minmax(120px, 0.42fr);
+  grid-template-columns: minmax(0, 2.2fr) minmax(72px, 0.8fr) minmax(72px, 0.8fr) minmax(88px, 0.9fr) minmax(88px, 0.9fr) minmax(96px, 0.8fr);
+}
+
+@utility min-w-admin-categories {
+  min-width: 860px;
 }
 
 @utility grid-cols-admin-orders {
@@ -228,6 +232,14 @@
 
 @utility grid-cols-product-modal {
   grid-template-columns: 55fr 45fr;
+}
+
+@utility grid-cols-category-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+}
+
+@utility grid-cols-hero-premium {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
 }
 
 @utility grid-rows-product-info {
