@@ -18,6 +18,7 @@ interface GlobalSearchBarProps {
   search: string
 
   products: SearchProduct[]
+  className?: string
 
   onSearchChange: (
     value: string
@@ -27,6 +28,7 @@ interface GlobalSearchBarProps {
 export function GlobalSearchBar({
   search,
   products,
+  className = "",
   onSearchChange,
 }: GlobalSearchBarProps) {
   const router = useRouter()
@@ -67,7 +69,7 @@ export function GlobalSearchBar({
   }
 
   return (
-    <div className="relative w-full">
+    <div className={`relative w-full ${className}`}>
       <div
         className={`flex overflow-hidden rounded-xl border bg-beyonix-surface transition-all duration-200 ${
           isFocused

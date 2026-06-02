@@ -33,8 +33,62 @@ import { ProductsGrid } from "./products-grid"
 import { ProductsToolbar } from "./products-toolbar"
 import {
   getDefaultVariantOption,
+  getProductVariantOptions,
 } from "@/lib/products/product-variants"
 import { SITE_SETTINGS } from "@/config/site-settings"
+
+const baseColorOrder = [
+  "negro",
+  "blanco",
+  "gris",
+  "azul",
+  "rojo",
+  "amarillo",
+  "verde",
+  "rosa",
+  "violeta",
+  "beige",
+]
+
+const baseColorKeywords: Record<string, string[]> = {
+  negro: ["negro", "black"],
+  blanco: ["blanco", "white"],
+  gris: ["gris", "plata", "silver", "titanio", "grafito"],
+  azul: ["azul", "celeste", "turquesa", "cyan", "sky", "lavanda"],
+  rojo: ["rojo", "bordo", "coral"],
+  amarillo: ["amarillo", "mostaza", "dorado"],
+  verde: ["verde", "oliva", "menta", "mint", "sage", "lima", "lime", "aqua"],
+  rosa: ["rosa", "fucsia", "salmon", "durazno", "terracota"],
+  violeta: ["violeta", "morado", "lila", "purple"],
+  beige: ["beige", "crema", "arena"],
+}
+
+function normalizeColorText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+}
+
+function getProductBaseColors(product: SupabaseProducto) {
+  const colors = new Set<string>()
+
+  getProductVariantOptions(product).forEach((variant) => {
+    const text = normalizeColorText(`${variant.name} ${product.nombre}`)
+
+    baseColorOrder.forEach((baseColor) => {
+      if (
+        baseColorKeywords[baseColor].some((keyword) =>
+          text.includes(keyword)
+        )
+      ) {
+        colors.add(baseColor)
+      }
+    })
+  })
+
+  return [...colors]
+}
 
 export function ProductsPageLayout() {
   const searchParams =
@@ -57,6 +111,11 @@ export function ProductsPageLayout() {
   const [
     selectedCategories,
     setSelectedCategories,
+  ] = useState<string[]>([])
+
+  const [
+    selectedColors,
+    setSelectedColors,
   ] = useState<string[]>([])
 
   const [onlyOffers, setOnlyOffers] =
@@ -141,6 +200,19 @@ export function ProductsPageLayout() {
     )
   }, [categories])
 
+  const availableColors =
+    useMemo(() => {
+      const colors = new Set<string>()
+
+      products.forEach((product) => {
+        getProductBaseColors(product).forEach((color) =>
+          colors.add(color)
+        )
+      })
+
+      return baseColorOrder.filter((color) => colors.has(color))
+    }, [products])
+
   // ─────────────────────────────────────
   // Filters
   // ─────────────────────────────────────
@@ -179,6 +251,17 @@ export function ProductsPageLayout() {
             product.precio <=
               maxPrice
 
+          const productBaseColors =
+            selectedColors.length > 0
+              ? getProductBaseColors(product)
+              : []
+
+          const matchColor =
+            !selectedColors.length ||
+            selectedColors.some((color) =>
+              productBaseColors.includes(color)
+            )
+
           const matchSearch =
             product.nombre
               .toLowerCase()
@@ -192,6 +275,7 @@ export function ProductsPageLayout() {
             matchBestSellers &&
             matchInstallments &&
             matchPrice &&
+            matchColor &&
             matchSearch
           )
         })
@@ -226,6 +310,7 @@ export function ProductsPageLayout() {
       onlyInstallments,
       minPrice,
       maxPrice,
+      selectedColors,
       search,
       sortBy,
     ])
@@ -270,11 +355,11 @@ export function ProductsPageLayout() {
   // ─────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-black pt-24 text-white">
+    <main className="min-h-screen bg-black pt-22 text-white lg:pt-24">
       <section className="container mx-auto px-4 lg:px-8">
         {/* Header */}
-        <div className="mb-10 border-b border-white/6 pb-8">
-          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-auto-content lg:items-end lg:gap-12">
+        <div className="mb-8 border-b border-white/6 pb-7 lg:mb-9">
+          <div className="flex flex-col gap-5 lg:grid lg:grid-cols-auto-content lg:items-end lg:gap-10">
             <div>
               <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                 Productos
@@ -292,6 +377,7 @@ export function ProductsPageLayout() {
 
             <GlobalSearchBar
               search={search}
+              className="lg:ml-auto lg:max-w-55pct"
               onSearchChange={
                 setSearch
               }
@@ -313,7 +399,7 @@ export function ProductsPageLayout() {
         </div>
 
         {/* Content */}
-        <div className="grid grid-cols-1 gap-8 pb-16 lg:grid-cols-products-layout">
+        <div className="grid grid-cols-1 gap-5 pb-14 lg:grid-cols-products-layout lg:gap-7 lg:pb-16">
           <ProductsFiltersSidebar
             categories={categories}
             selectedCategories={
@@ -321,6 +407,15 @@ export function ProductsPageLayout() {
             }
             setSelectedCategories={
               setSelectedCategories
+            }
+            selectedColors={
+              selectedColors
+            }
+            availableColors={
+              availableColors
+            }
+            setSelectedColors={
+              setSelectedColors
             }
             onlyOffers={
               onlyOffers

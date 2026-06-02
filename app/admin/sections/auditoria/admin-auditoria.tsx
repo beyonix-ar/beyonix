@@ -263,7 +263,7 @@ export function AdminAuditoria() {
               return (
                 <article
                   key={log.id}
-                  className="rounded-2xl border border-white/7 bg-black p-4 transition hover:border-sky-300/35 hover:bg-[#02070d]"
+                  className="rounded-2xl border border-white/7 bg-black p-4 transition hover:border-sky-300/35 hover:bg-admin-hover"
                 >
                   <div className="grid gap-4 xl:grid-cols-4 xl:items-center">
                     <div>

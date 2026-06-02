@@ -141,12 +141,12 @@ export function ProductDetailsPanel({
     <aside className="flex h-full min-h-0 flex-col bg-beyonix-surface text-white">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <div className="shrink-0 px-8 pb-5 pt-8">
+        <div className="shrink-0 px-5 pb-4 pt-5 lg:px-8 lg:pb-5 lg:pt-8">
           <p className="mb-2 text-10px font-bold uppercase tracking-widest text-beyonix-sky">
             {product.categorias?.nombre}
           </p>
 
-          <h2 className="text-28px font-semibold leading-snug tracking-tight text-white">
+          <h2 className="text-2xl font-semibold leading-snug tracking-tight text-white lg:text-28px">
             {product.nombre}
           </h2>
         </div>
@@ -160,7 +160,7 @@ export function ProductDetailsPanel({
               : "grid-rows-product-info-no-variant"
           }`}
         >
-          <section className="flex min-h-0 flex-col border-b border-white/8 px-8 py-4">
+          <section className="flex min-h-0 flex-col border-b border-white/8 px-5 py-4 lg:px-8">
             <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
               Descripcion
             </p>
@@ -176,7 +176,7 @@ export function ProductDetailsPanel({
             </div>
           </section>
 
-          <section className="flex min-h-0 flex-col border-b border-white/8 px-8 py-4">
+          <section className="flex min-h-0 flex-col border-b border-white/8 px-5 py-4 lg:px-8">
             <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
               Especificaciones
             </p>
@@ -184,7 +184,7 @@ export function ProductDetailsPanel({
             <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
               <div
                 className={`grid items-start gap-4 ${
-                  featureColumns.length > 1 ? "grid-cols-2" : "grid-cols-1"
+                  featureColumns.length > 1 ? "sm:grid-cols-2" : "grid-cols-1"
                 }`}
               >
                 {featureColumns.map((column, columnIndex) => (
@@ -214,7 +214,7 @@ export function ProductDetailsPanel({
           </section>
 
           {hasVariants && (
-            <section className="flex min-h-0 flex-col px-8 py-3">
+            <section className="flex min-h-0 flex-col px-5 py-3 lg:px-8">
               <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/40">
                 Variante
               </p>

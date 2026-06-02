@@ -29,7 +29,6 @@ interface CategoryPageLayoutProps {
 
 export function CategoryPageLayout({
   title,
-  description,
   image,
   products,
 }: CategoryPageLayoutProps) {
@@ -84,103 +83,105 @@ export function CategoryPageLayout({
     )
   }
 
+  const handleProductCardAdd = (
+    nextProduct: SupabaseProducto,
+    color: string,
+    nextImage?: string
+  ) => {
+    addToCart(
+      nextProduct,
+      color,
+      nextImage
+    )
+  }
+
   return (
     <section className="relative min-h-screen overflow-visible text-white">
-      <div className="absolute inset-0 -z-10 h-full w-full beyonix-category-radial-bg" />
+      <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-category-page-bg" />
 
-      <div className="global-search-wrapper absolute left-0 right-0 top-24 z-40">
-        <GlobalSearchBar
-          search={search}
-          products={products.map((product) => ({
-            id: String(product.id),
-            nombre: product.nombre,
-          }))}
-          onSearchChange={setSearch}
-        />
-      </div>
+      <div className="category-hero container relative z-20 mx-auto px-4 pb-6 pt-24 lg:px-8 lg:pb-8 lg:pt-28">
+        <div className="mx-auto max-w-1400px">
+          <div className="relative min-h-300px overflow-hidden rounded-xl border border-white/12 beyonix-category-banner-glass sm:min-h-360px lg:min-h-420px">
+            <div className="global-search-wrapper absolute left-0 right-0 top-4 z-30 flex justify-center px-4 sm:top-5">
+              <GlobalSearchBar
+                search={search}
+                className="max-w-xl"
+                products={products.map((product) => ({
+                  id: String(product.id),
+                  nombre: product.nombre,
+                }))}
+                onSearchChange={setSearch}
+              />
+            </div>
 
-      <div className="category-hero container relative z-20 mx-auto px-4 pb-14 pt-50 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-category-hero lg:items-end">
-          <div className="min-w-0">
-            <p className="mb-3 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-              Categoria
-            </p>
-
-            <h1 className="text-4xl font-bold tracking-tight lg:text-6xl">
-              {title}
-            </h1>
-
-            {description && (
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/68 lg:text-lg">
-                {description}
-              </p>
-            )}
-
-            <p className="mt-4 text-sm font-medium text-white/45">
-              {filteredProducts.length} producto{filteredProducts.length === 1 ? "" : "s"} disponible{filteredProducts.length === 1 ? "" : "s"}
-            </p>
-          </div>
-
-          <div className="relative min-h-220px overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface-3">
             {image ? (
               <Image
                 fill
                 src={image}
                 alt={title}
-                sizes="(min-width: 1024px) 420px, 100vw"
-                className="object-cover"
+                sizes="(min-width: 1536px) 1400px, 100vw"
+                className="object-cover object-center beyonix-category-banner-image-fade"
+                priority
               />
             ) : (
-              <div className="flex h-full min-h-220px items-center justify-center">
+              <div className="flex h-full min-h-300px items-center justify-center bg-beyonix-surface-3 sm:min-h-360px lg:min-h-420px">
                 <Boxes className="size-10 text-beyonix-cyan/45" />
               </div>
             )}
-            <div className="absolute inset-0 bg-linear-to-t from-black/55 via-transparent to-transparent" />
-          </div>
 
-          <div className="lg:col-span-2">
+            <div className="pointer-events-none absolute inset-0 beyonix-category-banner-fade" />
+          </div>
+        </div>
+      </div>
+
+      <div className="category-products container relative z-20 mx-auto px-4 pb-16 lg:px-8 lg:pb-20">
+        <div className="mx-auto grid max-w-1400px grid-cols-1 items-start gap-4 lg:grid-cols-products-layout lg:gap-5">
+          <div className="flex justify-end lg:col-span-2 lg:row-start-1">
             <CategorySort
               sortBy={sortBy}
               onSortChange={setSortBy}
             />
           </div>
+
+          <div className="w-full lg:col-start-1 lg:row-start-2 lg:w-260px">
+            <ProductsFiltersSidebar
+              categories={[]}
+              selectedCategories={[]}
+              setSelectedCategories={() => {}}
+              onlyOffers={onlyOffers}
+              setOnlyOffers={setOnlyOffers}
+              onlyBestSellers={onlyBestSellers}
+              setOnlyBestSellers={setOnlyBestSellers}
+              onlyInstallments={onlyInstallments}
+              setOnlyInstallments={setOnlyInstallments}
+              minPrice={minPrice}
+              setMinPrice={setMinPrice}
+              maxPrice={maxPrice}
+              setMaxPrice={setMaxPrice}
+              showInstallmentsFilter={
+                SITE_SETTINGS.filters.showInstallmentsFilter
+              }
+              showFeaturedFilter={
+                SITE_SETTINGS.filters.showFeaturedFilter
+              }
+              showOfferFilter={
+                SITE_SETTINGS.filters.showOfferFilter
+              }
+              showPriceFilter={
+                SITE_SETTINGS.filters.showPriceFilter
+              }
+              showCategoryFilter={false}
+            />
+          </div>
+
+          <div className="min-w-0 lg:col-start-2 lg:row-start-2">
+            <CategoryProductsGrid
+              products={filteredProducts}
+              onOpenPreview={openDetails}
+              onAddToCart={handleProductCardAdd}
+            />
+          </div>
         </div>
-      </div>
-
-      <div className="category-products container relative z-0 mx-auto grid grid-cols-1 gap-8 px-4 pb-20 lg:grid-cols-products-layout lg:px-8">
-        <ProductsFiltersSidebar
-          categories={[]}
-          selectedCategories={[]}
-          setSelectedCategories={() => {}}
-          onlyOffers={onlyOffers}
-          setOnlyOffers={setOnlyOffers}
-          onlyBestSellers={onlyBestSellers}
-          setOnlyBestSellers={setOnlyBestSellers}
-          onlyInstallments={onlyInstallments}
-          setOnlyInstallments={setOnlyInstallments}
-          minPrice={minPrice}
-          setMinPrice={setMinPrice}
-          maxPrice={maxPrice}
-          setMaxPrice={setMaxPrice}
-          showInstallmentsFilter={
-            SITE_SETTINGS.filters.showInstallmentsFilter
-          }
-          showFeaturedFilter={
-            SITE_SETTINGS.filters.showFeaturedFilter
-          }
-          showOfferFilter={
-            SITE_SETTINGS.filters.showOfferFilter
-          }
-          showPriceFilter={
-            SITE_SETTINGS.filters.showPriceFilter
-          }
-          showCategoryFilter={false}
-        />
-
-        <CategoryProductsGrid
-          products={filteredProducts}
-          onOpenPreview={openDetails}
-        />
       </div>
 
       <ProductDetailsModal

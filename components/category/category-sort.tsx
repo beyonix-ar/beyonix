@@ -44,19 +44,19 @@ export function CategorySort({
   return (
     <div
       ref={wrapperRef}
-      className="relative flex items-center gap-3"
+      className="relative flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3"
     >
       <span className="text-sm font-medium tracking-wide text-white/70">
         Filtrar por:
       </span>
 
-      <div className="relative">
+      <div className="relative w-full sm:w-auto">
         <button
           type="button"
           aria-label="Abrir orden de categoria"
           title="Ordenar productos"
           onClick={() => setIsOpen((prev) => !prev)}
-          className="flex min-w-180px items-center justify-between rounded-2xl border border-white/10 bg-black/60 px-5 py-2 text-sm font-medium text-white backdrop-blur-md transition hover:border-white/20"
+          className="flex min-h-44px w-full cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-black/60 px-4 py-2 text-sm font-medium text-white backdrop-blur-md transition hover:border-white/20 sm:min-w-180px"
         >
           <span>{selected.label}</span>
           <span className="ml-4 text-white/80">▼</span>
@@ -74,7 +74,7 @@ export function CategorySort({
                   onSortChange(option.value)
                   setIsOpen(false)
                 }}
-                className="block w-full px-5 py-3 text-left text-sm text-white transition hover:bg-white/10"
+                className="block w-full cursor-pointer px-5 py-3 text-left text-sm text-white transition hover:bg-white/10"
               >
                 {option.label}
               </button>

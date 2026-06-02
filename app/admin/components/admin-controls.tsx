@@ -77,7 +77,7 @@ export function AdminSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="admin-control-select flex h-11 w-full items-center justify-between gap-3 rounded-[18px] border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
+        className="admin-control-select flex h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
       >
         <span className="min-w-0 truncate">{selectedOption?.label}</span>
         <ChevronDown
@@ -91,7 +91,7 @@ export function AdminSelect({
         <div
           role="listbox"
           aria-label={ariaLabel ?? title}
-          className="absolute left-0 top-12 z-50 max-h-64 min-w-full overflow-hidden rounded-[18px] border border-beyonix-blue-light/45 bg-black p-1 shadow-2xl shadow-black/70"
+          className="absolute left-0 top-12 z-50 max-h-64 min-w-full overflow-hidden rounded-18px border border-beyonix-blue-light/45 bg-black p-1 shadow-2xl shadow-black/70"
         >
           <div className="max-h-60 overflow-y-auto py-1">
             {options.map((option) => {
@@ -107,7 +107,7 @@ export function AdminSelect({
                     onChange(option.value)
                     setOpen(false)
                   }}
-                  className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors ${
+                  className={`flex h-9 w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors ${
                     selected
                       ? "bg-beyonix-blue text-white"
                       : "text-white/78 hover:bg-beyonix-blue/70 hover:text-white"
@@ -149,7 +149,7 @@ export function AdminTextInput({
         placeholder={placeholder}
         inputMode={inputMode}
         onChange={(event) => onChange(event.target.value)}
-        className={`h-11 w-full rounded-[18px] border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none transition-colors placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light ${
+        className={`h-11 w-full rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none transition-colors placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light ${
           icon ? "pl-11" : ""
         }`}
       />

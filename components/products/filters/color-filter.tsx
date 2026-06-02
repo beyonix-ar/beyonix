@@ -8,6 +8,19 @@ interface ColorFilterProps {
   onToggleColor: (color: string) => void
 }
 
+const colorLabels: Record<string, string> = {
+  negro: "Negro",
+  blanco: "Blanco",
+  gris: "Gris",
+  azul: "Azul",
+  rojo: "Rojo",
+  amarillo: "Amarillo",
+  verde: "Verde",
+  rosa: "Rosa",
+  violeta: "Violeta",
+  beige: "Beige",
+}
+
 export function ColorFilter({
   selectedColors,
   availableColors,
@@ -33,8 +46,8 @@ export function ColorFilter({
               key={colorKey}
               type="button"
               onClick={() => onToggleColor(colorKey)}
-              aria-label={`Color ${colorKey}`}
-              title={colorKey.charAt(0).toUpperCase() + colorKey.slice(1)}
+              aria-label={`Filtrar por color ${colorLabels[colorKey] ?? colorKey}`}
+              title={colorLabels[colorKey] ?? colorKey}
               className={`relative size-7 rounded-full border transition-all duration-200 cursor-pointer ${colorClass} ${
                 isSelected
                   ? "border-beyonix-cyan ring-2 ring-beyonix-cyan/60 ring-offset-2 ring-offset-black shadow-beyonix-color-selected"

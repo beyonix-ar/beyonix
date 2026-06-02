@@ -10,7 +10,7 @@ interface ProductImageCarouselProps {
 }
 
 const arrowButtonClass =
-  "absolute top-1/2 -translate-y-1/2 z-10 size-10 rounded-full bg-beyonix-blue hover:bg-beyonix-blue-hover transition-colors duration-200 flex items-center justify-center shadow-lg"
+  "absolute top-1/2 -translate-y-1/2 z-10 size-10 cursor-pointer rounded-full bg-beyonix-blue hover:bg-beyonix-blue-hover transition-colors duration-200 flex items-center justify-center shadow-lg"
 
 export function ProductImageCarousel({
   images,
@@ -35,7 +35,7 @@ export function ProductImageCarousel({
   }
 
   return (
-    <div className="product-card-image group relative bg-beyonix-surface-3 overflow-hidden rounded-lg">
+    <div className="product-card-image group relative h-full bg-beyonix-surface-3 overflow-hidden rounded-lg">
       <Image
         src={images[currentIndex]}
         alt={alt}

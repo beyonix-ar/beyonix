@@ -39,11 +39,12 @@ export function ProductCardPricing({
       onClick={(e) =>
         e.stopPropagation()
       }
+      className="flex h-full flex-col"
     >
-      <div className="mb-4 flex items-end justify-between">
+      <div className="mb-2.5 flex min-h-88px items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-21px font-semibold tracking-tight text-white tabular-nums">
+            <p className="text-19px font-semibold tracking-tight text-white tabular-nums sm:text-21px">
               {formatPrice(price)}
             </p>
 
@@ -68,29 +69,41 @@ export function ProductCardPricing({
               </p>
             )}
 
+          {(!originalPrice ||
+            originalPrice <=
+              price) && (
+            <div className="mt-1 min-h-18px" />
+          )}
+
           {installmentsLabel && (
-            <p className="mt-2 inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2.5 py-1 text-11px font-medium text-beyonix-cyan">
+            <p className="mt-1.5 inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2 py-0.5 text-10px font-medium text-beyonix-cyan">
               {installmentsLabel}
             </p>
+          )}
+
+          {!installmentsLabel && (
+            <div className="mt-1.5 min-h-22px" />
           )}
         </div>
       </div>
 
-      <ProductCartToggleButton
-        quantity={quantity}
-        onAdd={
-          onAddToCart ||
-          (() => {})
-        }
-        onIncrease={
-          onIncrease ||
-          (() => {})
-        }
-        onDecrease={
-          onDecrease ||
-          (() => {})
-        }
-      />
+      <div className="mt-auto">
+        <ProductCartToggleButton
+          quantity={quantity}
+          onAdd={
+            onAddToCart ||
+            (() => {})
+          }
+          onIncrease={
+            onIncrease ||
+            (() => {})
+          }
+          onDecrease={
+            onDecrease ||
+            (() => {})
+          }
+        />
+      </div>
     </div>
   )
 }

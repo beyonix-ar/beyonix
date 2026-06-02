@@ -87,7 +87,7 @@ export function ProductsSection({
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mx-auto grid grid-cols-1 items-stretch justify-center gap-4 sm:grid-cols-product-cards-2 xl:grid-cols-product-cards-4">
           {products.map(
             (product) => {
               const discount =
@@ -116,20 +116,20 @@ export function ProductsSection({
                   key={
                     product.id
                   }
-                  className="group overflow-hidden rounded-2xl border border-white/6 bg-beyonix-surface transition-all duration-300 hover:border-white/12 hover:shadow-xl hover:shadow-black/50"
+                  className="group flex h-full w-full max-w-280px flex-col overflow-hidden rounded-2xl border border-white/6 bg-beyonix-surface transition-all duration-300 hover:border-white/12 hover:shadow-xl hover:shadow-black/50"
                 >
-                  <div className="relative aspect-square overflow-hidden bg-white">
+                  <div className="relative h-220px shrink-0 overflow-hidden bg-white p-2 sm:h-240px">
                     <Image
                       fill
                       src={image}
                       alt={
                         product.nombre
                       }
-                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      className="object-contain transition-transform duration-500 group-hover:scale-105"
                     />
                   </div>
 
-                  <div className="flex flex-col p-4">
+                  <div className="flex flex-1 flex-col p-4">
                     <p className="truncate text-10px font-semibold uppercase tracking-widest text-white/45">
                       {
                         product
@@ -144,8 +144,8 @@ export function ProductsSection({
                       }
                     </h3>
 
-                    <div className="mt-3 border-t border-white/5 pt-3">
-                      <div className="mb-4 flex min-h-52px flex-col justify-center">
+                    <div className="mt-auto border-t border-white/5 pt-3">
+                      <div className="mb-4 flex min-h-88px flex-col justify-start">
                         <div className="flex items-center gap-2">
                           <span className="text-19px font-bold leading-none text-white">
                             {formatPrice(
@@ -175,6 +175,10 @@ export function ProductsSection({
                               product.precio
                             )}
                           </p>
+                        )}
+
+                        {!hasSale && (
+                          <div className="mt-1 min-h-18px" />
                         )}
                       </div>
 

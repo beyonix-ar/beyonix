@@ -115,7 +115,7 @@ export function ProductDetailsModal({
   const selectedStock = selectedVariant?.stock ?? product.stock
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6">
       <button
         type="button"
         aria-label="Cerrar modal"
@@ -124,7 +124,7 @@ export function ProductDetailsModal({
         className="absolute inset-0 cursor-pointer"
       />
 
-      <div className="relative z-10 h-90vh w-full max-w-6xl overflow-hidden rounded-2xl border border-white/12 bg-beyonix-surface shadow-beyonix-modal lg:grid lg:grid-cols-product-modal lg:items-stretch">
+      <div className="relative z-10 max-h-90vh w-full max-w-6xl overflow-y-auto rounded-xl border border-white/12 bg-beyonix-surface shadow-beyonix-modal lg:grid lg:h-90vh lg:grid-cols-product-modal lg:items-stretch lg:overflow-hidden lg:rounded-2xl">
         <button
           type="button"
           aria-label="Cerrar detalle del producto"

@@ -251,7 +251,7 @@ function LoginContent() {
           className={
             mode === "login"
               ? "mb-6 space-y-5"
-              : "mb-7 grid gap-5 lg:grid-cols-[1fr_360px] lg:items-end"
+              : "mb-7 grid gap-5 lg:grid-cols-login-register lg:items-end"
           }
         >
           <div>

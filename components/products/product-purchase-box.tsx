@@ -68,10 +68,10 @@ export function ProductPurchaseBox({
       : null
 
   return (
-    <div className="px-8 pb-7 pt-5">
+    <div className="px-5 pb-5 pt-4 lg:px-8 lg:pb-7 lg:pt-5">
       {/* Price row */}
-      <div className="mb-5 flex items-baseline gap-3">
-        <span className="text-26px font-bold leading-none tracking-tight text-white">
+      <div className="mb-4 flex flex-wrap items-baseline gap-2.5 lg:mb-5 lg:gap-3">
+        <span className="text-2xl font-bold leading-none tracking-tight text-white lg:text-26px">
           {formatPrice(price)}
         </span>
 
@@ -89,7 +89,7 @@ export function ProductPurchaseBox({
       </div>
 
       {installmentsLabel && (
-        <div className="mb-5">
+        <div className="mb-4 lg:mb-5">
           <span className="inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-3 py-1.5 text-12px font-medium text-beyonix-cyan">
             {installmentsLabel}
           </span>
@@ -97,7 +97,7 @@ export function ProductPurchaseBox({
       )}
 
       {/* Buttons row */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex-1">
           <ProductCartToggleButton
             quantity={quantity}
@@ -112,7 +112,7 @@ export function ProductPurchaseBox({
           aria-label="Ver carrito"
           title="Ver carrito"
           onClick={onViewCart}
-          className="flex h-11 shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-lg border border-white/12 bg-black/45 px-6 text-13px font-medium text-white/85 transition-colors hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white active:scale-95"
+          className="flex h-11 w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-lg border border-white/12 bg-black/45 px-5 text-13px font-medium text-white/85 transition-colors hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white active:scale-95 sm:w-auto lg:px-6"
         >
           Ver carrito
         </button>

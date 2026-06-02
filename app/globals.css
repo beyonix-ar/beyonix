@@ -149,11 +149,18 @@
   /* Tokens custom de medidas */
   --spacing-3px: 3px;
   --spacing-55pct: 55%;
+  --spacing-18px: 18px;
+  --spacing-22px: 22px;
+  --spacing-28px: 28px;
   --spacing-32px: 32px;
   --spacing-44px: 44px;
+  --spacing-48px: 48px;
+  --spacing-52px: 52px;
   --spacing-40px: 40px;
+  --spacing-42: 10.5rem;
   --spacing-56px: 56px;
   --spacing-88px: 88px;
+  --spacing-110px: 110px;
   --spacing-112px: 112px;
   --spacing-78vh: 78vh;
   --spacing-80vh: 80vh;
@@ -162,20 +169,43 @@
   --spacing-140px: 140px;
   --spacing-150px: 150px;
   --spacing-160px: 160px;
+  --spacing-180px: 180px;
+  --spacing-200px: 200px;
   --spacing-90vh: 90vh;
   --spacing-92vh: 92vh;
   --spacing-220px: 220px;
+  --spacing-240px: 240px;
   --spacing-250px: 250px;
+  --spacing-260px: 260px;
   --spacing-280px: 280px;
+  --spacing-300px: 300px;
   --spacing-320px: 320px;
+  --spacing-340px: 340px;
+  --spacing-360px: 360px;
+  --spacing-400px: 400px;
+  --spacing-420px: 420px;
+  --spacing-1200px: 1200px;
+  --spacing-1400px: 1400px;
   --spacing-product-gallery-main: 85%;
   --spacing-product-gallery-spacer: 5%;
   --spacing-product-gallery-thumbs: 10%;
 
+  --text-10px: 10px;
+  --text-11px: 11px;
+  --text-12px: 12px;
   --text-12-5px: 12.5px;
+  --text-13px: 13px;
   --text-13-5px: 13.5px;
+  --text-14px: 14px;
+  --text-15px: 15px;
+  --text-16px: 16px;
+  --text-18px: 18px;
+  --text-19px: 19px;
+  --text-21px: 21px;
   --text-26px: 26px;
   --text-28px: 28px;
+  --text-8px: 8px;
+  --text-9px: 9px;
 
   --shadow-beyonix-color-selected: 0 0 10px rgba(74, 144, 184, 0.3);
   --shadow-beyonix-slider: 0 0 6px rgba(0, 174, 239, 0.22);
@@ -230,6 +260,22 @@
   grid-template-columns: 260px 1fr;
 }
 
+@utility grid-cols-product-cards-2 {
+  grid-template-columns: repeat(2, minmax(0, 280px));
+}
+
+@utility grid-cols-product-cards-3 {
+  grid-template-columns: repeat(3, minmax(0, 260px));
+}
+
+@utility grid-cols-product-cards-4 {
+  grid-template-columns: repeat(4, minmax(0, 260px));
+}
+
+@utility grid-cols-category-product-cards-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 @utility grid-cols-product-modal {
   grid-template-columns: 55fr 45fr;
 }
@@ -240,6 +286,18 @@
 
 @utility grid-cols-hero-premium {
   grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+}
+
+@utility grid-cols-login-register {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+@utility rounded-18px {
+  border-radius: 18px;
+}
+
+@utility bg-admin-hover {
+  background-color: #02070d;
 }
 
 @utility grid-rows-product-info {
@@ -264,6 +322,10 @@
 
 @utility aspect-category-featured {
   aspect-ratio: 16 / 9.2;
+}
+
+@utility aspect-product-card-image {
+  aspect-ratio: 1 / 0.86;
 }
 
 @utility leading-1-1 {
@@ -298,6 +360,55 @@
   );
 }
 
+@utility beyonix-category-page-bg {
+  background:
+    radial-gradient(
+      70% 46% at 50% 0%,
+      rgba(17, 42, 67, 0.34) 0%,
+      rgba(0, 0, 0, 0.28) 62%,
+      transparent 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.08) 0%,
+      transparent 34%,
+      rgba(0, 0, 0, 0.16) 100%
+    );
+}
+
+@utility beyonix-category-banner-glass {
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+@utility beyonix-category-banner-fade {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.08) 46%,
+      rgba(0, 0, 0, 0.24) 72%,
+      rgba(0, 0, 0, 0.42) 100%
+    ),
+    radial-gradient(
+      90% 72% at 50% 100%,
+      rgba(17, 42, 67, 0.18) 0%,
+      rgba(0, 0, 0, 0) 70%
+    );
+}
+
+@utility beyonix-category-banner-image-fade {
+  mask-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.96) 42%,
+    rgba(0, 0, 0, 0.62) 72%,
+    rgba(0, 0, 0, 0.12) 100%
+  );
+}
+
 /* =========================
    GLOBAL BASE
 ========================= */
@@ -317,6 +428,14 @@
     min-height: 100vh;
     overflow-x: hidden;
     position: relative;
+    text-size-adjust: 100%;
+  }
+
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
   }
 
   main.bg-black,
@@ -577,11 +696,11 @@ body.product-modal-open .category-hero {
 }
 
 .min-h-screen-small {
-  min-height: 530px;
+  min-height: 500px;
 }
 
 .product-card-image {
-  height: 320px;
+  height: 100%;
 }
 
 .hero-divider {
@@ -638,4 +757,14 @@ body.product-modal-open .category-hero {
   );
 
   pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  .min-h-screen-small {
+    min-height: 460px;
+  }
+
+  .product-card-image {
+    height: 100%;
+  }
 }

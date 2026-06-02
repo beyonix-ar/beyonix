@@ -82,8 +82,8 @@ export function ProductDetailsGallery({
   }, [safeIndex])
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-beyonix-surface px-6 pb-6 pt-6">
-      <div className="relative flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-white/8 bg-beyonix-surface-3 p-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-beyonix-surface px-4 pb-4 pt-4 sm:px-5 sm:pb-5 sm:pt-5 lg:px-6 lg:pb-6 lg:pt-6">
+      <div className="relative flex min-h-280px flex-1 items-center justify-center rounded-xl border border-white/8 bg-beyonix-surface-3 p-3 sm:p-4 lg:min-h-0 lg:rounded-2xl lg:p-5">
         <div className="flex h-full min-h-0 w-full items-center justify-center">
           <div className="relative flex aspect-square h-full max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-beyonix-surface-2">
             <Image
@@ -139,14 +139,14 @@ export function ProductDetailsGallery({
         )}
       </div>
 
-      <div className="flex h-40px shrink-0 items-center justify-center">
+      <div className="flex h-32px shrink-0 items-center justify-center sm:h-40px">
         <span className="text-12px font-semibold tabular-nums tracking-widest text-white/70">
           {safeIndex + 1} / {images.length || 1}
         </span>
       </div>
 
       {visibleImages.length > 0 && (
-        <div className="flex h-56px shrink-0 items-center justify-center">
+        <div className="flex h-48px shrink-0 items-center justify-center sm:h-56px">
           <ProductPreviewThumbnails
             images={visibleImages}
             selectedImage={safeIndex}

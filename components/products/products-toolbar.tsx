@@ -43,26 +43,29 @@ export function ProductsToolbar({
   }, [])
 
   return (
-    <div className="mb-5 flex items-center justify-between rounded-xl border border-white/7 bg-beyonix-surface px-5 py-3.5">
+    <div className="mb-3 flex flex-col gap-2 rounded-xl border border-white/7 bg-beyonix-surface px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
 
       {/* Contador */}
-      <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-bold tracking-tight text-white tabular-nums">
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-sm font-medium text-white/50">
+          Mostrando
+        </span>
+        <span className="text-lg font-bold tracking-tight text-white tabular-nums">
           {total}
         </span>
-        <span className="text-sm text-white/50">
-          {total === 1 ? "producto" : "productos"}
+        <span className="text-sm font-medium text-white/50">
+          {total === 1 ? "resultado" : "resultados"}
         </span>
       </div>
 
       {/* Selector de orden */}
-      <div ref={containerRef} className="relative">
+      <div ref={containerRef} className="relative w-full sm:w-auto">
         <button
           type="button"
           aria-label="Ordenar productos"
           title="Ordenar productos"
           onClick={() => setOpen(!open)}
-          className={`flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm transition-all duration-150 cursor-pointer ${
+          className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-sm transition-all duration-150 sm:w-auto ${
             open
               ? "border-beyonix-blue-light bg-beyonix-account-active text-white"
               : "border-white/10 bg-white/4 text-white/80 hover:border-white/20 hover:text-white"

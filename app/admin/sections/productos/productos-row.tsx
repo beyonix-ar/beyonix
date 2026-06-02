@@ -252,7 +252,7 @@ export function ProductosRow({
 
   return (
     <div
-      className={`bg-black transition-colors hover:bg-[#02070d] ${
+      className={`bg-black transition-colors hover:bg-admin-hover ${
         !isLast
           ? "border-b border-white/5"
           : ""

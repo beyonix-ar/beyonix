@@ -22,12 +22,12 @@ export function ProductCardImage({
   return (
     <div
       onClick={onOpenPreview}
-      className="relative aspect-square cursor-pointer overflow-hidden bg-beyonix-surface-3"
+      className="relative h-220px shrink-0 cursor-pointer overflow-hidden bg-beyonix-surface-3 p-2 sm:h-240px"
     >
       <img
         src={image}
         alt={productName}
-        className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
+        className="h-full w-full object-contain transition-transform duration-500 hover:scale-105"
       />
 
       {/* Overlay sutil al hover para indicar que es clickeable */}

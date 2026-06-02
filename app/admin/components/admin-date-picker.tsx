@@ -200,7 +200,7 @@ export function AdminDatePicker({
           spellCheck={false}
           onFocus={() => setOpen(true)}
           onChange={(event) => handleManualChange(event.target.value)}
-          className="h-11 w-full rounded-[18px] border border-white/12 bg-black px-4 pr-11 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
+          className="h-11 w-full rounded-18px border border-white/12 bg-black px-4 pr-11 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
         />
 
         <button
@@ -208,7 +208,7 @@ export function AdminDatePicker({
           title="Abrir calendario"
           aria-label="Abrir calendario"
           onClick={() => setOpen((current) => !current)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-white/56 transition hover:bg-white/6 hover:text-beyonix-sky"
+          className="absolute right-3 top-1/2 cursor-pointer rounded-full p-1 text-white/56 transition -translate-y-1/2 hover:bg-white/6 hover:text-beyonix-sky"
         >
           <CalendarDays className="size-4" />
         </button>
@@ -241,7 +241,7 @@ export function AdminDatePicker({
                   title="Mes anterior"
                   aria-label="Mes anterior"
                   onClick={() => changeMonth(-1)}
-                  className="grid size-9 place-items-center rounded-2xl border border-white/10 bg-black/60 text-white/70 transition hover:border-beyonix-blue-light hover:text-beyonix-sky"
+                  className="grid size-9 cursor-pointer place-items-center rounded-2xl border border-white/10 bg-black/60 text-white/70 transition hover:border-beyonix-blue-light hover:text-beyonix-sky"
                 >
                   <ChevronLeft className="size-4" />
                 </button>
@@ -251,7 +251,7 @@ export function AdminDatePicker({
                   title="Mes siguiente"
                   aria-label="Mes siguiente"
                   onClick={() => changeMonth(1)}
-                  className="grid size-9 place-items-center rounded-2xl border border-white/10 bg-black/60 text-white/70 transition hover:border-beyonix-blue-light hover:text-beyonix-sky"
+                  className="grid size-9 cursor-pointer place-items-center rounded-2xl border border-white/10 bg-black/60 text-white/70 transition hover:border-beyonix-blue-light hover:text-beyonix-sky"
                 >
                   <ChevronRight className="size-4" />
                 </button>
@@ -287,7 +287,7 @@ export function AdminDatePicker({
                     title={toDisplayDate(toInputDate(date))}
                     aria-label={toDisplayDate(toInputDate(date))}
                     onClick={() => handleSelectDate(date)}
-                    className={`grid h-9 place-items-center rounded-xl border text-sm font-bold transition ${
+                    className={`grid h-9 cursor-pointer place-items-center rounded-xl border text-sm font-bold transition ${
                       selected
                         ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-lg shadow-black/40"
                         : currentToday
@@ -309,7 +309,7 @@ export function AdminDatePicker({
                 title="Limpiar fecha"
                 aria-label="Limpiar fecha"
                 onClick={handleClear}
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black px-3 py-2 text-xs font-bold text-white/60 transition hover:border-beyonix-blue-light/35 hover:text-beyonix-sky"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-black px-3 py-2 text-xs font-bold text-white/60 transition hover:border-beyonix-blue-light/35 hover:text-beyonix-sky"
               >
                 <X className="size-3.5" />
                 Limpiar
@@ -320,7 +320,7 @@ export function AdminDatePicker({
                 title="Ir a hoy"
                 aria-label="Ir a hoy"
                 onClick={() => setVisibleMonth(today)}
-                className="rounded-2xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 py-2 text-xs font-black text-beyonix-sky transition hover:border-beyonix-blue-light hover:text-white"
+                className="cursor-pointer rounded-2xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 py-2 text-xs font-black text-beyonix-sky transition hover:border-beyonix-blue-light hover:text-white"
               >
                 Hoy
               </button>

@@ -72,6 +72,13 @@ export function CategoryProductCard({
     )
   }
 
+  const handleOpenPreview = () => {
+    onOpenPreview({
+      ...product,
+      selectedColor,
+    })
+  }
+
   return (
     <div className="group relative">
       <div className="pointer-events-none absolute -left-10 top-1/2 z-0 h-60 w-3 -translate-y-1/2 rounded-full bg-white/50 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-100" />
@@ -79,25 +86,22 @@ export function CategoryProductCard({
       <div className="pointer-events-none absolute -right-10 top-1/2 z-0 h-60 w-3 -translate-y-1/2 rounded-full bg-white/50 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-100" />
 
       <article className="relative z-10 flex h-full min-h-screen-small flex-col rounded-lg border border-border bg-card transition-all duration-500 hover:border-muted-foreground/30">
-        <button
-          type="button"
-          aria-label={`Ver ${product.nombre}`}
-          title={`Ver ${product.nombre}`}
-          onClick={() =>
-            onOpenPreview({
-              ...product,
-              selectedColor,
-            })
-          }
-          className="relative z-10 h-320px overflow-hidden rounded-t-lg"
-        >
+        <div className="relative h-280px overflow-hidden rounded-t-lg sm:h-320px">
+          {/* Invisible accessible button sits behind the carousel arrows (z-5) but above the image */}
+          <button
+            type="button"
+            aria-label={`Ver ${product.nombre}`}
+            title={`Ver ${product.nombre}`}
+            onClick={handleOpenPreview}
+            className="absolute inset-0 z-5 cursor-pointer"
+          />
           <ProductImageCarousel
             images={images}
             alt={product.nombre}
           />
-        </button>
+        </div>
 
-        <div className="flex flex-1 flex-col bg-beyonix-surface-3 px-4 pb-4 pt-4">
+        <div className="flex flex-1 flex-col bg-beyonix-surface-3 px-4 pb-4 pt-3.5">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-13px uppercase tracking-wider text-muted-foreground">
               {product.categorias?.nombre}
@@ -114,7 +118,7 @@ export function CategoryProductCard({
             />
           </div>
 
-          <h3 className="mb-3 mt-2 min-h-48px line-clamp-2 text-16px font-bold leading-tight text-foreground">
+          <h3 className="mb-2.5 mt-2 min-h-44px line-clamp-2 text-15px font-bold leading-tight text-foreground sm:text-16px">
             {product.nombre}
           </h3>
 
@@ -137,6 +141,10 @@ export function CategoryProductCard({
               <span className="inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2.5 py-1 text-11px font-medium text-beyonix-cyan">
                 {installmentsLabel}
               </span>
+            )}
+
+            {!installmentsLabel && (
+              <div className="min-h-28px" />
             )}
           </div>
 

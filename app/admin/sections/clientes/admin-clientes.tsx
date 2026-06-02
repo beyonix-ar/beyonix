@@ -352,7 +352,7 @@ export function AdminClientes({
             value={minSpent}
             placeholder="Gasto mín."
             onChange={(event) => setMinSpent(event.target.value)}
-            className="h-11 rounded-[18px] border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
+            className="h-11 rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
 
           <input
@@ -363,7 +363,7 @@ export function AdminClientes({
             value={minOrders}
             placeholder="Pedidos mín."
             onChange={(event) => setMinOrders(event.target.value)}
-            className="h-11 rounded-[18px] border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
+            className="h-11 rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
 
           <AdminDatePicker
