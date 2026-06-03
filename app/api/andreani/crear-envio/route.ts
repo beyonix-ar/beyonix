@@ -9,6 +9,7 @@ export async function POST() {
 
   return NextResponse.json({
     ok: false,
-    message: "Creación de envío Andreani pendiente de implementar",
+    message:
+      "Creación de envío Andreani pendiente de implementar hasta confirmar URL, headers y payload oficiales",
   })
 }

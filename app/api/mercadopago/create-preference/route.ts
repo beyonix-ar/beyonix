@@ -6,6 +6,7 @@ import {
   getProductDiscount,
 } from "@/lib/store-config"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
+import { getShippingCost } from "@/lib/store-config"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 
 interface CheckoutItemPayload {
@@ -23,6 +24,16 @@ interface CheckoutPayload {
     email?: string
     telefono?: string
     direccion?: string
+    cpDestino?: string
+    localidad?: string
+    provincia?: string
+  }
+  shipping?: {
+    provider?: string
+    type?: "sucursal" | "domicilio"
+    costReal?: number
+    costCharged?: number
+    freeShippingApplied?: boolean
   }
 }
 
@@ -78,6 +89,33 @@ function normalizeCustomer(customer: CheckoutPayload["customer"]) {
     cliente_email: customer?.email?.trim() || null,
     cliente_telefono: customer?.telefono?.trim() || null,
     cliente_direccion: customer?.direccion?.trim() || null,
+    cp_destino: customer?.cpDestino?.trim() || null,
+    localidad: customer?.localidad?.trim() || null,
+    provincia: customer?.provincia?.trim() || null,
+  }
+}
+
+function normalizeShipping(
+  shipping: CheckoutPayload["shipping"],
+  productsTotal: number
+) {
+  const realCost = Number(shipping?.costReal)
+  const fallbackCost = getShippingCost(productsTotal)
+  const shippingCostReal =
+    Number.isFinite(realCost) && realCost >= 0 ? realCost : fallbackCost
+  const freeShippingApplied = getShippingCost(productsTotal) === 0
+  const chargedCost = freeShippingApplied ? 0 : shippingCostReal
+  const requestedChargedCost = Number(shipping?.costCharged)
+
+  return {
+    shipping_provider: shipping?.provider || "manual",
+    shipping_type: shipping?.type === "sucursal" ? "sucursal" : "domicilio",
+    shipping_cost_real: shippingCostReal,
+    shipping_cost_charged:
+      Number.isFinite(requestedChargedCost) && requestedChargedCost >= 0
+        ? Math.min(requestedChargedCost, shippingCostReal)
+        : chargedCost,
+    free_shipping_applied: freeShippingApplied,
   }
 }
 
@@ -130,6 +168,14 @@ async function insertOrderItems(
   if (error) {
     throw new Error(error.message || "No se pudieron crear los ítems de la orden.")
   }
+}
+
+function isSchemaCacheColumnError(error: { message?: string } | null) {
+  return Boolean(
+    error?.message?.includes("schema cache") ||
+      error?.message?.includes("Could not find the") ||
+      error?.message?.includes("column")
+  )
 }
 
 export async function POST(request: Request) {
@@ -217,7 +263,7 @@ export async function POST(request: Request) {
       assertStock(item, product, variant)
     }
 
-    const totals = calculateCartTotals(
+    const baseTotals = calculateCartTotals(
       items.map((item) => {
         const product = productRows.find((row) => row.id === item.productId)!
 
@@ -227,17 +273,58 @@ export async function POST(request: Request) {
         }
       }),
     )
+    const shipping = normalizeShipping(payload.shipping, baseTotals.productsTotal)
+    const totals = calculateCartTotals(
+      items.map((item) => {
+        const product = productRows.find((row) => row.id === item.productId)!
 
-    const { data: order, error: orderError } = await supabase
+        return {
+          product,
+          quantity: item.quantity,
+        }
+      }),
+      {
+        shippingCost: shipping.shipping_cost_charged,
+      },
+    )
+
+    const orderPayload = {
+      usuario_id: user.id,
+      total: totals.total,
+      estado: "pendiente",
+      envio_proveedor: shipping.shipping_provider,
+      ...shipping,
+      ...normalizeCustomer(payload.customer),
+    }
+
+    let { data: order, error: orderError } = await supabase
       .from("ordenes")
-      .insert({
+      .insert(orderPayload as never)
+      .select()
+      .single()
+
+    if (orderError && isSchemaCacheColumnError(orderError)) {
+      const legacyCustomer = normalizeCustomer(payload.customer)
+
+      const legacyPayload = {
         usuario_id: user.id,
         total: totals.total,
         estado: "pendiente",
-        ...normalizeCustomer(payload.customer),
-      } as never)
-      .select()
-      .single()
+        cliente_nombre: legacyCustomer.cliente_nombre,
+        cliente_email: legacyCustomer.cliente_email,
+        cliente_telefono: legacyCustomer.cliente_telefono,
+        cliente_direccion: legacyCustomer.cliente_direccion,
+      }
+
+      const fallbackOrder = await supabase
+        .from("ordenes")
+        .insert(legacyPayload as never)
+        .select()
+        .single()
+
+      order = fallbackOrder.data
+      orderError = fallbackOrder.error
+    }
 
     if (orderError || !order) {
       throw new Error(orderError?.message || "No se pudo crear la orden.")

@@ -32,19 +32,19 @@ export function CartSummary({
   const isFreeShipping = hasFreeShipping(totals.productsTotal)
 
   return (
-    <div className="p-4 border-t border-border space-y-4">
+    <div className="space-y-4 border-t border-beyonix-blue-light bg-beyonix-surface p-4">
       
       <FreeShippingBar subtotal={totals.productsTotal} />
 
-      <div className="space-y-2">
+      <div className="space-y-2 rounded-xl border border-beyonix-blue-light bg-beyonix-surface-3 p-3">
         <div className="flex justify-between text-sm">
-          <span className="text-white/80">Subtotal</span>
+          <span className="text-beyonix-sky">Subtotal</span>
           <span className="text-white">{formatPrice(totals.subtotal)}</span>
         </div>
 
         {totals.discount > 0 && (
           <div className="flex justify-between text-sm items-center">
-            <span className="text-white/80 flex items-center gap-2">
+            <span className="flex items-center gap-2 text-beyonix-sky">
               Descuento
               {ACTIVE_SALE_EVENT !== "none" && (
                 <span className="text-9px text-emerald-400/80 tracking-wide">
@@ -60,7 +60,7 @@ export function CartSummary({
         )}
 
         <div className="flex justify-between text-sm">
-          <span className="text-white/80">Envío</span>
+          <span className="text-beyonix-sky">Envío</span>
           <span
             className={`${
               isFreeShipping
@@ -80,12 +80,12 @@ export function CartSummary({
         </div>
       </div>
 
-      <div className="border border-white/20 rounded-md px-3 py-3 text-center">
-        <p className="text-default tracking-widest text-white/80 mb-0">
+      <div className="rounded-md border border-white/10 bg-black px-3 py-2 text-center">
+        <p className="text-11px mb-0 tracking-widest text-beyonix-blue">
           IMPORTANTE
         </p>
 
-        <p className="text-sm text-white">
+        <p className="text-xs text-white">
           Verificá variante y color antes de finalizar la compra
         </p>
       </div>
@@ -94,7 +94,7 @@ export function CartSummary({
         type="button"
         aria-label="Finalizar compra"
         title="Finalizar compra"
-        className="w-full h-12 text-base font-semibold bg-black text-white hover:bg-gray-800 transition-colors"
+        className="h-12 w-full bg-beyonix-blue text-base font-semibold text-white transition-colors hover:bg-beyonix-blue-hover"
         size="lg"
         onClick={onCheckout}
       >
@@ -106,7 +106,7 @@ export function CartSummary({
         aria-label="Seguir comprando"
         title="Seguir comprando"
         size="lg"
-        className="w-full h-11 text-sm font-medium bg-black text-white hover:bg-gray-800 transition-colors"
+        className="h-11 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors hover:bg-beyonix-blue"
         onClick={onContinueShopping}
       >
         Seguir comprando

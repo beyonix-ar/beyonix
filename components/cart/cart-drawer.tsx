@@ -120,12 +120,12 @@ export function CartDrawer({
       <div
         ref={drawerRef}
         className={cn(
-          "absolute right-0 top-0 z-10 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-neutral-950 shadow-xl",
+          "absolute right-0 top-0 z-10 flex h-full w-full max-w-md flex-col border-l border-beyonix-blue-light bg-beyonix-surface shadow-xl shadow-beyonix-blue",
           "animate-in slide-in-from-right duration-300"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 p-4">
+        <div className="flex items-center justify-between border-b border-white/10 bg-black p-4">
           <h2 className="text-18px font-semibold tracking-wide text-white">
             Tu carrito ({items.length})
           </h2>
@@ -136,7 +136,7 @@ export function CartDrawer({
             title="Cerrar carrito"
             variant="ghost"
             size="icon"
-            className="rounded-full hover:bg-white/10"
+            className="rounded-full bg-black text-white hover:bg-neutral-900"
             onClick={onClose}
           >
             <X className="size-5" />

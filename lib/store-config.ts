@@ -1,13 +1,26 @@
+import { SITE_SETTINGS } from "@/config/site-settings"
+
 // Envio gratis a partir de este subtotal.
-export const FREE_SHIPPING_MIN = 1000
+export const FREE_SHIPPING_MIN = SITE_SETTINGS.shipping.freeShippingMinAmount
+
+export type FreeShippingMode = "full" | "off"
+
+function getFreeShippingMode(): FreeShippingMode {
+  return SITE_SETTINGS.shipping.freeShippingMode === "full" ? "full" : "off"
+}
+
+export const FREE_SHIPPING_MODE = getFreeShippingMode()
+export const IS_FREE_SHIPPING_ENABLED = getFreeShippingMode() === "full"
 
 // Costo de envio al cliente cuando no supera el minimo.
-export const SHIPPING_COST = 14000
+export const SHIPPING_COST = SITE_SETTINGS.shipping.defaultShippingCost
 
 export function getShippingCost(subtotal: number) {
   const safeSubtotal = Number.isFinite(subtotal) ? subtotal : 0
 
-  return safeSubtotal >= FREE_SHIPPING_MIN ? 0 : SHIPPING_COST
+  return safeSubtotal >= FREE_SHIPPING_MIN && IS_FREE_SHIPPING_ENABLED
+    ? 0
+    : SHIPPING_COST
 }
 
 export function hasFreeShipping(subtotal: number) {

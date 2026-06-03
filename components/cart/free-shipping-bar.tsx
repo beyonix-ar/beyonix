@@ -1,6 +1,10 @@
 "use client"
 
-import { FREE_SHIPPING_MIN, hasFreeShipping } from "@/lib/store-config"
+import {
+  FREE_SHIPPING_MIN,
+  IS_FREE_SHIPPING_ENABLED,
+  hasFreeShipping,
+} from "@/lib/store-config"
 
 interface Props {
   subtotal: number
@@ -14,6 +18,10 @@ const formatPrice = (price: number) =>
   }).format(price)
 
 export function FreeShippingBar({ subtotal }: Props) {
+  if (!IS_FREE_SHIPPING_ENABLED) {
+    return null
+  }
+
   const progress =
     FREE_SHIPPING_MIN <= 0
       ? 100

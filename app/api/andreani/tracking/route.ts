@@ -9,6 +9,7 @@ export async function POST() {
 
   return NextResponse.json({
     ok: false,
-    message: "Tracking Andreani pendiente de implementar",
+    message:
+      "Tracking Andreani pendiente de implementar hasta confirmar URL, headers y payload oficiales",
   })
 }

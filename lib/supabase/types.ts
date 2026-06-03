@@ -128,6 +128,14 @@ export interface SupabasePedido {
   cliente_email?: string | null
   cliente_telefono?: string | null
   cliente_direccion?: string | null
+  cp_destino?: string | null
+  localidad?: string | null
+  provincia?: string | null
+  shipping_provider?: string | null
+  shipping_type?: "sucursal" | "domicilio" | null
+  shipping_cost_real?: number | null
+  shipping_cost_charged?: number | null
+  free_shipping_applied?: boolean
   estado: string
   total: number
   payment_id?: string | null

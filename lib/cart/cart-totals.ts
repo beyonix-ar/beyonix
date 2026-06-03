@@ -8,7 +8,14 @@ interface CartTotalItem {
   quantity: number
 }
 
-export function calculateCartTotals(items: CartTotalItem[]) {
+interface CartTotalsOptions {
+  shippingCost?: number
+}
+
+export function calculateCartTotals(
+  items: CartTotalItem[],
+  options: CartTotalsOptions = {}
+) {
   const subtotal = items.reduce((acc, item) => {
     const price = Number.isFinite(item.product.precio) ? item.product.precio : 0
     return acc + price * item.quantity
@@ -22,7 +29,10 @@ export function calculateCartTotals(items: CartTotalItem[]) {
   }, 0)
 
   const productsTotal = Math.max(subtotal - discount, 0)
-  const shipping = getShippingCost(productsTotal)
+  const shipping =
+    typeof options.shippingCost === "number"
+      ? Math.max(options.shippingCost, 0)
+      : getShippingCost(productsTotal)
   const total = productsTotal + shipping
 
   return {

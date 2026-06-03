@@ -23,8 +23,8 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const hasColor = Boolean(colorHex)
 
   return (
-    <div className="flex gap-4 rounded-xl border border-white/6 bg-white/2 p-3">
-      <div className="relative size-20 shrink-0 overflow-hidden rounded-lg bg-white p-2">
+    <div className="flex gap-3 rounded-lg border border-white/10 bg-beyonix-surface-3 p-2">
+      <div className="relative size-16 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white p-1">
         <Image
           src={image || "/placeholder.svg"}
           alt={product.nombre}
@@ -34,16 +34,16 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="grid grid-cols-product-cart gap-x-3 gap-y-1 text-sm">
-          <span className="text-white/55">Producto:</span>
+        <div className="grid grid-cols-product-cart gap-x-2 gap-y-0.5 text-xs">
+          <span className="text-white/60">Producto:</span>
           <h4 className="line-clamp-2 font-semibold text-white">
             {product.nombre}
           </h4>
 
-          <span className="text-white/55">Precio:</span>
+          <span className="text-white/60">Precio:</span>
           <p className="font-semibold text-white/90">{formatPrice(price)}</p>
 
-          <span className="text-white/55">Unidades:</span>
+          <span className="text-white/60">Unidades:</span>
           <p className="font-semibold text-white">x{quantity}</p>
         </div>
 
@@ -61,13 +61,13 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
           </div>
         )}
 
-        <div className="mt-3 flex items-center justify-between">
+        <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="size-8"
+              className="size-6 border-white/15 bg-black text-white hover:bg-neutral-900"
               aria-label="Disminuir cantidad"
               title="Disminuir cantidad"
               onClick={() => onUpdateQuantity(product.id, color, quantity - 1)}
@@ -76,7 +76,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
               <Minus className="size-3" />
             </Button>
 
-            <span className="w-6 text-center text-sm font-medium text-white">
+            <span className="flex size-6 items-center justify-center text-xs font-medium text-white">
               {quantity}
             </span>
 
@@ -84,7 +84,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
               type="button"
               variant="outline"
               size="icon"
-              className="size-8"
+              className="size-6 border-white/15 bg-black text-white hover:bg-neutral-900"
               aria-label="Aumentar cantidad"
               title="Aumentar cantidad"
               onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
@@ -97,7 +97,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
             type="button"
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground hover:text-destructive"
+            className="size-7 bg-black text-red-500 hover:bg-black hover:text-red-400"
             aria-label="Eliminar producto"
             title="Eliminar producto"
             onClick={() => onRemove(product.id, color)}
