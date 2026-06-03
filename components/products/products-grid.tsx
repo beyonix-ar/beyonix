@@ -15,7 +15,7 @@ export function ProductsGrid({
   onAddToCart,
 }: ProductsGridProps) {
   return (
-    <div className="mx-auto grid grid-cols-1 items-stretch justify-center justify-items-center gap-4 sm:grid-cols-product-cards-2 xl:grid-cols-product-cards-3">
+    <div className="grid grid-cols-1 items-stretch justify-start justify-items-stretch gap-4 sm:grid-cols-product-cards-2 xl:grid-cols-category-product-cards-4">
       {products.map((product) => (
         <SharedProductCard
           key={product.id}

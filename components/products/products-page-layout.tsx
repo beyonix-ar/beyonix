@@ -358,7 +358,7 @@ export function ProductsPageLayout() {
     <main className="min-h-screen bg-black pt-22 text-white lg:pt-24">
       <section className="container mx-auto px-4 lg:px-8">
         {/* Header */}
-        <div className="mb-8 border-b border-white/6 pb-7 lg:mb-9">
+        <div className="mx-auto mb-8 max-w-1400px border-b border-white/6 pb-7 lg:mb-9">
           <div className="flex flex-col gap-5 lg:grid lg:grid-cols-auto-content lg:items-end lg:gap-10">
             <div>
               <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
@@ -399,73 +399,75 @@ export function ProductsPageLayout() {
         </div>
 
         {/* Content */}
-        <div className="grid grid-cols-1 gap-5 pb-14 lg:grid-cols-products-layout lg:gap-7 lg:pb-16">
-          <ProductsFiltersSidebar
-            categories={categories}
-            selectedCategories={
-              selectedCategories
-            }
-            setSelectedCategories={
-              setSelectedCategories
-            }
-            selectedColors={
-              selectedColors
-            }
-            availableColors={
-              availableColors
-            }
-            setSelectedColors={
-              setSelectedColors
-            }
-            onlyOffers={
-              onlyOffers
-            }
-            setOnlyOffers={
-              setOnlyOffers
-            }
-            minPrice={minPrice}
-            setMinPrice={
-              setMinPrice
-            }
-            maxPrice={maxPrice}
-            setMaxPrice={
-              setMaxPrice
-            }
-            onlyBestSellers={
-              onlyBestSellers
-            }
-            setOnlyBestSellers={
-              setOnlyBestSellers
-            }
-            onlyInstallments={
-              onlyInstallments
-            }
-            setOnlyInstallments={
-              setOnlyInstallments
-            }
-            showInstallmentsFilter={
-              SITE_SETTINGS.filters
-                .showInstallmentsFilter
-            }
-            showFeaturedFilter={
-              SITE_SETTINGS.filters
-                .showFeaturedFilter
-            }
-            showOfferFilter={
-              SITE_SETTINGS.filters
-                .showOfferFilter
-            }
-            showPriceFilter={
-              SITE_SETTINGS.filters
-                .showPriceFilter
-            }
-            showCategoryFilter={
-              SITE_SETTINGS.filters
-                .showCategoryFilter
-            }
-          />
+        <div className="mx-auto grid max-w-1400px grid-cols-1 gap-4 pb-14 lg:grid-cols-products-layout lg:gap-5 lg:pb-16">
+          <div className="w-full lg:w-260px">
+            <ProductsFiltersSidebar
+              categories={categories}
+              selectedCategories={
+                selectedCategories
+              }
+              setSelectedCategories={
+                setSelectedCategories
+              }
+              selectedColors={
+                selectedColors
+              }
+              availableColors={
+                availableColors
+              }
+              setSelectedColors={
+                setSelectedColors
+              }
+              onlyOffers={
+                onlyOffers
+              }
+              setOnlyOffers={
+                setOnlyOffers
+              }
+              minPrice={minPrice}
+              setMinPrice={
+                setMinPrice
+              }
+              maxPrice={maxPrice}
+              setMaxPrice={
+                setMaxPrice
+              }
+              onlyBestSellers={
+                onlyBestSellers
+              }
+              setOnlyBestSellers={
+                setOnlyBestSellers
+              }
+              onlyInstallments={
+                onlyInstallments
+              }
+              setOnlyInstallments={
+                setOnlyInstallments
+              }
+              showInstallmentsFilter={
+                SITE_SETTINGS.filters
+                  .showInstallmentsFilter
+              }
+              showFeaturedFilter={
+                SITE_SETTINGS.filters
+                  .showFeaturedFilter
+              }
+              showOfferFilter={
+                SITE_SETTINGS.filters
+                  .showOfferFilter
+              }
+              showPriceFilter={
+                SITE_SETTINGS.filters
+                  .showPriceFilter
+              }
+              showCategoryFilter={
+                SITE_SETTINGS.filters
+                  .showCategoryFilter
+              }
+            />
+          </div>
 
-          <div>
+          <div className="min-w-0">
             <ProductsToolbar
               total={
                 filteredProducts.length

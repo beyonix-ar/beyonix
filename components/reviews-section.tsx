@@ -129,7 +129,7 @@ export function ReviewsSection() {
   )
 
   return (
-    <section className="py-16 lg:py-24 bg-background">
+    <section className="py-16 lg:py-24">
       <div className="container mx-auto px-4 lg:px-8">
         <div className="text-center mb-12 lg:mb-16">
           <p className="text-sm font-medium tracking-widest text-muted-foreground uppercase mb-3">

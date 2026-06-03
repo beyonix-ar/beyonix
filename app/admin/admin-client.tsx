@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
   FolderOpen,
@@ -32,6 +32,16 @@ export type AdminSection =
   | "pedidos"
   | "activos"
   | "auditoria"
+
+const ADMIN_SECTIONS: AdminSection[] = [
+  "dashboard",
+  "productos",
+  "clientes",
+  "categorias",
+  "pedidos",
+  "activos",
+  "auditoria",
+]
 
 interface NavigationItem {
   key: AdminSection
@@ -81,10 +91,21 @@ function SidebarItem({
   )
 }
 
+function getAdminSection(value: string | null) {
+  if (!value) return null
+
+  return ADMIN_SECTIONS.includes(value as AdminSection)
+    ? (value as AdminSection)
+    : null
+}
+
 export function AdminClient() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, isLoading, isAdmin, isSuperAdmin, logout } = useAuth()
-  const [section, setSection] = useState<AdminSection>("dashboard")
+  const [section, setSection] = useState<AdminSection>(
+    () => getAdminSection(searchParams.get("section")) || "dashboard"
+  )
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const navigation = useMemo<NavigationItem[]>(
@@ -139,9 +160,37 @@ export function AdminClient() {
     [isSuperAdmin]
   )
 
+  useEffect(() => {
+    const nextSection =
+      getAdminSection(searchParams.get("section"))
+
+    if (!nextSection) return
+    if (nextSection === "auditoria" && !isSuperAdmin) return
+
+    setSection(nextSection)
+  }, [searchParams, isSuperAdmin])
+
+  useEffect(() => {
+    if (section !== "auditoria" || isSuperAdmin) return
+
+    setSection("dashboard")
+    router.replace("/admin?section=dashboard", {
+      scroll: false,
+    })
+  }, [section, isSuperAdmin, router])
+
   const goToSection = (nextSection: AdminSection) => {
     setSection(nextSection)
     setMobileOpen(false)
+
+    const nextParams =
+      new URLSearchParams(searchParams.toString())
+
+    nextParams.set("section", nextSection)
+
+    router.replace(`/admin?${nextParams.toString()}`, {
+      scroll: false,
+    })
   }
 
   const handleLogout = async () => {

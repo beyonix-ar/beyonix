@@ -7,6 +7,7 @@ import {
   LogOut,
   Menu,
   Package,
+  ShieldCheck,
   ShoppingBag,
   User,
   CircleUserRound,
@@ -206,12 +207,28 @@ export function SiteHeader() {
                         Mi cuenta
                       </Link>
                       <Link
+                        href="/cuenta?tab=datos"
+                        onClick={() => setUserOpen(false)}
+                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
+                      >
+                        <User className="size-3.5 shrink-0" />
+                        Mis datos
+                      </Link>
+                      <Link
                         href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
                         className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
                       >
                         <Package className="size-3.5 shrink-0" />
                         Mis órdenes
+                      </Link>
+                      <Link
+                        href="/cuenta?tab=seguridad"
+                        onClick={() => setUserOpen(false)}
+                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
+                      >
+                        <ShieldCheck className="size-3.5 shrink-0" />
+                        Seguridad
                       </Link>
                       <button
                         type="button"
@@ -320,6 +337,27 @@ export function SiteHeader() {
                     className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
                   >
                     Mi cuenta ({userLabel.toUpperCase()})
+                  </Link>
+                  <Link
+                    href="/cuenta?tab=datos"
+                    onClick={() => setMobileOpen(false)}
+                    className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                  >
+                    Mis datos
+                  </Link>
+                  <Link
+                    href="/cuenta?tab=ordenes"
+                    onClick={() => setMobileOpen(false)}
+                    className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                  >
+                    Mis órdenes
+                  </Link>
+                  <Link
+                    href="/cuenta?tab=seguridad"
+                    onClick={() => setMobileOpen(false)}
+                    className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                  >
+                    Seguridad
                   </Link>
                   <button
                     type="button"

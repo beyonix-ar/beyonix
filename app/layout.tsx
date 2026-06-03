@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next"
+import Script from "next/script"
 import { Montserrat, Manrope } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
@@ -46,6 +47,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${montserrat.variable} ${manrope.variable} antialiased`}>
+        <Script id="beyonix-scroll-restoration" strategy="beforeInteractive">
+          {`if ("scrollRestoration" in history) history.scrollRestoration = "manual";`}
+        </Script>
         <BeyonixShootingStarsBackground />
         <div className="relative z-10">
           <AuthProvider>

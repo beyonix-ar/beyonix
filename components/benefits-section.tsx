@@ -31,7 +31,7 @@ export function BenefitsSection() {
   return (
     <section
       id="beneficios"
-      className="scroll-mt-20 border-y border-white/10 bg-neutral-950 py-16 lg:py-20"
+      className="scroll-mt-20 py-16 lg:py-20"
     >
       <div className="container mx-auto px-4 lg:px-8">
         <div className="mb-12 text-center">

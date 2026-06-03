@@ -23,9 +23,7 @@ const trustItems = [
 
 export function HeroSection() {
   return (
-    <section className="relative min-h-80vh overflow-hidden bg-black pt-18 lg:pt-20">
-      <div className="pointer-events-none absolute inset-0 beyonix-category-radial-bg" />
-
+    <section className="relative min-h-80vh overflow-hidden pt-18 lg:pt-20">
       <div className="container relative mx-auto flex min-h-80vh items-center px-4 py-12 sm:px-6 lg:px-10 lg:py-14">
         <div className="grid w-full gap-9 lg:gap-10">
           <div className="max-w-3xl">

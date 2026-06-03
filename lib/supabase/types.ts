@@ -137,6 +137,13 @@ export interface SupabasePedido {
   paid_at?: string | null
   tracking_number?: string | null
   tracking_url?: string | null
+  envio_proveedor?: string | null
+  andreani_estado?: string | null
+  andreani_tracking?: string | null
+  andreani_envio_id?: string | null
+  andreani_etiqueta_url?: string | null
+  andreani_costo?: number | null
+  andreani_error?: string | null
   created_at: string
   orden_items?: SupabasePedidoItem[]
 }

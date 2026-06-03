@@ -46,7 +46,7 @@ export function CategoriesSection() {
   return (
     <section
       id="categorias"
-      className="scroll-mt-24 border-y border-white/6 bg-beyonix-page py-16 lg:py-24"
+      className="scroll-mt-24 py-16 lg:py-24"
     >
       <div className="container mx-auto px-4 lg:px-8">
         <div className="mb-10 flex flex-col gap-4 lg:mb-14 lg:flex-row lg:items-end lg:justify-between">

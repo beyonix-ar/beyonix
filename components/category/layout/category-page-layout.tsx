@@ -101,7 +101,7 @@ export function CategoryPageLayout({
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-6 pt-24 lg:px-8 lg:pb-8 lg:pt-28">
         <div className="mx-auto max-w-1400px">
-          <div className="relative min-h-300px overflow-hidden rounded-xl border border-white/12 beyonix-category-banner-glass sm:min-h-360px lg:min-h-420px">
+          <div className="relative min-h-300px overflow-hidden rounded-xl beyonix-category-banner-glass sm:min-h-360px lg:min-h-420px">
             <div className="global-search-wrapper absolute left-0 right-0 top-4 z-30 flex justify-center px-4 sm:top-5">
               <GlobalSearchBar
                 search={search}

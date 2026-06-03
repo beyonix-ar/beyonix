@@ -62,7 +62,7 @@ export function ProductsSection({
   return (
     <section
       id="productos"
-      className="scroll-mt-20 bg-beyonix-section py-16 lg:py-24"
+      className="scroll-mt-20 py-16 lg:py-24"
     >
       <div className="container mx-auto px-4 lg:px-8">
         <div className="mb-12 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
