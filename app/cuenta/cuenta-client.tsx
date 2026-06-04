@@ -121,7 +121,7 @@ function InputField({
         {label}
       </label>
       <div
-        className={`relative flex items-center rounded-xl border bg-white/2 transition-colors focus-within:border-beyonix-blue-light focus-within:ring-2 focus-within:ring-beyonix-blue/40 ${
+        className={`relative flex items-center rounded-xl border bg-white/5 transition-colors focus-within:border-beyonix-blue-light focus-within:ring-2 focus-within:ring-beyonix-blue/40 ${
           error ? "border-red-500/50" : "border-white/8 hover:border-white/14"
         }`}
       >
@@ -138,6 +138,41 @@ function InputField({
         {rightElement && <div className="absolute right-3">{rightElement}</div>}
       </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  )
+}
+
+function TextareaField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  icon: Icon,
+  maxLength,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  icon: React.ElementType
+  maxLength?: number
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
+        {label}
+      </label>
+      <div className="relative rounded-xl border border-white/8 bg-white/5 transition-colors hover:border-white/14 focus-within:border-beyonix-blue-light focus-within:ring-2 focus-within:ring-beyonix-blue/40">
+        <Icon className="pointer-events-none absolute left-3.5 top-3.5 size-4 text-white/40" />
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          rows={2}
+          className="min-h-20 w-full resize-none bg-transparent py-3 pl-10 pr-4 text-sm text-white placeholder:text-white/25 outline-none"
+        />
+      </div>
     </div>
   )
 }
@@ -299,6 +334,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const [province, setProvince] = useState("")
   const [postalCode, setPostalCode] = useState("")
   const [phone, setPhone] = useState("")
+  const [references, setReferences] = useState("")
   const [password, setPassword] = useState("")
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState("")
@@ -317,6 +353,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       postalCode,
       phone,
       password,
+      references,
     })
 
     if (validationError) {
@@ -334,6 +371,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       province,
       postalCode,
       phone,
+      references,
     })
     setLoading(false)
 
@@ -351,6 +389,14 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
       <InputField label="Email" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" icon={Mail} maxLength={FIELD_LIMITS.email} />
       <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} maxLength={FIELD_LIMITS.address} />
+      <TextareaField
+        label="Referencias"
+        value={references}
+        onChange={setReferences}
+        placeholder="Entre calles, fachada blanca, porton negro, antes de llegar a la esquina."
+        icon={MapPin}
+        maxLength={FIELD_LIMITS.references}
+      />
       <div className="space-y-1.5">
         <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
           Provincia
@@ -953,6 +999,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
   const [province, setProvince] = useState(user?.province ?? "")
   const [address, setAddress] = useState(user?.address ?? "")
   const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
+  const [references, setReferences] = useState(user?.references ?? "")
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? "")
   const [saved, setSaved] = useState(false)
   const [profileError, setProfileError] = useState("")
@@ -969,6 +1016,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
       province,
       address,
       postalCode,
+      references,
     })
 
     if (validationError) {
@@ -976,7 +1024,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
       return
     }
 
-    updateUser({ name, phone, province, address, postalCode })
+    updateUser({ name, phone, province, address, postalCode, references })
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -1047,7 +1095,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
         </h2>
       </div>
 
-      <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-6">
+      <div className="rounded-2xl border border-white/7 bg-black p-6">
         <form onSubmit={handleSave} className="space-y-6">
           <div className="flex items-center gap-4 rounded-xl border border-white/7 bg-white/2 p-4">
             <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
@@ -1115,6 +1163,16 @@ function MisDatos({ onBack }: { onBack: () => void }) {
             <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
             <div className="md:col-span-2">
               <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} maxLength={FIELD_LIMITS.address} />
+            </div>
+            <div className="md:col-span-2">
+              <TextareaField
+                label="Referencias para llegar"
+                value={references}
+                onChange={setReferences}
+                placeholder="Entre calles, fachada blanca, portón negro, antes de llegar a la esquina."
+                icon={MapPin}
+                maxLength={FIELD_LIMITS.references}
+              />
             </div>
           </div>
 

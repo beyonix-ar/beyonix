@@ -14,12 +14,17 @@ export function ProvinceSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-12 w-full appearance-none rounded-xl border border-white/10 bg-black px-4 pr-10 text-sm text-white outline-none transition-colors hover:border-white/18 focus:border-beyonix-focus"
+        aria-label="Seleccionar provincia"
+        title="Seleccionar provincia"
+        className="h-12 w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 pr-10 text-sm text-white outline-none transition-colors hover:border-white/18 focus:border-beyonix-focus"
         required
       >
-        <option value="">Seleccioná una provincia</option>
+        <option value="" className="bg-black text-white">
+          Seleccioná una provincia
+        </option>
+
         {ARGENTINA_PROVINCES.map((province) => (
-          <option key={province} value={province}>
+          <option key={province} value={province} className="bg-black text-white">
             {province}
           </option>
         ))}

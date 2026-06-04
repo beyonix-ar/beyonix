@@ -38,7 +38,7 @@ export function CartSummary({
 
       <div className="space-y-2 rounded-xl border border-beyonix-blue-light bg-beyonix-surface-3 p-3">
         <div className="flex justify-between text-sm">
-          <span className="text-beyonix-sky">Subtotal</span>
+          <span className="text-white/60">Subtotal</span>
           <span className="text-white">{formatPrice(totals.subtotal)}</span>
         </div>
 
@@ -60,7 +60,7 @@ export function CartSummary({
         )}
 
         <div className="flex justify-between text-sm">
-          <span className="text-beyonix-sky">Envío</span>
+          <span className="text-white/60">Envío</span>
           <span
             className={`${
               isFreeShipping
@@ -81,11 +81,14 @@ export function CartSummary({
       </div>
 
       <div className="rounded-md border border-white/10 bg-black px-3 py-2 text-center">
-        <p className="text-11px mb-0 tracking-widest text-beyonix-blue">
+        <p
+          className="text-16px mb-0 tracking-widest font-bold"
+          style={{ color: "#005799" }}
+        >
           IMPORTANTE
         </p>
 
-        <p className="text-xs text-white">
+        <p className="text-sm text-white">
           Verificá variante y color antes de finalizar la compra
         </p>
       </div>
@@ -94,7 +97,14 @@ export function CartSummary({
         type="button"
         aria-label="Finalizar compra"
         title="Finalizar compra"
-        className="h-12 w-full bg-beyonix-blue text-base font-semibold text-white transition-colors hover:bg-beyonix-blue-hover"
+        className="h-12 w-full text-base font-semibold text-white transition-colors"
+        style={{ backgroundColor: "#112A43" }}
+        onMouseEnter={(event) => {
+          event.currentTarget.style.backgroundColor = "#1E4A73"
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.backgroundColor = "#112A43"
+        }}
         size="lg"
         onClick={onCheckout}
       >
@@ -106,7 +116,13 @@ export function CartSummary({
         aria-label="Seguir comprando"
         title="Seguir comprando"
         size="lg"
-        className="h-11 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors hover:bg-beyonix-blue"
+        className="h-11 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors"
+        onMouseEnter={(event) => {
+          event.currentTarget.style.backgroundColor = "#1E4A73"
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.backgroundColor = "black"
+        }}
         onClick={onContinueShopping}
       >
         Seguir comprando

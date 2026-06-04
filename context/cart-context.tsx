@@ -52,6 +52,11 @@ const CartContext = createContext<CartContextType | null>(null)
 
 export const CART_STORAGE_KEY = "beyonix-cart"
 export const CART_SESSION_STORAGE_KEY = "beyonix-cart-session"
+const USER_CART_STORAGE_PREFIX = "beyonix-cart-user"
+
+function getUserCartStorageKey(userId: string) {
+  return `${USER_CART_STORAGE_PREFIX}:${userId}`
+}
 
 function createCartSessionId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -166,6 +171,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [cartSessionId, setCartSessionId] = useState("")
   const [isOpen, setIsOpen] = useState(false)
   const [hasHydrated, setHasHydrated] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -197,18 +203,72 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     if (cart.length === 0) {
       sessionStorage.removeItem(CART_STORAGE_KEY)
+      if (currentUserId) {
+        localStorage.removeItem(getUserCartStorageKey(currentUserId))
+      }
       return
     }
 
     sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart))
-  }, [cart, hasHydrated])
+    if (currentUserId) {
+      localStorage.setItem(
+        getUserCartStorageKey(currentUserId),
+        JSON.stringify(cart),
+      )
+    }
+  }, [cart, currentUserId, hasHydrated])
 
   useEffect(() => {
+    const restoreUserCart = (userId: string) => {
+      const stored = localStorage.getItem(getUserCartStorageKey(userId))
+      const storedCart = stored ? normalizeCart(JSON.parse(stored)) : []
+
+      setCurrentUserId(userId)
+      setCart(storedCart)
+
+      if (storedCart.length > 0) {
+        sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(storedCart))
+      } else {
+        sessionStorage.removeItem(CART_STORAGE_KEY)
+      }
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.user) return
+
+      try {
+        restoreUserCart(session.user.id)
+      } catch {
+        setCurrentUserId(session.user.id)
+        setCart([])
+        sessionStorage.removeItem(CART_STORAGE_KEY)
+        localStorage.removeItem(getUserCartStorageKey(session.user.id))
+      }
+    })
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (!user) return
+
+          try {
+            restoreUserCart(user.id)
+          } catch {
+            setCurrentUserId(user.id)
+            setCart([])
+            sessionStorage.removeItem(CART_STORAGE_KEY)
+            localStorage.removeItem(getUserCartStorageKey(user.id))
+          }
+        })
+
+        return
+      }
+
       if (event !== "SIGNED_OUT") return
 
+      setCurrentUserId(null)
       setCart([])
       setIsOpen(false)
       localStorage.removeItem(CART_STORAGE_KEY)

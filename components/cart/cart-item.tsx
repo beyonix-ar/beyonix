@@ -23,8 +23,8 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const hasColor = Boolean(colorHex)
 
   return (
-    <div className="flex gap-3 rounded-lg border border-white/10 bg-beyonix-surface-3 p-2">
-      <div className="relative size-16 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white p-1">
+    <div className="flex gap-4 rounded-lg border border-white/10 bg-beyonix-surface-3 p-2">
+      <div className="relative size-20 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white p-1">
         <Image
           src={image || "/placeholder.svg"}
           alt={product.nombre}
@@ -34,32 +34,34 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="grid grid-cols-product-cart gap-x-2 gap-y-0.5 text-xs">
-          <span className="text-white/60">Producto:</span>
-          <h4 className="line-clamp-2 font-semibold text-white">
-            {product.nombre}
-          </h4>
+        <div className="flex min-h-20 flex-col justify-center">
+          <div className="grid grid-cols-product-cart gap-x-2 gap-y-0.5 text-xs">
+            <span className="text-white/60">Producto:</span>
+            <h4 className="line-clamp-2 font-semibold text-white">
+              {product.nombre}
+            </h4>
 
-          <span className="text-white/60">Precio:</span>
-          <p className="font-semibold text-white/90">{formatPrice(price)}</p>
+            <span className="text-white/60">Precio:</span>
+            <p className="font-semibold text-white/90">{formatPrice(price)}</p>
 
-          <span className="text-white/60">Unidades:</span>
-          <p className="font-semibold text-white">x{quantity}</p>
-        </div>
-
-        {colorName && (
-          <div className="mt-1 flex items-center gap-2">
-            {hasColor && (
-              <span
-                style={{
-                  backgroundColor: colorHex ?? undefined,
-                }}
-                className="size-3 rounded-full border border-white/20"
-              />
-            )}
-            <span className="text-xs capitalize text-white/70">{colorName}</span>
+            <span className="text-white/60">Unidades:</span>
+            <p className="font-semibold text-white">x{quantity}</p>
           </div>
-        )}
+
+          {colorName && (
+            <div className="mt-1 flex items-center gap-2">
+              {hasColor && (
+                <span
+                  style={{
+                    backgroundColor: colorHex ?? undefined,
+                  }}
+                  className="size-3 rounded-full border border-white/20"
+                />
+              )}
+              <span className="text-xs capitalize text-white/70">{colorName}</span>
+            </div>
+          )}
+        </div>
 
         <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -97,7 +99,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7 bg-black text-red-500 hover:bg-black hover:text-red-400"
+            className="size-7 bg-black text-white/70 hover:bg-black hover:text-red-500"
             aria-label="Eliminar producto"
             title="Eliminar producto"
             onClick={() => onRemove(product.id, color)}

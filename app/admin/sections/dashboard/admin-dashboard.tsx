@@ -186,7 +186,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             title="Actualizar dashboard"
             aria-label="Actualizar dashboard"
             onClick={() => void reloadDashboard()}
-            className="inline-flex h-12 min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white px-6 text-sm font-black text-black transition hover:bg-white/90"
+            className="inline-flex h-12 min-w-140px cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white px-6 text-sm font-black text-black transition hover:bg-white/90"
           >
             <RefreshCw className="size-4" />
             Actualizar

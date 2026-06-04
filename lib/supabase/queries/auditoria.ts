@@ -8,7 +8,7 @@ export async function getAuditLogs() {
     .order("created_at", { ascending: false })
     .limit(150)
 
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   return (data ?? []) as SupabaseAuditLog[]
 }
@@ -18,7 +18,7 @@ export async function undoAuditLog(id: number) {
     p_log_id: id,
   })
 
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   return true
 }
