@@ -6,7 +6,7 @@ import type {
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
 
-interface ProductoPayload {
+export interface ProductoPayload {
   nombre: string
   slug: string
   descripcion?: string | null
@@ -20,6 +20,34 @@ interface ProductoPayload {
   destacado?: boolean
   activo?: boolean
   imagen_principal?: string | null
+}
+
+interface ProductoCompletoImagenPayload {
+  url: string
+  orden: number
+}
+
+interface ProductoCompletoVariantePayload {
+  nombre: string
+  color_hex: string
+  stock?: number | null
+  imagenes?: string[]
+  activo?: boolean
+  orden?: number
+}
+
+interface ProductoCompletoEspecificacionPayload {
+  icono: string
+  texto: string
+  orden?: number
+  activo?: boolean
+}
+
+export interface ProductoCompletoPayload {
+  producto: ProductoPayload
+  imagenes?: ProductoCompletoImagenPayload[]
+  variantes?: ProductoCompletoVariantePayload[]
+  especificaciones?: ProductoCompletoEspecificacionPayload[]
 }
 
 const PRODUCTO_SELECT = `
@@ -169,6 +197,29 @@ export async function createProducto(
     .insert(payload)
     .select()
     .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data as SupabaseProducto
+}
+
+export async function createProductoCompleto({
+  producto,
+  imagenes = [],
+  variantes = [],
+  especificaciones = [],
+}: ProductoCompletoPayload) {
+  const { data, error } = await supabase.rpc(
+    "create_producto_completo",
+    {
+      p_producto: producto,
+      p_imagenes: imagenes,
+      p_variantes: variantes,
+      p_especificaciones: especificaciones,
+    }
+  )
 
   if (error) {
     throw error

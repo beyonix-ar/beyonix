@@ -17,6 +17,10 @@ declare
   v_insert_columns text;
   v_insert_values text;
   v_actor_email text;
+  v_child_log public.audit_logs%rowtype;
+  v_child_table_oid oid;
+  v_child_insert_columns text;
+  v_child_insert_values text;
 begin
   if not exists (
     select 1
@@ -155,6 +159,72 @@ begin
     )
     using v_log.before_data;
 
+    if v_table_name = 'productos' then
+      for v_child_log in
+        select *
+        from public.audit_logs
+        where action = 'DELETE'
+          and table_name in (
+            'imagenes_producto',
+            'producto_especificaciones',
+            'producto_variantes'
+          )
+          and before_data ->> 'producto_id' = v_log.record_id
+          and undone_at is null
+          and created_at <= v_log.created_at
+          and created_at >= v_log.created_at - interval '10 minutes'
+        order by
+          case table_name
+            when 'producto_variantes' then 1
+            when 'imagenes_producto' then 2
+            when 'producto_especificaciones' then 3
+            else 4
+          end,
+          id
+      loop
+        v_child_table_oid := to_regclass(format('%I.%I', v_table_schema, v_child_log.table_name));
+
+        if v_child_table_oid is null then
+          continue;
+        end if;
+
+        select
+          string_agg(format('%I', a.attname), ', '),
+          string_agg(format('source.%I', a.attname), ', ')
+        into v_child_insert_columns, v_child_insert_values
+        from pg_attribute a
+        where a.attrelid = v_child_table_oid
+          and a.attnum > 0
+          and not a.attisdropped
+          and a.attgenerated = ''
+          and v_child_log.before_data ? a.attname;
+
+        if v_child_insert_columns is null then
+          continue;
+        end if;
+
+        execute format(
+          'insert into %I.%I (%s)
+           overriding system value
+           select %s
+           from jsonb_populate_record(null::%I.%I, $1) as source
+           on conflict do nothing',
+          v_table_schema,
+          v_child_log.table_name,
+          v_child_insert_columns,
+          v_child_insert_values,
+          v_table_schema,
+          v_child_log.table_name
+        )
+        using v_child_log.before_data;
+
+        update public.audit_logs
+        set undone_at = now(),
+            undone_by = auth.uid()
+        where id = v_child_log.id;
+      end loop;
+    end if;
+
   else
     raise exception 'Accion de auditoria no soportada: %.', v_log.action;
   end if;
@@ -191,5 +261,90 @@ begin
       'original_after_data', v_log.after_data
     )
   );
+end;
+$$;
+
+create or replace function public.restore_deleted_product_children(p_product_id bigint)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_child_log public.audit_logs%rowtype;
+  v_child_table_oid oid;
+  v_child_insert_columns text;
+  v_child_insert_values text;
+begin
+  if not exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and rol = 'super_admin'
+  ) then
+    raise exception 'Solo un super admin puede restaurar datos de productos.';
+  end if;
+
+  for v_child_log in
+    select *
+    from public.audit_logs
+    where action = 'DELETE'
+      and table_name in (
+        'imagenes_producto',
+        'producto_especificaciones',
+        'producto_variantes'
+      )
+      and before_data ->> 'producto_id' = p_product_id::text
+      and undone_at is null
+    order by
+      case table_name
+        when 'producto_variantes' then 1
+        when 'imagenes_producto' then 2
+        when 'producto_especificaciones' then 3
+        else 4
+      end,
+      id
+  loop
+    v_child_table_oid := to_regclass(format('%I.%I', 'public', v_child_log.table_name));
+
+    if v_child_table_oid is null then
+      continue;
+    end if;
+
+    select
+      string_agg(format('%I', a.attname), ', '),
+      string_agg(format('source.%I', a.attname), ', ')
+    into v_child_insert_columns, v_child_insert_values
+    from pg_attribute a
+    where a.attrelid = v_child_table_oid
+      and a.attnum > 0
+      and not a.attisdropped
+      and a.attgenerated = ''
+      and v_child_log.before_data ? a.attname;
+
+    if v_child_insert_columns is null then
+      continue;
+    end if;
+
+    execute format(
+      'insert into %I.%I (%s)
+       overriding system value
+       select %s
+       from jsonb_populate_record(null::%I.%I, $1) as source
+       on conflict do nothing',
+      'public',
+      v_child_log.table_name,
+      v_child_insert_columns,
+      v_child_insert_values,
+      'public',
+      v_child_log.table_name
+    )
+    using v_child_log.before_data;
+
+    update public.audit_logs
+    set undone_at = now(),
+        undone_by = auth.uid()
+    where id = v_child_log.id;
+  end loop;
 end;
 $$;

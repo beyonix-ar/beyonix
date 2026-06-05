@@ -98,6 +98,11 @@ export interface SupabaseProfile {
   referencias?: string | null
   avatar_url?: string | null
   rol: "cliente" | "admin" | "super_admin"
+  client_risk_status?: "normal" | "tedioso" | "complicado"
+  admin_note?: string | null
+  blocked_at?: string | null
+  blocked_reason?: string | null
+  blocked_by?: string | null
   created_at: string
 }
 
@@ -184,6 +189,11 @@ export interface SupabaseCliente {
   referencias?: string | null
   avatar_url?: string | null
   rol?: "cliente" | "admin" | "super_admin"
+  client_risk_status?: "normal" | "tedioso" | "complicado"
+  admin_note?: string | null
+  blocked_at?: string | null
+  blocked_reason?: string | null
+  blocked_by?: string | null
   created_at: string
   last_seen_at?: string | null
   is_active?: boolean

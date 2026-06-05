@@ -68,6 +68,8 @@ export interface BeyonixUser {
 
   avatarUrl?: string
 
+  blockedAt?: string
+
   createdAt: string
 }
 
@@ -157,6 +159,9 @@ function profileToUser(
 
     avatarUrl:
       profile.avatar_url ?? undefined,
+
+    blockedAt:
+      profile.blocked_at ?? undefined,
   }
 }
 
@@ -238,13 +243,13 @@ export function AuthProvider({
           return
         }
 
-        setUser(
-          profileToUser(
-            profile,
-            supabaseUser.email ??
-              ""
-          )
-        )
+        if (profile.blocked_at) {
+          await supabase.auth.signOut()
+          setUser(null)
+          return
+        }
+
+        setUser(profileToUser(profile, supabaseUser.email ?? ""))
       },
       []
     )
@@ -377,6 +382,26 @@ export function AuthProvider({
             String(profileEmail).trim().toLowerCase()
         }
 
+        const { data: isBlocked } =
+          await supabase.rpc(
+            "is_client_registration_blocked",
+            {
+              email_input: loginEmail.includes("@") ? loginEmail : null,
+              username_input: normalizedIdentifier.includes("@")
+                ? null
+                : normalizedIdentifier,
+              phone_input: null,
+            }
+          )
+
+        if (isBlocked) {
+          return {
+            ok: false,
+            error:
+              "Esta cuenta no puede acceder a la tienda.",
+          }
+        }
+
         const {
           data,
           error,
@@ -466,6 +491,27 @@ export function AuthProvider({
             ok: false,
             error:
               validationError,
+          }
+        }
+
+        const { data: isBlocked } =
+          await supabase.rpc(
+            "is_client_registration_blocked",
+            {
+              email_input:
+                form.email.trim().toLowerCase(),
+              username_input:
+                form.username.trim().toLowerCase(),
+              phone_input:
+                form.phone.trim(),
+            }
+          )
+
+        if (isBlocked) {
+          return {
+            ok: false,
+            error:
+              "No podemos crear una cuenta con esos datos.",
           }
         }
 

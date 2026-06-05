@@ -33,6 +33,7 @@ export function SiteHeader() {
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
   const userLabel =
+    user?.name?.trim() ||
     user?.username?.trim() ||
     user?.email?.split("@")[0] ||
     "Mi cuenta"
@@ -173,7 +174,7 @@ export function SiteHeader() {
                     aria-label="Abrir menú de usuario"
                     title="Abrir menú de usuario"
                     onClick={() => setUserOpen((v) => !v)}
-                    className="flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
+                    className="flex h-10 max-w-300px cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white text-black shadow-sm shadow-black/40">
                       {user.avatarUrl ? (
@@ -186,7 +187,7 @@ export function SiteHeader() {
                         <CircleUserRound className="size-5" />
                       )}
                     </span>
-                    <span className="max-w-90px truncate text-sm font-medium uppercase text-white/86">
+                    <span className="whitespace-nowrap text-sm font-medium uppercase text-white/86">
                       {userLabel.toUpperCase()}
                     </span>
                     <ChevronDown

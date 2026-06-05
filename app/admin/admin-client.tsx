@@ -43,6 +43,8 @@ const ADMIN_SECTIONS: AdminSection[] = [
   "auditoria",
 ]
 
+const ADMIN_SECTION_STORAGE_KEY = "beyonix-admin-section"
+
 interface NavigationItem {
   key: AdminSection
   label: string
@@ -99,12 +101,21 @@ function getAdminSection(value: string | null) {
     : null
 }
 
+function getStoredAdminSection() {
+  if (typeof window === "undefined") return null
+
+  return getAdminSection(window.localStorage.getItem(ADMIN_SECTION_STORAGE_KEY))
+}
+
 export function AdminClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, isLoading, isAdmin, isSuperAdmin, logout } = useAuth()
   const [section, setSection] = useState<AdminSection>(
-    () => getAdminSection(searchParams.get("section")) || "dashboard"
+    () =>
+      getAdminSection(searchParams.get("section")) ||
+      getStoredAdminSection() ||
+      "dashboard"
   )
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -164,24 +175,40 @@ export function AdminClient() {
     const nextSection =
       getAdminSection(searchParams.get("section"))
 
-    if (!nextSection) return
+    if (!nextSection) {
+      const storedSection = getStoredAdminSection()
+
+      if (!storedSection) return
+      if (storedSection === "auditoria" && !isSuperAdmin) return
+
+      setSection(storedSection)
+      router.replace(`/admin?section=${storedSection}`, {
+        scroll: false,
+      })
+      return
+    }
+
     if (nextSection === "auditoria" && !isSuperAdmin) return
 
     setSection(nextSection)
-  }, [searchParams, isSuperAdmin])
+    window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, nextSection)
+  }, [searchParams, isSuperAdmin, router])
 
   useEffect(() => {
+    if (isLoading) return
     if (section !== "auditoria" || isSuperAdmin) return
 
     setSection("dashboard")
+    window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, "dashboard")
     router.replace("/admin?section=dashboard", {
       scroll: false,
     })
-  }, [section, isSuperAdmin, router])
+  }, [section, isLoading, isSuperAdmin, router])
 
   const goToSection = (nextSection: AdminSection) => {
     setSection(nextSection)
     setMobileOpen(false)
+    window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, nextSection)
 
     const nextParams =
       new URLSearchParams(searchParams.toString())

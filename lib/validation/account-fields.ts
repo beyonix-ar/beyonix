@@ -28,7 +28,7 @@ export const ARGENTINA_PROVINCES = [
 ]
 
 export const FIELD_LIMITS = {
-  username: 24,
+  username: 18,
   name: 60,
   email: 120,
   address: 90,

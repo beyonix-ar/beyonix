@@ -13,6 +13,34 @@ const getFilePath = (
   return `productos/${productoId}/${crypto.randomUUID()}.${ext}`
 }
 
+const getDraftFilePath = (file: File) => {
+  const ext =
+    file.name.split(".").pop() || "jpg"
+
+  return `productos/drafts/${crypto.randomUUID()}.${ext}`
+}
+
+async function uploadImageFile(path: string, file: File) {
+  const {
+    data,
+    error: uploadError,
+  } = await supabase.storage
+    .from(PRODUCTO_IMAGES_BUCKET)
+    .upload(path, file)
+
+  if (uploadError) {
+    throw uploadError
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from(PRODUCTO_IMAGES_BUCKET)
+    .getPublicUrl(data.path)
+
+  return publicUrl
+}
+
 export async function uploadProductoImages(
   productoId: number,
   files: File[],
@@ -30,22 +58,7 @@ export async function uploadProductoImages(
       file
     )
 
-    const {
-      data,
-      error: uploadError,
-    } = await supabase.storage
-      .from(PRODUCTO_IMAGES_BUCKET)
-      .upload(path, file)
-
-    if (uploadError) {
-      throw uploadError
-    }
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage
-      .from(PRODUCTO_IMAGES_BUCKET)
-      .getPublicUrl(data.path)
+    const publicUrl = await uploadImageFile(path, file)
 
     const { error: dbError } =
       await supabase
@@ -66,8 +79,47 @@ export async function uploadProductoImages(
   return urls
 }
 
+export async function uploadProductoDraftImages(files: File[]) {
+  const validFiles = files.filter((file) =>
+    file.type.startsWith("image/")
+  )
+
+  const urls: string[] = []
+
+  for (const file of validFiles) {
+    urls.push(
+      await uploadImageFile(
+        getDraftFilePath(file),
+        file
+      )
+    )
+  }
+
+  return urls
+}
+
 function getStoragePathFromUrl(url: string) {
   return url.split(`/${PRODUCTO_IMAGES_BUCKET}/`)[1] ?? null
+}
+
+export async function deleteProductoImagesByUrls(urls: string[]) {
+  const paths = urls
+    .map(getStoragePathFromUrl)
+    .filter((path): path is string => Boolean(path))
+
+  if (!paths.length) {
+    return true
+  }
+
+  const { error } = await supabase.storage
+    .from(PRODUCTO_IMAGES_BUCKET)
+    .remove(paths)
+
+  if (error) {
+    throw error
+  }
+
+  return true
 }
 
 export async function deleteProductoImageByUrl(url: string) {

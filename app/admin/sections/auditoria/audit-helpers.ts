@@ -8,6 +8,13 @@ export interface AuditDescription {
   lines: string[]
 }
 
+export interface AuditLogGroup {
+  id: string
+  logs: SupabaseAuditLog[]
+  primaryLog: SupabaseAuditLog
+  kind: "product_delete" | "variant_principal_change" | "single"
+}
+
 const humanFieldNames: Record<string, string> = {
   activo: "Estado",
   category_id: "Categoría",
@@ -59,11 +66,41 @@ const operationalTables = new Set([
   "client_presence",
   "mercadopago_events",
   "orden_items",
-  "ordenes",
   "order_items",
-  "orders",
   "payments",
   "stock_reservations",
+])
+
+const orderTables = new Set(["ordenes", "orders"])
+
+const manualOrderFields = new Set([
+  "andreani_estado",
+  "andreani_tracking",
+  "estado",
+  "internal_notes",
+  "nota_interna",
+  "notas_internas",
+  "shipping_status",
+  "tracking_number",
+  "tracking_url",
+])
+
+const automaticOrderFields = new Set([
+  "paid_at",
+  "payment_id",
+  "payment_method_id",
+  "payment_status",
+  "payment_type_id",
+  "preference_id",
+])
+
+const nonAuditableEventTypes = new Set([
+  "open_detail",
+  "page_view",
+  "product_view",
+  "view",
+  "view_order",
+  "view_product",
 ])
 
 const reversibleTables = new Set([
@@ -72,9 +109,13 @@ const reversibleTables = new Set([
   "configuracion_visual",
   "hero_banners",
   "imagenes_producto",
+  "metodos_envio",
+  "metodos_pago",
+  "payment_methods",
   "producto_especificaciones",
   "producto_variantes",
   "productos",
+  "shipping_methods",
   "site_settings",
   "store_settings",
 ])
@@ -143,23 +184,16 @@ export function getPreviewFields(log: SupabaseAuditLog) {
 }
 
 export function formatAuditTitle(log: SupabaseAuditLog) {
-  const actor = log.actor_email?.split("@")[0] || "Sistema"
-
   if (isUndoAuditEvent(log)) {
-    const originalActor =
-      typeof log.after_data?.original_actor_email === "string"
-        ? log.after_data.original_actor_email.split("@")[0]
-        : "otro administrador"
-
-    return `${actor} deshizo un cambio realizado por ${originalActor}.`
+    return "Se deshizo un cambio anterior."
   }
 
   const entity = getEntityLabel(log)
 
-  if (log.action === "INSERT") return `${actor} creó ${entity}.`
-  if (log.action === "DELETE") return `${actor} eliminó ${entity}.`
+  if (log.action === "INSERT") return `Se creó ${entity}.`
+  if (log.action === "DELETE") return `Se eliminó ${entity}.`
 
-  return `${actor} modificó ${entity}.`
+  return `Se modificó ${entity}.`
 }
 
 export function formatAuditDescription(log: SupabaseAuditLog): AuditDescription {
@@ -180,12 +214,153 @@ export function formatAuditDescription(log: SupabaseAuditLog): AuditDescription 
   const changedFields = getChangedFields(log)
 
   return {
-    title:
-      changedFields.length > 0
-        ? formatAuditTitle(log)
-        : `${log.actor_email?.split("@")[0] || "Sistema"} revisó ${getEntityLabel(log)}, pero no hubo cambios visibles.`,
+    title: formatAuditTitle(log),
     lines: changedFields.map((field) => getChangeSentence(log, field)),
   }
+}
+
+export function groupAuditLogs(logs: SupabaseAuditLog[]): AuditLogGroup[] {
+  const groups: AuditLogGroup[] = []
+  const usedIds = new Set<number>()
+  const orderedLogs = [...logs].sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() -
+      new Date(a.created_at).getTime()
+  )
+
+  orderedLogs.forEach((log) => {
+    if (usedIds.has(log.id)) return
+    if (!isDeletedProductLog(log)) return
+
+    const productId = String(log.record_id ?? log.before_data?.id ?? "")
+    if (!productId) return
+
+    const createdAt = new Date(log.created_at).getTime()
+    const groupedLogs = orderedLogs.filter((candidate) => {
+      if (usedIds.has(candidate.id)) return false
+      if (candidate.actor_email !== log.actor_email) return false
+
+      const candidateCreatedAt = new Date(candidate.created_at).getTime()
+      if (Math.abs(createdAt - candidateCreatedAt) > 30000) return false
+
+      return getDeletedProductGroupId(candidate) === productId
+    })
+
+    groupedLogs.forEach((item) => usedIds.add(item.id))
+
+    groups.push({
+      id: `product-delete-${productId}-${createdAt}`,
+      logs: sortProductDeleteLogs(groupedLogs),
+      primaryLog: log,
+      kind: "product_delete",
+    })
+  })
+
+  orderedLogs.forEach((log) => {
+    if (usedIds.has(log.id)) return
+
+    const productId = getVariantPrincipalProductId(log)
+
+    if (!productId) {
+      usedIds.add(log.id)
+      groups.push({
+        id: `log-${log.id}`,
+        logs: [log],
+        primaryLog: log,
+        kind: "single",
+      })
+      return
+    }
+
+    const createdAt = new Date(log.created_at).getTime()
+    const groupedLogs = orderedLogs.filter((candidate) => {
+      if (usedIds.has(candidate.id)) return false
+      if (candidate.actor_email !== log.actor_email) return false
+      if (getVariantPrincipalProductId(candidate) !== productId) return false
+
+      const candidateCreatedAt = new Date(candidate.created_at).getTime()
+      return Math.abs(createdAt - candidateCreatedAt) <= 5000
+    })
+
+    groupedLogs.forEach((item) => usedIds.add(item.id))
+
+    if (groupedLogs.length <= 1) {
+      groups.push({
+        id: `log-${log.id}`,
+        logs: [log],
+        primaryLog: log,
+        kind: "single",
+      })
+      return
+    }
+
+    groups.push({
+      id: `variant-principal-${productId}-${createdAt}`,
+      logs: groupedLogs.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+      ),
+      primaryLog: groupedLogs[0],
+      kind: "variant_principal_change",
+    })
+  })
+
+  return groups
+}
+
+export function formatAuditGroupDescription(group: AuditLogGroup): AuditDescription {
+  if (group.kind === "product_delete") {
+    const productName = getDeletedProductName(group)
+    const summary = getDeletedProductSummary(group.logs)
+
+    return {
+      title: `Se eliminó el producto "${productName}".`,
+      lines: summary.length
+        ? [`Registros relacionados eliminados: ${formatHumanList(summary)}.`]
+        : ["Se eliminaron los datos asociados al producto."],
+    }
+  }
+
+  if (group.kind !== "variant_principal_change") {
+    return formatAuditDescription(group.primaryLog)
+  }
+
+  const productName = getGroupedProductName(group.logs)
+  const { beforeName, afterName } = getVariantPrincipalNames(group.logs)
+
+  const lines =
+    beforeName && afterName
+      ? [`Cambió la variante principal de "${beforeName}" a "${afterName}".`]
+      : ["Cambió la variante principal del producto."]
+
+  return {
+    title: `Se modificó la variante principal del producto "${productName}".`,
+    lines,
+  }
+}
+
+export function getAuditGroupSeverity(group: AuditLogGroup): AuditSeverity {
+  if (group.kind === "product_delete") return "critico"
+  if (group.kind === "variant_principal_change") return "normal"
+
+  return getAuditSeverity(group.primaryLog)
+}
+
+export function getAuditGroupDisplayAction(group: AuditLogGroup) {
+  return getAuditDisplayAction(group.primaryLog)
+}
+
+export function canUndoAuditGroup(group: AuditLogGroup) {
+  if (group.kind === "product_delete") return canUndoAuditLog(group.primaryLog)
+
+  return group.logs.every(canUndoAuditLog)
+}
+
+export function getAuditGroupUndoLogs(group: AuditLogGroup) {
+  if (group.kind === "product_delete") return [group.primaryLog]
+
+  return group.logs
 }
 
 export function getAuditSeverity(log: SupabaseAuditLog): AuditSeverity {
@@ -202,7 +377,7 @@ export function getAuditSeverity(log: SupabaseAuditLog): AuditSeverity {
 
   if (
     fields.some((field) => importantFields.has(field)) ||
-    (log.table_name === "ordenes" && fields.includes("estado"))
+    (orderTables.has(log.table_name) && fields.includes("estado"))
   ) {
     return "importante"
   }
@@ -211,13 +386,23 @@ export function getAuditSeverity(log: SupabaseAuditLog): AuditSeverity {
 }
 
 export function getAuditSection(log: SupabaseAuditLog) {
+  if (orderTables.has(log.table_name)) return "Pedidos"
+
   if (log.table_name === "productos" || log.table_name.startsWith("producto_") || log.table_name === "imagenes_producto") {
     return "Productos"
   }
 
   if (log.table_name === "categorias") return "Categorías"
   if (log.table_name === "profiles") return "Usuarios y permisos"
-  if (log.table_name.includes("banner") || log.table_name.includes("settings") || log.table_name.includes("config")) {
+  if (
+    log.table_name.includes("banner") ||
+    log.table_name.includes("config") ||
+    log.table_name.includes("envio") ||
+    log.table_name.includes("pago") ||
+    log.table_name.includes("payment_method") ||
+    log.table_name.includes("settings") ||
+    log.table_name.includes("shipping_method")
+  ) {
     return "Configuración visual"
   }
 
@@ -225,11 +410,30 @@ export function getAuditSection(log: SupabaseAuditLog) {
 }
 
 export function isGeneralAdminAuditLog(log: SupabaseAuditLog) {
+  if (isUndoAuditEvent(log)) return true
   if (operationalTables.has(log.table_name)) return false
   if (!log.actor_email) return false
+  if (log.action === "UPDATE" && getChangedFields(log).length === 0) return false
+
+  if (log.table_name === "admin_events") {
+    const eventType =
+      typeof log.after_data?.event_type === "string"
+        ? log.after_data.event_type
+        : ""
+
+    return eventType !== "" && !nonAuditableEventTypes.has(eventType)
+  }
+
+  if (orderTables.has(log.table_name)) {
+    return isManualOrderAuditLog(log)
+  }
 
   if (log.table_name === "profiles") {
-    return getChangedFields(log).some((field) => criticalFields.has(field))
+    return (
+      log.action === "INSERT" ||
+      log.action === "DELETE" ||
+      getChangedFields(log).some((field) => criticalFields.has(field))
+    )
   }
 
   return true
@@ -286,7 +490,7 @@ function getEntityLabel(log: SupabaseAuditLog) {
 
   const id = log.record_id ?? getRecordName(log)
 
-  if (log.table_name === "ordenes") return `el pedido #${id}`
+  if (orderTables.has(log.table_name)) return `el pedido #${id}`
   if (log.table_name === "productos") return `el producto "${getRecordName(log)}"`
   if (log.table_name === "producto_variantes") return "una variante del producto"
   if (log.table_name === "categorias") return `la categoría "${getRecordName(log)}"`
@@ -363,10 +567,161 @@ function getChangeSentence(log: SupabaseAuditLog, field: string) {
   const afterIsEmpty = isEmptyValue(afterValue)
   const lowerLabel = label.toLowerCase()
 
+  if (field === "imagen_principal") {
+    return "Cambio la imagen principal del producto."
+  }
+
   if (!beforeIsEmpty && afterIsEmpty) return `Se eliminó ${article} ${lowerLabel}.`
   if (beforeIsEmpty && !afterIsEmpty) return `Se agregó ${article} ${lowerLabel}.`
 
   return `Cambió ${article} ${lowerLabel} de "${formatHumanValue(beforeValue)}" a "${formatHumanValue(afterValue)}".`
+}
+
+function isDeletedProductLog(log: SupabaseAuditLog) {
+  return log.action === "DELETE" && log.table_name === "productos"
+}
+
+function getDeletedProductGroupId(log: SupabaseAuditLog) {
+  if (isDeletedProductLog(log)) {
+    return log.record_id ? String(log.record_id) : String(log.before_data?.id ?? "")
+  }
+
+  if (
+    log.action === "DELETE" &&
+    (
+      log.table_name === "imagenes_producto" ||
+      log.table_name === "producto_variantes" ||
+      log.table_name === "producto_especificaciones"
+    )
+  ) {
+    const productId = log.before_data?.producto_id
+    return productId ? String(productId) : null
+  }
+
+  return null
+}
+
+function sortProductDeleteLogs(logs: SupabaseAuditLog[]) {
+  return [...logs].sort((a, b) => {
+    if (a.table_name === "productos") return -1
+    if (b.table_name === "productos") return 1
+
+    return a.table_name.localeCompare(b.table_name)
+  })
+}
+
+function getDeletedProductName(group: AuditLogGroup) {
+  const productLog =
+    group.logs.find((log) => log.table_name === "productos") ?? group.primaryLog
+
+  return formatTechnicalValue(
+    productLog.before_data?.nombre ??
+      productLog.before_data?.name ??
+      productLog.record_id ??
+      "producto"
+  )
+}
+
+function getDeletedProductSummary(logs: SupabaseAuditLog[]) {
+  const variants = logs.filter((log) => log.table_name === "producto_variantes").length
+  const images = logs.filter((log) => log.table_name === "imagenes_producto").length
+  const specifications = logs.filter((log) => log.table_name === "producto_especificaciones").length
+  const summary: string[] = []
+
+  if (variants > 0) summary.push(`${variants} variante${variants === 1 ? "" : "s"}`)
+  if (images > 0) summary.push(`${images} imagen${images === 1 ? "" : "es"}`)
+  if (specifications > 0) {
+    summary.push(`${specifications} especificación${specifications === 1 ? "" : "es"}`)
+  }
+
+  return summary
+}
+
+function formatHumanList(items: string[]) {
+  if (items.length <= 1) return items[0] ?? ""
+  if (items.length === 2) return `${items[0]} y ${items[1]}`
+
+  return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`
+}
+
+function getVariantPrincipalProductId(log: SupabaseAuditLog) {
+  if (log.action !== "UPDATE") return null
+
+  const fields = getChangedFields(log)
+
+  if (
+    log.table_name === "productos" &&
+    fields.length === 1 &&
+    fields.includes("imagen_principal")
+  ) {
+    return log.record_id ? String(log.record_id) : null
+  }
+
+  if (
+    log.table_name === "producto_variantes" &&
+    fields.includes("orden")
+  ) {
+    const productId =
+      log.after_data?.producto_id ??
+      log.before_data?.producto_id
+
+    return productId ? String(productId) : null
+  }
+
+  return null
+}
+
+function getGroupedProductName(logs: SupabaseAuditLog[]) {
+  const productLog = logs.find((log) => log.table_name === "productos")
+  const productName =
+    productLog?.after_data?.nombre ??
+    productLog?.before_data?.nombre ??
+    productLog?.after_data?.name ??
+    productLog?.before_data?.name
+
+  if (productName) return formatTechnicalValue(productName)
+
+  const productId =
+    logs
+      .map((log) => getVariantPrincipalProductId(log))
+      .find(Boolean) ?? "registro"
+
+  return `ID ${productId}`
+}
+
+function getVariantPrincipalNames(logs: SupabaseAuditLog[]) {
+  const variantLogs = logs.filter(
+    (log) =>
+      log.table_name === "producto_variantes" &&
+      log.action === "UPDATE"
+  )
+
+  const beforeName =
+    variantLogs
+      .map((log) =>
+        Number(log.before_data?.orden) === 1
+          ? log.before_data?.nombre
+          : null
+      )
+      .find(Boolean) ?? null
+
+  const afterName =
+    variantLogs
+      .map((log) =>
+        Number(log.after_data?.orden) === 1
+          ? log.after_data?.nombre
+          : null
+      )
+      .find(Boolean) ?? null
+
+  return {
+    beforeName: beforeName
+      ? formatHumanValue(beforeName)
+      : null,
+    afterName: afterName
+      ? formatHumanValue(afterName)
+      : null,
+  }
 }
 
 function formatHumanValue(value: unknown) {
@@ -378,7 +733,7 @@ function formatHumanValue(value: unknown) {
 
   const text = String(value).trim()
   if (!text) return "vacío"
-  if (/^https?:\/\//i.test(text)) return text.length > 48 ? `${text.slice(0, 45)}...` : text
+  if (/^https?:\/\//i.test(text)) return "link cargado"
 
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase().replaceAll("_", " ")
 }
@@ -404,4 +759,15 @@ function isEmptyValue(value: unknown) {
     value === "" ||
     (Array.isArray(value) && value.length === 0)
   )
+}
+
+function isManualOrderAuditLog(log: SupabaseAuditLog) {
+  if (!log.actor_email) return false
+  if (log.action === "INSERT") return false
+
+  const fields = getChangedFields(log)
+  if (fields.length === 0) return false
+  if (fields.some((field) => automaticOrderFields.has(field))) return false
+
+  return fields.some((field) => manualOrderFields.has(field))
 }

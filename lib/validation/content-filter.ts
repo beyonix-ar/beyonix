@@ -72,8 +72,8 @@ export function validateUsername(username: string) {
     return "El nombre de usuario debe tener al menos 5 caracteres."
   }
 
-  if (cleanUsername.length > 24) {
-    return "El nombre de usuario no puede superar los 24 caracteres."
+  if (cleanUsername.length > 18) {
+    return "El nombre de usuario no puede superar los 18 caracteres."
   }
 
   if (!/^[a-zA-Z0-9._-]+$/.test(cleanUsername)) {

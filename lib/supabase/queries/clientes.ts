@@ -88,6 +88,11 @@ export async function getClientes() {
       referencias: profile.referencias,
       avatar_url: profile.avatar_url,
       rol: profile.rol,
+      client_risk_status: profile.client_risk_status ?? "normal",
+      admin_note: profile.admin_note,
+      blocked_at: profile.blocked_at,
+      blocked_reason: profile.blocked_reason,
+      blocked_by: profile.blocked_by,
       created_at: profile.created_at,
       last_seen_at: presence?.last_seen_at ?? null,
       is_active: presence?.last_seen_at

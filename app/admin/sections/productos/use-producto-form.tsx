@@ -23,16 +23,12 @@ import {
 import { isAllowedLucideIcon } from "./lucide-icon-picker"
 
 import {
-  uploadProductoImages,
+  uploadProductoDraftImages,
+  deleteProductoImagesByUrls,
 } from "@/lib/supabase/queries/producto-imagenes"
 
 import {
-  createProductoVariante,
-} from "@/lib/supabase/queries/producto-variantes"
-
-import {
-  createProducto,
-  deleteProducto,
+  createProductoCompleto,
   getCategorias,
   updateProducto,
 } from "@/lib/supabase/queries/productos"
@@ -309,9 +305,6 @@ export function useProductoForm({
       return
     }
 
-    let createdProductId: number | null =
-      null
-
     try {
       setSaving(true)
 
@@ -368,16 +361,22 @@ export function useProductoForm({
         return
       }
 
-      const created =
-        await createProducto(
-          nextPayload
-        )
-
-      createdProductId = created.id
-
       let imageOrder = 0
       let principalImage: string | null =
         null
+      const uploadedImageUrls: string[] = []
+      const imagenes: Array<{
+        url: string
+        orden: number
+      }> = []
+      const variantes: Array<{
+        nombre: string
+        color_hex: string
+        stock: number
+        imagenes: string[]
+        activo: boolean
+        orden: number
+      }> = []
 
       for (const [
         index,
@@ -385,22 +384,29 @@ export function useProductoForm({
       ] of draftVariants.entries()) {
         const urls =
           variant.imagenes.length
-            ? await uploadProductoImages(
-                created.id,
-                variant.imagenes,
-                imageOrder
+            ? await uploadProductoDraftImages(
+                variant.imagenes
               )
             : []
 
-        imageOrder += urls.length
+        uploadedImageUrls.push(...urls)
 
         if (!principalImage && urls[0]) {
           principalImage = urls[0]
         }
 
-        await createProductoVariante({
-          producto_id:
-            created.id,
+        imagenes.push(
+          ...urls.map((url) => {
+            imageOrder += 1
+
+            return {
+              url,
+              orden: imageOrder,
+            }
+          })
+        )
+
+        variantes.push({
           nombre:
             variant.nombre.trim(),
           color_hex:
@@ -415,27 +421,53 @@ export function useProductoForm({
         })
       }
 
-      if (principalImage) {
-        await updateProducto(
-          created.id,
-          {
-            imagen_principal:
-              principalImage,
-          }
+      try {
+        const created =
+          await createProductoCompleto({
+            producto: {
+              ...nextPayload,
+              imagen_principal:
+                principalImage,
+            },
+            imagenes,
+            variantes,
+            especificaciones:
+              draftSpecifications.map(
+                (specification) => ({
+                  icono:
+                    specification.icono,
+                  texto:
+                    specification.texto,
+                  orden:
+                    specification.orden,
+                  activo:
+                    specification.activo,
+                })
+              ),
+          })
+
+        setSavedId(created.id)
+        onDraftSaved?.()
+        setSuccess(
+          "Producto creado correctamente."
         )
+        onSaved()
+      } catch (err) {
+        if (uploadedImageUrls.length) {
+          try {
+            await deleteProductoImagesByUrls(
+              uploadedImageUrls
+            )
+          } catch (cleanupErr) {
+            console.error(
+              "No se pudieron limpiar las imagenes de borrador:",
+              cleanupErr
+            )
+          }
+        }
+
+        throw err
       }
-
-      await saveDraftProductoEspecificaciones(
-        created.id,
-        draftSpecifications
-      )
-
-      setSavedId(created.id)
-      onDraftSaved?.()
-      setSuccess(
-        "Producto creado correctamente."
-      )
-      onSaved()
     } catch (err) {
       const message =
         getErrorMessage(err)
@@ -444,23 +476,6 @@ export function useProductoForm({
         "Error guardando producto:",
         err
       )
-
-      if (
-        createdProductId &&
-        !savedId &&
-        !producto
-      ) {
-        try {
-          await deleteProducto(
-            createdProductId
-          )
-        } catch (rollbackErr) {
-          console.error(
-            "No se pudo revertir el producto creado:",
-            rollbackErr
-          )
-        }
-      }
 
       setError(
         `Error guardando producto: ${message}`

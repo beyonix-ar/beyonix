@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  type PointerEvent,
   useEffect,
   useState,
 } from "react"
@@ -9,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
+  GripVertical,
   ImageIcon,
   Package,
   Pencil,
@@ -101,6 +103,34 @@ const getStockTotal = (
   )
 }
 
+const sortVariantes = (
+  variantes: SupabaseProductoVariante[]
+) =>
+  [...variantes].sort((a, b) => {
+    if (a.orden !== b.orden) {
+      return a.orden - b.orden
+    }
+
+    return a.id - b.id
+  })
+
+const normalizeVariantOrder = (
+  variantes: SupabaseProductoVariante[]
+) =>
+  sortVariantes(variantes).map(
+    (variante, index) => ({
+      ...variante,
+      orden: index + 1,
+    })
+  )
+
+const getPrincipalVariantImage = (
+  variantes: SupabaseProductoVariante[]
+) =>
+  sortVariantes(variantes).flatMap(
+    (variante) => variante.imagenes || []
+  )[0] || null
+
 const getInstallmentsLabel = (
   producto: SupabaseProducto
 ) => {
@@ -151,14 +181,35 @@ export function ProductosRow({
     useState<SupabaseProductoVariante[]>(
       producto.producto_variantes || []
     )
+  const [localPrincipalImage, setLocalPrincipalImage] =
+    useState<string | null>(
+      producto.imagen_principal
+    )
+  const [draggedVariantId, setDraggedVariantId] =
+    useState<number | null>(null)
 
   useEffect(() => {
     setLocalVariantes(
-      producto.producto_variantes || []
+      sortVariantes(
+        producto.producto_variantes || []
+      )
     )
   }, [producto.producto_variantes])
 
-  const variantes = localVariantes
+  useEffect(() => {
+    setLocalPrincipalImage(
+      producto.imagen_principal
+    )
+  }, [producto.imagen_principal])
+
+  useEffect(() => {
+    return () => {
+      document.body.style.cursor = ""
+    }
+  }, [])
+
+  const variantes =
+    sortVariantes(localVariantes)
 
   const stockTotal =
     variantes.length
@@ -170,7 +221,7 @@ export function ProductosRow({
         )
       : getStockTotal(producto)
 
-  const syncStock = async (
+  const syncProductSummary = async (
     nextVariantes: SupabaseProductoVariante[]
   ) => {
     const total = nextVariantes.reduce(
@@ -179,8 +230,34 @@ export function ProductosRow({
       0
     )
 
+    const imagenPrincipal =
+      getPrincipalVariantImage(
+        nextVariantes
+      )
+
+    setLocalPrincipalImage(
+      imagenPrincipal
+    )
+
+    if (
+      total === stockTotal &&
+      imagenPrincipal === localPrincipalImage
+    ) {
+      return
+    }
+
     await updateProducto(producto.id, {
-      stock: total,
+      ...(total !== stockTotal
+        ? {
+            stock: total,
+          }
+        : {}),
+      ...(imagenPrincipal !== localPrincipalImage
+        ? {
+            imagen_principal:
+              imagenPrincipal,
+          }
+        : {}),
     })
   }
 
@@ -197,13 +274,23 @@ export function ProductosRow({
   const saveVariant = async (
     variante: SupabaseProductoVariante
   ) => {
+    const nextStock =
+      Number(editStock) || 0
+
+    if (
+      variante.color_hex === editColor &&
+      (variante.stock ?? 0) === nextStock
+    ) {
+      setEditingVariantId(null)
+      return
+    }
+
     const updated =
       await updateProductoVariante(
         variante.id,
         {
           color_hex: editColor,
-          stock:
-            Number(editStock) || 0,
+          stock: nextStock,
         }
       )
 
@@ -215,7 +302,9 @@ export function ProductosRow({
       )
 
     setLocalVariantes(nextVariantes)
-    await syncStock(nextVariantes)
+    await syncProductSummary(
+      nextVariantes
+    )
     setEditingVariantId(null)
   }
 
@@ -241,13 +330,151 @@ export function ProductosRow({
       )
 
     setLocalVariantes(nextVariantes)
-    await syncStock(nextVariantes)
+    await syncProductSummary(
+      nextVariantes
+    )
   }
 
   const viewVariant = (
     variante: SupabaseProductoVariante
   ) => {
     setViewingVariant(variante)
+  }
+
+  const reorderVariant = async (
+    draggedId: number,
+    targetId: number
+  ) => {
+    const ordered =
+      normalizeVariantOrder(variantes)
+    const currentIndex =
+      ordered.findIndex(
+        (item) => item.id === draggedId
+      )
+    const targetIndex =
+      ordered.findIndex(
+        (item) => item.id === targetId
+      )
+
+    if (
+      currentIndex < 0 ||
+      targetIndex < 0 ||
+      currentIndex === targetIndex
+    ) {
+      return
+    }
+
+    const previousVariantes =
+      localVariantes
+    const previousPrincipalImage =
+      localPrincipalImage
+    const reordered = [...ordered]
+    const [selected] =
+      reordered.splice(currentIndex, 1)
+
+    reordered.splice(targetIndex, 0, selected)
+
+    const nextVariantes =
+      reordered.map(
+        (item, index) => ({
+          ...item,
+          orden: index + 1,
+        })
+      )
+
+    setLocalVariantes(nextVariantes)
+
+    try {
+      await Promise.all(
+        nextVariantes.map((item) =>
+          updateProductoVariante(
+            item.id,
+            {
+              orden: item.orden,
+            }
+          )
+        )
+      )
+
+      await syncProductSummary(
+        nextVariantes
+      )
+    } catch (err) {
+      console.error(err)
+      setLocalVariantes(
+        previousVariantes
+      )
+      setLocalPrincipalImage(
+        previousPrincipalImage
+      )
+    }
+  }
+
+  const stopVariantReorder = () => {
+    setDraggedVariantId(null)
+    document.body.style.cursor = ""
+  }
+
+  const handleVariantPointerDown = (
+    event: PointerEvent<HTMLButtonElement>,
+    varianteId: number
+  ) => {
+    event.preventDefault()
+    setDraggedVariantId(varianteId)
+
+    document.body.style.cursor = "grab"
+    event.currentTarget.setPointerCapture(
+      event.pointerId
+    )
+  }
+
+  const handleVariantPointerUp = async (
+    event: PointerEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault()
+
+    const sourceId = draggedVariantId
+
+    stopVariantReorder()
+
+    if (
+      event.currentTarget.hasPointerCapture(
+        event.pointerId
+      )
+    ) {
+      event.currentTarget.releasePointerCapture(
+        event.pointerId
+      )
+    }
+
+    if (
+      sourceId === null ||
+      !Number.isFinite(sourceId)
+    ) {
+      return
+    }
+
+    const target = document
+      .elementFromPoint(
+        event.clientX,
+        event.clientY
+      )
+      ?.closest<HTMLElement>(
+        "[data-variant-drop-id]"
+      )
+
+    const targetId = Number(
+      target?.dataset.variantDropId
+    )
+
+    if (!Number.isFinite(targetId)) {
+      return
+    }
+
+    await reorderVariant(
+      sourceId,
+      targetId
+    )
   }
 
   return (
@@ -289,12 +516,10 @@ export function ProductosRow({
           </button>
 
           <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/6 bg-white">
-            {producto.imagen_principal ? (
+            {localPrincipalImage ? (
               <img
                 alt={producto.nombre}
-                src={
-                  producto.imagen_principal
-                }
+                src={localPrincipalImage}
                 className="h-full w-full object-cover"
               />
             ) : (
@@ -444,21 +669,59 @@ export function ProductosRow({
 
       {open && (
         <div className="border-t border-white/5 bg-black px-5 py-4">
-          <div className="ml-11 grid gap-2">
+          <div className="grid gap-2">
             {variantes.length ? (
-              variantes.map((variante) => {
+              variantes.map((variante, index) => {
               const stock =
                 variante.stock ?? 0
 
               const status =
                 stockStatus(stock)
+              const isPrincipal =
+                index === 0
 
               return (
                 <div
                   key={variante.id}
-                  className="grid grid-cols-admin-variant-row items-center gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3"
+                  data-variant-drop-id={
+                    variante.id
+                  }
+                  className="grid grid-cols-[2.5rem_1fr] items-stretch gap-3"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center">
+                    {variantes.length > 1 ? (
+                      <button
+                        type="button"
+                        title="Arrastrar para reordenar variante"
+                        aria-label={`Reordenar variante ${variante.nombre}`}
+                        onPointerDown={(event) =>
+                          handleVariantPointerDown(
+                            event,
+                            variante.id
+                          )
+                        }
+                        onPointerUp={
+                          handleVariantPointerUp
+                        }
+                        onPointerCancel={
+                          stopVariantReorder
+                        }
+                        className={`flex size-9 cursor-grab items-center justify-center rounded-xl border text-white/45 transition-colors active:cursor-grab ${
+                          draggedVariantId ===
+                          variante.id
+                            ? "border-beyonix-blue-light/40 bg-beyonix-blue/20 text-beyonix-cyan"
+                            : "border-white/8 bg-white/5 hover:border-beyonix-blue-light/30 hover:text-beyonix-cyan"
+                        }`}
+                      >
+                        <GripVertical className="size-4" />
+                      </button>
+                    ) : (
+                      <span className="size-9" />
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-admin-variant-row items-center gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3">
+                    <div className="flex items-center gap-3">
                     <span
                       className="size-5 rounded-full border border-white/20"
                       style={{
@@ -467,10 +730,18 @@ export function ProductosRow({
                       }}
                     />
 
-                    <div>
-                      <p className="text-sm font-medium text-white">
-                        {variante.nombre}
-                      </p>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-white">
+                          {variante.nombre}
+                        </p>
+
+                        {isPrincipal && (
+                          <span className="rounded-full border border-beyonix-blue-light/25 bg-beyonix-blue/20 px-2 py-0.5 text-10px font-semibold text-beyonix-cyan">
+                            Principal
+                          </span>
+                        )}
+                      </div>
 
                       <p className="text-xs text-white/50">
                         {variante.color_hex}
@@ -599,6 +870,7 @@ export function ProductosRow({
                       </div>
                     </>
                   )}
+                  </div>
                 </div>
               )
             })
@@ -627,6 +899,8 @@ export function ProductosRow({
         <AdminProductPreviewModal
           product={{
             ...producto,
+            imagen_principal:
+              localPrincipalImage,
             producto_variantes: variantes,
           }}
           onClose={() => setPreviewOpen(false)}

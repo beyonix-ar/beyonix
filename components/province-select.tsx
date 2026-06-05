@@ -1,4 +1,7 @@
-import { ChevronDown } from "lucide-react"
+"use client"
+
+import { useEffect, useRef, useState } from "react"
+import { Check, ChevronDown } from "lucide-react"
 
 import { ARGENTINA_PROVINCES } from "@/lib/validation/account-fields"
 
@@ -9,28 +12,107 @@ export function ProvinceSelect({
   value: string
   onChange: (value: string) => void
 }) {
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const selectedLabel = value || "Seleccioná una provincia"
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!wrapperRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown)
+    document.addEventListener("keydown", handleEscape)
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [])
+
   return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label="Seleccionar provincia"
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
         title="Seleccionar provincia"
-        className="h-12 w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 pr-10 text-sm text-white outline-none transition-colors hover:border-white/18 focus:border-beyonix-focus"
-        required
+        aria-label="Seleccionar provincia"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={`flex h-12 w-full cursor-pointer items-center justify-between gap-3 rounded-xl border bg-black px-4 text-left text-sm outline-none transition-colors ${
+          open
+            ? "border-beyonix-focus text-white"
+            : "border-white/10 text-white hover:border-white/18"
+        } ${value ? "" : "text-white/35"}`}
       >
-        <option value="" className="bg-black text-white">
-          Seleccioná una provincia
-        </option>
+        <span className="min-w-0 truncate">{selectedLabel}</span>
+        <ChevronDown
+          className={`size-4 shrink-0 text-white/45 transition-transform ${
+            open ? "rotate-180 text-beyonix-focus" : ""
+          }`}
+        />
+      </button>
 
-        {ARGENTINA_PROVINCES.map((province) => (
-          <option key={province} value={province} className="bg-black text-white">
-            {province}
-          </option>
-        ))}
-      </select>
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Provincias"
+          className="absolute left-0 top-14 z-50 w-full overflow-hidden rounded-xl border border-beyonix-focus/70 bg-black p-1 shadow-2xl shadow-black/70"
+        >
+          <div className="custom-scrollbar max-h-64 overflow-y-auto py-1">
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              onClick={() => {
+                onChange("")
+                setOpen(false)
+              }}
+              className={`flex h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-3 text-left text-sm transition-colors ${
+                !value
+                  ? "bg-beyonix-blue text-white"
+                  : "text-white/58 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              <span className="truncate">Seleccioná una provincia</span>
+              {!value && <Check className="size-3.5 text-beyonix-sky" />}
+            </button>
 
-      <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-white/45" />
+            {ARGENTINA_PROVINCES.map((province) => {
+              const selected = province === value
+
+              return (
+                <button
+                  key={province}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => {
+                    onChange(province)
+                    setOpen(false)
+                  }}
+                  className={`flex h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-3 text-left text-sm transition-colors ${
+                    selected
+                      ? "bg-beyonix-blue text-white"
+                      : "text-white/82 hover:bg-beyonix-blue/65 hover:text-white"
+                  }`}
+                >
+                  <span className="truncate">{province}</span>
+                  {selected && <Check className="size-3.5 text-beyonix-sky" />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

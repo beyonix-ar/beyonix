@@ -4,9 +4,19 @@ import { NextResponse, type NextRequest } from "next/server"
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
+  const type = requestUrl.searchParams.get("type")
   const next = requestUrl.searchParams.get("next") || "/reset-password"
+  const redirectUrl = new URL(next, request.url)
 
-  const response = NextResponse.redirect(new URL(next, request.url))
+  if (
+    code &&
+    redirectUrl.pathname.startsWith("/reset-password") &&
+    (!type || type === "recovery")
+  ) {
+    redirectUrl.searchParams.set("recovery", "1")
+  }
+
+  const response = NextResponse.redirect(redirectUrl)
 
   if (!code) {
     return response

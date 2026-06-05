@@ -1,38 +1,33 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import {
-  AlertCircle,
-  CalendarDays,
-  Filter,
-  History,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  ShieldCheck,
-  X,
-} from "lucide-react"
+import { AlertCircle, Filter, History, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react"
 
+import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
 import { AdminSelect, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { getAuditLogs, undoAuditLog } from "@/lib/supabase/queries/auditoria"
 import type { SupabaseAuditLog } from "@/lib/supabase/types"
 
 import {
   canUndoAuditLog,
+  canUndoAuditGroup,
   formatAuditDate,
-  formatAuditDescription,
+  formatAuditGroupDescription,
   formatAuditTime,
   formatTechnicalValue,
-  getAuditDisplayAction,
+  getAuditGroupDisplayAction,
+  getAuditGroupSeverity,
+  getAuditGroupUndoLogs,
   getAuditSection,
   getAuditSeverity,
   getChangedFields,
   getHumanFieldName,
   getPreviewFields,
   getSeverityLabel,
-  getUndoDescription,
+  groupAuditLogs,
   isGeneralAdminAuditLog,
   isUndoAuditEvent,
+  type AuditLogGroup,
   type AuditActionFilter,
   type AuditSeverity,
 } from "./audit-helpers"
@@ -54,8 +49,30 @@ function getErrorMessage(error: unknown) {
   return null
 }
 
-function getInputDate(value: string) {
-  return new Date(value).toLocaleDateString("en-CA")
+function parseDateInput(value: string, endOfDay = false) {
+  const clean = value.trim()
+  if (!clean) return null
+
+  const parts = clean.includes("/")
+    ? clean.split("/")
+    : clean.includes("-")
+      ? clean.split("-").reverse()
+      : []
+
+  if (parts.length !== 3) return null
+
+  const [day, month, year] = parts.map((part) => Number(part))
+  if (!day || !month || !year) return null
+
+  const date = new Date(year, month - 1, day)
+  const isValid =
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+
+  if (!isValid) return null
+  if (endOfDay) date.setHours(23, 59, 59, 999)
+  return date
 }
 
 function AuditDetails({ log }: { log: SupabaseAuditLog }) {
@@ -101,13 +118,33 @@ function AuditDetails({ log }: { log: SupabaseAuditLog }) {
   )
 }
 
+function AuditGroupDetails({ group }: { group: AuditLogGroup }) {
+  if (group.logs.length === 1) {
+    return <AuditDetails log={group.primaryLog} />
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      {group.logs.map((log) => (
+        <div key={log.id}>
+          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-white/35">
+            Movimiento técnico #{log.id}
+          </p>
+          <AuditDetails log={log} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function AdminAuditoria() {
   const [logs, setLogs] = useState<SupabaseAuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [undoingId, setUndoingId] = useState<number | null>(null)
-  const [pendingUndoLog, setPendingUndoLog] = useState<SupabaseAuditLog | null>(null)
-  const [dateFilter, setDateFilter] = useState("")
+  const [pendingUndoGroup, setPendingUndoGroup] = useState<AuditLogGroup | null>(null)
+  const [dateFromFilter, setDateFromFilter] = useState("")
+  const [dateToFilter, setDateToFilter] = useState("")
   const [adminFilter, setAdminFilter] = useState("")
   const [sectionFilter, setSectionFilter] = useState("all")
   const [actionFilter, setActionFilter] = useState<AuditActionFilter>("all")
@@ -145,9 +182,13 @@ export function AdminAuditoria() {
 
   const filteredLogs = useMemo(() => {
     const normalizedAdminFilter = adminFilter.trim().toLowerCase()
+    const fromDate = parseDateInput(dateFromFilter)
+    const toDate = parseDateInput(dateToFilter, true)
 
     return adminLogs.filter((log) => {
-      if (dateFilter && getInputDate(log.created_at) !== dateFilter) return false
+      const createdAt = new Date(log.created_at)
+      if (fromDate && createdAt < fromDate) return false
+      if (toDate && createdAt > toDate) return false
       if (
         normalizedAdminFilter &&
         !(log.actor_email ?? "Sistema").toLowerCase().includes(normalizedAdminFilter)
@@ -171,20 +212,28 @@ export function AdminAuditoria() {
     actionFilter,
     adminFilter,
     adminLogs,
-    dateFilter,
+    dateFromFilter,
+    dateToFilter,
     onlyReversible,
     sectionFilter,
     severityFilter,
   ])
 
+  const filteredGroups = useMemo(
+    () => groupAuditLogs(filteredLogs),
+    [filteredLogs],
+  )
+
   const handleUndo = async () => {
-    if (!pendingUndoLog || !canUndoAuditLog(pendingUndoLog)) return
+    if (!pendingUndoGroup || !canUndoAuditGroup(pendingUndoGroup)) return
 
     try {
-      setUndoingId(pendingUndoLog.id)
+      setUndoingId(pendingUndoGroup.primaryLog.id)
       setError(null)
-      await undoAuditLog(pendingUndoLog.id)
-      setPendingUndoLog(null)
+      for (const log of getAuditGroupUndoLogs(pendingUndoGroup)) {
+        await undoAuditLog(log.id)
+      }
+      setPendingUndoGroup(null)
       await loadLogs()
     } catch (err) {
       const message = getErrorMessage(err)
@@ -249,17 +298,22 @@ export function AdminAuditoria() {
             Filtros
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <label className="relative block" title="Filtrar por fecha">
-              <CalendarDays className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/38" />
-              <input
-                type="date"
-                aria-label="Filtrar por fecha"
-                value={dateFilter}
-                onChange={(event) => setDateFilter(event.target.value)}
-                className="h-11 w-full cursor-pointer rounded-18px border border-white/12 bg-black pl-11 pr-4 text-sm font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
-              />
-            </label>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[146px_146px_minmax(220px,1fr)_minmax(176px,0.8fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_minmax(160px,0.6fr)]">
+            <AdminDatePicker
+              title="Fecha desde"
+              ariaLabel="Fecha desde"
+              value={dateFromFilter}
+              placeholder="Desde"
+              onChange={setDateFromFilter}
+            />
+
+            <AdminDatePicker
+              title="Fecha hasta"
+              ariaLabel="Fecha hasta"
+              value={dateToFilter}
+              placeholder="Hasta"
+              onChange={setDateToFilter}
+            />
 
             <AdminTextInput
               title="Filtrar por administrador"
@@ -332,7 +386,7 @@ export function AdminAuditoria() {
           <div className="rounded-2xl border border-white/7 bg-black px-5 py-6 text-sm text-white/60">
             Cargando movimientos...
           </div>
-        ) : filteredLogs.length === 0 ? (
+        ) : filteredGroups.length === 0 ? (
           <div className="rounded-2xl border border-white/7 bg-black px-5 py-6">
             <div className="flex items-center gap-3 text-white/65">
               <History className="size-5" />
@@ -344,15 +398,16 @@ export function AdminAuditoria() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredLogs.map((log) => {
+            {filteredGroups.map((group) => {
+              const log = group.primaryLog
               const isUndone = Boolean(log.undone_at)
-              const description = formatAuditDescription(log)
-              const severity = getAuditSeverity(log)
-              const canUndo = canUndoAuditLog(log)
+              const description = formatAuditGroupDescription(group)
+              const severity = getAuditGroupSeverity(group)
+              const canUndo = canUndoAuditGroup(group)
 
               return (
                 <article
-                  key={log.id}
+                  key={group.id}
                   className="rounded-2xl border border-white/7 bg-black p-4 transition hover:border-sky-300/35 hover:bg-admin-hover"
                 >
                   <div className="grid gap-4 xl:grid-cols-4 xl:items-center">
@@ -380,7 +435,7 @@ export function AdminAuditoria() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-200">
-                          {getAuditDisplayAction(log)}
+                          {getAuditGroupDisplayAction(group)}
                         </span>
 
                         <span className={`rounded-full border px-3 py-1 text-xs font-bold ${severityStyles[severity]}`}>
@@ -415,7 +470,7 @@ export function AdminAuditoria() {
                           aria-label={`Deshacer movimiento ${log.id}`}
                           title="Deshacer movimiento"
                           disabled={undoingId === log.id}
-                          onClick={() => setPendingUndoLog(log)}
+                          onClick={() => setPendingUndoGroup(group)}
                           className="inline-flex min-h-44px min-w-140px cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-5 py-2 text-sm font-bold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
                         >
                           <RotateCcw className="size-4" />
@@ -430,7 +485,7 @@ export function AdminAuditoria() {
                       Ver detalle
                     </summary>
 
-                    <AuditDetails log={log} />
+                    <AuditGroupDetails group={group} />
                   </details>
                 </article>
               )
@@ -439,7 +494,7 @@ export function AdminAuditoria() {
         )}
       </div>
 
-      {pendingUndoLog && (
+      {pendingUndoGroup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 backdrop-blur-sm">
           <div className="w-full max-w-xl rounded-3xl border border-beyonix-blue-light/25 bg-black p-6 shadow-2xl shadow-black">
             <div className="mb-5 flex items-start justify-between gap-4">
@@ -456,7 +511,7 @@ export function AdminAuditoria() {
                 type="button"
                 aria-label="Cerrar alerta"
                 title="Cerrar"
-                onClick={() => setPendingUndoLog(null)}
+                onClick={() => setPendingUndoGroup(null)}
                 className="flex size-10 cursor-pointer items-center justify-center rounded-2xl border border-white/10 bg-black text-white/55 transition hover:border-white/25 hover:text-white"
               >
                 <X className="size-4" />
@@ -465,11 +520,11 @@ export function AdminAuditoria() {
 
             <div className="rounded-2xl border border-white/8 bg-black px-4 py-4">
               <p className="text-sm font-bold leading-6 text-white">
-                ¿Está seguro de deshacer "{getUndoDescription(pendingUndoLog)}"?
+                ¿Está seguro de deshacer "{formatAuditGroupDescription(pendingUndoGroup).lines[0] ?? formatAuditGroupDescription(pendingUndoGroup).title}"?
               </p>
               <div className="mt-3 space-y-1 text-sm leading-6 text-white/55">
-                <p>{formatAuditDescription(pendingUndoLog).title}</p>
-                {formatAuditDescription(pendingUndoLog).lines.map((line) => (
+                <p>{formatAuditGroupDescription(pendingUndoGroup).title}</p>
+                {formatAuditGroupDescription(pendingUndoGroup).lines.map((line) => (
                   <p key={line}>{line}</p>
                 ))}
               </div>
@@ -478,7 +533,7 @@ export function AdminAuditoria() {
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => setPendingUndoLog(null)}
+                onClick={() => setPendingUndoGroup(null)}
                 className="inline-flex min-h-44px cursor-pointer items-center justify-center rounded-2xl border border-white/10 bg-black px-5 py-2 text-sm font-black text-white transition hover:border-beyonix-blue-light/40 hover:text-beyonix-sky"
               >
                 Cancelar
@@ -487,10 +542,10 @@ export function AdminAuditoria() {
               <button
                 type="button"
                 onClick={() => void handleUndo()}
-                disabled={undoingId === pendingUndoLog.id || !canUndoAuditLog(pendingUndoLog)}
+                disabled={undoingId === pendingUndoGroup.primaryLog.id || !canUndoAuditGroup(pendingUndoGroup)}
                 className="inline-flex min-h-44px cursor-pointer items-center justify-center rounded-2xl border border-white/10 bg-black px-5 py-2 text-sm font-black text-white/55 transition hover:border-red-600 hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-black disabled:text-white/25"
               >
-                {undoingId === pendingUndoLog.id ? "Deshaciendo..." : "Sí, estoy seguro"}
+                {undoingId === pendingUndoGroup.primaryLog.id ? "Deshaciendo..." : "Sí, estoy seguro"}
               </button>
             </div>
           </div>

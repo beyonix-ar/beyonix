@@ -1,7 +1,7 @@
 "use client"
 
 import { Suspense, useEffect, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
@@ -25,6 +25,7 @@ function getInvalidLinkMessage() {
 }
 
 function ResetPasswordContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -33,10 +34,10 @@ function ResetPasswordContent() {
   const [checkingSession, setCheckingSession] = useState(true)
   const [canChangePassword, setCanChangePassword] = useState(false)
 
-  const goHomeLoggedOut = async () => {
+  const goLoginLoggedOut = async () => {
     localStorage.removeItem("beyonix-password-recovery")
     await supabase.auth.signOut()
-    window.location.replace("/")
+    router.replace("/login?reset=success")
   }
 
   useEffect(() => {
@@ -57,6 +58,7 @@ function ResetPasswordContent() {
       const code = searchParams.get("code")
       const tokenHash = searchParams.get("token_hash")
       const type = searchParams.get("type")
+      const recovery = searchParams.get("recovery")
       const accessToken = hashParams.get("access_token")
       const refreshToken = hashParams.get("refresh_token")
       const hashType = hashParams.get("type")
@@ -71,20 +73,13 @@ function ResetPasswordContent() {
       const hasRecoveryToken =
         Boolean(code || tokenHash || accessToken || refreshToken) ||
         type === "recovery" ||
-        hashType === "recovery"
+        hashType === "recovery" ||
+        recovery === "1"
 
       if (hashError || queryError) {
         setError(getInvalidLinkMessage())
         setCanChangePassword(false)
         setCheckingSession(false)
-        return
-      }
-
-      const { data: existingData } = await supabase.auth.getSession()
-
-      if (existingData.session && (hasRecoveryMarker || hasRecoveryToken)) {
-        markValidRecovery()
-        window.history.replaceState(null, "", "/reset-password")
         return
       }
 
@@ -140,8 +135,11 @@ function ResetPasswordContent() {
         return
       }
 
-      if (existingData.session && hasRecoveryMarker) {
+      const { data: existingData } = await supabase.auth.getSession()
+
+      if (existingData.session && (hasRecoveryMarker || hasRecoveryToken)) {
         markValidRecovery()
+        window.history.replaceState(null, "", "/reset-password")
         return
       }
 
@@ -164,7 +162,7 @@ function ResetPasswordContent() {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [searchParams])
+  }, [router, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -203,7 +201,7 @@ function ResetPasswordContent() {
         return
       }
 
-      await goHomeLoggedOut()
+      await goLoginLoggedOut()
     } catch {
       setError("No se pudo actualizar la contraseña. Intentá nuevamente.")
       setLoading(false)

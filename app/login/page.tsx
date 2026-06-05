@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Loader2 } from "lucide-react"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
 
 import { ProvinceSelect } from "@/components/province-select"
 import { useAuth } from "@/context/auth-context"
@@ -30,6 +30,7 @@ function Field({
   maxLength,
   inputMode,
   autoComplete,
+  showPasswordToggle,
 }: {
   name: string
   label: string
@@ -40,31 +41,55 @@ function Field({
   maxLength?: number
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"]
   autoComplete?: string
+  showPasswordToggle?: boolean
 }) {
+  const [passwordVisible, setPasswordVisible] = useState(false)
+  const inputType = showPasswordToggle && type === "password" && passwordVisible
+    ? "text"
+    : type
+
   return (
     <div>
       <label htmlFor={name} className="mb-2 block text-sm text-white/80">
         {label}
       </label>
-      <input
-        id={name}
-        name={name}
-        type={type}
-        aria-label={label}
-        title={label}
-        required
-        value={value}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        inputMode={inputMode}
-        autoComplete={autoComplete}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus"
-      />
+      <div className="relative">
+        <input
+          id={name}
+          name={name}
+          type={inputType}
+          aria-label={label}
+          title={label}
+          required
+          value={value}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          inputMode={inputMode}
+          autoComplete={autoComplete}
+          onChange={(e) => onChange(e.target.value)}
+          className={`h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus ${
+            showPasswordToggle ? "pr-12" : ""
+          }`}
+        />
+        {showPasswordToggle && type === "password" && (
+          <button
+            type="button"
+            aria-label={passwordVisible ? "Ocultar contrasena" : "Mostrar contrasena"}
+            title={passwordVisible ? "Ocultar contrasena" : "Mostrar contrasena"}
+            onClick={() => setPasswordVisible((current) => !current)}
+            className="absolute right-2 top-1/2 flex size-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-white/55 transition hover:bg-white/5 hover:text-white"
+          >
+            {passwordVisible ? (
+              <EyeOff className="size-4" />
+            ) : (
+              <Eye className="size-4" />
+            )}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
-
 function TextareaField({
   name,
   label,
@@ -121,6 +146,13 @@ function LoginContent() {
   const [loading, setLoading] = useState(false)
 
   const redirect = getSafeRedirect(searchParams.get("redirect"))
+
+  useEffect(() => {
+    if (searchParams.get("reset") !== "success") return
+
+    setSuccess("ContraseÃ±a actualizada correctamente. Ya podÃ©s iniciar sesiÃ³n.")
+    router.replace("/login", { scroll: false })
+  }, [router, searchParams])
 
   useEffect(() => {
     if (isLoading || !user) return
@@ -199,24 +231,7 @@ function LoginContent() {
     const recoveryEmail = identifier.trim().toLowerCase()
 
     if (!recoveryEmail || !recoveryEmail.includes("@")) {
-      setError("Para recuperar la contraseña ingresá tu email.")
-      return
-    }
-
-    const { data: emailExists, error: emailLookupError } = await supabase.rpc(
-      "email_exists_for_password_recovery",
-      {
-        email_input: recoveryEmail,
-      }
-    )
-
-    if (emailLookupError) {
-      setError("No pudimos validar el email. Probá nuevamente en unos minutos.")
-      return
-    }
-
-    if (!emailExists) {
-      setError("No encontramos una cuenta registrada con ese email.")
+      setError("Para recuperar la contrasena ingresa tu email.")
       return
     }
 
@@ -237,9 +252,8 @@ function LoginContent() {
       return
     }
 
-    setSuccess("Te enviamos un email para restablecer tu contraseña.")
+    setSuccess("Si el email existe, te enviamos un enlace de recuperación.")
   }
-
   return (
     <main className="flex min-h-screen items-center justify-center bg-black px-4 py-8">
       <div
@@ -315,11 +329,11 @@ function LoginContent() {
           {mode === "login" ? (
             <>
               <Field name="username" label="Email o usuario" type="text" value={identifier} onChange={setIdentifier} placeholder="usuario.tech o nombre@email.com" maxLength={FIELD_LIMITS.loginIdentifier} autoComplete="username" />
-              <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Contraseña" maxLength={FIELD_LIMITS.password} autoComplete="current-password" />
+              <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Contraseña" maxLength={FIELD_LIMITS.password} autoComplete="current-password" showPasswordToggle />
             </>
           ) : (
             <>
-              <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Mínimo 6 caracteres" maxLength={FIELD_LIMITS.password} autoComplete="new-password" />
+              <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Mínimo 6 caracteres" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
               <Field name="email" label="Email" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
             </>
           )}

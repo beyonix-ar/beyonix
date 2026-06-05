@@ -166,6 +166,15 @@ export function ProductVariantsEditor({
         acc + (variante.stock ?? 0),
       0
     )
+    const currentTotal = variantes.reduce(
+      (acc, variante) =>
+        acc + (variante.stock ?? 0),
+      0
+    )
+
+    if (total === currentTotal) {
+      return
+    }
 
     await updateProducto(productoId, {
       stock: total,
@@ -186,6 +195,17 @@ export function ProductVariantsEditor({
           return a.id - b.id
         })
         .flatMap((variante) => variante.imagenes || [])[0] || null
+    const currentPrincipalImage =
+      [...variantes]
+        .sort((a, b) => {
+          if (a.orden !== b.orden) return a.orden - b.orden
+          return a.id - b.id
+        })
+        .flatMap((variante) => variante.imagenes || [])[0] || null
+
+    if (principalImage === currentPrincipalImage) {
+      return
+    }
 
     await updateProducto(productoId, {
       imagen_principal: principalImage,

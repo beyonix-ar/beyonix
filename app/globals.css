@@ -253,7 +253,19 @@
 }
 
 @utility grid-cols-admin-client-filters {
-  grid-template-columns: minmax(260px, 0.95fr) minmax(124px, 0.38fr) minmax(150px, 0.46fr) minmax(124px, 0.38fr) minmax(124px, 0.38fr) minmax(146px, 0.45fr) minmax(146px, 0.45fr);
+  grid-template-columns: minmax(260px, 0.95fr) minmax(124px, 0.38fr) minmax(150px, 0.46fr) minmax(166px, 0.5fr) minmax(124px, 0.38fr) minmax(124px, 0.38fr) minmax(146px, 0.45fr) minmax(146px, 0.45fr);
+}
+
+@utility grid-cols-admin-client-note {
+  grid-template-columns: minmax(0, 1fr) 132px;
+}
+
+@utility grid-cols-admin-blocks {
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.9fr) 132px;
+}
+
+@utility grid-cols-admin-block-row {
+  grid-template-columns: minmax(120px, 0.75fr) minmax(180px, 1fr) minmax(120px, 0.7fr) minmax(180px, 1fr) minmax(180px, 1fr) 44px;
 }
 
 @utility grid-cols-admin-product-filters {
