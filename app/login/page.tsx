@@ -3,8 +3,9 @@
 import { Suspense, useEffect, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { Eye, EyeOff, Loader2, MailCheck } from "lucide-react"
 
+import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { ProvinceSelect } from "@/components/province-select"
 import { useAuth } from "@/context/auth-context"
 import { supabase } from "@/lib/supabase/client"
@@ -13,6 +14,7 @@ import {
   onlyDigits,
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
+import { formatDeliveryAddress } from "@/lib/delivery-address"
 
 function getSafeRedirect(redirect: string | null) {
   if (!redirect || redirect.startsWith("/login")) return "/"
@@ -31,6 +33,7 @@ function Field({
   inputMode,
   autoComplete,
   showPasswordToggle,
+  required = true,
 }: {
   name: string
   label: string
@@ -42,6 +45,7 @@ function Field({
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"]
   autoComplete?: string
   showPasswordToggle?: boolean
+  required?: boolean
 }) {
   const [passwordVisible, setPasswordVisible] = useState(false)
   const inputType = showPasswordToggle && type === "password" && passwordVisible
@@ -50,7 +54,7 @@ function Field({
 
   return (
     <div>
-      <label htmlFor={name} className="mb-2 block text-sm text-white/80">
+      <label htmlFor={name} className="mb-1 block text-xs font-medium text-white/78">
         {label}
       </label>
       <div className="relative">
@@ -60,14 +64,14 @@ function Field({
           type={inputType}
           aria-label={label}
           title={label}
-          required
+          required={required}
           value={value}
           placeholder={placeholder}
           maxLength={maxLength}
           inputMode={inputMode}
           autoComplete={autoComplete}
           onChange={(e) => onChange(e.target.value)}
-          className={`h-12 w-full rounded-xl border border-white/10 bg-black px-4 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus ${
+          className={`h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus ${
             showPasswordToggle ? "pr-12" : ""
           }`}
         />
@@ -77,7 +81,7 @@ function Field({
             aria-label={passwordVisible ? "Ocultar contrasena" : "Mostrar contrasena"}
             title={passwordVisible ? "Ocultar contrasena" : "Mostrar contrasena"}
             onClick={() => setPasswordVisible((current) => !current)}
-            className="absolute right-2 top-1/2 flex size-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-white/55 transition hover:bg-white/5 hover:text-white"
+            className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-white/55 transition hover:bg-white/5 hover:text-white"
           >
             {passwordVisible ? (
               <EyeOff className="size-4" />
@@ -107,7 +111,7 @@ function TextareaField({
 }) {
   return (
     <div className="md:col-span-2">
-      <label htmlFor={name} className="mb-2 block text-sm text-white/80">
+      <label htmlFor={name} className="mb-1 block text-xs font-medium text-white/78">
         {label}
       </label>
       <textarea
@@ -119,7 +123,7 @@ function TextareaField({
         placeholder={placeholder}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-24 w-full resize-none rounded-xl border border-white/10 bg-black px-4 py-3 text-sm leading-6 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus"
+        className="min-h-14 w-full resize-none rounded-lg border border-white/10 bg-black px-3 py-2 text-sm leading-5 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus"
       />
     </div>
   )
@@ -135,7 +139,11 @@ function LoginContent() {
   const [name, setName] = useState("")
   const [identifier, setIdentifier] = useState("")
   const [email, setEmail] = useState("")
-  const [address, setAddress] = useState("")
+  const [street, setStreet] = useState("")
+  const [streetNumber, setStreetNumber] = useState("")
+  const [floor, setFloor] = useState("")
+  const [apartment, setApartment] = useState("")
+  const [locality, setLocality] = useState("")
   const [province, setProvince] = useState("")
   const [postalCode, setPostalCode] = useState("")
   const [phone, setPhone] = useState("")
@@ -144,8 +152,10 @@ function LoginContent() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
+  const [confirmationEmail, setConfirmationEmail] = useState("")
 
   const redirect = getSafeRedirect(searchParams.get("redirect"))
+  const verificationEmail = searchParams.get("verificar-email")
 
   useEffect(() => {
     if (searchParams.get("reset") !== "success") return
@@ -153,6 +163,15 @@ function LoginContent() {
     setSuccess("ContraseÃ±a actualizada correctamente. Ya podÃ©s iniciar sesiÃ³n.")
     router.replace("/login", { scroll: false })
   }, [router, searchParams])
+
+  useEffect(() => {
+    if (!verificationEmail?.includes("@")) return
+
+    setConfirmationEmail(verificationEmail.trim().toLowerCase())
+    setMode("login")
+    setError("")
+    setSuccess("")
+  }, [verificationEmail])
 
   useEffect(() => {
     if (isLoading || !user) return
@@ -165,6 +184,7 @@ function LoginContent() {
     setMode(nextMode)
     setError("")
     setSuccess("")
+    setConfirmationEmail("")
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -186,11 +206,39 @@ function LoginContent() {
       return
     }
 
+    if (!street.trim()) {
+      setLoading(false)
+      setError("Ingresá la calle.")
+      return
+    }
+
+    if (!streetNumber.trim()) {
+      setLoading(false)
+      setError("Ingresá el número de calle.")
+      return
+    }
+
+    if (!locality.trim()) {
+      setLoading(false)
+      setError("Ingresá la localidad.")
+      return
+    }
+
+    const deliveryAddress = formatDeliveryAddress({
+      street,
+      streetNumber,
+      floor,
+      apartment,
+      locality,
+      region: province,
+      postalCode,
+    })
+
     const validationError = validateRegisterPayload({
       username,
       name,
       email,
-      address,
+      address: deliveryAddress,
       province,
       postalCode,
       phone,
@@ -209,7 +257,7 @@ function LoginContent() {
       name,
       email,
       password,
-      address,
+      address: deliveryAddress,
       postalCode,
       phone,
       province,
@@ -220,6 +268,18 @@ function LoginContent() {
 
     if (!result.ok) {
       setError(result.error || "Error al crear cuenta")
+      return
+    }
+
+    if (result.requiresConfirmation) {
+      const normalizedEmail = email.trim().toLowerCase()
+
+      setConfirmationEmail(normalizedEmail)
+      setMode("login")
+      router.replace(
+        `/login?verificar-email=${encodeURIComponent(normalizedEmail)}`,
+        { scroll: false }
+      )
       return
     }
 
@@ -255,27 +315,74 @@ function LoginContent() {
     setSuccess("Si el email existe, te enviamos un enlace de recuperación.")
   }
   return (
-    <main className="flex min-h-screen items-center justify-center bg-black px-4 py-8">
-      <div
-        className={`w-full rounded-2xl border border-white/10 bg-beyonix-surface-4 p-6 shadow-2xl lg:p-8 ${
-          mode === "login" ? "max-w-md" : "max-w-5xl"
-        }`}
-      >
-        <div
+    <div className="flex min-h-screen flex-col bg-black">
+      <header className="border-b border-white/10 bg-black">
+        <nav className="container mx-auto px-4 lg:px-8">
+          <div className="flex h-16 items-center justify-center lg:h-18">
+            <BeyonixLogoLink />
+          </div>
+        </nav>
+      </header>
+
+      <main className="flex flex-1 items-center justify-center px-4 py-4">
+        {confirmationEmail ? (
+          <div className="w-full max-w-lg rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-surface-4 p-6 text-center shadow-2xl shadow-black/35 lg:p-8">
+            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border border-beyonix-blue-light/30 bg-beyonix-blue/18 text-beyonix-cyan">
+              <MailCheck className="size-7" />
+            </div>
+
+            <h1 className="mt-5 text-2xl font-bold text-white sm:text-3xl">
+              Usuario creado con éxito
+            </h1>
+
+            <p className="mt-3 text-sm leading-6 text-white/68">
+              Revisá tu casilla de email:
+            </p>
+
+            <p className="mt-2 rounded-xl border border-white/8 bg-black px-4 py-3 text-sm font-semibold text-white">
+              {confirmationEmail}
+            </p>
+
+            <p className="mt-4 text-sm leading-6 text-white/58">
+              Para verificar la cuenta y poder comprar en nuestra tienda, tenés que abrir el correo de confirmación y validar tu email.
+            </p>
+
+            <p className="mt-3 text-xs leading-5 text-white/42">
+              Si no lo encontrás, revisá spam, promociones o correo no deseado.
+            </p>
+
+            <button
+              type="button"
+              aria-label="Volver al inicio de sesión"
+              title="Volver al inicio de sesión"
+              onClick={() => {
+                setConfirmationEmail("")
+                setMode("login")
+                router.replace("/login", { scroll: false })
+              }}
+              className="mt-6 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90"
+            >
+              Volver al inicio de sesión
+            </button>
+          </div>
+        ) : (
+          <div
+          className={`w-full rounded-2xl border border-white/10 bg-beyonix-surface-4 p-5 shadow-2xl lg:p-6 ${
+            mode === "login" ? "max-w-md" : "max-w-5xl"
+          }`}
+        >
+          <div
           className={
             mode === "login"
               ? "mb-6 space-y-5"
-              : "mb-7 grid gap-5 lg:grid-cols-login-register lg:items-end"
+              : "mb-4 grid gap-3 lg:grid-cols-login-register lg:items-end"
           }
         >
           <div>
-            <p className="mb-2 text-11px font-medium uppercase tracking-widest text-beyonix-focus">
-              BEYONIX
-            </p>
-            <h1 className="text-3xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-white sm:text-3xl">
               {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
             </h1>
-            <p className="mt-2 text-sm text-white/65">
+            <p className="mt-1.5 text-sm text-white/65">
               {mode === "login"
                 ? "Accedé a tu cuenta para continuar la compra."
                 : "Registrate para comprar en BEYONIX."}
@@ -288,7 +395,7 @@ function LoginContent() {
               aria-label="Iniciar sesión"
               title="Iniciar sesión"
               onClick={() => handleModeChange("login")}
-              className={`h-11 cursor-pointer rounded-lg text-sm font-medium transition-all ${
+              className={`h-10 cursor-pointer rounded-lg text-sm font-medium transition-all ${
                 mode === "login"
                   ? "bg-white text-black"
                   : "text-white/70 hover:text-white"
@@ -302,7 +409,7 @@ function LoginContent() {
               aria-label="Registrarme"
               title="Registrarme"
               onClick={() => handleModeChange("register")}
-              className={`h-11 cursor-pointer rounded-lg text-sm font-medium transition-all ${
+              className={`h-10 cursor-pointer rounded-lg text-sm font-medium transition-all ${
                 mode === "register"
                   ? "bg-white text-black"
                   : "text-white/70 hover:text-white"
@@ -317,7 +424,7 @@ function LoginContent() {
           key={mode}
           onSubmit={handleSubmit}
           autoComplete="on"
-          className={mode === "register" ? "grid gap-5 md:grid-cols-2" : "space-y-4"}
+          className={mode === "register" ? "grid gap-3 md:grid-cols-2" : "space-y-4"}
         >
           {mode === "register" && (
             <>
@@ -340,16 +447,35 @@ function LoginContent() {
 
           {mode === "register" && (
             <>
-              <Field name="address" label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" maxLength={FIELD_LIMITS.address} autoComplete="street-address" />
-              <div>
-                <label className="mb-2 block text-sm text-white/80">
-                  Provincia
-                </label>
-                <ProvinceSelect value={province} onChange={setProvince} />
+              <div className="md:col-span-2 rounded-xl border border-beyonix-blue-light/12 bg-black/30 p-3">
+                <div className="mb-2">
+                  <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-focus">
+                    Dirección de entrega
+                  </p>
+                  <p className="mt-0.5 text-xs leading-4 text-white/45">
+                    Estos datos ayudan a preparar futuros envíos a domicilio.
+                  </p>
+                </div>
+
+                <div className="grid gap-2.5 md:grid-cols-2">
+                  <Field name="street" label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" />
+                  <Field name="street-number" label="Número" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
+                  <Field name="floor" label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
+                  <Field name="apartment" label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
+                  <Field name="postal-code" label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" />
+                  <Field name="locality" label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" />
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-white/78">
+                      Provincia / Región
+                    </label>
+                    <ProvinceSelect value={province} onChange={setProvince} compact />
+                  </div>
+                  <Field name="phone" label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel" />
+                  <div className="md:col-span-2">
+                    <TextareaField name="references" label="Referencias para llegar" value={references} onChange={setReferences} placeholder="Entre Córdoba y Entre Ríos, fachada blanca, portón negro, antes de llegar a la esquina." maxLength={FIELD_LIMITS.references} />
+                  </div>
+                </div>
               </div>
-              <Field name="postal-code" label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" />
-              <Field name="phone" label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel" />
-              <TextareaField name="references" label="Referencias" value={references} onChange={setReferences} placeholder="Entre Córdoba y Entre Ríos, fachada blanca, portón negro, antes de llegar a la esquina." maxLength={FIELD_LIMITS.references} />
             </>
           )}
 
@@ -382,7 +508,7 @@ function LoginContent() {
             aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
             title={mode === "login" ? "Ingresar" : "Crear cuenta"}
             disabled={loading}
-            className="flex h-12 w-full cursor-pointer items-center justify-center rounded-xl bg-white font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50 md:col-span-2"
+            className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50 md:col-span-2"
           >
             {loading ? (
               <Loader2 className="size-5 animate-spin" />
@@ -392,9 +518,11 @@ function LoginContent() {
               "Crear cuenta"
             )}
           </button>
-        </form>
-      </div>
-    </main>
+          </form>
+          </div>
+        )}
+      </main>
+    </div>
   )
 }
 

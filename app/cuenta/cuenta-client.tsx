@@ -133,7 +133,7 @@ function InputField({
           placeholder={placeholder}
           maxLength={maxLength}
           inputMode={inputMode}
-          className="w-full bg-transparent py-3 pl-10 pr-10 text-sm text-white placeholder:text-white/25 outline-none"
+          className="w-full bg-transparent py-2.5 pl-10 pr-10 text-sm text-white placeholder:text-white/25 outline-none"
         />
         {rightElement && <div className="absolute right-3">{rightElement}</div>}
       </div>
@@ -170,7 +170,7 @@ function TextareaField({
           placeholder={placeholder}
           maxLength={maxLength}
           rows={2}
-          className="min-h-20 w-full resize-none bg-transparent py-3 pl-10 pr-4 text-sm text-white placeholder:text-white/25 outline-none"
+          className="min-h-20 w-full resize-none bg-transparent py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-white/25 outline-none"
         />
       </div>
     </div>
@@ -199,6 +199,11 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
 
     if (!result.ok) {
       setError(result.error || "Ocurrió un error.")
+      return
+    }
+
+    if ("requiresConfirmation" in result && result.requiresConfirmation) {
+      setSuccess("Cuenta creada. Te enviamos un email para confirmar tu cuenta antes de iniciar sesión.")
       return
     }
 
@@ -463,6 +468,46 @@ const PASSWORD_CHANGE_COOLDOWN_DAYS = 15
 const PASSWORD_CHANGE_COOLDOWN_MS =
   PASSWORD_CHANGE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
 
+function AccountViewFrame({
+  onBack,
+  kicker,
+  title,
+  children,
+  maxWidth = "max-w-4xl",
+}: {
+  onBack: () => void
+  kicker: string
+  title: string
+  children: React.ReactNode
+  maxWidth?: string
+}) {
+  return (
+    <div className={`mx-auto ${maxWidth} space-y-5`}>
+      <button
+        type="button"
+        aria-label="Volver a mi cuenta"
+        title="Volver a mi cuenta"
+        onClick={onBack}
+        className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-white/6 px-4 text-sm font-semibold text-white/82 shadow-lg shadow-black/20 transition-all hover:border-beyonix-blue-light/45 hover:bg-beyonix-blue/35 hover:text-white"
+      >
+        <ChevronLeft className="size-4" />
+        Volver a mi cuenta
+      </button>
+
+      <div className="rounded-2xl border border-white/8 bg-beyonix-surface px-5 py-5 shadow-2xl shadow-black/25 sm:px-6">
+        <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+          {kicker}
+        </p>
+        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+          {title}
+        </h2>
+      </div>
+
+      {children}
+    </div>
+  )
+}
+
 function getPasswordCooldownMessage(lastChangedAt: string) {
   const availableAt =
     new Date(
@@ -538,19 +583,12 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
   }, [user])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
-      <button type="button" aria-label="Volver a mi cuenta" title="Volver a mi cuenta" onClick={onBack}
-        className="flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors cursor-pointer">
-        <ChevronLeft className="size-4" /> Volver a mi cuenta
-      </button>
-
-      <div>
-        <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan mb-1">
-          Mis órdenes
-        </p>
-        <h2 className="text-xl font-bold text-white">Historial de compras</h2>
-      </div>
-
+    <AccountViewFrame
+      onBack={onBack}
+      kicker="Mis órdenes"
+      title="Historial de compras"
+      maxWidth="max-w-5xl"
+    >
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, index) => (
@@ -710,7 +748,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
           })}
         </div>
       )}
-    </div>
+    </AccountViewFrame>
   )
 }
 
@@ -737,6 +775,151 @@ function ReadOnlyField({
       {help && <p className="text-11px text-white/25">{help}</p>}
     </div>
   )
+}
+
+type DeliveryAddressDraft = {
+  codigoPostal: string
+  calle: string
+  numero: string
+  piso?: string
+  departamento?: string
+  localidad: string
+  region: string
+  pais: "Argentina"
+  componentesDeDireccion: []
+}
+
+function splitLegacyAddress(value: string) {
+  const cleanValue = value.trim()
+  const match = cleanValue.match(/^(.*?)(\d+[a-zA-Z]?)\b(.*)$/)
+
+  if (!match) {
+    return {
+      street: cleanValue,
+      number: "",
+    }
+  }
+
+  return {
+    street: match[1].replace(/[,\s]+$/, "").trim(),
+    number: match[2].trim(),
+  }
+}
+
+function parseProfileAddress(
+  value: string,
+  province?: string,
+  postalCode?: string
+) {
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const baseAddress = splitLegacyAddress(parts[0] ?? value)
+  let floor = ""
+  let apartment = ""
+  let locality = ""
+
+  for (const part of parts.slice(1)) {
+    if (/^piso\s+/i.test(part)) {
+      floor = part.replace(/^piso\s+/i, "").trim()
+      continue
+    }
+
+    if (/^depto\s+/i.test(part)) {
+      apartment = part.replace(/^depto\s+/i, "").trim()
+      continue
+    }
+
+    if (province && part.toLowerCase() === province.toLowerCase()) {
+      continue
+    }
+
+    if (postalCode && part.toLowerCase() === `cp ${postalCode}`.toLowerCase()) {
+      continue
+    }
+
+    if (!locality) {
+      locality = part
+    }
+  }
+
+  return {
+    ...baseAddress,
+    floor,
+    apartment,
+    locality,
+  }
+}
+
+function buildDeliveryAddressDraft({
+  postalCode,
+  street,
+  streetNumber,
+  floor,
+  apartment,
+  locality,
+  province,
+}: {
+  postalCode: string
+  street: string
+  streetNumber: string
+  floor: string
+  apartment: string
+  locality: string
+  province: string
+}): DeliveryAddressDraft {
+  return {
+    codigoPostal: postalCode.trim(),
+    calle: street.trim(),
+    numero: streetNumber.trim(),
+    piso: floor.trim() || undefined,
+    departamento: apartment.trim() || undefined,
+    localidad: locality.trim(),
+    region: province.trim(),
+    pais: "Argentina",
+    componentesDeDireccion: [],
+  }
+}
+
+function formatDeliveryAddressForProfile(address: DeliveryAddressDraft) {
+  const optionalParts = [
+    address.piso ? `Piso ${address.piso}` : "",
+    address.departamento ? `Depto ${address.departamento}` : "",
+  ].filter(Boolean)
+
+  return [
+    `${address.calle} ${address.numero}`,
+    ...optionalParts,
+    address.localidad,
+    address.region,
+    `CP ${address.codigoPostal}`,
+  ].join(", ")
+}
+
+function validateDeliveryAddress(address: DeliveryAddressDraft) {
+  if (!address.calle) return "Ingresá la calle."
+  if (!address.numero) return "Ingresá el número de calle."
+  if (!/^\d{4,8}$/.test(address.codigoPostal)) {
+    return "El código postal debe tener entre 4 y 8 números."
+  }
+  if (!address.localidad) return "Ingresá la localidad."
+  if (!address.region) return "Seleccioná una provincia válida."
+
+  const commonPattern = /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/
+  const values = [
+    address.calle,
+    address.numero,
+    address.piso ?? "",
+    address.departamento ?? "",
+    address.localidad,
+  ].filter(Boolean)
+
+  if (values.some((value) => !commonPattern.test(value))) {
+    return "La dirección contiene caracteres no permitidos."
+  }
+
+  return ""
 }
 
 function validateAccountPassword(password: string) {
@@ -964,41 +1147,36 @@ function ChangePasswordForm() {
 
 function Seguridad({ onBack }: { onBack: () => void }) {
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
-      <button
-        type="button"
-        aria-label="Volver a mi cuenta"
-        title="Volver a mi cuenta"
-        onClick={onBack}
-        className="flex cursor-pointer items-center gap-1.5 text-sm text-white/60 transition-colors hover:text-white"
-      >
-        <ChevronLeft className="size-4" /> Volver a mi cuenta
-      </button>
-
-      <div className="rounded-2xl border border-white/7 bg-white/2 px-5 py-4">
-        <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-          Seguridad
-        </p>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
-          Cambiar contraseña
-        </h2>
-      </div>
-
+    <AccountViewFrame
+      onBack={onBack}
+      kicker="Seguridad"
+      title="Cambiar contraseña"
+      maxWidth="max-w-4xl"
+    >
       <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-6">
         <ChangePasswordForm />
       </div>
-    </div>
+    </AccountViewFrame>
   )
 }
 
 function MisDatos({ onBack }: { onBack: () => void }) {
   const { user, updateUser } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const profileAddress = parseProfileAddress(
+    user?.address ?? "",
+    user?.province,
+    user?.postalCode
+  )
   const [name, setName] = useState(user?.name ?? "")
   const [phone, setPhone] = useState(user?.phone ?? "")
   const [province, setProvince] = useState(user?.province ?? "")
-  const [address, setAddress] = useState(user?.address ?? "")
   const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
+  const [street, setStreet] = useState(profileAddress.street)
+  const [streetNumber, setStreetNumber] = useState(profileAddress.number)
+  const [floor, setFloor] = useState(profileAddress.floor)
+  const [apartment, setApartment] = useState(profileAddress.apartment)
+  const [locality, setLocality] = useState(user?.city ?? profileAddress.locality)
   const [references, setReferences] = useState(user?.references ?? "")
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? "")
   const [saved, setSaved] = useState(false)
@@ -1014,7 +1192,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
       name,
       phone,
       province,
-      address,
+      address: `${street} ${streetNumber}`.trim(),
       postalCode,
       references,
     })
@@ -1024,7 +1202,30 @@ function MisDatos({ onBack }: { onBack: () => void }) {
       return
     }
 
-    updateUser({ name, phone, province, address, postalCode, references })
+    const deliveryAddress = buildDeliveryAddressDraft({
+      postalCode,
+      street,
+      streetNumber,
+      floor,
+      apartment,
+      locality,
+      province,
+    })
+    const deliveryError = validateDeliveryAddress(deliveryAddress)
+
+    if (deliveryError) {
+      setProfileError(deliveryError)
+      return
+    }
+
+    updateUser({
+      name,
+      phone,
+      province,
+      address: formatDeliveryAddressForProfile(deliveryAddress),
+      postalCode,
+      references,
+    })
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -1075,29 +1276,15 @@ function MisDatos({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="space-y-5">
-      <button
-        type="button"
-        aria-label="Volver a mi cuenta"
-        title="Volver a mi cuenta"
-        onClick={onBack}
-        className="flex cursor-pointer items-center gap-1.5 text-sm text-white/60 transition-colors hover:text-white"
-      >
-        <ChevronLeft className="size-4" /> Volver a mi cuenta
-      </button>
-
-      <div className="rounded-2xl border border-white/7 bg-white/2 px-5 py-4">
-        <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-          Mis datos
-        </p>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
-          Datos de la cuenta
-        </h2>
-      </div>
-
-      <div className="rounded-2xl border border-white/7 bg-black p-6">
-        <form onSubmit={handleSave} className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl border border-white/7 bg-white/2 p-4">
+    <AccountViewFrame
+      onBack={onBack}
+      kicker="Mis datos"
+      title="Datos de la cuenta"
+      maxWidth="max-w-4xl"
+    >
+      <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-4 sm:p-5">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="flex items-center gap-3 rounded-xl border border-white/7 bg-white/2 p-3">
             <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="" className="size-full object-cover" />
@@ -1108,7 +1295,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
 
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-white">Foto de perfil</p>
-              <p className="mt-1 text-xs text-white/45">
+              <p className="mt-0.5 text-xs text-white/45">
                 JPG o PNG, hasta 2 MB.
               </p>
               {avatarError && (
@@ -1138,7 +1325,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
             </button>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             <ReadOnlyField
               label="Nombre de usuario"
               value={user?.username || "Sin usuario asignado"}
@@ -1154,25 +1341,41 @@ function MisDatos({ onBack }: { onBack: () => void }) {
 
             <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
             <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
-                Provincia
-              </label>
-              <ProvinceSelect value={province} onChange={setProvince} />
+          </div>
+
+          <div className="rounded-2xl border border-beyonix-blue-light/12 bg-black/30 p-3">
+            <div className="mb-3">
+              <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+                Dirección de entrega
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/42">
+                Estos datos ayudan a preparar futuros envíos a domicilio con Andreani.
+              </p>
             </div>
-            <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
-            <div className="md:col-span-2">
-              <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} maxLength={FIELD_LIMITS.address} />
-            </div>
-            <div className="md:col-span-2">
-              <TextareaField
-                label="Referencias para llegar"
-                value={references}
-                onChange={setReferences}
-                placeholder="Entre calles, fachada blanca, portón negro, antes de llegar a la esquina."
-                icon={MapPin}
-                maxLength={FIELD_LIMITS.references}
-              />
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <InputField label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" icon={MapPin} maxLength={60} />
+              <InputField label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
+              <InputField label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" icon={Hash} maxLength={12} />
+              <InputField label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" icon={Hash} maxLength={12} />
+              <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
+              <InputField label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" icon={MapPin} maxLength={60} />
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
+                  Provincia / Región
+                </label>
+                <ProvinceSelect value={province} onChange={setProvince} />
+              </div>
+              <div className="md:col-span-2">
+                <TextareaField
+                  label="Referencias para llegar"
+                  value={references}
+                  onChange={setReferences}
+                  placeholder="Entre calles, fachada blanca, portón negro, antes de llegar a la esquina."
+                  icon={MapPin}
+                  maxLength={FIELD_LIMITS.references}
+                />
+              </div>
             </div>
           </div>
 
@@ -1192,7 +1395,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
           </button>
         </form>
       </div>
-    </div>
+    </AccountViewFrame>
   )
 }
 

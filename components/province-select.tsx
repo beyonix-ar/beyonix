@@ -8,9 +8,11 @@ import { ARGENTINA_PROVINCES } from "@/lib/validation/account-fields"
 export function ProvinceSelect({
   value,
   onChange,
+  compact = false,
 }: {
   value: string
   onChange: (value: string) => void
+  compact?: boolean
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
@@ -47,7 +49,9 @@ export function ProvinceSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`flex h-12 w-full cursor-pointer items-center justify-between gap-3 rounded-xl border bg-black px-4 text-left text-sm outline-none transition-colors ${
+        className={`flex w-full cursor-pointer items-center justify-between gap-3 border bg-black text-left text-sm outline-none transition-colors ${
+          compact ? "h-10 rounded-lg px-3" : "h-12 rounded-xl px-4"
+        } ${
           open
             ? "border-beyonix-focus text-white"
             : "border-white/10 text-white hover:border-white/18"
@@ -65,7 +69,9 @@ export function ProvinceSelect({
         <div
           role="listbox"
           aria-label="Provincias"
-          className="absolute left-0 top-14 z-50 w-full overflow-hidden rounded-xl border border-beyonix-focus/70 bg-black p-1 shadow-2xl shadow-black/70"
+          className={`absolute left-0 z-50 w-full overflow-hidden rounded-xl border border-beyonix-focus/70 bg-black p-1 shadow-2xl shadow-black/70 ${
+            compact ? "top-11" : "top-14"
+          }`}
         >
           <div className="custom-scrollbar max-h-64 overflow-y-auto py-1">
             <button

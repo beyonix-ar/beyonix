@@ -55,6 +55,10 @@ import {
   getShippingCost,
 } from "@/lib/store-config"
 import {
+  formatDeliveryAddress,
+  parseDeliveryAddress,
+} from "@/lib/delivery-address"
+import {
   hasBlockedWords,
 } from "@/lib/validation/content-filter"
 
@@ -94,6 +98,10 @@ const initialCheckoutFormData = {
   email: "",
   telefono: "",
   direccion: "",
+  calle: "",
+  numero: "",
+  piso: "",
+  departamento: "",
   cpDestino: "",
   localidad: "",
   provincia: "",
@@ -117,6 +125,8 @@ function isValidCheckoutForm(data: typeof initialCheckoutFormData) {
   const email = data.email.trim()
   const telefono = data.telefono.replace(/\D/g, "")
   const direccion = data.direccion.trim()
+  const calle = data.calle.trim()
+  const numero = data.numero.trim()
   const cpDestino = data.cpDestino.trim()
   const localidad = data.localidad.trim()
   const provincia = data.provincia.trim()
@@ -127,9 +137,10 @@ function isValidCheckoutForm(data: typeof initialCheckoutFormData) {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
     telefono.length >= 8 &&
     telefono.length <= 15 &&
+    calle.length >= 2 &&
+    hasLetters(calle) &&
+    numero.length >= 1 &&
     direccion.length >= 5 &&
-    hasLetters(direccion) &&
-    /\d/.test(direccion) &&
     /^\d{4,8}$/.test(cpDestino) &&
     localidad.length >= 2 &&
     hasLetters(localidad) &&
@@ -195,13 +206,24 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!user) return
 
+    const parsedAddress = parseDeliveryAddress(
+      user.address ?? "",
+      user.province,
+      user.postalCode
+    )
+
     setFormData({
+      ...initialCheckoutFormData,
       nombre: user.name ?? "",
       email: user.email ?? "",
       telefono: user.phone ?? "",
       direccion: user.address ?? "",
+      calle: parsedAddress.street,
+      numero: parsedAddress.streetNumber,
+      piso: parsedAddress.floor,
+      departamento: parsedAddress.apartment,
       cpDestino: user.postalCode ?? "",
-      localidad: "",
+      localidad: parsedAddress.locality,
       provincia: user.province ?? "",
     })
   }, [user])
@@ -382,10 +404,36 @@ export default function CheckoutPage() {
     const { name, value } =
       e.target
 
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [name]: value,
+      }
+
+      if (
+        [
+          "calle",
+          "numero",
+          "piso",
+          "departamento",
+          "localidad",
+          "provincia",
+          "cpDestino",
+        ].includes(name)
+      ) {
+        next.direccion = formatDeliveryAddress({
+          street: next.calle,
+          streetNumber: next.numero,
+          floor: next.piso,
+          apartment: next.departamento,
+          locality: next.localidad,
+          region: next.provincia,
+          postalCode: next.cpDestino,
+        })
+      }
+
+      return next
+    })
   }
 
   const isFormValid = Boolean(
@@ -588,18 +636,18 @@ export default function CheckoutPage() {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 lg:px-8 py-8 lg:py-12">
+      <div className="container mx-auto px-4 lg:px-8 py-6 lg:py-8">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-2xl lg:text-3xl font-bold text-foreground mb-8">
+          <h1 className="text-2xl lg:text-3xl font-bold text-foreground mb-5">
             Checkout
           </h1>
 
-          <div className="grid lg:grid-cols-3 gap-8 lg:gap-12">
-            <div className="lg:col-span-2 space-y-8">
-              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-6">
+          <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
+            <div className="lg:col-span-2 space-y-5">
+              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+                <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
-                    Datos de contacto
+                    Datos de quien recibe
                   </span>
                 </h2>
 
@@ -608,9 +656,9 @@ export default function CheckoutPage() {
                   onSubmit={
                     handleSubmit
                   }
-                  className="space-y-4"
+                  className="space-y-3"
                 >
-                  <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="grid sm:grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="nombre">
                         Nombre completo
@@ -650,100 +698,54 @@ export default function CheckoutPage() {
                       />
                     </div>
                   </div>
+                  <div className="rounded-xl border border-beyonix-blue-light/14 bg-black/25 p-3">
+                    <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+                      Datos de quien recibe
+                    </p>
+                    <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                      Podés usar otro email para quien recibe el producto. El nickname de la cuenta no se modifica.
+                    </p>
 
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="telefono">
-                        Teléfono
-                      </Label>
-
-                      <Input
-                        id="telefono"
-                        name="telefono"
-                        type="tel"
-                        className={checkoutInputClassName}
-                        value={
-                          formData.telefono
-                        }
-                        onChange={
-                          handleInputChange
-                        }
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="direccion">
-                        Dirección
-                      </Label>
-
-                      <Input
-                        id="direccion"
-                        name="direccion"
-                        className={checkoutInputClassName}
-                        value={
-                          formData.direccion
-                        }
-                        onChange={
-                          handleInputChange
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid sm:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="provincia">
-                        Provincia
-                      </Label>
-
-                      <Input
-                        id="provincia"
-                        name="provincia"
-                        className={checkoutInputClassName}
-                        value={formData.provincia}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="localidad">
-                        Localidad
-                      </Label>
-
-                      <Input
-                        id="localidad"
-                        name="localidad"
-                        className={checkoutInputClassName}
-                        value={formData.localidad}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="cpDestino">
-                        Código postal
-                      </Label>
-
-                      <Input
-                        id="cpDestino"
-                        name="cpDestino"
-                        inputMode="numeric"
-                        className={checkoutInputClassName}
-                        value={formData.cpDestino}
-                        onChange={handleInputChange}
-                        required
-                      />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="telefono">Teléfono</Label>
+                        <Input id="telefono" name="telefono" type="tel" className={checkoutInputClassName} value={formData.telefono} onChange={handleInputChange} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="calle">Calle</Label>
+                        <Input id="calle" name="calle" className={checkoutInputClassName} value={formData.calle} onChange={handleInputChange} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="numero">Número</Label>
+                        <Input id="numero" name="numero" inputMode="numeric" className={checkoutInputClassName} value={formData.numero} onChange={handleInputChange} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="piso">Piso opcional</Label>
+                        <Input id="piso" name="piso" className={checkoutInputClassName} value={formData.piso} onChange={handleInputChange} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="departamento">Departamento opcional</Label>
+                        <Input id="departamento" name="departamento" className={checkoutInputClassName} value={formData.departamento} onChange={handleInputChange} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="cpDestino">Código postal</Label>
+                        <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={checkoutInputClassName} value={formData.cpDestino} onChange={handleInputChange} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="localidad">Localidad</Label>
+                        <Input id="localidad" name="localidad" className={checkoutInputClassName} value={formData.localidad} onChange={handleInputChange} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="provincia">Provincia / Región</Label>
+                        <Input id="provincia" name="provincia" className={checkoutInputClassName} value={formData.provincia} onChange={handleInputChange} required />
+                      </div>
                     </div>
                   </div>
                 </form>
               </section>
 
-              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-6">
+              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+                <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
                     Método de envío
                   </span>
@@ -801,8 +803,8 @@ export default function CheckoutPage() {
                 )}
               </section>
 
-              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-6">
+              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+                <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
                     Método de pago
                   </span>
@@ -824,7 +826,7 @@ export default function CheckoutPage() {
                           )
                         }
                         className={cn(
-                          "checkout-solid-card w-full flex cursor-pointer items-center gap-4 rounded-lg border p-4 text-left transition-all",
+                          "checkout-solid-card w-full flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-all",
 
                           selectedPayment ===
                             method.id
@@ -834,7 +836,7 @@ export default function CheckoutPage() {
                       >
                         <div
                           className={cn(
-                            "size-12 rounded-lg flex items-center justify-center",
+                            "size-10 rounded-lg flex items-center justify-center",
 
                             selectedPayment ===
                               method.id
@@ -842,7 +844,7 @@ export default function CheckoutPage() {
                               : "bg-neutral-950"
                           )}
                         >
-                          <method.icon className="size-6" />
+                          <method.icon className="size-5" />
                         </div>
 
                         <div className="flex-1">
@@ -866,19 +868,19 @@ export default function CheckoutPage() {
             </div>
 
             <div className="lg:col-span-1">
-              <div className="checkout-solid-card sticky top-24 rounded-xl border border-beyonix-blue-light p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-6">
+              <div className="checkout-solid-card sticky top-24 rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+                <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
                     Resumen del pedido
                   </span>
                 </h2>
 
-                <div className="space-y-4 mb-6">
+                <div className="space-y-3 mb-4">
                   {items.map(
                     (item) => (
                       <div
                         key={`${item.product.id}-${item.variantId ?? item.color}`}
-                        className="checkout-solid-card flex gap-3 rounded-xl border border-beyonix-blue-light p-3"
+                        className="checkout-solid-card flex gap-3 rounded-xl border border-beyonix-blue-light p-2.5"
                       >
                         <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-950">
                           <Image
@@ -934,7 +936,7 @@ export default function CheckoutPage() {
 
                 <Separator className="mb-4" />
 
-                <div className="space-y-2 mb-6">
+                <div className="space-y-2 mb-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">
                       Subtotal
@@ -1030,7 +1032,7 @@ export default function CheckoutPage() {
                     : "Pagar ahora"}
                 </Button>
 
-                <p className="text-xs text-muted-foreground text-center mt-4">
+                <p className="text-xs text-muted-foreground text-center mt-3">
                   Al completar tu
                   compra aceptás
                   nuestros{" "}

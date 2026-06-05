@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
@@ -33,7 +34,6 @@ export function SiteHeader() {
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
   const userLabel =
-    user?.name?.trim() ||
     user?.username?.trim() ||
     user?.email?.split("@")[0] ||
     "Mi cuenta"
@@ -87,12 +87,7 @@ export function SiteHeader() {
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black">
       <nav className="container mx-auto px-4 lg:px-8">
         <div className="grid h-16 grid-cols-site-header items-center lg:h-18">
-          <Link
-            href="/"
-            className="shrink-0 font-heading text-2xl font-bold uppercase tracking-tight text-white transition-colors hover:text-white/90 lg:text-26px"
-          >
-            BEYONIX
-          </Link>
+          <BeyonixLogoLink />
 
           <div className="hidden items-center justify-center gap-7 lg:flex">
             <Link
@@ -174,9 +169,9 @@ export function SiteHeader() {
                     aria-label="Abrir menú de usuario"
                     title="Abrir menú de usuario"
                     onClick={() => setUserOpen((v) => !v)}
-                    className="flex h-10 max-w-300px cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
+                    className="flex h-12 max-w-300px cursor-pointer items-center gap-2.5 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3.5 text-white transition-all hover:border-white/22 hover:bg-white/7"
                   >
-                    <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white text-black shadow-sm shadow-black/40">
+                    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white text-black shadow-sm shadow-black/40">
                       {user.avatarUrl ? (
                         <img
                           src={user.avatarUrl}
@@ -184,7 +179,7 @@ export function SiteHeader() {
                           className="size-full object-cover"
                         />
                       ) : (
-                        <CircleUserRound className="size-5" />
+                        <CircleUserRound className="size-6" />
                       )}
                     </span>
                     <span className="whitespace-nowrap text-sm font-medium uppercase text-white/86">

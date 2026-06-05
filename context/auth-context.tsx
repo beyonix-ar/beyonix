@@ -39,6 +39,13 @@ function shouldHideRecoverySession() {
   return isPasswordRecoveryInProgress() && !isResetPasswordPage()
 }
 
+function isEmailConfirmed(supabaseUser: User) {
+  return Boolean(
+    supabaseUser.email_confirmed_at ||
+      supabaseUser.confirmed_at
+  )
+}
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Types
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -106,6 +113,7 @@ interface AuthContextType {
   ) => Promise<{
     ok: boolean
     error?: string
+    requiresConfirmation?: boolean
   }>
 
   logout: () => Promise<void>
@@ -282,6 +290,13 @@ export function AuthProvider({
               return
             }
 
+            if (!isEmailConfirmed(session.user)) {
+              supabase.auth.signOut()
+              setUser(null)
+              setIsLoading(false)
+              return
+            }
+
             loadProfile(
               session.user
             ).finally(() =>
@@ -315,6 +330,12 @@ export function AuthProvider({
             session?.user
           ) {
             if (shouldHideRecoverySession()) {
+              setUser(null)
+              return
+            }
+
+            if (!isEmailConfirmed(session.user)) {
+              supabase.auth.signOut()
               setUser(null)
               return
             }
@@ -438,6 +459,17 @@ export function AuthProvider({
         }
 
         if (data.user) {
+          if (!isEmailConfirmed(data.user)) {
+            await supabase.auth.signOut()
+            setUser(null)
+
+            return {
+              ok: false,
+              error:
+                "Tenés que confirmar tu email antes de iniciar sesión.",
+            }
+          }
+
           await loadProfile(
             data.user
           )
@@ -461,6 +493,7 @@ export function AuthProvider({
       ): Promise<{
         ok: boolean
         error?: string
+        requiresConfirmation?: boolean
       }> => {
         localStorage.removeItem(PASSWORD_RECOVERY_KEY)
 
@@ -530,6 +563,10 @@ export function AuthProvider({
                 form.password,
 
               options: {
+                emailRedirectTo:
+                  typeof window !== "undefined"
+                    ? `${window.location.origin}/auth/callback?next=/login?confirmed=1`
+                    : undefined,
                 data: {
                   nombre:
                     form.name.trim(),
@@ -624,13 +661,13 @@ export function AuthProvider({
             }
           }
 
-          await loadProfile(
-            data.user
-          )
+          await supabase.auth.signOut()
+          setUser(null)
         }
 
         return {
           ok: true,
+          requiresConfirmation: true,
         }
       },
       [loadProfile]
