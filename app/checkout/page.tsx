@@ -893,6 +893,7 @@ export default function CheckoutPage() {
                                 ? `${item.product.nombre} en carrito`
                                 : "Producto en carrito"
                             }
+                            sizes="64px"
                             className="object-cover"
                           />
                         </div>

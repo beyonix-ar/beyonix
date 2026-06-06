@@ -29,6 +29,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
           src={image || "/placeholder.svg"}
           alt={product.nombre}
           fill
+          sizes="80px"
           className="object-cover"
         />
       </div>

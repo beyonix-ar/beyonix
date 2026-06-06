@@ -21,12 +21,15 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import {
   FIELD_LIMITS,
+  meetsPasswordRequirements,
   onlyDigits,
+  validatePassword,
   validateProfilePayload,
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
@@ -202,11 +205,6 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
       return
     }
 
-    if ("requiresConfirmation" in result && result.requiresConfirmation) {
-      setSuccess("Cuenta creada. Te enviamos un email para confirmar tu cuenta antes de iniciar sesión.")
-      return
-    }
-
     router.push("/cuenta")
   }
 
@@ -272,7 +270,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
             aria-label="Mostrar u ocultar contraseña"
             title="Mostrar u ocultar contraseña"
             onClick={() => setShowPass((value) => !value)}
-            className="text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+            className="cursor-pointer text-slate-700 transition-colors hover:text-black"
           >
             {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
@@ -349,6 +347,11 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
     e.preventDefault()
     setError("")
 
+    if (!meetsPasswordRequirements(password)) {
+      setError("La contraseña no cumple los requisitos.")
+      return
+    }
+
     const validationError = validateRegisterPayload({
       username,
       name,
@@ -385,7 +388,9 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       return
     }
 
-    router.push("/cuenta")
+    router.push(
+      `/verificar-email?email=${encodeURIComponent(email.trim().toLowerCase())}`
+    )
   }
 
   return (
@@ -415,7 +420,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
         type={showPass ? "text" : "password"}
         value={password}
         onChange={setPassword}
-        placeholder="Mínimo 6 caracteres"
+        placeholder="Creá una contraseña segura"
         icon={Lock}
         maxLength={FIELD_LIMITS.password}
         rightElement={
@@ -430,6 +435,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
           </button>
         }
       />
+      <PasswordRequirements password={password} />
 
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
@@ -923,19 +929,7 @@ function validateDeliveryAddress(address: DeliveryAddressDraft) {
 }
 
 function validateAccountPassword(password: string) {
-  if (password.length < 8) {
-    return "La contraseña debe tener al menos 8 caracteres."
-  }
-
-  if (!/[A-Z]/.test(password)) {
-    return "La contraseña debe incluir al menos una mayúscula."
-  }
-
-  if (!/[0-9]/.test(password)) {
-    return "La contraseña debe incluir al menos un número."
-  }
-
-  return ""
+  return validatePassword(password)
 }
 
 function ChangePasswordForm() {

@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react"
 
@@ -44,6 +45,46 @@ function isEmailConfirmed(supabaseUser: User) {
     supabaseUser.email_confirmed_at ||
       supabaseUser.confirmed_at
   )
+}
+
+function isInvalidRefreshTokenError(error: unknown) {
+  if (!error || typeof error !== "object") return false
+
+  const authError = error as {
+    code?: string
+    message?: string
+  }
+  const message = authError.message?.toLowerCase() ?? ""
+
+  return (
+    authError.code === "refresh_token_not_found" ||
+    authError.code === "refresh_token_already_used" ||
+    message.includes("invalid refresh token") ||
+    message.includes("refresh token not found")
+  )
+}
+
+function clearSupabaseBrowserSession() {
+  if (typeof window === "undefined") return
+
+  const projectRef = new URL(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!
+  ).hostname.split(".")[0]
+  const storagePrefix = `sb-${projectRef}-auth-token`
+
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith(storagePrefix)) {
+      localStorage.removeItem(key)
+    }
+  }
+
+  for (const cookie of document.cookie.split(";")) {
+    const name = cookie.split("=")[0]?.trim()
+
+    if (name?.startsWith(storagePrefix)) {
+      document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`
+    }
+  }
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -198,6 +239,7 @@ export function AuthProvider({
 
   const [isLoading, setIsLoading] =
     useState(true)
+  const registrationInProgress = useRef(false)
 
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Load profile
@@ -273,14 +315,23 @@ export function AuthProvider({
       }
     }
 
-    supabase.auth
-      .getSession()
-      .then(
-        ({
-          data: {
-            session,
-          },
-        }) => {
+    supabase.auth.getSession().then(
+      ({
+        data: {
+          session,
+        },
+        error,
+      }) => {
+          if (error) {
+            if (isInvalidRefreshTokenError(error)) {
+              clearSupabaseBrowserSession()
+            }
+
+            setUser(null)
+            setIsLoading(false)
+            return
+          }
+
           if (
             session?.user
           ) {
@@ -309,8 +360,15 @@ export function AuthProvider({
               false
             )
           }
-        }
-      )
+      }
+    ).catch((error) => {
+      if (isInvalidRefreshTokenError(error)) {
+        clearSupabaseBrowserSession()
+      }
+
+      setUser(null)
+      setIsLoading(false)
+    })
 
     const {
       data: {
@@ -324,6 +382,11 @@ export function AuthProvider({
         ) => {
           if (event === "PASSWORD_RECOVERY") {
             localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
+          }
+
+          if (registrationInProgress.current) {
+            setUser(null)
+            return
           }
 
           if (
@@ -438,6 +501,17 @@ export function AuthProvider({
 
         if (error) {
           if (
+            error.code === "email_not_confirmed" ||
+            error.message.toLowerCase().includes("email not confirmed")
+          ) {
+            return {
+              ok: false,
+              error:
+                "Tenés que confirmar tu correo antes de iniciar sesión.",
+            }
+          }
+
+          if (
             error.message.includes(
               "Invalid login"
             )
@@ -466,7 +540,7 @@ export function AuthProvider({
             return {
               ok: false,
               error:
-                "Tenés que confirmar tu email antes de iniciar sesión.",
+                "Tenés que confirmar tu correo antes de iniciar sesión.",
             }
           }
 
@@ -548,6 +622,8 @@ export function AuthProvider({
           }
         }
 
+        registrationInProgress.current = true
+
         const {
           data,
           error,
@@ -565,7 +641,7 @@ export function AuthProvider({
               options: {
                 emailRedirectTo:
                   typeof window !== "undefined"
-                    ? `${window.location.origin}/auth/callback?next=/login?confirmed=1`
+                    ? `${window.location.origin}/confirmar-email`
                     : undefined,
                 data: {
                   nombre:
@@ -588,24 +664,63 @@ export function AuthProvider({
           )
 
         if (error) {
+          registrationInProgress.current = false
+
           if (
-            error.message.includes(
-              "already registered"
-            )
+            error.code === "user_already_exists" ||
+            error.message.toLowerCase().includes("already registered")
           ) {
             return {
               ok: false,
-
               error:
                 "Ya existe una cuenta con ese email.",
             }
           }
 
+          if (
+            error.code === "over_email_send_rate_limit" ||
+            error.status === 429
+          ) {
+            return {
+              ok: false,
+              error:
+                "Se enviaron demasiados correos. Esperá unos minutos e intentá nuevamente.",
+            }
+          }
+
+          if (
+            error.code === "unexpected_failure" ||
+            error.message.toLowerCase().includes("confirmation email")
+          ) {
+            return {
+              ok: false,
+              error:
+                "No pudimos enviar el correo de confirmación. Intentá nuevamente en unos minutos.",
+            }
+          }
+
           return {
             ok: false,
-
             error:
-              "OcurriÃ³ un error al crear la cuenta.",
+              "Ocurrió un error al crear la cuenta.",
+          }
+        }
+
+        if (
+          data.session ||
+          (data.user && isEmailConfirmed(data.user))
+        ) {
+          if (data.session) {
+            await supabase.auth.signOut()
+          }
+
+          registrationInProgress.current = false
+          setUser(null)
+
+          return {
+            ok: false,
+            error:
+              "Supabase confirmó el email automáticamente. Revisá la configuración del proyecto conectado antes de continuar.",
           }
         }
 
@@ -653,17 +768,10 @@ export function AuthProvider({
             profileError = retry.error
           }
 
-          if (profileError) {
-            return {
-              ok: false,
-              error:
-                "La cuenta se creó, pero faltan columnas de perfil en Supabase. Ejecutá el SQL de perfiles.",
-            }
-          }
-
-          await supabase.auth.signOut()
           setUser(null)
         }
+
+        registrationInProgress.current = false
 
         return {
           ok: true,

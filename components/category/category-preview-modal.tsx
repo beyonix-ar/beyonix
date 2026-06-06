@@ -109,6 +109,7 @@ export function ProductPreviewModal({
             alt={`${productName} ${selectedImage + 1}`}
             fill
             priority
+            sizes="100vw"
             className="pointer-events-none object-contain p-8"
           />
         </div>

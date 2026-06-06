@@ -125,6 +125,7 @@ export function ProductsSection({
                       alt={
                         product.nombre
                       }
+                      sizes="(min-width: 640px) 280px, calc(100vw - 32px)"
                       className="object-contain transition-transform duration-500 group-hover:scale-105"
                     />
                   </div>

@@ -45,7 +45,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es">
+    <html lang="es" data-scroll-behavior="smooth">
       <body className={`${montserrat.variable} ${manrope.variable} antialiased`}>
         <Script id="beyonix-scroll-restoration" strategy="beforeInteractive">
           {`if ("scrollRestoration" in history) history.scrollRestoration = "manual";`}

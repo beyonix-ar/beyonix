@@ -3,14 +3,16 @@
 import { Suspense, useEffect, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Eye, EyeOff, Loader2, MailCheck } from "lucide-react"
+import { CheckCircle2, Eye, EyeOff, Loader2, RefreshCw } from "lucide-react"
 
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
+import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { useAuth } from "@/context/auth-context"
 import { supabase } from "@/lib/supabase/client"
 import {
   FIELD_LIMITS,
+  meetsPasswordRequirements,
   onlyDigits,
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
@@ -71,7 +73,7 @@ function Field({
           inputMode={inputMode}
           autoComplete={autoComplete}
           onChange={(e) => onChange(e.target.value)}
-          className={`h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus ${
+          className={`beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus ${
             showPasswordToggle ? "pr-12" : ""
           }`}
         />
@@ -153,6 +155,9 @@ function LoginContent() {
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
   const [confirmationEmail, setConfirmationEmail] = useState("")
+  const [resendingEmail, setResendingEmail] = useState(false)
+  const [resendMessage, setResendMessage] = useState("")
+  const [resendCooldown, setResendCooldown] = useState(0)
 
   const redirect = getSafeRedirect(searchParams.get("redirect"))
   const verificationEmail = searchParams.get("verificar-email")
@@ -165,13 +170,52 @@ function LoginContent() {
   }, [router, searchParams])
 
   useEffect(() => {
+    if (searchParams.get("auth-error") !== "confirmation") return
+
+    setError(
+      "El enlace de confirmación no es válido o ya fue utilizado. Solicitá un nuevo correo."
+    )
+    router.replace("/login", { scroll: false })
+  }, [router, searchParams])
+
+  useEffect(() => {
+    if (searchParams.get("email-confirmed") !== "1") return
+
+    setSuccess("Email confirmado correctamente. Ya podés iniciar sesión.")
+    router.replace("/login", { scroll: false })
+  }, [router, searchParams])
+
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.slice(1))
+
+    if (hashParams.get("error_code") !== "otp_expired") return
+
+    setError(
+      "El enlace de confirmación venció o ya fue utilizado. Solicitá un correo nuevo."
+    )
+    window.history.replaceState(null, "", "/login")
+  }, [])
+
+  useEffect(() => {
     if (!verificationEmail?.includes("@")) return
 
-    setConfirmationEmail(verificationEmail.trim().toLowerCase())
+    const normalizedEmail = verificationEmail.trim().toLowerCase()
+    setConfirmationEmail(normalizedEmail)
+    setResendMessage("")
     setMode("login")
     setError("")
     setSuccess("")
   }, [verificationEmail])
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+
+    const timeout = window.setTimeout(() => {
+      setResendCooldown((current) => Math.max(0, current - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timeout)
+  }, [resendCooldown])
 
   useEffect(() => {
     if (isLoading || !user) return
@@ -234,6 +278,12 @@ function LoginContent() {
       postalCode,
     })
 
+    if (!meetsPasswordRequirements(password)) {
+      setLoading(false)
+      setError("La contraseña no cumple los requisitos.")
+      return
+    }
+
     const validationError = validateRegisterPayload({
       username,
       name,
@@ -277,7 +327,7 @@ function LoginContent() {
       setConfirmationEmail(normalizedEmail)
       setMode("login")
       router.replace(
-        `/login?verificar-email=${encodeURIComponent(normalizedEmail)}`,
+        `/verificar-email?email=${encodeURIComponent(normalizedEmail)}`,
         { scroll: false }
       )
       return
@@ -314,6 +364,33 @@ function LoginContent() {
 
     setSuccess("Si el email existe, te enviamos un enlace de recuperación.")
   }
+
+  const handleResendConfirmation = async () => {
+    if (!confirmationEmail || resendingEmail || resendCooldown > 0) return
+
+    setResendingEmail(true)
+    setResendMessage("")
+
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: confirmationEmail,
+    })
+
+    setResendingEmail(false)
+
+    if (resendError) {
+      setResendMessage(
+        resendError.status === 429
+          ? "Esperá unos minutos antes de volver a intentarlo."
+          : "No pudimos reenviar el correo de confirmación."
+      )
+      return
+    }
+
+    setResendCooldown(60)
+    setResendMessage("Correo reenviado. Puede demorar unos minutos en llegar.")
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-black">
       <header className="border-b border-white/10 bg-black">
@@ -327,8 +404,8 @@ function LoginContent() {
       <main className="flex flex-1 items-center justify-center px-4 py-4">
         {confirmationEmail ? (
           <div className="w-full max-w-lg rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-surface-4 p-6 text-center shadow-2xl shadow-black/35 lg:p-8">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border border-beyonix-blue-light/30 bg-beyonix-blue/18 text-beyonix-cyan">
-              <MailCheck className="size-7" />
+            <div className="mx-auto flex size-16 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-500/10">
+              <CheckCircle2 className="size-10 text-emerald-400" strokeWidth={2.25} />
             </div>
 
             <h1 className="mt-5 text-2xl font-bold text-white sm:text-3xl">
@@ -336,7 +413,7 @@ function LoginContent() {
             </h1>
 
             <p className="mt-3 text-sm leading-6 text-white/68">
-              Revisá tu casilla de email:
+              Te enviamos un correo de confirmación. Revisá tu email para activar la cuenta.
             </p>
 
             <p className="mt-2 rounded-xl border border-white/8 bg-black px-4 py-3 text-sm font-semibold text-white">
@@ -353,6 +430,37 @@ function LoginContent() {
 
             <button
               type="button"
+              onClick={handleResendConfirmation}
+              disabled={resendingEmail || resendCooldown > 0}
+              className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/5 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {resendingEmail ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              {resendingEmail
+                ? "Reenviando..."
+                : resendCooldown > 0
+                  ? `Reenviar en ${resendCooldown}s`
+                  : "Reenviar correo de confirmación"}
+            </button>
+
+            {resendMessage && (
+              <p
+                role="status"
+                className={`mt-3 text-xs leading-5 ${
+                  resendMessage.startsWith("Correo reenviado")
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}
+              >
+                {resendMessage}
+              </p>
+            )}
+
+            <button
+              type="button"
               aria-label="Volver al inicio de sesión"
               title="Volver al inicio de sesión"
               onClick={() => {
@@ -360,7 +468,7 @@ function LoginContent() {
                 setMode("login")
                 router.replace("/login", { scroll: false })
               }}
-              className="mt-6 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90"
+              className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90"
             >
               Volver al inicio de sesión
             </button>
@@ -440,7 +548,10 @@ function LoginContent() {
             </>
           ) : (
             <>
-              <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Mínimo 6 caracteres" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
+              <div>
+                <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Creá una contraseña segura" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
+                <PasswordRequirements password={password} />
+              </div>
               <Field name="email" label="Email" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
             </>
           )}

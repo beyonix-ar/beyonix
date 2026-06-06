@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
+import { validatePassword } from "@/lib/validation/account-fields"
 
 function getPasswordUpdateMessage(message: string) {
   const normalizedMessage = message.toLowerCase()
@@ -168,18 +169,10 @@ function ResetPasswordContent() {
     e.preventDefault()
     setError("")
 
-    if (password.length <= 6) {
-      setError("La contraseña debe tener más de 6 caracteres.")
-      return
-    }
+    const passwordError = validatePassword(password)
 
-    if (!/[A-Z]/.test(password)) {
-      setError("La contraseña debe incluir al menos una mayúscula.")
-      return
-    }
-
-    if (!/[0-9]/.test(password)) {
-      setError("La contraseña debe incluir al menos un número.")
+    if (passwordError) {
+      setError(passwordError)
       return
     }
 

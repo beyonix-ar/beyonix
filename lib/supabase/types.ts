@@ -172,6 +172,19 @@ export interface SupabasePedidoItem {
   producto_variantes?: SupabaseProductoVariante | null
 }
 
+export interface SupabaseReview {
+  id: number
+  user_id: string
+  order_id: number
+  rating: number
+  comment: string
+  nickname: string
+  city: string
+  province: string
+  approved: boolean
+  created_at: string
+}
+
 // ─────────────────────────────────────────────────────────────
 // Clientes
 // ─────────────────────────────────────────────────────────────

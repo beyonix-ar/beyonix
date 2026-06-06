@@ -84,7 +84,7 @@ export function Footer() {
       id="contacto"
       className="border-t border-beyonix-blue-light/16 bg-beyonix-page"
     >
-      <div className="h-px bg-gradient-to-r from-transparent via-beyonix-blue-light to-transparent opacity-70" />
+      <div className="h-px bg-linear-to-r from-transparent via-beyonix-blue-light to-transparent opacity-70" />
 
       <div className="container mx-auto px-4 py-12 lg:px-8 lg:py-14">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">

@@ -126,13 +126,53 @@ export function validateEmail(email: string) {
   return ""
 }
 
+export function getPasswordRequirements(password: string) {
+  return [
+    {
+      label: "Mínimo 8 caracteres",
+      met: password.length >= 8,
+    },
+    {
+      label: "Una letra mayúscula",
+      met: /[A-Z]/.test(password),
+    },
+    {
+      label: "Una letra minúscula",
+      met: /[a-z]/.test(password),
+    },
+    {
+      label: "Un número",
+      met: /[0-9]/.test(password),
+    },
+  ]
+}
+
+export function meetsPasswordRequirements(password: string) {
+  return (
+    password.length <= FIELD_LIMITS.password &&
+    getPasswordRequirements(password).every((requirement) => requirement.met)
+  )
+}
+
 export function validatePassword(password: string) {
-  if (password.length < 6) {
-    return "La contraseña debe tener al menos 6 caracteres."
+  if (password.length < 8) {
+    return "La contraseña debe tener al menos 8 caracteres."
   }
 
   if (password.length > FIELD_LIMITS.password) {
     return "La contraseña no puede superar los 20 caracteres."
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    return "La contraseña debe incluir al menos una mayúscula."
+  }
+
+  if (!/[a-z]/.test(password)) {
+    return "La contraseña debe incluir al menos una minúscula."
+  }
+
+  if (!/[0-9]/.test(password)) {
+    return "La contraseña debe incluir al menos un número."
   }
 
   return ""

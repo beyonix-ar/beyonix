@@ -5,11 +5,11 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
   const type = requestUrl.searchParams.get("type")
-  const isRecovery = !type || type === "recovery"
-  const next =
-    requestUrl.searchParams.get("next") ||
-    (isRecovery ? "/reset-password" : "/login?confirmed=1")
-  const redirectUrl = new URL(next, request.url)
+  const isRecovery = type === "recovery"
+  const redirectUrl = new URL(
+    isRecovery ? "/reset-password" : "/login",
+    request.url
+  )
 
   if (
     code &&
@@ -42,7 +42,24 @@ export async function GET(request: NextRequest) {
     }
   )
 
-  await supabase.auth.exchangeCodeForSession(code)
+  const { error } = await supabase.auth.exchangeCodeForSession(code)
+
+  if (error) {
+    const failedRedirect = new URL("/login", request.url)
+    failedRedirect.searchParams.set("auth-error", "confirmation")
+    const failedResponse = NextResponse.redirect(failedRedirect)
+
+    for (const cookie of request.cookies.getAll()) {
+      if (cookie.name.startsWith("sb-") && cookie.name.includes("-auth-token")) {
+        failedResponse.cookies.set(cookie.name, "", {
+          path: "/",
+          maxAge: 0,
+        })
+      }
+    }
+
+    return failedResponse
+  }
 
   return response
 }
