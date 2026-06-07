@@ -1,40 +1,108 @@
 "use client"
 
-import { Suspense, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { CheckCircle2, Loader2 } from "lucide-react"
 
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
+import { supabase } from "@/lib/supabase/client"
 
 function ConfirmEmailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tokenHash = searchParams.get("token_hash") ?? ""
+  const code = searchParams.get("code") ?? ""
   const [loading, setLoading] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [hasSession, setHasSession] = useState(false)
   const [error, setError] = useState("")
 
+  useEffect(() => {
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setHasSession(Boolean(data.session))
+      })
+      .catch(() => {
+        setError("No pudimos validar el enlace. Recargá la página.")
+      })
+      .finally(() => {
+        setCheckingSession(false)
+      })
+  }, [])
+
   const handleConfirm = async () => {
-    if (!tokenHash || loading) return
+    if (loading) return
 
     setLoading(true)
     setError("")
 
+    if (tokenHash) {
+      const { error: verificationError } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: "email",
+      })
+
+      if (verificationError) {
+        setLoading(false)
+        setError(
+          "El enlace de confirmación venció o ya fue utilizado. Solicitá un correo nuevo."
+        )
+        return
+      }
+    } else if (code) {
+      const { error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(code)
+
+      if (exchangeError) {
+        setLoading(false)
+        setError(
+          "El enlace de confirmación venció o ya fue utilizado. Solicitá un correo nuevo."
+        )
+        return
+      }
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session) {
+      setLoading(false)
+      setError(
+        "Este enlace no contiene una confirmación válida. Solicitá un correo nuevo."
+      )
+      return
+    }
+
     const response = await fetch("/api/auth/confirm-email", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tokenHash }),
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
     })
     const result = await response.json()
 
-    setLoading(false)
-
     if (!response.ok) {
+      setLoading(false)
       setError(result.error || "No pudimos confirmar tu cuenta.")
       return
     }
 
-    router.replace("/login?email-confirmed=1")
+    const { error: refreshError } = await supabase.auth.refreshSession()
+
+    if (refreshError) {
+      setLoading(false)
+      setError("La cuenta se activó, pero no pudimos iniciar la sesión.")
+      return
+    }
+
+    router.replace("/")
+    router.refresh()
   }
+
+  const canConfirm =
+    !checkingSession && Boolean(tokenHash || code || hasSession)
 
   return (
     <div className="flex min-h-screen flex-col bg-black">
@@ -71,10 +139,12 @@ function ConfirmEmailContent() {
             aria-label="Confirmar cuenta"
             title="Confirmar cuenta"
             onClick={handleConfirm}
-            disabled={!tokenHash || loading}
+            disabled={!canConfirm || loading}
             className="mt-6 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading && <Loader2 className="size-4 animate-spin" />}
+            {(loading || checkingSession) && (
+              <Loader2 className="size-4 animate-spin" />
+            )}
             {loading ? "Confirmando..." : "Confirmar cuenta"}
           </button>
         </div>

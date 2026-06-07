@@ -27,7 +27,7 @@ type MeteorRoute = {
   endY: number
 }
 
-const SHOOTING_STAR_COUNT = 9
+const SHOOTING_STAR_COUNT = 7
 const BACKGROUND_DOT_COUNT = 100
 
 const meteorRoutes: MeteorRoute[] = [

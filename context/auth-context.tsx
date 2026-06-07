@@ -47,6 +47,16 @@ function isEmailConfirmed(supabaseUser: User) {
   )
 }
 
+function isAccountActivated(supabaseUser: User) {
+  const requiresManualActivation =
+    supabaseUser.user_metadata?.pending_activation === true
+
+  return (
+    !requiresManualActivation ||
+    supabaseUser.app_metadata?.account_activated === true
+  )
+}
+
 function isInvalidRefreshTokenError(error: unknown) {
   if (!error || typeof error !== "object") return false
 
@@ -342,7 +352,12 @@ export function AuthProvider({
             }
 
             if (!isEmailConfirmed(session.user)) {
-              supabase.auth.signOut()
+              setUser(null)
+              setIsLoading(false)
+              return
+            }
+
+            if (!isAccountActivated(session.user)) {
               setUser(null)
               setIsLoading(false)
               return
@@ -398,7 +413,11 @@ export function AuthProvider({
             }
 
             if (!isEmailConfirmed(session.user)) {
-              supabase.auth.signOut()
+              setUser(null)
+              return
+            }
+
+            if (!isAccountActivated(session.user)) {
               setUser(null)
               return
             }
@@ -544,6 +563,17 @@ export function AuthProvider({
             }
           }
 
+          if (!isAccountActivated(data.user)) {
+            await supabase.auth.signOut()
+            setUser(null)
+
+            return {
+              ok: false,
+              error:
+                "Tenés que completar la activación desde el botón del correo antes de iniciar sesión.",
+            }
+          }
+
           await loadProfile(
             data.user
           )
@@ -658,6 +688,7 @@ export function AuthProvider({
                     form.province.trim(),
                   referencias:
                     form.references?.trim() ?? "",
+                  pending_activation: true,
                 },
               },
             }
