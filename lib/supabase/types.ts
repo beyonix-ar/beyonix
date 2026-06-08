@@ -152,6 +152,12 @@ export interface SupabasePedido {
   payment_status?: string | null
   payment_method_id?: string | null
   payment_type_id?: string | null
+  transfer_alias?: string | null
+  transfer_discount_percent?: number | null
+  transfer_discount_amount?: number | null
+  payment_proof_url?: string | null
+  payment_proof_file_name?: string | null
+  payment_proof_uploaded_at?: string | null
   paid_at?: string | null
   tracking_number?: string | null
   tracking_url?: string | null

@@ -148,13 +148,44 @@ function getTopSellingProducts(items: SupabasePedidoItem[]) {
     .slice(0, 6)
 }
 
+function throwDashboardQueryError(label: string, error: unknown): never {
+  console.error("DASHBOARD_QUERY_ERROR", {
+    query: label,
+    message:
+      error && typeof error === "object" && "message" in error
+        ? error.message
+        : undefined,
+    details:
+      error && typeof error === "object" && "details" in error
+        ? error.details
+        : undefined,
+    hint:
+      error && typeof error === "object" && "hint" in error
+        ? error.hint
+        : undefined,
+    code:
+      error && typeof error === "object" && "code" in error
+        ? error.code
+        : undefined,
+    error,
+  })
+
+  throw error
+}
+
 export async function getDashboardData() {
   const [productosResult, clientesResult, ordenesResult, itemsResult, presenceResult] =
     await Promise.all([
       supabase
         .from("productos")
         .select("*, categorias(*), imagenes_producto(*), producto_variantes(*)"),
-      supabase.rpc("admin_get_client_profiles"),
+      supabase
+        .from("profiles")
+        .select(
+          "id, created_at, nombre, username, telefono, codigo_postal, provincia, avatar_url, referencias, client_risk_status, admin_note, blocked_at, blocked_reason, blocked_by, calle, numero, piso, departamento, localidad, rol"
+        )
+        .eq("rol", "cliente")
+        .order("created_at", { ascending: false }),
       supabase
         .from("ordenes")
         .select("*")
@@ -165,10 +196,26 @@ export async function getDashboardData() {
       supabase.rpc("admin_get_client_presence"),
     ])
 
-  if (productosResult.error) throw productosResult.error
-  if (clientesResult.error) throw clientesResult.error
-  if (ordenesResult.error) throw ordenesResult.error
-  if (itemsResult.error) throw itemsResult.error
+  if (productosResult.error) {
+    throwDashboardQueryError("productos", productosResult.error)
+  }
+
+  if (clientesResult.error) {
+    console.error("DASHBOARD_QUERY_ERROR", {
+      query: "admin_get_client_profiles",
+      message: clientesResult.error?.message,
+      details: clientesResult.error?.details,
+      hint: clientesResult.error?.hint,
+      code: clientesResult.error?.code,
+    })
+    throwDashboardQueryError("profiles", clientesResult.error)
+  }
+  if (ordenesResult.error) {
+    throwDashboardQueryError("ordenes", ordenesResult.error)
+  }
+  if (itemsResult.error) {
+    throwDashboardQueryError("orden_items", itemsResult.error)
+  }
 
   const productos = (productosResult.data ?? []) as SupabaseProducto[]
   const clientes = ((clientesResult.data ?? []) as SupabaseProfile[]).filter(

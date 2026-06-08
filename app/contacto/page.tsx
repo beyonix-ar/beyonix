@@ -1,5 +1,6 @@
 import {
   Clock,
+  CreditCard,
   Instagram,
   Mail,
   MapPin,
@@ -26,6 +27,11 @@ const infoCards = [
     label: "Cobertura",
     value: "Envíos a todo el país",
     icon: Truck,
+  },
+  {
+    label: "Medios de pago",
+    value: "Tarjetas, transferencia y Mercado Pago",
+    icon: CreditCard,
   },
 ]
 

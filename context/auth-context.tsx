@@ -221,9 +221,6 @@ function profileToUser(
     province:
       profile.provincia ?? undefined,
 
-    address:
-      profile.direccion ?? undefined,
-
     street:
       profile.calle ?? undefined,
 
@@ -314,7 +311,6 @@ export function AuthProvider({
               username: metadata.username ?? null,
               nombre: metadata.nombre ?? "",
               telefono: metadata.telefono ?? null,
-              direccion: metadata.direccion ?? null,
               calle: metadata.calle ?? null,
               numero: metadata.numero ?? null,
               piso: metadata.piso ?? null,
@@ -704,7 +700,6 @@ export function AuthProvider({
           username,
           nombre: form.name.trim(),
           telefono: form.phone.trim(),
-          direccion: form.address.trim(),
           calle: form.street.trim(),
           numero: form.streetNumber.trim(),
           piso: form.floor?.trim() || null,
@@ -878,10 +873,6 @@ export function AuthProvider({
 
         if (data.phone !== undefined) {
           payload.telefono = data.phone
-        }
-
-        if (data.address !== undefined) {
-          payload.direccion = data.address
         }
 
         if (data.street !== undefined) {

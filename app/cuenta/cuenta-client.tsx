@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Camera,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { PaymentProofUploader } from "@/components/payment-proof-uploader"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
@@ -630,6 +632,22 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
     }
   }, [user])
 
+  const handlePaymentProofUploaded = (updatedOrder: SupabasePedido) => {
+    setOrders((currentOrders) =>
+      currentOrders.map((order) =>
+        order.id === updatedOrder.id
+          ? {
+              ...order,
+              payment_status: updatedOrder.payment_status,
+              payment_proof_url: updatedOrder.payment_proof_url,
+              payment_proof_file_name: updatedOrder.payment_proof_file_name,
+              payment_proof_uploaded_at: updatedOrder.payment_proof_uploaded_at,
+            }
+          : order
+      )
+    )
+  }
+
   return (
     <AccountViewFrame
       onBack={onBack}
@@ -694,6 +712,32 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                     </button>
                   </div>
                 </div>
+
+                {order.payment_method_id === "transferencia" && (
+                  <div className="border-b border-white/7 px-5 py-4">
+                    <div className="mb-3">
+                      <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                        Transferencia bancaria
+                      </p>
+                      <p className="mt-1 text-sm text-white/55">
+                        Estado de pago: {order.payment_status || "pendiente"}
+                      </p>
+                    </div>
+
+                    {order.payment_status === "pendiente_comprobante" &&
+                    !order.payment_proof_url ? (
+                      <PaymentProofUploader
+                        orderId={order.id}
+                        compact
+                        onUploaded={handlePaymentProofUploaded}
+                      />
+                    ) : (
+                      <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-300">
+                        Comprobante recibido. Pago en revisión.
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="px-5 py-4">
                   <div className="mb-2 hidden grid-cols-account-order-item gap-4 px-3 xl:grid">
@@ -1200,33 +1244,36 @@ function uppercaseAccountText(value: string) {
   return value.toLocaleUpperCase("es-AR")
 }
 
+function nonEmptyAccountText(value: string | undefined) {
+  const trimmed = value?.trim()
+
+  return trimmed ? trimmed : undefined
+}
+
 function MisDatos({ onBack }: { onBack: () => void }) {
   const { user, updateUser } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const profileAddress = parseProfileAddress(
-    user?.address ?? "",
-    user?.province,
-    user?.postalCode
-  )
   const [phone, setPhone] = useState(user?.phone ?? "")
   const [province, setProvince] = useState(
-    uppercaseAccountText(user?.province ?? "")
+    uppercaseAccountText(nonEmptyAccountText(user?.province) ?? "")
   )
   const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
   const [street, setStreet] = useState(
-    uppercaseAccountText(user?.street ?? profileAddress.street)
+    uppercaseAccountText(nonEmptyAccountText(user?.street) ?? "")
   )
   const [streetNumber, setStreetNumber] = useState(
-    user?.streetNumber ?? profileAddress.number
+    user?.streetNumber ?? ""
   )
   const [floor, setFloor] = useState(
-    uppercaseAccountText(user?.floor ?? profileAddress.floor)
+    uppercaseAccountText(nonEmptyAccountText(user?.floor) ?? "")
   )
   const [apartment, setApartment] = useState(
-    uppercaseAccountText(user?.apartment ?? profileAddress.apartment)
+    uppercaseAccountText(
+      nonEmptyAccountText(user?.apartment) ?? ""
+    )
   )
   const [locality, setLocality] = useState(
-    uppercaseAccountText(user?.city ?? profileAddress.locality)
+    uppercaseAccountText(nonEmptyAccountText(user?.city) ?? "")
   )
   const [references, setReferences] = useState(
     uppercaseAccountText(user?.references ?? "")
@@ -1236,27 +1283,47 @@ function MisDatos({ onBack }: { onBack: () => void }) {
   const [profileError, setProfileError] = useState("")
   const [avatarLoading, setAvatarLoading] = useState(false)
   const [avatarError, setAvatarError] = useState("")
+  const formSignature = [
+    phone,
+    province,
+    postalCode,
+    street,
+    streetNumber,
+    floor,
+    apartment,
+    locality,
+    references,
+  ].join("|")
+  const savedSignatureRef = useRef("")
 
   useEffect(() => {
-    const nextAddress = parseProfileAddress(
-      user?.address ?? "",
-      user?.province,
-      user?.postalCode
-    )
-
     setPhone(user?.phone ?? "")
-    setProvince(uppercaseAccountText(user?.province ?? ""))
+    setProvince(uppercaseAccountText(nonEmptyAccountText(user?.province) ?? ""))
     setPostalCode(user?.postalCode ?? "")
-    setStreet(uppercaseAccountText(user?.street ?? nextAddress.street))
-    setStreetNumber(user?.streetNumber ?? nextAddress.number)
-    setFloor(uppercaseAccountText(user?.floor ?? nextAddress.floor))
-    setApartment(
-      uppercaseAccountText(user?.apartment ?? nextAddress.apartment)
+    setStreet(
+      uppercaseAccountText(nonEmptyAccountText(user?.street) ?? "")
     )
-    setLocality(uppercaseAccountText(user?.city ?? nextAddress.locality))
+    setStreetNumber(user?.streetNumber ?? "")
+    setFloor(
+      uppercaseAccountText(nonEmptyAccountText(user?.floor) ?? "")
+    )
+    setApartment(
+      uppercaseAccountText(
+        nonEmptyAccountText(user?.apartment) ?? ""
+      )
+    )
+    setLocality(
+      uppercaseAccountText(nonEmptyAccountText(user?.city) ?? "")
+    )
     setReferences(uppercaseAccountText(user?.references ?? ""))
     setAvatarUrl(user?.avatarUrl ?? "")
   }, [user])
+
+  useEffect(() => {
+    if (saved && savedSignatureRef.current !== formSignature) {
+      setSaved(false)
+    }
+  }, [formSignature, saved])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1265,8 +1332,12 @@ function MisDatos({ onBack }: { onBack: () => void }) {
     const validationError = validateProfilePayload({
       name: user?.name ?? "",
       phone,
+      calle: street,
+      numero: streetNumber,
+      piso: floor,
+      departamento: apartment,
+      localidad: locality,
       province,
-      address: `${street} ${streetNumber}`.trim(),
       postalCode,
       references,
     })
@@ -1299,20 +1370,9 @@ function MisDatos({ onBack }: { onBack: () => void }) {
       const normalizedApartment = uppercaseAccountText(apartment.trim())
       const normalizedLocality = uppercaseAccountText(locality.trim())
       const normalizedReferences = uppercaseAccountText(references.trim())
-      const normalizedAddress = buildDeliveryAddressDraft({
-        postalCode,
-        street: normalizedStreet,
-        streetNumber,
-        floor: normalizedFloor,
-        apartment: normalizedApartment,
-        locality: normalizedLocality,
-        province: normalizedProvince,
-      })
-
       await updateUser({
         phone,
         province: normalizedProvince,
-        address: formatDeliveryAddressForProfile(normalizedAddress),
         street: normalizedStreet,
         streetNumber,
         floor: normalizedFloor,
@@ -1321,8 +1381,18 @@ function MisDatos({ onBack }: { onBack: () => void }) {
         postalCode,
         references: normalizedReferences,
       })
+      savedSignatureRef.current = [
+        phone,
+        normalizedProvince,
+        postalCode,
+        normalizedStreet,
+        streetNumber,
+        normalizedFloor,
+        normalizedApartment,
+        normalizedLocality,
+        normalizedReferences,
+      ].join("|")
       setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
     } catch {
       setProfileError("No pudimos guardar tus datos. Intentá nuevamente.")
     }
@@ -1492,9 +1562,20 @@ function MisDatos({ onBack }: { onBack: () => void }) {
             type="submit"
             aria-label="Guardar cambios"
             title="Guardar cambios"
-            className="h-11 w-full cursor-pointer rounded-xl border border-beyonix-blue-light/60 bg-beyonix-blue text-sm font-semibold text-white transition-colors hover:bg-beyonix-blue-light"
+            className={`flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm font-semibold text-white transition-colors ${
+              saved
+                ? "border-emerald-400/60 bg-emerald-600 hover:bg-emerald-600"
+                : "border-beyonix-blue-light/60 bg-beyonix-blue hover:bg-beyonix-blue-light"
+            }`}
           >
-            {saved ? "Guardado" : "Guardar cambios"}
+            {saved ? (
+              <>
+                <Check className="size-4" />
+                Guardado
+              </>
+            ) : (
+              "Guardar cambios"
+            )}
           </button>
         </form>
       </div>

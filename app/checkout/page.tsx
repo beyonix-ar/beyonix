@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
 } from "react"
 
@@ -16,6 +17,7 @@ import {
   ArrowLeft,
   ChevronDown,
   CircleUserRound,
+  Landmark,
   Smartphone,
 } from "lucide-react"
 
@@ -61,6 +63,11 @@ import {
 import {
   hasBlockedWords,
 } from "@/lib/validation/content-filter"
+import {
+  TRANSFER_ALIAS,
+  TRANSFER_DISCOUNT_PERCENT,
+  calculateTransferDiscount,
+} from "@/lib/payments/transfer"
 
 import {
   cn,
@@ -88,10 +95,16 @@ const paymentMethods = [
     description: "Pagá con tu cuenta, tarjeta o dinero disponible",
     icon: Smartphone,
   },
+  {
+    id: "transferencia",
+    name: "Transferencia bancaria",
+    description: "Transferencia con 5% OFF y validacion manual",
+    icon: Landmark,
+  },
 ]
 
 const checkoutInputClassName =
-  "border-beyonix-blue-light bg-beyonix-surface-3 text-foreground placeholder:text-muted-foreground focus-visible:border-beyonix-sky focus-visible:ring-beyonix-blue"
+  "beyonix-checkout-input border-beyonix-blue-light bg-neutral-900 text-white placeholder:text-muted-foreground focus-visible:border-beyonix-focus focus-visible:ring-beyonix-focus"
 
 const initialCheckoutFormData = {
   nombre: "",
@@ -192,6 +205,7 @@ export default function CheckoutPage() {
     useState<ShippingOption[]>([])
   const [accountMenuOpen, setAccountMenuOpen] =
     useState(false)
+  const hasEditedCheckoutFormRef = useRef(false)
 
   useEffect(() => {
     setMounted(true)
@@ -212,19 +226,48 @@ export default function CheckoutPage() {
       user.postalCode
     )
 
-    setFormData({
-      ...initialCheckoutFormData,
-      nombre: user.name ?? "",
-      email: user.email ?? "",
-      telefono: user.phone ?? "",
-      direccion: user.address ?? "",
-      calle: parsedAddress.street,
-      numero: parsedAddress.streetNumber,
-      piso: parsedAddress.floor,
-      departamento: parsedAddress.apartment,
-      cpDestino: user.postalCode ?? "",
-      localidad: parsedAddress.locality,
-      provincia: user.province ?? "",
+    if (hasEditedCheckoutFormRef.current) return
+
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+      }
+      const profileValues = {
+        nombre: user.name ?? "",
+        email: user.email ?? "",
+        telefono: user.phone ?? "",
+        direccion: user.address ?? "",
+        calle: user.street ?? parsedAddress.street,
+        numero: user.streetNumber ?? parsedAddress.streetNumber,
+        piso: user.floor ?? parsedAddress.floor,
+        departamento: user.apartment ?? parsedAddress.apartment,
+        cpDestino: user.postalCode ?? "",
+        localidad: user.city ?? parsedAddress.locality,
+        provincia: user.province ?? "",
+      }
+
+      for (const [key, value] of Object.entries(profileValues)) {
+        const field = key as keyof typeof initialCheckoutFormData
+        const normalizedValue = String(value ?? "").trim()
+
+        if (!next[field] && normalizedValue) {
+          next[field] = value
+        }
+      }
+
+      if (!next.direccion) {
+        next.direccion = formatDeliveryAddress({
+          street: next.calle,
+          streetNumber: next.numero,
+          floor: next.piso,
+          apartment: next.departamento,
+          locality: next.localidad,
+          region: next.provincia,
+          postalCode: next.cpDestino,
+        })
+      }
+
+      return next
     })
   }, [user])
 
@@ -295,6 +338,10 @@ export default function CheckoutPage() {
   const totals = calculateCartTotals(items, {
     shippingCost: shippingCostCharged,
   })
+  const isTransferPayment = selectedPayment === "transferencia"
+  const transferDiscountAmount =
+    isTransferPayment ? calculateTransferDiscount(totals.total) : 0
+  const finalTotal = Math.max(totals.total - transferDiscountAmount, 0)
 
   useEffect(() => {
     const cpDestino = formData.cpDestino.trim()
@@ -404,6 +451,8 @@ export default function CheckoutPage() {
     const { name, value } =
       e.target
 
+    hasEditedCheckoutFormRef.current = true
+
     setFormData((prev) => {
       const next = {
         ...prev,
@@ -457,7 +506,12 @@ export default function CheckoutPage() {
     setCheckoutError("")
 
     try {
-      const response = await fetch("/api/mercadopago/create-preference", {
+      const endpoint =
+        selectedPayment === "transferencia"
+          ? "/api/transferencia/create-order"
+          : "/api/mercadopago/create-preference"
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -482,6 +536,19 @@ export default function CheckoutPage() {
       })
 
       const data = await response.json()
+
+      if (selectedPayment === "transferencia") {
+        if (!response.ok || !data.order_id || !data.redirect_url) {
+          setCheckoutError(
+            data.error ||
+              "No pudimos registrar el pedido por transferencia. Intentá nuevamente.",
+          )
+          return
+        }
+
+        window.location.href = data.redirect_url
+        return
+      }
 
       if (!response.ok || !data.init_point) {
         setCheckoutError(
@@ -864,6 +931,34 @@ export default function CheckoutPage() {
                     )
                   )}
                 </div>
+
+                {isTransferPayment && (
+                  <div className="mt-4 rounded-xl border border-beyonix-blue-light bg-black p-4">
+                    <h3 className="text-base font-black text-white">
+                      Transferencia bancaria con 5% OFF
+                    </h3>
+
+                    <div className="mt-3 space-y-3 text-sm leading-6 text-white/70">
+                      <p>Transferí el total final al alias:</p>
+                      <p className="rounded-xl border border-beyonix-blue-light/25 bg-beyonix-surface-3 px-4 py-3 text-base font-black uppercase tracking-wide text-beyonix-sky">
+                        Alias: {TRANSFER_ALIAS}
+                      </p>
+                      <p>
+                        Luego subí el comprobante de pago para que podamos validar tu compra.
+                      </p>
+                      <p>
+                        El pago se verifica manualmente dentro del horario de atención.
+                      </p>
+                      <p>
+                        El pedido se prepara una vez confirmado el pago.
+                      </p>
+                      <div className="rounded-xl border border-white/8 bg-black px-4 py-3">
+                        <p className="font-black text-white">Horario de atención:</p>
+                        <p>Lunes a viernes: 7:00 a 20:00 hs</p>
+                        <p>Sábados: 8:00 a 14:00 hs</p>
+                      </div>
+                    </div>                  </div>
+                )}
               </section>
             </div>
 
@@ -983,6 +1078,18 @@ export default function CheckoutPage() {
                     </span>
                   </div>
 
+                  {transferDiscountAmount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Transferencia {TRANSFER_DISCOUNT_PERCENT}% OFF
+                      </span>
+
+                      <span className="font-semibold text-emerald-400">
+                        -{formatPrice(transferDiscountAmount)}
+                      </span>
+                    </div>
+                  )}
+
                   <Separator />
 
                   <div className="flex justify-between pt-2">
@@ -992,7 +1099,7 @@ export default function CheckoutPage() {
 
                     <span className="font-bold text-foreground text-xl">
                       {formatPrice(
-                        totals.total
+                        finalTotal
                       )}
                     </span>
                   </div>
@@ -1012,12 +1119,14 @@ export default function CheckoutPage() {
 
                 <Button
                   type="submit"
-                  aria-label="Pagar ahora"
-                  title="Pagar ahora"
+                  aria-label={isTransferPayment ? "Registrar pedido por transferencia" : "Pagar ahora"}
+                  title={isTransferPayment ? "Registrar pedido por transferencia" : "Pagar ahora"}
                   form="checkout-form"
                   className={cn(
                     "w-full",
-                    isFormValid && !isProcessing && !stockError
+                    isFormValid &&
+                    !isProcessing &&
+                    !stockError
                       ? "bg-beyonix-blue text-white hover:bg-beyonix-blue-hover"
                       : "cursor-not-allowed bg-neutral-700 text-white/55 hover:bg-neutral-700"
                   )}
@@ -1030,7 +1139,9 @@ export default function CheckoutPage() {
                 >
                   {isProcessing
                     ? "Procesando..."
-                    : "Pagar ahora"}
+                    : isTransferPayment
+                      ? "Registrar pedido"
+                      : "Pagar ahora"}
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center mt-3">

@@ -399,7 +399,7 @@ export function getAuditSection(log: SupabaseAuditLog) {
     log.table_name.includes("config") ||
     log.table_name.includes("envio") ||
     log.table_name.includes("pago") ||
-    log.table_name.includes("payment_method") ||
+    log.table_name.includes("payment_") ||
     log.table_name.includes("settings") ||
     log.table_name.includes("shipping_method")
   ) {

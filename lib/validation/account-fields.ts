@@ -40,6 +40,14 @@ export const FIELD_LIMITS = {
   references: 180,
 }
 
+function isArgentinaProvince(value: string) {
+  const normalized = value.trim().toLocaleUpperCase("es-AR")
+
+  return ARGENTINA_PROVINCES.some(
+    (province) => province.toLocaleUpperCase("es-AR") === normalized
+  )
+}
+
 export type RegisterValidationPayload = {
   username: string
   name: string
@@ -54,7 +62,11 @@ export type RegisterValidationPayload = {
 
 export type ProfileValidationPayload = {
   name: string
-  address: string
+  calle: string
+  numero: string
+  piso?: string
+  departamento?: string
+  localidad: string
   province: string
   postalCode: string
   phone: string
@@ -209,7 +221,7 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
   )
   if (addressError) return addressError
 
-  if (!ARGENTINA_PROVINCES.includes(data.province)) {
+  if (!isArgentinaProvince(data.province)) {
     return "Seleccioná una provincia válida."
   }
 
@@ -258,19 +270,47 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
   )
   if (nameError) return nameError
 
-  const addressError = validateCleanText(
-    data.address,
-    "tu dirección",
-    FIELD_LIMITS.address,
-    {
-      minLength: 5,
-      pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
-      allowedHint: "Usá solo letras, números y signos comunes de dirección.",
-    }
-  )
-  if (addressError) return addressError
+  const streetError = validateCleanText(data.calle, "la calle", 60, {
+    minLength: 2,
+    pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+    allowedHint: "Usá solo letras, números y signos comunes en la calle.",
+  })
+  if (streetError) return streetError
 
-  if (!ARGENTINA_PROVINCES.includes(data.province)) {
+  if (!/^\d{1,8}$/.test(data.numero.trim())) {
+    return "Ingresá el número de calle."
+  }
+
+  if (data.piso?.trim()) {
+    const floorError = validateCleanText(data.piso, "el piso", 12, {
+      pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+      allowedHint: "Usá solo letras, números y signos comunes en el piso.",
+    })
+    if (floorError) return floorError
+  }
+
+  if (data.departamento?.trim()) {
+    const apartmentError = validateCleanText(
+      data.departamento,
+      "el departamento",
+      12,
+      {
+        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        allowedHint:
+          "Usá solo letras, números y signos comunes en el departamento.",
+      }
+    )
+    if (apartmentError) return apartmentError
+  }
+
+  const localityError = validateCleanText(data.localidad, "la localidad", 60, {
+    minLength: 2,
+    pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+    allowedHint: "Usá solo letras, números y signos comunes en la localidad.",
+  })
+  if (localityError) return localityError
+
+  if (!isArgentinaProvince(data.province)) {
     return "Seleccioná una provincia válida."
   }
 

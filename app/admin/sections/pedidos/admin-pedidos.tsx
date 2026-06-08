@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react"
 import {
   AlertTriangle,
+  Bell,
+  CreditCard,
+  Download,
   Eye,
   Printer,
   RefreshCw,
@@ -14,6 +17,11 @@ import {
 } from "lucide-react"
 
 import { usePedidos } from "@/hooks/use-pedidos"
+import {
+  getOrderNotificationCount,
+  notifyOrderNotificationsChanged,
+} from "@/lib/admin/order-notifications"
+import { supabase } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
@@ -27,6 +35,21 @@ function formatOrderDate(value: string) {
     timeStyle: "short",
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(new Date(value))
+}
+
+function formatOrderDateParts(value: string) {
+  const date = new Date(value)
+
+  return {
+    date: new Intl.DateTimeFormat("es-AR", {
+      dateStyle: "short",
+      timeZone: "America/Argentina/Buenos_Aires",
+    }).format(date),
+    time: new Intl.DateTimeFormat("es-AR", {
+      timeStyle: "short",
+      timeZone: "America/Argentina/Buenos_Aires",
+    }).format(date),
+  }
 }
 
 function formatPublicOrderId(id: number) {
@@ -73,7 +96,111 @@ function getShippingProvider(pedido: SupabasePedido) {
 }
 
 function getAndreaniStatus(pedido: SupabasePedido) {
-  return pedido.andreani_estado || "Sin envío generado"
+  return pedido.andreani_estado || "Sin envÃƒÂ­o generado"
+}
+
+function getPaymentMethodLabel(pedido: SupabasePedido) {
+  if (pedido.payment_method_id === "transferencia") {
+    return "Transferencia bancaria"
+  }
+
+  return pedido.payment_method_id || pedido.payment_type_id || "Metodo no informado"
+}
+
+function getPaymentStatusLabel(status?: string | null) {
+  const labels: Record<string, string> = {
+    pendiente_comprobante: "Pendiente de comprobante",
+    en_revision: "En revision",
+    confirmado: "Confirmado",
+    rechazado: "Rechazado",
+    approved: "Aprobado",
+    pending: "Pendiente",
+    rejected: "Rechazado",
+  }
+
+  return status ? labels[status] ?? status : "Sin estado"
+}
+
+function getTransferPaymentStatusBadge(status?: string | null) {
+  const badges: Record<string, { label: string; className: string }> = {
+    pendiente_comprobante: {
+      label: "Falta comprobante",
+      className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
+    },
+    en_revision: {
+      label: "En revisiÃƒÂ³n",
+      className: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
+    },
+    confirmado: {
+      label: "Pago confirmado",
+      className: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
+    },
+    rechazado: {
+      label: "Pago rechazado",
+      className: "border-red-400/25 bg-red-400/10 text-red-300",
+    },
+  }
+
+  return (
+    badges[status ?? ""] ?? {
+      label: getPaymentStatusLabel(status),
+      className: "border-white/10 bg-white/5 text-white/60",
+    }
+  )
+}
+
+function formatOptionalOrderDate(value?: string | null) {
+  return value ? formatOrderDate(value) : "Sin fecha"
+}
+
+function TransferPaymentBadges({ pedido }: { pedido: SupabasePedido }) {
+  const paymentBadge = getTransferPaymentStatusBadge(pedido.payment_status)
+  const proofUploaded = Boolean(pedido.payment_proof_url)
+
+  return (
+    <div className="flex flex-wrap justify-center gap-1.5">
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-beyonix-blue-light/35 bg-black px-2.5 py-1 text-10px font-black uppercase tracking-wide text-beyonix-sky">
+        <CreditCard className="size-3" />
+        Transferencia
+      </span>
+      <span
+        title={paymentBadge.label}
+        className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${paymentBadge.className}`}
+      >
+        {paymentBadge.label}
+      </span>
+      <span
+        title={proofUploaded ? "Comprobante subido" : "Sin comprobante"}
+        className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${
+          proofUploaded
+            ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+            : "border-white/10 bg-white/5 text-white/52"
+        }`}
+      >
+        {proofUploaded ? "Con comprobante" : "Sin comprobante"}
+      </span>
+    </div>
+  )
+}
+
+function OrderNotificationBell({ count }: { count: number }) {
+  return (
+    <span
+      title={
+        count
+          ? `${count} pedidos requieren atenciÃƒÂ³n`
+          : "Sin pedidos pendientes de atenciÃƒÂ³n"
+      }
+      className="inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/35 bg-black px-3 py-2 text-beyonix-sky"
+    >
+      <Bell className="size-4" />
+      {count > 0 && (
+        <span className="flex min-w-5 items-center justify-center rounded-full bg-beyonix-blue px-1.5 text-11px font-black text-white">
+          {count}
+        </span>
+      )}
+    </span>
+  )
 }
 
 async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
@@ -90,12 +217,12 @@ async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
     error?: string
   }
 
-  alert(data.message || data.error || "Andreani todavía no está configurado")
+  alert(data.message || data.error || "Andreani todavÃƒÂ­a no estÃƒÂ¡ configurado")
 }
 
 function handlePrintAndreaniLabel(pedido: SupabasePedido) {
   if (!pedido.andreani_etiqueta_url) {
-    alert("Andreani todavía no está configurado.")
+    alert("Andreani todavÃƒÂ­a no estÃƒÂ¡ configurado.")
     return
   }
 
@@ -126,7 +253,7 @@ function getDispatchAlert(pedido: SupabasePedido) {
 
   if (hours > 12) {
     return {
-      label: "Atención",
+      label: "AtenciÃƒÂ³n",
       className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
     }
   }
@@ -235,10 +362,14 @@ function PedidoPreviewModal({
   pedido,
   pedidos,
   onClose,
+  onOpenPaymentProof,
+  onPaymentStatusChange,
 }: {
   pedido: SupabasePedido
   pedidos: SupabasePedido[]
   onClose: () => void
+  onOpenPaymentProof: (pedidoId: number) => void
+  onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
 }) {
   const clientKey = getPedidoClientKey(pedido)
   const paidPedidos = pedidos.filter(
@@ -305,8 +436,8 @@ function PedidoPreviewModal({
               </h3>
               <div className="mt-3 space-y-2 text-sm text-white/62">
                 <p>{pedido.cliente_email || "Email no informado"}</p>
-                <p>{pedido.cliente_telefono || "Teléfono no informado"}</p>
-                <p>{pedido.cliente_direccion || "Dirección no informada"}</p>
+                <p>{pedido.cliente_telefono || "TelÃƒÂ©fono no informado"}</p>
+                <p>{pedido.cliente_direccion || "DirecciÃƒÂ³n no informada"}</p>
               </div>
             </section>
 
@@ -351,28 +482,165 @@ function PedidoPreviewModal({
                 <p>Fecha: {formatOrderDate(pedido.created_at)}</p>
                 <p>Pago: {pedido.payment_id || "Sin ID pago"}</p>
                 <p>
-                  Método:{" "}
+                  MÃƒÂ©todo:{" "}
                   {pedido.payment_method_id ||
                     pedido.payment_type_id ||
-                    "Método no informado"}
+                    "MÃƒÂ©todo no informado"}
                 </p>
                 <p>Seguimiento: {pedido.tracking_number || "Pendiente"}</p>
               </div>
             </section>
           </div>
 
+          {pedido.payment_method_id === "transferencia" && (
+            <section className="mt-5 rounded-2xl border border-beyonix-blue-light/25 bg-black p-4">
+              <div className="flex flex-col gap-4 border-b border-white/7 pb-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                    Pago por transferencia
+                  </p>
+                  <h3 className="mt-2 flex items-center gap-2 text-xl font-black text-white">
+                    <CreditCard className="size-5 text-beyonix-sky" />
+                    Alias usado: {pedido.transfer_alias || "beyonix"}
+                  </h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <TransferPaymentBadges pedido={pedido} />
+                  </div>
+                </div>
+
+                <div className="w-full max-w-sm">
+                  <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
+                    Estado administrativo de pago
+                  </p>
+                  <AdminSelect
+                    title="Estado de pago"
+                    value={pedido.payment_status || "pendiente_comprobante"}
+                    onChange={(value) => onPaymentStatusChange(pedido.id, value)}
+                  >
+                    <option value="pendiente_comprobante">Pendiente comprobante</option>
+                    <option value="en_revision">En revisiÃƒÂ³n</option>
+                    <option value="confirmado">Confirmado</option>
+                    <option value="rechazado">Rechazado</option>
+                  </AdminSelect>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
+                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                    Estado de pago
+                  </p>
+                  <p className="mt-2 text-sm font-black text-white">
+                    {getPaymentStatusLabel(pedido.payment_status)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
+                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                    Descuento transferencia
+                  </p>
+                  <p className="mt-2 text-sm font-black text-emerald-300">
+                    {formatPrice(Number(pedido.transfer_discount_amount ?? 0))}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
+                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                    Nombre del comprobante
+                  </p>
+                  <p
+                    title={pedido.payment_proof_file_name || "Sin comprobante"}
+                    className="mt-2 break-words text-sm font-black text-white"
+                  >
+                    {pedido.payment_proof_file_name || "Sin comprobante"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
+                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                    Fecha de subida
+                  </p>
+                  <p className="mt-2 text-sm font-black text-white">
+                    {formatOptionalOrderDate(pedido.payment_proof_uploaded_at)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-white/7 bg-white/3 p-3">
+                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  Comprobante
+                </p>
+                {pedido.payment_proof_url ? (
+                  <button
+                    type="button"
+                    aria-label={`Ver comprobante del pedido ${pedido.id}`}
+                    title="Ver o descargar comprobante"
+                    onClick={() => onOpenPaymentProof(pedido.id)}
+                    className="mt-3 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:bg-beyonix-blue"
+                  >
+                    <Download className="size-4" />
+                    Ver comprobante
+                  </button>
+                ) : (
+                  <p className="mt-2 text-sm font-black text-white/55">
+                    Sin comprobante
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          <section className="mt-5 rounded-2xl border border-white/8 bg-black p-4">
+            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+              Estados administrativos
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
+                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  Estado del pedido
+                </p>
+                <div className="mt-2">
+                  <EstadoBadge estado={pedido.estado} />
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
+                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  Estado de pago
+                </p>
+                {pedido.payment_method_id === "transferencia" ? (
+                  <div className="mt-2">
+                    <TransferPaymentBadges pedido={pedido} />
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm font-black text-white">
+                    {getPaymentStatusLabel(pedido.payment_status)}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
+                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  Despacho
+                </p>
+                <span
+                  title={getDispatchAlert(pedido).label}
+                  className={`mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${getDispatchAlert(pedido).className}`}
+                >
+                  <AlertTriangle className="size-3.5" />
+                  {getDispatchAlert(pedido).label}
+                </span>
+              </div>
+            </div>
+          </section>
+
           <section className="mt-5 rounded-2xl border border-white/8 bg-black p-4">
             <div className="flex flex-col gap-4 border-b border-white/7 pb-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                  Envío
+                  EnvÃƒÂ­o
                 </p>
                 <h3 className="mt-2 flex items-center gap-2 text-xl font-black text-white">
                   <Truck className="size-5 text-beyonix-sky" />
                   Proveedor: {getShippingProvider(pedido)}
                 </h3>
                 <p className="mt-2 text-sm text-white/55">
-                  Integración preparada para Andreani. Las credenciales reales
+                  IntegraciÃƒÂ³n preparada para Andreani. Las credenciales reales
                   quedan reservadas para el backend.
                 </p>
               </div>
@@ -380,13 +648,13 @@ function PedidoPreviewModal({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  title="Generar envío Andreani"
-                  aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
+                  title="Generar envÃƒÂ­o Andreani"
+                  aria-label={`Generar envÃƒÂ­o Andreani para pedido ${pedido.id}`}
                   onClick={() => runAndreaniAction("crear-envio", pedido.id)}
                   className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover"
                 >
                   <Truck className="size-4" />
-                  Generar envío Andreani
+                  Generar envÃƒÂ­o Andreani
                 </button>
                 <button
                   type="button"
@@ -414,7 +682,7 @@ function PedidoPreviewModal({
             <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-xl border border-white/7 bg-white/3 p-3">
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Estado de envío
+                  Estado de envÃƒÂ­o
                 </p>
                 <p className="mt-2 text-sm font-black text-white">
                   {getAndreaniStatus(pedido)}
@@ -430,7 +698,7 @@ function PedidoPreviewModal({
               </div>
               <div className="rounded-xl border border-white/7 bg-white/3 p-3">
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Envío ID
+                  EnvÃƒÂ­o ID
                 </p>
                 <p className="mt-2 break-words text-sm font-black text-white">
                   {pedido.andreani_envio_id || "Pendiente"}
@@ -480,7 +748,7 @@ function PedidoPreviewModal({
                       Pedido #{formatPublicOrderId(currentPedido.id)}
                     </h3>
                     <p className="mt-1 text-sm text-white/55">
-                      {formatOrderDate(currentPedido.created_at)} · Estado:{" "}
+                      {formatOrderDate(currentPedido.created_at)} Ã‚Â· Estado:{" "}
                       {currentPedido.estado}
                     </p>
                   </div>
@@ -602,11 +870,15 @@ function PedidoPreviewModal({
 }
 
 export function AdminPedidos() {
-  const { pedidos, loading, error, deletePedido, updatePedidoEstado } =
+  const { pedidos, loading, error, deletePedido, updatePedidoEstado, reloadPedidos } =
     usePedidos()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [previewPedido, setPreviewPedido] = useState<SupabasePedido | null>(null)
+  const notificationCount = useMemo(
+    () => getOrderNotificationCount(pedidos),
+    [pedidos]
+  )
 
   const pedidosFiltrados = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
@@ -618,6 +890,7 @@ export function AdminPedidos() {
         pedido.cliente_email ?? "",
         pedido.cliente_telefono ?? "",
         pedido.cliente_direccion ?? "",
+        pedido.payment_status ?? "",
         pedido.payment_method_id ?? "",
         pedido.orden_items?.map((item) => item.productos?.nombre ?? "").join(" ") ?? "",
       ]
@@ -632,9 +905,10 @@ export function AdminPedidos() {
   }, [pedidos, search, statusFilter])
 
   const handleDelete = async (id: number) => {
-    const ok = confirm("¿Eliminar pedido?")
+    const ok = confirm("Ã‚Â¿Eliminar pedido?")
     if (!ok) return
-    await deletePedido(id)
+    const deleted = await deletePedido(id)
+    if (deleted) notifyOrderNotificationsChanged()
   }
 
   const handleEstadoChange = async (
@@ -645,23 +919,93 @@ export function AdminPedidos() {
     if (estadoActual === nextEstado) return
 
     if (nextEstado === "pagado" && estadoActual !== "pagado") {
-      alert("El estado pagado se actualiza automáticamente desde Mercado Pago.")
+      alert("El estado pagado se actualiza automÃƒÂ¡ticamente desde Mercado Pago.")
       return
     }
 
     if (nextEstado === "enviado") {
       const trackingNumber =
-        prompt("Número de seguimiento (opcional)")?.trim() || null
+        prompt("NÃƒÂºmero de seguimiento (opcional)")?.trim() || null
       const trackingUrl = prompt("Link de seguimiento (opcional)")?.trim() || null
 
-      await updatePedidoEstado(pedidoId, nextEstado, {
+      const updated = await updatePedidoEstado(pedidoId, nextEstado, {
         tracking_number: trackingNumber,
         tracking_url: trackingUrl,
       })
+      if (updated) notifyOrderNotificationsChanged()
       return
     }
 
-    await updatePedidoEstado(pedidoId, nextEstado)
+    const updated = await updatePedidoEstado(pedidoId, nextEstado)
+    if (updated) notifyOrderNotificationsChanged()
+  }
+
+  const handlePaymentStatusChange = async (
+    pedidoId: number,
+    nextStatus: string
+  ) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      alert("No autorizado.")
+      return
+    }
+
+    const response = await fetch(`/api/admin/pedidos/${pedidoId}/payment-status`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ payment_status: nextStatus }),
+    })
+    const data = await response.json()
+
+    if (!response.ok) {
+      alert(data.error || "No se pudo actualizar el estado de pago.")
+      return
+    }
+
+    if (data.order) {
+      setPreviewPedido((currentPedido) =>
+        currentPedido?.id === pedidoId
+          ? {
+              ...currentPedido,
+              payment_status: data.order.payment_status,
+            }
+          : currentPedido
+      )
+    }
+
+    await reloadPedidos()
+    notifyOrderNotificationsChanged()
+  }
+
+  const handleOpenPaymentProof = async (pedidoId: number) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      alert("No autorizado.")
+      return
+    }
+
+    const response = await fetch(`/api/admin/payment-proofs/${pedidoId}`, {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+    const data = await response.json()
+
+    if (!response.ok || !data.signedUrl) {
+      alert(data.error || "No se pudo abrir el comprobante.")
+      return
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer")
   }
 
   return (
@@ -671,7 +1015,10 @@ export function AdminPedidos() {
           <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
             Pedidos
           </p>
-          <h1 className="text-3xl font-black text-white/95">Gestión de pedidos</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-black text-white/95">Gestión de pedidos</h1>
+            <OrderNotificationBell count={notificationCount} />
+          </div>
           <p className="mt-2 text-sm text-white/68">
             Seguimiento de pago, productos, envío y prioridad de despacho.
           </p>
@@ -737,6 +1084,7 @@ export function AdminPedidos() {
                   "Fecha",
                   "Estado",
                   "Despacho",
+                  "Pago",
                   "Total",
                   "Acciones",
                 ].map((label) => (
@@ -757,7 +1105,8 @@ export function AdminPedidos() {
               {pedidosFiltrados.map((pedido) => {
                 const dispatch = getDispatchAlert(pedido)
                 const paymentMethod =
-                  pedido.payment_method_id || pedido.payment_type_id || "Método no informado"
+                  pedido.payment_method_id || pedido.payment_type_id || "MÃƒÂ©todo no informado"
+                const orderDate = formatOrderDateParts(pedido.created_at)
                 const trackingText =
                   pedido.andreani_tracking ||
                   pedido.tracking_number ||
@@ -806,9 +1155,14 @@ export function AdminPedidos() {
                   <QuantitySummary pedido={pedido} />
                   <ColorSummary pedido={pedido} />
 
-                  <p title={formatOrderDate(pedido.created_at)} className="text-center text-sm font-black text-white/95">
-                    {formatOrderDate(pedido.created_at)}
-                  </p>
+                  <div title={formatOrderDate(pedido.created_at)} className="text-center">
+                    <p className="text-sm font-black leading-5 text-white/95">
+                      {orderDate.date}
+                    </p>
+                    <p className="text-11px font-bold leading-4 text-white/52">
+                      {orderDate.time}
+                    </p>
+                  </div>
 
                   <div className="text-center">
                     <div className="mx-auto w-admin-order-status">
@@ -857,11 +1211,21 @@ export function AdminPedidos() {
                   </div>
 
                   <div className="text-center">
+                    {pedido.payment_method_id === "transferencia" ? (
+                      <TransferPaymentBadges pedido={pedido} />
+                    ) : (
+                      <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/58">
+                        {getPaymentStatusLabel(pedido.payment_status)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-center">
                     <p className="text-sm font-black text-white/95">
                       {formatPrice(pedido.total)}
                     </p>
                     <p title={paymentMethod} className="mt-1 break-words text-11px leading-4 text-white/58">
-                      {paymentMethod}
+                      {paymentMethod.toLowerCase()}
                     </p>
                   </div>
 
@@ -899,6 +1263,8 @@ export function AdminPedidos() {
           pedido={previewPedido}
           pedidos={pedidos}
           onClose={() => setPreviewPedido(null)}
+          onOpenPaymentProof={handleOpenPaymentProof}
+          onPaymentStatusChange={handlePaymentStatusChange}
         />
       )}
     </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
+  Bell,
   FolderOpen,
   History,
   LogOut,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { useOrderNotifications } from "@/hooks/use-order-notifications"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
 import { AdminCategorias } from "./sections/categorias/admin-categorias"
@@ -50,6 +52,7 @@ interface NavigationItem {
   label: string
   description: string
   icon: React.ReactNode
+  notificationCount?: number
 }
 
 function SidebarItem({
@@ -83,11 +86,22 @@ function SidebarItem({
         {item.icon}
       </span>
 
-      <span className="min-w-0">
+      <span className="flex min-w-0 flex-1 items-start justify-between gap-2">
+        <span className="min-w-0">
         <span className="block text-sm font-bold">{item.label}</span>
         <span title={item.description} className="mt-0.5 block truncate text-11px text-white/58">
           {item.description}
         </span>
+        </span>
+        {item.notificationCount ? (
+          <span
+            title={`${item.notificationCount} pedidos requieren atención`}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue px-2 py-1 text-10px font-black text-beyonix-sky"
+          >
+            <Bell className="size-3" />
+            {item.notificationCount}
+          </span>
+        ) : null}
       </span>
     </button>
   )
@@ -111,6 +125,7 @@ export function AdminClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, isLoading, isAdmin, isSuperAdmin, logout } = useAuth()
+  const { notificationCount } = useOrderNotifications()
   const [section, setSection] = useState<AdminSection>(
     () =>
       getAdminSection(searchParams.get("section")) ||
@@ -144,6 +159,7 @@ export function AdminClient() {
         label: "Pedidos",
         description: "Ventas y despacho",
         icon: <ShoppingCart className="size-4" />,
+        notificationCount,
       },
       {
         key: "activos",
@@ -168,7 +184,7 @@ export function AdminClient() {
           ]
         : []),
     ],
-    [isSuperAdmin]
+    [isSuperAdmin, notificationCount]
   )
 
   useEffect(() => {

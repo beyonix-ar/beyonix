@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -379,7 +380,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCart([])
     localStorage.removeItem(CART_STORAGE_KEY)
     sessionStorage.removeItem(CART_STORAGE_KEY)
@@ -387,7 +388,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const nextSessionId = createCartSessionId()
     sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
     setCartSessionId(nextSessionId)
-  }
+  }, [])
 
   const { total, itemCount } = useMemo(() => {
     return cart.reduce(
