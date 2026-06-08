@@ -22,39 +22,6 @@ function ConfirmEmailContent() {
     hasConfirmed.current = true
 
     const confirmEmail = async () => {
-      const activateAccountAndRedirect = async () => {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-
-        if (!session) {
-          setError(INVALID_LINK_MESSAGE)
-          return
-        }
-
-        const response = await fetch("/api/auth/confirm-email", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        })
-
-        if (!response.ok) {
-          setError(INVALID_LINK_MESSAGE)
-          return
-        }
-
-        const { error: refreshError } = await supabase.auth.refreshSession()
-
-        if (refreshError) {
-          setError(INVALID_LINK_MESSAGE)
-          return
-        }
-
-        router.replace("/")
-        router.refresh()
-      }
-
       const code = searchParams.get("code")
       const tokenHash = searchParams.get("token_hash")
       const type = searchParams.get("type")
@@ -70,31 +37,34 @@ function ConfirmEmailContent() {
         return
       }
 
-      if (code) {
-        const { error: exchangeError } =
-          await supabase.auth.exchangeCodeForSession(code)
+      if (tokenHash) {
+        window.history.replaceState(null, "", "/confirmar-email")
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: "signup",
+        })
 
-        if (exchangeError) {
+        if (error) {
+          console.error("confirm-email error", error)
           setError(INVALID_LINK_MESSAGE)
           return
         }
 
-        await activateAccountAndRedirect()
+        router.replace("/")
         return
       }
 
-      if (tokenHash) {
-        const { error: verificationError } = await supabase.auth.verifyOtp({
-          token_hash: tokenHash,
-          type: "email",
-        })
+      if (code) {
+        window.history.replaceState(null, "", "/confirmar-email")
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-        if (verificationError) {
+        if (error) {
+          console.error("confirm-email error", error)
           setError(INVALID_LINK_MESSAGE)
           return
         }
 
-        await activateAccountAndRedirect()
+        router.replace("/")
         return
       }
 

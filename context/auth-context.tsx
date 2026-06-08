@@ -653,6 +653,7 @@ export function AuthProvider({
         }
 
         registrationInProgress.current = true
+        const username = form.username.trim().toLowerCase()
 
         const {
           data,
@@ -669,26 +670,9 @@ export function AuthProvider({
                 form.password,
 
               options: {
-                emailRedirectTo:
-                  typeof window !== "undefined"
-                    ? `${window.location.origin}/confirmar-email`
-                    : undefined,
+                emailRedirectTo: `${window.location.origin}/confirmar-email`,
                 data: {
-                  nombre:
-                    form.name.trim(),
-                  username:
-                    form.username.trim().toLowerCase(),
-                  telefono:
-                    form.phone.trim(),
-                  direccion:
-                    form.address.trim(),
-                  codigo_postal:
-                    form.postalCode.trim(),
-                  provincia:
-                    form.province.trim(),
-                  referencias:
-                    form.references?.trim() ?? "",
-                  pending_activation: true,
+                  username,
                 },
               },
             }
