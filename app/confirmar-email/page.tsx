@@ -6,12 +6,31 @@ import { CheckCircle2, Loader2 } from "lucide-react"
 
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { supabase } from "@/lib/supabase/client"
+import type { EmailOtpType } from "@supabase/supabase-js"
+
+const SUPPORTED_EMAIL_OTP_TYPES = new Set<EmailOtpType>([
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email_change",
+  "email",
+])
+
+function getEmailOtpType(type: string | null): EmailOtpType {
+  if (type && SUPPORTED_EMAIL_OTP_TYPES.has(type as EmailOtpType)) {
+    return type as EmailOtpType
+  }
+
+  return "email"
+}
 
 function ConfirmEmailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tokenHash = searchParams.get("token_hash") ?? ""
   const code = searchParams.get("code") ?? ""
+  const otpType = getEmailOtpType(searchParams.get("type"))
   const [loading, setLoading] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
   const [hasSession, setHasSession] = useState(false)
@@ -40,7 +59,7 @@ function ConfirmEmailContent() {
     if (tokenHash) {
       const { error: verificationError } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
-        type: "email",
+        type: otpType,
       })
 
       if (verificationError) {

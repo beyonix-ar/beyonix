@@ -153,7 +153,7 @@ export function SiteHeader() {
             </div>
 
             <Link
-              href="/#contacto"
+              href="/contacto"
               className="text-15px font-medium text-white/78 transition-colors hover:text-white"
             >
               Contacto
@@ -297,7 +297,7 @@ export function SiteHeader() {
               { label: "Inicio", href: "/" },
               { label: "Productos", href: "/productos" },
               { label: "Categorías", href: "/categorias" },
-              { label: "Contacto", href: "/#contacto" },
+              { label: "Contacto", href: "/contacto" },
             ].map((link) => (
               <Link
                 key={link.href}

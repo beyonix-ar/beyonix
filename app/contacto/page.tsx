@@ -134,7 +134,7 @@ export default function ContactoPage() {
           </div>
 
           <div className="mt-8 rounded-2xl border border-beyonix-blue-light/16 bg-beyonix-surface p-6 shadow-2xl shadow-black/25">
-            <p className="max-w-3xl text-base leading-8 text-white/76">
+            <p className="mx-auto max-w-3xl text-center text-base leading-8 text-white/76">
               Nuestro objetivo es brindarte una atención clara, simple y cercana
               antes, durante y después de tu compra.
             </p>
