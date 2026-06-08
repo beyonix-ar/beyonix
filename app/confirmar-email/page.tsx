@@ -1,127 +1,108 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { CheckCircle2, Loader2 } from "lucide-react"
+import { AlertCircle, Loader2 } from "lucide-react"
 
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { supabase } from "@/lib/supabase/client"
-import type { EmailOtpType } from "@supabase/supabase-js"
 
-const SUPPORTED_EMAIL_OTP_TYPES = new Set<EmailOtpType>([
-  "signup",
-  "invite",
-  "magiclink",
-  "recovery",
-  "email_change",
-  "email",
-])
-
-function getEmailOtpType(type: string | null): EmailOtpType {
-  if (type && SUPPORTED_EMAIL_OTP_TYPES.has(type as EmailOtpType)) {
-    return type as EmailOtpType
-  }
-
-  return "email"
-}
+const INVALID_LINK_MESSAGE =
+  "El enlace venció o ya fue utilizado. Solicitá un nuevo correo de confirmación."
 
 function ConfirmEmailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const tokenHash = searchParams.get("token_hash") ?? ""
-  const code = searchParams.get("code") ?? ""
-  const otpType = getEmailOtpType(searchParams.get("type"))
-  const [loading, setLoading] = useState(false)
-  const [checkingSession, setCheckingSession] = useState(true)
-  const [hasSession, setHasSession] = useState(false)
+  const hasConfirmed = useRef(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        setHasSession(Boolean(data.session))
-      })
-      .catch(() => {
-        setError("No pudimos validar el enlace. Recargá la página.")
-      })
-      .finally(() => {
-        setCheckingSession(false)
-      })
-  }, [])
+    if (hasConfirmed.current) return
 
-  const handleConfirm = async () => {
-    if (loading) return
+    hasConfirmed.current = true
 
-    setLoading(true)
-    setError("")
+    const confirmEmail = async () => {
+      const activateAccountAndRedirect = async () => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
-    if (tokenHash) {
-      const { error: verificationError } = await supabase.auth.verifyOtp({
-        token_hash: tokenHash,
-        type: otpType,
-      })
+        if (!session) {
+          setError(INVALID_LINK_MESSAGE)
+          return
+        }
 
-      if (verificationError) {
-        setLoading(false)
-        setError(
-          "El enlace de confirmación venció o ya fue utilizado. Solicitá un correo nuevo."
-        )
+        const response = await fetch("/api/auth/confirm-email", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        })
+
+        if (!response.ok) {
+          setError(INVALID_LINK_MESSAGE)
+          return
+        }
+
+        const { error: refreshError } = await supabase.auth.refreshSession()
+
+        if (refreshError) {
+          setError(INVALID_LINK_MESSAGE)
+          return
+        }
+
+        router.replace("/")
+        router.refresh()
+      }
+
+      const code = searchParams.get("code")
+      const tokenHash = searchParams.get("token_hash")
+      const type = searchParams.get("type")
+
+      if (type === "recovery") {
+        const resetParams = new URLSearchParams()
+
+        if (code) resetParams.set("code", code)
+        if (tokenHash) resetParams.set("token_hash", tokenHash)
+        resetParams.set("type", type)
+
+        router.replace(`/reset-password?${resetParams.toString()}`)
         return
       }
-    } else if (code) {
-      const { error: exchangeError } =
-        await supabase.auth.exchangeCodeForSession(code)
 
-      if (exchangeError) {
-        setLoading(false)
-        setError(
-          "El enlace de confirmación venció o ya fue utilizado. Solicitá un correo nuevo."
-        )
+      if (code) {
+        const { error: exchangeError } =
+          await supabase.auth.exchangeCodeForSession(code)
+
+        if (exchangeError) {
+          setError(INVALID_LINK_MESSAGE)
+          return
+        }
+
+        await activateAccountAndRedirect()
         return
       }
+
+      if (tokenHash) {
+        const { error: verificationError } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: "email",
+        })
+
+        if (verificationError) {
+          setError(INVALID_LINK_MESSAGE)
+          return
+        }
+
+        await activateAccountAndRedirect()
+        return
+      }
+
+      setError(INVALID_LINK_MESSAGE)
     }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
-      setLoading(false)
-      setError(
-        "Este enlace no contiene una confirmación válida. Solicitá un correo nuevo."
-      )
-      return
-    }
-
-    const response = await fetch("/api/auth/confirm-email", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    })
-    const result = await response.json()
-
-    if (!response.ok) {
-      setLoading(false)
-      setError(result.error || "No pudimos confirmar tu cuenta.")
-      return
-    }
-
-    const { error: refreshError } = await supabase.auth.refreshSession()
-
-    if (refreshError) {
-      setLoading(false)
-      setError("La cuenta se activó, pero no pudimos iniciar la sesión.")
-      return
-    }
-
-    router.replace("/")
-    router.refresh()
-  }
-
-  const canConfirm =
-    !checkingSession && Boolean(tokenHash || code || hasSession)
+    confirmEmail()
+  }, [router, searchParams])
 
   return (
     <div className="flex min-h-screen flex-col bg-black">
@@ -136,36 +117,26 @@ function ConfirmEmailContent() {
       <main className="flex flex-1 items-center justify-center px-4 py-6">
         <div className="w-full max-w-md rounded-2xl border border-white/10 bg-beyonix-surface-4 p-6 text-center shadow-2xl shadow-black/35">
           <div className="mx-auto flex size-16 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-500/10">
-            <CheckCircle2 className="size-10 text-emerald-400" />
+            {error ? (
+              <AlertCircle className="size-10 text-red-400" />
+            ) : (
+              <Loader2 className="size-8 animate-spin text-emerald-400" />
+            )}
           </div>
 
           <h1 className="mt-5 text-2xl font-bold text-white">
-            Confirmá tu cuenta
+            Confirmando tu cuenta
           </h1>
 
-          <p className="mt-3 text-sm leading-6 text-white/60">
-            Presioná el botón para validar tu email y activar tu cuenta.
-          </p>
-
-          {error && (
+          {error ? (
             <p className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
               {error}
             </p>
+          ) : (
+            <p className="mt-3 text-sm leading-6 text-white/60">
+              Estamos validando tu email. Te vamos a redirigir automáticamente.
+            </p>
           )}
-
-          <button
-            type="button"
-            aria-label="Confirmar cuenta"
-            title="Confirmar cuenta"
-            onClick={handleConfirm}
-            disabled={!canConfirm || loading}
-            className="mt-6 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {(loading || checkingSession) && (
-              <Loader2 className="size-4 animate-spin" />
-            )}
-            {loading ? "Confirmando..." : "Confirmar cuenta"}
-          </button>
         </div>
       </main>
     </div>
