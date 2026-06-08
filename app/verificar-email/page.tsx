@@ -13,7 +13,7 @@ function VerifyEmailContent() {
   const email = searchParams.get("email")?.trim().toLowerCase() ?? ""
   const [resending, setResending] = useState(false)
   const [message, setMessage] = useState("")
-  const [cooldown, setCooldown] = useState(0)
+  const [cooldown, setCooldown] = useState(30)
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -50,7 +50,7 @@ function VerifyEmailContent() {
       return
     }
 
-    setCooldown(60)
+    setCooldown(30)
     setMessage("Correo reenviado. Puede demorar unos minutos en llegar.")
   }
 
@@ -106,7 +106,7 @@ function VerifyEmailContent() {
             {resending
               ? "Reenviando..."
               : cooldown > 0
-                ? `Reenviar en ${cooldown}s`
+                ? `Podés reenviar el correo en ${cooldown} segundos`
                 : "Reenviar correo de confirmación"}
           </button>
 

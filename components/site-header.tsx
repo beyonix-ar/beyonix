@@ -22,7 +22,7 @@ import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 export function SiteHeader() {
   const { cart, total, openCart } = useCart()
-  const { user, logout } = useAuth()
+  const { user, isLoading, logout } = useAuth()
 
   const [categories, setCategories] = useState<SupabaseCategoria[]>([])
   const [catOpen, setCatOpen] = useState(false)
@@ -35,8 +35,7 @@ export function SiteHeader() {
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
   const userLabel =
     user?.username?.trim() ||
-    user?.email?.split("@")[0] ||
-    "Mi cuenta"
+    (isLoading ? "" : "Mi cuenta")
 
   useEffect(() => {
     let active = true

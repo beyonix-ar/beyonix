@@ -93,6 +93,11 @@ export interface SupabaseProfile {
   nombre: string
   telefono?: string | null
   direccion?: string | null
+  calle?: string | null
+  numero?: string | null
+  piso?: string | null
+  departamento?: string | null
+  localidad?: string | null
   codigo_postal?: string | null
   provincia?: string | null
   referencias?: string | null

@@ -120,6 +120,14 @@ export interface BeyonixUser {
 
   address?: string
 
+  street?: string
+
+  streetNumber?: string
+
+  floor?: string
+
+  apartment?: string
+
   postalCode?: string
 
   references?: string
@@ -137,6 +145,11 @@ export interface RegisterPayload {
   email: string
   password: string
   address: string
+  street: string
+  streetNumber: string
+  floor?: string
+  apartment?: string
+  locality: string
   postalCode: string
   phone: string
   province: string
@@ -180,13 +193,14 @@ interface AuthContextType {
 
 function profileToUser(
   profile: SupabaseProfile,
-  email: string
+  email: string,
+  metadataUsername?: string
 ): BeyonixUser {
   return {
     id: profile.id,
 
     username:
-      profile.username ?? undefined,
+      profile.username ?? metadataUsername,
 
     name: profile.nombre,
 
@@ -209,6 +223,21 @@ function profileToUser(
 
     address:
       profile.direccion ?? undefined,
+
+    street:
+      profile.calle ?? undefined,
+
+    streetNumber:
+      profile.numero ?? undefined,
+
+    floor:
+      profile.piso ?? undefined,
+
+    apartment:
+      profile.departamento ?? undefined,
+
+    city:
+      profile.localidad ?? undefined,
 
     postalCode:
       profile.codigo_postal ?? undefined,
@@ -260,7 +289,7 @@ export function AuthProvider({
       async (
         supabaseUser: User
       ) => {
-        const {
+        let {
           data: profile,
           error,
         } = await supabase
@@ -276,30 +305,41 @@ export function AuthProvider({
           error ||
           !profile
         ) {
-          setUser({
-            id: supabaseUser.id,
+          const metadata = supabaseUser.user_metadata ?? {}
+          const { error: syncError } = await supabase
+            .from("profiles")
+            .upsert({
+              id: supabaseUser.id,
+              email: supabaseUser.email ?? metadata.email ?? null,
+              username: metadata.username ?? null,
+              nombre: metadata.nombre ?? "",
+              telefono: metadata.telefono ?? null,
+              direccion: metadata.direccion ?? null,
+              calle: metadata.calle ?? null,
+              numero: metadata.numero ?? null,
+              piso: metadata.piso ?? null,
+              departamento: metadata.departamento ?? null,
+              localidad: metadata.localidad ?? null,
+              codigo_postal: metadata.codigo_postal ?? null,
+              provincia: metadata.provincia ?? null,
+              referencias: metadata.referencias ?? null,
+            } as never)
 
-            username:
-              supabaseUser
-                .user_metadata
-                ?.username ?? undefined,
+          if (!syncError) {
+            const retry = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("id", supabaseUser.id)
+              .single()
 
-            name:
-              supabaseUser
-                .user_metadata
-                ?.nombre ||
-              "Usuario",
+            profile = retry.data
+            error = retry.error
+          }
+        }
 
-            email:
-              supabaseUser.email ??
-              "",
-
-            rol: "cliente",
-
-            createdAt:
-              new Date().toISOString(),
-          })
-
+        if (error || !profile) {
+          console.error("load profile error", error)
+          setUser(null)
           return
         }
 
@@ -309,7 +349,13 @@ export function AuthProvider({
           return
         }
 
-        setUser(profileToUser(profile, supabaseUser.email ?? ""))
+        setUser(
+          profileToUser(
+            profile,
+            supabaseUser.email ?? "",
+            supabaseUser.user_metadata?.username ?? undefined
+          )
+        )
       },
       []
     )
@@ -463,21 +509,19 @@ export function AuthProvider({
           normalizedIdentifier
 
         if (!normalizedIdentifier.includes("@")) {
-          const { data: profileEmail } =
-            await supabase
-              .rpc(
-                "get_profile_email_by_username",
-                {
-                  username_input:
-                    normalizedIdentifier,
-                }
-              )
+          const {
+            data: profileEmail,
+            error: profileError,
+          } = await supabase
+            .rpc("get_profile_email_by_username", {
+              username_input: normalizedIdentifier,
+            })
 
-          if (!profileEmail) {
+          if (profileError || !profileEmail) {
             return {
               ok: false,
               error:
-                "Email, usuario o contraseña incorrectos.",
+                "No existe una cuenta con ese nombre de usuario.",
             }
           }
 
@@ -654,6 +698,22 @@ export function AuthProvider({
 
         registrationInProgress.current = true
         const username = form.username.trim().toLowerCase()
+        const email = form.email.trim().toLowerCase()
+        const profilePayload = {
+          email,
+          username,
+          nombre: form.name.trim(),
+          telefono: form.phone.trim(),
+          direccion: form.address.trim(),
+          calle: form.street.trim(),
+          numero: form.streetNumber.trim(),
+          piso: form.floor?.trim() || null,
+          departamento: form.apartment?.trim() || null,
+          localidad: form.locality.trim(),
+          codigo_postal: form.postalCode.trim(),
+          provincia: form.province.trim(),
+          referencias: form.references?.trim() || null,
+        }
 
         const {
           data,
@@ -662,9 +722,7 @@ export function AuthProvider({
           await supabase.auth.signUp(
             {
               email:
-                form.email
-                  .trim()
-                  .toLowerCase(),
+                email,
 
               password:
                 form.password,
@@ -672,7 +730,7 @@ export function AuthProvider({
               options: {
                 emailRedirectTo: `${window.location.origin}/confirmar-email`,
                 data: {
-                  username,
+                  ...profilePayload,
                 },
               },
             }
@@ -740,47 +798,13 @@ export function AuthProvider({
         }
 
         if (data.user) {
-          const profilePayload = {
-            username:
-              form.username.trim().toLowerCase(),
-            nombre:
-              form.name.trim(),
-            telefono:
-              form.phone.trim(),
-            direccion:
-              form.address.trim(),
-            codigo_postal:
-              form.postalCode.trim(),
-            provincia:
-              form.province.trim(),
-            referencias:
-              form.references?.trim() ?? "",
-          }
+          const { error: profileError } = await supabase
+            .rpc("sync_signup_profile", {
+              user_id_input: data.user.id,
+            })
 
-          let { error: profileError } =
-            await supabase
-              .from("profiles")
-              .update(profilePayload as never)
-              .eq("id", data.user.id)
-
-          if (
-            profileError &&
-            profileError.message
-              .toLowerCase()
-              .includes("referencias")
-          ) {
-            const {
-              referencias,
-              ...profilePayloadWithoutReferences
-            } = profilePayload
-
-            const retry =
-              await supabase
-                .from("profiles")
-                .update(profilePayloadWithoutReferences as never)
-                .eq("id", data.user.id)
-
-            profileError = retry.error
+          if (profileError) {
+            console.error("register profile upsert error", profileError)
           }
 
           setUser(null)
@@ -860,6 +884,22 @@ export function AuthProvider({
           payload.direccion = data.address
         }
 
+        if (data.street !== undefined) {
+          payload.calle = data.street
+        }
+
+        if (data.streetNumber !== undefined) {
+          payload.numero = data.streetNumber
+        }
+
+        if (data.floor !== undefined) {
+          payload.piso = data.floor || null
+        }
+
+        if (data.apartment !== undefined) {
+          payload.departamento = data.apartment || null
+        }
+
         if (data.postalCode !== undefined) {
           payload.codigo_postal = data.postalCode
         }
@@ -869,7 +909,7 @@ export function AuthProvider({
         }
 
         if (data.city !== undefined) {
-          payload.provincia = data.city
+          payload.localidad = data.city
         }
 
         if (data.avatarUrl !== undefined) {
@@ -880,7 +920,7 @@ export function AuthProvider({
           payload.referencias = data.references
         }
 
-        await supabase
+        const { error } = await supabase
           .from(
             "profiles"
           )
@@ -889,6 +929,10 @@ export function AuthProvider({
             "id",
             user.id
           )
+
+        if (error) {
+          throw error
+        }
 
         setUser(
           (prev) =>

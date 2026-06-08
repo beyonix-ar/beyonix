@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import type { KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Check, ChevronDown } from "lucide-react"
 
 import { ARGENTINA_PROVINCES } from "@/lib/validation/account-fields"
@@ -16,7 +17,14 @@ export function ProvinceSelect({
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
-  const selectedLabel = value || "Seleccioná una provincia"
+  const selectedProvince = ARGENTINA_PROVINCES.find(
+    (province) =>
+      province.toLocaleUpperCase("es-AR") ===
+      value.toLocaleUpperCase("es-AR")
+  )
+  const selectedLabel = value
+    ? value.toLocaleUpperCase("es-AR")
+    : "Seleccioná una provincia"
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -40,6 +48,19 @@ export function ProvinceSelect({
     }
   }, [])
 
+  const handleTriggerKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>
+  ) => {
+    if (
+      event.key === "Enter" ||
+      event.key === " " ||
+      event.key === "ArrowDown"
+    ) {
+      event.preventDefault()
+      setOpen(true)
+    }
+  }
+
   return (
     <div ref={wrapperRef} className="relative">
       <button
@@ -49,7 +70,8 @@ export function ProvinceSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`flex w-full cursor-pointer items-center justify-between gap-3 border bg-black text-left text-sm outline-none transition-colors ${
+        onKeyDown={handleTriggerKeyDown}
+        className={`flex w-full cursor-pointer items-center justify-between gap-3 border bg-black text-left text-sm transition-colors focus-visible:border-beyonix-focus focus-visible:outline-none focus-visible:ring-0 ${
           compact ? "h-10 rounded-lg px-3" : "h-12 rounded-xl px-4"
         } ${
           open
@@ -93,7 +115,7 @@ export function ProvinceSelect({
             </button>
 
             {ARGENTINA_PROVINCES.map((province) => {
-              const selected = province === value
+              const selected = province === selectedProvince
 
               return (
                 <button

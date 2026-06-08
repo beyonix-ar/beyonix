@@ -333,7 +333,11 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const [username, setUsername] = useState("")
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
-  const [address, setAddress] = useState("")
+  const [street, setStreet] = useState("")
+  const [streetNumber, setStreetNumber] = useState("")
+  const [floor, setFloor] = useState("")
+  const [apartment, setApartment] = useState("")
+  const [locality, setLocality] = useState("")
   const [province, setProvince] = useState("")
   const [postalCode, setPostalCode] = useState("")
   const [phone, setPhone] = useState("")
@@ -352,11 +356,38 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       return
     }
 
+    if (!street.trim()) {
+      setError("Ingresá la calle.")
+      return
+    }
+
+    if (!streetNumber.trim()) {
+      setError("Ingresá el número de calle.")
+      return
+    }
+
+    if (!locality.trim()) {
+      setError("Ingresá la localidad.")
+      return
+    }
+
+    const deliveryAddress = formatDeliveryAddressForProfile(
+      buildDeliveryAddressDraft({
+        postalCode,
+        street,
+        streetNumber,
+        floor,
+        apartment,
+        locality,
+        province,
+      })
+    )
+
     const validationError = validateRegisterPayload({
       username,
       name,
       email,
-      address,
+      address: deliveryAddress,
       province,
       postalCode,
       phone,
@@ -375,7 +406,12 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       name,
       email,
       password,
-      address,
+      address: deliveryAddress,
+      street,
+      streetNumber,
+      floor,
+      apartment,
+      locality,
       province,
       postalCode,
       phone,
@@ -398,7 +434,13 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       <InputField label="Nombre de usuario" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" icon={User} maxLength={FIELD_LIMITS.username} />
       <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
       <InputField label="Email" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" icon={Mail} maxLength={FIELD_LIMITS.email} />
-      <InputField label="Dirección" type="text" value={address} onChange={setAddress} placeholder="Calle 1234, piso/depto" icon={MapPin} maxLength={FIELD_LIMITS.address} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <InputField label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" icon={MapPin} maxLength={60} />
+        <InputField label="Número" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
+        <InputField label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" icon={Hash} maxLength={12} />
+        <InputField label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" icon={Hash} maxLength={12} />
+        <InputField label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" icon={MapPin} maxLength={60} />
+      </div>
       <TextareaField
         label="Referencias"
         value={references}
@@ -1154,6 +1196,10 @@ function Seguridad({ onBack }: { onBack: () => void }) {
   )
 }
 
+function uppercaseAccountText(value: string) {
+  return value.toLocaleUpperCase("es-AR")
+}
+
 function MisDatos({ onBack }: { onBack: () => void }) {
   const { user, updateUser } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1162,28 +1208,62 @@ function MisDatos({ onBack }: { onBack: () => void }) {
     user?.province,
     user?.postalCode
   )
-  const [name, setName] = useState(user?.name ?? "")
   const [phone, setPhone] = useState(user?.phone ?? "")
-  const [province, setProvince] = useState(user?.province ?? "")
+  const [province, setProvince] = useState(
+    uppercaseAccountText(user?.province ?? "")
+  )
   const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
-  const [street, setStreet] = useState(profileAddress.street)
-  const [streetNumber, setStreetNumber] = useState(profileAddress.number)
-  const [floor, setFloor] = useState(profileAddress.floor)
-  const [apartment, setApartment] = useState(profileAddress.apartment)
-  const [locality, setLocality] = useState(user?.city ?? profileAddress.locality)
-  const [references, setReferences] = useState(user?.references ?? "")
+  const [street, setStreet] = useState(
+    uppercaseAccountText(user?.street ?? profileAddress.street)
+  )
+  const [streetNumber, setStreetNumber] = useState(
+    user?.streetNumber ?? profileAddress.number
+  )
+  const [floor, setFloor] = useState(
+    uppercaseAccountText(user?.floor ?? profileAddress.floor)
+  )
+  const [apartment, setApartment] = useState(
+    uppercaseAccountText(user?.apartment ?? profileAddress.apartment)
+  )
+  const [locality, setLocality] = useState(
+    uppercaseAccountText(user?.city ?? profileAddress.locality)
+  )
+  const [references, setReferences] = useState(
+    uppercaseAccountText(user?.references ?? "")
+  )
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? "")
   const [saved, setSaved] = useState(false)
   const [profileError, setProfileError] = useState("")
   const [avatarLoading, setAvatarLoading] = useState(false)
   const [avatarError, setAvatarError] = useState("")
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    const nextAddress = parseProfileAddress(
+      user?.address ?? "",
+      user?.province,
+      user?.postalCode
+    )
+
+    setPhone(user?.phone ?? "")
+    setProvince(uppercaseAccountText(user?.province ?? ""))
+    setPostalCode(user?.postalCode ?? "")
+    setStreet(uppercaseAccountText(user?.street ?? nextAddress.street))
+    setStreetNumber(user?.streetNumber ?? nextAddress.number)
+    setFloor(uppercaseAccountText(user?.floor ?? nextAddress.floor))
+    setApartment(
+      uppercaseAccountText(user?.apartment ?? nextAddress.apartment)
+    )
+    setLocality(uppercaseAccountText(user?.city ?? nextAddress.locality))
+    setReferences(uppercaseAccountText(user?.references ?? ""))
+    setAvatarUrl(user?.avatarUrl ?? "")
+  }, [user])
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setProfileError("")
 
     const validationError = validateProfilePayload({
-      name,
+      name: user?.name ?? "",
       phone,
       province,
       address: `${street} ${streetNumber}`.trim(),
@@ -1212,16 +1292,40 @@ function MisDatos({ onBack }: { onBack: () => void }) {
       return
     }
 
-    updateUser({
-      name,
-      phone,
-      province,
-      address: formatDeliveryAddressForProfile(deliveryAddress),
-      postalCode,
-      references,
-    })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    try {
+      const normalizedProvince = uppercaseAccountText(province.trim())
+      const normalizedStreet = uppercaseAccountText(street.trim())
+      const normalizedFloor = uppercaseAccountText(floor.trim())
+      const normalizedApartment = uppercaseAccountText(apartment.trim())
+      const normalizedLocality = uppercaseAccountText(locality.trim())
+      const normalizedReferences = uppercaseAccountText(references.trim())
+      const normalizedAddress = buildDeliveryAddressDraft({
+        postalCode,
+        street: normalizedStreet,
+        streetNumber,
+        floor: normalizedFloor,
+        apartment: normalizedApartment,
+        locality: normalizedLocality,
+        province: normalizedProvince,
+      })
+
+      await updateUser({
+        phone,
+        province: normalizedProvince,
+        address: formatDeliveryAddressForProfile(normalizedAddress),
+        street: normalizedStreet,
+        streetNumber,
+        floor: normalizedFloor,
+        apartment: normalizedApartment,
+        city: normalizedLocality,
+        postalCode,
+        references: normalizedReferences,
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {
+      setProfileError("No pudimos guardar tus datos. Intentá nuevamente.")
+    }
   }
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1322,7 +1426,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
           <div className="grid gap-3 md:grid-cols-2">
             <ReadOnlyField
               label="Nombre de usuario"
-              value={user?.username || "Sin usuario asignado"}
+              value={uppercaseAccountText(user?.username ?? "")}
               icon={User}
               help="El nombre de usuario no se puede cambiar."
             />
@@ -1333,7 +1437,12 @@ function MisDatos({ onBack }: { onBack: () => void }) {
               help="El email no se puede cambiar."
             />
 
-            <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
+            <ReadOnlyField
+              label="Nombre y apellido"
+              value={uppercaseAccountText(user?.name ?? "")}
+              icon={User}
+              help="El nombre y apellido no se pueden cambiar."
+            />
             <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
           </div>
 
@@ -1348,23 +1457,23 @@ function MisDatos({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
-              <InputField label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" icon={MapPin} maxLength={60} />
+              <InputField label="Calle" type="text" value={street} onChange={(value) => setStreet(uppercaseAccountText(value))} placeholder="San Martín" icon={MapPin} maxLength={60} />
               <InputField label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
-              <InputField label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" icon={Hash} maxLength={12} />
-              <InputField label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" icon={Hash} maxLength={12} />
+              <InputField label="Piso opcional" type="text" value={floor} onChange={(value) => setFloor(uppercaseAccountText(value))} placeholder="3" icon={Hash} maxLength={12} />
+              <InputField label="Departamento opcional" type="text" value={apartment} onChange={(value) => setApartment(uppercaseAccountText(value))} placeholder="B" icon={Hash} maxLength={12} />
               <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
-              <InputField label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" icon={MapPin} maxLength={60} />
+              <InputField label="Localidad" type="text" value={locality} onChange={(value) => setLocality(uppercaseAccountText(value))} placeholder="Rosario" icon={MapPin} maxLength={60} />
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
                   Provincia / Región
                 </label>
-                <ProvinceSelect value={province} onChange={setProvince} />
+                <ProvinceSelect value={province} onChange={(value) => setProvince(uppercaseAccountText(value))} />
               </div>
               <div className="md:col-span-2">
                 <TextareaField
                   label="Referencias para llegar"
                   value={references}
-                  onChange={setReferences}
+                  onChange={(value) => setReferences(uppercaseAccountText(value))}
                   placeholder="Entre calles, fachada blanca, portón negro, antes de llegar a la esquina."
                   icon={MapPin}
                   maxLength={FIELD_LIMITS.references}
