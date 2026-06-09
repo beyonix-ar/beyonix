@@ -165,7 +165,7 @@ function LoginContent() {
   useEffect(() => {
     if (searchParams.get("reset") !== "success") return
 
-    setSuccess("ContraseÃ±a actualizada correctamente. Ya podÃ©s iniciar sesiÃ³n.")
+    setSuccess("Contraseña actualizada correctamente. Ya podés iniciar sesión.")
     router.replace("/login", { scroll: false })
   }, [router, searchParams])
 
@@ -250,33 +250,38 @@ function LoginContent() {
       return
     }
 
-    if (!street.trim()) {
-      setLoading(false)
-      setError("Ingresá la calle.")
-      return
-    }
-
-    if (!streetNumber.trim()) {
-      setLoading(false)
-      setError("Ingresá el número de calle.")
-      return
-    }
-
-    if (!locality.trim()) {
-      setLoading(false)
-      setError("Ingresá la localidad.")
-      return
-    }
-
-    const deliveryAddress = formatDeliveryAddress({
+    const hasDeliveryData = [
       street,
       streetNumber,
       floor,
       apartment,
       locality,
-      region: province,
+      province,
       postalCode,
-    })
+    ].some((value) => value.trim())
+    const deliveryAddress = hasDeliveryData
+      ? street.trim() && streetNumber.trim()
+        ? formatDeliveryAddress({
+            street,
+            streetNumber,
+            floor,
+            apartment,
+            locality,
+            region: province,
+            postalCode,
+          })
+        : [
+            street.trim(),
+            streetNumber.trim(),
+            floor.trim() ? `Piso ${floor.trim()}` : "",
+            apartment.trim() ? `Depto ${apartment.trim()}` : "",
+            locality.trim(),
+            province.trim(),
+            postalCode.trim() ? `CP ${postalCode.trim()}` : "",
+          ]
+            .filter(Boolean)
+            .join(", ")
+      : ""
 
     if (!meetsPasswordRequirements(password)) {
       setLoading(false)
@@ -574,19 +579,19 @@ function LoginContent() {
                 </div>
 
                 <div className="grid gap-2.5 md:grid-cols-2">
-                  <Field name="street" label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" />
-                  <Field name="street-number" label="Número" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
+                  <Field name="street" label="Calle opcional" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" required={false} />
+                  <Field name="street-number" label="Número opcional" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" required={false} />
                   <Field name="floor" label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
                   <Field name="apartment" label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
-                  <Field name="postal-code" label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" />
-                  <Field name="locality" label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" />
+                  <Field name="postal-code" label="Código postal opcional" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required={false} />
+                  <Field name="locality" label="Localidad opcional" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required={false} />
                   <div>
                     <label className="mb-1 block text-xs font-medium text-white/78">
-                      Provincia / Región
+                      Provincia / Región opcional
                     </label>
                     <ProvinceSelect value={province} onChange={setProvince} compact />
                   </div>
-                  <Field name="phone" label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel" />
+                  <Field name="phone" label="Teléfono móvil opcional" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel" required={false} />
                   <div className="md:col-span-2">
                     <TextareaField name="references" label="Referencias para llegar" value={references} onChange={setReferences} placeholder="Entre Córdoba y Entre Ríos, fachada blanca, portón negro, antes de llegar a la esquina." maxLength={FIELD_LIMITS.references} />
                   </div>

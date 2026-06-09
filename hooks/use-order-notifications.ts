@@ -4,32 +4,24 @@ import { useCallback, useEffect, useState } from "react"
 
 import {
   ORDER_NOTIFICATIONS_CHANGED_EVENT,
-  getOrderNotificationCount,
+  getSupabaseErrorDetails,
+  getNewOrderNotificationCount,
 } from "@/lib/admin/order-notifications"
 import { supabase } from "@/lib/supabase/client"
-import type { SupabasePedido } from "@/lib/supabase/types"
 
 export function useOrderNotifications() {
   const [notificationCount, setNotificationCount] = useState(0)
 
   const loadNotificationCount = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("ordenes")
-      .select("estado, payment_status")
-
-    if (error) {
-      console.error("ORDER_NOTIFICATIONS_LOAD_ERROR", {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-      })
-      return
+    try {
+      setNotificationCount(await getNewOrderNotificationCount())
+    } catch (error) {
+      setNotificationCount(0)
+      console.error(
+        "ORDER_NOTIFICATIONS_LOAD_ERROR",
+        getSupabaseErrorDetails(error)
+      )
     }
-
-    setNotificationCount(
-      getOrderNotificationCount((data ?? []) as SupabasePedido[])
-    )
   }, [])
 
   useEffect(() => {
@@ -45,6 +37,27 @@ export function useOrderNotifications() {
         ORDER_NOTIFICATIONS_CHANGED_EVENT,
         loadNotificationCount
       )
+    }
+  }, [loadNotificationCount])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-order-notifications")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "ordenes",
+        },
+        () => {
+          void loadNotificationCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
     }
   }, [loadNotificationCount])
 

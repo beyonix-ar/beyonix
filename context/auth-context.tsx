@@ -74,6 +74,31 @@ function isInvalidRefreshTokenError(error: unknown) {
   )
 }
 
+function getSupabaseErrorDetails(error: unknown) {
+  const candidate =
+    typeof error === "object" && error !== null
+      ? (error as {
+          message?: unknown
+          details?: unknown
+          hint?: unknown
+          code?: unknown
+        })
+      : null
+
+  return {
+    message:
+      typeof candidate?.message === "string"
+        ? candidate.message
+        : error instanceof Error
+          ? error.message
+          : String(error),
+    details: candidate?.details,
+    hint: candidate?.hint,
+    code: candidate?.code,
+    error,
+  }
+}
+
 function clearSupabaseBrowserSession() {
   if (typeof window === "undefined") return
 
@@ -144,15 +169,15 @@ export interface RegisterPayload {
   name: string
   email: string
   password: string
-  address: string
-  street: string
-  streetNumber: string
+  address?: string
+  street?: string
+  streetNumber?: string
   floor?: string
   apartment?: string
-  locality: string
-  postalCode: string
-  phone: string
-  province: string
+  locality?: string
+  postalCode?: string
+  phone?: string
+  province?: string
   references?: string
 }
 
@@ -254,6 +279,45 @@ function profileToUser(
 // Context
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+function authUserToFallbackUser(
+  supabaseUser: User,
+  currentUser: BeyonixUser | null
+): BeyonixUser {
+  if (currentUser?.id === supabaseUser.id) return currentUser
+
+  const metadata = supabaseUser.user_metadata ?? {}
+  const metadataRole =
+    supabaseUser.app_metadata?.rol ??
+    supabaseUser.app_metadata?.role ??
+    metadata.rol
+  const role =
+    metadataRole === "admin" || metadataRole === "super_admin"
+      ? metadataRole
+      : "cliente"
+
+  return {
+    id: supabaseUser.id,
+    username: metadata.username ?? undefined,
+    name:
+      metadata.nombre ??
+      metadata.name ??
+      supabaseUser.email?.split("@")[0] ??
+      "Usuario",
+    email: supabaseUser.email ?? metadata.email ?? "",
+    rol: role,
+    phone: metadata.telefono ?? undefined,
+    city: metadata.localidad ?? undefined,
+    province: metadata.provincia ?? undefined,
+    street: metadata.calle ?? undefined,
+    streetNumber: metadata.numero ?? undefined,
+    floor: metadata.piso ?? undefined,
+    apartment: metadata.departamento ?? undefined,
+    postalCode: metadata.codigo_postal ?? undefined,
+    references: metadata.referencias ?? undefined,
+    createdAt: supabaseUser.created_at,
+  }
+}
+
 const AuthContext =
   createContext<AuthContextType | null>(
     null
@@ -286,56 +350,77 @@ export function AuthProvider({
       async (
         supabaseUser: User
       ) => {
-        let {
-          data: profile,
-          error,
+        const {
+          data: existingProfile,
+          error: profileLoadError,
         } = await supabase
           .from("profiles")
           .select("*")
-          .eq(
-            "id",
-            supabaseUser.id
-          )
-          .single()
+          .eq("id", supabaseUser.id)
+          .maybeSingle()
 
-        if (
-          error ||
-          !profile
-        ) {
+        if (profileLoadError) {
+          console.error(
+            "LOAD_PROFILE_ERROR",
+            getSupabaseErrorDetails(profileLoadError)
+          )
+          setUser((currentUser) =>
+            authUserToFallbackUser(supabaseUser, currentUser)
+          )
+          return
+        }
+
+        let profile = existingProfile as SupabaseProfile | null
+
+        if (!profile) {
           const metadata = supabaseUser.user_metadata ?? {}
-          const { error: syncError } = await supabase
+          const {
+            data: createdProfile,
+            error: createProfileError,
+          } = await supabase
             .from("profiles")
-            .upsert({
+            .insert({
               id: supabaseUser.id,
               email: supabaseUser.email ?? metadata.email ?? null,
               username: metadata.username ?? null,
               nombre: metadata.nombre ?? "",
-              telefono: metadata.telefono ?? null,
-              calle: metadata.calle ?? null,
-              numero: metadata.numero ?? null,
-              piso: metadata.piso ?? null,
-              departamento: metadata.departamento ?? null,
-              localidad: metadata.localidad ?? null,
-              codigo_postal: metadata.codigo_postal ?? null,
-              provincia: metadata.provincia ?? null,
-              referencias: metadata.referencias ?? null,
+              rol: "cliente",
             } as never)
+            .select("*")
+            .maybeSingle()
 
-          if (!syncError) {
-            const retry = await supabase
+          if (createProfileError) {
+            console.error(
+              "CREATE_BASIC_PROFILE_ERROR",
+              getSupabaseErrorDetails(createProfileError)
+            )
+
+            const {
+              data: retryProfile,
+              error: retryProfileError,
+            } = await supabase
               .from("profiles")
               .select("*")
               .eq("id", supabaseUser.id)
-              .single()
+              .maybeSingle()
 
-            profile = retry.data
-            error = retry.error
+            if (retryProfileError) {
+              console.error(
+                "RETRY_LOAD_PROFILE_ERROR",
+                getSupabaseErrorDetails(retryProfileError)
+              )
+            }
+
+            profile = retryProfile as SupabaseProfile | null
+          } else {
+            profile = createdProfile as SupabaseProfile | null
           }
         }
 
-        if (error || !profile) {
-          console.error("load profile error", error)
-          setUser(null)
+        if (!profile) {
+          setUser((currentUser) =>
+            authUserToFallbackUser(supabaseUser, currentUser)
+          )
           return
         }
 
@@ -650,13 +735,13 @@ export function AuthProvider({
             email:
               form.email,
             address:
-              form.address,
+              form.address ?? "",
             province:
-              form.province,
+              form.province ?? "",
             postalCode:
-              form.postalCode,
+              form.postalCode ?? "",
             phone:
-              form.phone,
+              form.phone ?? "",
             password:
               form.password,
             references:
@@ -680,7 +765,7 @@ export function AuthProvider({
               username_input:
                 form.username.trim().toLowerCase(),
               phone_input:
-                form.phone.trim(),
+                form.phone?.trim() ?? "",
             }
           )
 
@@ -695,44 +780,81 @@ export function AuthProvider({
         registrationInProgress.current = true
         const username = form.username.trim().toLowerCase()
         const email = form.email.trim().toLowerCase()
+        const emailRedirectTo =
+          typeof window !== "undefined"
+            ? `${window.location.origin}/confirmar-email`
+            : undefined
         const profilePayload = {
           email,
           username,
           nombre: form.name.trim(),
-          telefono: form.phone.trim(),
-          calle: form.street.trim(),
-          numero: form.streetNumber.trim(),
+          telefono: form.phone?.trim() || null,
+          calle: form.street?.trim() || null,
+          numero: form.streetNumber?.trim() || null,
           piso: form.floor?.trim() || null,
           departamento: form.apartment?.trim() || null,
-          localidad: form.locality.trim(),
-          codigo_postal: form.postalCode.trim(),
-          provincia: form.province.trim(),
+          localidad: form.locality?.trim() || null,
+          codigo_postal: form.postalCode?.trim() || null,
+          provincia: form.province?.trim() || null,
           referencias: form.references?.trim() || null,
         }
 
-        const {
-          data,
-          error,
-        } =
-          await supabase.auth.signUp(
-            {
-              email:
-                email,
-
-              password:
-                form.password,
-
-              options: {
-                emailRedirectTo: `${window.location.origin}/confirmar-email`,
-                data: {
-                  ...profilePayload,
-                },
+        const executeSignup = () =>
+          supabase.auth.signUp({
+            email,
+            password: form.password,
+            options: {
+              emailRedirectTo,
+              data: {
+                ...profilePayload,
               },
-            }
-          )
+            },
+          })
+        let signupResult: Awaited<ReturnType<typeof executeSignup>>
+
+        try {
+          signupResult = await executeSignup()
+        } catch (signupError) {
+          registrationInProgress.current = false
+          const signupDetails = getSupabaseErrorDetails(signupError)
+
+          console.error("AUTH_SIGNUP_THROWN_ERROR", {
+            ...signupDetails,
+            status:
+              typeof signupError === "object" &&
+              signupError !== null &&
+              "status" in signupError
+                ? signupError.status
+                : undefined,
+            name:
+              signupError instanceof Error
+                ? signupError.name
+                : undefined,
+            cause:
+              signupError instanceof Error
+                ? signupError.cause
+                : undefined,
+          })
+
+          return {
+            ok: false,
+            error:
+              "No pudimos crear la cuenta. Revisá los datos o intentá nuevamente en unos minutos.",
+          }
+        }
+
+        const { data, error } = signupResult
 
         if (error) {
           registrationInProgress.current = false
+          console.error("AUTH_SIGNUP_ERROR", {
+            message: error.message,
+            status: error.status,
+            name: error.name,
+            cause: error.cause,
+            code: error.code,
+            error,
+          })
 
           if (
             error.code === "user_already_exists" ||
@@ -757,7 +879,6 @@ export function AuthProvider({
           }
 
           if (
-            error.code === "unexpected_failure" ||
             error.message.toLowerCase().includes("confirmation email")
           ) {
             return {
@@ -770,13 +891,26 @@ export function AuthProvider({
           return {
             ok: false,
             error:
-              "Ocurrió un error al crear la cuenta.",
+              "No pudimos crear la cuenta. Revisá los datos o intentá nuevamente en unos minutos.",
+          }
+        }
+
+        if (!data.user) {
+          registrationInProgress.current = false
+          console.error("AUTH_SIGNUP_MISSING_USER", {
+            data,
+          })
+
+          return {
+            ok: false,
+            error:
+              "No pudimos crear la cuenta. Revisá los datos o intentá nuevamente en unos minutos.",
           }
         }
 
         if (
           data.session ||
-          (data.user && isEmailConfirmed(data.user))
+          isEmailConfirmed(data.user)
         ) {
           if (data.session) {
             await supabase.auth.signOut()
@@ -792,19 +926,7 @@ export function AuthProvider({
           }
         }
 
-        if (data.user) {
-          const { error: profileError } = await supabase
-            .rpc("sync_signup_profile", {
-              user_id_input: data.user.id,
-            })
-
-          if (profileError) {
-            console.error("register profile upsert error", profileError)
-          }
-
-          setUser(null)
-        }
-
+        setUser(null)
         registrationInProgress.current = false
 
         return {

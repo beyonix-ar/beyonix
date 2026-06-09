@@ -1,34 +1,162 @@
-import type { SupabasePedido } from "@/lib/supabase/types"
+import { supabase } from "@/lib/supabase/client"
 
 export const ORDER_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:order-notifications-changed"
 
-const ATTENTION_PAYMENT_STATUSES = new Set([
-  "pendiente_comprobante",
-  "en_revision",
-])
-
-const FINAL_ORDER_STATES = new Set([
-  "cancelado",
-  "entregado",
-  "finalizado",
-])
-
-export function orderNeedsAdminAttention(
-  order: Pick<SupabasePedido, "estado" | "payment_status">
-) {
-  const status = order.estado?.toLowerCase()
-  const paymentStatus = order.payment_status?.toLowerCase() ?? ""
-
-  if (FINAL_ORDER_STATES.has(status)) return false
-
-  return status === "pendiente" || ATTENTION_PAYMENT_STATUSES.has(paymentStatus)
+interface AdminOrderView {
+  last_seen_at: string
+  available: boolean
 }
 
-export function getOrderNotificationCount(
-  orders: Pick<SupabasePedido, "estado" | "payment_status">[]
+const DEFAULT_LAST_SEEN_AT = "2000-01-01T00:00:00.000Z"
+
+export function getSupabaseErrorDetails(error: unknown) {
+  const candidate =
+    typeof error === "object" && error !== null
+      ? (error as {
+          message?: unknown
+          details?: unknown
+          hint?: unknown
+          code?: unknown
+        })
+      : null
+
+  return {
+    message:
+      typeof candidate?.message === "string"
+        ? candidate.message
+        : error instanceof Error
+          ? error.message
+          : String(error),
+    details: candidate?.details,
+    hint: candidate?.hint,
+    code: candidate?.code,
+    error,
+  }
+}
+
+async function getCurrentAdminId() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
+
+  if (error) {
+    console.error(
+      "ORDER_NOTIFICATIONS_AUTH_ERROR",
+      getSupabaseErrorDetails(error)
+    )
+    return null
+  }
+
+  if (!user) return null
+
+  return user.id
+}
+
+async function getAdminOrderView(adminId: string) {
+  const { data, error } = await supabase
+    .from("admin_order_views")
+    .select("last_seen_at")
+    .eq("admin_id", adminId)
+    .maybeSingle()
+
+  if (error) {
+    console.error(
+      "ADMIN_ORDER_VIEW_LOAD_ERROR",
+      getSupabaseErrorDetails(error)
+    )
+    return {
+      last_seen_at: DEFAULT_LAST_SEEN_AT,
+      available: false,
+    }
+  }
+
+  return {
+    last_seen_at: data?.last_seen_at ?? DEFAULT_LAST_SEEN_AT,
+    available: true,
+  }
+}
+
+export function isOrderNewerThanLastSeen(
+  orderCreatedAt: string,
+  lastSeenAt: string | null
 ) {
-  return orders.filter(orderNeedsAdminAttention).length
+  if (!lastSeenAt) return true
+
+  return new Date(orderCreatedAt).getTime() > new Date(lastSeenAt).getTime()
+}
+
+export async function getNewOrderNotificationCount() {
+  try {
+    const adminId = await getCurrentAdminId()
+
+    if (!adminId) return 0
+
+    const view = await getAdminOrderView(adminId)
+
+    if (!view.available) return 0
+
+    const { count, error } = await supabase
+      .from("ordenes")
+      .select("id", { count: "exact", head: true })
+      .gt("created_at", view.last_seen_at)
+
+    if (error) {
+      console.error(
+        "ORDER_NOTIFICATIONS_COUNT_ERROR",
+        getSupabaseErrorDetails(error)
+      )
+      return 0
+    }
+
+    return count ?? 0
+  } catch (error) {
+    console.error(
+      "ORDER_NOTIFICATIONS_UNEXPECTED_ERROR",
+      getSupabaseErrorDetails(error)
+    )
+    return 0
+  }
+}
+
+export async function markOrdersSeenAndGetPreviousLastSeen() {
+  try {
+    const adminId = await getCurrentAdminId()
+
+    if (!adminId) return null
+
+    const view = await getAdminOrderView(adminId)
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from("admin_order_views")
+      .upsert(
+        {
+          admin_id: adminId,
+          last_seen_at: now,
+          updated_at: now,
+        },
+        { onConflict: "admin_id" }
+      )
+
+    if (error) {
+      console.error(
+        "ADMIN_ORDER_VIEW_UPSERT_ERROR",
+        getSupabaseErrorDetails(error)
+      )
+      return view.available ? view.last_seen_at : null
+    }
+
+    notifyOrderNotificationsChanged()
+
+    return view.available ? view.last_seen_at : null
+  } catch (error) {
+    console.error(
+      "ADMIN_ORDER_VIEW_UNEXPECTED_ERROR",
+      getSupabaseErrorDetails(error)
+    )
+    return null
+  }
 }
 
 export function notifyOrderNotificationsChanged() {

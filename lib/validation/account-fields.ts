@@ -209,27 +209,29 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
   const emailError = validateEmail(data.email)
   if (emailError) return emailError
 
-  const addressError = validateCleanText(
-    data.address,
-    "tu dirección",
-    FIELD_LIMITS.address,
-    {
-      minLength: 5,
-      pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
-      allowedHint: "Usá solo letras, números y signos comunes de dirección.",
-    }
-  )
-  if (addressError) return addressError
+  if (data.address.trim()) {
+    const addressError = validateCleanText(
+      data.address,
+      "tu dirección",
+      FIELD_LIMITS.address,
+      {
+        minLength: 2,
+        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        allowedHint: "Usá solo letras, números y signos comunes de dirección.",
+      }
+    )
+    if (addressError) return addressError
+  }
 
-  if (!isArgentinaProvince(data.province)) {
+  if (data.province.trim() && !isArgentinaProvince(data.province)) {
     return "Seleccioná una provincia válida."
   }
 
-  if (!/^\d{4,8}$/.test(data.postalCode)) {
+  if (data.postalCode.trim() && !/^\d{4,8}$/.test(data.postalCode)) {
     return "El código postal debe tener entre 4 y 8 números."
   }
 
-  if (!/^\d{8,15}$/.test(data.phone)) {
+  if (data.phone.trim() && !/^\d{8,15}$/.test(data.phone)) {
     return "El teléfono móvil debe tener entre 8 y 15 números."
   }
 
@@ -250,7 +252,7 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
     if (referencesError) return referencesError
   }
 
-  if (!hasCommonAllowedChars(data.address)) {
+  if (data.address.trim() && !hasCommonAllowedChars(data.address)) {
     return "La dirección contiene caracteres no permitidos."
   }
 

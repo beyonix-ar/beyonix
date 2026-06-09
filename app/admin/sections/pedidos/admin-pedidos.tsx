@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   Bell,
@@ -18,7 +18,9 @@ import {
 
 import { usePedidos } from "@/hooks/use-pedidos"
 import {
-  getOrderNotificationCount,
+  getSupabaseErrorDetails,
+  isOrderNewerThanLastSeen,
+  markOrdersSeenAndGetPreviousLastSeen,
   notifyOrderNotificationsChanged,
 } from "@/lib/admin/order-notifications"
 import { supabase } from "@/lib/supabase/client"
@@ -96,7 +98,7 @@ function getShippingProvider(pedido: SupabasePedido) {
 }
 
 function getAndreaniStatus(pedido: SupabasePedido) {
-  return pedido.andreani_estado || "Sin envÃƒÂ­o generado"
+  return pedido.andreani_estado || "Sin envío generado"
 }
 
 function getPaymentMethodLabel(pedido: SupabasePedido) {
@@ -104,13 +106,13 @@ function getPaymentMethodLabel(pedido: SupabasePedido) {
     return "Transferencia bancaria"
   }
 
-  return pedido.payment_method_id || pedido.payment_type_id || "Metodo no informado"
+  return pedido.payment_method_id || pedido.payment_type_id || "Método no informado"
 }
 
 function getPaymentStatusLabel(status?: string | null) {
   const labels: Record<string, string> = {
     pendiente_comprobante: "Pendiente de comprobante",
-    en_revision: "En revision",
+    en_revision: "En revisión",
     confirmado: "Confirmado",
     rechazado: "Rechazado",
     approved: "Aprobado",
@@ -128,7 +130,7 @@ function getTransferPaymentStatusBadge(status?: string | null) {
       className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
     },
     en_revision: {
-      label: "En revisiÃƒÂ³n",
+      label: "En revisión",
       className: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     },
     confirmado: {
@@ -188,8 +190,8 @@ function OrderNotificationBell({ count }: { count: number }) {
     <span
       title={
         count
-          ? `${count} pedidos requieren atenciÃƒÂ³n`
-          : "Sin pedidos pendientes de atenciÃƒÂ³n"
+          ? `${count} pedidos requieren atención`
+          : "Sin pedidos pendientes de atención"
       }
       className="inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/35 bg-black px-3 py-2 text-beyonix-sky"
     >
@@ -217,12 +219,12 @@ async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
     error?: string
   }
 
-  alert(data.message || data.error || "Andreani todavÃƒÂ­a no estÃƒÂ¡ configurado")
+  alert(data.message || data.error || "Andreani todavía no está configurado")
 }
 
 function handlePrintAndreaniLabel(pedido: SupabasePedido) {
   if (!pedido.andreani_etiqueta_url) {
-    alert("Andreani todavÃƒÂ­a no estÃƒÂ¡ configurado.")
+    alert("Andreani todavía no está configurado.")
     return
   }
 
@@ -253,7 +255,7 @@ function getDispatchAlert(pedido: SupabasePedido) {
 
   if (hours > 12) {
     return {
-      label: "AtenciÃƒÂ³n",
+      label: "Atención",
       className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
     }
   }
@@ -436,8 +438,8 @@ function PedidoPreviewModal({
               </h3>
               <div className="mt-3 space-y-2 text-sm text-white/62">
                 <p>{pedido.cliente_email || "Email no informado"}</p>
-                <p>{pedido.cliente_telefono || "TelÃƒÂ©fono no informado"}</p>
-                <p>{pedido.cliente_direccion || "DirecciÃƒÂ³n no informada"}</p>
+                <p>{pedido.cliente_telefono || "Teléfono no informado"}</p>
+                <p>{pedido.cliente_direccion || "Dirección no informada"}</p>
               </div>
             </section>
 
@@ -482,10 +484,10 @@ function PedidoPreviewModal({
                 <p>Fecha: {formatOrderDate(pedido.created_at)}</p>
                 <p>Pago: {pedido.payment_id || "Sin ID pago"}</p>
                 <p>
-                  MÃƒÂ©todo:{" "}
+                  Método:{" "}
                   {pedido.payment_method_id ||
                     pedido.payment_type_id ||
-                    "MÃƒÂ©todo no informado"}
+                    "Método no informado"}
                 </p>
                 <p>Seguimiento: {pedido.tracking_number || "Pendiente"}</p>
               </div>
@@ -518,7 +520,7 @@ function PedidoPreviewModal({
                     onChange={(value) => onPaymentStatusChange(pedido.id, value)}
                   >
                     <option value="pendiente_comprobante">Pendiente comprobante</option>
-                    <option value="en_revision">En revisiÃƒÂ³n</option>
+                    <option value="en_revision">En revisión</option>
                     <option value="confirmado">Confirmado</option>
                     <option value="rechazado">Rechazado</option>
                   </AdminSelect>
@@ -633,14 +635,14 @@ function PedidoPreviewModal({
             <div className="flex flex-col gap-4 border-b border-white/7 pb-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                  EnvÃƒÂ­o
+                  Envío
                 </p>
                 <h3 className="mt-2 flex items-center gap-2 text-xl font-black text-white">
                   <Truck className="size-5 text-beyonix-sky" />
                   Proveedor: {getShippingProvider(pedido)}
                 </h3>
                 <p className="mt-2 text-sm text-white/55">
-                  IntegraciÃƒÂ³n preparada para Andreani. Las credenciales reales
+                  Integración preparada para Andreani. Las credenciales reales
                   quedan reservadas para el backend.
                 </p>
               </div>
@@ -648,13 +650,13 @@ function PedidoPreviewModal({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  title="Generar envÃƒÂ­o Andreani"
-                  aria-label={`Generar envÃƒÂ­o Andreani para pedido ${pedido.id}`}
+                  title="Generar envío Andreani"
+                  aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
                   onClick={() => runAndreaniAction("crear-envio", pedido.id)}
                   className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover"
                 >
                   <Truck className="size-4" />
-                  Generar envÃƒÂ­o Andreani
+                  Generar envío Andreani
                 </button>
                 <button
                   type="button"
@@ -682,7 +684,7 @@ function PedidoPreviewModal({
             <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-xl border border-white/7 bg-white/3 p-3">
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Estado de envÃƒÂ­o
+                  Estado de envío
                 </p>
                 <p className="mt-2 text-sm font-black text-white">
                   {getAndreaniStatus(pedido)}
@@ -698,7 +700,7 @@ function PedidoPreviewModal({
               </div>
               <div className="rounded-xl border border-white/7 bg-white/3 p-3">
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  EnvÃƒÂ­o ID
+                  Envío ID
                 </p>
                 <p className="mt-2 break-words text-sm font-black text-white">
                   {pedido.andreani_envio_id || "Pendiente"}
@@ -748,7 +750,7 @@ function PedidoPreviewModal({
                       Pedido #{formatPublicOrderId(currentPedido.id)}
                     </h3>
                     <p className="mt-1 text-sm text-white/55">
-                      {formatOrderDate(currentPedido.created_at)} Ã‚Â· Estado:{" "}
+                      {formatOrderDate(currentPedido.created_at)} · Estado:{" "}
                       {currentPedido.estado}
                     </p>
                   </div>
@@ -875,10 +877,46 @@ export function AdminPedidos() {
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [previewPedido, setPreviewPedido] = useState<SupabasePedido | null>(null)
-  const notificationCount = useMemo(
-    () => getOrderNotificationCount(pedidos),
-    [pedidos]
-  )
+  const [newOrderIds, setNewOrderIds] = useState<Set<number>>(() => new Set())
+  const hasMarkedOrderViews = useRef(false)
+
+  useEffect(() => {
+    if (loading) return
+    if (hasMarkedOrderViews.current) return
+
+    hasMarkedOrderViews.current = true
+
+    let active = true
+
+    async function markCurrentOrdersAsSeen() {
+      try {
+        const previousLastSeenAt = await markOrdersSeenAndGetPreviousLastSeen()
+
+        if (!active || !previousLastSeenAt) return
+
+        setNewOrderIds(
+          new Set(
+            pedidos
+              .filter((pedido) =>
+                isOrderNewerThanLastSeen(pedido.created_at, previousLastSeenAt)
+              )
+              .map((pedido) => pedido.id)
+          )
+        )
+      } catch (error) {
+        console.error(
+          "ADMIN_ORDER_VIEW_MARK_ERROR",
+          getSupabaseErrorDetails(error)
+        )
+      }
+    }
+
+    void markCurrentOrdersAsSeen()
+
+    return () => {
+      active = false
+    }
+  }, [loading, pedidos])
 
   const pedidosFiltrados = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
@@ -905,7 +943,7 @@ export function AdminPedidos() {
   }, [pedidos, search, statusFilter])
 
   const handleDelete = async (id: number) => {
-    const ok = confirm("Ã‚Â¿Eliminar pedido?")
+    const ok = confirm("¿Eliminar pedido?")
     if (!ok) return
     const deleted = await deletePedido(id)
     if (deleted) notifyOrderNotificationsChanged()
@@ -919,13 +957,13 @@ export function AdminPedidos() {
     if (estadoActual === nextEstado) return
 
     if (nextEstado === "pagado" && estadoActual !== "pagado") {
-      alert("El estado pagado se actualiza automÃƒÂ¡ticamente desde Mercado Pago.")
+      alert("El estado pagado se actualiza automáticamente desde Mercado Pago.")
       return
     }
 
     if (nextEstado === "enviado") {
       const trackingNumber =
-        prompt("NÃƒÂºmero de seguimiento (opcional)")?.trim() || null
+        prompt("Número de seguimiento (opcional)")?.trim() || null
       const trackingUrl = prompt("Link de seguimiento (opcional)")?.trim() || null
 
       const updated = await updatePedidoEstado(pedidoId, nextEstado, {
@@ -1017,7 +1055,7 @@ export function AdminPedidos() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-black text-white/95">Gestión de pedidos</h1>
-            <OrderNotificationBell count={notificationCount} />
+            <OrderNotificationBell count={0} />
           </div>
           <p className="mt-2 text-sm text-white/68">
             Seguimiento de pago, productos, envío y prioridad de despacho.
@@ -1071,10 +1109,9 @@ export function AdminPedidos() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          <div>
-            <div className="space-y-3">
-              <div className="hidden grid-cols-admin-orders-pro gap-4 rounded-2xl border border-white/8 bg-black px-5 py-3 xl:grid">
+        <div className="overflow-x-auto pb-2">
+          <div className="min-w-admin-orders-pro space-y-3">
+            <div className="grid grid-cols-admin-orders-pro gap-4 rounded-2xl border border-white/8 bg-black px-5 py-3">
                 {[
                   "Pedido",
                   "Cliente",
@@ -1104,8 +1141,9 @@ export function AdminPedidos() {
 
               {pedidosFiltrados.map((pedido) => {
                 const dispatch = getDispatchAlert(pedido)
+                const isNewOrder = newOrderIds.has(pedido.id)
                 const paymentMethod =
-                  pedido.payment_method_id || pedido.payment_type_id || "MÃƒÂ©todo no informado"
+                  pedido.payment_method_id || pedido.payment_type_id || "Método no informado"
                 const orderDate = formatOrderDateParts(pedido.created_at)
                 const trackingText =
                   pedido.andreani_tracking ||
@@ -1115,11 +1153,24 @@ export function AdminPedidos() {
                 return (
                   <article
                     key={pedido.id}
-                    className="rounded-3xl border border-white/8 bg-black px-5 py-4 transition hover:border-beyonix-blue-light/45"
+                    className={`rounded-3xl border px-5 py-4 transition ${
+                      isNewOrder
+                        ? "border-emerald-400/30 bg-emerald-500/6 shadow-lg shadow-emerald-500/5 hover:bg-emerald-500/10"
+                        : "border-white/8 bg-black hover:border-beyonix-blue-light/45"
+                    }`}
                   >
-                    <div className="grid gap-4 xl:grid-cols-admin-orders-pro xl:items-center">
+                    <div className="grid grid-cols-admin-orders-pro items-center gap-4">
                   <div>
-                    <p className="text-sm font-black text-white/95">#{formatPublicOrderId(pedido.id)}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-black text-white/95">
+                        #{formatPublicOrderId(pedido.id)}
+                      </p>
+                      {isNewOrder && (
+                        <span className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-9px font-black uppercase tracking-widest text-emerald-300">
+                          Nuevo
+                        </span>
+                      )}
+                    </div>
                     <p
                       title={pedido.payment_id ? `Pago ${pedido.payment_id}` : "Sin ID pago"}
                       className="mt-1 break-words text-11px leading-4 text-white/55"
@@ -1256,7 +1307,6 @@ export function AdminPedidos() {
               })}
             </div>
           </div>
-        </div>
       )}
       {previewPedido && (
         <PedidoPreviewModal

@@ -68,6 +68,8 @@ import {
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferDiscount,
 } from "@/lib/payments/transfer"
+import { supabase } from "@/lib/supabase/client"
+import type { SupabaseProfile } from "@/lib/supabase/types"
 
 import {
   cn,
@@ -118,6 +120,7 @@ const initialCheckoutFormData = {
   cpDestino: "",
   localidad: "",
   provincia: "",
+  referencias: "",
 }
 
 type ShippingType = "sucursal" | "domicilio"
@@ -220,55 +223,95 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!user) return
 
-    const parsedAddress = parseDeliveryAddress(
-      user.address ?? "",
-      user.province,
-      user.postalCode
-    )
+    const currentUser = user
+    let cancelled = false
 
-    if (hasEditedCheckoutFormRef.current) return
+    async function loadCheckoutProfile() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select(
+          "id, email, nombre, username, telefono, calle, numero, piso, departamento, localidad, codigo_postal, provincia, referencias, rol, created_at"
+        )
+        .eq("id", currentUser.id)
+        .maybeSingle()
 
-    setFormData((prev) => {
-      const next = {
-        ...prev,
-      }
-      const profileValues = {
-        nombre: user.name ?? "",
-        email: user.email ?? "",
-        telefono: user.phone ?? "",
-        direccion: user.address ?? "",
-        calle: user.street ?? parsedAddress.street,
-        numero: user.streetNumber ?? parsedAddress.streetNumber,
-        piso: user.floor ?? parsedAddress.floor,
-        departamento: user.apartment ?? parsedAddress.apartment,
-        cpDestino: user.postalCode ?? "",
-        localidad: user.city ?? parsedAddress.locality,
-        provincia: user.province ?? "",
-      }
+      if (cancelled || hasEditedCheckoutFormRef.current) return
 
-      for (const [key, value] of Object.entries(profileValues)) {
-        const field = key as keyof typeof initialCheckoutFormData
-        const normalizedValue = String(value ?? "").trim()
-
-        if (!next[field] && normalizedValue) {
-          next[field] = value
-        }
-      }
-
-      if (!next.direccion) {
-        next.direccion = formatDeliveryAddress({
-          street: next.calle,
-          streetNumber: next.numero,
-          floor: next.piso,
-          apartment: next.departamento,
-          locality: next.localidad,
-          region: next.provincia,
-          postalCode: next.cpDestino,
+      if (error) {
+        console.error("CHECKOUT_PROFILE_LOAD_ERROR", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          error,
         })
       }
 
-      return next
-    })
+      const profile = data as SupabaseProfile | null
+      const fallbackAddress = currentUser.address ?? ""
+      const parsedAddress = parseDeliveryAddress(
+        fallbackAddress,
+        profile?.provincia ?? currentUser.province,
+        profile?.codigo_postal ?? currentUser.postalCode
+      )
+
+      setFormData((prev) => {
+        const next = {
+          ...prev,
+        }
+        const profileValues = {
+          nombre: profile?.nombre ?? currentUser.name ?? "",
+          email: profile?.email ?? currentUser.email ?? "",
+          telefono: profile?.telefono ?? currentUser.phone ?? "",
+          direccion: fallbackAddress,
+          calle: profile?.calle ?? currentUser.street ?? parsedAddress.street,
+          numero:
+            profile?.numero ??
+            currentUser.streetNumber ??
+            parsedAddress.streetNumber,
+          piso: profile?.piso ?? currentUser.floor ?? parsedAddress.floor,
+          departamento:
+            profile?.departamento ??
+            currentUser.apartment ??
+            parsedAddress.apartment,
+          cpDestino: profile?.codigo_postal ?? currentUser.postalCode ?? "",
+          localidad:
+            profile?.localidad ?? currentUser.city ?? parsedAddress.locality,
+          provincia: profile?.provincia ?? currentUser.province ?? "",
+          referencias:
+            profile?.referencias ?? currentUser.references ?? "",
+        }
+
+        for (const [key, value] of Object.entries(profileValues)) {
+          const field = key as keyof typeof initialCheckoutFormData
+          const normalizedValue = String(value ?? "").trim()
+
+          if (!next[field] && normalizedValue) {
+            next[field] = String(value)
+          }
+        }
+
+        if (!next.direccion && next.calle && next.numero) {
+          next.direccion = formatDeliveryAddress({
+            street: next.calle,
+            streetNumber: next.numero,
+            floor: next.piso,
+            apartment: next.departamento,
+            locality: next.localidad,
+            region: next.provincia,
+            postalCode: next.cpDestino,
+          })
+        }
+
+        return next
+      })
+    }
+
+    void loadCheckoutProfile()
+
+    return () => {
+      cancelled = true
+    }
   }, [user])
 
   useEffect(() => {
@@ -351,14 +394,20 @@ export default function CheckoutPage() {
     if (!cpDestino || !provincia || !localidad || items.length === 0) {
       setShippingOptions([
         {
-          type: "domicilio",
-          label: "Envío estándar",
+          type: "sucursal",
+          label: "Retiro en sucursal Andreani",
           price: manualShippingCost,
-          provider: "manual",
+          provider: "andreani",
+        },
+        {
+          type: "domicilio",
+          label: "Envío a domicilio Andreani",
+          price: manualShippingCost,
+          provider: "andreani",
         },
       ])
       setShippingMessage(
-        "Completá los datos de destino para ver las opciones de envío."
+        "Completá código postal, provincia y localidad para cotizar Andreani."
       )
       return
     }
@@ -399,33 +448,40 @@ export default function CheckoutPage() {
             type: "sucursal",
             label: "Retiro en sucursal Andreani",
             price: manualShippingCost,
-            provider: "manual",
+            provider: "andreani",
           },
           {
             type: "domicilio",
             label: "Envío a domicilio Andreani",
             price: manualShippingCost,
-            provider: "manual",
+            provider: "andreani",
           },
         ])
         setShippingMessage(
           data.message ||
-            "La cotización automática todavía no está disponible. Vas a poder continuar con el envío estándar."
+            "No pudimos cotizar Andreani en este momento. Intentá nuevamente o contactanos."
         )
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return
 
+        console.error("ANDREANI_QUOTE_ERROR", error)
         setShippingOptions([
           {
-            type: "domicilio",
-            label: "Envío estándar",
+            type: "sucursal",
+            label: "Retiro en sucursal Andreani",
             price: manualShippingCost,
-            provider: "manual",
+            provider: "andreani",
+          },
+          {
+            type: "domicilio",
+            label: "Envío a domicilio Andreani",
+            price: manualShippingCost,
+            provider: "andreani",
           },
         ])
         setShippingMessage(
-          "No pudimos preparar la cotización automática. Vas a poder continuar con el envío estándar."
+          "No pudimos cotizar Andreani en este momento. Intentá nuevamente o contactanos."
         )
       })
 
@@ -506,6 +562,17 @@ export default function CheckoutPage() {
     setCheckoutError("")
 
     try {
+      const customerData = {
+        ...formData,
+        direccion: [
+          formData.direccion,
+          formData.referencias.trim()
+            ? `Referencias: ${formData.referencias.trim()}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(". "),
+      }
       const endpoint =
         selectedPayment === "transferencia"
           ? "/api/transferencia/create-order"
@@ -518,7 +585,7 @@ export default function CheckoutPage() {
         },
         body: JSON.stringify({
           reservationSessionId: cartSessionId,
-          customer: formData,
+          customer: customerData,
           shipping: {
             provider: selectedShippingOption.provider,
             type: selectedShippingOption.type,
@@ -805,6 +872,10 @@ export default function CheckoutPage() {
                       <div className="space-y-2">
                         <Label htmlFor="provincia">Provincia / Región</Label>
                         <Input id="provincia" name="provincia" className={checkoutInputClassName} value={formData.provincia} onChange={handleInputChange} required />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="referencias">Referencias opcionales</Label>
+                        <Input id="referencias" name="referencias" className={checkoutInputClassName} value={formData.referencias} onChange={handleInputChange} />
                       </div>
                     </div>
                   </div>
