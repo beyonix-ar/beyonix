@@ -745,6 +745,20 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   color: rgba(255, 255, 255, 0.92);
 }
 
+.admin-order-data-panel {
+  background-color: #181a1d !important;
+}
+
+.admin-order-shipping-panel {
+  background:
+    linear-gradient(145deg, rgba(17, 42, 67, 0.38), rgba(24, 26, 29, 0.96))
+    !important;
+}
+
+.admin-order-info-card {
+  background-color: rgba(0, 0, 0, 0.34);
+}
+
 @keyframes beyonix-shooting-star-flight {
   0% {
     opacity: 0;

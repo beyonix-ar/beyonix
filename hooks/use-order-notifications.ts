@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
   ORDER_NOTIFICATIONS_CHANGED_EVENT,
@@ -11,6 +11,9 @@ import { supabase } from "@/lib/supabase/client"
 
 export function useOrderNotifications() {
   const [notificationCount, setNotificationCount] = useState(0)
+  const channelName = useRef(
+    `admin-order-notifications-${Math.random().toString(36).slice(2)}`
+  )
 
   const loadNotificationCount = useCallback(async () => {
     try {
@@ -42,7 +45,7 @@ export function useOrderNotifications() {
 
   useEffect(() => {
     const channel = supabase
-      .channel("admin-order-notifications")
+      .channel(channelName.current)
       .on(
         "postgres_changes",
         {

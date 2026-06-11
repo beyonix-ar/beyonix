@@ -276,7 +276,7 @@ export function AdminClient() {
     dashboard: <AdminDashboard onNavigate={goToSection} />,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
-    pedidos: <AdminPedidos />,
+    pedidos: <AdminPedidos notificationCount={notificationCount} />,
     activos: <AdminClientes initialActiveOnly />,
     categorias: <AdminCategorias />,
     auditoria: isSuperAdmin ? <AdminAuditoria /> : null,

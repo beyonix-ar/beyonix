@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   AlertTriangle,
   Bell,
@@ -19,6 +19,7 @@ import {
 
 import { usePedidos } from "@/hooks/use-pedidos"
 import {
+  getAdminOrderLastSeenAt,
   getSupabaseErrorDetails,
   isOrderNewerThanLastSeen,
   markOrdersSeenAndGetPreviousLastSeen,
@@ -168,6 +169,18 @@ function getPaymentStatusLabel(status?: string | null) {
   return status ? labels[status] ?? status : "Sin estado"
 }
 
+function isRejectedPayment(status?: string | null) {
+  return status === "rechazado" || status === "rejected"
+}
+
+function isApprovedPayment(pedido: SupabasePedido) {
+  return (
+    pedido.estado === "pagado" ||
+    pedido.payment_status === "confirmado" ||
+    pedido.payment_status === "approved"
+  )
+}
+
 function getTransferPaymentStatusBadge(status?: string | null) {
   const badges: Record<string, { label: string; className: string }> = {
     pendiente_comprobante: {
@@ -238,12 +251,12 @@ function OrderNotificationBell({ count }: { count: number }) {
           ? `${count} pedidos requieren atención`
           : "Sin pedidos pendientes de atención"
       }
-      className="inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/35 bg-black px-3 py-2 text-beyonix-sky"
+      className="relative inline-flex size-10 items-center justify-center rounded-full border border-white/12 bg-black text-white"
     >
-      <Bell className="size-4" />
+      <Bell className="size-4 text-white" />
       {count > 0 && (
-        <span className="flex min-w-5 items-center justify-center rounded-full bg-beyonix-blue px-1.5 text-11px font-black text-white">
-          {count}
+        <span className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-black bg-red-500 px-1 text-10px font-black leading-none text-white shadow-lg shadow-red-950/40">
+          {count > 99 ? "99+" : count}
         </span>
       )}
     </span>
@@ -397,6 +410,47 @@ function ColorSummary({ pedido }: { pedido: SupabasePedido }) {
       <p title={principalColor} className="truncate text-sm font-black text-white/95">
         {principalColor}
       </p>
+    </div>
+  )
+}
+
+function getOrderProductName(pedido: SupabasePedido) {
+  const principal = pedido.orden_items?.[0]
+
+  if (!principal) return "Sin detalle cargado"
+
+  return principal.productos?.nombre ?? `Producto #${principal.producto_id}`
+}
+
+function getOrderQuantity(pedido: SupabasePedido) {
+  return (pedido.orden_items ?? []).reduce(
+    (sum, item) => sum + Number(item.cantidad ?? 0),
+    0
+  )
+}
+
+function getOrderColor(pedido: SupabasePedido) {
+  const principal = pedido.orden_items?.[0]
+  return principal ? getItemColor(principal) : "Sin color"
+}
+
+function MobileOrderField({
+  label,
+  children,
+  align = "left",
+}: {
+  label: string
+  children: React.ReactNode
+  align?: "left" | "right"
+}) {
+  return (
+    <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
+      <p className="text-9px font-bold uppercase tracking-widest text-white/38">
+        {label}
+      </p>
+      <div className="mt-1 min-w-0 text-sm font-bold text-white/88">
+        {children}
+      </div>
     </div>
   )
 }
@@ -917,18 +971,39 @@ function PedidoDetailModal({
   onClose,
   onOpenPaymentProof,
   onPaymentStatusChange,
+  onAndreaniAction,
 }: {
   pedido: SupabasePedido
   onClose: () => void
   onOpenPaymentProof: (pedidoId: number) => void
   onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
+  onAndreaniAction: (
+    action: AndreaniAction,
+    pedidoId: number
+  ) => Promise<{ ok: boolean; message: string }>
 }) {
   const items = pedido.orden_items ?? []
   const dispatch = getDispatchAlert(pedido)
   const tracking = pedido.andreani_tracking || pedido.tracking_number
+  const [andreaniLoading, setAndreaniLoading] = useState<AndreaniAction | null>(
+    null
+  )
+  const [andreaniNotice, setAndreaniNotice] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
   const destination =
     [pedido.localidad, pedido.provincia].filter(Boolean).join(", ") ||
     "No informado"
+
+  const handleModalAndreaniAction = async (action: AndreaniAction) => {
+    setAndreaniLoading(action)
+    setAndreaniNotice(null)
+
+    const result = await onAndreaniAction(action, pedido.id)
+    setAndreaniNotice(result)
+    setAndreaniLoading(null)
+  }
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
@@ -970,9 +1045,9 @@ function PedidoDetailModal({
           </div>
         </header>
 
-        <div className="custom-scrollbar overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="custom-scrollbar overflow-y-auto bg-black px-4 py-4 sm:px-6 sm:py-5">
           <div className="grid gap-4 lg:grid-cols-2">
-            <section className="rounded-2xl border border-white/8 bg-black p-4">
+            <section className="admin-order-data-panel rounded-2xl border border-white/8 p-4 sm:p-5">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Cliente
               </p>
@@ -995,7 +1070,7 @@ function PedidoDetailModal({
               </div>
             </section>
 
-            <section className="rounded-2xl border border-white/8 bg-black p-4">
+            <section className="admin-order-data-panel rounded-2xl border border-white/8 p-4 sm:p-5">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Pago
               </p>
@@ -1004,7 +1079,13 @@ function PedidoDetailModal({
                   <h3 className="text-lg font-black text-white">
                     {getPaymentMethodLabel(pedido)}
                   </h3>
-                  <p className="mt-1 text-sm text-white/58">
+                  <p
+                    className={`mt-1 text-sm ${
+                      isRejectedPayment(pedido.payment_status)
+                        ? "font-bold text-red-300"
+                        : "text-white/58"
+                    }`}
+                  >
                     {getPaymentStatusLabel(pedido.payment_status)}
                   </p>
                 </div>
@@ -1016,13 +1097,14 @@ function PedidoDetailModal({
               {isTransferOrder(pedido) ? (
                 <div className="mt-4 space-y-4 border-t border-white/8 pt-4">
                   <TransferPaymentBadges pedido={pedido} />
-                  <div>
+                  <div className="w-full max-w-56">
                     <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
                       Estado administrativo
                     </p>
                     <AdminSelect
                       title="Estado de pago"
                       compact
+                      centered
                       value={pedido.payment_status || "pendiente_comprobante"}
                       onChange={(value) => onPaymentStatusChange(pedido.id, value)}
                     >
@@ -1032,7 +1114,7 @@ function PedidoDetailModal({
                       <option value="rechazado">Rechazado</option>
                     </AdminSelect>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/3 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-black/45 p-3">
                     <DetailValue
                       label="Comprobante"
                       value={pedido.payment_proof_file_name || "Sin comprobante"}
@@ -1063,7 +1145,7 @@ function PedidoDetailModal({
             </section>
           </div>
 
-          <section className="mt-4 rounded-2xl border border-white/8 bg-black p-4">
+          <section className="admin-order-data-panel mt-4 rounded-2xl border border-white/8 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -1088,7 +1170,7 @@ function PedidoDetailModal({
                   return (
                     <article
                       key={item.id}
-                      className="grid gap-3 rounded-xl border border-white/8 bg-white/3 p-3 sm:grid-cols-admin-order-modal-item sm:items-center"
+                      className="grid gap-3 rounded-xl border border-white/8 bg-black/45 p-3 sm:grid-cols-admin-order-modal-item sm:items-center"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
@@ -1120,14 +1202,14 @@ function PedidoDetailModal({
                   )
                 })
               ) : (
-                <p className="rounded-xl border border-white/8 bg-white/3 p-4 text-sm text-white/55">
+                <p className="rounded-xl border border-white/8 bg-black/45 p-4 text-sm text-white/55">
                   Este pedido no tiene productos cargados.
                 </p>
               )}
             </div>
           </section>
 
-          <section className="mt-4 rounded-2xl border border-white/8 bg-black p-4">
+          <section className="admin-order-shipping-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -1149,31 +1231,136 @@ function PedidoDetailModal({
               </span>
             </div>
 
-            <div className="mt-4 grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-              <DetailValue label="Proveedor" value={getShippingProvider(pedido)} />
-              <DetailValue label="Estado" value={getAndreaniStatus(pedido)} />
-              <DetailValue label="Seguimiento" value={tracking || "Pendiente"} />
-              <DetailValue label="Destino" value={destination} />
+            <div className="mt-4 grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue label="Proveedor" value={getShippingProvider(pedido)} />
+              </div>
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue label="Estado" value={getAndreaniStatus(pedido)} />
+              </div>
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue label="Seguimiento" value={tracking || "Pendiente"} />
+              </div>
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue
+                  label="Envío ID"
+                  value={pedido.andreani_envio_id || "Pendiente"}
+                />
+              </div>
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue
+                  label="Costo"
+                  value={
+                    typeof pedido.andreani_costo === "number"
+                      ? formatPrice(pedido.andreani_costo)
+                      : "Pendiente"
+                  }
+                />
+              </div>
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue label="Destino" value={destination} />
+              </div>
             </div>
 
-            {(pedido.tracking_url || pedido.andreani_etiqueta_url) && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {pedido.tracking_url && (
+            {pedido.andreani_error && (
+              <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-medium text-red-200">
+                {pedido.andreani_error}
+              </p>
+            )}
+
+            {andreaniNotice && (
+              <p
+                role="status"
+                className={`mt-3 rounded-xl border px-3 py-2 text-xs font-medium ${
+                  andreaniNotice.ok
+                    ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-200"
+                    : "border-red-400/20 bg-red-400/8 text-red-200"
+                }`}
+              >
+                {andreaniNotice.message}
+              </p>
+            )}
+
+            <div className="mt-4 rounded-2xl border border-white/8 bg-black/35 p-3">
+              <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                Acciones de Andreani
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <button
+                  type="button"
+                  title="Generar envío en Andreani"
+                  aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
+                  disabled={andreaniLoading !== null}
+                  onClick={() => void handleModalAndreaniAction("crear-envio")}
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+                >
+                  <Truck className="size-4" />
+                  Generar envío
+                </button>
+                <button
+                  type="button"
+                  title="Consultar el estado del envío"
+                  aria-label={`Consultar envío Andreani del pedido ${pedido.id}`}
+                  disabled={andreaniLoading !== null}
+                  onClick={() => void handleModalAndreaniAction("tracking")}
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-11px font-black uppercase tracking-wide text-white/72 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+                >
+                  <RefreshCw className="size-4" />
+                  Consultar
+                </button>
+                {pedido.tracking_url ? (
                   <ExternalLink
                     href={pedido.tracking_url}
-                    label="Ver seguimiento"
+                    label="Ver envío"
                     ariaLabel={`Abrir seguimiento del pedido ${pedido.id}`}
                   />
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    title="El seguimiento todavía no está disponible"
+                    aria-label="Seguimiento no disponible"
+                    className="inline-flex h-10 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-white/7 px-3 text-11px font-black uppercase tracking-wide text-white/28"
+                  >
+                    <Eye className="size-4" />
+                    Ver envío
+                  </button>
                 )}
-                {pedido.andreani_etiqueta_url && (
+                {pedido.andreani_etiqueta_url ? (
                   <ExternalLink
                     href={pedido.andreani_etiqueta_url}
                     label="Ver etiqueta"
                     ariaLabel={`Abrir etiqueta del pedido ${pedido.id}`}
                   />
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    title="La etiqueta todavía no está disponible"
+                    aria-label="Etiqueta no disponible"
+                    className="inline-flex h-10 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-white/7 px-3 text-11px font-black uppercase tracking-wide text-white/28"
+                  >
+                    <Download className="size-4" />
+                    Ver etiqueta
+                  </button>
                 )}
+                <button
+                  type="button"
+                  disabled={!pedido.andreani_etiqueta_url}
+                  title={
+                    pedido.andreani_etiqueta_url
+                      ? "Imprimir etiqueta de envío"
+                      : "La etiqueta todavía no está disponible"
+                  }
+                  aria-label={`Imprimir etiqueta Andreani del pedido ${pedido.id}`}
+                  onClick={() => handlePrintAndreaniLabel(pedido)}
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-11px font-black uppercase tracking-wide text-white/72 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky disabled:cursor-not-allowed disabled:border-white/7 disabled:text-white/28"
+                >
+                  <Printer className="size-4" />
+                  Imprimir
+                </button>
               </div>
-            )}
+            </div>
           </section>
         </div>
       </div>
@@ -1234,15 +1421,19 @@ function ExternalLink({
   )
 }
 
-export function AdminPedidos() {
+export function AdminPedidos({
+  notificationCount,
+}: {
+  notificationCount: number
+}) {
   const { pedidos, loading, error, deletePedido, updatePedidoEstado, reloadPedidos } =
     usePedidos()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [previewPedido, setPreviewPedido] = useState<SupabasePedido | null>(null)
   const [newOrderIds, setNewOrderIds] = useState<Set<number>>(() => new Set())
+  const [unreadOrdersLoaded, setUnreadOrdersLoaded] = useState(false)
   const [notice, setNotice] = useState<AdminNotice>(null)
-  const hasMarkedOrderViews = useRef(false)
 
   useEffect(() => {
     if (!notice) return
@@ -1252,28 +1443,46 @@ export function AdminPedidos() {
   }, [notice])
 
   useEffect(() => {
-    if (loading) return
-    if (hasMarkedOrderViews.current) return
+    if (!previewPedido) return
 
-    hasMarkedOrderViews.current = true
+    const updatedPedido = pedidos.find(
+      (pedido) => pedido.id === previewPedido.id
+    )
+
+    if (updatedPedido && updatedPedido !== previewPedido) {
+      setPreviewPedido(updatedPedido)
+    }
+  }, [pedidos, previewPedido])
+
+  useEffect(() => {
+    if (loading) return
+    if (unreadOrdersLoaded) return
 
     let active = true
 
-    async function markCurrentOrdersAsSeen() {
+    async function loadUnreadOrders() {
       try {
-        const previousLastSeenAt = await markOrdersSeenAndGetPreviousLastSeen()
+        const lastSeenAt = await getAdminOrderLastSeenAt()
 
-        if (!active || !previousLastSeenAt) return
+        if (!active) return
+
+        if (!lastSeenAt) {
+          setUnreadOrdersLoaded(true)
+          return
+        }
 
         setNewOrderIds(
           new Set(
             pedidos
-              .filter((pedido) =>
-                isOrderNewerThanLastSeen(pedido.created_at, previousLastSeenAt)
+              .filter(
+                (pedido) =>
+                  isVisibleAdminOrder(pedido) &&
+                  isOrderNewerThanLastSeen(pedido.created_at, lastSeenAt)
               )
               .map((pedido) => pedido.id)
           )
         )
+        setUnreadOrdersLoaded(true)
       } catch (error) {
         console.error(
           "ADMIN_ORDER_VIEW_MARK_ERROR",
@@ -1282,12 +1491,26 @@ export function AdminPedidos() {
       }
     }
 
-    void markCurrentOrdersAsSeen()
+    void loadUnreadOrders()
 
     return () => {
       active = false
     }
-  }, [loading, pedidos])
+  }, [loading, pedidos, unreadOrdersLoaded])
+
+  const handleOpenPedido = (pedido: SupabasePedido) => {
+    setPreviewPedido(pedido)
+
+    if (!newOrderIds.has(pedido.id)) return
+
+    const remainingUnread = new Set(newOrderIds)
+    remainingUnread.delete(pedido.id)
+    setNewOrderIds(remainingUnread)
+
+    if (remainingUnread.size === 0) {
+      void markOrdersSeenAndGetPreviousLastSeen()
+    }
+  }
 
   const pedidosFiltrados = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
@@ -1446,23 +1669,59 @@ export function AdminPedidos() {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer")
   }
 
+  const handleAndreaniAction = async (
+    action: AndreaniAction,
+    pedidoId: number
+  ) => {
+    try {
+      const result = await runAndreaniAction(action, pedidoId)
+
+      setNotice({
+        type: result.ok ? "ok" : "error",
+        message: result.message,
+      })
+
+      if (result.ok) {
+        await reloadPedidos()
+      }
+
+      return result
+    } catch (error) {
+      console.error("ADMIN_ANDREANI_ACTION_ERROR", error)
+      const result = {
+        ok: false,
+        message: "No se pudo completar la acción de Andreani.",
+      }
+      setNotice({
+        type: "error",
+        message: result.message,
+      })
+      return result
+    }
+  }
+
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
+    <div className="min-w-0 space-y-5 p-3 sm:p-5 lg:p-6 2xl:p-8">
+      <div className="rounded-3xl border border-white/8 bg-black/80 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
           <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
             Pedidos
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-black text-white/95">Gestión de pedidos</h1>
-            <OrderNotificationBell count={0} />
+            <h1 className="text-2xl font-black text-white/95 sm:text-3xl">
+              Gestión de pedidos
+            </h1>
+            <OrderNotificationBell
+              count={unreadOrdersLoaded ? newOrderIds.size : notificationCount}
+            />
           </div>
           <p className="mt-2 text-sm text-white/68">
             Seguimiento de pago, productos, envío y prioridad de despacho.
           </p>
         </div>
 
-        <div className="grid w-full gap-3 sm:grid-cols-admin-order-filters xl:max-w-2xl">
+        <div className="grid w-full gap-3 sm:grid-cols-admin-order-filters xl:max-w-xl">
           <AdminTextInput
             title="Buscar pedido"
             ariaLabel="Buscar pedido"
@@ -1483,6 +1742,7 @@ export function AdminPedidos() {
             <option value="enviado">Enviados</option>
             <option value="cancelado">Cancelados</option>
           </AdminSelect>
+        </div>
         </div>
       </div>
 
@@ -1527,8 +1787,8 @@ export function AdminPedidos() {
           </p>
         </div>
       ) : (
-        <div className="w-full min-w-0 space-y-3 overflow-visible">
-            <div className="grid grid-cols-admin-orders-pro gap-3 rounded-2xl border border-white/8 bg-black px-4 py-3.5">
+        <div className="w-full min-w-0 space-y-3">
+            <div className="hidden grid-cols-admin-orders-pro gap-3 rounded-2xl border border-white/8 bg-black/90 px-4 py-3 2xl:grid">
                 {[
                   "Pedido",
                   "Cliente",
@@ -1564,13 +1824,140 @@ export function AdminPedidos() {
                 return (
                   <article
                     key={pedido.id}
-                    className={`min-w-0 rounded-2xl border px-4 py-4 transition ${
+                    className={`min-w-0 overflow-hidden rounded-2xl border p-4 transition sm:p-5 2xl:px-4 2xl:py-4 ${
                       isNewOrder
-                        ? "border-emerald-400/30 bg-emerald-500/6 shadow-lg shadow-emerald-500/5 hover:bg-emerald-500/10"
-                        : "border-white/8 bg-black hover:border-beyonix-blue-light/45"
+                        ? "border-emerald-400/35 bg-emerald-500/10 shadow-lg shadow-emerald-500/5 hover:bg-emerald-500/15"
+                        : "border-white/8 bg-zinc-900/75 hover:border-beyonix-blue-light/45 hover:bg-zinc-900"
                     }`}
                   >
-                    <div className="grid min-w-0 grid-cols-admin-orders-pro items-center gap-3">
+                    <div className="2xl:hidden">
+                      <div className="flex min-w-0 items-start justify-between gap-3 border-b border-white/7 pb-4">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-base font-black text-white">
+                              {formatPublicOrderId(pedido.id)}
+                            </p>
+                            <EstadoBadge estado={pedido.estado} />
+                            {isNewOrder && (
+                              <span className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-9px font-black uppercase tracking-widest text-emerald-300">
+                                Nuevo
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-9px font-bold uppercase tracking-widest text-white/38">
+                            Total
+                          </p>
+                          <p className="mt-1 text-base font-black text-white">
+                            {formatPrice(pedido.total)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-4 py-4 sm:grid-cols-3">
+                        <MobileOrderField label="Cliente">
+                          <p title={getOrderUsername(pedido)} className="truncate">
+                            {getOrderUsername(pedido)}
+                          </p>
+                        </MobileOrderField>
+                        <MobileOrderField label="Producto">
+                          <p title={getOrderProductName(pedido)} className="truncate">
+                            {getOrderProductName(pedido)}
+                          </p>
+                        </MobileOrderField>
+                        <MobileOrderField label="Cantidad">
+                          {getOrderQuantity(pedido)}
+                        </MobileOrderField>
+                        <MobileOrderField label="Color">
+                          <p title={getOrderColor(pedido)} className="truncate">
+                            {getOrderColor(pedido)}
+                          </p>
+                        </MobileOrderField>
+                        <MobileOrderField label="Fecha">
+                          <p>{orderDate.date}</p>
+                          <p className="text-xs font-medium text-white/48">
+                            {orderDate.time}
+                          </p>
+                        </MobileOrderField>
+                      </div>
+
+                      <div className="grid min-w-0 gap-4 border-y border-white/7 py-4 sm:grid-cols-3">
+                        <MobileOrderField label="Estado">
+                          <div className="max-w-36">
+                            <AdminSelect
+                              title="Estado del pedido"
+                              compact
+                              centered
+                              value={pedido.estado}
+                              onChange={(value) =>
+                                handleEstadoChange(pedido, value)
+                              }
+                            >
+                              <option value="pendiente">Pendiente</option>
+                              <option value="pagado">Pagado</option>
+                              <option value="enviado">Enviado</option>
+                              <option value="cancelado">Cancelado</option>
+                            </AdminSelect>
+                          </div>
+                        </MobileOrderField>
+                        <MobileOrderField label="Despacho">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <span
+                              title={dispatch.label}
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-9px font-black uppercase tracking-wide ${dispatch.className}`}
+                            >
+                              <AlertTriangle className="size-3" />
+                              {dispatch.label}
+                            </span>
+                          </div>
+                        </MobileOrderField>
+                        <MobileOrderField label="Pago">
+                          <p className="truncate">{paymentMethod}</p>
+                          <p
+                            title={getPaymentStatusLabel(pedido.payment_status)}
+                            className={`mt-0.5 truncate text-xs font-bold ${
+                              isRejectedPayment(pedido.payment_status)
+                                ? "text-red-300"
+                                : isApprovedPayment(pedido)
+                                  ? "text-emerald-300"
+                                : "text-white/52"
+                            }`}
+                          >
+                            {getPaymentStatusLabel(pedido.payment_status)}
+                          </p>
+                        </MobileOrderField>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 pt-4">
+                        <p className="min-w-0 truncate text-xs text-white/48">
+                          {pedido.cliente_email || "Cliente sin correo informado"}
+                        </p>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            aria-label={`Ver pedido ${pedido.id}`}
+                            title="Ver pedido"
+                            onClick={() => handleOpenPedido(pedido)}
+                            className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 px-3 text-xs font-bold text-beyonix-sky transition-colors hover:bg-beyonix-blue"
+                          >
+                            <Eye className="size-3.5" />
+                            Ver
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Eliminar pedido ${pedido.id}`}
+                            title="Eliminar pedido"
+                            onClick={() => handleDelete(pedido.id)}
+                            className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/62 transition-colors hover:border-red-500/30 hover:text-red-300"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="hidden min-w-0 grid-cols-admin-orders-pro items-center gap-3 2xl:grid">
                   <div className="min-w-0">
                     <div>
                       <p className="text-11px font-black uppercase tracking-wide text-beyonix-sky">
@@ -1610,10 +1997,11 @@ export function AdminPedidos() {
                   </div>
 
                   <div className="text-center">
-                    <div className="mx-auto w-admin-order-status">
+                    <div className="mx-auto w-28">
                       <AdminSelect
                         title="Estado del pedido"
                         compact
+                        centered
                         value={pedido.estado}
                         onChange={(value) =>
                           handleEstadoChange(pedido, value)
@@ -1628,12 +2016,9 @@ export function AdminPedidos() {
                   </div>
 
                   <div className="text-center">
-                    <p className="truncate text-11px font-black uppercase tracking-wide text-beyonix-sky">
-                      {getShippingProvider(pedido)}
-                    </p>
                     <span
                       title={dispatch.label}
-                      className={`mt-1.5 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${dispatch.className}`}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${dispatch.className}`}
                     >
                       <AlertTriangle className="size-3" />
                       {dispatch.label}
@@ -1646,14 +2031,28 @@ export function AdminPedidos() {
                         title={`${getPaymentStatusLabel(pedido.payment_status)} · ${
                           pedido.payment_proof_url ? "Con comprobante" : "Sin comprobante"
                         }`}
-                        className="inline-flex max-w-full items-center rounded-full border border-beyonix-blue-light/35 bg-black px-2.5 py-1 text-10px font-black uppercase tracking-wide text-beyonix-sky"
+                        className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${
+                          isRejectedPayment(pedido.payment_status)
+                            ? "border-red-400/30 bg-red-400/10 text-red-300"
+                            : isApprovedPayment(pedido)
+                              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                            : "border-beyonix-blue-light/35 bg-black text-beyonix-sky"
+                        }`}
                       >
                         <span className="truncate">
                           {getPaymentStatusLabel(pedido.payment_status)}
                         </span>
                       </span>
                     ) : (
-                      <span className="inline-flex max-w-full items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/58">
+                      <span
+                        className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${
+                          isRejectedPayment(pedido.payment_status)
+                            ? "border-red-400/30 bg-red-400/10 text-red-300"
+                            : isApprovedPayment(pedido)
+                              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                            : "border-white/10 bg-white/5 text-white/58"
+                        }`}
+                      >
                         <span className="truncate">
                           {getPaymentStatusLabel(pedido.payment_status)}
                         </span>
@@ -1675,7 +2074,7 @@ export function AdminPedidos() {
                       type="button"
                       aria-label={`Ver pedido ${pedido.id}`}
                       title="Ver pedido"
-                      onClick={() => setPreviewPedido(pedido)}
+                      onClick={() => handleOpenPedido(pedido)}
                       className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky"
                     >
                       <Eye className="size-3.5" />
@@ -1702,6 +2101,7 @@ export function AdminPedidos() {
           onClose={() => setPreviewPedido(null)}
           onOpenPaymentProof={handleOpenPaymentProof}
           onPaymentStatusChange={handlePaymentStatusChange}
+          onAndreaniAction={handleAndreaniAction}
         />
       )}
     </div>

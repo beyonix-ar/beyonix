@@ -10,6 +10,7 @@ interface AdminSelectProps {
   children: React.ReactNode
   ariaLabel?: string
   compact?: boolean
+  centered?: boolean
   onChange: (value: string) => void
 }
 
@@ -29,6 +30,7 @@ export function AdminSelect({
   children,
   ariaLabel,
   compact = false,
+  centered = false,
   onChange,
 }: AdminSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -135,16 +137,21 @@ export function AdminSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`admin-control-select flex cursor-pointer items-center justify-between rounded-18px border border-white/12 bg-black font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light ${
+        className={`admin-control-select relative flex cursor-pointer items-center rounded-18px border border-white/12 bg-black font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light ${
+          centered ? "justify-center" : "justify-between"
+        } ${
           compact
-            ? "h-8 w-full min-w-0 gap-1 px-2 text-10px"
+            ? "h-8 w-full min-w-0 gap-1 px-2 text-11px"
             : "h-11 w-full gap-3 px-4 text-sm"
         }`}
       >
-        <span className="min-w-0 truncate">{selectedOption?.label}</span>
+        <span className={`min-w-0 truncate ${centered ? "px-4 text-center" : ""}`}>
+          {selectedOption?.label}
+        </span>
         <ChevronDown
           className={`size-4 shrink-0 text-beyonix-sky/75 transition-transform ${
-            open ? "rotate-180" : ""
+            centered ? "absolute right-2" : ""
+          } ${open ? "rotate-180" : ""
           }`}
         />
       </button>

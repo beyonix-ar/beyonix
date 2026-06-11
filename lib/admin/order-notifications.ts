@@ -78,6 +78,15 @@ async function getAdminOrderView(adminId: string) {
   }
 }
 
+export async function getAdminOrderLastSeenAt() {
+  const adminId = await getCurrentAdminId()
+
+  if (!adminId) return null
+
+  const view = await getAdminOrderView(adminId)
+  return view.available ? view.last_seen_at : null
+}
+
 export function isOrderNewerThanLastSeen(
   orderCreatedAt: string,
   lastSeenAt: string | null
@@ -85,6 +94,23 @@ export function isOrderNewerThanLastSeen(
   if (!lastSeenAt) return true
 
   return new Date(orderCreatedAt).getTime() > new Date(lastSeenAt).getTime()
+}
+
+function isVisibleAdminOrderNotification(order: {
+  payment_method_id?: string | null
+  payment_id?: string | null
+  payment_status?: string | null
+}) {
+  if (order.payment_method_id === "transferencia") return true
+
+  const isMercadoPago =
+    order.payment_method_id === "mercadopago" ||
+    Boolean(order.payment_id) ||
+    ["pending_checkout", "pending", "rejected", "cancelled"].includes(
+      order.payment_status ?? ""
+    )
+
+  return !isMercadoPago || order.payment_status === "approved"
 }
 
 export async function getNewOrderNotificationCount() {
@@ -97,9 +123,9 @@ export async function getNewOrderNotificationCount() {
 
     if (!view.available) return 0
 
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from("ordenes")
-      .select("id", { count: "exact", head: true })
+      .select("payment_method_id, payment_id, payment_status")
       .gt("created_at", view.last_seen_at)
 
     if (error) {
@@ -110,7 +136,7 @@ export async function getNewOrderNotificationCount() {
       return 0
     }
 
-    return count ?? 0
+    return (data ?? []).filter(isVisibleAdminOrderNotification).length
   } catch (error) {
     console.error(
       "ORDER_NOTIFICATIONS_UNEXPECTED_ERROR",
