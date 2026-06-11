@@ -87,18 +87,18 @@ type IconName = keyof typeof iconMap
 const iconOptions: Array<IconOption & { name: IconName }> = [
   {
     name: "Battery",
-    label: "Bateria",
-    keywords: ["bateria", "energia", "duracion", "carga"],
+    label: "Batería",
+    keywords: ["batería", "energía", "duración", "carga"],
   },
   {
     name: "BatteryCharging",
-    label: "Bateria cargando",
-    keywords: ["bateria", "carga", "cargando", "energia"],
+    label: "Batería cargando",
+    keywords: ["batería", "carga", "cargando", "energía"],
   },
   {
     name: "BatteryFull",
-    label: "Bateria completa",
-    keywords: ["bateria", "duracion", "energia", "completa"],
+    label: "Batería completa",
+    keywords: ["batería", "duración", "energía", "completa"],
   },
   {
     name: "Headphones",
@@ -122,13 +122,13 @@ const iconOptions: Array<IconOption & { name: IconName }> = [
   },
   {
     name: "Truck",
-    label: "Envio",
-    keywords: ["envio", "entrega", "transporte", "rapido"],
+    label: "Envío",
+    keywords: ["envío", "entrega", "transporte", "rápido"],
   },
   {
     name: "Package",
     label: "Paquete",
-    keywords: ["envio", "paquete", "caja", "producto"],
+    keywords: ["envío", "paquete", "caja", "producto"],
   },
   {
     name: "Shield",
@@ -148,7 +148,7 @@ const iconOptions: Array<IconOption & { name: IconName }> = [
   {
     name: "Clock",
     label: "Tiempo",
-    keywords: ["tiempo", "duracion", "hora", "rapido"],
+    keywords: ["tiempo", "duración", "hora", "rápido"],
   },
   {
     name: "BadgeCheck",
@@ -178,12 +178,12 @@ const iconOptions: Array<IconOption & { name: IconName }> = [
   {
     name: "Plug",
     label: "Enchufe",
-    keywords: ["carga", "enchufe", "energia", "plug"],
+    keywords: ["carga", "enchufe", "energía", "plug"],
   },
   {
     name: "Zap",
-    label: "Rapido",
-    keywords: ["carga", "rapido", "energia", "potencia"],
+    label: "Rápido",
+    keywords: ["carga", "rápido", "energía", "potencia"],
   },
   {
     name: "Armchair",
@@ -233,7 +233,7 @@ const iconOptions: Array<IconOption & { name: IconName }> = [
   {
     name: "Rocket",
     label: "Velocidad",
-    keywords: ["rapido", "velocidad", "potencia"],
+    keywords: ["rápido", "velocidad", "potencia"],
   },
 ]
 
@@ -265,7 +265,7 @@ export function LucideIconPicker({
   const [search, setSearch] = useState("")
   const [open, setOpen] = useState(false)
   const SelectedIcon = value ? getLucideIcon(value) : Search
-  const selectedLabel = value ? getFriendlyIconName(value) : "Elegir icono"
+  const selectedLabel = value ? getFriendlyIconName(value) : "Elegir ícono"
 
   const filteredOptions = useMemo(() => {
     const query = normalize(search.trim())
@@ -312,10 +312,10 @@ export function LucideIconPicker({
         <SelectedIcon className="size-5 shrink-0 text-beyonix-sky" />
         <input
           type="search"
-          title="Buscar icono"
-          aria-label="Buscar icono"
+          title="Buscar ícono"
+          aria-label="Buscar ícono"
           value={search}
-          placeholder="Buscar: bateria, sonido, envio..."
+          placeholder="Buscar: batería, sonido, envío..."
           onChange={(event) => setSearch(event.target.value)}
           className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
         />
@@ -339,8 +339,8 @@ export function LucideIconPicker({
             <button
               key={option.name}
               type="button"
-              title={`Elegir icono ${option.label}`}
-              aria-label={`Elegir icono ${option.label}`}
+              title={`Elegir ícono ${option.label}`}
+              aria-label={`Elegir ícono ${option.label}`}
               onClick={() => {
                 onChange(option.name)
                 setOpen(false)

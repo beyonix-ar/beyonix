@@ -53,7 +53,7 @@ export function CategorySort({
       <div className="relative w-full sm:w-auto">
         <button
           type="button"
-          aria-label="Abrir orden de categoria"
+          aria-label="Abrir orden de categoría"
           title="Ordenar productos"
           onClick={() => setIsOpen((prev) => !prev)}
           className="flex min-h-44px w-full cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-black/60 px-4 py-2 text-sm font-medium text-white backdrop-blur-md transition hover:border-white/20 sm:min-w-180px"

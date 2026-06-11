@@ -178,29 +178,29 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
 
               <div>
                 <label htmlFor="cuotas" className={labelCls}>
-                  Cuotas sin interes
+                  Cuotas sin interés
                 </label>
                 <AdminSelect
-                  title="Cuotas sin interes"
+                  title="Cuotas sin interés"
                   value={form.cuotas}
                   onChange={(value) => setField("cuotas", value)}
                 >
                   <option value="sin_cuotas">Sin cuotas</option>
-                  <option value="3">3 cuotas sin interes</option>
-                  <option value="6">6 cuotas sin interes</option>
+                  <option value="3">3 cuotas sin interés</option>
+                  <option value="6">6 cuotas sin interés</option>
                 </AdminSelect>
               </div>
 
               <div>
                 <label htmlFor="categoria" className={labelCls}>
-                  Categoria
+                  Categoría
                 </label>
                 <AdminSelect
-                  title="Categoria"
+                  title="Categoría"
                   value={form.categoria_id}
                   onChange={(value) => setField("categoria_id", value)}
                 >
-                  <option value="">Sin categoria</option>
+                  <option value="">Sin categoría</option>
                   {categorias.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.nombre}

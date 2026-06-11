@@ -27,7 +27,7 @@ interface PreviewImage {
 export function DraftImageUploader({
   files,
   onChange,
-  emptyMessage = "Carga imagenes antes de crear el producto.",
+  emptyMessage = "Cargá imágenes antes de crear el producto.",
 }: DraftImageUploaderProps) {
   const inputRef =
     useRef<HTMLInputElement>(null)
@@ -123,7 +123,7 @@ export function DraftImageUploader({
 
         <div className="text-center">
           <p className="text-sm font-medium text-white/75">
-            Arrastra imagenes aca
+            Arrastrá imágenes acá
           </p>
 
           <p className="mt-1 text-xs text-white/40">
@@ -137,8 +137,8 @@ export function DraftImageUploader({
           ref={inputRef}
           type="file"
           accept="image/*"
-          aria-label="Seleccionar imagenes"
-          title="Seleccionar imagenes"
+          aria-label="Seleccionar imágenes"
+          title="Seleccionar imágenes"
           onChange={(event) => {
             if (event.target.files) {
               addFiles(

@@ -80,8 +80,8 @@ function Field({
         {showPasswordToggle && type === "password" && (
           <button
             type="button"
-            aria-label={passwordVisible ? "Ocultar contrasena" : "Mostrar contrasena"}
-            title={passwordVisible ? "Ocultar contrasena" : "Mostrar contrasena"}
+            aria-label={passwordVisible ? "Ocultar contraseña" : "Mostrar contraseña"}
+            title={passwordVisible ? "Ocultar contraseña" : "Mostrar contraseña"}
             onClick={() => setPasswordVisible((current) => !current)}
             className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-white/55 transition hover:bg-white/5 hover:text-white"
           >
@@ -351,7 +351,7 @@ function LoginContent() {
     const recoveryEmail = identifier.trim().toLowerCase()
 
     if (!recoveryEmail || !recoveryEmail.includes("@")) {
-      setError("Para recuperar la contrasena ingresa tu email.")
+      setError("Para recuperar la contraseña ingresá tu email.")
       return
     }
 

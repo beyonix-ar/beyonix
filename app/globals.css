@@ -686,8 +686,8 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 
 .beyonix-checkout-input,
 .beyonix-checkout-input:focus {
-  background: #171717 !important;
-  background-color: #171717 !important;
+  background: #202020 !important;
+  background-color: #202020 !important;
   background-image: none !important;
   color: #ffffff !important;
   caret-color: #ffffff !important;
@@ -701,57 +701,43 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 .beyonix-checkout-input:-webkit-autofill:hover,
 .beyonix-checkout-input:-webkit-autofill:focus,
 .beyonix-checkout-input:-webkit-autofill:active {
-  background: #171717 !important;
-  background-color: #171717 !important;
+  background: #202020 !important;
+  background-color: #202020 !important;
   background-image: none !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
   caret-color: #ffffff !important;
-  box-shadow: 0 0 0 1000px #171717 inset !important;
-  -webkit-box-shadow: 0 0 0 1000px #171717 inset !important;
+  box-shadow: 0 0 0 1000px #202020 inset !important;
+  -webkit-box-shadow: 0 0 0 1000px #202020 inset !important;
   transition: background-color 9999s ease-out 0s !important;
 }
 
-.checkout-solid-card {
-  background: #000000 !important;
-  background-color: #000000 !important;
+.checkout-panel {
+  background: #121212 !important;
+  background-color: #121212 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
   background-image: none !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
-body > div.relative.z-10 .checkout-solid-card,
-body > div.relative.z-10 section.checkout-solid-card,
-body > div.relative.z-10 div.checkout-solid-card,
-body > div.relative.z-10 button.checkout-solid-card {
-  background: #000000 !important;
-  background-color: #000000 !important;
-  background-image: none !important;
-  opacity: 1 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+.checkout-subpanel,
+.checkout-note {
+  background-color: #181818;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
-.checkout-solid-card input,
-.checkout-solid-card select,
-.checkout-solid-card textarea,
-body > div.relative.z-10 .checkout-solid-card input,
-body > div.relative.z-10 .checkout-solid-card select,
-body > div.relative.z-10 .checkout-solid-card textarea {
-  background: #111111 !important;
-  background-color: #111111 !important;
-  background-image: none !important;
-  opacity: 1 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+.checkout-option,
+.checkout-order-item {
+  background-color: #1b1b1b;
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
-.checkout-solid-card button,
-body > div.relative.z-10 .checkout-solid-card button {
-  opacity: 1 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+.checkout-option-selected {
+  background-color: #14283b;
+  border-color: #4f83ad;
+  box-shadow: 0 0 0 1px rgba(79, 131, 173, 0.2);
 }
 
 .admin-control-select {

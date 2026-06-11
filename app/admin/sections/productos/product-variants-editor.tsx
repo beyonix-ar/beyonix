@@ -254,7 +254,7 @@ export function ProductVariantsEditor({
     } catch (err) {
       console.error(err)
       setError(
-        "No se pudo actualizar el orden de imagenes."
+        "No se pudo actualizar el orden de imágenes."
       )
       setPersistedVariantImages(
         editingVariant.imagenes
@@ -621,8 +621,8 @@ export function ProductVariantsEditor({
           onChange={setVariantImages}
           emptyMessage={
             editingVariant?.kind === "persisted"
-              ? "Agrega imagenes nuevas para esta variante."
-              : "Carga imagenes antes de crear el producto."
+              ? "Agregá imágenes nuevas para esta variante."
+              : "Cargá imágenes antes de crear el producto."
           }
         />
       </div>
@@ -767,7 +767,7 @@ function PersistedVariantImages({
         <ImageIcon className="mx-auto mb-2 size-7 text-white/15" />
 
         <p className="text-sm text-white/55">
-          Esta variante no tiene imagenes cargadas.
+          Esta variante no tiene imágenes cargadas.
         </p>
       </div>
     )

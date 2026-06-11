@@ -287,7 +287,7 @@ export function useProductoForm({
 
     if (hasInvalidDraftSpecification) {
       setError(
-        "Completa icono, texto y orden en todas las especificaciones."
+        "Completá ícono, texto y orden en todas las especificaciones."
       )
 
       return
@@ -460,7 +460,7 @@ export function useProductoForm({
             )
           } catch (cleanupErr) {
             console.error(
-              "No se pudieron limpiar las imagenes de borrador:",
+              "No se pudieron limpiar las imágenes de borrador:",
               cleanupErr
             )
           }

@@ -180,7 +180,7 @@ export async function POST(request: Request) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Debes iniciar sesion para registrar el pedido." },
+        { error: "Debés iniciar sesión para registrar el pedido." },
         { status: 401 },
       )
     }

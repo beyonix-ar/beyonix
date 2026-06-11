@@ -119,7 +119,7 @@ export async function POST(request: Request) {
   const lookupValue = body.lookup_value?.trim() ?? ""
 
   if (!lookupValue) {
-    return Response.json({ error: "Ingresa un dato para bloquear." }, { status: 400 })
+    return Response.json({ error: "Ingresá un dato para bloquear." }, { status: 400 })
   }
 
   const matchedProfile = await findProfileByLookup(auth.admin, lookupValue)

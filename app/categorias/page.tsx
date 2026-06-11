@@ -48,11 +48,11 @@ export default async function CategoriasPage() {
           </p>
 
           <h1 className="text-4xl font-bold tracking-tight lg:text-6xl">
-            Explora la tienda por categoria
+            Explorá la tienda por categoría
           </h1>
 
           <p className="mt-4 text-base leading-7 text-white/62 lg:text-lg">
-            Explora nuestras lineas de productos y encontra rapidamente lo que estas buscando.
+            Explorá nuestras líneas de productos y encontrá rápidamente lo que estás buscando.
           </p>
         </div>
 
@@ -99,7 +99,7 @@ export default async function CategoriasPage() {
                       </div>
 
                       <p className="line-clamp-2 min-h-40px text-sm leading-5 text-white/62">
-                        {categoria.descripcion || "Explora esta categoria y sus productos disponibles."}
+                        {categoria.descripcion || "Explorá esta categoría y sus productos disponibles."}
                       </p>
                     </div>
                   </div>

@@ -27,7 +27,7 @@ export async function PATCH(
   }
 
   if (!ALLOWED_PAYMENT_STATUSES.includes(paymentStatus)) {
-    return NextResponse.json({ error: "Estado de pago invalido." }, { status: 400 })
+    return NextResponse.json({ error: "Estado de pago inválido." }, { status: 400 })
   }
 
   const { data, error } = await auth.admin

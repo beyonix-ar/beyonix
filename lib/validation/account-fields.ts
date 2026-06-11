@@ -78,7 +78,7 @@ export function onlyDigits(value: string, maxLength: number) {
 }
 
 function hasCommonAllowedChars(value: string) {
-  return /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/.test(value)
+  return /^[\p{L}\p{M}0-9\s.,'°/-]+$/u.test(value)
 }
 
 function validateCleanText(
@@ -146,11 +146,11 @@ export function getPasswordRequirements(password: string) {
     },
     {
       label: "Una letra mayúscula",
-      met: /[A-Z]/.test(password),
+      met: /\p{Lu}/u.test(password),
     },
     {
       label: "Una letra minúscula",
-      met: /[a-z]/.test(password),
+      met: /\p{Ll}/u.test(password),
     },
     {
       label: "Un número",
@@ -175,11 +175,11 @@ export function validatePassword(password: string) {
     return "La contraseña no puede superar los 20 caracteres."
   }
 
-  if (!/[A-Z]/.test(password)) {
+  if (!/\p{Lu}/u.test(password)) {
     return "La contraseña debe incluir al menos una mayúscula."
   }
 
-  if (!/[a-z]/.test(password)) {
+  if (!/\p{Ll}/u.test(password)) {
     return "La contraseña debe incluir al menos una minúscula."
   }
 
@@ -200,7 +200,7 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
     FIELD_LIMITS.name,
     {
       minLength: 3,
-      pattern: /^[a-zA-ZÀ-ÿ\s'-]+$/,
+      pattern: /^[\p{L}\p{M}\s'-]+$/u,
       allowedHint: "Usá solo letras, espacios, apóstrofe o guion en el nombre.",
     }
   )
@@ -215,8 +215,8 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
       "tu dirección",
       FIELD_LIMITS.address,
       {
-        minLength: 2,
-        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        minLength: 5,
+        pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
         allowedHint: "Usá solo letras, números y signos comunes de dirección.",
       }
     )
@@ -244,7 +244,7 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
       "las referencias",
       FIELD_LIMITS.references,
       {
-        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
         allowedHint:
           "Usá solo letras, números y signos comunes en las referencias.",
       }
@@ -266,7 +266,7 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
     FIELD_LIMITS.name,
     {
       minLength: 3,
-      pattern: /^[a-zA-ZÀ-ÿ\s'-]+$/,
+      pattern: /^[\p{L}\p{M}\s'-]+$/u,
       allowedHint: "Usá solo letras, espacios, apóstrofe o guion en el nombre.",
     }
   )
@@ -274,7 +274,7 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
 
   const streetError = validateCleanText(data.calle, "la calle", 60, {
     minLength: 2,
-    pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+    pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
     allowedHint: "Usá solo letras, números y signos comunes en la calle.",
   })
   if (streetError) return streetError
@@ -285,7 +285,7 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
 
   if (data.piso?.trim()) {
     const floorError = validateCleanText(data.piso, "el piso", 12, {
-      pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+      pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
       allowedHint: "Usá solo letras, números y signos comunes en el piso.",
     })
     if (floorError) return floorError
@@ -297,7 +297,7 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
       "el departamento",
       12,
       {
-        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
         allowedHint:
           "Usá solo letras, números y signos comunes en el departamento.",
       }
@@ -307,7 +307,7 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
 
   const localityError = validateCleanText(data.localidad, "la localidad", 60, {
     minLength: 2,
-    pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+    pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
     allowedHint: "Usá solo letras, números y signos comunes en la localidad.",
   })
   if (localityError) return localityError
@@ -330,7 +330,7 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
       "las referencias",
       FIELD_LIMITS.references,
       {
-        pattern: /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/,
+        pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
         allowedHint:
           "Usá solo letras, números y signos comunes en las referencias.",
       }

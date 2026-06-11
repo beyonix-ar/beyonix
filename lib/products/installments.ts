@@ -8,5 +8,5 @@ export function getInstallmentsLabel(product: SupabaseProducto) {
     return null
   }
 
-  return `${product.cuotas_maximas} cuotas sin interes`
+  return `${product.cuotas_maximas} cuotas sin interés`
 }

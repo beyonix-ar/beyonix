@@ -94,8 +94,8 @@ export function CategoriasRow({
           }
           aria-label={
             isFeatured
-              ? "Quitar categoria destacada"
-              : "Marcar categoria destacada"
+              ? "Quitar categoría destacada"
+              : "Marcar categoría destacada"
           }
           onClick={() =>
             onToggleDestacado(categoria)
@@ -158,8 +158,8 @@ export function CategoriasRow({
       <div className="flex items-center justify-end gap-1.5">
         <button
           type="button"
-          title="Editar categoria"
-          aria-label="Editar categoria"
+          title="Editar categoría"
+          aria-label="Editar categoría"
           onClick={() =>
             onEdit(categoria)
           }
@@ -170,8 +170,8 @@ export function CategoriasRow({
 
         <button
           type="button"
-          title="Eliminar categoria"
-          aria-label="Eliminar categoria"
+          title="Eliminar categoría"
+          aria-label="Eliminar categoría"
           onClick={() =>
             onDelete(categoria.id)
           }

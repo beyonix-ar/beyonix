@@ -234,18 +234,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.user) return
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!session?.user) return
 
-      try {
-        restoreUserCart(session.user.id)
-      } catch {
-        setCurrentUserId(session.user.id)
-        setCart([])
-        sessionStorage.removeItem(CART_STORAGE_KEY)
-        localStorage.removeItem(getUserCartStorageKey(session.user.id))
-      }
-    })
+        try {
+          restoreUserCart(session.user.id)
+        } catch {
+          setCurrentUserId(session.user.id)
+          setCart([])
+          sessionStorage.removeItem(CART_STORAGE_KEY)
+          localStorage.removeItem(getUserCartStorageKey(session.user.id))
+        }
+      })
+      .catch(() => {
+        setCurrentUserId(null)
+      })
 
     const {
       data: { subscription },
@@ -382,13 +387,24 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart = useCallback(() => {
     setCart([])
+    setIsOpen(false)
     localStorage.removeItem(CART_STORAGE_KEY)
+    if (currentUserId) {
+      localStorage.removeItem(getUserCartStorageKey(currentUserId))
+    }
     sessionStorage.removeItem(CART_STORAGE_KEY)
     sessionStorage.removeItem(CART_SESSION_STORAGE_KEY)
     const nextSessionId = createCartSessionId()
     sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
     setCartSessionId(nextSessionId)
-  }, [])
+
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+
+      localStorage.removeItem(getUserCartStorageKey(user.id))
+      setCart([])
+    })
+  }, [currentUserId])
 
   const { total, itemCount } = useMemo(() => {
     return cart.reduce(

@@ -10,12 +10,12 @@ const trustItems = [
     icon: CheckCircle2,
   },
   {
-    title: "Tecnologia util",
-    sub: "Para tu dia a dia",
+    title: "Tecnología útil",
+    sub: "Para tu día a día",
     icon: Sparkles,
   },
   {
-    title: "Envio a todo el pais",
+    title: "Envío a todo el país",
     sub: "Entrega segura y con seguimiento",
     icon: PackageCheck,
   },
@@ -37,7 +37,7 @@ export function HeroSection() {
             </h1>
 
             <p className="mb-8 max-w-xl text-base leading-1-8 text-white/68 lg:text-lg">
-              Tecnologia premium, practica y confiable para acompanar tu dia a dia con estilo.
+              Tecnología premium, práctica y confiable para acompañar tu día a día con estilo.
             </p>
 
             <div className="flex flex-col items-start gap-3 sm:flex-row">

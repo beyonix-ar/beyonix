@@ -168,17 +168,17 @@ export function ProductSpecificationsEditor({
     )
 
     if (!cleanText) {
-      setError("El texto de la especificacion es obligatorio.")
+      setError("El texto de la especificación es obligatorio.")
       return
     }
 
     if (!cleanIcon) {
-      setError("Elegi un icono para la especificacion.")
+      setError("Elegí un ícono para la especificación.")
       return
     }
 
     if (!isAllowedLucideIcon(cleanIcon)) {
-      setError("El icono elegido no esta permitido.")
+      setError("El ícono elegido no está permitido.")
       return
     }
 
@@ -264,7 +264,7 @@ export function ProductSpecificationsEditor({
     } catch (err) {
       const message = getErrorMessage(err)
 
-      console.error("No se pudo guardar la especificacion.", {
+      console.error("No se pudo guardar la especificación.", {
         error: err,
         productoId,
         payload: {
@@ -272,7 +272,7 @@ export function ProductSpecificationsEditor({
           ...nextSpecification,
         },
       })
-      setError(`No se pudo guardar la especificacion: ${message}`)
+      setError(`No se pudo guardar la especificación: ${message}`)
     } finally {
       setSaving(false)
     }
@@ -332,8 +332,8 @@ export function ProductSpecificationsEditor({
       )
     } catch (err) {
       const message = getErrorMessage(err)
-      console.error("No se pudo eliminar la especificacion.", err)
-      setError(`No se pudo eliminar la especificacion: ${message}`)
+      console.error("No se pudo eliminar la especificación.", err)
+      setError(`No se pudo eliminar la especificación: ${message}`)
     }
   }
 
@@ -436,7 +436,7 @@ export function ProductSpecificationsEditor({
         </h2>
 
         <p className="mt-1 text-xs text-white/55">
-          Agrega iconos y textos breves para destacar beneficios del producto.
+          Agregá íconos y textos breves para destacar beneficios del producto.
         </p>
       </div>
 
@@ -449,7 +449,7 @@ export function ProductSpecificationsEditor({
         <div>
           <input
             type="text"
-            title="Texto de especificacion"
+            title="Texto de especificación"
             value={texto}
             placeholder="Sonido estereo de alta fidelidad"
             onChange={(event) => setTexto(event.target.value)}
@@ -459,9 +459,9 @@ export function ProductSpecificationsEditor({
 
         <button
           type="button"
-          title={activo ? "Desactivar especificacion" : "Activar especificacion"}
+          title={activo ? "Desactivar especificación" : "Activar especificación"}
           aria-label={
-            activo ? "Desactivar especificacion" : "Activar especificacion"
+            activo ? "Desactivar especificación" : "Activar especificación"
           }
           onClick={() => setActivo((current) => !current)}
           className="flex min-h-48px cursor-pointer items-center gap-3 rounded-2xl border border-white/8 bg-black px-4 text-left transition-colors hover:border-beyonix-blue-light/45"
@@ -472,7 +472,7 @@ export function ProductSpecificationsEditor({
             <ToggleLeft className="size-6 text-white/45" />
           )}
           <span className="text-sm text-white/80">
-            {activo ? "Especificacion activa" : "Especificacion inactiva"}
+            {activo ? "Especificación activa" : "Especificación inactiva"}
           </span>
         </button>
       </div>
@@ -482,13 +482,13 @@ export function ProductSpecificationsEditor({
           type="button"
           title={
             editingSpecification
-              ? "Guardar especificacion"
-              : "Agregar especificacion"
+              ? "Guardar especificación"
+              : "Agregar especificación"
           }
           aria-label={
             editingSpecification
-              ? "Guardar especificacion"
-              : "Agregar especificacion"
+              ? "Guardar especificación"
+              : "Agregar especificación"
           }
           onClick={saveSpecification}
           disabled={saving}
@@ -715,9 +715,9 @@ function SpecificationRow({
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
-            title={activo ? "Desactivar especificacion" : "Activar especificacion"}
+            title={activo ? "Desactivar especificación" : "Activar especificación"}
             aria-label={
-              activo ? "Desactivar especificacion" : "Activar especificacion"
+              activo ? "Desactivar especificación" : "Activar especificación"
             }
             onClick={onToggle}
             className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-beyonix-blue-light/45 hover:text-white"
@@ -731,8 +731,8 @@ function SpecificationRow({
 
           <button
             type="button"
-            title="Editar especificacion"
-            aria-label="Editar especificacion"
+            title="Editar especificación"
+            aria-label="Editar especificación"
             onClick={onEdit}
             className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-white/20 hover:text-white"
           >
@@ -741,8 +741,8 @@ function SpecificationRow({
 
           <button
             type="button"
-            title="Eliminar especificacion"
-            aria-label="Eliminar especificacion"
+            title="Eliminar especificación"
+            aria-label="Eliminar especificación"
             onClick={onRemove}
             className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
           >

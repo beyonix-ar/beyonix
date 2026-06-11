@@ -10,6 +10,22 @@ import { supabase } from "@/lib/supabase/client"
 const INVALID_LINK_MESSAGE =
   "El enlace venció o ya fue utilizado. Solicitá un nuevo correo de confirmación."
 
+async function activateConfirmedAccount(accessToken: string) {
+  const response = await fetch("/api/auth/confirm-email", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+  const data = (await response.json()) as {
+    error?: string
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error || "No pudimos activar tu cuenta.")
+  }
+}
+
 function ConfirmEmailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -37,38 +53,54 @@ function ConfirmEmailContent() {
         return
       }
 
+      let accessToken = ""
+
       if (tokenHash) {
         window.history.replaceState(null, "", "/confirmar-email")
-        const { error } = await supabase.auth.verifyOtp({
+        const { data, error } = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
           type: "signup",
         })
 
         if (error) {
-          console.error("confirm-email error", error)
           setError(INVALID_LINK_MESSAGE)
           return
         }
 
-        router.replace("/")
-        return
-      }
-
-      if (code) {
+        accessToken = data.session?.access_token ?? ""
+      } else if (code) {
         window.history.replaceState(null, "", "/confirmar-email")
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
         if (error) {
-          console.error("confirm-email error", error)
           setError(INVALID_LINK_MESSAGE)
           return
         }
 
-        router.replace("/")
+        accessToken = data.session?.access_token ?? ""
+      } else {
+        setError(INVALID_LINK_MESSAGE)
         return
       }
 
-      setError(INVALID_LINK_MESSAGE)
+      if (!accessToken) {
+        await supabase.auth.signOut({ scope: "local" })
+        setError(INVALID_LINK_MESSAGE)
+        return
+      }
+
+      try {
+        await activateConfirmedAccount(accessToken)
+        await supabase.auth.signOut({ scope: "local" })
+        router.replace("/login?email-confirmed=1")
+      } catch (activationError) {
+        await supabase.auth.signOut({ scope: "local" })
+        setError(
+          activationError instanceof Error
+            ? activationError.message
+            : "No pudimos activar tu cuenta. Intentá nuevamente."
+        )
+      }
     }
 
     confirmEmail()

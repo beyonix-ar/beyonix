@@ -100,13 +100,13 @@ const paymentMethods = [
   {
     id: "transferencia",
     name: "Transferencia bancaria",
-    description: "Transferencia con 5% OFF y validacion manual",
+    description: "Transferencia con 5% OFF y validación manual",
     icon: Landmark,
   },
 ]
 
 const checkoutInputClassName =
-  "beyonix-checkout-input border-beyonix-blue-light bg-neutral-900 text-white placeholder:text-muted-foreground focus-visible:border-beyonix-focus focus-visible:ring-beyonix-focus"
+  "beyonix-checkout-input border-white/15 bg-neutral-900 text-white placeholder:text-white/35 focus-visible:border-beyonix-focus focus-visible:ring-beyonix-focus"
 
 const initialCheckoutFormData = {
   nombre: "",
@@ -133,7 +133,7 @@ interface ShippingOption {
 }
 
 function hasLetters(value: string) {
-  return /[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(value)
+  return /\p{L}/u.test(value)
 }
 
 function isValidCheckoutForm(data: typeof initialCheckoutFormData) {
@@ -176,6 +176,7 @@ export default function CheckoutPage() {
     cart: items,
     cartSessionId,
     isReady: isCartReady,
+    clearCart,
   } = useCart()
 
   const [mounted, setMounted] =
@@ -613,6 +614,7 @@ export default function CheckoutPage() {
           return
         }
 
+        clearCart()
         window.location.href = data.redirect_url
         return
       }
@@ -778,7 +780,7 @@ export default function CheckoutPage() {
 
           <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
             <div className="lg:col-span-2 space-y-5">
-              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+              <section className="checkout-panel rounded-xl border p-4 sm:p-5">
                 <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
                     Datos de quien recibe
@@ -832,12 +834,9 @@ export default function CheckoutPage() {
                       />
                     </div>
                   </div>
-                  <div className="rounded-xl border border-beyonix-blue-light/14 bg-black/25 p-3">
-                    <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-                      Datos de quien recibe
-                    </p>
-                    <p className="mb-3 text-xs leading-5 text-muted-foreground">
-                      Podés usar otro email para quien recibe el producto. El nickname de la cuenta no se modifica.
+                  <div className="checkout-subpanel rounded-xl border p-3">
+                    <p className="mb-3 text-xs leading-5 text-white/65">
+                      Completá el teléfono y la dirección de entrega.
                     </p>
 
                     <div className="grid gap-3 sm:grid-cols-2">
@@ -882,7 +881,7 @@ export default function CheckoutPage() {
                 </form>
               </section>
 
-              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+              <section className="checkout-panel rounded-xl border p-4 sm:p-5">
                 <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
                     Método de envío
@@ -903,10 +902,10 @@ export default function CheckoutPage() {
                         title={`Seleccionar ${option.label}`}
                         onClick={() => setSelectedShippingType(option.type)}
                         className={cn(
-                          "checkout-solid-card flex w-full cursor-pointer items-center justify-between gap-4 rounded-lg border p-4 text-left transition-all",
+                          "checkout-option flex w-full cursor-pointer items-center justify-between gap-4 rounded-lg border p-4 text-left transition-all",
                           selected
-                            ? "border-beyonix-sky bg-beyonix-blue"
-                            : "border-beyonix-blue-light hover:border-beyonix-sky"
+                            ? "checkout-option-selected"
+                            : "hover:border-white/30"
                         )}
                       >
                         <div>
@@ -935,13 +934,13 @@ export default function CheckoutPage() {
                 </div>
 
                 {shippingMessage && (
-                  <div className="checkout-solid-card mt-4 rounded-xl border border-beyonix-blue-light px-4 py-3 text-sm text-beyonix-sky">
+                  <div className="checkout-note mt-4 rounded-xl border px-4 py-3 text-sm text-white/70">
                     {shippingMessage}
                   </div>
                 )}
               </section>
 
-              <section className="checkout-solid-card rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+              <section className="checkout-panel rounded-xl border p-4 sm:p-5">
                 <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
                     Método de pago
@@ -964,12 +963,12 @@ export default function CheckoutPage() {
                           )
                         }
                         className={cn(
-                          "checkout-solid-card w-full flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-all",
+                          "checkout-option w-full flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-all",
 
                           selectedPayment ===
                             method.id
-                            ? "border-beyonix-sky bg-beyonix-blue"
-                            : "border-beyonix-blue-light hover:border-beyonix-sky"
+                            ? "checkout-option-selected"
+                            : "hover:border-white/30"
                         )}
                       >
                         <div
@@ -978,8 +977,8 @@ export default function CheckoutPage() {
 
                             selectedPayment ===
                               method.id
-                              ? "bg-beyonix-blue-hover text-primary-foreground"
-                              : "bg-neutral-950"
+                              ? "bg-beyonix-blue-light text-white"
+                              : "bg-black/45 text-white/75"
                           )}
                         >
                           <method.icon className="size-5" />
@@ -1004,37 +1003,30 @@ export default function CheckoutPage() {
                 </div>
 
                 {isTransferPayment && (
-                  <div className="mt-4 rounded-xl border border-beyonix-blue-light bg-black p-4">
-                    <h3 className="text-base font-black text-white">
+                  <div className="checkout-note mt-4 rounded-xl border p-4">
+                    <h3 className="text-base font-bold text-white">
                       Transferencia bancaria con 5% OFF
                     </h3>
 
                     <div className="mt-3 space-y-3 text-sm leading-6 text-white/70">
-                      <p>Transferí el total final al alias:</p>
-                      <p className="rounded-xl border border-beyonix-blue-light/25 bg-beyonix-surface-3 px-4 py-3 text-base font-black uppercase tracking-wide text-beyonix-sky">
+                      <p className="rounded-lg border border-white/10 bg-black/35 px-4 py-3 text-base font-bold uppercase tracking-wide text-white">
                         Alias: {TRANSFER_ALIAS}
                       </p>
                       <p>
-                        Luego subí el comprobante de pago para que podamos validar tu compra.
+                        Registrá el pedido y luego subí el comprobante. Lo validaremos manualmente antes de prepararlo.
                       </p>
-                      <p>
-                        El pago se verifica manualmente dentro del horario de atención.
-                      </p>
-                      <p>
-                        El pedido se prepara una vez confirmado el pago.
-                      </p>
-                      <div className="rounded-xl border border-white/8 bg-black px-4 py-3">
-                        <p className="font-black text-white">Horario de atención:</p>
-                        <p>Lunes a viernes: 7:00 a 20:00 hs</p>
-                        <p>Sábados: 8:00 a 14:00 hs</p>
+                      <div className="rounded-lg border border-white/8 bg-black/25 px-4 py-3">
+                        <p className="font-semibold text-white">Validación de pagos</p>
+                        <p>Lun. a vie. 7:00-20:00 · Sáb. 8:00-14:00</p>
                       </div>
-                    </div>                  </div>
+                    </div>
+                  </div>
                 )}
               </section>
             </div>
 
             <div className="lg:col-span-1">
-              <div className="checkout-solid-card sticky top-24 rounded-xl border border-beyonix-blue-light p-4 sm:p-5">
+              <div className="checkout-panel sticky top-24 rounded-xl border p-4 sm:p-5">
                 <h2 className="text-lg font-semibold text-foreground mb-4">
                   <span className="border-l-4 border-beyonix-blue pl-3">
                     Resumen del pedido
@@ -1046,7 +1038,7 @@ export default function CheckoutPage() {
                     (item) => (
                       <div
                         key={`${item.product.id}-${item.variantId ?? item.color}`}
-                        className="checkout-solid-card flex gap-3 rounded-xl border border-beyonix-blue-light p-2.5"
+                        className="checkout-order-item flex gap-3 rounded-xl border p-2.5"
                       >
                         <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-950">
                           <Image
@@ -1065,10 +1057,6 @@ export default function CheckoutPage() {
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-muted-foreground">
-                            Producto:
-                          </p>
-
                           <p className="text-sm font-semibold text-foreground line-clamp-2">
                             {
                               item.product
@@ -1076,23 +1064,11 @@ export default function CheckoutPage() {
                             }
                           </p>
 
-                          <p className="mt-1 text-sm text-foreground">
-                            Precio:{" "}
-                            <span className="font-semibold">
-                              {formatPrice(
-                                item.product
-                                  .precio
-                              )}
-                            </span>
-                          </p>
-
-                          <p className="text-sm text-muted-foreground">
-                            Unidades:{" "}
-                            <span className="font-semibold text-foreground">
-                              x{item.quantity}{" "}
-                              {item.quantity === 1
-                                ? "unidad"
-                                : "unidades"}
+                          <p className="mt-1 text-sm text-white/65">
+                            {item.quantity} {item.quantity === 1 ? "unidad" : "unidades"}
+                            {" · "}
+                            <span className="font-semibold text-white">
+                              {formatPrice(item.product.precio)}
                             </span>
                           </p>
                         </div>

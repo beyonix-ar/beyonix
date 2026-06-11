@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser()
 
     if (!user) {
-      return NextResponse.json({ error: "Debes iniciar sesion." }, { status: 401 })
+      return NextResponse.json({ error: "Debés iniciar sesión." }, { status: 401 })
     }
 
     const formData = await request.formData()
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
     if (!(file instanceof File)) {
       return NextResponse.json(
-        { error: "Selecciona un comprobante para subir." },
+        { error: "Seleccioná un comprobante para subir." },
         { status: 400 },
       )
     }

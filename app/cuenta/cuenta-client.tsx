@@ -998,7 +998,7 @@ function validateDeliveryAddress(address: DeliveryAddressDraft) {
   if (!address.localidad) return "Ingresá la localidad."
   if (!address.region) return "Seleccioná una provincia válida."
 
-  const commonPattern = /^[a-zA-ZÀ-ÿ0-9\s.,'°/-]+$/
+  const commonPattern = /^[\p{L}\p{M}0-9\s.,'°/-]+$/u
   const values = [
     address.calle,
     address.numero,

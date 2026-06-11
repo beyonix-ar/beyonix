@@ -16,7 +16,7 @@ const options = [
   { label: "En oferta", key: "offers", visibleKey: "showOfferFilter" },
   { label: "Destacados", key: "featured", visibleKey: "showFeaturedFilter" },
   {
-    label: "Cuotas sin interes",
+    label: "Cuotas sin interés",
     key: "installments",
     visibleKey: "showInstallmentsFilter",
   },

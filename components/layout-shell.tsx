@@ -61,8 +61,13 @@ export function LayoutShell({
       "/login"
     )
 
+  const isCheckoutPage =
+    pathname.startsWith(
+      "/checkout"
+    )
+
   // Admin layout
-  if (isAdmin || isPasswordReset || isAuthPage) {
+  if (isAdmin || isPasswordReset || isAuthPage || isCheckoutPage) {
     return children
   }
 

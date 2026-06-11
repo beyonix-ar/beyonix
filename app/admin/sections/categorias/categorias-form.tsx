@@ -178,7 +178,7 @@ export function CategoriaForm({
       console.error(err)
 
       setError(
-        "Error guardando categoria."
+        "Error guardando categoría."
       )
     } finally {
       setSaving(false)
@@ -204,8 +204,8 @@ export function CategoriaForm({
 
           <h1 className="text-3xl font-bold text-white">
             {categoria
-              ? "Editar categoria"
-              : "Nueva categoria"}
+              ? "Editar categoría"
+              : "Nueva categoría"}
           </h1>
         </div>
 
@@ -302,7 +302,7 @@ export function CategoriaForm({
                 {previewImage ? (
                   <img
                     src={previewImage}
-                    alt={nombre || "Imagen de categoria"}
+                    alt={nombre || "Imagen de categoría"}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -374,7 +374,7 @@ export function CategoriaForm({
               }`}
             />
             <span className="text-sm font-semibold">
-              Categoria destacada
+              Categoría destacada
             </span>
           </button>
 
@@ -431,8 +431,8 @@ export function CategoriaForm({
             <button
               type="submit"
               disabled={saving}
-              title="Guardar categoria"
-              aria-label="Guardar categoria"
+              title="Guardar categoría"
+              aria-label="Guardar categoría"
               className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
             >
               {saving ? (
@@ -440,7 +440,7 @@ export function CategoriaForm({
               ) : categoria ? (
                 "Guardar cambios"
               ) : (
-                "Crear categoria"
+                "Crear categoría"
               )}
             </button>
 

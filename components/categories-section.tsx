@@ -56,11 +56,11 @@ export function CategoriesSection() {
             </p>
 
             <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-white lg:text-5xl">
-              Exploracion rapida por categoria
+              Exploración rápida por categoría
             </h2>
 
             <p className="mt-3 max-w-xl text-sm leading-6 text-white/58">
-              Elegi la categoria que mas va con vos y encontra productos pensados para tu dia a dia.
+              Elegí la categoría que más va con vos y encontrá productos pensados para tu día a día.
             </p>
           </div>
 
@@ -108,7 +108,7 @@ export function CategoriesSection() {
                   </div>
 
                   <p className="line-clamp-2 min-h-40px text-sm leading-5 text-white/62">
-                    {categoria.descripcion || "Explora productos seleccionados para esta categoria."}
+                    {categoria.descripcion || "Explorá productos seleccionados para esta categoría."}
                   </p>
                 </div>
               </div>

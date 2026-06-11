@@ -345,7 +345,7 @@ function ClientCard({
               <p className="text-xs text-white/52">
                 {isBlocked
                   ? `Bloqueado desde ${formatDate(cliente.blocked_at)}.`
-                  : "Al bloquearlo se guardan email, usuario y telefono para frenar nuevos registros."}
+                  : "Al bloquearlo se guardan email, usuario y teléfono para frenar nuevos registros."}
               </p>
               <button
                 type="button"
@@ -496,7 +496,7 @@ function BlockedClientsPanel({
             <h2 className="text-lg font-black">Bloqueos</h2>
           </div>
           <p className="mt-1 text-sm text-white/58">
-            Escribi email, usuario o telefono. Si existe un cliente, se bloquean
+            Escribí email, usuario o teléfono. Si existe un cliente, se bloquean
             todos sus datos disponibles.
           </p>
         </div>
@@ -511,7 +511,7 @@ function BlockedClientsPanel({
             title="Dato a bloquear"
             ariaLabel="Dato a bloquear"
             value={value}
-            placeholder="email, usuario o telefono"
+            placeholder="email, usuario o teléfono"
             onChange={setValue}
           />
           <AdminTextInput
@@ -538,7 +538,7 @@ function BlockedClientsPanel({
           {blockedRows.length ? (
             <>
               <div className="hidden grid-cols-admin-block-row gap-3 px-4 py-2 md:grid">
-                {["Usuario", "Email", "Telefono", "Direccion", "Motivo", ""].map(
+                {["Usuario", "Email", "Teléfono", "Dirección", "Motivo", ""].map(
                   (label) => (
                     <span
                       key={label}

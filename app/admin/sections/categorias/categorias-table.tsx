@@ -40,7 +40,7 @@ interface CategoriasTableProps {
 }
 
 const headers = [
-  "Producto / Categoria",
+  "Producto / Categoría",
   "Articulos",
   "Stock",
   "Destacada",
@@ -82,7 +82,7 @@ export function CategoriasTable({
         </p>
 
         <p className="mt-1 text-xs text-white/40">
-          Crea una categoria para empezar.
+          Creá una categoría para empezar.
         </p>
       </div>
     )
@@ -96,7 +96,7 @@ export function CategoriasTable({
             <span
               key={label}
               className={`text-11px font-semibold uppercase tracking-widest text-white/55 ${
-                label === "Producto / Categoria"
+                label === "Producto / Categoría"
                   ? ""
                   : "text-center"
               }`}

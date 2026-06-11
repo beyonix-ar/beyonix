@@ -68,7 +68,7 @@ const productFeatures = [
   },
   {
     icon: BatteryCharging,
-    text: "Bateria de larga duracion",
+    text: "Batería de larga duración",
   },
   {
     icon: Bluetooth,

@@ -184,7 +184,7 @@ export function AdminCategorias() {
         ) => {
           if (
             !confirm(
-              "Eliminar esta categoria?"
+              "¿Eliminar esta categoría?"
             )
           ) {
             return

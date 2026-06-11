@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import {
   createContext,
@@ -23,6 +23,40 @@ import {
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
 const PASSWORD_RECOVERY_KEY = "beyonix-password-recovery"
+const AUTH_LAST_ACTIVITY_KEY = "beyonix-auth-last-activity"
+const AUTH_INACTIVITY_LIMIT_MS = 30 * 60 * 1000
+const AUTH_ACTIVITY_WRITE_INTERVAL_MS = 15 * 1000
+
+function getLastAuthActivity() {
+  if (typeof window === "undefined") return null
+
+  const storedValue = Number(localStorage.getItem(AUTH_LAST_ACTIVITY_KEY))
+
+  return Number.isFinite(storedValue) && storedValue > 0
+    ? storedValue
+    : null
+}
+
+function hasAuthSessionExpired() {
+  const lastActivity = getLastAuthActivity()
+
+  return (
+    lastActivity === null ||
+    Date.now() - lastActivity >= AUTH_INACTIVITY_LIMIT_MS
+  )
+}
+
+function recordAuthActivity() {
+  if (typeof window === "undefined") return
+
+  localStorage.setItem(AUTH_LAST_ACTIVITY_KEY, String(Date.now()))
+}
+
+function clearAuthActivity() {
+  if (typeof window === "undefined") return
+
+  localStorage.removeItem(AUTH_LAST_ACTIVITY_KEY)
+}
 
 function isPasswordRecoveryInProgress() {
   if (typeof window === "undefined") return false
@@ -34,6 +68,15 @@ function isResetPasswordPage() {
   if (typeof window === "undefined") return false
 
   return window.location.pathname.startsWith("/reset-password")
+}
+
+function isTemporaryAuthPage() {
+  if (typeof window === "undefined") return false
+
+  return (
+    window.location.pathname.startsWith("/confirmar-email") ||
+    isResetPasswordPage()
+  )
 }
 
 function shouldHideRecoverySession() {
@@ -121,10 +164,7 @@ function clearSupabaseBrowserSession() {
     }
   }
 }
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Types
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface BeyonixUser {
   id: string
@@ -211,10 +251,7 @@ interface AuthContextType {
     data: Partial<BeyonixUser>
   ) => Promise<void>
 }
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Mapper
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function profileToUser(
   profile: SupabaseProfile,
@@ -274,10 +311,7 @@ function profileToUser(
       profile.blocked_at ?? undefined,
   }
 }
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Context
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function authUserToFallbackUser(
   supabaseUser: User,
@@ -322,10 +356,7 @@ const AuthContext =
   createContext<AuthContextType | null>(
     null
   )
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Provider
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function AuthProvider({
   children,
@@ -340,81 +371,44 @@ export function AuthProvider({
   const [isLoading, setIsLoading] =
     useState(true)
   const registrationInProgress = useRef(false)
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const loginInProgress = useRef(false)
+  const hasAuthenticatedSession = useRef(false)
+  const lastActivityWrite = useRef(0)
   // Load profile
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const loadProfile =
     useCallback(
       async (
-        supabaseUser: User
+        supabaseUser: User,
+        accessToken: string
       ) => {
-        const {
-          data: existingProfile,
-          error: profileLoadError,
-        } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", supabaseUser.id)
-          .maybeSingle()
+        let profile: SupabaseProfile | undefined
 
-        if (profileLoadError) {
+        try {
+          const response = await fetch("/api/auth/profile", {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            cache: "no-store",
+          })
+          const data = (await response.json()) as {
+            profile?: SupabaseProfile
+            error?: string
+          }
+
+          if (!response.ok || !data.profile) {
+            console.error("LOAD_PROFILE_API_ERROR", {
+              status: response.status,
+              error: data.error,
+            })
+          } else {
+            profile = data.profile
+          }
+        } catch (profileLoadError) {
           console.error(
             "LOAD_PROFILE_ERROR",
             getSupabaseErrorDetails(profileLoadError)
           )
-          setUser((currentUser) =>
-            authUserToFallbackUser(supabaseUser, currentUser)
-          )
-          return
-        }
-
-        let profile = existingProfile as SupabaseProfile | null
-
-        if (!profile) {
-          const metadata = supabaseUser.user_metadata ?? {}
-          const {
-            data: createdProfile,
-            error: createProfileError,
-          } = await supabase
-            .from("profiles")
-            .insert({
-              id: supabaseUser.id,
-              email: supabaseUser.email ?? metadata.email ?? null,
-              username: metadata.username ?? null,
-              nombre: metadata.nombre ?? "",
-              rol: "cliente",
-            } as never)
-            .select("*")
-            .maybeSingle()
-
-          if (createProfileError) {
-            console.error(
-              "CREATE_BASIC_PROFILE_ERROR",
-              getSupabaseErrorDetails(createProfileError)
-            )
-
-            const {
-              data: retryProfile,
-              error: retryProfileError,
-            } = await supabase
-              .from("profiles")
-              .select("*")
-              .eq("id", supabaseUser.id)
-              .maybeSingle()
-
-            if (retryProfileError) {
-              console.error(
-                "RETRY_LOAD_PROFILE_ERROR",
-                getSupabaseErrorDetails(retryProfileError)
-              )
-            }
-
-            profile = retryProfile as SupabaseProfile | null
-          } else {
-            profile = createdProfile as SupabaseProfile | null
-          }
         }
 
         if (!profile) {
@@ -440,16 +434,85 @@ export function AuthProvider({
       },
       []
     )
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Session listener
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   useEffect(() => {
+    let inactivityLogoutInProgress = false
+
+    function clearAuthenticatedUser() {
+      hasAuthenticatedSession.current = false
+      clearAuthActivity()
+      setUser(null)
+    }
+
+    async function logoutExpiredSession() {
+      if (inactivityLogoutInProgress) return
+
+      inactivityLogoutInProgress = true
+      clearAuthenticatedUser()
+
+      try {
+        await supabase.auth.signOut({ scope: "local" })
+      } finally {
+        setIsLoading(false)
+        inactivityLogoutInProgress = false
+      }
+    }
+
+    function acceptAuthenticatedSession() {
+      hasAuthenticatedSession.current = true
+    }
+
+    function validateStoredActivity() {
+      if (
+        hasAuthenticatedSession.current &&
+        hasAuthSessionExpired()
+      ) {
+        void logoutExpiredSession()
+        return false
+      }
+
+      return true
+    }
+
+    function trackActivity() {
+      if (
+        !hasAuthenticatedSession.current ||
+        hasAuthSessionExpired()
+      ) {
+        validateStoredActivity()
+        return
+      }
+
+      const now = Date.now()
+
+      if (
+        now - lastActivityWrite.current <
+        AUTH_ACTIVITY_WRITE_INTERVAL_MS
+      ) {
+        return
+      }
+
+      lastActivityWrite.current = now
+      recordAuthActivity()
+    }
+
+    function recordPageClose() {
+      if (
+        hasAuthenticatedSession.current &&
+        !hasAuthSessionExpired()
+      ) {
+        recordAuthActivity()
+      }
+    }
+
     function hideRecoverySessionOutsideReset() {
       if (shouldHideRecoverySession()) {
         setUser(null)
+        return
       }
+
+      validateStoredActivity()
     }
 
     supabase.auth.getSession().then(
@@ -472,6 +535,17 @@ export function AuthProvider({
           if (
             session?.user
           ) {
+            if (isTemporaryAuthPage()) {
+              setUser(null)
+              setIsLoading(false)
+              return
+            }
+
+            if (hasAuthSessionExpired()) {
+              void logoutExpiredSession()
+              return
+            }
+
             if (shouldHideRecoverySession()) {
               setUser(null)
               setIsLoading(false)
@@ -490,14 +564,18 @@ export function AuthProvider({
               return
             }
 
+            acceptAuthenticatedSession()
+
             loadProfile(
-              session.user
+              session.user,
+              session.access_token
             ).finally(() =>
               setIsLoading(
                 false
               )
             )
           } else {
+            clearAuthenticatedUser()
             setIsLoading(
               false
             )
@@ -526,6 +604,11 @@ export function AuthProvider({
             localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
           }
 
+          if (event === "SIGNED_OUT") {
+            clearAuthenticatedUser()
+            return
+          }
+
           if (registrationInProgress.current) {
             setUser(null)
             return
@@ -534,6 +617,20 @@ export function AuthProvider({
           if (
             session?.user
           ) {
+            if (isTemporaryAuthPage()) {
+              setUser(null)
+              setIsLoading(false)
+              return
+            }
+
+            if (
+              !(event === "SIGNED_IN" && loginInProgress.current) &&
+              hasAuthSessionExpired()
+            ) {
+              void logoutExpiredSession()
+              return
+            }
+
             if (shouldHideRecoverySession()) {
               setUser(null)
               return
@@ -549,28 +646,63 @@ export function AuthProvider({
               return
             }
 
+            acceptAuthenticatedSession()
+
+            if (event === "SIGNED_IN" && loginInProgress.current) {
+              recordAuthActivity()
+              lastActivityWrite.current = Date.now()
+            }
+
             loadProfile(
-              session.user
+              session.user,
+              session.access_token
             )
           } else {
-            setUser(null)
+            clearAuthenticatedUser()
           }
         }
       )
 
+    const activityEvents = [
+      "keydown",
+      "pointerdown",
+      "scroll",
+      "touchstart",
+    ] as const
+    const inactivityCheck = window.setInterval(
+      validateStoredActivity,
+      60 * 1000
+    )
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, trackActivity, {
+        passive: true,
+      })
+    })
     window.addEventListener("focus", hideRecoverySessionOutsideReset)
     window.addEventListener("storage", hideRecoverySessionOutsideReset)
+    window.addEventListener("pagehide", recordPageClose)
+    document.addEventListener(
+      "visibilitychange",
+      hideRecoverySessionOutsideReset
+    )
 
     return () => {
+      window.clearInterval(inactivityCheck)
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, trackActivity)
+      })
       window.removeEventListener("focus", hideRecoverySessionOutsideReset)
       window.removeEventListener("storage", hideRecoverySessionOutsideReset)
+      window.removeEventListener("pagehide", recordPageClose)
+      document.removeEventListener(
+        "visibilitychange",
+        hideRecoverySessionOutsideReset
+      )
       subscription.unsubscribe()
     }
   }, [loadProfile])
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Login
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const login =
     useCallback(
@@ -630,6 +762,9 @@ export function AuthProvider({
           }
         }
 
+        loginInProgress.current = true
+        recordAuthActivity()
+
         const {
           data,
           error,
@@ -644,6 +779,9 @@ export function AuthProvider({
           )
 
         if (error) {
+          loginInProgress.current = false
+          clearAuthActivity()
+
           if (
             error.code === "email_not_confirmed" ||
             error.message.toLowerCase().includes("email not confirmed")
@@ -679,6 +817,8 @@ export function AuthProvider({
         if (data.user) {
           if (!isEmailConfirmed(data.user)) {
             await supabase.auth.signOut()
+            loginInProgress.current = false
+            clearAuthActivity()
             setUser(null)
 
             return {
@@ -690,6 +830,8 @@ export function AuthProvider({
 
           if (!isAccountActivated(data.user)) {
             await supabase.auth.signOut()
+            loginInProgress.current = false
+            clearAuthActivity()
             setUser(null)
 
             return {
@@ -700,9 +842,12 @@ export function AuthProvider({
           }
 
           await loadProfile(
-            data.user
+            data.user,
+            data.session!.access_token
           )
         }
+
+        loginInProgress.current = false
 
         return {
           ok: true,
@@ -710,10 +855,7 @@ export function AuthProvider({
       },
       [loadProfile]
     )
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Register
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const register =
     useCallback(
@@ -936,10 +1078,7 @@ export function AuthProvider({
       },
       [loadProfile]
     )
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Logout
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const logout =
     useCallback(
@@ -947,6 +1086,7 @@ export function AuthProvider({
         await supabase.auth.signOut()
 
         localStorage.removeItem(PASSWORD_RECOVERY_KEY)
+        clearAuthActivity()
         localStorage.removeItem("beyonix-cart")
         sessionStorage.removeItem("beyonix-cart")
 
@@ -954,10 +1094,7 @@ export function AuthProvider({
       },
       []
     )
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Update user
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const updateUser =
     useCallback(
@@ -1059,10 +1196,7 @@ export function AuthProvider({
       },
       [user]
     )
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Admin
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const isSuperAdmin =
     user?.rol?.toLowerCase() ===
@@ -1072,10 +1206,7 @@ export function AuthProvider({
     user?.rol?.toLowerCase() ===
       "admin" ||
     isSuperAdmin
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Provider
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <AuthContext.Provider
@@ -1100,10 +1231,7 @@ export function AuthProvider({
     </AuthContext.Provider>
   )
 }
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Hook
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function useAuth(): AuthContextType {
   const ctx =
@@ -1117,4 +1245,3 @@ export function useAuth(): AuthContextType {
 
   return ctx
 }
-
