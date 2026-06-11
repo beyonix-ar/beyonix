@@ -1,4 +1,5 @@
 "use client"
+// @refresh reset
 
 import { useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
@@ -331,7 +332,6 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
 
 function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const { register } = useAuth()
-  const router = useRouter()
   const [username, setUsername] = useState("")
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -348,6 +348,107 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [pendingUserId, setPendingUserId] = useState("")
+  const [confirmationHandoff, setConfirmationHandoff] = useState("")
+  const [confirmationValidated, setConfirmationValidated] = useState(false)
+  const [confirmationMessage, setConfirmationMessage] = useState("")
+  const confirmationPollInProgress = useRef(false)
+  const confirmationCompletionStarted = useRef(false)
+
+  useEffect(() => {
+    if (!pendingUserId || !confirmationHandoff) return
+
+    let cancelled = false
+    let timeout: number | undefined
+
+    const checkConfirmation = async () => {
+      if (cancelled || confirmationPollInProgress.current) return
+
+      confirmationPollInProgress.current = true
+
+      try {
+        const response = await fetch("/api/auth/confirmation-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: pendingUserId,
+            handoff: confirmationHandoff,
+          }),
+          cache: "no-store",
+        })
+        const data = (await response.json()) as {
+          confirmed?: boolean
+          tokenHash?: string
+          error?: string
+        }
+
+        if (!cancelled && response.ok && data.confirmed) {
+          setConfirmationValidated(true)
+
+          if (!data.tokenHash) {
+            setConfirmationMessage(
+              data.error ||
+                "Cuenta confirmada. Estamos preparando tu sesión..."
+            )
+            return
+          }
+
+          if (confirmationCompletionStarted.current) return
+
+          confirmationCompletionStarted.current = true
+          setConfirmationMessage("Email confirmado. Iniciando sesión...")
+
+          localStorage.setItem(
+            "beyonix-auth-last-activity",
+            String(Date.now())
+          )
+          const { error: sessionError } = await supabase.auth.verifyOtp({
+            token_hash: data.tokenHash,
+            type: "magiclink",
+          })
+
+          if (cancelled) return
+
+          if (!sessionError) {
+            setConfirmationMessage(
+              "Email confirmado. Te llevaremos al Home en un segundo..."
+            )
+            timeout = window.setTimeout(() => {
+              window.location.assign("/")
+            }, 1000)
+            return
+          }
+
+          confirmationCompletionStarted.current = false
+          setConfirmationMessage(
+            "La cuenta fue confirmada, pero no pudimos iniciar sesión automáticamente."
+          )
+        } else if (!cancelled && !response.ok && data.error) {
+          setConfirmationMessage(data.error)
+        }
+      } catch {
+        // La pestaña seguirá consultando mientras permanezca abierta.
+      } finally {
+        confirmationPollInProgress.current = false
+      }
+
+      if (!cancelled && !confirmationCompletionStarted.current) {
+        timeout = window.setTimeout(checkConfirmation, 1000)
+      }
+    }
+
+    void checkConfirmation()
+
+    return () => {
+      cancelled = true
+      if (timeout) window.clearTimeout(timeout)
+    }
+  }, [
+    confirmationHandoff,
+    pendingUserId,
+  ])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -426,8 +527,49 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       return
     }
 
-    router.push(
-      `/verificar-email?email=${encodeURIComponent(email.trim().toLowerCase())}`
+    setPendingUserId(result.pendingUserId ?? "")
+    setConfirmationHandoff(result.confirmationHandoff ?? "")
+    setConfirmationValidated(false)
+    setConfirmationMessage("")
+    confirmationCompletionStarted.current = false
+  }
+
+  if (pendingUserId && confirmationHandoff) {
+    return (
+      <div className="space-y-5 text-center">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-500/10">
+          <Check className="size-9 text-emerald-400" />
+        </div>
+
+        <div>
+          <h2 className="text-2xl font-bold text-white">
+            {confirmationValidated ? "Cuenta confirmada" : "Revisá tu correo"}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-white/60">
+            {confirmationValidated
+              ? "Estamos iniciando tu sesión y te llevaremos al Home automáticamente."
+              : "Dejá esta pestaña abierta. Cuando confirmes la cuenta desde Gmail, iniciaremos tu sesión automáticamente y te llevaremos al inicio."}
+          </p>
+        </div>
+
+        {!confirmationValidated && (
+          <p className="rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white">
+            {email.trim().toLowerCase()}
+          </p>
+        )}
+
+        {confirmationMessage && (
+          <p className="text-sm text-emerald-400">{confirmationMessage}</p>
+        )}
+
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="h-11 w-full cursor-pointer rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90"
+        >
+          Volver al inicio de sesión
+        </button>
+      </div>
     )
   }
 

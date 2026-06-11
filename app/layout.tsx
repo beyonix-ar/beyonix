@@ -27,6 +27,23 @@ export const metadata: Metadata = {
     "Descubrí la mejor tecnología para tu hogar y estilo de vida. Productos premium de audio, iluminación LED, accesorios para celulares, hogar inteligente y más. Envíos a toda Argentina.",
   keywords:
     "tecnología, hogar inteligente, auriculares, LED, accesorios celular, mate térmico, Argentina",
+  icons: {
+    icon: [
+      {
+        url: "/icon.png?v=2",
+        type: "image/png",
+        sizes: "512x512",
+      },
+    ],
+    shortcut: "/icon.png?v=2",
+    apple: [
+      {
+        url: "/apple-icon.png?v=2",
+        type: "image/png",
+        sizes: "180x180",
+      },
+    ],
+  },
   openGraph: {
     title: "BEYONIX | Tecnología para tu comodidad",
     description: "Productos premium de tecnología y confort para tu vida diaria",

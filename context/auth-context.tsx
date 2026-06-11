@@ -243,6 +243,8 @@ interface AuthContextType {
     ok: boolean
     error?: string
     requiresConfirmation?: boolean
+    pendingUserId?: string
+    confirmationHandoff?: string
   }>
 
   logout: () => Promise<void>
@@ -617,6 +619,13 @@ export function AuthProvider({
           if (
             session?.user
           ) {
+            // Toda sesión recién emitida inicia su propio período de
+            // actividad. Esto incluye confirmaciones abiertas en otra pestaña.
+            if (event === "SIGNED_IN") {
+              recordAuthActivity()
+              lastActivityWrite.current = Date.now()
+            }
+
             if (isTemporaryAuthPage()) {
               setUser(null)
               setIsLoading(false)
@@ -624,7 +633,7 @@ export function AuthProvider({
             }
 
             if (
-              !(event === "SIGNED_IN" && loginInProgress.current) &&
+              event !== "SIGNED_IN" &&
               hasAuthSessionExpired()
             ) {
               void logoutExpiredSession()
@@ -647,11 +656,6 @@ export function AuthProvider({
             }
 
             acceptAuthenticatedSession()
-
-            if (event === "SIGNED_IN" && loginInProgress.current) {
-              recordAuthActivity()
-              lastActivityWrite.current = Date.now()
-            }
 
             loadProfile(
               session.user,
@@ -865,6 +869,8 @@ export function AuthProvider({
         ok: boolean
         error?: string
         requiresConfirmation?: boolean
+        pendingUserId?: string
+        confirmationHandoff?: string
       }> => {
         localStorage.removeItem(PASSWORD_RECOVERY_KEY)
 
@@ -924,8 +930,9 @@ export function AuthProvider({
         const email = form.email.trim().toLowerCase()
         const emailRedirectTo =
           typeof window !== "undefined"
-            ? `${window.location.origin}/confirmar-email`
+            ? window.location.origin
             : undefined
+        const confirmationHandoff = crypto.randomUUID()
         const profilePayload = {
           email,
           username,
@@ -939,6 +946,8 @@ export function AuthProvider({
           codigo_postal: form.postalCode?.trim() || null,
           provincia: form.province?.trim() || null,
           referencias: form.references?.trim() || null,
+          confirmation_handoff: confirmationHandoff,
+          confirmation_handoff_created_at: new Date().toISOString(),
         }
 
         const executeSignup = () =>
@@ -1051,6 +1060,20 @@ export function AuthProvider({
         }
 
         if (
+          Array.isArray(data.user.identities) &&
+          data.user.identities.length === 0
+        ) {
+          registrationInProgress.current = false
+          setUser(null)
+
+          return {
+            ok: false,
+            error:
+              "Ya existe una cuenta con ese email. Iniciá sesión o recuperá tu contraseña.",
+          }
+        }
+
+        if (
           data.session ||
           isEmailConfirmed(data.user)
         ) {
@@ -1074,6 +1097,8 @@ export function AuthProvider({
         return {
           ok: true,
           requiresConfirmation: true,
+          pendingUserId: data.user.id,
+          confirmationHandoff,
         }
       },
       [loadProfile]

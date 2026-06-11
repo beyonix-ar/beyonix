@@ -1,6 +1,7 @@
 "use client"
+// @refresh reset
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { CheckCircle2, Eye, EyeOff, Loader2, RefreshCw } from "lucide-react"
@@ -9,6 +10,11 @@ import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { useAuth } from "@/context/auth-context"
+import {
+  EMAIL_CONFIRMATION_CHANNEL,
+  EMAIL_CONFIRMATION_STORAGE_KEY,
+  type EmailConfirmationEvent,
+} from "@/lib/auth/confirmation-events"
 import { supabase } from "@/lib/supabase/client"
 import {
   FIELD_LIMITS,
@@ -155,12 +161,18 @@ function LoginContent() {
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
   const [confirmationEmail, setConfirmationEmail] = useState("")
+  const [confirmationUserId, setConfirmationUserId] = useState("")
+  const [confirmationHandoff, setConfirmationHandoff] = useState("")
+  const [confirmationValidated, setConfirmationValidated] = useState(false)
+  const [finishingConfirmation, setFinishingConfirmation] = useState(false)
   const [resendingEmail, setResendingEmail] = useState(false)
   const [resendMessage, setResendMessage] = useState("")
   const [resendCooldown, setResendCooldown] = useState(0)
 
   const redirect = getSafeRedirect(searchParams.get("redirect"))
   const verificationEmail = searchParams.get("verificar-email")
+  const confirmationPollInProgress = useRef(false)
+  const confirmationCompletionStarted = useRef(false)
 
   useEffect(() => {
     if (searchParams.get("reset") !== "success") return
@@ -218,9 +230,162 @@ function LoginContent() {
   }, [resendCooldown])
 
   useEffect(() => {
-    if (isLoading || !user) return
+    if (
+      !confirmationEmail ||
+      !confirmationUserId ||
+      !confirmationHandoff
+    ) {
+      return
+    }
+
+    let cancelled = false
+    let timeout: number | undefined
+    let channel: BroadcastChannel | null = null
+
+    const isExpectedConfirmation = (
+      value: unknown
+    ): value is EmailConfirmationEvent => {
+      if (!value || typeof value !== "object") return false
+
+      const event = value as Partial<EmailConfirmationEvent>
+
+      return (
+        event.userId === confirmationUserId &&
+        event.email?.trim().toLowerCase() === confirmationEmail
+      )
+    }
+
+    const checkConfirmation = async () => {
+      if (cancelled || confirmationPollInProgress.current) return
+
+      confirmationPollInProgress.current = true
+
+      try {
+        const response = await fetch("/api/auth/confirmation-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: confirmationUserId,
+            handoff: confirmationHandoff,
+          }),
+          cache: "no-store",
+        })
+        const data = (await response.json()) as {
+          confirmed?: boolean
+          tokenHash?: string
+          error?: string
+        }
+
+        if (!cancelled && response.ok && data.confirmed) {
+          setConfirmationValidated(true)
+
+          if (!data.tokenHash) {
+            setResendMessage(
+              data.error ||
+                "Cuenta confirmada. Estamos preparando tu sesión..."
+            )
+            return
+          }
+
+          if (confirmationCompletionStarted.current) return
+
+          confirmationCompletionStarted.current = true
+          setFinishingConfirmation(true)
+          setResendMessage("Email confirmado. Iniciando sesión...")
+
+          localStorage.setItem(
+            "beyonix-auth-last-activity",
+            String(Date.now())
+          )
+          const { error: sessionError } = await supabase.auth.verifyOtp({
+            token_hash: data.tokenHash,
+            type: "magiclink",
+          })
+
+          if (cancelled) return
+
+          if (!sessionError) {
+            localStorage.removeItem(EMAIL_CONFIRMATION_STORAGE_KEY)
+            setResendMessage(
+              "Email confirmado. Te llevaremos al Home en un segundo..."
+            )
+            timeout = window.setTimeout(() => {
+              window.location.assign(redirect)
+            }, 1000)
+            return
+          }
+
+          confirmationCompletionStarted.current = false
+          setFinishingConfirmation(false)
+          setResendMessage(
+            "La cuenta fue confirmada, pero no pudimos iniciar sesión automáticamente."
+          )
+        } else if (!cancelled && !response.ok && data.error) {
+          setResendMessage(data.error)
+        }
+      } catch {
+        // La pestaña seguirá consultando mientras permanezca abierta.
+      } finally {
+        confirmationPollInProgress.current = false
+      }
+
+      if (!cancelled && !confirmationCompletionStarted.current) {
+        timeout = window.setTimeout(checkConfirmation, 1000)
+      }
+    }
+
+    const handleBroadcast = (event: MessageEvent<unknown>) => {
+      if (isExpectedConfirmation(event.data)) {
+        void checkConfirmation()
+      }
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        event.key !== EMAIL_CONFIRMATION_STORAGE_KEY ||
+        !event.newValue
+      ) {
+        return
+      }
+
+      try {
+        const confirmationEvent = JSON.parse(event.newValue) as unknown
+
+        if (isExpectedConfirmation(confirmationEvent)) {
+          void checkConfirmation()
+        }
+      } catch {
+        // El sondeo periódico queda como respaldo.
+      }
+    }
+
+    if ("BroadcastChannel" in window) {
+      channel = new BroadcastChannel(EMAIL_CONFIRMATION_CHANNEL)
+      channel.addEventListener("message", handleBroadcast)
+    }
+    window.addEventListener("storage", handleStorage)
+
+    void checkConfirmation()
+
+    return () => {
+      cancelled = true
+      if (timeout) window.clearTimeout(timeout)
+      channel?.removeEventListener("message", handleBroadcast)
+      channel?.close()
+      window.removeEventListener("storage", handleStorage)
+    }
+  }, [
+    confirmationEmail,
+    confirmationHandoff,
+    confirmationUserId,
+    redirect,
+  ])
+
+  useEffect(() => {
+    if (isLoading || !user || confirmationEmail) return
     router.replace(redirect)
-  }, [isLoading, redirect, router, user])
+  }, [confirmationEmail, isLoading, redirect, router, user])
 
   if (isLoading || user) return null
 
@@ -229,6 +394,11 @@ function LoginContent() {
     setError("")
     setSuccess("")
     setConfirmationEmail("")
+    setConfirmationUserId("")
+    setConfirmationHandoff("")
+    setConfirmationValidated(false)
+    setFinishingConfirmation(false)
+    confirmationCompletionStarted.current = false
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -335,10 +505,15 @@ function LoginContent() {
       const normalizedEmail = email.trim().toLowerCase()
 
       setConfirmationEmail(normalizedEmail)
+      setConfirmationUserId(result.pendingUserId ?? "")
+      setConfirmationHandoff(result.confirmationHandoff ?? "")
+      setConfirmationValidated(false)
+      confirmationCompletionStarted.current = false
       setMode("login")
-      router.replace(
-        `/verificar-email?email=${encodeURIComponent(normalizedEmail)}`,
-        { scroll: false }
+      window.history.replaceState(
+        null,
+        "",
+        `/login?verificar-email=${encodeURIComponent(normalizedEmail)}`
       )
       return
     }
@@ -384,6 +559,9 @@ function LoginContent() {
     const { error: resendError } = await supabase.auth.resend({
       type: "signup",
       email: confirmationEmail,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
     })
 
     setResendingEmail(false)
@@ -419,48 +597,65 @@ function LoginContent() {
             </div>
 
             <h1 className="mt-5 text-2xl font-bold text-white sm:text-3xl">
-              Usuario creado con éxito
+              {confirmationValidated
+                ? "Cuenta confirmada"
+                : "Usuario creado con éxito"}
             </h1>
 
             <p className="mt-3 text-sm leading-6 text-white/68">
-              Te enviamos un correo de confirmación. Revisá tu email para activar la cuenta.
+              {confirmationValidated
+                ? "Estamos iniciando tu sesión y te llevaremos al Home automáticamente."
+                : "Te enviamos un correo de confirmación. Revisá tu email para activar la cuenta."}
             </p>
 
-            <p className="mt-2 rounded-xl border border-white/8 bg-black px-4 py-3 text-sm font-semibold text-white">
-              {confirmationEmail}
-            </p>
+            {!confirmationValidated && (
+              <>
+                <p className="mt-2 rounded-xl border border-white/8 bg-black px-4 py-3 text-sm font-semibold text-white">
+                  {confirmationEmail}
+                </p>
 
-            <p className="mt-4 text-sm leading-6 text-white/58">
-              Para verificar la cuenta y poder comprar en nuestra tienda, tenés que abrir el correo de confirmación y validar tu email.
-            </p>
+                <p className="mt-4 text-sm leading-6 text-white/58">
+                  Para verificar la cuenta y poder comprar en nuestra tienda,
+                  tenés que abrir el correo de confirmación y validar tu email.
+                </p>
 
-            <p className="mt-3 text-xs leading-5 text-white/42">
-              Si no lo encontrás, revisá spam, promociones o correo no deseado.
-            </p>
+                <p className="mt-3 text-xs leading-5 text-emerald-300/75">
+                  Dejá esta pestaña abierta. Cuando confirmes el correo,
+                  iniciaremos tu sesión automáticamente y te llevaremos al
+                  inicio.
+                </p>
 
-            <button
-              type="button"
-              onClick={handleResendConfirmation}
-              disabled={resendingEmail || resendCooldown > 0}
-              className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/5 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {resendingEmail ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <RefreshCw className="size-4" />
-              )}
-              {resendingEmail
-                ? "Reenviando..."
-                : resendCooldown > 0
-                  ? `Reenviar en ${resendCooldown}s`
-                  : "Reenviar correo de confirmación"}
-            </button>
+                <p className="mt-3 text-xs leading-5 text-white/42">
+                  Si no lo encontrás, revisá spam, promociones o correo no
+                  deseado.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={resendingEmail || resendCooldown > 0}
+                  className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/5 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {resendingEmail ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  {resendingEmail
+                    ? "Reenviando..."
+                    : resendCooldown > 0
+                      ? `Reenviar en ${resendCooldown}s`
+                      : "Reenviar correo de confirmación"}
+                </button>
+              </>
+            )}
 
             {resendMessage && (
               <p
                 role="status"
                 className={`mt-3 text-xs leading-5 ${
-                  resendMessage.startsWith("Correo reenviado")
+                  resendMessage.startsWith("Correo reenviado") ||
+                  resendMessage.startsWith("Email confirmado")
                     ? "text-emerald-400"
                     : "text-red-400"
                 }`}
@@ -473,12 +668,18 @@ function LoginContent() {
               type="button"
               aria-label="Volver al inicio de sesión"
               title="Volver al inicio de sesión"
+              disabled={finishingConfirmation}
               onClick={() => {
                 setConfirmationEmail("")
+                setConfirmationUserId("")
+                setConfirmationHandoff("")
+                setConfirmationValidated(false)
+                setFinishingConfirmation(false)
+                confirmationCompletionStarted.current = false
                 setMode("login")
                 router.replace("/login", { scroll: false })
               }}
-              className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90"
+              className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Volver al inicio de sesión
             </button>

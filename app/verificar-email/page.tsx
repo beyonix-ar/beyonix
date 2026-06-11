@@ -35,7 +35,7 @@ function VerifyEmailContent() {
       type: "signup",
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/confirmar-email`,
+        emailRedirectTo: window.location.origin,
       },
     })
 

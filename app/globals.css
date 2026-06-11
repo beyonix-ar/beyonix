@@ -229,15 +229,11 @@
 }
 
 @utility grid-cols-admin-orders-pro {
-  grid-template-columns: minmax(96px, 0.52fr) minmax(160px, 0.88fr) minmax(180px, 1fr) minmax(88px, 0.42fr) minmax(104px, 0.5fr) minmax(104px, 0.46fr) minmax(160px, 0.72fr) minmax(160px, 0.72fr) minmax(178px, 0.86fr) minmax(118px, 0.52fr) 150px;
-}
-
-@utility min-w-admin-orders-pro {
-  min-width: 1620px;
+  grid-template-columns: minmax(54px, 0.58fr) minmax(76px, 0.88fr) minmax(96px, 1.18fr) minmax(44px, 0.42fr) minmax(60px, 0.58fr) minmax(74px, 0.72fr) minmax(100px, 0.92fr) minmax(90px, 0.92fr) minmax(100px, 1fr) minmax(86px, 0.82fr) 70px;
 }
 
 @utility w-admin-order-status {
-  width: 152px;
+  width: auto;
 }
 
 @utility grid-cols-admin-order-modal-item {

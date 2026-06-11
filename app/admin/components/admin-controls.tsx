@@ -1,6 +1,7 @@
 "use client"
 
 import { Children, isValidElement, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Check, ChevronDown } from "lucide-react"
 
 interface AdminSelectProps {
@@ -8,6 +9,7 @@ interface AdminSelectProps {
   value: string
   children: React.ReactNode
   ariaLabel?: string
+  compact?: boolean
   onChange: (value: string) => void
 }
 
@@ -26,10 +28,18 @@ export function AdminSelect({
   value,
   children,
   ariaLabel,
+  compact = false,
   onChange,
 }: AdminSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({
+    left: 0,
+    top: 0,
+    width: 0,
+  })
   const options = Children.toArray(children)
     .filter(isValidElement)
     .map((child) => {
@@ -47,8 +57,17 @@ export function AdminSelect({
   const selectedOption = options.find((option) => option.value === value)
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node
+
+      if (
+        !wrapperRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
         setOpen(false)
       }
     }
@@ -68,8 +87,47 @@ export function AdminSelect({
     }
   }, [])
 
+  useEffect(() => {
+    if (!open) return
+
+    function updateMenuPosition() {
+      const rect = wrapperRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      const menuHeight = Math.min(options.length * 36 + 10, 256)
+      const spaceBelow = window.innerHeight - rect.bottom
+      const openAbove = spaceBelow < menuHeight && rect.top > menuHeight
+      const width = Math.max(rect.width, compact ? 144 : rect.width)
+      const left = Math.min(
+        Math.max(8, rect.left),
+        Math.max(8, window.innerWidth - width - 8)
+      )
+
+      setMenuPosition({
+        left,
+        top: openAbove
+          ? Math.max(8, rect.top - menuHeight - 4)
+          : Math.min(window.innerHeight - menuHeight - 8, rect.bottom + 4),
+        width,
+      })
+    }
+
+    updateMenuPosition()
+    window.addEventListener("resize", updateMenuPosition)
+    window.addEventListener("scroll", updateMenuPosition, true)
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition)
+      window.removeEventListener("scroll", updateMenuPosition, true)
+    }
+  }, [compact, open, options.length])
+
   return (
-    <div ref={wrapperRef} className="relative block" title={title}>
+    <div
+      ref={wrapperRef}
+      className="relative block w-full"
+      title={title}
+    >
       <button
         type="button"
         title={title}
@@ -77,7 +135,11 @@ export function AdminSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="admin-control-select flex h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
+        className={`admin-control-select flex cursor-pointer items-center justify-between rounded-18px border border-white/12 bg-black font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light ${
+          compact
+            ? "h-8 w-full min-w-0 gap-1 px-2 text-10px"
+            : "h-11 w-full gap-3 px-4 text-sm"
+        }`}
       >
         <span className="min-w-0 truncate">{selectedOption?.label}</span>
         <ChevronDown
@@ -87,40 +149,49 @@ export function AdminSelect({
         />
       </button>
 
-      {open && (
-        <div
-          role="listbox"
-          aria-label={ariaLabel ?? title}
-          className="absolute left-0 top-12 z-50 max-h-64 min-w-full overflow-hidden rounded-18px border border-beyonix-blue-light/45 bg-black p-1 shadow-2xl shadow-black/70"
-        >
-          <div className="max-h-60 overflow-y-auto py-1">
-            {options.map((option) => {
-              const selected = option.value === value
+      {mounted &&
+        open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label={ariaLabel ?? title}
+            className="fixed z-100 max-h-64 overflow-hidden rounded-18px border border-beyonix-blue-light/45 bg-black p-1 shadow-2xl shadow-black/70"
+            style={{
+              left: menuPosition.left,
+              top: menuPosition.top,
+              width: menuPosition.width,
+            }}
+          >
+            <div className="max-h-60 overflow-y-auto py-1">
+              {options.map((option) => {
+                const selected = option.value === value
 
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  onClick={() => {
-                    onChange(option.value)
-                    setOpen(false)
-                  }}
-                  className={`flex h-9 w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors ${
-                    selected
-                      ? "bg-beyonix-blue text-white"
-                      : "text-white/78 hover:bg-beyonix-blue/70 hover:text-white"
-                  }`}
-                >
-                  <span className="truncate">{option.label}</span>
-                  {selected && <Check className="size-3.5 text-beyonix-sky" />}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      onChange(option.value)
+                      setOpen(false)
+                    }}
+                    className={`flex h-9 w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors ${
+                      selected
+                        ? "bg-beyonix-blue text-white"
+                        : "text-white/78 hover:bg-beyonix-blue/70 hover:text-white"
+                    }`}
+                  >
+                    <span className="truncate">{option.label}</span>
+                    {selected && <Check className="size-3.5 text-beyonix-sky" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

@@ -169,8 +169,11 @@ async function handleWebhook(request: Request) {
     const paymentPayload = {
       payment_id: String(payment.id),
       payment_status: payment.status,
-      payment_method_id: payment.payment_method_id ?? null,
-      payment_type_id: payment.payment_type_id ?? null,
+      payment_method_id: "mercadopago",
+      payment_type_id:
+        payment.payment_method_id ??
+        payment.payment_type_id ??
+        null,
       paid_at: payment.date_approved ?? null,
     }
 
