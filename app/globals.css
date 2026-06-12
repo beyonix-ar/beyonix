@@ -458,19 +458,6 @@
   mask-size: 100% 100%;
 }
 
-html.home-scroll-snap {
-  scroll-behavior: smooth;
-  scroll-padding-top: 72px;
-  scroll-snap-type: y mandatory;
-}
-
-html.home-scroll-snap .home-snap-section,
-html.home-scroll-snap footer {
-  scroll-margin-top: 72px;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-}
-
 /* =========================
    GLOBAL BASE
 ========================= */
