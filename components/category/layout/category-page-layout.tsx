@@ -56,6 +56,7 @@ export function CategoryPageLayout({
     setMinPrice,
     maxPrice,
     setMaxPrice,
+    priceRange,
     filteredProducts,
   } = useCategoryProducts(products)
 
@@ -158,6 +159,15 @@ export function CategoryPageLayout({
               setMinPrice={setMinPrice}
               maxPrice={maxPrice}
               setMaxPrice={setMaxPrice}
+              minPriceLimit={
+                priceRange.min
+              }
+              maxPriceLimit={
+                priceRange.max
+              }
+              priceStep={
+                priceRange.step
+              }
               showInstallmentsFilter={
                 SITE_SETTINGS.filters.showInstallmentsFilter
               }

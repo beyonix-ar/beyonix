@@ -53,35 +53,93 @@ type SupabaseLikeError = {
   code?: string
 }
 
-const getErrorMessage = (
+const getErrorDetails = (
   err: unknown
-) => {
+): SupabaseLikeError => {
+  if (err instanceof Error) {
+    return {
+      message: err.message,
+    }
+  }
+
   if (
     err &&
     typeof err === "object"
   ) {
-    const supabaseError =
-      err as SupabaseLikeError
+    const candidate =
+      err as Record<string, unknown>
 
-    const parts = [
-      supabaseError.message,
-      supabaseError.details,
-      supabaseError.hint,
-      supabaseError.code
-        ? `Código: ${supabaseError.code}`
-        : null,
-    ].filter(Boolean)
-
-    if (parts.length) {
-      return parts.join(" | ")
+    return {
+      message:
+        typeof candidate.message === "string"
+          ? candidate.message
+          : undefined,
+      details:
+        typeof candidate.details === "string"
+          ? candidate.details
+          : undefined,
+      hint:
+        typeof candidate.hint === "string"
+          ? candidate.hint
+          : undefined,
+      code:
+        typeof candidate.code === "string"
+          ? candidate.code
+          : undefined,
     }
   }
 
-  if (err instanceof Error) {
-    return err.message
+  return {
+    message:
+      typeof err === "string"
+        ? err
+        : undefined,
+  }
+}
+
+const getErrorMessage = (
+  err: unknown
+) => {
+  const details = getErrorDetails(err)
+  const normalizedMessage =
+    details.message?.toLowerCase() ?? ""
+
+  if (details.code === "23505") {
+    return "Ya existe un producto con ese slug. Modificá el nombre o el slug e intentá nuevamente."
   }
 
-  return "Error desconocido al guardar el producto."
+  if (
+    normalizedMessage.includes(
+      "tenes que iniciar sesion"
+    ) ||
+    normalizedMessage.includes(
+      "jwt expired"
+    )
+  ) {
+    return "Tu sesión venció. Volvé a iniciar sesión antes de guardar el producto."
+  }
+
+  if (
+    normalizedMessage.includes(
+      "solo un administrador"
+    ) ||
+    details.code === "42501"
+  ) {
+    return "Tu usuario no tiene permisos para crear productos."
+  }
+
+  const parts = [
+    details.message,
+    details.details,
+    details.hint,
+    details.code
+      ? `Código: ${details.code}`
+      : null,
+  ].filter(Boolean)
+
+  return parts.length
+    ? parts.join(" | ")
+    : "Error desconocido al guardar el producto."
 }
 
 export function useProductoForm({
@@ -305,6 +363,27 @@ export function useProductoForm({
       return
     }
 
+    const hasInvalidDraftVariant =
+      draftVariants.some(
+        (variant) =>
+          !variant.nombre.trim() ||
+          !/^#[0-9A-F]{6}$/i.test(
+            variant.color_hex
+          ) ||
+          !Number.isFinite(
+            Number(variant.stock)
+          ) ||
+          Number(variant.stock) < 0
+      )
+
+    if (hasInvalidDraftVariant) {
+      setError(
+        "Completá correctamente el nombre, el color y el stock de todas las variantes."
+      )
+
+      return
+    }
+
     try {
       setSaving(true)
 
@@ -471,10 +550,12 @@ export function useProductoForm({
     } catch (err) {
       const message =
         getErrorMessage(err)
+      const errorDetails =
+        getErrorDetails(err)
 
-      console.error(
+      console.warn(
         "Error guardando producto:",
-        err
+        errorDetails
       )
 
       setError(

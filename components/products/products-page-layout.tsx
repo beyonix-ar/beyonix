@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import {
   useEffect,
   useMemo,
@@ -35,6 +36,9 @@ import {
   getDefaultVariantOption,
   getProductVariantOptions,
 } from "@/lib/products/product-variants"
+import {
+  getProductPriceRange,
+} from "@/lib/products/price-range"
 import { SITE_SETTINGS } from "@/config/site-settings"
 
 const baseColorOrder = [
@@ -132,10 +136,18 @@ export function ProductsPageLayout() {
   ] = useState(false)
 
   const [minPrice, setMinPrice] =
-    useState(1000)
+    useState(0)
 
   const [maxPrice, setMaxPrice] =
-    useState(150000)
+    useState(1000)
+
+  const priceRange = useMemo(
+    () =>
+      getProductPriceRange(
+        products
+      ),
+    [products]
+  )
 
   const {
     addToCart,
@@ -180,8 +192,19 @@ export function ProductsPageLayout() {
           getStoreCategorias(),
         ])
 
+        const nextPriceRange =
+          getProductPriceRange(
+            productsData
+          )
+
         setProducts(productsData)
         setCategories(categoriesData)
+        setMinPrice(
+          nextPriceRange.min
+        )
+        setMaxPrice(
+          nextPriceRange.max
+        )
       } catch (error) {
         console.error(error)
       }
@@ -355,51 +378,47 @@ export function ProductsPageLayout() {
   // ─────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-black pt-22 text-white lg:pt-24">
-      <section className="container mx-auto px-4 lg:px-8">
-        {/* Header */}
-        <div className="mx-auto mb-8 max-w-1400px border-b border-white/6 pb-7 lg:mb-9">
-          <div className="flex flex-col gap-5 lg:grid lg:grid-cols-auto-content lg:items-end lg:gap-10">
-            <div>
-              <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-                Productos
-              </p>
+    <main className="relative min-h-screen overflow-visible bg-black text-white">
+      <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-category-page-bg" />
 
-              <h1 className="text-3xl font-bold tracking-tight lg:text-4xl">
-                Todos los productos
-              </h1>
-
-              <p className="mt-2 text-sm tracking-wide text-white/60">
-                Explorá el catálogo completo de
-                BEYONIX.
-              </p>
+      <div className="category-hero container relative z-20 mx-auto px-4 pb-6 pt-16 lg:px-8 lg:pb-8 lg:pt-18">
+        <div className="mx-auto max-w-1400px">
+          <div className="relative min-h-[340px] overflow-hidden rounded-xl beyonix-category-banner-glass sm:min-h-[400px] lg:min-h-[480px]">
+            <div className="global-search-wrapper absolute left-0 right-0 top-12 z-30 flex justify-center px-4">
+              <GlobalSearchBar
+                search={search}
+                className="max-w-xl"
+                onSearchChange={
+                  setSearch
+                }
+                products={products.map(
+                  (product) => ({
+                    id: String(
+                      product.id
+                    ),
+                    nombre:
+                      product.nombre,
+                  })
+                )}
+              />
             </div>
 
-            <GlobalSearchBar
-              search={search}
-              className="lg:ml-auto lg:max-w-55pct"
-              onSearchChange={
-                setSearch
-              }
-              products={products.map(
-                (product) => ({
-                  id: String(
-                    product.id
-                  ),
-
-                  nombre:
-                    product.nombre,
-
-                  slug:
-                    product.slug,
-                })
-              )}
+            <Image
+              fill
+              src="/images/beyonix-products-banner.png"
+              alt="Tecnología BEYONIX"
+              sizes="(min-width: 1536px) 1400px, 100vw"
+              className="object-cover object-center beyonix-category-banner-image-fade"
+              priority
             />
+
+            <div className="pointer-events-none absolute inset-0 beyonix-category-banner-fade" />
           </div>
         </div>
+      </div>
 
-        {/* Content */}
-        <div className="mx-auto grid max-w-1400px grid-cols-1 gap-4 pb-14 lg:grid-cols-products-layout lg:gap-5 lg:pb-16">
+      <section className="container relative z-20 mx-auto px-4 lg:px-8">
+        <div className="mx-auto grid max-w-[1432px] grid-cols-1 gap-4 pb-14 lg:grid-cols-products-layout lg:gap-5 lg:pb-16">
           <div className="w-full lg:w-260px">
             <ProductsFiltersSidebar
               categories={categories}
@@ -431,6 +450,15 @@ export function ProductsPageLayout() {
               maxPrice={maxPrice}
               setMaxPrice={
                 setMaxPrice
+              }
+              minPriceLimit={
+                priceRange.min
+              }
+              maxPriceLimit={
+                priceRange.max
+              }
+              priceStep={
+                priceRange.step
               }
               onlyBestSellers={
                 onlyBestSellers

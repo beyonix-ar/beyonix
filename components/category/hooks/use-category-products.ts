@@ -2,16 +2,30 @@
 
 import { useMemo, useState } from "react"
 import { SITE_SETTINGS } from "@/config/site-settings"
+import {
+  getProductPriceRange,
+} from "@/lib/products/price-range"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
 export function useCategoryProducts(products: SupabaseProducto[]) {
+  const priceRange = useMemo(
+    () =>
+      getProductPriceRange(
+        products
+      ),
+    [products]
+  )
   const [search, setSearch] = useState("")
   const [sortBy, setSortBy] = useState("default")
   const [onlyOffers, setOnlyOffers] = useState(false)
   const [onlyBestSellers, setOnlyBestSellers] = useState(false)
   const [onlyInstallments, setOnlyInstallments] = useState(false)
-  const [minPrice, setMinPrice] = useState(1000)
-  const [maxPrice, setMaxPrice] = useState(150000)
+  const [minPrice, setMinPrice] = useState(
+    priceRange.min
+  )
+  const [maxPrice, setMaxPrice] = useState(
+    priceRange.max
+  )
 
   const filteredProducts = useMemo(() => {
     const normalizedSearch = search.toLowerCase().trim()
@@ -90,6 +104,7 @@ export function useCategoryProducts(products: SupabaseProducto[]) {
     setMinPrice,
     maxPrice,
     setMaxPrice,
+    priceRange,
     filteredProducts,
   }
 }

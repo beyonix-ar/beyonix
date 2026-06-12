@@ -35,6 +35,9 @@ interface ProductsFiltersSidebarProps {
   setMinPrice: (value: number) => void
   maxPrice: number
   setMaxPrice: (value: number) => void
+  minPriceLimit: number
+  maxPriceLimit: number
+  priceStep: number
 }
 
 export function ProductsFiltersSidebar({
@@ -63,6 +66,9 @@ export function ProductsFiltersSidebar({
   setMinPrice,
   maxPrice,
   setMaxPrice,
+  minPriceLimit,
+  maxPriceLimit,
+  priceStep,
 }: ProductsFiltersSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -125,6 +131,9 @@ export function ProductsFiltersSidebar({
           <PriceFilter
             minPrice={minPrice}
             maxPrice={maxPrice}
+            minLimit={minPriceLimit}
+            maxLimit={maxPriceLimit}
+            step={priceStep}
             setMinPrice={setMinPrice}
             setMaxPrice={setMaxPrice}
           />

@@ -5,6 +5,9 @@ import { Slider } from "@/components/ui/slider"
 interface PriceFilterProps {
   minPrice: number
   maxPrice: number
+  minLimit: number
+  maxLimit: number
+  step: number
   setMinPrice: (value: number) => void
   setMaxPrice: (value: number) => void
 }
@@ -12,6 +15,9 @@ interface PriceFilterProps {
 export function PriceFilter({
   minPrice,
   maxPrice,
+  minLimit,
+  maxLimit,
+  step,
   setMinPrice,
   setMaxPrice,
 }: PriceFilterProps) {
@@ -23,9 +29,9 @@ export function PriceFilter({
 
       <Slider
         value={[minPrice, maxPrice]}
-        min={1000}
-        max={150000}
-        step={1000}
+        min={minLimit}
+        max={maxLimit}
+        step={step}
         minStepsBetweenThumbs={1}
         onValueChange={(value) => {
           setMinPrice(value[0])

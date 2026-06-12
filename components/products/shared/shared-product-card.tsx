@@ -80,7 +80,7 @@ export default function SharedProductCard({
           product
         )
       }
-      className="group flex h-full w-full max-w-280px cursor-pointer flex-col overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface transition-all duration-300 hover:border-beyonix-blue-light/30 hover:shadow-xl hover:shadow-black/50"
+      className="group flex h-full w-full max-w-[276px] cursor-pointer flex-col overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface transition-all duration-300 hover:border-beyonix-blue-light/30 hover:shadow-xl hover:shadow-black/50"
     >
       <ProductCardImage
         image={image}

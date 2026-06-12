@@ -21,7 +21,7 @@ declare
   v_disabled_triggers text[] := array[]::text[];
 begin
   if v_actor_user_id is null then
-    raise exception 'Tenes que iniciar sesion para crear productos.';
+    raise exception 'Tenés que iniciar sesión para crear productos.';
   end if;
 
   if not exists (

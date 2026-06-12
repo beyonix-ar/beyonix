@@ -43,7 +43,7 @@ export function ProductsToolbar({
   }, [])
 
   return (
-    <div className="mb-3 flex flex-col gap-2 rounded-xl border border-white/7 bg-beyonix-surface px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-4 flex flex-col gap-2 rounded-xl border border-white/7 bg-beyonix-surface px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
 
       {/* Contador */}
       <div className="flex items-baseline gap-1.5">
