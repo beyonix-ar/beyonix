@@ -169,6 +169,12 @@ export interface SupabasePedido {
   andreani_etiqueta_url?: string | null
   andreani_costo?: number | null
   andreani_error?: string | null
+  invoice_number?: number | null
+  invoice_point?: number | null
+  invoice_cae?: string | null
+  invoice_cae_due?: string | null
+  invoice_status?: "processing" | "authorized" | "error" | null
+  invoice_created_at?: string | null
   created_at: string
   orden_items?: SupabasePedidoItem[]
 }

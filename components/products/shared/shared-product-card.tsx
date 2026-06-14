@@ -80,7 +80,7 @@ export default function SharedProductCard({
           product
         )
       }
-      className="group flex h-full w-full max-w-[276px] cursor-pointer flex-col overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface transition-all duration-300 hover:border-beyonix-blue-light/30 hover:shadow-xl hover:shadow-black/50"
+      className="group flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface shadow-lg shadow-black/15 transition-all duration-300 hover:-translate-y-0.5 hover:border-beyonix-blue-light/35 hover:shadow-2xl hover:shadow-black/35"
     >
       <ProductCardImage
         image={image}
@@ -92,8 +92,8 @@ export default function SharedProductCard({
         }
       />
 
-      <div className="flex flex-1 flex-col p-3.5">
-        <p className="min-h-18px truncate text-10px font-semibold uppercase tracking-widest text-beyonix-cyan/80">
+      <div className="flex flex-1 flex-col p-4">
+        <p className="min-h-18px truncate text-10px font-semibold uppercase tracking-[0.16em] text-beyonix-cyan/75">
           {
             product.categorias
               ?.nombre
@@ -101,12 +101,12 @@ export default function SharedProductCard({
         </p>
 
         <h3
-          className="mt-1.5 min-h-44px line-clamp-2 text-15px font-semibold leading-product-title text-white transition-colors group-hover:text-white/88 sm:text-16px"
+          className="mt-1.5 min-h-44px line-clamp-2 text-15px font-semibold leading-product-title tracking-tight text-white transition-colors group-hover:text-white/90 sm:text-16px"
         >
           {product.nombre}
         </h3>
 
-        <div className="mt-auto border-t border-white/6 pt-2.5">
+        <div className="mt-3 border-t border-white/7 pt-3">
           <ProductCardPricing
             price={product.precio}
             originalPrice={

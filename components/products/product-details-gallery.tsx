@@ -8,6 +8,10 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { ProductPreviewThumbnails } from "./product-preview-thumbnails"
 import { SITE_SETTINGS } from "@/config/site-settings"
+import {
+  SILVER_IMAGE_BACKGROUND,
+  useImageTransparency,
+} from "@/hooks/use-image-transparency"
 
 export function getStockBadge(stock: number) {
   if (stock <= 0) {
@@ -74,6 +78,10 @@ export function ProductDetailsGallery({
   const currentImage =
     images[safeIndex] ||
     "/placeholder.png"
+  const {
+    hasTransparentBackground,
+    detectTransparency,
+  } = useImageTransparency(currentImage)
   const visibleImages = images.slice(0, 5)
   const stockBadge = getStockBadge(selectedStock)
 
@@ -82,20 +90,31 @@ export function ProductDetailsGallery({
   }, [safeIndex])
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-beyonix-surface px-4 pb-4 pt-4 sm:px-5 sm:pb-5 sm:pt-5 lg:px-6 lg:pb-6 lg:pt-6">
-      <div className="relative flex min-h-280px flex-1 items-center justify-center rounded-xl border border-white/8 bg-beyonix-surface-3 p-3 sm:p-4 lg:min-h-0 lg:rounded-2xl lg:p-5">
+    <div className="flex min-h-0 flex-col overflow-hidden bg-beyonix-surface px-3 pb-3 pt-3 sm:px-5 sm:pb-4 sm:pt-5 lg:h-full lg:px-6 lg:pb-5 lg:pt-6">
+      <div className="relative flex min-h-300px flex-1 items-center justify-center rounded-xl border border-white/8 bg-beyonix-surface-3 p-2.5 sm:min-h-420px sm:p-3 lg:min-h-0 lg:rounded-2xl">
         <div className="flex h-full min-h-0 w-full items-center justify-center">
-          <div className="relative flex aspect-square h-full max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-beyonix-surface-2">
+          <div
+            className="relative flex aspect-square h-full max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl border border-white/7 bg-beyonix-surface-2"
+            style={{
+              background:
+                hasTransparentBackground
+                  ? SILVER_IMAGE_BACKGROUND
+                  : undefined,
+            }}
+          >
             <Image
               src={currentImage}
               alt={`${productName} imagen ${safeIndex + 1}`}
               width={2000}
               height={2000}
               priority
-              onLoad={() =>
+              onLoad={(event) => {
+                detectTransparency(
+                  event
+                )
                 setIsLoaded(true)
-              }
-              className={`h-full w-full object-contain transition-opacity duration-300 ${
+              }}
+              className={`h-full w-full object-contain p-2 transition-opacity duration-300 sm:p-3 ${
                 isLoaded
                   ? "opacity-100"
                   : "opacity-0"
@@ -139,14 +158,14 @@ export function ProductDetailsGallery({
         )}
       </div>
 
-      <div className="flex h-32px shrink-0 items-center justify-center sm:h-40px">
+      <div className="flex h-32px shrink-0 items-center justify-center sm:h-38px">
         <span className="text-12px font-semibold tabular-nums tracking-widest text-white/70">
           {safeIndex + 1} / {images.length || 1}
         </span>
       </div>
 
       {visibleImages.length > 0 && (
-        <div className="flex h-48px shrink-0 items-center justify-center sm:h-56px">
+        <div className="flex h-50px shrink-0 items-center justify-center sm:h-56px">
           <ProductPreviewThumbnails
             images={visibleImages}
             selectedImage={safeIndex}

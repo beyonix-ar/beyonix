@@ -41,10 +41,10 @@ export function ProductCardPricing({
       }
       className="flex h-full flex-col"
     >
-      <div className="mb-2.5 flex min-h-88px items-start justify-between">
+      <div className="mb-3 flex min-h-84px items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-19px font-semibold tracking-tight text-white tabular-nums sm:text-21px">
+            <p className="text-20px font-semibold tracking-tight text-white tabular-nums sm:text-21px">
               {formatPrice(price)}
             </p>
 

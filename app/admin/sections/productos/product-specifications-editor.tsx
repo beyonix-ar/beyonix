@@ -59,7 +59,7 @@ type EditingSpecification =
   | null
 
 const inputCls =
-  "w-full rounded-2xl border border-white/8 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-blue-400"
+  "h-10 w-full rounded-xl border border-white/8 bg-[#181818] px-3.5 text-sm text-white outline-none transition-colors placeholder:text-white/30 hover:border-[#112A43] focus:border-beyonix-blue-light"
 
 function normalizeOrder(value: string, fallback: number) {
   const parsed = Number(value)
@@ -429,18 +429,8 @@ export function ProductSpecificationsEditor({
   const visibleSpecifications = sortSpecifications(specifications)
 
   return (
-    <div className="space-y-5 rounded-2xl border border-white/8 bg-black p-4">
-      <div>
-        <h2 className="text-sm font-semibold text-white">
-          Especificaciones
-        </h2>
-
-        <p className="mt-1 text-xs text-white/55">
-          Agregá íconos y textos breves para destacar beneficios del producto.
-        </p>
-      </div>
-
-      <div className="grid gap-3">
+    <div className="space-y-3">
+      <div className="grid gap-2">
         <LucideIconPicker
           value={icono}
           onChange={setIcono}
@@ -464,7 +454,7 @@ export function ProductSpecificationsEditor({
             activo ? "Desactivar especificación" : "Activar especificación"
           }
           onClick={() => setActivo((current) => !current)}
-          className="flex min-h-48px cursor-pointer items-center gap-3 rounded-2xl border border-white/8 bg-black px-4 text-left transition-colors hover:border-beyonix-blue-light/45"
+          className="flex min-h-40px cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-[#181818] px-3.5 text-left transition-colors hover:border-[#112A43] hover:bg-[#112A43]"
         >
           {activo ? (
             <ToggleRight className="size-6 text-beyonix-cyan" />
@@ -477,7 +467,7 @@ export function ProductSpecificationsEditor({
         </button>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           title={
@@ -492,7 +482,7 @@ export function ProductSpecificationsEditor({
           }
           onClick={saveSpecification}
           disabled={saving}
-          className="inline-flex h-12 min-w-160px cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90 disabled:opacity-50"
+          className="inline-flex h-10 min-w-120px cursor-pointer items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-black transition-colors hover:bg-[#112A43] hover:text-white disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="size-4 animate-spin" />
@@ -508,7 +498,7 @@ export function ProductSpecificationsEditor({
             title="Cancelar edicion"
             aria-label="Cancelar edicion"
             onClick={resetFields}
-            className="inline-flex h-12 min-w-140px cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white"
+            className="inline-flex h-10 min-w-110px cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#181818] px-4 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             <X className="size-4" />
             Cancelar
@@ -527,7 +517,7 @@ export function ProductSpecificationsEditor({
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <div className="space-y-2 border-t border-white/8 pt-4">
+        <div className="space-y-2 border-t border-white/8 pt-3">
           {productoId ? (
             visibleSpecifications.length ? (
               visibleSpecifications.map((specification, index) => (
@@ -630,7 +620,7 @@ function reorderPersistedSpecifications(
 
 function EmptySpecifications() {
   return (
-    <div className="rounded-2xl border border-white/7 bg-black px-5 py-6 text-center">
+    <div className="rounded-xl border border-white/7 bg-[#181818] px-4 py-4 text-center">
       <p className="text-sm text-white/55">
         Todavia no hay especificaciones cargadas.
       </p>
@@ -684,7 +674,7 @@ function SpecificationRow({
         onDrop()
       }}
       onDragEnd={onDragEnd}
-      className={`rounded-2xl border bg-black px-4 py-3 ${
+      className={`rounded-xl border bg-[#181818] px-3 py-2.5 ${
         draggedKey === dragKey
           ? "border-beyonix-sky"
           : "border-white/7"
@@ -720,7 +710,7 @@ function SpecificationRow({
               activo ? "Desactivar especificación" : "Activar especificación"
             }
             onClick={onToggle}
-            className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-beyonix-blue-light/45 hover:text-white"
+            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             {activo ? (
               <ToggleRight className="size-4 text-beyonix-cyan" />
@@ -734,7 +724,7 @@ function SpecificationRow({
             title="Editar especificación"
             aria-label="Editar especificación"
             onClick={onEdit}
-            className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-white/20 hover:text-white"
+            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             <Pencil className="size-4" />
           </button>
@@ -744,7 +734,7 @@ function SpecificationRow({
             title="Eliminar especificación"
             aria-label="Eliminar especificación"
             onClick={onRemove}
-            className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
+            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             <Trash2 className="size-4" />
           </button>

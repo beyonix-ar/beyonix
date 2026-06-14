@@ -1,11 +1,27 @@
 import { SITE_SETTINGS } from "@/config/site-settings"
 
 // Envio gratis a partir de este subtotal.
-export const FREE_SHIPPING_MIN = SITE_SETTINGS.shipping.freeShippingMinAmount
+const configuredFreeShippingMin = Number(
+  process.env.NEXT_PUBLIC_FREE_SHIPPING_MIN_AMOUNT ??
+    process.env.FREE_SHIPPING_MIN_AMOUNT,
+)
+
+export const FREE_SHIPPING_MIN =
+  Number.isFinite(configuredFreeShippingMin) && configuredFreeShippingMin >= 0
+    ? configuredFreeShippingMin
+    : SITE_SETTINGS.shipping.freeShippingMinAmount
 
 export type FreeShippingMode = "full" | "off"
 
 function getFreeShippingMode(): FreeShippingMode {
+  const configuredMode =
+    process.env.NEXT_PUBLIC_FREE_SHIPPING_MODE ??
+    process.env.FREE_SHIPPING_MODE
+
+  if (configuredMode === "full" || configuredMode === "off") {
+    return configuredMode
+  }
+
   return SITE_SETTINGS.shipping.freeShippingMode === "full" ? "full" : "off"
 }
 

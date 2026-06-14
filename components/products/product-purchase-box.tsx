@@ -68,7 +68,7 @@ export function ProductPurchaseBox({
       : null
 
   return (
-    <div className="px-5 pb-5 pt-4 lg:px-8 lg:pb-7 lg:pt-5">
+    <div className="bg-black/18 px-5 pb-5 pt-4 lg:px-8 lg:pb-6 lg:pt-5">
       {/* Price row */}
       <div className="mb-4 flex flex-wrap items-baseline gap-2.5 lg:mb-5 lg:gap-3">
         <span className="text-2xl font-bold leading-none tracking-tight text-white lg:text-26px">

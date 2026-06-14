@@ -4,7 +4,7 @@ import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import {
   TRANSFER_ALIAS,
   TRANSFER_DISCOUNT_PERCENT,
-  calculateTransferDiscount,
+  calculateTransferPaymentTotal,
 } from "@/lib/payments/transfer"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createClient } from "@/lib/supabase/server"
@@ -96,19 +96,15 @@ function normalizeShipping(
   const realCost = Number(shipping?.costReal)
   const fallbackCost = getShippingCost(productsTotal)
   const shippingCostReal =
-    Number.isFinite(realCost) && realCost >= 0 ? realCost : fallbackCost
+    Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
   const freeShippingApplied = getShippingCost(productsTotal) === 0
   const chargedCost = freeShippingApplied ? 0 : shippingCostReal
-  const requestedChargedCost = Number(shipping?.costCharged)
 
   return {
     provider: shipping?.provider || "manual",
     type: shipping?.type === "sucursal" ? "sucursal" : "domicilio",
     costReal: shippingCostReal,
-    costCharged:
-      Number.isFinite(requestedChargedCost) && requestedChargedCost >= 0
-        ? Math.min(requestedChargedCost, shippingCostReal)
-        : chargedCost,
+    costCharged: chargedCost,
     freeShippingApplied,
   }
 }
@@ -255,8 +251,12 @@ export async function POST(request: Request) {
     const totals = calculateCartTotals(cartRows, {
       shippingCost: shipping.costCharged,
     })
-    const transferDiscountAmount = calculateTransferDiscount(totals.total)
-    const transferTotal = Math.max(totals.total - transferDiscountAmount, 0)
+    const transferPaymentTotals = calculateTransferPaymentTotal(
+      totals.productsTotal,
+      totals.shipping,
+    )
+    const transferDiscountAmount = transferPaymentTotals.discount
+    const transferTotal = transferPaymentTotals.total
 
     const orderPayload = {
       usuario_id: user.id,

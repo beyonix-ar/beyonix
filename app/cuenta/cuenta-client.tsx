@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Camera,
+  Download,
   Eye,
   EyeOff,
   Hash,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
-import { PaymentProofUploader } from "@/components/payment-proof-uploader"
+import { CustomerPaymentProof } from "@/components/customer-payment-proof"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
@@ -55,6 +56,13 @@ function formatCuentaOrderDate(value: string) {
 
 function formatPublicOrderId(id: number) {
   return `BX-${1000 + id}`
+}
+
+function formatCuentaInvoiceNumber(
+  point?: number | null,
+  number?: number | null,
+) {
+  return `${String(point ?? 0).padStart(4, "0")}-${String(number ?? 0).padStart(8, "0")}`
 }
 
 function getClientOrderStatusLabel(status: string) {
@@ -715,6 +723,10 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
   const [orders, setOrders] = useState<SupabasePedido[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<number | null>(
+    null,
+  )
+  const [invoiceError, setInvoiceError] = useState("")
 
   useEffect(() => {
     let active = true
@@ -790,6 +802,35 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
     )
   }
 
+  const handleDownloadInvoice = async (orderId: number) => {
+    setDownloadingInvoiceId(orderId)
+    setInvoiceError("")
+
+    try {
+      const response = await fetch(`/api/orders/${orderId}/invoice`)
+
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        setInvoiceError(data.error || "No se pudo descargar la factura.")
+        return
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `factura-c-pedido-${orderId}.pdf`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setInvoiceError("No se pudo descargar la factura. Intentá nuevamente.")
+    } finally {
+      setDownloadingInvoiceId(null)
+    }
+  }
+
   return (
     <AccountViewFrame
       onBack={onBack}
@@ -818,6 +859,11 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
         </div>
       ) : (
         <div className="space-y-4">
+          {invoiceError && (
+            <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-4 py-3 text-sm text-red-200">
+              {invoiceError}
+            </div>
+          )}
           {orders.map((order) => {
             const items = order.orden_items ?? []
 
@@ -840,42 +886,85 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                   </div>
 
                   <div className="flex flex-col items-start gap-2 sm:items-end">
-                  <span className="w-fit rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue px-3 py-1 text-11px font-black uppercase tracking-wide text-beyonix-sky">
-                    {getClientOrderStatusLabel(order.estado)}
-                  </span>
-                    <button
-                      type="button"
-                      aria-label={`Ver factura del pedido ${formatPublicOrderId(order.id)}`}
-                      title="Ver factura disponible próximamente"
-                      disabled
-                      className="h-9 cursor-not-allowed rounded-xl border border-white/8 px-4 text-11px font-black uppercase tracking-wide text-white/28"
-                    >
-                      Ver factura
-                    </button>
+                    <span className="w-fit rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue px-3 py-1 text-11px font-black uppercase tracking-wide text-beyonix-sky">
+                      {getClientOrderStatusLabel(order.estado)}
+                    </span>
+                    {order.invoice_status === "authorized" &&
+                      order.payment_method_id !== "transferencia" && (
+                      <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-3 sm:text-right">
+                        <p className="text-10px font-black uppercase tracking-widest text-emerald-300">
+                          Factura C disponible
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-white">
+                          Factura C{" "}
+                          {formatCuentaInvoiceNumber(
+                            order.invoice_point,
+                            order.invoice_number,
+                          )}
+                        </p>
+                        <button
+                          type="button"
+                          aria-label={`Descargar factura del pedido ${formatPublicOrderId(order.id)}`}
+                          title="Descargar Factura C"
+                          disabled={downloadingInvoiceId === order.id}
+                          onClick={() => void handleDownloadInvoice(order.id)}
+                          className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          <Download className="size-4" />
+                          {downloadingInvoiceId === order.id
+                            ? "Preparando..."
+                            : "Descargar factura"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {order.payment_method_id === "transferencia" && (
                   <div className="border-b border-white/7 px-5 py-4">
-                    <div className="mb-3">
-                      <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                        Transferencia bancaria
-                      </p>
-                      <p className="mt-1 text-sm text-white/55">
-                        Estado de pago: {order.payment_status || "pendiente"}
-                      </p>
-                    </div>
+                    <CustomerPaymentProof
+                      order={order}
+                      onUploaded={handlePaymentProofUploaded}
+                      hideProofWhenConfirmed
+                    />
 
-                    {order.payment_status === "pendiente_comprobante" &&
-                    !order.payment_proof_url ? (
-                      <PaymentProofUploader
-                        orderId={order.id}
-                        compact
-                        onUploaded={handlePaymentProofUploaded}
-                      />
-                    ) : (
-                      <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-300">
-                        Comprobante recibido. Pago en revisión.
+                    {order.payment_status === "confirmado" && (
+                      <div className="mt-3 rounded-xl border border-[#112A43] bg-[#112A43]/20 p-4">
+                        {order.invoice_status === "authorized" ? (
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-black text-white">
+                                Factura disponible
+                              </p>
+                              <p className="mt-1 text-xs text-white/55">
+                                Factura C{" "}
+                                {formatCuentaInvoiceNumber(
+                                  order.invoice_point,
+                                  order.invoice_number,
+                                )}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              aria-label={`Descargar factura del pedido ${formatPublicOrderId(order.id)}`}
+                              title="Descargar factura"
+                              disabled={downloadingInvoiceId === order.id}
+                              onClick={() =>
+                                void handleDownloadInvoice(order.id)
+                              }
+                              className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#112A43] px-4 text-xs font-black text-white transition-colors hover:bg-[#183B5E] disabled:cursor-wait disabled:opacity-60"
+                            >
+                              <Download className="size-4" />
+                              {downloadingInvoiceId === order.id
+                                ? "Preparando..."
+                                : "Descargar factura"}
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm font-semibold text-white/75">
+                            Tu factura será emitida a la brevedad.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

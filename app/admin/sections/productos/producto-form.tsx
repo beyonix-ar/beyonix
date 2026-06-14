@@ -21,7 +21,7 @@ interface ProductoFormProps {
 }
 
 const inputCls =
-  "w-full rounded-2xl border border-white/8 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
+  "h-10 w-full rounded-xl border border-white/8 bg-[#141414] px-3.5 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-[#112A43] focus:border-beyonix-blue-light"
 
 const labelCls =
   "mb-2 block text-xs font-semibold uppercase tracking-widest text-white/50"
@@ -51,9 +51,9 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
   const currentProductoId = producto?.id || savedId
 
   return (
-    <div className="min-h-screen px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
+    <div className="min-h-screen px-4 py-5 sm:px-6 lg:px-7 lg:py-6">
+      <div className="mx-auto w-full max-w-[1720px]">
+        <div className="mb-4 flex items-center justify-between gap-4">
           <div>
             <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
               Productos
@@ -68,7 +68,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             title="Volver"
             aria-label="Volver"
             onClick={onCancel}
-            className="inline-flex h-12 min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/8 px-6 text-white/70 transition-colors hover:text-white cursor-pointer"
+            className="inline-flex h-10 min-w-120px items-center justify-center gap-2 rounded-xl border border-white/8 bg-[#141414] px-5 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
           >
             <ArrowLeft className="size-4" />
             Volver
@@ -87,11 +87,16 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               },
             })
           }}
-          className="rounded-3xl border border-white/7 bg-black p-5 shadow-2xl shadow-black/30 sm:p-6"
+          className="admin-product-form rounded-3xl border border-white/8 bg-[#0d0d0d] p-3 shadow-2xl shadow-black/30 sm:p-4"
         >
-          <div className="grid gap-6 xl:grid-cols-admin-product-form xl:items-start">
-            <section className="space-y-4 rounded-2xl border border-white/7 bg-black p-4">
-              <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-2 xl:items-start 2xl:grid-cols-12">
+            <section className="admin-product-section space-y-3 rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-4">
+              <div className="border-b border-white/7 pb-3">
+                <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan/75">
+                  Información general
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label htmlFor="nombre" className={labelCls}>
                     Nombre *
@@ -125,22 +130,19 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
 
               <div>
                 <label htmlFor="descripcion" className={labelCls}>
-                  Descripcion
+                  Descripción
                 </label>
                 <textarea
                   id="descripcion"
-                  title="Descripcion"
+                  title="Descripción"
                   value={form.descripcion}
-                  placeholder="Descripcion del producto..."
+                  placeholder="Descripción del producto..."
                   onChange={(event) => setField("descripcion", event.target.value)}
-                  className={`${inputCls} min-h-112px resize-none leading-6`}
+                  className={`${inputCls} min-h-88px resize-none py-3 leading-5`}
                 />
-                <p className="mt-2 text-xs leading-5 text-white/45">
-                  La descripcion debe ser un texto breve y vendedor. Las caracteristicas tecnicas van en Especificaciones.
-                </p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label htmlFor="precio" className={labelCls}>
                     Precio
@@ -209,7 +211,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 </AdminSelect>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {[
                   {
                     key: "destacado" as const,
@@ -230,7 +232,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     title={toggle.label}
                     aria-label={toggle.label}
                     onClick={() => setField(toggle.key, !toggle.active)}
-                    className="flex min-h-48px items-center gap-3 rounded-2xl border border-white/8 bg-black px-4 text-left transition-colors hover:border-beyonix-blue-light/45 cursor-pointer"
+                    className="flex min-h-10 items-center gap-3 rounded-xl border border-white/8 bg-[#181818] px-3.5 text-left transition-colors hover:border-[#112A43] hover:bg-[#112A43] cursor-pointer"
                   >
                     {toggle.active ? (
                       <ToggleRight className={`size-6 ${toggle.color}`} />
@@ -243,7 +245,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="space-y-6">
+            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-5">
               <div>
                 <label className={labelCls}>Variantes</label>
                 <ProductVariantsEditor
@@ -252,7 +254,9 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   onDraftVariantsChange={setDraftVariants}
                 />
               </div>
+            </section>
 
+            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-3">
               <div>
                 <label className={labelCls}>Especificaciones</label>
                 <ProductSpecificationsEditor
@@ -264,7 +268,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             </section>
           </div>
 
-          <div className="mt-5 space-y-4">
+          <div className="mt-4 space-y-3">
             {error && (
               <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
                 <p className="text-sm text-red-400">{error}</p>
@@ -277,13 +281,13 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             )}
 
-            <div className="flex gap-3 border-t border-white/7 pt-5">
+            <div className="flex gap-3 border-t border-white/7 pt-4">
               <button
                 type="submit"
                 disabled={saving}
                 title="Guardar producto"
                 aria-label="Guardar producto"
-                className="flex h-12 flex-1 items-center justify-center rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:opacity-50 cursor-pointer"
+                className="flex h-11 flex-1 items-center justify-center rounded-xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-[#112A43] hover:text-white disabled:opacity-50 cursor-pointer"
               >
                 {saving ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -301,7 +305,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 title="Cancelar"
                 aria-label="Cancelar"
                 onClick={onCancel}
-                className="h-12 min-w-140px rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
+                className="h-11 min-w-140px rounded-xl border border-white/10 bg-[#141414] px-6 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
               >
                 Cancelar
               </button>

@@ -1,5 +1,7 @@
+import { TRANSFER_DISCOUNT } from "@/lib/store-config"
+
 export const TRANSFER_ALIAS = "beyonix"
-export const TRANSFER_DISCOUNT_PERCENT = 5
+export const TRANSFER_DISCOUNT_PERCENT = TRANSFER_DISCOUNT * 100
 export const PAYMENT_PROOF_BUCKET = "payment-proofs"
 export const PAYMENT_PROOF_MAX_SIZE = 5 * 1024 * 1024
 
@@ -18,10 +20,30 @@ export const PAYMENT_PROOF_ALLOWED_EXTENSIONS = [
   "pdf",
 ]
 
-export function calculateTransferDiscount(total: number) {
-  const safeTotal = Number.isFinite(total) ? Math.max(total, 0) : 0
+export function calculateTransferDiscount(productsTotal: number) {
+  const safeProductsTotal = Number.isFinite(productsTotal)
+    ? Math.max(productsTotal, 0)
+    : 0
 
-  return Math.round(safeTotal * (TRANSFER_DISCOUNT_PERCENT / 100))
+  return Math.round(
+    safeProductsTotal * TRANSFER_DISCOUNT,
+  )
+}
+
+export function calculateTransferPaymentTotal(
+  productsTotal: number,
+  shipping: number,
+) {
+  const safeProductsTotal = Number.isFinite(productsTotal)
+    ? Math.max(productsTotal, 0)
+    : 0
+  const safeShipping = Number.isFinite(shipping) ? Math.max(shipping, 0) : 0
+  const discount = calculateTransferDiscount(safeProductsTotal)
+
+  return {
+    discount,
+    total: Math.max(safeProductsTotal - discount + safeShipping, 0),
+  }
 }
 
 export function getPaymentProofValidationError(file: File | null) {

@@ -102,19 +102,15 @@ function normalizeShipping(
   const realCost = Number(shipping?.costReal)
   const fallbackCost = getShippingCost(productsTotal)
   const shippingCostReal =
-    Number.isFinite(realCost) && realCost >= 0 ? realCost : fallbackCost
+    Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
   const freeShippingApplied = getShippingCost(productsTotal) === 0
   const chargedCost = freeShippingApplied ? 0 : shippingCostReal
-  const requestedChargedCost = Number(shipping?.costCharged)
 
   return {
     shipping_provider: shipping?.provider || "manual",
     shipping_type: shipping?.type === "sucursal" ? "sucursal" : "domicilio",
     shipping_cost_real: shippingCostReal,
-    shipping_cost_charged:
-      Number.isFinite(requestedChargedCost) && requestedChargedCost >= 0
-        ? Math.min(requestedChargedCost, shippingCostReal)
-        : chargedCost,
+    shipping_cost_charged: chargedCost,
     free_shipping_applied: freeShippingApplied,
   }
 }

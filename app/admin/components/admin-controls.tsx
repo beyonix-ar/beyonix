@@ -137,7 +137,7 @@ export function AdminSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`admin-control-select relative flex cursor-pointer items-center rounded-18px border border-white/12 bg-black font-medium text-white/86 outline-none transition-colors hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light ${
+        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:border-[#112A43] hover:bg-[#112A43] focus:border-beyonix-blue-light ${
           centered ? "justify-center" : "justify-between"
         } ${
           compact
@@ -163,7 +163,7 @@ export function AdminSelect({
             ref={menuRef}
             role="listbox"
             aria-label={ariaLabel ?? title}
-            className="fixed z-100 max-h-64 overflow-hidden rounded-18px border border-beyonix-blue-light/45 bg-black p-1 shadow-2xl shadow-black/70"
+            className="fixed z-100 max-h-64 overflow-hidden rounded-xl border border-beyonix-blue-light/45 bg-[#141414] p-1 shadow-2xl shadow-black/70"
             style={{
               left: menuPosition.left,
               top: menuPosition.top,

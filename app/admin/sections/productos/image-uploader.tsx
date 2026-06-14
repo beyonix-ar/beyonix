@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { useImageUploader } from "./use-image-uploader"
+import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 
 interface ImageUploaderProps {
   productoId: number
@@ -67,7 +68,7 @@ export function ImageUploader({
         className={`flex h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed transition-colors ${
           dragging
             ? "border-beyonix-cyan bg-beyonix-blue/30"
-            : "border-white/10 bg-black hover:border-white/20"
+            : "border-white/10 bg-[#181818] hover:border-[#112A43]"
         }`}
       >
         {uploading ? (
@@ -84,6 +85,10 @@ export function ImageUploader({
               <p className="mt-1 text-xs text-white/40">
                 o hacé click para
                 seleccionar
+              </p>
+
+              <p className="mt-2 text-10px font-semibold uppercase tracking-widest text-beyonix-cyan/70">
+                PNG · 1:1 · 2000 × 2000 px
               </p>
             </div>
           </>
@@ -129,16 +134,16 @@ export function ImageUploader({
         )}
 
       {!!imagenes.length && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
           {imagenes.map((img) => (
             <div
               key={img.id}
-              className="group relative aspect-square overflow-hidden rounded-2xl border border-white/7 bg-black"
+              className="group relative aspect-square overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface-3 p-1.5 transition-colors hover:border-[#112A43]"
             >
-              <img
+              <TransparencyAwareImage
                 alt=""
                 src={img.url}
-                className="h-full w-full object-cover"
+                className="h-full w-full rounded-xl object-contain"
               />
 
               <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/65 opacity-0 transition-opacity group-hover:opacity-100">
@@ -151,7 +156,7 @@ export function ImageUploader({
                       img.url
                     )
                   }
-                  className="flex size-9 items-center justify-center rounded-xl bg-amber-500/90 transition-colors hover:bg-amber-500 cursor-pointer"
+                  className="flex size-9 items-center justify-center rounded-xl bg-amber-500/90 transition-colors hover:bg-[#112A43] cursor-pointer"
                 >
                   <Star className="size-4 text-white" />
                 </button>
@@ -165,7 +170,7 @@ export function ImageUploader({
                       img
                     )
                   }
-                  className="flex size-9 items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-red-500 cursor-pointer"
+                  className="flex size-9 items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-[#112A43] cursor-pointer"
                 >
                   <Trash2 className="size-4 text-white" />
                 </button>

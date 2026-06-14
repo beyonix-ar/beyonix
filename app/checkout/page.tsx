@@ -6,7 +6,6 @@ import {
   useState,
 } from "react"
 
-import Image from "next/image"
 import Link from "next/link"
 
 import {
@@ -15,10 +14,17 @@ import {
 
 import {
   ArrowLeft,
+  Check,
   ChevronDown,
   CircleUserRound,
+  Clock3,
+  Instagram,
   Landmark,
+  Mail,
+  Minus,
+  Plus,
   Smartphone,
+  Truck,
 } from "lucide-react"
 
 import {
@@ -66,7 +72,7 @@ import {
 import {
   TRANSFER_ALIAS,
   TRANSFER_DISCOUNT_PERCENT,
-  calculateTransferDiscount,
+  calculateTransferPaymentTotal,
 } from "@/lib/payments/transfer"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseProfile } from "@/lib/supabase/types"
@@ -74,6 +80,9 @@ import type { SupabaseProfile } from "@/lib/supabase/types"
 import {
   cn,
 } from "@/lib/utils"
+import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
+import { Footer } from "@/components/footer"
+import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 
 function formatPrice(
   price: number
@@ -106,7 +115,10 @@ const paymentMethods = [
 ]
 
 const checkoutInputClassName =
-  "beyonix-checkout-input border-white/15 bg-neutral-900 text-white placeholder:text-white/35 focus-visible:border-beyonix-focus focus-visible:ring-beyonix-focus"
+  "beyonix-checkout-input border-white/15 bg-neutral-900 uppercase text-white placeholder:normal-case placeholder:text-white/35 focus-visible:border-beyonix-focus focus-visible:ring-beyonix-focus"
+
+const CHECKOUT_EMAIL = "beyonix.ar@gmail.com"
+const CHECKOUT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CHECKOUT_EMAIL)}&su=${encodeURIComponent("Consulta sobre mi compra en BEYONIX")}`
 
 const initialCheckoutFormData = {
   nombre: "",
@@ -132,37 +144,63 @@ interface ShippingOption {
   provider: "andreani" | "manual"
 }
 
+type CheckoutStep = 1 | 2 | 3
+
+const checkoutSteps = [
+  {
+    id: 1 as const,
+    label: "Quién recibe",
+  },
+  {
+    id: 2 as const,
+    label: "Envío",
+  },
+  {
+    id: 3 as const,
+    label: "Pago",
+  },
+]
+
 function hasLetters(value: string) {
   return /\p{L}/u.test(value)
 }
 
-function isValidCheckoutForm(data: typeof initialCheckoutFormData) {
+type RequiredCheckoutField =
+  | "nombre"
+  | "email"
+  | "telefono"
+  | "calle"
+  | "numero"
+  | "cpDestino"
+  | "localidad"
+  | "provincia"
+
+function getFirstInvalidCheckoutField(
+  data: typeof initialCheckoutFormData
+): RequiredCheckoutField | null {
   const nombre = data.nombre.trim()
   const email = data.email.trim()
   const telefono = data.telefono.replace(/\D/g, "")
-  const direccion = data.direccion.trim()
   const calle = data.calle.trim()
   const numero = data.numero.trim()
   const cpDestino = data.cpDestino.trim()
   const localidad = data.localidad.trim()
   const provincia = data.provincia.trim()
 
-  return (
-    nombre.length >= 3 &&
-    hasLetters(nombre) &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
-    telefono.length >= 8 &&
-    telefono.length <= 15 &&
-    calle.length >= 2 &&
-    hasLetters(calle) &&
-    numero.length >= 1 &&
-    direccion.length >= 5 &&
-    /^\d{4,8}$/.test(cpDestino) &&
-    localidad.length >= 2 &&
-    hasLetters(localidad) &&
-    provincia.length >= 2 &&
-    hasLetters(provincia)
-  )
+  if (nombre.length < 3 || !hasLetters(nombre)) return "nombre"
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "email"
+  if (telefono.length < 8 || telefono.length > 15) return "telefono"
+  if (calle.length < 2 || !hasLetters(calle)) return "calle"
+  if (numero.length < 1) return "numero"
+  if (!/^\d{4,8}$/.test(cpDestino)) return "cpDestino"
+  if (localidad.length < 2 || !hasLetters(localidad)) return "localidad"
+  if (provincia.length < 2 || !hasLetters(provincia)) return "provincia"
+
+  return null
+}
+
+function isValidCheckoutForm(data: typeof initialCheckoutFormData) {
+  return getFirstInvalidCheckoutField(data) === null
 }
 
 export default function CheckoutPage() {
@@ -177,6 +215,8 @@ export default function CheckoutPage() {
     cartSessionId,
     isReady: isCartReady,
     clearCart,
+    increaseQuantity,
+    decreaseQuantity,
   } = useCart()
 
   const [mounted, setMounted] =
@@ -204,15 +244,29 @@ export default function CheckoutPage() {
   const [
     selectedShippingType,
     setSelectedShippingType,
-  ] = useState<ShippingType>("domicilio")
+  ] = useState<ShippingType | null>(null)
   const [shippingOptions, setShippingOptions] =
     useState<ShippingOption[]>([])
   const [accountMenuOpen, setAccountMenuOpen] =
     useState(false)
+  const [currentStep, setCurrentStep] =
+    useState<CheckoutStep>(1)
+  const [invalidField, setInvalidField] =
+    useState<RequiredCheckoutField | null>(null)
+  const [shippingSelectionMissing, setShippingSelectionMissing] =
+    useState(false)
   const hasEditedCheckoutFormRef = useRef(false)
+  const validationTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     setMounted(true)
+
+    return () => {
+      if (validationTimerRef.current) {
+        clearTimeout(validationTimerRef.current)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -288,7 +342,7 @@ export default function CheckoutPage() {
           const normalizedValue = String(value ?? "").trim()
 
           if (!next[field] && normalizedValue) {
-            next[field] = String(value)
+            next[field] = String(value).toLocaleUpperCase("es-AR")
           }
         }
 
@@ -373,19 +427,35 @@ export default function CheckoutPage() {
   const packageInfo = calculateCartShippingPackage(items)
   const manualShippingCost = getShippingCost(baseTotals.productsTotal)
   const selectedShippingOption =
-    shippingOptions.find((option) => option.type === selectedShippingType) ??
-    shippingOptions[0] ??
-    null
-  const shippingCostReal = selectedShippingOption?.price ?? manualShippingCost
+    selectedShippingType
+      ? shippingOptions.find(
+          (option) =>
+            option.type ===
+            selectedShippingType
+        ) ?? null
+      : null
+  const shippingCostReal =
+    selectedShippingOption?.price ?? 0
   const freeShippingApplied = manualShippingCost === 0
-  const shippingCostCharged = freeShippingApplied ? 0 : shippingCostReal
+  const shippingCostCharged =
+    selectedShippingOption &&
+    !freeShippingApplied
+      ? shippingCostReal
+      : 0
   const totals = calculateCartTotals(items, {
     shippingCost: shippingCostCharged,
   })
   const isTransferPayment = selectedPayment === "transferencia"
-  const transferDiscountAmount =
-    isTransferPayment ? calculateTransferDiscount(totals.total) : 0
-  const finalTotal = Math.max(totals.total - transferDiscountAmount, 0)
+  const transferPaymentTotals = calculateTransferPaymentTotal(
+    totals.productsTotal,
+    totals.shipping,
+  )
+  const transferDiscountAmount = isTransferPayment
+    ? transferPaymentTotals.discount
+    : 0
+  const finalTotal = isTransferPayment
+    ? transferPaymentTotals.total
+    : totals.total
 
   useEffect(() => {
     const cpDestino = formData.cpDestino.trim()
@@ -507,13 +577,21 @@ export default function CheckoutPage() {
   ) => {
     const { name, value } =
       e.target
+    const normalizedValue =
+      value.toLocaleUpperCase(
+        "es-AR"
+      )
 
     hasEditedCheckoutFormRef.current = true
+
+    if (invalidField === name) {
+      setInvalidField(null)
+    }
 
     setFormData((prev) => {
       const next = {
         ...prev,
-        [name]: value,
+        [name]: normalizedValue,
       }
 
       if (
@@ -542,10 +620,82 @@ export default function CheckoutPage() {
     })
   }
 
+  const isRecipientStepValid =
+    isValidCheckoutForm(formData)
+  const isShippingStepValid =
+    Boolean(selectedShippingOption)
   const isFormValid = Boolean(
-    isValidCheckoutForm(formData) &&
-      selectedShippingOption
+    isRecipientStepValid &&
+      isShippingStepValid
   )
+  const getCheckoutInputClassName = (
+    field: RequiredCheckoutField
+  ) =>
+    cn(
+      checkoutInputClassName,
+      invalidField === field &&
+        "border-red-400/70 shadow-[0_0_0_2px_rgba(248,113,113,0.1)]"
+    )
+
+  const goToNextStep = () => {
+    if (
+      currentStep === 1 &&
+      !isRecipientStepValid
+    ) {
+      const firstInvalidField =
+        getFirstInvalidCheckoutField(formData)
+
+      if (firstInvalidField) {
+        setInvalidField(firstInvalidField)
+
+        if (validationTimerRef.current) {
+          clearTimeout(validationTimerRef.current)
+        }
+
+        requestAnimationFrame(() => {
+          const field = document.getElementById(firstInvalidField)
+          field?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          })
+          field?.focus({
+            preventScroll: true,
+          })
+        })
+
+        validationTimerRef.current = setTimeout(() => {
+          setInvalidField(null)
+        }, 1400)
+      }
+
+      return
+    }
+
+    if (
+      currentStep === 2 &&
+      !isShippingStepValid
+    ) {
+      setShippingSelectionMissing(true)
+
+      if (validationTimerRef.current) {
+        clearTimeout(validationTimerRef.current)
+      }
+
+      validationTimerRef.current = setTimeout(() => {
+        setShippingSelectionMissing(false)
+      }, 1400)
+      return
+    }
+
+    setInvalidField(null)
+    setShippingSelectionMissing(false)
+    setCurrentStep(
+      Math.min(
+        currentStep + 1,
+        3
+      ) as CheckoutStep
+    )
+  }
 
   const handleSubmit = async (
     e: React.FormEvent
@@ -642,31 +792,35 @@ export default function CheckoutPage() {
 
   if (items.length === 0) {
     return (
-      <main className="min-h-screen bg-background">
-        <div className="container mx-auto px-4 py-16 lg:py-24">
-          <div className="max-w-md mx-auto text-center">
-            <h1 className="text-2xl font-bold text-foreground mb-4">
-              Tu carrito está vacío
-            </h1>
+      <>
+        <main className="bg-background">
+          <div className="container mx-auto px-4 py-16 lg:py-24">
+            <div className="max-w-md mx-auto text-center">
+              <h1 className="text-2xl font-bold text-foreground mb-4">
+                Tu carrito está vacío
+              </h1>
 
-            <Button
-              type="button"
-              aria-label="Volver a la tienda"
-              title="Volver a la tienda"
-              onClick={() =>
-                router.push("/")
-              }
-            >
-              Volver a la tienda
-            </Button>
+              <Button
+                type="button"
+                aria-label="Volver a la tienda"
+                title="Volver a la tienda"
+                onClick={() =>
+                  router.push("/")
+                }
+              >
+                Volver a la tienda
+              </Button>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+        <Footer />
+      </>
     )
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <>
+      <main className="bg-background">
       <header className="border-b border-border bg-black sticky top-0 z-50">
         <div className="container mx-auto px-4 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
@@ -677,7 +831,7 @@ export default function CheckoutPage() {
               onClick={() =>
                 router.push("/")
               }
-              className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+              className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-muted-foreground transition-colors hover:bg-[#112A43] hover:text-white"
             >
               <ArrowLeft className="size-5" />
 
@@ -690,7 +844,7 @@ export default function CheckoutPage() {
               href="/"
               aria-label="Ir al inicio de BEYONIX"
               title="Ir al inicio de BEYONIX"
-              className="font-heading text-26px lg:text-28px font-bold tracking-tight text-foreground transition-colors hover:text-white/80"
+              className="font-heading text-26px font-bold tracking-tight text-foreground transition-colors hover:text-[#112A43] lg:text-28px"
             >
               BEYONIX
             </Link>
@@ -772,86 +926,98 @@ export default function CheckoutPage() {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 lg:px-8 py-6 lg:py-8">
-        <div className="max-w-6xl mx-auto">
-          <h1 className="text-2xl lg:text-3xl font-bold text-foreground mb-5">
-            Checkout
-          </h1>
+      <div className="container mx-auto px-4 py-5 lg:px-8 lg:py-7">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-10px font-semibold uppercase tracking-[0.2em] text-beyonix-cyan/75">
+                Compra segura
+              </p>
+              <h1 className="mt-1 text-2xl font-bold text-foreground lg:text-3xl">
+                Checkout
+              </h1>
+            </div>
 
-          <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
-            <div className="lg:col-span-2 space-y-5">
-              <section className="checkout-panel rounded-xl border p-4 sm:p-5">
-                <h2 className="text-lg font-semibold text-foreground mb-4">
-                  <span className="border-l-4 border-beyonix-blue pl-3">
-                    Datos de quien recibe
-                  </span>
-                </h2>
+            <span className="hidden text-sm text-white/45 sm:block">
+              Paso {currentStep} de 3
+            </span>
+          </div>
 
-                <form
-                  id="checkout-form"
-                  onSubmit={
-                    handleSubmit
-                  }
-                  className="space-y-3"
+          <div className="mb-5 grid grid-cols-3 gap-2" aria-label="Progreso del checkout">
+            {checkoutSteps.map((step) => {
+              const active =
+                currentStep === step.id
+              const complete =
+                currentStep > step.id
+
+              return (
+                <div
+                  key={step.id}
+                  className={cn(
+                    "flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-all",
+                    active
+                      ? "border-beyonix-blue-light bg-beyonix-blue/45 text-white"
+                      : complete
+                        ? "border-beyonix-blue-light/25 bg-[#15191d] text-white/80"
+                        : "border-white/8 bg-[#121212] text-white/40"
+                  )}
                 >
-                  <div className="grid sm:grid-cols-2 gap-3">
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
+                      active || complete
+                        ? "border-beyonix-sky/35 bg-beyonix-blue text-beyonix-sky"
+                        : "border-white/10 bg-black/35"
+                    )}
+                  >
+                    {complete ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      step.id
+                    )}
+                  </span>
+                  <span className="truncate text-xs font-semibold sm:text-sm">
+                    {step.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          <form
+            id="checkout-form"
+            onSubmit={handleSubmit}
+            className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-7"
+          >
+            <section className="checkout-panel flex min-h-[520px] flex-col rounded-2xl border p-4 sm:p-6">
+              {currentStep === 1 && (
+                <div className="animate-in fade-in slide-in-from-right-2 flex-1 space-y-4 rounded-2xl border border-white/8 bg-[#181818] p-4 duration-300 sm:p-5">
+                  <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
+                    Datos de quien recibe
+                  </h2>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="nombre">
-                        Nombre completo
-                      </Label>
-
-                      <Input
-                        id="nombre"
-                        name="nombre"
-                        className={checkoutInputClassName}
-                        value={
-                          formData.nombre
-                        }
-                        onChange={
-                          handleInputChange
-                        }
-                        required
-                      />
+                      <Label htmlFor="nombre">Nombre completo *</Label>
+                      <Input id="nombre" name="nombre" className={getCheckoutInputClassName("nombre")} value={formData.nombre} onChange={handleInputChange} required />
                     </div>
-
                     <div className="space-y-2">
-                      <Label htmlFor="email">
-                        Email
-                      </Label>
-
-                      <Input
-                        id="email"
-                        name="email"
-                        type="email"
-                        className={checkoutInputClassName}
-                        value={
-                          formData.email
-                        }
-                        onChange={
-                          handleInputChange
-                        }
-                        required
-                      />
+                      <Label htmlFor="email">Email *</Label>
+                      <Input id="email" name="email" type="email" className={getCheckoutInputClassName("email")} value={formData.email} onChange={handleInputChange} required />
                     </div>
-                  </div>
-                  <div className="checkout-subpanel rounded-xl border p-3">
-                    <p className="mb-3 text-xs leading-5 text-white/65">
-                      Completá el teléfono y la dirección de entrega.
-                    </p>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="telefono">Teléfono</Label>
-                        <Input id="telefono" name="telefono" type="tel" className={checkoutInputClassName} value={formData.telefono} onChange={handleInputChange} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="calle">Calle</Label>
-                        <Input id="calle" name="calle" className={checkoutInputClassName} value={formData.calle} onChange={handleInputChange} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="numero">Número</Label>
-                        <Input id="numero" name="numero" inputMode="numeric" className={checkoutInputClassName} value={formData.numero} onChange={handleInputChange} required />
-                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="telefono">Teléfono *</Label>
+                      <Input id="telefono" name="telefono" type="tel" className={getCheckoutInputClassName("telefono")} value={formData.telefono} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="calle">Calle *</Label>
+                      <Input id="calle" name="calle" className={getCheckoutInputClassName("calle")} value={formData.calle} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="numero">Número *</Label>
+                      <Input id="numero" name="numero" inputMode="numeric" className={getCheckoutInputClassName("numero")} value={formData.numero} onChange={handleInputChange} required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">
                         <Label htmlFor="piso">Piso opcional</Label>
                         <Input id="piso" name="piso" className={checkoutInputClassName} value={formData.piso} onChange={handleInputChange} />
@@ -860,354 +1026,418 @@ export default function CheckoutPage() {
                         <Label htmlFor="departamento">Departamento opcional</Label>
                         <Input id="departamento" name="departamento" className={checkoutInputClassName} value={formData.departamento} onChange={handleInputChange} />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cpDestino">Código postal</Label>
-                        <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={checkoutInputClassName} value={formData.cpDestino} onChange={handleInputChange} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="localidad">Localidad</Label>
-                        <Input id="localidad" name="localidad" className={checkoutInputClassName} value={formData.localidad} onChange={handleInputChange} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="provincia">Provincia / Región</Label>
-                        <Input id="provincia" name="provincia" className={checkoutInputClassName} value={formData.provincia} onChange={handleInputChange} required />
-                      </div>
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="referencias">Referencias opcionales</Label>
-                        <Input id="referencias" name="referencias" className={checkoutInputClassName} value={formData.referencias} onChange={handleInputChange} />
-                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cpDestino">Código postal *</Label>
+                      <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="localidad">Localidad *</Label>
+                      <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor="provincia">Provincia *</Label>
+                      <Input id="provincia" name="provincia" className={getCheckoutInputClassName("provincia")} value={formData.provincia} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor="referencias">Referencias opcionales</Label>
+                      <Input id="referencias" name="referencias" className={checkoutInputClassName} value={formData.referencias} onChange={handleInputChange} />
                     </div>
                   </div>
-                </form>
-              </section>
+                </div>
+              )}
 
-              <section className="checkout-panel rounded-xl border p-4 sm:p-5">
-                <h2 className="text-lg font-semibold text-foreground mb-4">
-                  <span className="border-l-4 border-beyonix-blue pl-3">
+              {currentStep === 2 && (
+                <div className="animate-in fade-in slide-in-from-right-2 space-y-4 duration-300">
+                  <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
                     Método de envío
-                  </span>
-                </h2>
+                  </h2>
 
-                <div className="space-y-3">
-                  {shippingOptions.map((option) => {
-                    const selected = selectedShippingType === option.type
-                    const displayPrice =
-                      freeShippingApplied ? "GRATIS" : formatPrice(option.price)
+                  <div
+                    className={cn(
+                      "grid gap-3 rounded-2xl transition-shadow",
+                      shippingSelectionMissing &&
+                        "shadow-[0_0_0_2px_rgba(248,113,113,0.12)]"
+                    )}
+                  >
+                    {shippingOptions.map((option) => {
+                      const selected =
+                        selectedShippingType === option.type
 
-                    return (
+                      return (
+                        <button
+                          key={option.type}
+                          type="button"
+                          onClick={() => {
+                            setSelectedShippingType(option.type)
+                            setShippingSelectionMissing(false)
+                          }}
+                          className={cn(
+                            "checkout-option flex w-full cursor-pointer items-center gap-4 rounded-xl border p-4 text-left transition-all hover:border-beyonix-blue-light/55",
+                            selected &&
+                              "checkout-option-selected"
+                          )}
+                        >
+                          <span className={cn(
+                            "flex size-11 shrink-0 items-center justify-center rounded-xl border",
+                            selected
+                              ? "border-beyonix-sky/25 bg-beyonix-blue text-beyonix-sky"
+                              : "border-white/8 bg-black/30 text-white/55"
+                          )}>
+                            <Truck className="size-5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block font-semibold text-white">
+                              {option.label}
+                            </span>
+                            <span className="mt-1 block text-sm text-white/45">
+                              Cotización Andreani
+                            </span>
+                          </span>
+                          <span className={freeShippingApplied ? "font-semibold text-emerald-400" : "font-semibold text-white"}>
+                            {freeShippingApplied
+                              ? "GRATIS"
+                              : formatPrice(option.price)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {shippingMessage && (
+                    <div className="checkout-note rounded-xl border px-4 py-3 text-sm text-white/65">
+                      {shippingMessage}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {currentStep === 3 && (
+                <div className="animate-in fade-in slide-in-from-right-2 space-y-4 duration-300">
+                  <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
+                    Método de pago
+                  </h2>
+
+                  <div className="grid gap-3">
+                    {paymentMethods.map((method) => (
                       <button
-                        key={option.type}
+                        key={method.id}
                         type="button"
-                        aria-label={`Seleccionar ${option.label}`}
-                        title={`Seleccionar ${option.label}`}
-                        onClick={() => setSelectedShippingType(option.type)}
+                        onClick={() =>
+                          setSelectedPayment(method.id)
+                        }
                         className={cn(
-                          "checkout-option flex w-full cursor-pointer items-center justify-between gap-4 rounded-lg border p-4 text-left transition-all",
-                          selected
-                            ? "checkout-option-selected"
-                            : "hover:border-white/30"
+                          "checkout-option flex w-full cursor-pointer items-center gap-3 rounded-xl border p-4 text-left transition-all hover:border-beyonix-blue-light/55",
+                          selectedPayment === method.id &&
+                            "checkout-option-selected"
                         )}
                       >
-                        <div>
-                          <p className="font-medium text-foreground">
-                            {option.label}
-                          </p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {option.provider === "andreani"
-                              ? "Cotización Andreani"
-                              : "Disponible para continuar la compra"}
-                          </p>
-                        </div>
-
-                        <span
-                          className={
-                            freeShippingApplied
-                              ? "font-semibold text-emerald-400"
-                              : "font-semibold text-foreground"
-                          }
-                        >
-                          {displayPrice}
+                        <span className={cn(
+                          "flex size-11 shrink-0 items-center justify-center rounded-xl",
+                          selectedPayment === method.id
+                            ? "bg-beyonix-blue-light text-white"
+                            : "bg-black/35 text-white/65"
+                        )}>
+                          <method.icon className="size-5" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-white">
+                            {method.name}
+                          </span>
+                          <span className="mt-1 block text-sm text-white/45">
+                            {method.description}
+                          </span>
                         </span>
                       </button>
-                    )
-                  })}
-                </div>
-
-                {shippingMessage && (
-                  <div className="checkout-note mt-4 rounded-xl border px-4 py-3 text-sm text-white/70">
-                    {shippingMessage}
+                    ))}
                   </div>
-                )}
-              </section>
 
-              <section className="checkout-panel rounded-xl border p-4 sm:p-5">
-                <h2 className="text-lg font-semibold text-foreground mb-4">
-                  <span className="border-l-4 border-beyonix-blue pl-3">
-                    Método de pago
-                  </span>
-                </h2>
-
-                <div className="space-y-3">
-                  {paymentMethods.map(
-                    (method) => (
-                      <button
-                        key={
-                          method.id
-                        }
-                        type="button"
-                        aria-label={`Seleccionar ${method.name}`}
-                        title={`Seleccionar ${method.name}`}
-                        onClick={() =>
-                          setSelectedPayment(
-                            method.id
-                          )
-                        }
-                        className={cn(
-                          "checkout-option w-full flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-all",
-
-                          selectedPayment ===
-                            method.id
-                            ? "checkout-option-selected"
-                            : "hover:border-white/30"
-                        )}
-                      >
-                        <div
-                          className={cn(
-                            "size-10 rounded-lg flex items-center justify-center",
-
-                            selectedPayment ===
-                              method.id
-                              ? "bg-beyonix-blue-light text-white"
-                              : "bg-black/45 text-white/75"
-                          )}
-                        >
-                          <method.icon className="size-5" />
-                        </div>
-
-                        <div className="flex-1">
-                          <p className="font-medium text-foreground">
-                            {
-                              method.name
-                            }
-                          </p>
-
-                          <p className="text-sm text-muted-foreground">
-                            {
-                              method.description
-                            }
-                          </p>
-                        </div>
-                      </button>
-                    )
-                  )}
-                </div>
-
-                {isTransferPayment && (
-                  <div className="checkout-note mt-4 rounded-xl border p-4">
-                    <h3 className="text-base font-bold text-white">
-                      Transferencia bancaria con 5% OFF
-                    </h3>
-
-                    <div className="mt-3 space-y-3 text-sm leading-6 text-white/70">
-                      <p className="rounded-lg border border-white/10 bg-black/35 px-4 py-3 text-base font-bold uppercase tracking-wide text-white">
-                        Alias: {TRANSFER_ALIAS}
-                      </p>
-                      <p>
-                        Registrá el pedido y luego subí el comprobante. Lo validaremos manualmente antes de prepararlo.
-                      </p>
-                      <div className="rounded-lg border border-white/8 bg-black/25 px-4 py-3">
-                        <p className="font-semibold text-white">Validación de pagos</p>
-                        <p>Lun. a vie. 7:00-20:00 · Sáb. 8:00-14:00</p>
+                  {isTransferPayment && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="checkout-note rounded-xl border p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
+                          Datos de transferencia
+                        </p>
+                        <p className="mt-2 text-base font-semibold text-white">
+                          Alias: <span className="uppercase text-beyonix-sky">{TRANSFER_ALIAS}</span>
+                        </p>
+                        <p className="mt-1 text-sm text-white/55">
+                          {TRANSFER_DISCOUNT_PERCENT}% OFF con validación manual.
+                        </p>
                       </div>
-                    </div>
-                  </div>
-                )}
-              </section>
-            </div>
 
-            <div className="lg:col-span-1">
-              <div className="checkout-panel sticky top-24 rounded-xl border p-4 sm:p-5">
-                <h2 className="text-lg font-semibold text-foreground mb-4">
-                  <span className="border-l-4 border-beyonix-blue pl-3">
-                    Resumen del pedido
-                  </span>
-                </h2>
-
-                <div className="space-y-3 mb-4">
-                  {items.map(
-                    (item) => (
-                      <div
-                        key={`${item.product.id}-${item.variantId ?? item.color}`}
-                        className="checkout-order-item flex gap-3 rounded-xl border p-2.5"
-                      >
-                        <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-950">
-                          <Image
-                            fill
-                            src={
-                              item.image
-                            }
-                            alt={
-                              item.product.nombre
-                                ? `${item.product.nombre} en carrito`
-                                : "Producto en carrito"
-                            }
-                            sizes="64px"
-                            className="object-cover"
-                          />
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground line-clamp-2">
-                            {
-                              item.product
-                                .nombre
-                            }
+                      <div className="checkout-note flex items-start gap-3 rounded-xl border p-4">
+                        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
+                          <Clock3 className="size-5" />
+                        </span>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
+                            Horarios de atención
                           </p>
-
-                          <p className="mt-1 text-sm text-white/65">
-                            {item.quantity} {item.quantity === 1 ? "unidad" : "unidades"}
-                            {" · "}
-                            <span className="font-semibold text-white">
-                              {formatPrice(item.product.precio)}
-                            </span>
+                          <p className="mt-2 text-sm text-white/75">
+                            Lunes a viernes: 7:00 a 20:00 hs
+                          </p>
+                          <p className="mt-1 text-sm text-white/55">
+                            Sábados: 8:00 a 14:00 hs
                           </p>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-white/8 bg-[#141414] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
+                      ¿Necesitás ayuda?
+                    </p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <a
+                        href="https://instagram.com/beyonix.ar"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-[#1b1b1b] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
+                      >
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
+                          <Instagram className="size-4" />
+                        </span>
+                        <span>
+                          <span className="block text-sm font-semibold text-white">Instagram</span>
+                          <span className="block text-xs text-white/50 group-hover:text-white/75">@beyonix.ar</span>
+                        </span>
+                      </a>
+
+                      <a
+                        href={CHECKOUT_EMAIL_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-[#1b1b1b] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
+                      >
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
+                          <Mail className="size-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-white">Email</span>
+                          <span className="block truncate text-xs text-white/50 group-hover:text-white/75">{CHECKOUT_EMAIL}</span>
+                        </span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-auto flex items-center justify-between gap-3 border-t border-white/8 pt-4">
+                <button
+                  type="button"
+                  disabled={currentStep === 1}
+                  onClick={() =>
+                    setCurrentStep(
+                      Math.max(
+                        currentStep - 1,
+                        1
+                      ) as CheckoutStep
                     )
-                  )}
-                </div>
-
-                <Separator className="mb-4" />
-
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      Subtotal
-                    </span>
-
-                    <span className="text-foreground">
-                      {formatPrice(
-                        totals.subtotal
-                      )}
-                    </span>
-                  </div>
-
-                  {totals.discount > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        Descuento
-                      </span>
-
-                      <span className="font-semibold text-emerald-400">
-                        -{formatPrice(totals.discount)}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      Envío
-                    </span>
-
-                    <span
-                      className={
-                        totals.shipping === 0
-                          ? "font-semibold text-emerald-400"
-                          : "text-foreground"
-                      }
-                    >
-                      {totals.shipping ===
-                      0
-                        ? "GRATIS"
-                        : formatPrice(
-                            totals.shipping
-                          )}
-                    </span>
-                  </div>
-
-                  {transferDiscountAmount > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        Transferencia {TRANSFER_DISCOUNT_PERCENT}% OFF
-                      </span>
-
-                      <span className="font-semibold text-emerald-400">
-                        -{formatPrice(transferDiscountAmount)}
-                      </span>
-                    </div>
-                  )}
-
-                  <Separator />
-
-                  <div className="flex justify-between pt-2">
-                    <span className="font-semibold text-foreground">
-                      Total
-                    </span>
-
-                    <span className="font-bold text-foreground text-xl">
-                      {formatPrice(
-                        finalTotal
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                {stockError && (
-                  <div className="mb-4 rounded-xl border border-red-500/20 bg-red-950 px-4 py-3 text-sm text-red-300">
-                    {stockError}
-                  </div>
-                )}
-
-                {checkoutError && (
-                  <div className="mb-4 rounded-xl border border-red-500/20 bg-red-950 px-4 py-3 text-sm text-red-300">
-                    {checkoutError}
-                  </div>
-                )}
-
-                <Button
-                  type="submit"
-                  aria-label={isTransferPayment ? "Registrar pedido por transferencia" : "Pagar ahora"}
-                  title={isTransferPayment ? "Registrar pedido por transferencia" : "Pagar ahora"}
-                  form="checkout-form"
-                  className={cn(
-                    "w-full",
-                    isFormValid &&
-                    !isProcessing &&
-                    !stockError
-                      ? "bg-beyonix-blue text-white hover:bg-beyonix-blue-hover"
-                      : "cursor-not-allowed bg-neutral-700 text-white/55 hover:bg-neutral-700"
-                  )}
-                  size="lg"
-                  disabled={
-                    !isFormValid ||
-                    isProcessing ||
-                    Boolean(stockError)
                   }
+                  className="h-11 min-w-120px cursor-pointer rounded-xl border border-white/10 bg-[#181818] px-5 text-sm font-semibold text-white/70 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
                 >
-                  {isProcessing
-                    ? "Procesando..."
-                    : isTransferPayment
-                      ? "Registrar pedido"
-                      : "Pagar ahora"}
-                </Button>
+                  Anterior
+                </button>
 
-                <p className="text-xs text-muted-foreground text-center mt-3">
-                  Al completar tu
-                  compra aceptás
-                  nuestros{" "}
-                  <Link
-                    href="/terminos"
-                    className="font-medium text-foreground underline underline-offset-4 transition-colors hover:text-white"
+                {currentStep < 3 ? (
+                  <button
+                    type="button"
+                    onClick={goToNextStep}
+                    className="h-11 min-w-150px cursor-pointer rounded-xl bg-beyonix-blue px-6 text-sm font-semibold text-white transition-colors hover:bg-beyonix-blue-hover"
                   >
-                    términos y condiciones
-                  </Link>
-                  .
-                </p>
+                    Continuar
+                  </button>
+                ) : (
+                  <Button
+                    type="submit"
+                    className={cn(
+                      "h-11 min-w-180px",
+                      isFormValid &&
+                      !isProcessing &&
+                      !stockError
+                        ? "bg-beyonix-blue text-white hover:bg-beyonix-blue-hover"
+                        : "cursor-not-allowed bg-neutral-700 text-white/55 hover:bg-neutral-700"
+                    )}
+                    disabled={
+                      !isFormValid ||
+                      isProcessing ||
+                      Boolean(stockError)
+                    }
+                  >
+                    {isProcessing
+                      ? "Procesando..."
+                      : isTransferPayment
+                        ? "Registrar pedido"
+                        : "Pagar ahora"}
+                  </Button>
+                )}
               </div>
-            </div>
-          </div>
+            </section>
+
+            <aside className="checkout-panel relative h-full min-h-[520px] overflow-hidden rounded-2xl border p-4 shadow-2xl shadow-black/25 sm:p-5">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-beyonix-blue-light/75 to-transparent" />
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
+                  Resumen del pedido
+                </h2>
+                <span className="rounded-full border border-beyonix-blue-light/25 bg-beyonix-blue/25 px-2.5 py-1 text-10px font-semibold uppercase tracking-widest text-beyonix-sky">
+                  {items.reduce((total, item) => total + item.quantity, 0)} unidades
+                </span>
+              </div>
+
+              <div className="my-4 rounded-xl border border-beyonix-blue-light/18 bg-linear-to-br from-[#1b1d20] to-[#141414] p-3 shadow-inner shadow-black/20">
+                <FreeShippingBar subtotal={baseTotals.productsTotal} />
+              </div>
+
+              <div className="max-h-[330px] space-y-3 overflow-y-auto pr-1 custom-scrollbar">
+                {items.map((item) => (
+                  <div
+                    key={`${item.product.id}-${item.variantId ?? item.color}`}
+                    className="checkout-order-item group grid min-h-112px grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border p-2.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
+                  >
+                    <div className="h-full min-h-92px overflow-hidden rounded-lg border border-white/8 bg-beyonix-surface-3">
+                      <TransparencyAwareImage
+                        src={item.image}
+                        alt={`${item.product.nombre} en carrito`}
+                        className="h-full w-full object-contain p-1.5 transition-transform duration-300 group-hover:scale-[1.025]"
+                      />
+                    </div>
+
+                    <div className="flex min-w-0 flex-col justify-between py-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 text-sm font-semibold text-foreground">
+                            {item.product.nombre}
+                          </p>
+                          {(item.variantName || item.colorHex) && (
+                            <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-white/8 bg-black/25 px-2.5 py-1">
+                              {item.colorHex && (
+                                <span
+                                  className="size-3 shrink-0 rounded-full border border-white/35 shadow-sm shadow-black"
+                                  style={{
+                                    backgroundColor: item.colorHex,
+                                  }}
+                                />
+                              )}
+                              <span className="truncate text-10px font-semibold uppercase tracking-wider text-white/65">
+                                {item.variantName || item.color}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold text-white">
+                          {formatPrice(item.product.precio * item.quantity)}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-label="Quitar una unidad"
+                          onClick={() =>
+                            decreaseQuantity(item.product.id, item.color)
+                          }
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-black/30 text-white/65 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white"
+                        >
+                          <Minus className="size-3.5" />
+                        </button>
+                        <span className="flex h-8 min-w-10 items-center justify-center rounded-lg border border-beyonix-blue-light/25 bg-beyonix-blue/20 px-2 text-sm font-semibold tabular-nums text-white">
+                          {item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Agregar una unidad"
+                          onClick={() =>
+                            increaseQuantity(item.product.id, item.color)
+                          }
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-black/30 text-white/65 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white"
+                        >
+                          <Plus className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Separator className="my-4" />
+
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span>{formatPrice(totals.subtotal)}</span>
+                </div>
+                {totals.discount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Descuento</span>
+                    <span className="font-semibold text-emerald-400">
+                      -{formatPrice(totals.discount)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Envío</span>
+                  <span className={
+                    selectedShippingOption &&
+                    totals.shipping === 0
+                      ? "font-semibold text-emerald-400"
+                      : ""
+                  }>
+                    {!selectedShippingOption
+                      ? "A definir"
+                      : totals.shipping === 0
+                        ? "GRATIS"
+                        : formatPrice(totals.shipping)}
+                  </span>
+                </div>
+                {transferDiscountAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Transferencia {TRANSFER_DISCOUNT_PERCENT}% OFF
+                    </span>
+                    <span className="font-semibold text-emerald-400">
+                      -{formatPrice(transferDiscountAmount)}
+                    </span>
+                  </div>
+                )}
+                <Separator />
+                <div className="flex items-end justify-between pt-1">
+                  <span className="font-semibold">Total</span>
+                  <span className="text-xl font-bold">
+                    {formatPrice(finalTotal)}
+                  </span>
+                </div>
+              </div>
+
+              {stockError && (
+                <div className="mt-4 rounded-xl border border-red-500/20 bg-red-950 px-4 py-3 text-sm text-red-300">
+                  {stockError}
+                </div>
+              )}
+              {checkoutError && (
+                <div className="mt-4 rounded-xl border border-red-500/20 bg-red-950 px-4 py-3 text-sm text-red-300">
+                  {checkoutError}
+                </div>
+              )}
+
+              <p className="mt-4 text-center text-xs text-muted-foreground">
+                Al completar tu compra aceptás nuestros{" "}
+                <Link
+                  href="/terminos"
+                  className="font-medium text-foreground underline underline-offset-4 transition-colors hover:text-white"
+                >
+                  términos y condiciones
+                </Link>
+                .
+              </p>
+            </aside>
+          </form>
         </div>
       </div>
-    </main>
+      </main>
+      <Footer />
+    </>
   )
 }

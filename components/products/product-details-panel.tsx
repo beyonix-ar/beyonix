@@ -138,8 +138,8 @@ export function ProductDetailsPanel({
       : [limitedFeatures]
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-beyonix-surface text-white">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <aside className="flex min-h-0 flex-col bg-beyonix-surface text-white lg:h-full">
+      <div className="flex min-h-0 flex-1 flex-col lg:overflow-hidden">
         {/* Header */}
         <div className="shrink-0 px-5 pb-4 pt-5 lg:px-8 lg:pb-5 lg:pt-8">
           <p className="mb-2 text-10px font-bold uppercase tracking-widest text-beyonix-sky">
@@ -153,19 +153,13 @@ export function ProductDetailsPanel({
 
         <div className="h-px bg-white/8" />
 
-        <div
-          className={`grid min-h-0 flex-1 ${
-            hasVariants
-              ? "grid-rows-product-info"
-              : "grid-rows-product-info-no-variant"
-          }`}
-        >
-          <section className="flex min-h-0 flex-col border-b border-white/8 px-5 py-4 lg:px-8">
+        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col lg:overflow-y-auto">
+          <section className="shrink-0 border-b border-white/8 px-5 py-4 lg:px-8 lg:py-5">
             <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
-              Descripcion
+              Descripción
             </p>
 
-            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
+            <div className="max-h-32 overflow-y-auto pr-2 text-white/72 lg:max-h-40">
               {product.descripcion && (
                 <ProductDescription
                   shortDescription={product.descripcion}
@@ -176,12 +170,12 @@ export function ProductDetailsPanel({
             </div>
           </section>
 
-          <section className="flex min-h-0 flex-col border-b border-white/8 px-5 py-4 lg:px-8">
+          <section className="shrink-0 border-b border-white/8 px-5 py-4 lg:px-8 lg:py-5">
             <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
               Especificaciones
             </p>
 
-            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
+            <div className="pr-2">
               <div
                 className={`grid items-start gap-4 ${
                   featureColumns.length > 1 ? "sm:grid-cols-2" : "grid-cols-1"
@@ -214,12 +208,12 @@ export function ProductDetailsPanel({
           </section>
 
           {hasVariants && (
-            <section className="flex min-h-0 flex-col px-5 py-3 lg:px-8">
+            <section className="shrink-0 px-5 py-4 lg:px-8 lg:py-5">
               <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/40">
                 Variante
               </p>
 
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div>
                 <ColorSelector
                   colors={colors.map((color) => ({
                     name: color.name,

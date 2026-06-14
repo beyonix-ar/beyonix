@@ -41,6 +41,7 @@ import {
 import {
   updateProducto,
 } from "@/lib/supabase/queries/productos"
+import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 
 interface ProductVariantsEditorProps {
   productoId?: number
@@ -51,7 +52,7 @@ interface ProductVariantsEditorProps {
 }
 
 const inputCls =
-  "w-full rounded-2xl border border-white/8 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-blue-400"
+  "h-10 w-full rounded-xl border border-white/8 bg-[#181818] px-3.5 text-sm text-white outline-none transition-colors placeholder:text-white/30 hover:border-[#112A43] focus:border-beyonix-blue-light"
 
 const normalizeHex = (value: string) => {
   const clean = value.trim()
@@ -532,18 +533,8 @@ export function ProductVariantsEditor({
   }
 
   return (
-    <div className="space-y-5 rounded-2xl border border-white/8 bg-black p-4">
-      <div>
-        <h2 className="text-sm font-semibold text-white">
-          Variante
-        </h2>
-
-        <p className="mt-1 text-xs text-white/55">
-          Seleccioná color, stock e imágenes para esta variante.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(190px,1fr)_minmax(100px,0.55fr)]">
         <input
           type="text"
           title="Nombre de variante"
@@ -567,7 +558,7 @@ export function ProductVariantsEditor({
                 )
               )
             }
-            className="h-12 w-16 cursor-pointer rounded-2xl border border-white/8 bg-black p-1"
+            className="h-10 w-12 cursor-pointer rounded-xl border border-white/8 bg-[#181818] p-1 transition-colors hover:border-[#112A43]"
           />
 
           <input
@@ -600,7 +591,7 @@ export function ProductVariantsEditor({
         />
       </div>
 
-      <div>
+      <div className="rounded-xl border border-white/7 bg-[#101010] p-3">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
           Imágenes de esta variante
         </p>
@@ -627,14 +618,14 @@ export function ProductVariantsEditor({
         />
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           title="Crear variante"
           aria-label="Crear variante"
           onClick={addVariant}
           disabled={saving}
-          className="inline-flex h-12 min-w-160px items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-colors hover:bg-white/90 cursor-pointer disabled:opacity-50"
+          className="inline-flex h-10 min-w-150px items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-black transition-colors hover:bg-[#112A43] hover:text-white cursor-pointer disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="size-4 animate-spin" />
@@ -652,7 +643,7 @@ export function ProductVariantsEditor({
             title="Cancelar edición"
             aria-label="Cancelar edición"
             onClick={resetFields}
-            className="inline-flex h-12 min-w-140px items-center justify-center gap-2 rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white cursor-pointer"
+            className="inline-flex h-10 min-w-120px items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#181818] px-5 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
           >
             <X className="size-4" />
             Cancelar
@@ -673,7 +664,7 @@ export function ProductVariantsEditor({
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <div className="space-y-2 border-t border-white/8 pt-4">
+        <div className="grid gap-2 border-t border-white/8 pt-3 xl:grid-cols-2">
           {productoId ? (
             variantes.length ? (
               variantes.map((variante) => (
@@ -733,7 +724,7 @@ export function ProductVariantsEditor({
 
 function EmptyVariants() {
   return (
-    <div className="rounded-2xl border border-white/7 bg-black px-5 py-6 text-center">
+    <div className="rounded-xl border border-white/7 bg-[#181818] px-4 py-4 text-center xl:col-span-2">
       <p className="text-sm text-white/55">
         Todavía no hay variantes cargadas.
       </p>
@@ -763,7 +754,7 @@ function PersistedVariantImages({
 }: PersistedVariantImagesProps) {
   if (!images.length) {
     return (
-      <div className="mb-3 rounded-2xl border border-white/6 bg-black px-5 py-5 text-center">
+      <div className="mb-3 rounded-xl border border-white/6 bg-[#181818] px-4 py-4 text-center">
         <ImageIcon className="mx-auto mb-2 size-7 text-white/15" />
 
         <p className="text-sm text-white/55">
@@ -774,7 +765,7 @@ function PersistedVariantImages({
   }
 
   return (
-    <div className="mb-3 grid grid-cols-4 gap-3">
+    <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
       {images.map((image, index) => (
         <div
           key={`${image}-${index}`}
@@ -796,12 +787,12 @@ function PersistedVariantImages({
             onDragEnd()
           }}
           onDragEnd={onDragEnd}
-          className="group relative aspect-square cursor-grab overflow-hidden rounded-2xl border border-white/7 bg-black active:cursor-grabbing"
+          className="group relative aspect-square cursor-grab overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface-3 p-1 transition-colors hover:border-[#112A43] active:cursor-grabbing"
         >
-          <img
+          <TransparencyAwareImage
             src={image}
             alt={`Imagen ${index + 1}`}
-            className="h-full w-full object-cover"
+            className="h-full w-full rounded-xl object-contain"
           />
 
           {index === 0 && (
@@ -820,7 +811,7 @@ function PersistedVariantImages({
               title="Eliminar imagen"
               aria-label={`Eliminar imagen ${index + 1}`}
               onClick={() => onRemove(image)}
-              className="flex size-9 cursor-pointer items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-red-500"
+              className="flex size-9 cursor-pointer items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-[#112A43]"
             >
               <Trash2 className="size-4 text-white" />
             </button>
@@ -849,7 +840,7 @@ function VariantRow({
   onRemove,
 }: VariantRowProps) {
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-white/7 bg-black px-4 py-3">
+    <div className="flex items-center justify-between rounded-xl border border-white/7 bg-[#181818] px-3 py-2.5">
       <div className="flex items-center gap-3">
         <span
           className="size-6 rounded-full border border-white/20"
@@ -878,7 +869,7 @@ function VariantRow({
           title="Editar variante"
           aria-label={`Editar variante ${nombre}`}
           onClick={onEdit}
-          className="flex size-9 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-white/20 hover:text-white cursor-pointer"
+          className="flex size-8 items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
         >
           <Pencil className="size-4" />
         </button>
@@ -888,7 +879,7 @@ function VariantRow({
           title="Eliminar variante"
           aria-label={`Eliminar variante ${nombre}`}
           onClick={onRemove}
-          className="flex size-9 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400 cursor-pointer"
+          className="flex size-8 items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
         >
           <Trash2 className="size-4" />
         </button>

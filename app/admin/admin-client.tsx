@@ -290,12 +290,12 @@ export function AdminClient() {
           title="Ir al inicio"
           aria-label="Ir al inicio"
           onClick={() => router.push("/")}
-          className="cursor-pointer text-left"
+          className="group cursor-pointer text-left"
         >
           <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             Panel administrativo
           </p>
-          <h1 className="text-2xl font-black text-white">BEYONIX</h1>
+          <h1 className="text-2xl font-black text-white transition-colors group-hover:text-[#112A43]">BEYONIX</h1>
         </button>
       </div>
 

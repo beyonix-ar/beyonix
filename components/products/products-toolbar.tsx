@@ -67,8 +67,8 @@ export function ProductsToolbar({
           onClick={() => setOpen(!open)}
           className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-sm transition-all duration-150 sm:w-auto ${
             open
-              ? "border-beyonix-blue-light bg-beyonix-account-active text-white"
-              : "border-white/10 bg-white/4 text-white/80 hover:border-white/20 hover:text-white"
+              ? "border-[#112A43] bg-beyonix-account-active text-white"
+              : "border-white/10 bg-white/4 text-white/80 hover:border-[#112A43] hover:text-white"
           }`}
         >
           <span className="font-medium">{selected}</span>
@@ -89,7 +89,7 @@ export function ProductsToolbar({
                   setSortBy(option.value)
                   setOpen(false)
                 }}
-                className={`flex w-full items-center justify-between px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+                className={`flex w-full items-center justify-between px-4 py-2.5 text-sm transition-colors cursor-pointer hover:shadow-[inset_0_0_0_1px_#112A43] ${
                   i < options.length - 1 ? "border-b border-white/5" : ""
                 } ${
                   option.value === sortBy

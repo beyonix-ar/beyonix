@@ -1,7 +1,11 @@
 "use client"
 
-import { useState } from "react"
-import { CheckCircle2, Upload } from "lucide-react"
+import { useRef, useState } from "react"
+import {
+  FileCheck2,
+  ImageUp,
+  Upload,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -23,16 +27,29 @@ export function PaymentProofUploader({
   onUploaded,
 }: PaymentProofUploaderProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [uploaded, setUploaded] = useState(initialUploaded)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
+  const [isDragging, setIsDragging] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const actionLabel = initialUploaded
+    ? "Reemplazar comprobante"
+    : "Subir comprobante"
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextFile = event.target.files?.[0] ?? null
+  const selectFile = (nextFile: File | null) => {
     const validationError = getPaymentProofValidationError(nextFile)
 
     setFile(nextFile)
     setError(validationError)
+  }
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    selectFile(event.target.files?.[0] ?? null)
+  }
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDragging(false)
+    selectFile(event.dataTransfer.files?.[0] ?? null)
   }
 
   const handleUpload = async () => {
@@ -62,8 +79,8 @@ export function PaymentProofUploader({
         return
       }
 
-      setUploaded(true)
       setFile(null)
+      if (inputRef.current) inputRef.current.value = ""
       onUploaded?.(data.order as SupabasePedido)
     } catch {
       setError("No pudimos subir el comprobante. Intentá nuevamente.")
@@ -72,34 +89,95 @@ export function PaymentProofUploader({
     }
   }
 
-  if (uploaded) {
-    return (
-      <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-300">
-        <CheckCircle2 className="mr-2 inline size-4" />
-        Comprobante recibido. Pago en revisión.
-      </div>
-    )
-  }
-
   return (
-    <div className="rounded-xl border border-beyonix-blue-light/18 bg-black p-4">
+    <div className="rounded-2xl border border-[#112A43] bg-[#0B0B0B] p-4 sm:p-5">
       <div className={compact ? "space-y-3" : "space-y-4"}>
         <div>
-          <label
-            htmlFor={`payment-proof-${orderId}`}
-            className="block text-11px font-black uppercase tracking-widest text-beyonix-cyan"
-          >
-            Subir comprobante
-          </label>
+          <p className="text-11px font-black uppercase tracking-widest text-white/70">
+            {actionLabel}
+          </p>
           <input
+            ref={inputRef}
             id={`payment-proof-${orderId}`}
             type="file"
             accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
             onChange={handleFileChange}
-            className="mt-2 block w-full cursor-pointer rounded-xl border border-beyonix-blue-light bg-beyonix-surface-3 px-3 py-2 text-sm text-white file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-beyonix-blue file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:text-white hover:border-beyonix-sky focus-visible:border-beyonix-focus focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-focus"
+            className="sr-only"
           />
-          <p className="mt-2 text-xs leading-5 text-white/52">
-            Formatos permitidos: JPG, PNG, WEBP o PDF. Tamaño máximo: 5 MB.
+
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Seleccionar o arrastrar un comprobante"
+            onClick={() => inputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                inputRef.current?.click()
+              }
+            }}
+            onDragEnter={(event) => {
+              event.preventDefault()
+              setIsDragging(true)
+            }}
+            onDragOver={(event) => {
+              event.preventDefault()
+              setIsDragging(true)
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault()
+              if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                setIsDragging(false)
+              }
+            }}
+            onDrop={handleDrop}
+            className={`mt-3 flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-beyonix-focus ${
+              isDragging
+                ? "border-beyonix-sky bg-[#112A43] shadow-[0_0_0_3px_rgba(79,131,173,0.12)]"
+                : file
+                  ? "border-emerald-400/35 bg-emerald-400/5"
+                : "border-white/20 bg-[#141414] hover:border-[#112A43] hover:bg-[#181818]"
+            }`}
+          >
+            <span className={`flex size-12 items-center justify-center rounded-xl border ${
+              file
+                ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+                : "border-[#112A43] bg-[#112A43]/40 text-white"
+            }`}>
+              {file ? (
+                <FileCheck2 className="size-6" />
+              ) : (
+                <ImageUp className="size-6" />
+              )}
+            </span>
+
+            {file ? (
+              <>
+                <p className="mt-3 max-w-full truncate text-sm font-semibold text-white">
+                  {file.name}
+                </p>
+                <p className="mt-1 text-xs text-white/50">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB · Tocá para reemplazar
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-3 text-sm font-semibold text-white">
+                  Arrastrá el comprobante acá
+                </p>
+                <p className="mt-1 text-xs text-white/55">
+                  o tocá para elegirlo desde tu dispositivo
+                </p>
+              </>
+            )}
+
+            <span className="mt-4 rounded-lg bg-[#112A43] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#183B5E]">
+              Seleccionar archivo
+            </span>
+          </div>
+
+          <p className="mt-2 text-center text-xs leading-5 text-white/45">
+            JPG, PNG, WEBP o PDF · Máximo 5 MB
           </p>
         </div>
 
@@ -111,14 +189,14 @@ export function PaymentProofUploader({
 
         <Button
           type="button"
-          aria-label={`Subir comprobante del pedido ${orderId}`}
-          title="Subir comprobante"
+          aria-label={`${actionLabel} del pedido ${orderId}`}
+          title={actionLabel}
           onClick={handleUpload}
           disabled={uploading || Boolean(error) || !file}
-          className="w-full cursor-pointer bg-beyonix-blue text-white hover:bg-beyonix-blue-hover disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-white/55"
+          className="w-full cursor-pointer bg-[#112A43] text-white hover:bg-[#183B5E] disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-white/55"
         >
           <Upload className="mr-2 size-4" />
-          {uploading ? "Subiendo..." : "Subir comprobante"}
+          {uploading ? "Subiendo..." : actionLabel}
         </Button>
       </div>
     </div>

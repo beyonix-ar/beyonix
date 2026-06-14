@@ -8,6 +8,8 @@ import {
   CreditCard,
   Download,
   Eye,
+  FileText,
+  LoaderCircle,
   Printer,
   RefreshCw,
   Search,
@@ -211,6 +213,31 @@ function getTransferPaymentStatusBadge(status?: string | null) {
 
 function formatOptionalOrderDate(value?: string | null) {
   return value ? formatOrderDate(value) : "Sin fecha"
+}
+
+function formatInvoiceDate(value?: string | null) {
+  if (!value) return "Sin fecha"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-")
+    return `${day}/${month}/${year}`
+  }
+
+  return formatOrderDate(value)
+}
+
+function formatInvoiceNumber(point?: number | null, number?: number | null) {
+  return `${String(point ?? 0).padStart(4, "0")}-${String(number ?? 0).padStart(8, "0")}`
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
 }
 
 function TransferPaymentBadges({ pedido }: { pedido: SupabasePedido }) {
@@ -434,6 +461,24 @@ function getOrderColor(pedido: SupabasePedido) {
   return principal ? getItemColor(principal) : "Sin color"
 }
 
+function getOrderFinancialBreakdown(pedido: SupabasePedido) {
+  const productsSubtotal = (pedido.orden_items ?? []).reduce(
+    (sum, item) =>
+      sum + Number(item.precio ?? 0) * Number(item.cantidad ?? 0),
+    0,
+  )
+  const shipping = Number(
+    pedido.shipping_cost_charged ?? pedido.andreani_costo ?? 0,
+  )
+  const transferDiscount = Number(pedido.transfer_discount_amount ?? 0)
+
+  return {
+    productsSubtotal,
+    shipping,
+    transferDiscount,
+  }
+}
+
 function MobileOrderField({
   label,
   children,
@@ -641,7 +686,7 @@ function PedidoPreviewModal({
                 </div>
                 <div className="rounded-xl border border-white/7 bg-white/3 p-3">
                   <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                    Nombre del comprobante
+                    Comprobante actual
                   </p>
                   <p
                     title={pedido.payment_proof_file_name || "Sin comprobante"}
@@ -972,6 +1017,8 @@ function PedidoDetailModal({
   onOpenPaymentProof,
   onPaymentStatusChange,
   onAndreaniAction,
+  onIssueInvoice,
+  onDownloadInvoice,
 }: {
   pedido: SupabasePedido
   onClose: () => void
@@ -981,14 +1028,27 @@ function PedidoDetailModal({
     action: AndreaniAction,
     pedidoId: number
   ) => Promise<{ ok: boolean; message: string }>
+  onIssueInvoice: (
+    pedidoId: number
+  ) => Promise<{ ok: boolean; message: string }>
+  onDownloadInvoice: (
+    pedidoId: number
+  ) => Promise<{ ok: boolean; message: string }>
 }) {
   const items = pedido.orden_items ?? []
+  const financialBreakdown = getOrderFinancialBreakdown(pedido)
   const dispatch = getDispatchAlert(pedido)
   const tracking = pedido.andreani_tracking || pedido.tracking_number
   const [andreaniLoading, setAndreaniLoading] = useState<AndreaniAction | null>(
     null
   )
   const [andreaniNotice, setAndreaniNotice] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false)
+  const [invoiceNotice, setInvoiceNotice] = useState<{
     ok: boolean
     message: string
   } | null>(null)
@@ -1005,10 +1065,26 @@ function PedidoDetailModal({
     setAndreaniLoading(null)
   }
 
+  const handleIssueInvoice = async () => {
+    setInvoiceLoading(true)
+    setInvoiceNotice(null)
+    const result = await onIssueInvoice(pedido.id)
+    setInvoiceNotice(result)
+    setInvoiceLoading(false)
+  }
+
+  const handleDownloadInvoice = async () => {
+    setInvoiceDownloading(true)
+    setInvoiceNotice(null)
+    const result = await onDownloadInvoice(pedido.id)
+    setInvoiceNotice(result.ok ? null : result)
+    setInvoiceDownloading(false)
+  }
+
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-80vh w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-beyonix-surface shadow-2xl shadow-black/80">
-        <header className="flex items-start justify-between gap-4 border-b border-white/8 bg-black px-5 py-4 sm:px-6">
+      <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#0b0b0b] shadow-2xl shadow-black/80">
+        <header className="flex items-start justify-between gap-4 border-b border-white/8 bg-[#141414] px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
               Detalle del pedido
@@ -1045,7 +1121,7 @@ function PedidoDetailModal({
           </div>
         </header>
 
-        <div className="custom-scrollbar overflow-y-auto bg-black px-4 py-4 sm:px-6 sm:py-5">
+        <div className="custom-scrollbar overflow-y-auto bg-[#0b0b0b] px-4 py-4 sm:px-6 sm:py-5">
           <div className="grid gap-4 lg:grid-cols-2">
             <section className="admin-order-data-panel rounded-2xl border border-white/8 p-4 sm:p-5">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -1116,7 +1192,7 @@ function PedidoDetailModal({
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-black/45 p-3">
                     <DetailValue
-                      label="Comprobante"
+                      label="Comprobante actual"
                       value={pedido.payment_proof_file_name || "Sin comprobante"}
                     />
                     {pedido.payment_proof_url && (
@@ -1144,6 +1220,143 @@ function PedidoDetailModal({
               )}
             </section>
           </div>
+
+          <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <DetailValue
+                label="Subtotal productos"
+                value={formatPrice(financialBreakdown.productsSubtotal)}
+              />
+            </div>
+            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <DetailValue
+                label="Descuento transferencia"
+                value={
+                  financialBreakdown.transferDiscount > 0
+                    ? `-${formatPrice(financialBreakdown.transferDiscount)}`
+                    : formatPrice(0)
+                }
+              />
+            </div>
+            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <DetailValue
+                label="Envío"
+                value={
+                  financialBreakdown.shipping > 0
+                    ? formatPrice(financialBreakdown.shipping)
+                    : "Gratis"
+                }
+              />
+            </div>
+            <div className="rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/20 p-3">
+              <DetailValue label="Total cobrado" value={formatPrice(pedido.total)} />
+            </div>
+          </section>
+
+          <section className="admin-order-invoice-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                  Factura electrónica
+                </p>
+                {pedido.invoice_status === "authorized" ? (
+                  <>
+                    <h3 className="mt-2 flex items-center gap-2 text-lg font-black text-white">
+                      <FileText className="size-5 text-emerald-300" />
+                      Factura C emitida
+                    </h3>
+                    <p className="mt-1 text-sm font-bold text-beyonix-sky">
+                      Factura C{" "}
+                      {formatInvoiceNumber(
+                        pedido.invoice_point,
+                        pedido.invoice_number,
+                      )}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="mt-2 text-lg font-black text-white">
+                      Emitir comprobante fiscal
+                    </h3>
+                    <p className="mt-1 max-w-xl text-sm leading-6 text-white/55">
+                      La Factura C se solicitará a ARCA y quedará asociada a
+                      este pedido.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {pedido.invoice_status === "authorized" ? (
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadInvoice()}
+                  disabled={invoiceDownloading}
+                  className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light disabled:cursor-wait disabled:opacity-60"
+                >
+                  {invoiceDownloading ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <Download className="size-4" />
+                  )}
+                  {invoiceDownloading ? "Preparando..." : "Descargar factura"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleIssueInvoice()}
+                  disabled={invoiceLoading || !isApprovedPayment(pedido)}
+                  className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-cyan hover:bg-beyonix-blue-hover disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {invoiceLoading ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <FileText className="size-4" />
+                  )}
+                  {invoiceLoading ? "Emitiendo factura..." : "Emitir Factura C"}
+                </button>
+              )}
+            </div>
+
+            {pedido.invoice_status === "authorized" ? (
+              <div className="mt-4 grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-3">
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="CAE"
+                    value={pedido.invoice_cae || "No informado"}
+                  />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Vencimiento CAE"
+                    value={formatInvoiceDate(pedido.invoice_cae_due)}
+                  />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Fecha de emisión"
+                    value={formatOptionalOrderDate(pedido.invoice_created_at)}
+                  />
+                </div>
+              </div>
+            ) : !isApprovedPayment(pedido) ? (
+              <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs font-medium text-amber-200">
+                Confirmá el pago antes de emitir la factura.
+              </p>
+            ) : null}
+
+            {invoiceNotice && (
+              <p
+                role="status"
+                className={`mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${
+                  invoiceNotice.ok
+                    ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-200"
+                    : "border-red-400/20 bg-red-400/8 text-red-200"
+                }`}
+              >
+                {invoiceNotice.message}
+              </p>
+            )}
+          </section>
 
           <section className="admin-order-data-panel mt-4 rounded-2xl border border-white/8 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1669,6 +1882,88 @@ export function AdminPedidos({
     window.open(data.signedUrl, "_blank", "noopener,noreferrer")
   }
 
+  const handleIssueInvoice = async (pedidoId: number) => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        return {
+          ok: false,
+          message: "La sesión administrativa venció.",
+        }
+      }
+
+      const response = await fetch(`/api/admin/orders/${pedidoId}/invoice`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      })
+      const data = (await response.json()) as { error?: string }
+
+      if (!response.ok) {
+        const detail = data.error || "No se pudo emitir factura."
+        const message = /ARCA_|configur|CUIT|PTO_VTA|cert|private/i.test(detail)
+          ? `Revisar configuración fiscal. ${detail}`
+          : detail
+
+        setNotice({ type: "error", message })
+        return { ok: false, message }
+      }
+
+      await reloadPedidos()
+      const message = "Factura C emitida correctamente."
+      setNotice({ type: "ok", message })
+      return { ok: true, message }
+    } catch (error) {
+      console.error("ADMIN_INVOICE_ISSUE_ERROR", error)
+      const message = "Error de conexión con ARCA. Intentá nuevamente."
+      setNotice({ type: "error", message })
+      return { ok: false, message }
+    }
+  }
+
+  const handleDownloadInvoice = async (pedidoId: number) => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        return {
+          ok: false,
+          message: "La sesión administrativa venció.",
+        }
+      }
+
+      const response = await fetch(`/api/admin/orders/${pedidoId}/invoice/pdf`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        return {
+          ok: false,
+          message: data.error || "No se pudo descargar la factura.",
+        }
+      }
+
+      const blob = await response.blob()
+      downloadBlob(blob, `factura-c-pedido-${pedidoId}.pdf`)
+      return { ok: true, message: "Factura descargada." }
+    } catch (error) {
+      console.error("ADMIN_INVOICE_DOWNLOAD_ERROR", error)
+      return {
+        ok: false,
+        message: "No se pudo descargar la factura.",
+      }
+    }
+  }
+
   const handleAndreaniAction = async (
     action: AndreaniAction,
     pedidoId: number
@@ -2102,6 +2397,8 @@ export function AdminPedidos({
           onOpenPaymentProof={handleOpenPaymentProof}
           onPaymentStatusChange={handlePaymentStatusChange}
           onAndreaniAction={handleAndreaniAction}
+          onIssueInvoice={handleIssueInvoice}
+          onDownloadInvoice={handleDownloadInvoice}
         />
       )}
     </div>

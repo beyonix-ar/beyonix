@@ -381,13 +381,13 @@ export function ProductsPageLayout() {
     <main className="relative min-h-screen overflow-visible bg-black text-white">
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-category-page-bg" />
 
-      <div className="category-hero container relative z-20 mx-auto px-4 pb-6 pt-16 lg:px-8 lg:pb-8 lg:pt-18">
-        <div className="mx-auto max-w-1400px">
-          <div className="relative min-h-[340px] overflow-hidden rounded-xl beyonix-category-banner-glass sm:min-h-[400px] lg:min-h-[480px]">
-            <div className="global-search-wrapper absolute left-0 right-0 top-12 z-30 flex justify-center px-4">
+      <div className="category-hero relative z-20 w-full pb-6 pt-16 lg:pb-8 lg:pt-18">
+        <div className="w-full">
+          <div className="relative min-h-[380px] overflow-hidden rounded-xl beyonix-category-banner-glass sm:min-h-[460px] lg:min-h-[560px]">
+            <div className="global-search-wrapper absolute left-0 right-0 top-18 z-30 flex justify-center px-4">
               <GlobalSearchBar
                 search={search}
-                className="max-w-xl"
+                className="max-w-3xl lg:max-w-4xl [&>div:first-child]:border-white/15 [&>div:first-child]:bg-[#171717] [&>div:first-child]:shadow-xl [&>div:first-child]:shadow-black/35 [&>div:first-child:hover]:border-[#112A43] [&>div:first-child>button:hover]:shadow-[inset_0_0_0_1px_#112A43]"
                 onSearchChange={
                   setSearch
                 }
@@ -408,7 +408,7 @@ export function ProductsPageLayout() {
               src="/images/beyonix-products-banner.png"
               alt="Tecnología BEYONIX"
               sizes="(min-width: 1536px) 1400px, 100vw"
-              className="object-cover object-center beyonix-category-banner-image-fade"
+              className="object-cover object-[center_45%] beyonix-category-banner-image-fade"
               priority
             />
 
