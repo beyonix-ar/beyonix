@@ -29,6 +29,7 @@ interface CategoryPageLayoutProps {
 
 export function CategoryPageLayout({
   title,
+  description,
   image,
   products,
 }: CategoryPageLayoutProps) {
@@ -113,6 +114,20 @@ export function CategoryPageLayout({
                 }))}
                 onSearchChange={setSearch}
               />
+            </div>
+
+            <div className="absolute left-5 top-24 z-20 max-w-[85%] sm:left-8 sm:top-28 sm:max-w-[520px] lg:left-12 lg:top-28">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-beyonix-cyan/80">
+                Categoría
+              </p>
+              <h1 className="font-heading text-4xl font-black uppercase tracking-tight text-white sm:text-5xl lg:text-6xl">
+                {title}
+              </h1>
+              {description ? (
+                <p className="mt-3 max-w-[480px] text-sm leading-relaxed text-white/70 sm:text-base">
+                  {description}
+                </p>
+              ) : null}
             </div>
 
             {image ? (

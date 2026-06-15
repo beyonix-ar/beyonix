@@ -41,10 +41,10 @@ interface CategoriasTableProps {
 
 const headers = [
   "Producto / Categoría",
-  "Articulos",
+  "Artículos",
   "Stock",
   "Destacada",
-  "Posicion",
+  "Posición",
   "Acciones",
 ]
 
@@ -78,7 +78,7 @@ export function CategoriasTable({
         <FolderOpen className="mx-auto mb-3 size-10 text-white/15" />
 
         <p className="text-sm font-medium text-white/60">
-          No hay categorias cargadas.
+          No hay categorías cargadas.
         </p>
 
         <p className="mt-1 text-xs text-white/40">

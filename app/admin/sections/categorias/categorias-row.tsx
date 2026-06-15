@@ -6,6 +6,7 @@ import {
   Trash2,
 } from "lucide-react"
 
+import { AdminSelect } from "@/app/admin/components/admin-controls"
 import type {
   SupabaseCategoria,
 } from "@/lib/supabase/types"
@@ -118,36 +119,30 @@ export function CategoriasRow({
 
       <div className="flex justify-center">
         {isFeatured ? (
-          <select
-            value={
-              categoria.posicion_destacada ?? ""
-            }
-            onChange={(event) => {
-              const value =
-                event.target.value
-
-              onPositionChange(
-                categoria,
-                value
-                  ? (Number(value) as 1 | 2 | 3)
-                  : null
-              )
-            }}
-            className="h-8 w-20 cursor-pointer rounded-xl border border-white/8 bg-black px-2 text-center text-sm font-semibold text-white outline-none transition-colors focus:border-beyonix-blue-light"
-          >
-            <option value="">
-              -
-            </option>
-            <option value="1">
-              1
-            </option>
-            <option value="2">
-              2
-            </option>
-            <option value="3">
-              3
-            </option>
-          </select>
+          <div className="w-20">
+            <AdminSelect
+              title="Posición destacada"
+              ariaLabel={`Posición destacada de ${categoria.nombre}`}
+              value={String(
+                categoria.posicion_destacada ?? ""
+              )}
+              compact
+              centered
+              onChange={(value) =>
+                onPositionChange(
+                  categoria,
+                  value
+                    ? (Number(value) as 1 | 2 | 3)
+                    : null
+                )
+              }
+            >
+              <option value="">-</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </AdminSelect>
+          </div>
         ) : (
           <span className="text-sm font-semibold text-white/28">
             -
