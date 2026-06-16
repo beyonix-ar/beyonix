@@ -4,6 +4,7 @@ import { Montserrat, Manrope } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
 import { AuthProvider } from "@/context/auth-context"
+import { BrowserTabTitle } from "@/components/BrowserTabTitle"
 import { BeyonixShootingStarsBackground } from "@/components/backgrounds/beyonix-shooting-stars-background"
 import { LayoutShell } from "@/components/layout-shell"
 import { CartWrapper } from "@/components/cart/cart-wrapper"
@@ -67,6 +68,7 @@ export default function RootLayout({
         <Script id="beyonix-scroll-restoration" strategy="beforeInteractive">
           {`if ("scrollRestoration" in history) history.scrollRestoration = "manual";`}
         </Script>
+        <BrowserTabTitle />
         <BeyonixShootingStarsBackground />
         <div className="relative z-10">
           <AuthProvider>

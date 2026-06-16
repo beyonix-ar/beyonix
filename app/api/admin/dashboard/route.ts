@@ -8,6 +8,7 @@ import type {
 } from "@/lib/supabase/types"
 
 const PAID_STATES = new Set(["pagado", "enviado", "entregado", "approved"])
+const PAYMENT_REVIEW_STATES = new Set(["pendiente_comprobante", "en_revision"])
 
 interface DashboardLowStockItem {
   id: string
@@ -35,9 +36,11 @@ interface CommercialSale {
 
 interface RecentActivity {
   id: string
-  type: "pedido" | "pago" | "stock" | "admin"
+  type: "venta" | "pedido" | "pago" | "stock"
   title: string
   detail: string
+  meta?: string
+  secondary?: string
   created_at: string
 }
 
@@ -56,6 +59,18 @@ function getPaymentMethodLabel(order: SupabasePedido | undefined) {
   return order.payment_method_id || order.payment_type_id || "No informado"
 }
 
+function getOrderCustomerLabel(order: SupabasePedido) {
+  return order.cliente_nombre || order.cliente_email || "Cliente"
+}
+
+function getOrderItemLabel(item: SupabasePedidoItem) {
+  const productName = item.productos?.nombre ?? `Producto #${item.producto_id}`
+  const variantName = item.producto_variantes?.nombre
+  const quantity = Number(item.cantidad ?? 1) || 1
+
+  return `${productName}${variantName ? ` ${variantName}` : ""} x${quantity}`
+}
+
 export async function GET(request: Request) {
   const auth = await requireInternalUser(request)
   if ("error" in auth) return auth.error
@@ -64,7 +79,6 @@ export async function GET(request: Request) {
     productsResult,
     ordersResult,
     itemsResult,
-    auditResult,
     mercadoLibreResult,
   ] =
     await Promise.all([
@@ -77,12 +91,7 @@ export async function GET(request: Request) {
       }),
       auth.admin
         .from("orden_items")
-        .select("*, productos(id, nombre, categorias(nombre))"),
-      auth.admin
-        .from("audit_logs")
-        .select("id, table_name, action, record_id, actor_email, created_at")
-        .order("created_at", { ascending: false })
-        .limit(8),
+        .select("*, productos(id, nombre, categorias(nombre)), producto_variantes(nombre)"),
       auth.admin
         .from("mercadolibre_sales")
         .select("*")
@@ -136,9 +145,7 @@ export async function GET(request: Request) {
   const paidOrders = orders.filter(isPaidOrder)
   const sensitive = canViewSensitiveNumbers(auth.profile.rol)
   const paymentReviewOrders = orders.filter((order) =>
-    ["pendiente_comprobante", "en_revision"].includes(
-      order.payment_status ?? ""
-    )
+    PAYMENT_REVIEW_STATES.has(order.payment_status ?? "")
   )
   const pendingDispatchOrders = orders.filter(
     (order) =>
@@ -208,41 +215,74 @@ export async function GET(request: Request) {
         }),
       ]
     : []
+  const ordersById = new Map(orders.map((order) => [order.id, order]))
+  const recentWebSales = items
+    .map<RecentActivity | null>((item) => {
+      const order = ordersById.get(item.orden_id)
+      if (!order || !isPaidOrder(order)) return null
+
+      return {
+        id: `venta-web-${item.id}`,
+        type: "venta",
+        title: "Nueva venta realizada",
+        detail: getOrderItemLabel(item),
+        meta: getPaymentMethodLabel(order),
+        secondary: `Orden #${order.id}`,
+        created_at: order.paid_at || order.created_at,
+      }
+    })
+    .filter(Boolean) as RecentActivity[]
+  const recentMercadoLibreSales: RecentActivity[] = mlRows
+    .slice(0, 10)
+    .map((row) => ({
+      id: `venta-ml-${String(row.id)}`,
+      type: "venta",
+      title: "Nueva venta realizada",
+      detail: `${String(row.product_name ?? "Venta MercadoLibre")} x${Number(row.quantity ?? 1) || 1}`,
+      meta: "MercadoLibre",
+      secondary: row.order_id ? `Orden #${String(row.order_id)}` : "Marketplace",
+      created_at: String(row.sale_date ?? row.imported_at ?? new Date().toISOString()),
+    }))
+  const paymentConfirmedActivity: RecentActivity[] = paidOrders
+    .slice(0, 8)
+    .map((order) => ({
+      id: `pago-confirmado-${order.id}`,
+      type: "pago",
+      title: "Pago confirmado",
+      detail: `Orden #${order.id}`,
+      meta: `${getPaymentMethodLabel(order)} aprobado`,
+      created_at: order.paid_at || order.created_at,
+    }))
   const recentActivity: RecentActivity[] = [
-    ...orders.slice(0, 5).map((order) => ({
+    ...recentWebSales,
+    ...recentMercadoLibreSales,
+    ...paymentConfirmedActivity,
+    ...orders.filter((order) => !isPaidOrder(order)).slice(0, 5).map((order) => ({
       id: `pedido-${order.id}`,
       type: "pedido" as const,
-      title: `Pedido #${order.id}`,
-      detail: `${order.cliente_nombre || order.cliente_email || "Cliente"} · ${order.estado}`,
+      title: "Pedido pendiente",
+      detail: `Orden #${order.id}`,
+      meta: `${getOrderCustomerLabel(order)} · ${order.estado}`,
       created_at: order.created_at,
     })),
-    ...paymentReviewOrders.slice(0, 3).map((order) => ({
+    ...paymentReviewOrders.slice(0, 5).map((order) => ({
       id: `pago-${order.id}`,
       type: "pago" as const,
-      title: `Pago a revisar #${order.id}`,
-      detail: order.payment_proof_file_name || order.payment_status || "Transferencia pendiente",
+      title: "Pago en revisión",
+      detail: `Orden #${order.id}`,
+      meta: order.payment_proof_file_name
+        ? "Comprobante recibido"
+        : "Transferencia pendiente",
       created_at: order.payment_proof_uploaded_at || order.created_at,
     })),
-    ...lowStock.slice(0, 3).map((item) => ({
+    ...lowStock.slice(0, 8).map((item) => ({
       id: `stock-${item.id}`,
       type: "stock" as const,
-      title: item.producto_nombre || item.nombre,
-      detail: `${item.tipo === "variante" ? item.nombre : "Producto"} · ${item.stock} unidades`,
+      title: "Stock bajo",
+      detail: item.producto_nombre || item.nombre,
+      meta: `Quedan ${item.stock} unidades`,
+      secondary: item.tipo === "variante" ? item.nombre : undefined,
       created_at: new Date().toISOString(),
-    })),
-    ...((auditResult.error ? [] : auditResult.data ?? []) as Array<{
-      id: number
-      table_name: string
-      action: string
-      record_id: string | null
-      actor_email: string | null
-      created_at: string
-    }>).map((log) => ({
-      id: `audit-${log.id}`,
-      type: "admin" as const,
-      title: `${log.action} en ${log.table_name}`,
-      detail: log.actor_email || log.record_id || "Actividad administrativa",
-      created_at: log.created_at,
     })),
   ]
     .sort(

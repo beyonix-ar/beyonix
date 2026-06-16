@@ -5,15 +5,15 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  CheckCircle2,
   Clock,
   CreditCard,
   Eye,
   EyeOff,
   FileUp,
   Package,
-  RefreshCw,
   ShoppingCart,
-  Truck,
+  Sparkles,
 } from "lucide-react"
 import * as XLSX from "xlsx"
 
@@ -83,6 +83,23 @@ function formatDate(value: string) {
     timeStyle: "short",
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(new Date(value))
+}
+
+function formatRelativeTime(value: string) {
+  const date = new Date(value)
+  const diffMs = Date.now() - date.getTime()
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000))
+
+  if (diffMinutes < 1) return "Recién"
+  if (diffMinutes < 60) return `Hace ${diffMinutes} min`
+
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `Hace ${diffHours} h`
+
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) return `Hace ${diffDays} d`
+
+  return formatDate(value)
 }
 
 function isSameDay(a: Date, b: Date) {
@@ -229,6 +246,12 @@ function StatCard({
   icon: React.ReactNode
   onClick?: () => void
 }) {
+  const valueClass =
+    typeof value === "number"
+      ? "text-3xl"
+      : String(value).length > 16
+        ? "text-xl leading-tight"
+        : "text-2xl"
   const content = (
     <>
       <div className="flex items-start justify-between gap-4">
@@ -236,8 +259,10 @@ function StatCard({
           <p className="text-11px font-bold uppercase tracking-widest text-white/45">
             {title}
           </p>
-          <p className="mt-3 truncate text-3xl font-black text-white">{value}</p>
-          {helper && <p className="mt-2 text-xs text-white/50">{helper}</p>}
+          <p className={`mt-3 break-words font-black text-white ${valueClass}`}>
+            {value}
+          </p>
+          {helper && <p className="mt-2 text-xs leading-5 text-white/50">{helper}</p>}
         </div>
         <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-black/25 text-beyonix-sky">
           {icon}
@@ -268,6 +293,64 @@ function StatCard({
   return (
     <div className="min-h-140px rounded-3xl border border-white/8 bg-black/85 p-5">
       {content}
+    </div>
+  )
+}
+
+function ActivityIcon({ type }: { type: DashboardRecentActivity["type"] }) {
+  const className = "size-4"
+
+  if (type === "venta") return <ShoppingCart className={className} />
+  if (type === "pago") return <CheckCircle2 className={className} />
+  if (type === "stock") return <AlertTriangle className={className} />
+
+  return <Clock className={className} />
+}
+
+function ActivityItem({ item }: { item: DashboardRecentActivity }) {
+  const tone =
+    item.type === "stock"
+      ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+      : item.type === "pago"
+        ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+        : item.type === "venta"
+          ? "border-beyonix-sky/30 bg-beyonix-blue text-beyonix-sky"
+          : "border-white/10 bg-[#181818] text-white/70"
+
+  return (
+    <div className="rounded-2xl border border-white/7 bg-black px-4 py-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border ${tone}`}>
+          <ActivityIcon type={item.type} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-white">{item.title}</p>
+              <p className="mt-1 truncate text-xs font-medium text-white/58">
+                {item.detail}
+              </p>
+            </div>
+            <span className="shrink-0 text-11px font-bold uppercase tracking-wide text-white/35">
+              {formatRelativeTime(item.created_at)}
+            </span>
+          </div>
+          {(item.meta || item.secondary) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {item.meta && (
+                <span className="rounded-full border border-white/8 bg-[#181818] px-2.5 py-1 text-11px font-bold text-white/58">
+                  {item.meta}
+                </span>
+              )}
+              {item.secondary && (
+                <span className="rounded-full border border-white/8 bg-[#181818] px-2.5 py-1 text-11px font-bold text-white/45">
+                  {item.secondary}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -746,6 +829,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
     return values[sortKey]
   })
+  const latestSale = recentActivity.find((item) => item.type === "venta")
   const alerts = [
     stats.productosBajoStock > 0
       ? `${stats.productosBajoStock} productos o variantes con stock bajo.`
@@ -787,7 +871,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-2xl border border-white/8 bg-[#141414] p-1">
+            <div className="inline-flex rounded-xl border border-beyonix-blue-light/25 bg-black/35 p-0.5 shadow-inner shadow-black/40">
               {[
                 ["operativo", "Centro operativo"],
                 ["comercial", "Análisis comercial"],
@@ -798,31 +882,21 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   title={label}
                   aria-label={label}
                   onClick={() => setTab(key as DashboardTab)}
-                  className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-all ${
+                  className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
                     tab === key
-                      ? "bg-white text-black"
-                      : "text-white/65 hover:bg-white/8 hover:text-white"
+                      ? "border-beyonix-sky/45 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
+                      : "border-transparent text-white/62 hover:border-white/10 hover:bg-white/7 hover:text-white"
                   }`}
                 >
                   {key === "operativo" ? (
-                    <ShoppingCart className="size-4" />
+                    <ShoppingCart className="size-3.5" />
                   ) : (
-                    <BarChart3 className="size-4" />
+                    <BarChart3 className="size-3.5" />
                   )}
                   {label}
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              title="Actualizar dashboard"
-              aria-label="Actualizar dashboard"
-              onClick={() => void reloadDashboard()}
-              className="inline-flex h-12 min-w-140px cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white px-6 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-white/90"
-            >
-              <RefreshCw className="size-4" />
-              Actualizar
-            </button>
           </div>
         </div>
       </div>
@@ -835,36 +909,43 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       {tab === "operativo" ? (
         <>
-          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-            <StatCard
-              title="Pedidos pendientes"
-              value={stats.pedidosPendientes}
-              helper={`${stats.esperandoComprobante} esperan comprobante · ${stats.enviosPendientes} para preparar`}
-              icon={<ShoppingCart className="size-5" />}
-              onClick={() => onNavigate("pedidos")}
-            />
-            <StatCard
-              title="Pagos a revisar"
-              value={stats.pagosEnRevision}
-              helper="Transferencias y comprobantes"
-              icon={<CreditCard className="size-5" />}
-              onClick={() => onNavigate("pedidos")}
-            />
-            <StatCard
-              title="Despachos pendientes"
-              value={stats.enviosPendientes}
-              helper={`${stats.pedidosSinTracking} sin tracking o etiqueta`}
-              icon={<Truck className="size-5" />}
-              onClick={() => onNavigate("pedidos")}
-            />
-            <StatCard
-              title="Stock crítico"
-              value={stats.productosBajoStock}
-              helper="Productos y variantes bajo umbral"
-              icon={<AlertTriangle className="size-5" />}
-              onClick={() => onNavigate("productos")}
-            />
-          </div>
+          <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+            <SectionHeader eyebrow="Centro operativo" title="Prioridades de hoy" />
+            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+              <StatCard
+                title="Pedidos pendientes"
+                value={stats.pedidosPendientes}
+                helper={`${stats.esperandoComprobante} esperan comprobante · ${stats.enviosPendientes} para preparar`}
+                icon={<ShoppingCart className="size-5" />}
+                onClick={() => onNavigate("pedidos")}
+              />
+              <StatCard
+                title="Pagos en revisión"
+                value={stats.pagosEnRevision}
+                helper="Transferencias pendientes de confirmar"
+                icon={<CreditCard className="size-5" />}
+                onClick={() => onNavigate("pedidos")}
+              />
+              <StatCard
+                title="Stock crítico"
+                value={stats.productosBajoStock}
+                helper="Productos y variantes bajo umbral"
+                icon={<AlertTriangle className="size-5" />}
+                onClick={() => onNavigate("productos")}
+              />
+              <StatCard
+                title="Última venta"
+                value={latestSale?.detail ?? "Sin ventas recientes"}
+                helper={
+                  latestSale
+                    ? `${latestSale.meta ?? "Venta confirmada"} · ${formatRelativeTime(latestSale.created_at)}`
+                    : "Aparecerá cuando ingrese una venta"
+                }
+                icon={<Sparkles className="size-5" />}
+                onClick={() => onNavigate("pedidos")}
+              />
+            </div>
+          </section>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
@@ -907,28 +988,11 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </section>
 
             <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
-              <SectionHeader eyebrow="Actividad" title="Movimientos recientes" />
+              <SectionHeader eyebrow="Actividad" title="Actividad reciente" />
               <div className="space-y-3">
                 {recentActivity.length ? (
                   recentActivity.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-2xl border border-white/7 bg-black px-4 py-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-white">
-                            {item.title}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-white/45">
-                            {item.detail}
-                          </p>
-                        </div>
-                        <span className="shrink-0 text-11px uppercase text-white/35">
-                          {formatDate(item.created_at)}
-                        </span>
-                      </div>
-                    </div>
+                    <ActivityItem key={item.id} item={item} />
                   ))
                 ) : (
                   <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55">

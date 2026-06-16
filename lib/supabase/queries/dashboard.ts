@@ -29,9 +29,11 @@ export interface DashboardCommercialSale {
 
 export interface DashboardRecentActivity {
   id: string
-  type: "pedido" | "pago" | "stock" | "admin"
+  type: "venta" | "pedido" | "pago" | "stock"
   title: string
   detail: string
+  meta?: string
+  secondary?: string
   created_at: string
 }
 

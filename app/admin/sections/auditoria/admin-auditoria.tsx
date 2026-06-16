@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertCircle, Filter, History, RefreshCw, RotateCcw, Search, ShieldCheck, X } from "lucide-react"
+import { AlertCircle, Filter, History, RotateCcw, Search, ShieldCheck, X } from "lucide-react"
 
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
 import { AdminSelect, AdminTextInput } from "@/app/admin/components/admin-controls"
@@ -249,7 +249,7 @@ export function AdminAuditoria() {
 
   return (
     <div className="p-8">
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mb-8">
         <div>
           <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-sky-300">
             Super admin
@@ -260,19 +260,6 @@ export function AdminAuditoria() {
           </h1>
         </div>
 
-        <button
-          type="button"
-          aria-label="Actualizar registro de auditoría"
-          title="Actualizar registro"
-          onClick={() => {
-            setLoading(true)
-            void loadLogs()
-          }}
-          className="inline-flex min-h-48px min-w-140px cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-6 py-3 text-sm font-bold text-black transition hover:bg-white/90"
-        >
-          <RefreshCw className="size-4" />
-          Actualizar
-        </button>
       </div>
 
       <div className="rounded-3xl border border-white/7 bg-black p-6">

@@ -65,19 +65,19 @@ export function ProductosToolbar({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-2xl border border-white/8 bg-[#141414] p-1">
+          <div className="inline-flex rounded-xl border border-beyonix-blue-light/25 bg-black/35 p-0.5 shadow-inner shadow-black/40">
             <button
               type="button"
               title="Ver productos"
               aria-label="Ver productos"
               onClick={() => onViewChange("productos")}
-              className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-all ${
+              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
                 view === "productos"
-                  ? "bg-white text-black shadow-sm"
-                  : "text-white/65 hover:border-white/10 hover:bg-white/8 hover:text-white"
+                  ? "border-beyonix-sky/45 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
+                  : "border-transparent text-white/62 hover:border-white/10 hover:bg-white/7 hover:text-white"
               }`}
             >
-              <Package className="size-4" />
+              <Package className="size-3.5" />
               Productos
             </button>
             <button
@@ -85,13 +85,13 @@ export function ProductosToolbar({
               title="Ver categorías"
               aria-label="Ver categorías"
               onClick={() => onViewChange("categorias")}
-              className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-all ${
+              className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
                 view === "categorias"
-                  ? "bg-white text-black shadow-sm"
-                  : "text-white/65 hover:border-white/10 hover:bg-white/8 hover:text-white"
+                  ? "border-beyonix-sky/45 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
+                  : "border-transparent text-white/62 hover:border-white/10 hover:bg-white/7 hover:text-white"
               }`}
             >
-              <FolderOpen className="size-4" />
+              <FolderOpen className="size-3.5" />
               Categorías
             </button>
           </div>
