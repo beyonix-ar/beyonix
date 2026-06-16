@@ -4,27 +4,30 @@ import { useCallback, useEffect, useState } from "react"
 
 import {
   getDashboardData,
+  type DashboardCommercialSale,
+  type DashboardRecentActivity,
   type DashboardStats,
   type LowStockItem,
-  type TopSellingProduct,
 } from "@/lib/supabase/queries/dashboard"
-import type { SupabasePedido, SupabaseProfile } from "@/lib/supabase/types"
+import type { SupabasePedido } from "@/lib/supabase/types"
 
 interface DashboardState {
+  role: "operador" | "admin" | "super_admin" | null
   stats: DashboardStats | null
   lowStock: LowStockItem[]
   recentOrders: SupabasePedido[]
-  recentClients: SupabaseProfile[]
-  topSellingProducts: TopSellingProduct[]
+  commercialSales: DashboardCommercialSale[]
+  recentActivity: DashboardRecentActivity[]
 }
 
 export function useDashboard() {
   const [data, setData] = useState<DashboardState>({
+    role: null,
     stats: null,
     lowStock: [],
     recentOrders: [],
-    recentClients: [],
-    topSellingProducts: [],
+    commercialSales: [],
+    recentActivity: [],
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

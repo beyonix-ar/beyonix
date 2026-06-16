@@ -1,47 +1,46 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
   Bell,
-  FolderOpen,
   History,
   LogOut,
   Menu,
   Package,
   ShieldCheck,
   ShoppingCart,
+  UserCog,
   Users,
   X,
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
-import { AdminCategorias } from "./sections/categorias/admin-categorias"
 import { AdminClientes } from "./sections/clientes/admin-clientes"
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
 import { AdminPedidos } from "./sections/pedidos/admin-pedidos"
 import { AdminProductos } from "./sections/productos/admin-productos"
+import { AdminUsuarios } from "./sections/usuarios/admin-usuarios"
 
 export type AdminSection =
   | "dashboard"
   | "productos"
   | "clientes"
-  | "categorias"
   | "pedidos"
-  | "activos"
+  | "usuarios"
   | "auditoria"
 
 const ADMIN_SECTIONS: AdminSection[] = [
   "dashboard",
   "productos",
   "clientes",
-  "categorias",
   "pedidos",
-  "activos",
+  "usuarios",
   "auditoria",
 ]
 
@@ -51,7 +50,7 @@ interface NavigationItem {
   key: AdminSection
   label: string
   description: string
-  icon: React.ReactNode
+  icon: ReactNode
   notificationCount?: number
 }
 
@@ -88,10 +87,13 @@ function SidebarItem({
 
       <span className="flex min-w-0 flex-1 items-start justify-between gap-2">
         <span className="min-w-0">
-        <span className="block text-sm font-bold">{item.label}</span>
-        <span title={item.description} className="mt-0.5 block truncate text-11px text-white/58">
-          {item.description}
-        </span>
+          <span className="block text-sm font-bold">{item.label}</span>
+          <span
+            title={item.description}
+            className="mt-0.5 block truncate text-11px text-white/58"
+          >
+            {item.description}
+          </span>
         </span>
         {item.notificationCount ? (
           <span
@@ -124,7 +126,8 @@ function getStoredAdminSection() {
 export function AdminClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { user, isLoading, isAdmin, isSuperAdmin, logout } = useAuth()
+  const { user, isLoading, isInternal, isOperator, isSuperAdmin, logout } =
+    useAuth()
   const { notificationCount } = useOrderNotifications()
   const [section, setSection] = useState<AdminSection>(
     () =>
@@ -134,8 +137,8 @@ export function AdminClient() {
   )
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const navigation = useMemo<NavigationItem[]>(
-    () => [
+  const navigation = useMemo<NavigationItem[]>(() => {
+    const operational: NavigationItem[] = [
       {
         key: "dashboard",
         label: "Dashboard",
@@ -145,9 +148,22 @@ export function AdminClient() {
       {
         key: "productos",
         label: "Productos",
-        description: "Stock, precios y variantes",
+        description: "Stock, precios, variantes y categorías",
         icon: <Package className="size-4" />,
       },
+      {
+        key: "pedidos",
+        label: "Pedidos",
+        description: "Ventas, pagos, comprobantes y envíos",
+        icon: <ShoppingCart className="size-4" />,
+        notificationCount,
+      },
+    ]
+
+    if (isOperator) return operational
+
+    return [
+      ...operational,
       {
         key: "clientes",
         label: "Clientes",
@@ -155,23 +171,10 @@ export function AdminClient() {
         icon: <Users className="size-4" />,
       },
       {
-        key: "pedidos",
-        label: "Pedidos",
-        description: "Ventas y despacho",
-        icon: <ShoppingCart className="size-4" />,
-        notificationCount,
-      },
-      {
-        key: "activos",
-        label: "Activos",
-        description: "Sesiones actuales",
-        icon: <ShieldCheck className="size-4" />,
-      },
-      {
-        key: "categorias",
-        label: "Categorías",
-        description: "Organización del catálogo",
-        icon: <FolderOpen className="size-4" />,
+        key: "usuarios",
+        label: "Usuarios / Roles",
+        description: "Permisos de acceso",
+        icon: <UserCog className="size-4" />,
       },
       ...(isSuperAdmin
         ? [
@@ -183,19 +186,24 @@ export function AdminClient() {
             },
           ]
         : []),
-    ],
-    [isSuperAdmin, notificationCount]
-  )
+    ]
+  }, [isOperator, isSuperAdmin, notificationCount])
 
   useEffect(() => {
-    const nextSection =
-      getAdminSection(searchParams.get("section"))
+    const nextSection = getAdminSection(searchParams.get("section"))
 
     if (!nextSection) {
       const storedSection = getStoredAdminSection()
 
-      if (!storedSection) return
-      if (storedSection === "auditoria" && !isSuperAdmin) return
+      if (!storedSection) {
+        if (searchParams.has("section")) {
+          router.replace("/admin?section=dashboard", {
+            scroll: false,
+          })
+        }
+        return
+      }
+      if (!navigation.some((item) => item.key === storedSection)) return
 
       setSection(storedSection)
       router.replace(`/admin?section=${storedSection}`, {
@@ -204,31 +212,29 @@ export function AdminClient() {
       return
     }
 
-    if (nextSection === "auditoria" && !isSuperAdmin) return
+    if (!navigation.some((item) => item.key === nextSection)) return
 
     setSection(nextSection)
     window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, nextSection)
-  }, [searchParams, isSuperAdmin, router])
+  }, [searchParams, navigation, router])
 
   useEffect(() => {
     if (isLoading) return
-    if (section !== "auditoria" || isSuperAdmin) return
+    if (navigation.some((item) => item.key === section)) return
 
     setSection("dashboard")
     window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, "dashboard")
     router.replace("/admin?section=dashboard", {
       scroll: false,
     })
-  }, [section, isLoading, isSuperAdmin, router])
+  }, [section, isLoading, navigation, router])
 
   const goToSection = (nextSection: AdminSection) => {
     setSection(nextSection)
     setMobileOpen(false)
     window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, nextSection)
 
-    const nextParams =
-      new URLSearchParams(searchParams.toString())
-
+    const nextParams = new URLSearchParams(searchParams.toString())
     nextParams.set("section", nextSection)
 
     router.replace(`/admin?${nextParams.toString()}`, {
@@ -249,14 +255,14 @@ export function AdminClient() {
     )
   }
 
-  if (!user || !isAdmin) {
+  if (!user || !isInternal) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black px-4">
         <div className="max-w-md rounded-3xl border border-white/10 bg-beyonix-surface p-8 text-center">
           <ShieldCheck className="mx-auto mb-4 size-10 text-beyonix-sky" />
           <h1 className="text-2xl font-bold text-white">Acceso restringido</h1>
           <p className="mt-2 text-sm text-white/60">
-            Solo administradores autorizados pueden entrar al panel.
+            Tu cuenta no tiene permisos para ingresar al panel administrativo.
           </p>
           <button
             type="button"
@@ -272,13 +278,12 @@ export function AdminClient() {
     )
   }
 
-  const sections: Record<AdminSection, React.ReactNode> = {
+  const sections: Record<AdminSection, ReactNode> = {
     dashboard: <AdminDashboard onNavigate={goToSection} />,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
     pedidos: <AdminPedidos notificationCount={notificationCount} />,
-    activos: <AdminClientes initialActiveOnly />,
-    categorias: <AdminCategorias />,
+    usuarios: !isOperator ? <AdminUsuarios /> : null,
     auditoria: isSuperAdmin ? <AdminAuditoria /> : null,
   }
 
@@ -295,7 +300,9 @@ export function AdminClient() {
           <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             Panel administrativo
           </p>
-          <h1 className="text-2xl font-black text-white transition-colors group-hover:text-[#112A43]">BEYONIX</h1>
+          <h1 className="text-2xl font-black text-white transition-colors group-hover:text-[#112A43]">
+            BEYONIX
+          </h1>
         </button>
       </div>
 
@@ -308,7 +315,7 @@ export function AdminClient() {
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/40 bg-beyonix-blue px-3 py-1">
             <span className="size-1.5 rounded-full bg-beyonix-sky" />
             <span className="text-10px font-bold uppercase tracking-widest text-beyonix-sky">
-              {isSuperAdmin ? "Super admin" : "Admin"}
+              {ROLE_LABELS[user.rol as UserRole]}
             </span>
           </div>
         </div>

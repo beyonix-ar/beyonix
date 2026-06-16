@@ -175,7 +175,7 @@ export interface BeyonixUser {
 
   email: string
 
-  rol: "cliente" | "admin" | "super_admin"
+  rol: "cliente" | "operador" | "admin" | "super_admin"
 
   phone?: string
 
@@ -227,6 +227,8 @@ interface AuthContextType {
   isLoading: boolean
 
   isAdmin: boolean
+  isInternal: boolean
+  isOperator: boolean
   isSuperAdmin: boolean
 
   login: (
@@ -271,6 +273,7 @@ function profileToUser(
     email,
 
     rol:
+      profile.rol === "operador" ||
       profile.rol === "admin" ||
       profile.rol === "super_admin"
         ? profile.rol
@@ -327,7 +330,9 @@ function authUserToFallbackUser(
     supabaseUser.app_metadata?.role ??
     metadata.rol
   const role =
-    metadataRole === "admin" || metadataRole === "super_admin"
+    metadataRole === "operador" ||
+    metadataRole === "admin" ||
+    metadataRole === "super_admin"
       ? metadataRole
       : "cliente"
 
@@ -1231,6 +1236,12 @@ export function AuthProvider({
     user?.rol?.toLowerCase() ===
       "admin" ||
     isSuperAdmin
+  const isOperator =
+    user?.rol?.toLowerCase() ===
+    "operador"
+  const isInternal =
+    isOperator ||
+    isAdmin
   // Provider
 
   return (
@@ -1241,6 +1252,8 @@ export function AuthProvider({
         isLoading,
 
         isAdmin,
+        isInternal,
+        isOperator,
         isSuperAdmin,
 
         login,

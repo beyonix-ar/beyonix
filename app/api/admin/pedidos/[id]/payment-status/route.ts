@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { requireOperator } from "@/app/api/admin/clientes/_auth"
 
 const ALLOWED_PAYMENT_STATUSES = [
   "pendiente_comprobante",
@@ -13,7 +13,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdmin(request)
+  const auth = await requireOperator(request)
 
   if ("error" in auth) return auth.error
 

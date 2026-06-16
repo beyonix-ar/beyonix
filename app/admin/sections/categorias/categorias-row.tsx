@@ -53,7 +53,7 @@ export function CategoriasRow({
 
   return (
     <div
-      className={`grid grid-cols-admin-categories items-center gap-3 bg-black px-5 py-3 transition-colors hover:bg-beyonix-surface ${
+      className={`group grid grid-cols-admin-categories items-center gap-3 bg-black px-5 py-3 transition-all hover:bg-beyonix-blue/20 ${
         !isLast
           ? "border-b border-white/5"
           : ""
@@ -101,7 +101,7 @@ export function CategoriasRow({
           onClick={() =>
             onToggleDestacado(categoria)
           }
-          className={`flex size-8 cursor-pointer items-center justify-center rounded-xl border transition-colors ${
+          className={`flex size-8 cursor-pointer items-center justify-center rounded-xl border transition-all hover:-translate-y-0.5 ${
             isFeatured
               ? "border-beyonix-blue-light/45 bg-beyonix-blue/25 text-beyonix-cyan"
               : "border-white/8 text-white/28 hover:border-beyonix-blue-light/30 hover:text-white/55"
@@ -158,7 +158,7 @@ export function CategoriasRow({
           onClick={() =>
             onEdit(categoria)
           }
-          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-white/20 hover:text-white"
+          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-all hover:-translate-y-0.5 hover:border-beyonix-blue-light/35 hover:bg-beyonix-blue/20 hover:text-white"
         >
           <Pencil className="size-3.5" />
         </button>
@@ -170,7 +170,7 @@ export function CategoriasRow({
           onClick={() =>
             onDelete(categoria.id)
           }
-          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
+          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-all hover:-translate-y-0.5 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400"
         >
           <Trash2 className="size-3.5" />
         </button>

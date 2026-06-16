@@ -2,17 +2,19 @@
 
 import { useMemo, useState } from "react"
 
-import type { SupabaseProducto } from "@/lib/supabase/types"
+import { SITE_SETTINGS } from "@/config/site-settings"
 import { useProductos } from "@/hooks/use-productos"
+import type { SupabaseProducto } from "@/lib/supabase/types"
 
+import { AdminCategorias } from "../categorias/admin-categorias"
 import { ProductoForm } from "./producto-form"
 import { ProductosTable } from "./productos-table"
 import { ProductosToolbar } from "./productos-toolbar"
-import { SITE_SETTINGS } from "@/config/site-settings"
 
 type StockFilter = "todos" | "sin_stock" | "bajo_stock" | "disponible"
 type ActiveFilter = "todos" | "activos" | "inactivos"
 type FeaturedFilter = "todos" | "destacados" | "normales"
+type ProductView = "productos" | "categorias"
 
 function getStockTotal(producto: SupabaseProducto) {
   const variantes = producto.producto_variantes ?? []
@@ -32,10 +34,13 @@ export function AdminProductos() {
   } = useProductos()
 
   const [search, setSearch] = useState("")
+  const [categorySearch, setCategorySearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("todos")
   const [stockFilter, setStockFilter] = useState<StockFilter>("todos")
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("todos")
   const [featuredFilter, setFeaturedFilter] = useState<FeaturedFilter>("todos")
+  const [view, setView] = useState<ProductView>("productos")
+  const [createCategorySignal, setCreateCategorySignal] = useState(0)
   const [editando, setEditando] = useState<SupabaseProducto | null | undefined>(
     undefined
   )
@@ -65,7 +70,8 @@ export function AdminProductos() {
         .toLowerCase()
         .includes(normalizedSearch)
       const matchesCategory =
-        categoryFilter === "todos" || String(producto.categoria_id) === categoryFilter
+        categoryFilter === "todos" ||
+        String(producto.categoria_id) === categoryFilter
       const matchesStock =
         stockFilter === "todos" ||
         (stockFilter === "sin_stock" && stock <= 0) ||
@@ -125,32 +131,46 @@ export function AdminProductos() {
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <ProductosToolbar
         search={search}
+        categorySearch={categorySearch}
         categorias={categorias}
         categoryFilter={categoryFilter}
         stockFilter={stockFilter}
         activeFilter={activeFilter}
         featuredFilter={featuredFilter}
+        view={view}
         onSearchChange={setSearch}
+        onCategorySearchChange={setCategorySearch}
         onCategoryFilterChange={setCategoryFilter}
         onStockFilterChange={setStockFilter}
         onActiveFilterChange={setActiveFilter}
         onFeaturedFilterChange={setFeaturedFilter}
+        onViewChange={setView}
         onCreate={() => setEditando(null)}
+        onCreateCategory={() => setCreateCategorySignal((current) => current + 1)}
       />
 
-      {error && (
-        <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
+      {view === "categorias" ? (
+        <AdminCategorias
+          createSignal={createCategorySignal}
+          search={categorySearch}
+        />
+      ) : (
+        <>
+          {error && (
+            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+              {error}
+            </div>
+          )}
+
+          <ProductosTable
+            productos={productosFiltrados}
+            loading={loading}
+            onEdit={(producto) => setEditando(producto)}
+            onDelete={handleDelete}
+            onToggleActivo={toggleProductoActivo}
+          />
+        </>
       )}
-
-      <ProductosTable
-        productos={productosFiltrados}
-        loading={loading}
-        onEdit={(producto) => setEditando(producto)}
-        onDelete={handleDelete}
-        onToggleActivo={toggleProductoActivo}
-      />
     </div>
   )
 }

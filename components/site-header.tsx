@@ -22,7 +22,7 @@ import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 export function SiteHeader() {
   const { cart, total, openCart } = useCart()
-  const { user, isLoading, logout } = useAuth()
+  const { user, isLoading, isInternal, logout } = useAuth()
 
   const [categories, setCategories] = useState<SupabaseCategoria[]>([])
   const [catOpen, setCatOpen] = useState(false)
@@ -225,6 +225,16 @@ export function SiteHeader() {
                         <ShieldCheck className="size-3.5 shrink-0" />
                         Seguridad
                       </Link>
+                      {isInternal && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setUserOpen(false)}
+                          className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-white/5 hover:text-white"
+                        >
+                          <ShieldCheck className="size-3.5 shrink-0" />
+                          Panel administrador
+                        </Link>
+                      )}
                       <button
                         type="button"
                         aria-label="Cerrar sesión"
@@ -354,6 +364,15 @@ export function SiteHeader() {
                   >
                     Seguridad
                   </Link>
+                  {isInternal && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setMobileOpen(false)}
+                      className="block rounded-lg px-2 py-3 text-15px font-semibold text-beyonix-cyan transition-colors hover:bg-white/4 hover:text-white"
+                    >
+                      Panel administrador
+                    </Link>
+                  )}
                   <button
                     type="button"
                     aria-label="Cerrar sesión"

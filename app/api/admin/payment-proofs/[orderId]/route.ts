@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { PAYMENT_PROOF_BUCKET } from "@/lib/payments/transfer"
 
 function stripBucket(path: string) {
@@ -13,7 +13,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ orderId: string }> },
 ) {
-  const auth = await requireAdmin(request)
+  const auth = await requireOperator(request)
 
   if ("error" in auth) return auth.error
 

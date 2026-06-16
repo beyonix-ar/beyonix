@@ -27,7 +27,12 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!user) {
-    return NextResponse.redirect(new URL("/login", request.url))
+    const loginUrl = new URL("/login", request.url)
+    loginUrl.searchParams.set(
+      "redirect",
+      `${request.nextUrl.pathname}${request.nextUrl.search}`
+    )
+    return NextResponse.redirect(loginUrl)
   }
 
   const { data: profile } = await supabase
@@ -35,10 +40,6 @@ export async function proxy(request: NextRequest) {
     .select("rol")
     .eq("id", user.id)
     .single()
-
-  if (!profile || !["admin", "super_admin"].includes(profile.rol)) {
-    return NextResponse.redirect(new URL("/", request.url))
-  }
 
   return response
 }

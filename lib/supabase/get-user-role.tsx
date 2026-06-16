@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { isUserRole } from '@/lib/auth/roles'
 
 export async function getUserRole() {
   const supabase = await createClient()
@@ -17,5 +18,5 @@ export async function getUserRole() {
     .eq('id', user.id)
     .single()
 
-  return profile?.rol ?? null
+  return isUserRole(profile?.rol) ? profile.rol : null
 }

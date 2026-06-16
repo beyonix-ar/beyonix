@@ -1815,7 +1815,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
 }
 
 function ProfilePanel({ initialView }: { initialView: ProfileView }) {
-  const { user, logout, isAdmin } = useAuth()
+  const { user, logout, isInternal } = useAuth()
   const router = useRouter()
   const [view, setView] = useState<ProfileView>(initialView)
 
@@ -1885,7 +1885,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
         ))}
       </div>
 
-      {isAdmin && (
+      {isInternal && (
         <button
           type="button"
           aria-label="Ir al panel admin"
@@ -1897,7 +1897,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
             <Shield className="size-4 text-beyonix-cyan" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white">Panel Admin</p>
+            <p className="text-sm font-semibold text-white">Panel administrador</p>
             <p className="text-xs text-white/55">Gestión de tienda</p>
           </div>
           <ChevronRight className="size-4 text-white/25 group-hover:text-white/70 transition-colors shrink-0" />

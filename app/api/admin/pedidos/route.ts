@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -7,7 +7,7 @@ import type {
 } from "@/lib/supabase/types"
 
 export async function GET(request: Request) {
-  const auth = await requireAdmin(request)
+  const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
 
   const { data: orderRows, error: ordersError } = await auth.admin
@@ -111,10 +111,22 @@ export async function GET(request: Request) {
   return Response.json({
     pedidos: pedidos.map((pedido) => ({
       ...pedido,
+      total: auth.profile.rol === "operador" ? 0 : pedido.total,
+      shipping_cost_real:
+        auth.profile.rol === "operador" ? null : pedido.shipping_cost_real,
+      shipping_cost_charged:
+        auth.profile.rol === "operador" ? null : pedido.shipping_cost_charged,
+      transfer_discount_amount:
+        auth.profile.rol === "operador"
+          ? null
+          : pedido.transfer_discount_amount,
       cliente_username: pedido.usuario_id
         ? usernamesById.get(pedido.usuario_id) ?? null
         : null,
-      orden_items: itemsByOrder.get(pedido.id) ?? [],
+      orden_items: (itemsByOrder.get(pedido.id) ?? []).map((item) => ({
+        ...item,
+        precio: auth.profile.rol === "operador" ? 0 : item.precio,
+      })),
     })),
   })
 }

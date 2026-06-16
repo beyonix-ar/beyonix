@@ -102,7 +102,7 @@ export interface SupabaseProfile {
   provincia?: string | null
   referencias?: string | null
   avatar_url?: string | null
-  rol: "cliente" | "admin" | "super_admin"
+  rol: "cliente" | "operador" | "admin" | "super_admin"
   client_risk_status?: "normal" | "tedioso" | "complicado"
   admin_note?: string | null
   blocked_at?: string | null
@@ -219,7 +219,7 @@ export interface SupabaseCliente {
   provincia?: string | null
   referencias?: string | null
   avatar_url?: string | null
-  rol?: "cliente" | "admin" | "super_admin"
+  rol?: "cliente" | "operador" | "admin" | "super_admin"
   client_risk_status?: "normal" | "tedioso" | "complicado"
   admin_note?: string | null
   blocked_at?: string | null

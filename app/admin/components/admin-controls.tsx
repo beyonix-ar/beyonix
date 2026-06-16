@@ -11,6 +11,7 @@ interface AdminSelectProps {
   ariaLabel?: string
   compact?: boolean
   centered?: boolean
+  disabled?: boolean
   onChange: (value: string) => void
 }
 
@@ -31,6 +32,7 @@ export function AdminSelect({
   ariaLabel,
   compact = false,
   centered = false,
+  disabled = false,
   onChange,
 }: AdminSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -136,8 +138,9 @@ export function AdminSelect({
         aria-label={ariaLabel ?? title}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => setOpen((current) => !current)}
-        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:border-[#112A43] hover:bg-[#112A43] focus:border-beyonix-blue-light ${
+        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:border-[#112A43] hover:bg-[#112A43] focus:border-beyonix-blue-light disabled:cursor-not-allowed disabled:opacity-45 ${
           centered ? "justify-center" : "justify-between"
         } ${
           compact
@@ -151,8 +154,7 @@ export function AdminSelect({
         <ChevronDown
           className={`size-4 shrink-0 text-beyonix-sky/75 transition-transform ${
             centered ? "absolute right-2" : ""
-          } ${open ? "rotate-180" : ""
-          }`}
+          } ${centered ? "" : "mr-1"} ${open ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -170,7 +172,7 @@ export function AdminSelect({
               width: menuPosition.width,
             }}
           >
-            <div className="max-h-60 overflow-y-auto py-1">
+            <div className="admin-select-scrollbar max-h-60 overflow-y-auto py-1 pr-1">
               {options.map((option) => {
                 const selected = option.value === value
 
