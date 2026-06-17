@@ -2,9 +2,7 @@
 
 import { FolderOpen } from "lucide-react"
 
-import type {
-  SupabaseCategoria,
-} from "@/lib/supabase/types"
+import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 import { CategoriasRow } from "./categorias-row"
 
@@ -21,22 +19,16 @@ interface CategoriasTableProps {
 
   loading: boolean
 
-  onEdit: (
-    categoria: SupabaseCategoria
-  ) => void
+  onEdit: (categoria: SupabaseCategoria) => void
 
-  onToggleDestacado: (
-    categoria: SupabaseCategoria
-  ) => void
+  onToggleDestacado: (categoria: SupabaseCategoria) => void
 
   onPositionChange: (
     categoria: SupabaseCategoria,
     position: 1 | 2 | 3 | null
   ) => void
 
-  onDelete: (
-    id: number
-  ) => void
+  onDelete: (id: number) => void
 }
 
 const headers = [
@@ -60,14 +52,12 @@ export function CategoriasTable({
   if (loading) {
     return (
       <div className="space-y-3">
-        {[...Array(5)].map(
-          (_, i) => (
-            <div
-              key={i}
-              className="h-16 animate-pulse rounded-2xl border border-white/6 bg-white/2"
-            />
-          )
-        )}
+        {[...Array(5)].map((_, i) => (
+          <div
+            key={i}
+            className="h-16 animate-pulse rounded-2xl border border-white/6 bg-white/2"
+          />
+        ))}
       </div>
     )
   }
@@ -96,9 +86,7 @@ export function CategoriasTable({
             <span
               key={label}
               className={`text-11px font-semibold uppercase tracking-widest text-white/55 ${
-                label === "Producto / Categoría"
-                  ? ""
-                  : "text-center"
+                label === "Producto / Categoría" ? "" : "text-center"
               }`}
             >
               {label}
@@ -106,35 +94,23 @@ export function CategoriasTable({
           ))}
         </div>
 
-        {categorias.map(
-          (categoria, index) => (
-            <CategoriasRow
-              key={categoria.id}
-              categoria={categoria}
-              stats={
-                categoryStats.get(
-                  categoria.id
-                ) || {
-                  articulos: 0,
-                  stock: 0,
-                }
+        {categorias.map((categoria, index) => (
+          <CategoriasRow
+            key={categoria.id}
+            categoria={categoria}
+            stats={
+              categoryStats.get(categoria.id) || {
+                articulos: 0,
+                stock: 0,
               }
-              isLast={
-                index ===
-                categorias.length -
-                  1
-              }
-              onEdit={onEdit}
-              onToggleDestacado={
-                onToggleDestacado
-              }
-              onPositionChange={
-                onPositionChange
-              }
-              onDelete={onDelete}
-            />
-          )
-        )}
+            }
+            isLast={index === categorias.length - 1}
+            onEdit={onEdit}
+            onToggleDestacado={onToggleDestacado}
+            onPositionChange={onPositionChange}
+            onDelete={onDelete}
+          />
+        ))}
       </div>
     </div>
   )

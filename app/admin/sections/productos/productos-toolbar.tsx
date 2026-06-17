@@ -168,14 +168,23 @@ export function ProductosToolbar({
             </AdminSelect>
           </div>
         ) : (
-          <AdminTextInput
-            title="Buscar categoría"
-            ariaLabel="Buscar categoría"
-            value={categorySearch}
-            placeholder="Buscar categoría"
-            icon={<Search className="size-4" />}
-            onChange={onCategorySearchChange}
-          />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="w-full max-w-md">
+              <AdminTextInput
+                title="Buscar categoría"
+                ariaLabel="Buscar categoría"
+                value={categorySearch}
+                placeholder="Buscar categoría"
+                icon={<Search className="size-4" />}
+                onChange={onCategorySearchChange}
+              />
+            </div>
+
+            <p className="text-xs font-semibold text-white/45 lg:text-right">
+              Gestioná nombres, imágenes, destacados y posiciones desde una
+              vista más compacta.
+            </p>
+          </div>
         )}
       </div>
     </div>

@@ -1,16 +1,10 @@
 "use client"
 
-import {
-  Pencil,
-  Star,
-  Trash2,
-} from "lucide-react"
+import { Pencil, Star, Trash2 } from "lucide-react"
 
 import { AdminSelect } from "@/app/admin/components/admin-controls"
-import type {
-  SupabaseCategoria,
-} from "@/lib/supabase/types"
 import { SITE_SETTINGS } from "@/config/site-settings"
+import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 interface CategoriasRowProps {
   categoria: SupabaseCategoria
@@ -21,22 +15,16 @@ interface CategoriasRowProps {
 
   isLast?: boolean
 
-  onEdit: (
-    categoria: SupabaseCategoria
-  ) => void
+  onEdit: (categoria: SupabaseCategoria) => void
 
-  onToggleDestacado: (
-    categoria: SupabaseCategoria
-  ) => void
+  onToggleDestacado: (categoria: SupabaseCategoria) => void
 
   onPositionChange: (
     categoria: SupabaseCategoria,
     position: 1 | 2 | 3 | null
   ) => void
 
-  onDelete: (
-    id: number
-  ) => void
+  onDelete: (id: number) => void
 }
 
 export function CategoriasRow({
@@ -48,15 +36,12 @@ export function CategoriasRow({
   onPositionChange,
   onDelete,
 }: CategoriasRowProps) {
-  const isFeatured =
-    categoria.destacado === true
+  const isFeatured = categoria.destacado === true
 
   return (
     <div
       className={`group grid grid-cols-admin-categories items-center gap-3 bg-black px-5 py-3 transition-all hover:bg-beyonix-blue/20 ${
-        !isLast
-          ? "border-b border-white/5"
-          : ""
+        !isLast ? "border-b border-white/5" : ""
       }`}
     >
       <div className="min-w-0">
@@ -74,8 +59,7 @@ export function CategoriasRow({
 
       <p
         className={`text-center text-sm font-bold ${
-          stats.stock <=
-          SITE_SETTINGS.stock.criticalStockThreshold
+          stats.stock <= SITE_SETTINGS.stock.criticalStockThreshold
             ? "text-red-400"
             : stats.stock <= SITE_SETTINGS.stock.lowStockThreshold
             ? "text-amber-400"
@@ -88,19 +72,13 @@ export function CategoriasRow({
       <div className="flex justify-center">
         <button
           type="button"
-          title={
-            isFeatured
-              ? "Quitar destacada"
-              : "Marcar destacada"
-          }
+          title={isFeatured ? "Quitar destacada" : "Marcar destacada"}
           aria-label={
             isFeatured
               ? "Quitar categoría destacada"
               : "Marcar categoría destacada"
           }
-          onClick={() =>
-            onToggleDestacado(categoria)
-          }
+          onClick={() => onToggleDestacado(categoria)}
           className={`flex size-8 cursor-pointer items-center justify-center rounded-xl border transition-all hover:-translate-y-0.5 ${
             isFeatured
               ? "border-beyonix-blue-light/45 bg-beyonix-blue/25 text-beyonix-cyan"
@@ -108,11 +86,7 @@ export function CategoriasRow({
           }`}
         >
           <Star
-            className={`size-3.5 ${
-              isFeatured
-                ? "fill-beyonix-cyan/70"
-                : ""
-            }`}
+            className={`size-3.5 ${isFeatured ? "fill-beyonix-cyan/70" : ""}`}
           />
         </button>
       </div>
@@ -123,17 +97,13 @@ export function CategoriasRow({
             <AdminSelect
               title="Posición destacada"
               ariaLabel={`Posición destacada de ${categoria.nombre}`}
-              value={String(
-                categoria.posicion_destacada ?? ""
-              )}
+              value={String(categoria.posicion_destacada ?? "")}
               compact
               centered
               onChange={(value) =>
                 onPositionChange(
                   categoria,
-                  value
-                    ? (Number(value) as 1 | 2 | 3)
-                    : null
+                  value ? (Number(value) as 1 | 2 | 3) : null
                 )
               }
             >
@@ -144,9 +114,7 @@ export function CategoriasRow({
             </AdminSelect>
           </div>
         ) : (
-          <span className="text-sm font-semibold text-white/28">
-            -
-          </span>
+          <span className="text-sm font-semibold text-white/28">-</span>
         )}
       </div>
 
@@ -155,9 +123,7 @@ export function CategoriasRow({
           type="button"
           title="Editar categoría"
           aria-label="Editar categoría"
-          onClick={() =>
-            onEdit(categoria)
-          }
+          onClick={() => onEdit(categoria)}
           className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-all hover:-translate-y-0.5 hover:border-beyonix-blue-light/35 hover:bg-beyonix-blue/20 hover:text-white"
         >
           <Pencil className="size-3.5" />
@@ -167,9 +133,7 @@ export function CategoriasRow({
           type="button"
           title="Eliminar categoría"
           aria-label="Eliminar categoría"
-          onClick={() =>
-            onDelete(categoria.id)
-          }
+          onClick={() => onDelete(categoria.id)}
           className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-all hover:-translate-y-0.5 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400"
         >
           <Trash2 className="size-3.5" />
