@@ -6,6 +6,7 @@ export interface LowStockItem {
   id: string
   nombre: string
   stock: number
+  threshold: number
   tipo: "producto" | "variante"
   producto_nombre?: string
   color_hex?: string
@@ -29,12 +30,28 @@ export interface DashboardCommercialSale {
 
 export interface DashboardRecentActivity {
   id: string
-  type: "venta" | "pedido" | "pago" | "stock"
+  type: "venta" | "pedido" | "pago" | "despacho"
   title: string
   detail: string
   meta?: string
   secondary?: string
   created_at: string
+}
+
+export interface DashboardSystemStatus {
+  id: "store" | "mercadopago" | "andreani" | "arca"
+  label: string
+  status: "ok" | "warning" | "error" | "unknown"
+  detail: string
+}
+
+export interface DashboardSearchItem {
+  id: string
+  type: "pedido" | "producto"
+  title: string
+  detail: string
+  keywords: string
+  section: "pedidos" | "productos"
 }
 
 export interface DashboardStats {
@@ -49,6 +66,7 @@ export interface DashboardStats {
   pagosEnRevision: number
   enviosPendientes: number
   pedidosSinTracking: number
+  facturasPendientes: number
   pedidosPagados: number
   pedidosCancelados: number
 }
@@ -81,5 +99,7 @@ export async function getDashboardData() {
     recentOrders: SupabasePedido[]
     commercialSales: DashboardCommercialSale[]
     recentActivity: DashboardRecentActivity[]
+    systemStatus: DashboardSystemStatus[]
+    searchIndex: DashboardSearchItem[]
   }
 }

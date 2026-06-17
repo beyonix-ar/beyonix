@@ -111,6 +111,52 @@ async function callWsfe(operation: string, body: string) {
   ]
 }
 
+async function callWsfePublic(operation: string, body = "") {
+  const envelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="${WSFE_NAMESPACE}">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ar:${operation}>
+      ${body}
+    </ar:${operation}>
+  </soapenv:Body>
+</soapenv:Envelope>`
+
+  const response = await fetch(WSFE_HOMOLOGATION_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/xml; charset=utf-8",
+      SOAPAction: `"${WSFE_NAMESPACE}${operation}"`,
+    },
+    body: envelope,
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  })
+  const responseXml = await response.text()
+  const document = parseXml<Record<string, any>>(responseXml)
+  const fault = getSoapFaultMessage(document)
+
+  if (!response.ok || fault) {
+    throw new ArcaWsError(
+      `WSFEv1 rechazó ${operation}: ${fault ?? `HTTP ${response.status}`}.`,
+    )
+  }
+
+  return document?.Envelope?.Body?.[`${operation}Response`]?.[
+    `${operation}Result`
+  ]
+}
+
+export async function getWsfeHealth() {
+  const result = await callWsfePublic("FEDummy")
+
+  return {
+    appServer: String(result?.AppServer ?? ""),
+    dbServer: String(result?.DbServer ?? ""),
+    authServer: String(result?.AuthServer ?? ""),
+  }
+}
+
 export async function feCompUltimoAutorizado(
   pointOfSale: number,
   voucherType = FACTURA_C_TYPE,

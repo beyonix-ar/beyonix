@@ -12,14 +12,16 @@ import {
   EyeOff,
   FileUp,
   Package,
+  Search,
   ShoppingCart,
-  Sparkles,
 } from "lucide-react"
 import * as XLSX from "xlsx"
 
 import type { AdminSection } from "../../admin-client"
 import { supabase } from "@/lib/supabase/client"
 import {
+  type DashboardSearchItem,
+  type DashboardSystemStatus,
   type DashboardCommercialSale,
   type DashboardRecentActivity,
 } from "@/lib/supabase/queries/dashboard"
@@ -60,7 +62,7 @@ interface ImportedSale {
   raw_data: Record<string, unknown>
 }
 
-const HIDDEN_AMOUNT = "$••••••"
+const HIDDEN_AMOUNT = "$******"
 const MONTHS = [
   { value: "", label: "Todos" },
   { value: "0", label: "Enero" },
@@ -248,28 +250,28 @@ function StatCard({
 }) {
   const valueClass =
     typeof value === "number"
-      ? "text-3xl"
+      ? "text-2xl"
       : String(value).length > 16
-        ? "text-xl leading-tight"
-        : "text-2xl"
+        ? "text-lg leading-tight"
+        : "text-xl"
   const content = (
     <>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-11px font-bold uppercase tracking-widest text-white/45">
             {title}
           </p>
-          <p className={`mt-3 break-words font-black text-white ${valueClass}`}>
+          <p className={`mt-2 break-words font-black text-white ${valueClass}`}>
             {value}
           </p>
-          {helper && <p className="mt-2 text-xs leading-5 text-white/50">{helper}</p>}
+          {helper && <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-white/50">{helper}</p>}
         </div>
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-black/25 text-beyonix-sky">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/8 bg-black/25 text-beyonix-sky">
           {icon}
         </span>
       </div>
       {onClick && (
-        <span className="mt-5 inline-flex items-center gap-2 text-xs font-bold text-beyonix-sky">
+        <span className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-beyonix-sky">
           Abrir <ArrowRight className="size-3.5" />
         </span>
       )}
@@ -283,7 +285,7 @@ function StatCard({
         title={`Abrir ${title}`}
         aria-label={`Abrir ${title}`}
         onClick={onClick}
-        className="min-h-140px cursor-pointer rounded-3xl border border-white/8 bg-black/85 p-5 text-left transition hover:-translate-y-0.5 hover:border-beyonix-sky/50"
+        className="min-h-120px cursor-pointer rounded-2xl border border-white/8 bg-black/85 p-4 text-left transition hover:-translate-y-0.5 hover:border-beyonix-sky/50"
       >
         {content}
       </button>
@@ -291,7 +293,7 @@ function StatCard({
   }
 
   return (
-    <div className="min-h-140px rounded-3xl border border-white/8 bg-black/85 p-5">
+    <div className="min-h-120px rounded-2xl border border-white/8 bg-black/85 p-4">
       {content}
     </div>
   )
@@ -302,19 +304,19 @@ function ActivityIcon({ type }: { type: DashboardRecentActivity["type"] }) {
 
   if (type === "venta") return <ShoppingCart className={className} />
   if (type === "pago") return <CheckCircle2 className={className} />
-  if (type === "stock") return <AlertTriangle className={className} />
+  if (type === "despacho") return <Package className={className} />
 
   return <Clock className={className} />
 }
 
 function ActivityItem({ item }: { item: DashboardRecentActivity }) {
   const tone =
-    item.type === "stock"
-      ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
-      : item.type === "pago"
+    item.type === "pago"
         ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
         : item.type === "venta"
           ? "border-beyonix-sky/30 bg-beyonix-blue text-beyonix-sky"
+          : item.type === "despacho"
+            ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
           : "border-white/10 bg-[#181818] text-white/70"
 
   return (
@@ -350,6 +352,117 @@ function ActivityItem({ item }: { item: DashboardRecentActivity }) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+}
+
+function GlobalAdminSearch({
+  rows,
+  onNavigate,
+}: {
+  rows: DashboardSearchItem[]
+  onNavigate: (section: AdminSection) => void
+}) {
+  const [query, setQuery] = useState("")
+  const results = useMemo(() => {
+    const normalized = normalizeSearch(query.trim())
+    if (normalized.length < 2) return []
+
+    return rows
+      .filter((row) =>
+        normalizeSearch(`${row.title} ${row.detail} ${row.keywords}`).includes(
+          normalized,
+        ),
+      )
+      .slice(0, 6)
+  }, [query, rows])
+
+  return (
+    <div className="relative w-full max-w-2xl">
+      <div className="flex h-11 items-center gap-3 rounded-2xl border border-white/10 bg-black/45 px-4 text-white shadow-inner shadow-black/30">
+        <Search className="size-4 shrink-0 text-beyonix-sky" />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar pedido, cliente o producto..."
+          className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/38"
+        />
+      </div>
+      {query.trim().length >= 2 && (
+        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50">
+          {results.length ? (
+            results.map((row) => (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => {
+                  setQuery("")
+                  onNavigate(row.section)
+                }}
+                className="flex w-full cursor-pointer items-center justify-between gap-3 border-b border-white/6 px-4 py-3 text-left last:border-b-0 hover:bg-white/5"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-black text-white">
+                    {row.title}
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-white/48">
+                    {row.detail}
+                  </span>
+                </span>
+                <span className="shrink-0 rounded-full border border-white/8 bg-black px-2.5 py-1 text-10px font-black uppercase tracking-widest text-white/45">
+                  {row.type}
+                </span>
+              </button>
+            ))
+          ) : (
+            <p className="px-4 py-4 text-sm text-white/48">
+              No hay resultados para esa búsqueda.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SystemStatusPill({ item }: { item: DashboardSystemStatus }) {
+  const tone =
+    item.status === "ok"
+      ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+      : item.status === "error"
+        ? "border-red-400/25 bg-red-400/10 text-red-200"
+        : item.status === "warning"
+          ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+          : "border-white/10 bg-black text-white/52"
+  const label =
+    item.status === "ok"
+      ? "OK"
+      : item.status === "error"
+        ? "Error"
+        : item.status === "warning"
+          ? "Revisar"
+          : "Sin datos"
+
+  return (
+    <div className="rounded-xl border border-white/7 bg-black/60 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-black text-white">{item.label}</p>
+          <p className="mt-0.5 truncate text-11px text-white/45">
+            {item.detail}
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-9px font-black uppercase tracking-widest ${tone}`}>
+          {label}
+        </span>
       </div>
     </div>
   )
@@ -712,6 +825,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     recentOrders,
     commercialSales,
     recentActivity,
+    systemStatus,
+    searchIndex,
     loading,
     error,
     reloadDashboard,
@@ -829,22 +944,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
     return values[sortKey]
   })
-  const latestSale = recentActivity.find((item) => item.type === "venta")
-  const alerts = [
-    stats.productosBajoStock > 0
-      ? `${stats.productosBajoStock} productos o variantes con stock bajo.`
-      : null,
-    stats.pagosEnRevision > 0
-      ? `${stats.pagosEnRevision} pagos pendientes de revisión.`
-      : null,
-    stats.enviosPendientes > 0
-      ? `${stats.enviosPendientes} pedidos listos para despacho.`
-      : null,
-    stats.productosInactivos > 0
-      ? `${stats.productosInactivos} productos inactivos.`
-      : null,
-  ].filter(Boolean)
-
   const toggleHiddenValues = () => {
     setHiddenValues((current) => {
       window.localStorage.setItem(
@@ -909,179 +1008,79 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       {tab === "operativo" ? (
         <>
-          <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
-            <SectionHeader eyebrow="Centro operativo" title="Prioridades de hoy" />
-            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-              <StatCard
-                title="Pedidos pendientes"
-                value={stats.pedidosPendientes}
-                helper={`${stats.esperandoComprobante} esperan comprobante · ${stats.enviosPendientes} para preparar`}
-                icon={<ShoppingCart className="size-5" />}
-                onClick={() => onNavigate("pedidos")}
-              />
-              <StatCard
-                title="Pagos en revisión"
-                value={stats.pagosEnRevision}
-                helper="Transferencias pendientes de confirmar"
-                icon={<CreditCard className="size-5" />}
-                onClick={() => onNavigate("pedidos")}
-              />
-              <StatCard
-                title="Stock crítico"
-                value={stats.productosBajoStock}
-                helper="Productos y variantes bajo umbral"
-                icon={<AlertTriangle className="size-5" />}
-                onClick={() => onNavigate("productos")}
-              />
-              <StatCard
-                title="Última venta"
-                value={latestSale?.detail ?? "Sin ventas recientes"}
-                helper={
-                  latestSale
-                    ? `${latestSale.meta ?? "Venta confirmada"} · ${formatRelativeTime(latestSale.created_at)}`
-                    : "Aparecerá cuando ingrese una venta"
-                }
-                icon={<Sparkles className="size-5" />}
-                onClick={() => onNavigate("pedidos")}
-              />
+          <section className="rounded-3xl border border-white/8 bg-[#141414] p-4 sm:p-5">
+            <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <SectionHeader eyebrow="Centro operativo" title="Prioridades de hoy" />
+              <GlobalAdminSearch rows={searchIndex} onNavigate={onNavigate} />
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <StatCard title="Pagos en revisión" value={stats.pagosEnRevision} helper={`${stats.esperandoComprobante} esperan comprobante`} icon={<CreditCard className="size-5" />} onClick={() => onNavigate("pedidos")} />
+              <StatCard title="Pedidos a preparar" value={stats.enviosPendientes} helper={`${stats.pedidosSinTracking} sin tracking o etiqueta`} icon={<ShoppingCart className="size-5" />} onClick={() => onNavigate("pedidos")} />
+              <StatCard title="Facturas pendientes" value={stats.facturasPendientes} helper="Pedidos pagados sin factura emitida" icon={<FileUp className="size-5" />} onClick={() => onNavigate("pedidos")} />
             </div>
           </section>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <section className="rounded-3xl border border-white/8 bg-[#141414] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                  Sistema
+                </p>
+                <h2 className="mt-1 text-base font-black text-white">
+                  Estado del sistema
+                </h2>
+              </div>
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/8 bg-black/35 text-beyonix-sky">
+                <CheckCircle2 className="size-4" />
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {systemStatus.map((item) => (
+                <SystemStatusPill key={item.id} item={item} />
+              ))}
+            </div>
+          </section>
+
+          <div className="grid gap-5 xl:grid-cols-2">
             <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
               <SectionHeader eyebrow="Operación" title="Últimos pedidos" />
-              <div className="space-y-3">
-                {recentOrders.length ? (
-                  recentOrders.map((order) => (
-                    <button
-                      type="button"
-                      title={`Abrir pedido ${order.id}`}
-                      aria-label={`Abrir pedido ${order.id}`}
-                      key={order.id}
-                      onClick={() => onNavigate("pedidos")}
-                      className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-2xl border border-white/7 bg-black px-4 py-3 text-left transition hover:border-beyonix-blue-light hover:bg-beyonix-blue/20"
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-sm font-bold text-white">
-                          Pedido #{order.id}
-                        </span>
-                        <span className="mt-1 block truncate text-xs text-white/45">
-                          {order.cliente_nombre || order.cliente_email || "Cliente"}
-                        </span>
-                      </span>
-                      <span className="text-right">
-                        <span className="block text-sm font-black text-white">
-                          {order.estado}
-                        </span>
-                        <span className="mt-1 block text-11px uppercase text-white/42">
-                          {formatDate(order.created_at)}
-                        </span>
-                      </span>
-                    </button>
-                  ))
-                ) : (
-                  <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55">
-                    No hay pedidos todavía.
-                  </p>
-                )}
+              <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
+                {recentOrders.length ? recentOrders.map((order) => (
+                  <button type="button" title={`Abrir pedido ${order.id}`} aria-label={`Abrir pedido ${order.id}`} key={order.id} onClick={() => onNavigate("pedidos")} className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-2xl border border-white/7 bg-black px-4 py-3 text-left transition hover:border-beyonix-blue-light hover:bg-beyonix-blue/20">
+                    <span className="min-w-0"><span className="block text-sm font-bold text-white">Pedido #{order.id}</span><span className="mt-1 block truncate text-xs text-white/45">{order.cliente_nombre || order.cliente_email || "Cliente"}</span></span>
+                    <span className="text-right"><span className="block text-sm font-black text-white">{order.estado}</span><span className="mt-1 block text-11px uppercase text-white/42">{formatRelativeTime(order.created_at)}</span></span>
+                  </button>
+                )) : <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55">No hay pedidos todavía.</p>}
               </div>
             </section>
-
             <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
               <SectionHeader eyebrow="Actividad" title="Actividad reciente" />
-              <div className="space-y-3">
-                {recentActivity.length ? (
-                  recentActivity.map((item) => (
-                    <ActivityItem key={item.id} item={item} />
-                  ))
-                ) : (
-                  <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55">
-                    No hay actividad reciente.
-                  </p>
-                )}
+              <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
+                {recentActivity.length ? recentActivity.map((item) => <ActivityItem key={item.id} item={item} />) : <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55">No hay actividad reciente.</p>}
               </div>
             </section>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-3">
-            <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
-              <SectionHeader
-                eyebrow="Stock"
-                title="Productos sin stock o bajo stock"
-                action={
-                  <button
-                    type="button"
-                    title="Ver productos"
-                    aria-label="Ver productos"
-                    onClick={() => onNavigate("productos")}
-                    className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl border border-white/10 px-4 text-sm font-black text-white/70 transition hover:border-beyonix-sky/45 hover:text-white"
-                  >
-                    Ver productos <ArrowRight className="size-4" />
-                  </button>
-                }
-              />
-              <div className="grid gap-3 md:grid-cols-2">
-                {lowStock.length ? (
-                  lowStock.slice(0, 8).map((item) => (
-                    <button
-                      type="button"
-                      title="Abrir productos"
-                      aria-label="Abrir productos"
-                      key={item.id}
-                      onClick={() => onNavigate("productos")}
-                      className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3 text-left transition hover:border-amber-400/35 hover:bg-amber-400/8"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-bold text-white">
-                          {item.producto_nombre || item.nombre}
-                        </span>
-                        <span className="mt-1 block truncate text-xs text-white/45">
-                          {item.tipo === "variante" ? item.nombre : "Producto"}
-                        </span>
-                      </span>
-                      <span
-                        className={`rounded-full border px-3 py-1 text-xs font-black ${
-                          item.stock <= SITE_SETTINGS.stock.criticalStockThreshold
-                            ? "border-red-400/25 bg-red-400/10 text-red-300"
-                            : "border-amber-400/25 bg-amber-400/10 text-amber-200"
-                        }`}
-                      >
-                        {item.stock}
-                      </span>
-                    </button>
-                  ))
-                ) : (
-                  <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55 md:col-span-2">
-                    No hay productos con stock bajo.
-                  </p>
-                )}
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
-              <SectionHeader eyebrow="Alertas" title="Operativas" />
-              <div className="space-y-3">
-                {alerts.length ? (
-                  alerts.map((alert) => (
-                    <div
-                      key={alert}
-                      className="rounded-2xl border border-amber-400/20 bg-amber-400/8 px-4 py-3 text-sm text-amber-100"
-                    >
-                      {alert}
-                    </div>
-                  ))
-                ) : (
-                  <p className="rounded-2xl border border-emerald-400/20 bg-emerald-400/8 px-4 py-5 text-sm text-emerald-100">
-                    No hay alertas críticas en este momento.
-                  </p>
-                )}
-              </div>
-            </section>
-          </div>
+          <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+            <SectionHeader eyebrow="Stock" title="Productos sin stock o bajo stock" action={<button type="button" title="Ver productos" aria-label="Ver productos" onClick={() => onNavigate("productos")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl border border-white/10 px-4 text-sm font-black text-white/70 transition hover:border-beyonix-sky/45 hover:text-white">Ver productos <ArrowRight className="size-4" /></button>} />
+            <div className="custom-scrollbar grid max-h-420px gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
+              {lowStock.length ? lowStock.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-white/7 bg-black px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0"><span className="block truncate text-sm font-bold text-white">{item.producto_nombre || item.nombre}</span><span className="mt-1 flex items-center gap-2 truncate text-xs text-white/45">{item.color_hex && <span className="size-3 rounded-full border border-white/20" style={{ backgroundColor: item.color_hex }} />}{item.tipo === "variante" ? item.nombre : "Producto"}</span><span className="mt-2 block text-11px font-bold uppercase tracking-widest text-white/35">Umbral mínimo: {item.threshold}</span></span>
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${item.stock <= SITE_SETTINGS.stock.criticalStockThreshold ? "border-red-400/25 bg-red-400/10 text-red-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>Stock {item.stock}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-white/10 px-3 text-xs font-black text-white/70 hover:border-beyonix-sky/45 hover:text-white">Editar producto</button>
+                    <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-white/10 px-3 text-xs font-black text-beyonix-sky hover:border-beyonix-sky/45">Reponer stock</button>
+                  </div>
+                </div>
+              )) : <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55 md:col-span-2 xl:col-span-3">No hay productos con stock bajo.</p>}
+            </div>
+          </section>
         </>
       ) : (
-        <>
-          {!sensitive ? (
+        <>          {!sensitive ? (
             <section className="rounded-3xl border border-white/8 bg-[#141414] p-8 text-center">
               <h2 className="text-2xl font-black text-white">Análisis comercial</h2>
               <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/55">

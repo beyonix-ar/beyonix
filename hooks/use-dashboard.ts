@@ -6,7 +6,9 @@ import {
   getDashboardData,
   type DashboardCommercialSale,
   type DashboardRecentActivity,
+  type DashboardSearchItem,
   type DashboardStats,
+  type DashboardSystemStatus,
   type LowStockItem,
 } from "@/lib/supabase/queries/dashboard"
 import type { SupabasePedido } from "@/lib/supabase/types"
@@ -18,6 +20,8 @@ interface DashboardState {
   recentOrders: SupabasePedido[]
   commercialSales: DashboardCommercialSale[]
   recentActivity: DashboardRecentActivity[]
+  systemStatus: DashboardSystemStatus[]
+  searchIndex: DashboardSearchItem[]
 }
 
 export function useDashboard() {
@@ -28,6 +32,8 @@ export function useDashboard() {
     recentOrders: [],
     commercialSales: [],
     recentActivity: [],
+    systemStatus: [],
+    searchIndex: [],
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

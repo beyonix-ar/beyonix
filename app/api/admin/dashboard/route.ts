@@ -1,5 +1,7 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import { canViewSensitiveNumbers } from "@/lib/auth/roles"
+import { getAndreaniConfig, isAndreaniReady } from "@/lib/andreani/client"
+import { getWsfeHealth } from "@/lib/arca/wsfe"
 import { SITE_SETTINGS } from "@/config/site-settings"
 import type {
   SupabasePedido,
@@ -14,8 +16,10 @@ interface DashboardLowStockItem {
   id: string
   nombre: string
   stock: number
+  threshold: number
   tipo: "producto" | "variante"
   producto_nombre?: string
+  color_hex?: string
 }
 
 interface CommercialSale {
@@ -36,7 +40,7 @@ interface CommercialSale {
 
 interface RecentActivity {
   id: string
-  type: "venta" | "pedido" | "pago" | "stock"
+  type: "venta" | "pedido" | "pago" | "despacho"
   title: string
   detail: string
   meta?: string
@@ -44,8 +48,22 @@ interface RecentActivity {
   created_at: string
 }
 
+interface SystemStatusItem {
+  id: "store" | "mercadopago" | "andreani" | "arca"
+  label: string
+  status: "ok" | "warning" | "error" | "unknown"
+  detail: string
+}
+
 function isPaidOrder(order: SupabasePedido) {
   return PAID_STATES.has(order.estado) || order.payment_status === "approved"
+}
+
+function isReadyToPrepare(order: SupabasePedido) {
+  return (
+    isPaidOrder(order) &&
+    !["enviado", "entregado", "cancelado"].includes(order.estado)
+  )
 }
 
 function getPaymentMethodLabel(order: SupabasePedido | undefined) {
@@ -63,12 +81,116 @@ function getOrderCustomerLabel(order: SupabasePedido) {
   return order.cliente_nombre || order.cliente_email || "Cliente"
 }
 
-function getOrderItemLabel(item: SupabasePedidoItem) {
+function getOrderItemName(item: SupabasePedidoItem) {
   const productName = item.productos?.nombre ?? `Producto #${item.producto_id}`
   const variantName = item.producto_variantes?.nombre
+
+  return `${productName}${variantName ? ` ${variantName}` : ""}`
+}
+
+function getOrderItemLabel(item: SupabasePedidoItem) {
   const quantity = Number(item.cantidad ?? 1) || 1
 
-  return `${productName}${variantName ? ` ${variantName}` : ""} x${quantity}`
+  return `${getOrderItemName(item)} x${quantity}`
+}
+
+function groupItemsByOrder(items: SupabasePedidoItem[]) {
+  return items.reduce((map, item) => {
+    const rows = map.get(item.orden_id) ?? []
+    rows.push(item)
+    map.set(item.orden_id, rows)
+    return map
+  }, new Map<number, SupabasePedidoItem[]>())
+}
+
+async function getMercadoPagoStatus(): Promise<SystemStatusItem> {
+  const token = process.env.MERCADOPAGO_ACCESS_TOKEN
+  if (!token) {
+    return {
+      id: "mercadopago",
+      label: "Mercado Pago",
+      status: "unknown",
+      detail: "Sin token configurado",
+    }
+  }
+
+  try {
+    const response = await fetch("https://api.mercadopago.com/users/me", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    })
+
+    if (!response.ok) {
+      return {
+        id: "mercadopago",
+        label: "Mercado Pago",
+        status: "error",
+        detail: `API respondió HTTP ${response.status}`,
+      }
+    }
+
+    return {
+      id: "mercadopago",
+      label: "Mercado Pago",
+      status: "ok",
+      detail: "API accesible con credenciales",
+    }
+  } catch {
+    return {
+      id: "mercadopago",
+      label: "Mercado Pago",
+      status: "error",
+      detail: "No se pudo verificar la API",
+    }
+  }
+}
+
+function getAndreaniStatus(): SystemStatusItem {
+  const config = getAndreaniConfig()
+  if (!config.enabled) {
+    return {
+      id: "andreani",
+      label: "Andreani",
+      status: "unknown",
+      detail: "Integración deshabilitada",
+    }
+  }
+
+  const ready = isAndreaniReady(config)
+
+  return {
+    id: "andreani",
+    label: "Andreani",
+    status: ready ? "unknown" : "warning",
+    detail: ready
+      ? "Configurado, sin health check real implementado"
+      : "Configuración incompleta",
+  }
+}
+
+async function getArcaStatus(): Promise<SystemStatusItem> {
+  try {
+    const health = await getWsfeHealth()
+    const values = [health.appServer, health.dbServer, health.authServer]
+    const allOk = values.every((value) => value === "OK")
+
+    return {
+      id: "arca",
+      label: "ARCA / Facturación electrónica",
+      status: allOk ? "ok" : "warning",
+      detail: allOk
+        ? "WSFEv1 FEDummy respondió OK"
+        : `FEDummy: app ${health.appServer || "-"}, db ${health.dbServer || "-"}, auth ${health.authServer || "-"}`,
+    }
+  } catch {
+    return {
+      id: "arca",
+      label: "ARCA / Facturación electrónica",
+      status: "unknown",
+      detail: "No verificable en este momento",
+    }
+  }
 }
 
 export async function GET(request: Request) {
@@ -80,29 +202,29 @@ export async function GET(request: Request) {
     ordersResult,
     itemsResult,
     mercadoLibreResult,
-  ] =
-    await Promise.all([
-      auth.admin
-        .from("productos")
-        .select("*, producto_variantes(*)")
-        .order("id", { ascending: false }),
-      auth.admin.from("ordenes").select("*").order("created_at", {
-        ascending: false,
-      }),
-      auth.admin
-        .from("orden_items")
-        .select("*, productos(id, nombre, categorias(nombre)), producto_variantes(nombre)"),
-      auth.admin
-        .from("mercadolibre_sales")
-        .select("*")
-        .order("sale_date", { ascending: false })
-        .limit(1000),
-    ])
+    mercadoPagoStatus,
+    arcaStatus,
+  ] = await Promise.all([
+    auth.admin
+      .from("productos")
+      .select("*, categorias(nombre), producto_variantes(*)")
+      .order("id", { ascending: false }),
+    auth.admin.from("ordenes").select("*").order("created_at", {
+      ascending: false,
+    }),
+    auth.admin
+      .from("orden_items")
+      .select("*, productos(id, nombre, categorias(nombre)), producto_variantes(nombre)"),
+    auth.admin
+      .from("mercadolibre_sales")
+      .select("*")
+      .order("sale_date", { ascending: false })
+      .limit(1000),
+    getMercadoPagoStatus(),
+    getArcaStatus(),
+  ])
 
-  const error =
-    productsResult.error ||
-    ordersResult.error ||
-    itemsResult.error
+  const error = productsResult.error || ordersResult.error || itemsResult.error
 
   if (error) {
     return Response.json({ error: error.message }, { status: 500 })
@@ -114,6 +236,7 @@ export async function GET(request: Request) {
   const mlRows = mercadoLibreResult.error
     ? []
     : ((mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>)
+  const itemsByOrderId = groupItemsByOrder(items)
   const lowStock = products.flatMap<DashboardLowStockItem>((product) => {
     const variants = product.producto_variantes ?? []
     if (variants.length) {
@@ -121,42 +244,47 @@ export async function GET(request: Request) {
         .filter(
           (variant) =>
             variant.activo &&
-            (variant.stock ?? 0) <= SITE_SETTINGS.stock.lowStockThreshold
+            (variant.stock ?? 0) <= SITE_SETTINGS.stock.lowStockThreshold,
         )
         .map((variant) => ({
           id: `variante-${variant.id}`,
           nombre: variant.nombre,
           producto_nombre: product.nombre,
           stock: variant.stock ?? 0,
+          threshold: SITE_SETTINGS.stock.lowStockThreshold,
           tipo: "variante" as const,
+          color_hex: variant.color_hex,
         }))
     }
 
     return product.activo &&
       (product.stock ?? 0) <= SITE_SETTINGS.stock.lowStockThreshold
-      ? [{
-          id: `producto-${product.id}`,
-          nombre: product.nombre,
-          stock: product.stock ?? 0,
-          tipo: "producto" as const,
-        }]
+      ? [
+          {
+            id: `producto-${product.id}`,
+            nombre: product.nombre,
+            stock: product.stock ?? 0,
+            threshold: SITE_SETTINGS.stock.lowStockThreshold,
+            tipo: "producto" as const,
+          },
+        ]
       : []
   })
+  const sortedLowStock = [...lowStock].sort((a, b) => a.stock - b.stock)
   const paidOrders = orders.filter(isPaidOrder)
   const sensitive = canViewSensitiveNumbers(auth.profile.rol)
   const paymentReviewOrders = orders.filter((order) =>
-    PAYMENT_REVIEW_STATES.has(order.payment_status ?? "")
+    PAYMENT_REVIEW_STATES.has(order.payment_status ?? ""),
   )
-  const pendingDispatchOrders = orders.filter(
-    (order) =>
-      isPaidOrder(order) &&
-      !["enviado", "entregado", "cancelado"].includes(order.estado)
+  const pendingDispatchOrders = orders.filter(isReadyToPrepare)
+  const pendingInvoiceOrders = paidOrders.filter(
+    (order) => order.invoice_status !== "authorized",
   )
   const commercialSales: CommercialSale[] = sensitive
     ? [
         ...items
           .filter((item) =>
-            paidOrders.some((order) => order.id === item.orden_id)
+            paidOrders.some((order) => order.id === item.orden_id),
           )
           .map((item) => {
             const order = paidOrders.find((row) => row.id === item.orden_id)
@@ -196,7 +324,9 @@ export async function GET(request: Request) {
 
           return {
             id: `ml-${String(row.id)}`,
-            date: String(row.sale_date ?? row.imported_at ?? new Date().toISOString()),
+            date: String(
+              row.sale_date ?? row.imported_at ?? new Date().toISOString(),
+            ),
             channel: "MercadoLibre Marketplace" as const,
             paymentMethod: "MercadoLibre",
             productName: String(row.product_name ?? "Venta MercadoLibre"),
@@ -215,23 +345,23 @@ export async function GET(request: Request) {
         }),
       ]
     : []
-  const ordersById = new Map(orders.map((order) => [order.id, order]))
-  const recentWebSales = items
-    .map<RecentActivity | null>((item) => {
-      const order = ordersById.get(item.orden_id)
-      if (!order || !isPaidOrder(order)) return null
+  const recentWebSales: RecentActivity[] = paidOrders.map((order) => {
+    const orderItems = itemsByOrderId.get(order.id) ?? []
+    const firstItem = orderItems[0]
+    const additionalItems = Math.max(0, orderItems.length - 1)
 
-      return {
-        id: `venta-web-${item.id}`,
-        type: "venta",
-        title: "Nueva venta realizada",
-        detail: getOrderItemLabel(item),
-        meta: getPaymentMethodLabel(order),
-        secondary: `Orden #${order.id}`,
-        created_at: order.paid_at || order.created_at,
-      }
-    })
-    .filter(Boolean) as RecentActivity[]
+    return {
+      id: `venta-web-${order.id}`,
+      type: "venta",
+      title: "Nueva venta realizada",
+      detail: firstItem
+        ? `${getOrderItemLabel(firstItem)}${additionalItems ? ` y ${additionalItems} más` : ""}`
+        : `Orden #${order.id}`,
+      meta: getPaymentMethodLabel(order),
+      secondary: `Orden #${order.id}`,
+      created_at: order.paid_at || order.created_at,
+    }
+  })
   const recentMercadoLibreSales: RecentActivity[] = mlRows
     .slice(0, 10)
     .map((row) => ({
@@ -241,7 +371,9 @@ export async function GET(request: Request) {
       detail: `${String(row.product_name ?? "Venta MercadoLibre")} x${Number(row.quantity ?? 1) || 1}`,
       meta: "MercadoLibre",
       secondary: row.order_id ? `Orden #${String(row.order_id)}` : "Marketplace",
-      created_at: String(row.sale_date ?? row.imported_at ?? new Date().toISOString()),
+      created_at: String(
+        row.sale_date ?? row.imported_at ?? new Date().toISOString(),
+      ),
     }))
   const paymentConfirmedActivity: RecentActivity[] = paidOrders
     .slice(0, 8)
@@ -257,14 +389,25 @@ export async function GET(request: Request) {
     ...recentWebSales,
     ...recentMercadoLibreSales,
     ...paymentConfirmedActivity,
-    ...orders.filter((order) => !isPaidOrder(order)).slice(0, 5).map((order) => ({
-      id: `pedido-${order.id}`,
-      type: "pedido" as const,
-      title: "Pedido pendiente",
+    ...pendingDispatchOrders.slice(0, 5).map((order) => ({
+      id: `despacho-${order.id}`,
+      type: "despacho" as const,
+      title: "Pedido listo para despacho",
       detail: `Orden #${order.id}`,
-      meta: `${getOrderCustomerLabel(order)} · ${order.estado}`,
-      created_at: order.created_at,
+      meta: getOrderCustomerLabel(order),
+      created_at: order.paid_at || order.created_at,
     })),
+    ...orders
+      .filter((order) => !isPaidOrder(order))
+      .slice(0, 5)
+      .map((order) => ({
+        id: `pedido-${order.id}`,
+        type: "pedido" as const,
+        title: "Cambio de estado de pedido",
+        detail: `Orden #${order.id}`,
+        meta: `${getOrderCustomerLabel(order)} · ${order.estado}`,
+        created_at: order.created_at,
+      })),
     ...paymentReviewOrders.slice(0, 5).map((order) => ({
       id: `pago-${order.id}`,
       type: "pago" as const,
@@ -275,21 +418,59 @@ export async function GET(request: Request) {
         : "Transferencia pendiente",
       created_at: order.payment_proof_uploaded_at || order.created_at,
     })),
-    ...lowStock.slice(0, 8).map((item) => ({
-      id: `stock-${item.id}`,
-      type: "stock" as const,
-      title: "Stock bajo",
-      detail: item.producto_nombre || item.nombre,
-      meta: `Quedan ${item.stock} unidades`,
-      secondary: item.tipo === "variante" ? item.nombre : undefined,
-      created_at: new Date().toISOString(),
-    })),
   ]
     .sort(
       (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )
     .slice(0, 10)
+  const systemStatus: SystemStatusItem[] = [
+    {
+      id: "store",
+      label: "Tienda activa",
+      status: "ok",
+      detail: "Base de datos accesible",
+    },
+    mercadoPagoStatus,
+    getAndreaniStatus(),
+    arcaStatus,
+  ]
+  const searchIndex = [
+    ...orders.slice(0, 50).map((order) => {
+      const orderItems = itemsByOrderId.get(order.id) ?? []
+
+      return {
+        id: `pedido-${order.id}`,
+        type: "pedido" as const,
+        title: `Pedido #${order.id}`,
+        detail: getOrderCustomerLabel(order),
+        keywords: [
+          String(order.id),
+          order.cliente_nombre,
+          order.cliente_email,
+          order.cliente_username,
+          ...orderItems.map(getOrderItemName),
+        ]
+          .filter(Boolean)
+          .join(" "),
+        section: "pedidos" as const,
+      }
+    }),
+    ...products.slice(0, 80).map((product) => ({
+      id: `producto-${product.id}`,
+      type: "producto" as const,
+      title: product.nombre,
+      detail: product.categorias?.nombre ?? "Producto",
+      keywords: [
+        product.nombre,
+        product.slug,
+        ...(product.producto_variantes ?? []).map((variant) => variant.nombre),
+      ]
+        .filter(Boolean)
+        .join(" "),
+      section: "productos" as const,
+    })),
+  ]
 
   return Response.json({
     role: auth.profile.rol,
@@ -307,8 +488,8 @@ export async function GET(request: Request) {
           order.payment_method_id === "transferencia" &&
           !order.payment_proof_url &&
           !["confirmado", "approved", "rechazado"].includes(
-            order.payment_status ?? ""
-          )
+            order.payment_status ?? "",
+          ),
       ).length,
       pagosEnRevision: paymentReviewOrders.length,
       enviosPendientes: pendingDispatchOrders.length,
@@ -317,13 +498,14 @@ export async function GET(request: Request) {
           !order.tracking_number &&
           !order.tracking_url &&
           !order.andreani_tracking &&
-          !order.andreani_etiqueta_url
+          !order.andreani_etiqueta_url,
       ).length,
+      facturasPendientes: pendingInvoiceOrders.length,
       pedidosPagados: paidOrders.length,
       pedidosCancelados: orders.filter((order) => order.estado === "cancelado")
         .length,
     },
-    lowStock: lowStock.sort((a, b) => a.stock - b.stock).slice(0, 10),
+    lowStock: sortedLowStock.slice(0, 10),
     recentOrders: orders.slice(0, 8).map((order) => ({
       ...order,
       total: sensitive ? order.total : 0,
@@ -335,5 +517,7 @@ export async function GET(request: Request) {
     })),
     commercialSales,
     recentActivity,
+    systemStatus,
+    searchIndex,
   })
 }
