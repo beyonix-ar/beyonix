@@ -84,8 +84,8 @@ function AuditDetails({ log }: { log: SupabaseAuditLog }) {
     <div className="mt-4 overflow-hidden rounded-2xl border border-white/7 bg-black">
       <div className="grid gap-3 border-b border-white/7 px-4 py-3 text-sm lg:grid-cols-3">
         <p className="font-bold text-white">Tabla técnica</p>
-        <p className="break-words text-white/65">{log.table_name}</p>
-        <p className="break-words text-white/80">ID: {log.record_id ?? "-"}</p>
+        <p className="wrap-break-word text-white/65">{log.table_name}</p>
+        <p className="wrap-break-word text-white/80">ID: {log.record_id ?? "-"}</p>
       </div>
 
       {fields.length === 0 ? (
@@ -102,12 +102,12 @@ function AuditDetails({ log }: { log: SupabaseAuditLog }) {
               {getHumanFieldName(field)}
             </p>
 
-            <p className="break-words text-sm text-white/65">
+            <p className="wrap-break-word text-sm text-white/65">
               <span className="mr-2 text-white/35">Antes:</span>
               {formatTechnicalValue(log.before_data?.[field])}
             </p>
 
-            <p className="break-words text-sm text-white/80">
+            <p className="wrap-break-word text-sm text-white/80">
               <span className="mr-2 text-white/35">Después:</span>
               {formatTechnicalValue(log.after_data?.[field])}
             </p>
@@ -414,7 +414,7 @@ export function AdminAuditoria() {
                       <p className="text-11px font-semibold uppercase tracking-widest text-white/35">
                         Usuario
                       </p>
-                      <p className="mt-1 break-words text-sm font-bold text-white">
+                      <p className="mt-1 wrap-break-word text-sm font-bold text-white">
                         {log.actor_email ?? "Sistema"}
                       </p>
                     </div>

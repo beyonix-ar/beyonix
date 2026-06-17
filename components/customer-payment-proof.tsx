@@ -15,7 +15,7 @@ import type { SupabasePedido } from "@/lib/supabase/types"
 const PAYMENT_STATUS_CONTENT = {
   pendiente_comprobante: {
     title: "Comprobante pendiente",
-    description: "Subí tu comprobante para que podamos validar el pago.",
+    description: "Sube tu comprobante para que podamos validar el pago.",
     icon: Clock3,
     className: "border-amber-400/20 bg-amber-400/8 text-amber-200",
   },
@@ -35,7 +35,7 @@ const PAYMENT_STATUS_CONTENT = {
   rechazado: {
     title: "Comprobante rechazado",
     description:
-      "El comprobante no pudo validarse. Podés subir uno nuevo.",
+      "El comprobante no pudo validarse. Puedes subir uno nuevo.",
     icon: AlertCircle,
     className: "border-red-400/20 bg-red-400/8 text-red-200",
   },

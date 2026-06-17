@@ -32,7 +32,14 @@ import type { SupabasePedido } from "@/lib/supabase/types"
 import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
-type StatusFilter = "todos" | "pendiente" | "pagado" | "enviado" | "cancelado"
+type StatusFilter =
+  | "todos"
+  | "pendiente"
+  | "pagado"
+  | "enviado"
+  | "en_camino"
+  | "entregado"
+  | "cancelado"
 type AndreaniAction = "crear-envio" | "tracking"
 type AdminNotice = { type: "ok" | "error"; message: string } | null
 
@@ -159,8 +166,8 @@ function isVisibleAdminOrder(pedido: SupabasePedido) {
 
 function getPaymentStatusLabel(status?: string | null) {
   const labels: Record<string, string> = {
-    pendiente_comprobante: "Pendiente de comprobante",
-    en_revision: "En revisión",
+    pendiente_comprobante: "Falta comprobante",
+    en_revision: "Falta comprobante",
     confirmado: "Confirmado",
     rechazado: "Rechazado",
     approved: "Aprobado",
@@ -183,6 +190,10 @@ function isApprovedPayment(pedido: SupabasePedido) {
   )
 }
 
+function needsPaymentProof(status?: string | null) {
+  return status === "pendiente_comprobante"
+}
+
 function getTransferPaymentStatusBadge(status?: string | null) {
   const badges: Record<string, { label: string; className: string }> = {
     pendiente_comprobante: {
@@ -190,8 +201,8 @@ function getTransferPaymentStatusBadge(status?: string | null) {
       className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
     },
     en_revision: {
-      label: "En revisión",
-      className: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
+      label: "Falta comprobante",
+      className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
     },
     confirmado: {
       label: "Pago confirmado",
@@ -360,7 +371,17 @@ function EstadoBadge({ estado }: { estado: string }) {
     pendiente: "border-amber-500/20 bg-amber-500/10 text-amber-300",
     pagado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
     enviado: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
+    en_camino: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
+    entregado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
     cancelado: "border-red-500/20 bg-red-500/10 text-red-300",
+  }
+  const labels: Record<string, string> = {
+    pendiente: "Pendiente",
+    pagado: "Pago confirmado",
+    enviado: "Despachado",
+    en_camino: "En camino",
+    entregado: "Entregado",
+    cancelado: "Cancelado/Rechazado",
   }
 
   return (
@@ -369,7 +390,7 @@ function EstadoBadge({ estado }: { estado: string }) {
         styles[estado] ?? "border-white/10 bg-white/5 text-white/60"
       }`}
     >
-      {estado}
+      {labels[estado] ?? estado}
     </span>
   )
 }
@@ -660,7 +681,6 @@ function PedidoPreviewModal({
                     onChange={(value) => onPaymentStatusChange(pedido.id, value)}
                   >
                     <option value="pendiente_comprobante">Pendiente comprobante</option>
-                    <option value="en_revision">En revisión</option>
                     <option value="confirmado">Confirmado</option>
                     <option value="rechazado">Rechazado</option>
                   </AdminSelect>
@@ -690,7 +710,7 @@ function PedidoPreviewModal({
                   </p>
                   <p
                     title={pedido.payment_proof_file_name || "Sin comprobante"}
-                    className="mt-2 break-words text-sm font-black text-white"
+                    className="mt-2 wrap-break-word text-sm font-black text-white"
                   >
                     {pedido.payment_proof_file_name || "Sin comprobante"}
                   </p>
@@ -834,7 +854,7 @@ function PedidoPreviewModal({
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
                   Tracking
                 </p>
-                <p className="mt-2 break-words text-sm font-black text-white">
+                <p className="mt-2 wrap-break-word text-sm font-black text-white">
                   {pedido.andreani_tracking || pedido.tracking_number || "Pendiente"}
                 </p>
               </div>
@@ -842,7 +862,7 @@ function PedidoPreviewModal({
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
                   Envío ID
                 </p>
-                <p className="mt-2 break-words text-sm font-black text-white">
+                <p className="mt-2 wrap-break-word text-sm font-black text-white">
                   {pedido.andreani_envio_id || "Pendiente"}
                 </p>
               </div>
@@ -850,7 +870,7 @@ function PedidoPreviewModal({
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
                   Etiqueta
                 </p>
-                <p className="mt-2 break-words text-sm font-black text-white">
+                <p className="mt-2 wrap-break-word text-sm font-black text-white">
                   {pedido.andreani_etiqueta_url ? "Disponible" : "Pendiente"}
                 </p>
               </div>
@@ -870,7 +890,7 @@ function PedidoPreviewModal({
                 </p>
                 <p
                   title={pedido.andreani_error || "Sin errores"}
-                  className="mt-2 break-words text-sm font-black text-white"
+                  className="mt-2 wrap-break-word text-sm font-black text-white"
                 >
                   {pedido.andreani_error || "Sin errores"}
                 </p>
@@ -1015,6 +1035,7 @@ function PedidoDetailModal({
   pedido,
   onClose,
   onOpenPaymentProof,
+  onEstadoChange,
   onPaymentStatusChange,
   onAndreaniAction,
   onIssueInvoice,
@@ -1023,6 +1044,7 @@ function PedidoDetailModal({
   pedido: SupabasePedido
   onClose: () => void
   onOpenPaymentProof: (pedidoId: number) => void
+  onEstadoChange: (pedido: SupabasePedido, nextEstado: string) => void
   onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
   onAndreaniAction: (
     action: AndreaniAction,
@@ -1094,6 +1116,22 @@ function PedidoDetailModal({
                 Pedido #{formatPublicOrderId(pedido.id)}
               </h2>
               <EstadoBadge estado={pedido.estado} />
+              <div className="w-32">
+                <AdminSelect
+                  title="Estado del pedido"
+                  compact
+                  centered
+                  value={pedido.estado}
+                  onChange={(value) => onEstadoChange(pedido, value)}
+                >
+                  <option value="pendiente">Pendiente</option>
+                  <option value="pagado">Pago confirmado</option>
+                  <option value="enviado">Despachado</option>
+                  <option value="en_camino">En camino</option>
+                  <option value="entregado">Entregado</option>
+                  <option value="cancelado">Cancelado/Rechazado</option>
+                </AdminSelect>
+              </div>
             </div>
             <p className="mt-2 text-sm text-white/55">
               {formatOrderDate(pedido.created_at)} · {getPaymentMethodLabel(pedido)}
@@ -1185,7 +1223,6 @@ function PedidoDetailModal({
                       onChange={(value) => onPaymentStatusChange(pedido.id, value)}
                     >
                       <option value="pendiente_comprobante">Pendiente comprobante</option>
-                      <option value="en_revision">En revisión</option>
                       <option value="confirmado">Confirmado</option>
                       <option value="rechazado">Rechazado</option>
                     </AdminSelect>
@@ -1595,7 +1632,7 @@ function DetailValue({
       <p className="text-10px font-bold uppercase tracking-widest text-white/38">
         {label}
       </p>
-      <p className="mt-1 break-words text-sm font-bold text-white/82">{value}</p>
+      <p className="mt-1 wrap-break-word text-sm font-bold text-white/82">{value}</p>
     </div>
   )
 }
@@ -1782,7 +1819,7 @@ export function AdminPedidos({
       return
     }
 
-    if (nextEstado === "enviado") {
+    if (nextEstado === "enviado" || nextEstado === "en_camino") {
       const trackingNumber =
         prompt("Número de seguimiento (opcional)")?.trim() || null
       const trackingUrl = prompt("Link de seguimiento (opcional)")?.trim() || null
@@ -1919,7 +1956,7 @@ export function AdminPedidos({
       return { ok: true, message }
     } catch (error) {
       console.error("ADMIN_INVOICE_ISSUE_ERROR", error)
-      const message = "Error de conexión con ARCA. Intentá nuevamente."
+      const message = "Error de conexión con ARCA. Inténtalo de nuevo."
       setNotice({ type: "error", message })
       return { ok: false, message }
     }
@@ -2034,8 +2071,10 @@ export function AdminPedidos({
             <option value="todos">Todos los estados</option>
             <option value="pendiente">Pendientes</option>
             <option value="pagado">Pagados</option>
-            <option value="enviado">Enviados</option>
-            <option value="cancelado">Cancelados</option>
+            <option value="enviado">Despachados</option>
+            <option value="en_camino">En camino</option>
+            <option value="entregado">Entregados</option>
+            <option value="cancelado">Cancelados/Rechazados</option>
           </AdminSelect>
         </div>
         </div>
@@ -2179,21 +2218,8 @@ export function AdminPedidos({
 
                       <div className="grid min-w-0 gap-4 border-y border-white/7 py-4 sm:grid-cols-3">
                         <MobileOrderField label="Estado">
-                          <div className="max-w-36">
-                            <AdminSelect
-                              title="Estado del pedido"
-                              compact
-                              centered
-                              value={pedido.estado}
-                              onChange={(value) =>
-                                handleEstadoChange(pedido, value)
-                              }
-                            >
-                              <option value="pendiente">Pendiente</option>
-                              <option value="pagado">Pagado</option>
-                              <option value="enviado">Enviado</option>
-                              <option value="cancelado">Cancelado</option>
-                            </AdminSelect>
+                          <div className="flex min-w-0">
+                            <EstadoBadge estado={pedido.estado} />
                           </div>
                         </MobileOrderField>
                         <MobileOrderField label="Despacho">
@@ -2208,19 +2234,9 @@ export function AdminPedidos({
                           </div>
                         </MobileOrderField>
                         <MobileOrderField label="Pago">
-                          <p className="truncate">{paymentMethod}</p>
-                          <p
-                            title={getPaymentStatusLabel(pedido.payment_status)}
-                            className={`mt-0.5 truncate text-xs font-bold ${
-                              isRejectedPayment(pedido.payment_status)
-                                ? "text-red-300"
-                                : isApprovedPayment(pedido)
-                                  ? "text-emerald-300"
-                                : "text-white/52"
-                            }`}
-                          >
-                            {getPaymentStatusLabel(pedido.payment_status)}
-                          </p>
+                          <span className="inline-flex max-w-full items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/78">
+                            <span className="truncate">{paymentMethod}</span>
+                          </span>
                         </MobileOrderField>
                       </div>
 
@@ -2292,21 +2308,8 @@ export function AdminPedidos({
                   </div>
 
                   <div className="text-center">
-                    <div className="mx-auto w-28">
-                      <AdminSelect
-                        title="Estado del pedido"
-                        compact
-                        centered
-                        value={pedido.estado}
-                        onChange={(value) =>
-                          handleEstadoChange(pedido, value)
-                        }
-                      >
-                        <option value="pendiente">Pendiente</option>
-                        <option value="pagado">Pagado</option>
-                        <option value="enviado">Enviado</option>
-                        <option value="cancelado">Cancelado</option>
-                      </AdminSelect>
+                    <div className="flex justify-center">
+                      <EstadoBadge estado={pedido.estado} />
                     </div>
                   </div>
 
@@ -2321,41 +2324,14 @@ export function AdminPedidos({
                   </div>
 
                   <div className="min-w-0 space-y-1 text-center">
-                    {pedido.payment_method_id === "transferencia" ? (
-                      <span
-                        title={`${getPaymentStatusLabel(pedido.payment_status)} · ${
-                          pedido.payment_proof_url ? "Con comprobante" : "Sin comprobante"
-                        }`}
-                        className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${
-                          isRejectedPayment(pedido.payment_status)
-                            ? "border-red-400/30 bg-red-400/10 text-red-300"
-                            : isApprovedPayment(pedido)
-                              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                            : "border-beyonix-blue-light/35 bg-black text-beyonix-sky"
-                        }`}
-                      >
-                        <span className="truncate">
-                          {getPaymentStatusLabel(pedido.payment_status)}
-                        </span>
+                    <span
+                      title={paymentMethod}
+                      className="inline-flex max-w-full items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/78"
+                    >
+                      <span className="truncate">
+                        {paymentMethod}
                       </span>
-                    ) : (
-                      <span
-                        className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${
-                          isRejectedPayment(pedido.payment_status)
-                            ? "border-red-400/30 bg-red-400/10 text-red-300"
-                            : isApprovedPayment(pedido)
-                              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                            : "border-white/10 bg-white/5 text-white/58"
-                        }`}
-                      >
-                        <span className="truncate">
-                          {getPaymentStatusLabel(pedido.payment_status)}
-                        </span>
-                      </span>
-                    )}
-                    <p className="truncate text-11px font-bold text-white/68">
-                      {paymentMethod}
-                    </p>
+                    </span>
                   </div>
 
                   <div className="min-w-0 text-center">
@@ -2395,6 +2371,9 @@ export function AdminPedidos({
           pedido={previewPedido}
           onClose={() => setPreviewPedido(null)}
           onOpenPaymentProof={handleOpenPaymentProof}
+          onEstadoChange={(pedido, nextEstado) =>
+            void handleEstadoChange(pedido, nextEstado)
+          }
           onPaymentStatusChange={handlePaymentStatusChange}
           onAndreaniAction={handleAndreaniAction}
           onIssueInvoice={handleIssueInvoice}

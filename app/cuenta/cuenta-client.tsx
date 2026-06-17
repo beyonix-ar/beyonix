@@ -1,17 +1,19 @@
 "use client"
 // @refresh reset
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Camera,
   Download,
   Eye,
   EyeOff,
+  ExternalLink,
   Hash,
   Lock,
   LogOut,
@@ -24,7 +26,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
-import { CustomerPaymentProof } from "@/components/customer-payment-proof"
+import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
@@ -65,22 +67,60 @@ function formatCuentaInvoiceNumber(
   return `${String(point ?? 0).padStart(4, "0")}-${String(number ?? 0).padStart(8, "0")}`
 }
 
-function getClientOrderStatusLabel(status: string) {
-  const normalizedStatus = status.toLowerCase()
+function getClientOrderStatusBadge(order: SupabasePedido) {
+  const status = order.estado.toLowerCase()
+  const paymentStatus = order.payment_status ?? ""
 
-  if (normalizedStatus === "enviado") {
-    return "Despachado"
+  if (paymentStatus === "rechazado") {
+    return {
+      label: "Comprobante inválido",
+      className: "border-red-400/35 bg-red-400/12 text-red-200",
+    }
   }
 
-  if (normalizedStatus === "entregado") {
-    return "Entregado"
+  if (
+    paymentStatus === "confirmado" ||
+    paymentStatus === "approved" ||
+    status === "pagado"
+  ) {
+    return {
+      label: "Pago confirmado",
+      className: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
+    }
   }
 
-  if (normalizedStatus === "cancelado") {
-    return "Cancelado"
+  if (status === "enviado") {
+    return {
+      label: "Despachado",
+      className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
+    }
   }
 
-  return "Tu pedido será enviado a la brevedad"
+  if (status === "en_camino") {
+    return {
+      label: "En camino",
+      className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
+    }
+  }
+
+  if (status === "entregado") {
+    return {
+      label: "Entregado",
+      className: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
+    }
+  }
+
+  if (status === "cancelado") {
+    return {
+      label: "Cancelado/Rechazado",
+      className: "border-red-400/35 bg-red-400/12 text-red-200",
+    }
+  }
+
+  return {
+    label: "Pendiente de confirmación",
+    className: "border-amber-300/35 bg-amber-400/12 text-amber-200",
+  }
 }
 
 function getCuentaItemColor(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
@@ -103,6 +143,228 @@ function getCuentaItemImage(item: NonNullable<SupabasePedido["orden_items"]>[num
     item.productos?.imagen_principal ||
     item.productos?.imagenes_producto?.[0]?.url ||
     ""
+  )
+}
+
+type OrderProgressTone = "done" | "current" | "pending" | "danger" | "warning"
+
+interface OrderProgressStep {
+  label: string
+  detail: string
+  tone: OrderProgressTone
+}
+
+function getPaymentProgressLabel(order: SupabasePedido) {
+  const paymentStatus = order.payment_status ?? ""
+
+  if (order.payment_method_id !== "transferencia") {
+    if (paymentStatus === "approved" || order.estado === "pagado") {
+      return "Pago aprobado"
+    }
+
+    return "Esperando confirmación del pago"
+  }
+
+  if (paymentStatus === "confirmado" || order.estado === "pagado") {
+    return "Transferencia confirmada"
+  }
+
+  if (paymentStatus === "en_revision") {
+    return "Comprobante pendiente"
+  }
+
+  if (paymentStatus === "rechazado") {
+    return "Comprobante inválido"
+  }
+
+  return "Comprobante pendiente"
+}
+
+function isAndreaniOrderInTransit(order: SupabasePedido) {
+  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
+
+  return [
+    "camino",
+    "tránsito",
+    "transito",
+    "distribución",
+    "distribucion",
+    "reparto",
+    "visita",
+  ].some((status) => andreaniStatus.includes(status))
+}
+
+function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[] {
+  const estado = order.estado.toLowerCase()
+  const paymentStatus = order.payment_status ?? ""
+  const isCanceled = estado === "cancelado"
+  const isRejected = paymentStatus === "rechazado"
+  const isPaid =
+    estado === "pagado" ||
+    estado === "enviado" ||
+    estado === "en_camino" ||
+    estado === "entregado" ||
+    paymentStatus === "confirmado" ||
+    paymentStatus === "approved"
+  const isDispatched =
+    estado === "enviado" ||
+    estado === "en_camino" ||
+    estado === "entregado" ||
+    Boolean(order.tracking_number || order.andreani_tracking)
+  const isDelivered = estado === "entregado"
+  const isInTransit = estado === "en_camino" || isDelivered || isAndreaniOrderInTransit(order)
+  const hasTracking = Boolean(order.tracking_number || order.andreani_tracking)
+
+  if (isCanceled) {
+    return [
+      {
+        label: "Pedido registrado",
+        detail: formatCuentaOrderDate(order.created_at),
+        tone: "done",
+      },
+      {
+        label: "Pedido cancelado",
+        detail: "La compra fue cancelada.",
+        tone: "danger",
+      },
+    ]
+  }
+
+  if (isRejected) {
+    return [
+      {
+        label: "Pedido registrado",
+        detail: formatCuentaOrderDate(order.created_at),
+        tone: "done",
+      },
+      {
+        label: "Comprobante inválido",
+        detail: "Pago no recibido. Puedes subir un nuevo comprobante.",
+        tone: "danger",
+      },
+    ]
+  }
+
+  return [
+    {
+      label: "Pedido registrado",
+      detail: formatCuentaOrderDate(order.created_at),
+      tone: "done",
+    },
+    {
+      label: getPaymentProgressLabel(order),
+      detail: isPaid
+        ? "El pago ya fue confirmado."
+        : "Te avisaremos cuando se haya aprobado.",
+      tone: isPaid ? "done" : "warning",
+    },
+    {
+      label: "Preparación",
+      detail: isPaid
+        ? "Estamos preparando tu pedido."
+        : "Este paso empieza cuando se confirme el pago.",
+      tone: isPaid ? (isDispatched ? "done" : "current") : "pending",
+    },
+    {
+      label: "Despacho",
+      detail: hasTracking
+        ? "Seguimiento " + (order.tracking_number || order.andreani_tracking)
+        : "Te enviaremos el seguimiento cuando salga.",
+      tone: isDispatched ? "done" : "pending",
+    },
+    {
+      label: "En camino",
+      detail: isInTransit
+        ? "Andreani est? llevando el pedido al domicilio indicado."
+        : "Este paso se activa cuando Andreani inicia el transporte.",
+      tone: isInTransit ? (isDelivered ? "done" : "current") : "pending",
+    },
+    {
+      label: "Entregado",
+      detail: isDelivered
+        ? "El pedido figura como entregado."
+        : "Último paso del recorrido.",
+      tone: isDelivered ? "done" : "pending",
+    },
+  ]
+}
+
+function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
+  const steps = getOrderProgressSteps(order)
+  const toneClassNames: Record<OrderProgressTone, string> = {
+    done: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
+    current: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
+    pending: "border-white/10 bg-white/5 text-white/45",
+    danger: "border-red-400/35 bg-red-400/12 text-red-200",
+    warning: "border-amber-300/35 bg-amber-400/12 text-amber-200",
+  }
+  const gridClassName =
+    steps.length >= 6
+      ? "md:grid-cols-6"
+      : steps.length === 2
+        ? "md:grid-cols-2"
+        : "md:grid-cols-5"
+
+  return (
+    <div className="mb-4 rounded-xl border border-white/8 bg-black/25 p-3">
+      <p className="mb-3 text-11px font-black uppercase tracking-widest text-white/45">
+        Estado del pedido
+      </p>
+      <div className={"grid gap-2 " + gridClassName}>
+        {steps.map((step, index) => (
+          <div
+            key={step.label + "-" + index}
+            className={"relative rounded-lg border p-3 " + toneClassNames[step.tone]}
+          >
+            <span className="mb-2 flex size-6 items-center justify-center rounded-full border border-current text-11px font-black">
+              {step.tone === "done" ? <Check className="size-3.5" /> : index + 1}
+            </span>
+            <p className="text-xs font-black text-white">{step.label}</p>
+            <p className="mt-1 text-11px leading-4 text-white/52">
+              {step.detail}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ReturnClaimPanel({ order }: { order: SupabasePedido }) {
+  const subject = encodeURIComponent(
+    `Reclamo por estado del producto - Pedido ${formatPublicOrderId(order.id)}`,
+  )
+  const body = encodeURIComponent(
+    [
+      `Hola, necesito iniciar un reclamo por el estado del producto del pedido ${formatPublicOrderId(order.id)}.`,
+      "",
+      "Motivo del reclamo:",
+      "Producto/s afectado/s:",
+      "Fotos o vídeos adjuntos:",
+    ].join("\n"),
+  )
+
+  return (
+    <section className="mb-4 rounded-xl border border-amber-300/30 bg-amber-400/10 p-4">
+      <p className="text-11px font-black uppercase tracking-widest text-amber-200">
+        Devolución por estado del producto
+      </p>
+      <h3 className="mt-2 text-xl font-black text-white">
+        Tienes 48 h desde la entrega para iniciar el reclamo.
+      </h3>
+      <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/72">
+        Si el producto llegó dañado o en mal estado, inicia el reclamo dentro
+        de las 48 h posteriores a la entrega. Este plazo permite gestionar la
+        devolución correspondiente con Andreani.
+      </p>
+      <a
+        href={`mailto:beyonix.ar@gmail.com?subject=${subject}&body=${body}`}
+        className="mt-4 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-amber-300/35 bg-amber-300/15 px-4 text-xs font-black uppercase tracking-wide text-amber-100 transition-colors hover:bg-amber-300/25"
+      >
+        <Mail className="size-4" />
+        Iniciar reclamo
+      </a>
+    </section>
   )
 }
 
@@ -223,7 +485,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
     const normalizedEmail = identifier.trim().toLowerCase()
 
     if (!normalizedEmail || !normalizedEmail.includes("@")) {
-      setError("Ingresá tu email primero.")
+      setError("Introduce tu email primero.")
       setSuccess("")
       return
     }
@@ -250,7 +512,7 @@ function LoginForm({ onSwitch }: { onSwitch: () => void }) {
 
       setSuccess("Te enviamos un email para restablecer tu contraseña.")
     } catch {
-      setError("No se pudo enviar el email. Intentá nuevamente.")
+      setError("No se pudo enviar el email. Inténtalo de nuevo.")
     } finally {
       setResetLoading(false)
     }
@@ -468,17 +730,17 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
     }
 
     if (!street.trim()) {
-      setError("Ingresá la calle.")
+      setError("Introduce la calle.")
       return
     }
 
     if (!streetNumber.trim()) {
-      setError("Ingresá el número de calle.")
+      setError("Introduce el número de calle.")
       return
     }
 
     if (!locality.trim()) {
-      setError("Ingresá la localidad.")
+      setError("Introduce la localidad.")
       return
     }
 
@@ -674,12 +936,14 @@ function AccountViewFrame({
   title,
   children,
   maxWidth = "max-w-4xl",
+  hideHeading = false,
 }: {
   onBack: () => void
   kicker: string
   title: string
   children: React.ReactNode
   maxWidth?: string
+  hideHeading?: boolean
 }) {
   return (
     <div className={`mx-auto ${maxWidth} space-y-5`}>
@@ -694,14 +958,16 @@ function AccountViewFrame({
         Volver a mi cuenta
       </button>
 
-      <div className="rounded-2xl border border-white/8 bg-beyonix-surface px-5 py-5 shadow-2xl shadow-black/25 sm:px-6">
-        <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-          {kicker}
-        </p>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
-          {title}
-        </h2>
-      </div>
+      {!hideHeading && (
+        <div className="rounded-2xl border border-white/8 bg-beyonix-surface px-5 py-5 shadow-2xl shadow-black/25 sm:px-6">
+          <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+            {kicker}
+          </p>
+          <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">
+            {title}
+          </h2>
+        </div>
+      )}
 
       {children}
     </div>
@@ -718,6 +984,69 @@ function getPasswordCooldownMessage(lastChangedAt: string) {
   return `La contraseña se puede cambiar una vez cada 15 días. Vas a poder cambiarla nuevamente el ${availableAt.toLocaleDateString("es-AR")}.`
 }
 
+function PaymentProofViewButton({ order }: { order: SupabasePedido }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    setError("")
+  }, [order.id, order.payment_proof_uploaded_at])
+
+  const handleOpenProof = async () => {
+    setLoading(true)
+    setError("")
+
+    try {
+      const response = await fetch(`/api/payment-proofs/${order.id}`)
+      const data = (await response.json()) as {
+        signedUrl?: string | null
+        error?: string
+      }
+
+      if (!response.ok || !data.signedUrl) {
+        throw new Error(data.error || "No se pudo abrir el comprobante.")
+      }
+
+      const anchor = document.createElement("a")
+      anchor.href = data.signedUrl
+      anchor.target = "_blank"
+      anchor.rel = "noreferrer"
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+    } catch (proofError) {
+      setError(
+        proofError instanceof Error
+          ? proofError.message
+          : "No se pudo abrir el comprobante.",
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <span className="inline-flex flex-col items-stretch gap-1">
+      <button
+        type="button"
+        aria-label={`Ver comprobante del pedido ${formatPublicOrderId(order.id)}`}
+        title="Ver comprobante"
+        disabled={loading}
+        onClick={() => void handleOpenProof()}
+        className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#112A43] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:bg-[#183B5E] disabled:cursor-wait disabled:opacity-60"
+      >
+        <ExternalLink className="size-4" />
+        {loading ? "Abriendo..." : "Ver comprobante"}
+      </button>
+      {error && (
+        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-red-300 sm:text-right">
+          {error}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function MisOrdenes({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const [orders, setOrders] = useState<SupabasePedido[]>([])
@@ -727,14 +1056,19 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
     null,
   )
   const [invoiceError, setInvoiceError] = useState("")
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(
+    () => new Set(),
+  )
 
-  useEffect(() => {
-    let active = true
+  const loadOrders = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!user) {
+        setOrders([])
+        setLoading(false)
+        return
+      }
 
-    async function loadOrders() {
-      if (!user) return
-
-      setLoading(true)
+      if (!silent) setLoading(true)
       setError("")
 
       const { data, error: ordersError } = await supabase
@@ -742,11 +1076,9 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
         .select("*, orden_items(*, productos(*), producto_variantes(*))")
         .order("created_at", { ascending: false })
 
-      if (!active) return
-
       if (ordersError) {
         setError("No se pudieron cargar tus órdenes.")
-        setLoading(false)
+        if (!silent) setLoading(false)
         return
       }
 
@@ -776,15 +1108,46 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
       })
 
       setOrders(matchedOrders)
-      setLoading(false)
+      if (!silent) setLoading(false)
+    },
+    [user],
+  )
+
+  useEffect(() => {
+    void loadOrders()
+  }, [loadOrders])
+
+  useEffect(() => {
+    if (!user) return
+
+    const refreshOrders = () => {
+      void loadOrders({ silent: true })
     }
 
-    loadOrders()
+    const channel = supabase
+      .channel(`customer-orders-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ordenes",
+        },
+        refreshOrders,
+      )
+      .subscribe()
+
+    const intervalId = window.setInterval(refreshOrders, 15000)
+    window.addEventListener("focus", refreshOrders)
+    document.addEventListener("visibilitychange", refreshOrders)
 
     return () => {
-      active = false
+      window.clearInterval(intervalId)
+      window.removeEventListener("focus", refreshOrders)
+      document.removeEventListener("visibilitychange", refreshOrders)
+      void supabase.removeChannel(channel)
     }
-  }, [user])
+  }, [loadOrders, user])
 
   const handlePaymentProofUploaded = (updatedOrder: SupabasePedido) => {
     setOrders((currentOrders) =>
@@ -792,14 +1155,43 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
         order.id === updatedOrder.id
           ? {
               ...order,
+              estado: updatedOrder.estado ?? order.estado,
               payment_status: updatedOrder.payment_status,
+              payment_method_id:
+                updatedOrder.payment_method_id ?? order.payment_method_id,
               payment_proof_url: updatedOrder.payment_proof_url,
               payment_proof_file_name: updatedOrder.payment_proof_file_name,
               payment_proof_uploaded_at: updatedOrder.payment_proof_uploaded_at,
+              tracking_number:
+                updatedOrder.tracking_number ?? order.tracking_number,
+              tracking_url: updatedOrder.tracking_url ?? order.tracking_url,
+              andreani_tracking:
+                updatedOrder.andreani_tracking ?? order.andreani_tracking,
+              andreani_estado:
+                updatedOrder.andreani_estado ?? order.andreani_estado,
+              invoice_status:
+                updatedOrder.invoice_status ?? order.invoice_status,
+              invoice_point: updatedOrder.invoice_point ?? order.invoice_point,
+              invoice_number:
+                updatedOrder.invoice_number ?? order.invoice_number,
             }
           : order
       )
     )
+  }
+
+  const toggleOrderDetails = (orderId: number) => {
+    setExpandedOrderIds((currentIds) => {
+      const nextIds = new Set(currentIds)
+
+      if (nextIds.has(orderId)) {
+        nextIds.delete(orderId)
+      } else {
+        nextIds.add(orderId)
+      }
+
+      return nextIds
+    })
   }
 
   const handleDownloadInvoice = async (orderId: number) => {
@@ -825,7 +1217,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
       anchor.remove()
       URL.revokeObjectURL(url)
     } catch {
-      setInvoiceError("No se pudo descargar la factura. Intentá nuevamente.")
+      setInvoiceError("No se pudo descargar la factura. Inténtalo de nuevo.")
     } finally {
       setDownloadingInvoiceId(null)
     }
@@ -837,6 +1229,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
       kicker="Mis órdenes"
       title="Historial de compras"
       maxWidth="max-w-5xl"
+      hideHeading
     >
       {loading ? (
         <div className="space-y-3">
@@ -854,8 +1247,8 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
       ) : orders.length === 0 ? (
         <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-8 text-center">
           <ShoppingBag className="size-10 text-white/15 mx-auto mb-3" />
-          <p className="text-sm font-medium text-white/60">Todavía no realizaste ningún pedido.</p>
-          <p className="text-xs text-white/40 mt-1">Cuando compres algo aparecerá acá.</p>
+          <p className="text-sm font-medium text-white/60">Todavía no has realizado ningún pedido.</p>
+          <p className="text-xs text-white/40 mt-1">Cuando compres algo aparecerá aquí.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -866,49 +1259,102 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
           )}
           {orders.map((order) => {
             const items = order.orden_items ?? []
+            const hasProof = Boolean(order.payment_proof_url)
+            const isTransferOrder = order.payment_method_id === "transferencia"
+            const isExpanded = expandedOrderIds.has(order.id)
+            const orderStatusBadge = getClientOrderStatusBadge(order)
 
             return (
               <article
                 key={order.id}
-                className="overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface shadow-2xl shadow-black/30"
+                className="overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface shadow-xl shadow-black/20"
               >
-                <div className="flex flex-col gap-4 border-b border-white/7 bg-white/2 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                      Pedido #{formatPublicOrderId(order.id)}
-                    </p>
-                    <p className="mt-2 text-sm text-white/55">
+                <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <span className="block text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                        Pedido #{formatPublicOrderId(order.id)}
+                      </span>
+                      <span
+                        className={"w-fit rounded-full border px-3 py-1 text-10px font-black uppercase tracking-wide " + orderStatusBadge.className}
+                      >
+                        {orderStatusBadge.label}
+                      </span>
+                    </div>
+                    <span className="mt-1 block text-sm text-white/55">
                       {formatCuentaOrderDate(order.created_at)}
-                    </p>
-                    <h3 className="mt-2 text-2xl font-black text-white">
+                    </span>
+                    <span className="mt-1 block text-xl font-black text-white">
                       {formatCuentaPrice(Number(order.total ?? 0))}
-                    </h3>
+                    </span>
                   </div>
 
-                  <div className="flex flex-col items-start gap-2 sm:items-end">
-                    <span className="w-fit rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue px-3 py-1 text-11px font-black uppercase tracking-wide text-beyonix-sky">
-                      {getClientOrderStatusLabel(order.estado)}
-                    </span>
-                    {order.invoice_status === "authorized" &&
-                      order.payment_method_id !== "transferencia" && (
-                      <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-3 sm:text-right">
-                        <p className="text-10px font-black uppercase tracking-widest text-emerald-300">
-                          Factura C disponible
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          Factura C{" "}
-                          {formatCuentaInvoiceNumber(
-                            order.invoice_point,
-                            order.invoice_number,
-                          )}
-                        </p>
+                  <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+                    {isTransferOrder && (
+                      <>
+                        {hasProof ? (
+                          <>
+                            <PaymentProofViewButton order={order} />
+                            <PaymentProofActionButton
+                              orderId={order.id}
+                              initialUploaded
+                              onUploaded={handlePaymentProofUploaded}
+                              className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/7 px-3 text-11px font-black uppercase tracking-wide text-white/82 transition-colors hover:border-beyonix-blue-light/35 hover:bg-white/12 disabled:cursor-wait disabled:opacity-60"
+                            />
+                          </>
+                        ) : (
+                          <PaymentProofActionButton
+                            orderId={order.id}
+                            onUploaded={handlePaymentProofUploaded}
+                            className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-400/35 bg-emerald-500/15 px-3 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
+                          />
+                        )}
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      aria-label={(isExpanded ? "Ocultar" : "Ver") + " detalle del pedido " + formatPublicOrderId(order.id)}
+                      title={(isExpanded ? "Ocultar" : "Ver") + " detalle"}
+                      onClick={() => toggleOrderDetails(order.id)}
+                      className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/70 transition-colors hover:border-beyonix-blue-light/35 hover:text-white"
+                    >
+                      <ChevronDown
+                        className={"size-5 transition-transform " + (isExpanded ? "rotate-180" : "")}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="border-t border-white/7 px-4 py-4 sm:px-5">
+                    <OrderProgressTimeline order={order} />
+
+                    {order.estado === "entregado" && (
+                      <ReturnClaimPanel order={order} />
+                    )}
+
+                    {order.invoice_status === "authorized" && (
+                      <div className="mb-3 flex flex-col gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-emerald-300">
+                            Factura disponible
+                          </p>
+                          <p className="mt-1 text-sm font-bold text-white">
+                            Factura C{" "}
+                            {formatCuentaInvoiceNumber(
+                              order.invoice_point,
+                              order.invoice_number,
+                            )}
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          aria-label={`Descargar factura del pedido ${formatPublicOrderId(order.id)}`}
-                          title="Descargar Factura C"
+                          aria-label={"Descargar factura del pedido " + formatPublicOrderId(order.id)}
+                          title="Descargar factura"
                           disabled={downloadingInvoiceId === order.id}
                           onClick={() => void handleDownloadInvoice(order.id)}
-                          className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-60"
+                          className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-60"
                         >
                           <Download className="size-4" />
                           {downloadingInvoiceId === order.id
@@ -917,155 +1363,102 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                         </button>
                       </div>
                     )}
-                  </div>
-                </div>
 
-                {order.payment_method_id === "transferencia" && (
-                  <div className="border-b border-white/7 px-5 py-4">
-                    <CustomerPaymentProof
-                      order={order}
-                      onUploaded={handlePaymentProofUploaded}
-                      hideProofWhenConfirmed
-                    />
+                    <div className="mb-2 hidden grid-cols-account-order-item gap-4 px-3 xl:grid">
+                      {[
+                        "Producto",
+                        "Color",
+                        "Cantidad",
+                        "Precio x un.",
+                        "Subtotal",
+                      ].map((label) => (
+                        <span
+                          key={label}
+                          className={"text-11px font-bold uppercase tracking-widest text-white/38 " +
+                            (label === "Producto" ? "text-left" : "text-center")}
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
 
-                    {order.payment_status === "confirmado" && (
-                      <div className="mt-3 rounded-xl border border-[#112A43] bg-[#112A43]/20 p-4">
-                        {order.invoice_status === "authorized" ? (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <p className="text-sm font-black text-white">
-                                Factura disponible
-                              </p>
-                              <p className="mt-1 text-xs text-white/55">
-                                Factura C{" "}
-                                {formatCuentaInvoiceNumber(
-                                  order.invoice_point,
-                                  order.invoice_number,
+                    <div className="space-y-3">
+                      {items.map((item) => {
+                        const quantity = Number(item.cantidad ?? 0)
+                        const unitPrice = Number(item.precio ?? 0)
+                        const subtotal = quantity * unitPrice
+                        const productName =
+                          item.productos?.nombre ?? "Producto #" + item.producto_id
+                        const image = getCuentaItemImage(item)
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="grid gap-4 rounded-xl border border-white/6 bg-black/35 p-3 sm:grid-cols-account-order-item sm:items-center"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
+                                {image ? (
+                                  <img
+                                    src={image}
+                                    alt={productName}
+                                    className="size-full object-contain"
+                                  />
+                                ) : (
+                                  <ShoppingBag className="size-5 text-black/35" />
                                 )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-white">
+                                  {productName}
+                                </p>
+                                <p className="mt-1 text-xs text-white/48">
+                                  Producto #{item.producto_id}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-center">
+                              <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
+                                Color
+                              </p>
+                              <p className="mt-1 text-sm font-black text-white">
+                                {getCuentaItemColor(item)}
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              aria-label={`Descargar factura del pedido ${formatPublicOrderId(order.id)}`}
-                              title="Descargar factura"
-                              disabled={downloadingInvoiceId === order.id}
-                              onClick={() =>
-                                void handleDownloadInvoice(order.id)
-                              }
-                              className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#112A43] px-4 text-xs font-black text-white transition-colors hover:bg-[#183B5E] disabled:cursor-wait disabled:opacity-60"
-                            >
-                              <Download className="size-4" />
-                              {downloadingInvoiceId === order.id
-                                ? "Preparando..."
-                                : "Descargar factura"}
-                            </button>
+
+                            <div className="text-center">
+                              <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
+                                Cantidad
+                              </p>
+                              <p className="mt-1 text-sm font-black text-white">
+                                {quantity}
+                              </p>
+                            </div>
+
+                            <div className="text-center">
+                              <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
+                                Precio x un.
+                              </p>
+                              <p className="mt-1 text-sm font-black text-white">
+                                {formatCuentaPrice(unitPrice)}
+                              </p>
+                            </div>
+
+                            <div className="text-center">
+                              <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
+                                Subtotal
+                              </p>
+                              <p className="mt-1 text-sm font-black text-white">
+                                {formatCuentaPrice(subtotal)}
+                              </p>
+                            </div>
                           </div>
-                        ) : (
-                          <p className="text-sm font-semibold text-white/75">
-                            Tu factura será emitida a la brevedad.
-                          </p>
-                        )}
-                      </div>
-                    )}
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
-
-                <div className="px-5 py-4">
-                  <div className="mb-2 hidden grid-cols-account-order-item gap-4 px-3 xl:grid">
-                    {[
-                      "Producto",
-                      "Color",
-                      "Cantidad",
-                      "Precio x un.",
-                      "Subtotal",
-                    ].map((label) => (
-                      <span
-                        key={label}
-                        className={`text-11px font-bold uppercase tracking-widest text-white/38 ${
-                          label === "Producto" ? "text-left" : "text-center"
-                        }`}
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="space-y-3">
-                  {items.map((item) => {
-                    const quantity = Number(item.cantidad ?? 0)
-                    const unitPrice = Number(item.precio ?? 0)
-                    const subtotal = quantity * unitPrice
-                    const productName =
-                      item.productos?.nombre ?? `Producto #${item.producto_id}`
-                    const image = getCuentaItemImage(item)
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="grid gap-4 rounded-xl border border-white/6 bg-black/35 p-3 sm:grid-cols-account-order-item sm:items-center"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
-                            {image ? (
-                              <img
-                                src={image}
-                                alt={productName}
-                                className="size-full object-contain"
-                              />
-                            ) : (
-                              <ShoppingBag className="size-5 text-black/35" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-black text-white">
-                              {productName}
-                            </p>
-                            <p className="mt-1 text-xs text-white/48">
-                              Producto #{item.producto_id}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="text-center">
-                          <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
-                            Color
-                          </p>
-                          <p className="mt-1 text-sm font-black text-white">
-                            {getCuentaItemColor(item)}
-                          </p>
-                        </div>
-
-                        <div className="text-center">
-                          <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
-                            Cantidad
-                          </p>
-                          <p className="mt-1 text-sm font-black text-white">
-                            {quantity}
-                          </p>
-                        </div>
-
-                        <div className="text-center">
-                          <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
-                            Precio x un.
-                          </p>
-                          <p className="mt-1 text-sm font-black text-white">
-                            {formatCuentaPrice(unitPrice)}
-                          </p>
-                        </div>
-
-                        <div className="text-center">
-                          <p className="text-11px font-bold uppercase tracking-widest text-white/38 xl:hidden">
-                            Subtotal
-                          </p>
-                          <p className="mt-1 text-sm font-black text-white">
-                            {formatCuentaPrice(subtotal)}
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  </div>
-                </div>
               </article>
             )
           })}
@@ -1221,12 +1614,12 @@ function formatDeliveryAddressForProfile(address: DeliveryAddressDraft) {
 }
 
 function validateDeliveryAddress(address: DeliveryAddressDraft) {
-  if (!address.calle) return "Ingresá la calle."
-  if (!address.numero) return "Ingresá el número de calle."
+  if (!address.calle) return "Introduce la calle."
+  if (!address.numero) return "Introduce el número de calle."
   if (!/^\d{4,8}$/.test(address.codigoPostal)) {
     return "El código postal debe tener entre 4 y 8 números."
   }
-  if (!address.localidad) return "Ingresá la localidad."
+  if (!address.localidad) return "Introduce la localidad."
   if (!address.region) return "Seleccioná una provincia válida."
 
   const commonPattern = /^[\p{L}\p{M}0-9\s.,'°/-]+$/u
@@ -1271,7 +1664,7 @@ function ChangePasswordForm() {
     }
 
     if (!currentPassword) {
-      setError("Ingresá tu contraseña actual.")
+      setError("Introduce tu contraseña actual.")
       return
     }
 
@@ -1301,7 +1694,7 @@ function ChangePasswordForm() {
 
     if (authUserError) {
       setLoading(false)
-      setError("No se pudo validar la sesión. Intentá nuevamente.")
+      setError("No se pudo validar la sesión. Inténtalo de nuevo.")
       return
     }
 
@@ -1345,7 +1738,7 @@ function ChangePasswordForm() {
     setLoading(false)
 
     if (updateError) {
-      setError("No se pudo actualizar la contraseña. Intentá nuevamente.")
+      setError("No se pudo actualizar la contraseña. Inténtalo de nuevo.")
       return
     }
 
@@ -1625,7 +2018,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
       ].join("|")
       setSaved(true)
     } catch {
-      setProfileError("No pudimos guardar tus datos. Intentá nuevamente.")
+      setProfileError("No hemos podido guardar tus datos. Inténtalo de nuevo.")
     }
   }
 
@@ -1635,7 +2028,7 @@ function MisDatos({ onBack }: { onBack: () => void }) {
     if (!file || !user) return
 
     if (!file.type.startsWith("image/")) {
-      setAvatarError("Subí una imagen válida.")
+      setAvatarError("Sube una imagen válida.")
       return
     }
 
@@ -1984,7 +2377,7 @@ export function CuentaClient() {
               </h1>
               <p className="text-sm text-white/50">
                 {tab === "login"
-                  ? "Ingresá para ver tus órdenes y datos."
+                  ? "Inicia sesión para ver tus órdenes y datos."
                   : "Registrate para comprar en BEYONIX."}
               </p>
             </div>

@@ -20,6 +20,13 @@ interface PaymentProofUploaderProps {
   onUploaded?: (order: SupabasePedido) => void
 }
 
+interface PaymentProofActionButtonProps {
+  orderId: number
+  initialUploaded?: boolean
+  onUploaded?: (order: SupabasePedido) => void
+  className?: string
+}
+
 export function PaymentProofUploader({
   orderId,
   initialUploaded = false,
@@ -83,7 +90,7 @@ export function PaymentProofUploader({
       if (inputRef.current) inputRef.current.value = ""
       onUploaded?.(data.order as SupabasePedido)
     } catch {
-      setError("No pudimos subir el comprobante. Intentá nuevamente.")
+      setError("No hemos podido subir el comprobante. Inténtalo de nuevo.")
     } finally {
       setUploading(false)
     }
@@ -157,16 +164,16 @@ export function PaymentProofUploader({
                   {file.name}
                 </p>
                 <p className="mt-1 text-xs text-white/50">
-                  {(file.size / 1024 / 1024).toFixed(2)} MB · Tocá para reemplazar
+                  {(file.size / 1024 / 1024).toFixed(2)} MB · Toca para reemplazar
                 </p>
               </>
             ) : (
               <>
                 <p className="mt-3 text-sm font-semibold text-white">
-                  Arrastrá el comprobante acá
+                  Arrastra el comprobante aquí
                 </p>
                 <p className="mt-1 text-xs text-white/55">
-                  o tocá para elegirlo desde tu dispositivo
+                  o toca para elegirlo desde tu dispositivo
                 </p>
               </>
             )}
@@ -200,5 +207,85 @@ export function PaymentProofUploader({
         </Button>
       </div>
     </div>
+  )
+}
+
+export function PaymentProofActionButton({
+  orderId,
+  initialUploaded = false,
+  onUploaded,
+  className = "",
+}: PaymentProofActionButtonProps) {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
+  const actionLabel = initialUploaded ? "Editar comprobante" : "Agregar comprobante"
+
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const selectedFile = event.target.files?.[0] ?? null
+    const validationError = getPaymentProofValidationError(selectedFile)
+
+    if (validationError || !selectedFile) {
+      setError(validationError)
+      return
+    }
+
+    setUploading(true)
+    setError("")
+
+    try {
+      const formData = new FormData()
+      formData.set("orderId", String(orderId))
+      formData.set("file", selectedFile)
+
+      const response = await fetch("/api/payment-proofs", {
+        method: "POST",
+        body: formData,
+      })
+      const data = await response.json()
+
+      if (!response.ok || !data.order) {
+        setError(data.error || "No pudimos subir el comprobante.")
+        return
+      }
+
+      onUploaded?.(data.order as SupabasePedido)
+    } catch {
+      setError("No hemos podido subir el comprobante. Inténtalo de nuevo.")
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ""
+    }
+  }
+
+  return (
+    <span className="inline-flex flex-col items-stretch gap-1">
+      <input
+        ref={inputRef}
+        id={`payment-proof-action-${orderId}`}
+        type="file"
+        accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+        onChange={(event) => void handleFileChange(event)}
+        className="sr-only"
+      />
+      <button
+        type="button"
+        aria-label={`${actionLabel} del pedido ${orderId}`}
+        title={actionLabel}
+        disabled={uploading}
+        onClick={() => inputRef.current?.click()}
+        className={className}
+      >
+        <Upload className="size-4" />
+        {uploading ? "Subiendo..." : actionLabel}
+      </button>
+      {error && (
+        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-red-300 sm:text-right">
+          {error}
+        </span>
+      )}
+    </span>
   )
 }

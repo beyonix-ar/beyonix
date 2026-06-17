@@ -261,7 +261,7 @@ function StatCard({
           <p className="text-11px font-bold uppercase tracking-widest text-white/45">
             {title}
           </p>
-          <p className={`mt-2 break-words font-black text-white ${valueClass}`}>
+          <p className={`mt-2 wrap-break-word font-black text-white ${valueClass}`}>
             {value}
           </p>
           {helper && <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-white/50">{helper}</p>}
@@ -1221,7 +1221,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 <StatCard title="Cantidad de ventas" value={commercialStats.ventas} icon={<ShoppingCart className="size-5" />} />
                 <StatCard title="Unidades vendidas" value={commercialStats.unidades} icon={<Package className="size-5" />} />
                 <StatCard title="Ganancia estimada" value={maskAmount(formatPrice(commercialStats.ganancia), hiddenValues)} helper="Según neto recibido o costo disponible" icon={<BarChart3 className="size-5" />} />
-                <StatCard title="Margen estimado" value={hiddenValues ? "••••" : `${margin.toFixed(1)}%`} icon={<BarChart3 className="size-5" />} />
+                <StatCard title="Margen estimado" value={hiddenValues ? "****" : `${margin.toFixed(1)}%`} icon={<BarChart3 className="size-5" />} />
               </div>
 
               <div className="grid gap-6 xl:grid-cols-3">
@@ -1284,7 +1284,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                             <td className="px-4 py-3 text-white/62">{maskAmount(formatPrice(sale.grossAmount), hiddenValues)}</td>
                             <td className="px-4 py-3 text-white/62">{sale.costAmount == null ? "-" : maskAmount(formatPrice(sale.costAmount), hiddenValues)}</td>
                             <td className="px-4 py-3 text-white/62">{sale.profitAmount == null ? "-" : maskAmount(formatPrice(sale.profitAmount), hiddenValues)}</td>
-                            <td className="px-4 py-3 text-white/62">{sale.marginPercent == null || hiddenValues ? (hiddenValues ? "••••" : "-") : `${sale.marginPercent.toFixed(1)}%`}</td>
+                            <td className="px-4 py-3 text-white/62">{sale.marginPercent == null || hiddenValues ? (hiddenValues ? "****" : "-") : `${sale.marginPercent.toFixed(1)}%`}</td>
                             <td className="px-4 py-3 text-white/62">{maskAmount(formatPrice(rowTicket), hiddenValues)}</td>
                           </tr>
                         )
