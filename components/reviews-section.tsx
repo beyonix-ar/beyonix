@@ -13,7 +13,10 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { supabase } from "@/lib/supabase/client"
+import {
+  getSafeSupabaseSession,
+  supabase,
+} from "@/lib/supabase/client"
 
 type Review = {
   id: number
@@ -40,9 +43,7 @@ type ReviewsResponse = {
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  const session = await getSafeSupabaseSession()
 
   const headers: Record<string, string> = {}
 

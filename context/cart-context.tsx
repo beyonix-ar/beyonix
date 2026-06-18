@@ -11,7 +11,10 @@ import {
 } from "react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
-import { supabase } from "@/lib/supabase/client"
+import {
+  getSafeSupabaseSession,
+  supabase,
+} from "@/lib/supabase/client"
 import {
   DEFAULT_VARIANT_VALUE,
   FALLBACK_PRODUCT_IMAGE,
@@ -234,9 +237,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
+    getSafeSupabaseSession()
+      .then((session) => {
         if (!session?.user) return
 
         try {
@@ -254,20 +256,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        supabase.auth.getUser().then(({ data: { user } }) => {
-          if (!user) return
+        const user = session?.user
 
-          try {
-            restoreUserCart(user.id)
-          } catch {
-            setCurrentUserId(user.id)
-            setCart([])
-            sessionStorage.removeItem(CART_STORAGE_KEY)
-            localStorage.removeItem(getUserCartStorageKey(user.id))
-          }
-        })
+        if (!user) return
+
+        try {
+          restoreUserCart(user.id)
+        } catch {
+          setCurrentUserId(user.id)
+          setCart([])
+          sessionStorage.removeItem(CART_STORAGE_KEY)
+          localStorage.removeItem(getUserCartStorageKey(user.id))
+        }
 
         return
       }

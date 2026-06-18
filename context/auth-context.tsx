@@ -10,7 +10,11 @@ import {
   type ReactNode,
 } from "react"
 
-import { supabase } from "@/lib/supabase/client"
+import {
+  clearSupabaseBrowserSession,
+  getSafeSupabaseSession,
+  supabase,
+} from "@/lib/supabase/client"
 
 import type {
   SupabaseProfile,
@@ -100,23 +104,6 @@ function isAccountActivated(supabaseUser: User) {
   )
 }
 
-function isInvalidRefreshTokenError(error: unknown) {
-  if (!error || typeof error !== "object") return false
-
-  const authError = error as {
-    code?: string
-    message?: string
-  }
-  const message = authError.message?.toLowerCase() ?? ""
-
-  return (
-    authError.code === "refresh_token_not_found" ||
-    authError.code === "refresh_token_already_used" ||
-    message.includes("invalid refresh token") ||
-    message.includes("refresh token not found")
-  )
-}
-
 function getSupabaseErrorDetails(error: unknown) {
   const candidate =
     typeof error === "object" && error !== null
@@ -142,28 +129,6 @@ function getSupabaseErrorDetails(error: unknown) {
   }
 }
 
-function clearSupabaseBrowserSession() {
-  if (typeof window === "undefined") return
-
-  const projectRef = new URL(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!
-  ).hostname.split(".")[0]
-  const storagePrefix = `sb-${projectRef}-auth-token`
-
-  for (const key of Object.keys(localStorage)) {
-    if (key.startsWith(storagePrefix)) {
-      localStorage.removeItem(key)
-    }
-  }
-
-  for (const cookie of document.cookie.split(";")) {
-    const name = cookie.split("=")[0]?.trim()
-
-    if (name?.startsWith(storagePrefix)) {
-      document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`
-    }
-  }
-}
 // Types
 
 export interface BeyonixUser {
@@ -522,23 +487,13 @@ export function AuthProvider({
       validateStoredActivity()
     }
 
-    supabase.auth.getSession().then(
-      ({
-        data: {
-          session,
-        },
-        error,
-      }) => {
-          if (error) {
-            if (isInvalidRefreshTokenError(error)) {
-              clearSupabaseBrowserSession()
-            }
-
-            setUser(null)
-            setIsLoading(false)
-            return
-          }
-
+    if (!isTemporaryAuthPage() && hasAuthSessionExpired()) {
+      clearSupabaseBrowserSession()
+      clearAuthenticatedUser()
+      setIsLoading(false)
+    } else {
+      getSafeSupabaseSession().then(
+        (session) => {
           if (
             session?.user
           ) {
@@ -587,15 +542,12 @@ export function AuthProvider({
               false
             )
           }
-      }
-    ).catch((error) => {
-      if (isInvalidRefreshTokenError(error)) {
-        clearSupabaseBrowserSession()
-      }
-
-      setUser(null)
-      setIsLoading(false)
-    })
+        }
+      ).catch(() => {
+        setUser(null)
+        setIsLoading(false)
+      })
+    }
 
     const {
       data: {
