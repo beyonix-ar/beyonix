@@ -82,7 +82,7 @@ export function usePedidos() {
 
           return true
         } catch (err) {
-          console.error(err)
+          console.warn("DELETE_PEDIDO_ERROR", err)
 
           return false
         }
@@ -122,7 +122,7 @@ export function usePedidos() {
 
           return true
         } catch (err) {
-          console.error(err)
+          console.warn("UPDATE_PEDIDO_ESTADO_ERROR", err)
 
           return false
         }

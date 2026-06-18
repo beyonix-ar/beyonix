@@ -3,14 +3,11 @@ import { NextResponse } from "next/server"
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import {
   generateInvoicePdf,
+  invoicePdfFilename,
   type InvoicePdfOrder,
 } from "@/lib/arca/invoice-pdf"
 
 export const runtime = "nodejs"
-
-function invoiceFilename(point: number, number: number) {
-  return `Factura-C-${String(point).padStart(4, "0")}-${String(number).padStart(8, "0")}.pdf`
-}
 
 function optionalText(value: unknown) {
   if (typeof value !== "string") return null
@@ -228,10 +225,7 @@ export async function GET(
   return new NextResponse(Buffer.from(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${invoiceFilename(
-        invoiceOrder.invoice_point,
-        invoiceOrder.invoice_number,
-      )}"`,
+      "Content-Disposition": `inline; filename="${invoicePdfFilename(invoiceOrder)}"`,
       "Cache-Control": "private, no-store",
     },
   })

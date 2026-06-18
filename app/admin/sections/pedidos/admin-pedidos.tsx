@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import {
@@ -19,7 +19,14 @@ import {
   X,
 } from "lucide-react"
 
+import { useAuth } from "@/context/auth-context"
 import { usePedidos } from "@/hooks/use-pedidos"
+import { parseDeliveryAddress } from "@/lib/delivery-address"
+import {
+  getOrderClaimResolutionLabel,
+  getOrderClaimStatusLabel,
+  getOrderClaimTypeLabel,
+} from "@/lib/order-claims"
 import {
   getAdminOrderLastSeenAt,
   getSupabaseErrorDetails,
@@ -28,7 +35,12 @@ import {
   notifyOrderNotificationsChanged,
 } from "@/lib/admin/order-notifications"
 import { supabase } from "@/lib/supabase/client"
-import type { SupabasePedido } from "@/lib/supabase/types"
+import type {
+  OrderClaimResolution,
+  OrderClaimStatus,
+  SupabaseOrderClaim,
+  SupabasePedido,
+} from "@/lib/supabase/types"
 import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
@@ -42,6 +54,11 @@ type StatusFilter =
   | "cancelado"
 type AndreaniAction = "crear-envio" | "tracking"
 type AdminNotice = { type: "ok" | "error"; message: string } | null
+type ForcedStatusRequest = {
+  pedido: SupabasePedido
+  nextEstado: "en_camino" | "entregado"
+} | null
+type AdminOrderDetailView = "detalle" | "factura" | "reclamo"
 
 function formatOrderDate(value: string) {
   return new Intl.DateTimeFormat("es-AR", {
@@ -120,6 +137,37 @@ function getItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) 
 
 function getShippingProvider(pedido: SupabasePedido) {
   return pedido.envio_proveedor || "Andreani"
+}
+
+function normalizePlaceName(value?: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
+
+function isRosarioOrder(pedido: SupabasePedido) {
+  return normalizePlaceName(pedido.localidad) === "rosario"
+}
+
+function isAndreaniShippingOrder(pedido: SupabasePedido) {
+  const provider = normalizePlaceName(
+    pedido.envio_proveedor ?? pedido.shipping_provider
+  )
+
+  return (
+    provider.includes("andreani") ||
+    Boolean(
+      pedido.andreani_envio_id ||
+        pedido.andreani_tracking ||
+        pedido.andreani_etiqueta_url
+    )
+  )
+}
+
+function isLocalRosarioDeliveryOrder(pedido: SupabasePedido) {
+  return isRosarioOrder(pedido) && !isAndreaniShippingOrder(pedido)
 }
 
 function getAndreaniStatus(pedido: SupabasePedido) {
@@ -1033,19 +1081,20 @@ function PedidoPreviewModal({
 
 function PedidoDetailModal({
   pedido,
+  isSuperAdmin,
   onClose,
   onOpenPaymentProof,
   onEstadoChange,
-  onPaymentStatusChange,
   onAndreaniAction,
   onIssueInvoice,
   onDownloadInvoice,
+  onClaimChange,
 }: {
   pedido: SupabasePedido
+  isSuperAdmin: boolean
   onClose: () => void
   onOpenPaymentProof: (pedidoId: number) => void
   onEstadoChange: (pedido: SupabasePedido, nextEstado: string) => void
-  onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
   onAndreaniAction: (
     action: AndreaniAction,
     pedidoId: number
@@ -1056,11 +1105,13 @@ function PedidoDetailModal({
   onDownloadInvoice: (
     pedidoId: number
   ) => Promise<{ ok: boolean; message: string }>
+  onClaimChange: (pedidoId: number, claim: SupabaseOrderClaim) => void
 }) {
   const items = pedido.orden_items ?? []
   const financialBreakdown = getOrderFinancialBreakdown(pedido)
   const dispatch = getDispatchAlert(pedido)
   const tracking = pedido.andreani_tracking || pedido.tracking_number
+  const isLocalRosarioOrder = isLocalRosarioDeliveryOrder(pedido)
   const [andreaniLoading, setAndreaniLoading] = useState<AndreaniAction | null>(
     null
   )
@@ -1074,6 +1125,8 @@ function PedidoDetailModal({
     ok: boolean
     message: string
   } | null>(null)
+  const [activeView, setActiveView] =
+    useState<AdminOrderDetailView>("detalle")
   const destination =
     [pedido.localidad, pedido.provincia].filter(Boolean).join(", ") ||
     "No informado"
@@ -1116,21 +1169,25 @@ function PedidoDetailModal({
                 Pedido #{formatPublicOrderId(pedido.id)}
               </h2>
               <EstadoBadge estado={pedido.estado} />
-              <div className="w-32">
-                <AdminSelect
-                  title="Estado del pedido"
-                  compact
-                  centered
-                  value={pedido.estado}
-                  onChange={(value) => onEstadoChange(pedido, value)}
-                >
-                  <option value="pendiente">Pendiente</option>
-                  <option value="pagado">Pago confirmado</option>
-                  <option value="enviado">Despachado</option>
-                  <option value="en_camino">En camino</option>
-                  <option value="entregado">Entregado</option>
-                  <option value="cancelado">Cancelado/Rechazado</option>
-                </AdminSelect>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["detalle", "Detalle"],
+                  ["factura", "Factura"],
+                  ["reclamo", "Reclamo"],
+                ].map(([view, label]) => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => setActiveView(view as AdminOrderDetailView)}
+                    className={`inline-flex h-8 cursor-pointer items-center justify-center rounded-xl border px-3 text-10px font-black uppercase tracking-wide transition-colors ${
+                      activeView === view
+                        ? "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky"
+                        : "border-beyonix-blue-light/25 bg-[#111111] text-white/68 hover:border-beyonix-blue-light/45 hover:text-beyonix-sky"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
             <p className="mt-2 text-sm text-white/55">
@@ -1160,8 +1217,10 @@ function PedidoDetailModal({
         </header>
 
         <div className="custom-scrollbar overflow-y-auto bg-[#0b0b0b] px-4 py-4 sm:px-6 sm:py-5">
+          {activeView === "detalle" && (
+            <>
           <div className="grid gap-4 lg:grid-cols-2">
-            <section className="admin-order-data-panel rounded-2xl border border-white/8 p-4 sm:p-5">
+            <section className="admin-order-data-panel admin-order-client-panel rounded-2xl border border-white/8 p-4 sm:p-5">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Cliente
               </p>
@@ -1174,17 +1233,11 @@ function PedidoDetailModal({
                   label="Teléfono"
                   value={pedido.cliente_telefono || "No informado"}
                 />
-                <DetailValue
-                  label="Dirección"
-                  value={pedido.cliente_direccion || "No informada"}
-                  wide
-                />
-                <DetailValue label="Localidad" value={pedido.localidad || "No informada"} />
-                <DetailValue label="Provincia" value={pedido.provincia || "No informada"} />
+                <CustomerAddressDetails pedido={pedido} />
               </div>
             </section>
 
-            <section className="admin-order-data-panel rounded-2xl border border-white/8 p-4 sm:p-5">
+            <section className="admin-order-data-panel admin-order-payment-panel rounded-2xl border border-white/8 p-4 sm:p-5">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Pago
               </p>
@@ -1216,18 +1269,29 @@ function PedidoDetailModal({
                       Estado administrativo
                     </p>
                     <AdminSelect
-                      title="Estado de pago"
+                      title="Estado administrativo"
                       compact
                       centered
-                      value={pedido.payment_status || "pendiente_comprobante"}
-                      onChange={(value) => onPaymentStatusChange(pedido.id, value)}
+                      value={pedido.estado}
+                      onChange={(value) => onEstadoChange(pedido, value)}
                     >
-                      <option value="pendiente_comprobante">Pendiente comprobante</option>
-                      <option value="confirmado">Confirmado</option>
-                      <option value="rechazado">Rechazado</option>
+                      <option value="pendiente">Pendiente</option>
+                      <option value="pagado">Pago confirmado</option>
+                      <option value="enviado">Despachado</option>
+                      {(isLocalRosarioOrder ||
+                        isSuperAdmin ||
+                        pedido.estado === "en_camino") && (
+                        <option value="en_camino">En camino</option>
+                      )}
+                      {(isLocalRosarioOrder ||
+                        isSuperAdmin ||
+                        pedido.estado === "entregado") && (
+                        <option value="entregado">Entregado</option>
+                      )}
+                      <option value="cancelado">Cancelado/Rechazado</option>
                     </AdminSelect>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-black/45 p-3">
+                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 p-3">
                     <DetailValue
                       label="Comprobante actual"
                       value={pedido.payment_proof_file_name || "Sin comprobante"}
@@ -1285,11 +1349,14 @@ function PedidoDetailModal({
                 }
               />
             </div>
-            <div className="rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/20 p-3">
+            <div className="admin-order-total-card rounded-xl border border-beyonix-blue-light/20 p-3">
               <DetailValue label="Total cobrado" value={formatPrice(pedido.total)} />
             </div>
           </section>
+            </>
+          )}
 
+          {activeView === "factura" && (
           <section className="admin-order-invoice-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -1390,12 +1457,22 @@ function PedidoDetailModal({
                     : "border-red-400/20 bg-red-400/8 text-red-200"
                 }`}
               >
-                {invoiceNotice.message}
-              </p>
-            )}
+              {invoiceNotice.message}
+            </p>
+          )}
           </section>
+          )}
 
-          <section className="admin-order-data-panel mt-4 rounded-2xl border border-white/8 p-4 sm:p-5">
+          {activeView === "reclamo" && (
+          <AdminClaimsCenterSection
+            pedido={pedido}
+            onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
+          />
+          )}
+
+          {activeView === "detalle" && (
+            <>
+          <section className="admin-order-products-panel mt-4 rounded-2xl border border-white/8 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -1420,7 +1497,7 @@ function PedidoDetailModal({
                   return (
                     <article
                       key={item.id}
-                      className="grid gap-3 rounded-xl border border-white/8 bg-black/45 p-3 sm:grid-cols-admin-order-modal-item sm:items-center"
+                      className="admin-order-item-card grid gap-3 rounded-xl border border-white/8 p-3 sm:grid-cols-admin-order-modal-item sm:items-center"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
@@ -1452,7 +1529,7 @@ function PedidoDetailModal({
                   )
                 })
               ) : (
-                <p className="rounded-xl border border-white/8 bg-black/45 p-4 text-sm text-white/55">
+                <p className="admin-order-item-card rounded-xl border border-white/8 p-4 text-sm text-white/55">
                   Este pedido no tiene productos cargados.
                 </p>
               )}
@@ -1467,10 +1544,17 @@ function PedidoDetailModal({
                 </p>
                 <h3 className="mt-2 flex items-center gap-2 text-lg font-black text-white">
                   <Truck className="size-5 text-beyonix-sky" />
-                  {pedido.shipping_type === "sucursal"
-                    ? "Retiro en sucursal"
-                    : "Envío a domicilio"}
+                  {isLocalRosarioOrder
+                    ? "Envío sin costo"
+                    : pedido.shipping_type === "sucursal"
+                      ? "Retiro en sucursal"
+                      : "Envío a domicilio"}
                 </h3>
+                {isLocalRosarioOrder && (
+                  <p className="mt-1 text-sm font-medium text-beyonix-sky/88">
+                    Entrega local dentro de Rosario.
+                  </p>
+                )}
               </div>
               <span
                 title={dispatch.label}
@@ -1483,7 +1567,14 @@ function PedidoDetailModal({
 
             <div className="mt-4 grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                <DetailValue label="Proveedor" value={getShippingProvider(pedido)} />
+                <DetailValue
+                  label="Proveedor"
+                  value={
+                    isLocalRosarioOrder
+                      ? "Envío local Rosario"
+                      : getShippingProvider(pedido)
+                  }
+                />
               </div>
               <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
                 <DetailValue label="Estado" value={getAndreaniStatus(pedido)} />
@@ -1501,8 +1592,10 @@ function PedidoDetailModal({
                 <DetailValue
                   label="Costo"
                   value={
-                    typeof pedido.andreani_costo === "number"
-                      ? formatPrice(pedido.andreani_costo)
+                    isLocalRosarioOrder
+                      ? "Sin costo"
+                      : typeof pedido.andreani_costo === "number"
+                        ? formatPrice(pedido.andreani_costo)
                       : "Pendiente"
                   }
                 />
@@ -1612,6 +1705,8 @@ function PedidoDetailModal({
               </div>
             </div>
           </section>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1633,6 +1728,70 @@ function DetailValue({
         {label}
       </p>
       <p className="mt-1 wrap-break-word text-sm font-bold text-white/82">{value}</p>
+    </div>
+  )
+}
+
+function getAddressReference(value?: string | null) {
+  const match = value?.match(/referencias?:\s*(.+)$/i)
+  return match?.[1]?.trim() || ""
+}
+
+function cleanAddressValue(value?: string | null) {
+  return (value ?? "")
+    .replace(/\.?\s*referencias?:\s*.+$/i, "")
+    .trim()
+}
+
+function getPostalCodeFromAddress(value?: string | null) {
+  return value?.match(/\bCP\s*([A-Z0-9 -]+)/i)?.[1]?.trim().replace(/\.$/, "") || ""
+}
+
+function CustomerAddressDetails({ pedido }: { pedido: SupabasePedido }) {
+  const cleanAddress = cleanAddressValue(pedido.cliente_direccion)
+  const parsedAddress = parseDeliveryAddress(
+    cleanAddress,
+    pedido.provincia ?? undefined,
+    pedido.cp_destino ?? undefined
+  )
+  const streetLine = [parsedAddress.street, parsedAddress.streetNumber]
+    .filter(Boolean)
+    .join(" ")
+  const unitLine = [
+    parsedAddress.floor ? `Piso ${parsedAddress.floor}` : "",
+    parsedAddress.apartment ? `Depto ${parsedAddress.apartment}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const locality = pedido.localidad || parsedAddress.locality
+  const postalCode = pedido.cp_destino || getPostalCodeFromAddress(cleanAddress)
+  const reference = getAddressReference(pedido.cliente_direccion)
+
+  return (
+    <div className="sm:col-span-2 rounded-xl border border-white/8 bg-[#111111] p-3">
+      <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+        Dirección
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <DetailValue
+          label="Calle y número"
+          value={streetLine || cleanAddress || "No informada"}
+        />
+        <DetailValue
+          label="Piso / departamento"
+          value={unitLine || "Sin datos"}
+        />
+        <DetailValue label="Localidad" value={locality || "No informada"} />
+        <DetailValue
+          label="Provincia"
+          value={pedido.provincia || "No informada"}
+        />
+        <DetailValue label="Código postal" value={postalCode || "No informado"} />
+        <DetailValue
+          label="Referencias"
+          value={reference || "Sin referencias"}
+        />
+      </div>
     </div>
   )
 }
@@ -1671,11 +1830,335 @@ function ExternalLink({
   )
 }
 
+function ForcedStatusConfirmModal({
+  request,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  request: ForcedStatusRequest
+  loading: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (!request) return null
+
+  const statusLabel =
+    request.nextEstado === "entregado" ? "Entregado" : "En camino"
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-beyonix-blue-light/25 bg-[#101010] shadow-2xl shadow-black/80">
+        <div className="border-b border-white/8 bg-[linear-gradient(135deg,#102438_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
+          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+            Acción de super admin
+          </p>
+          <h2 className="mt-2 text-xl font-black text-white">
+            ¿Estás seguro de marcar como {statusLabel}?
+          </h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
+            Este pedido usa Andreani. Al confirmar, vas a forzar manualmente el
+            estado del pedido #{formatPublicOrderId(request.pedido.id)}.
+          </p>
+        </div>
+
+        <div className="space-y-3 px-5 py-4">
+          <div className="rounded-2xl border border-white/8 bg-[#181818] p-3">
+            <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+              Cliente
+            </p>
+            <p className="mt-1 text-sm font-black text-white">
+              {request.pedido.cliente_nombre || "Cliente sin nombre"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-sm font-semibold leading-6 text-amber-100">
+            Usalo solo cuando tengas confirmación real de envío o entrega fuera
+            de la sincronización automática.
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+          >
+            {loading ? "Confirmando..." : `Marcar ${statusLabel}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AdminClaimsCenterSection({
+  pedido,
+  onClaimChange,
+}: {
+  pedido: SupabasePedido
+  onClaimChange: (claim: SupabaseOrderClaim) => void
+}) {
+  const claims = pedido.order_claims ?? []
+  const [editingClaimId, setEditingClaimId] = useState<number | null>(
+    claims[0]?.id ?? null
+  )
+  const claim = claims.find((item) => item.id === editingClaimId) ?? claims[0]
+  const [status, setStatus] = useState<OrderClaimStatus>(
+    claim?.status ?? "recibido"
+  )
+  const [resolution, setResolution] = useState<OrderClaimResolution | "">(
+    claim?.resolution ?? ""
+  )
+  const [adminResponse, setAdminResponse] = useState(
+    claim?.admin_response ?? ""
+  )
+  const [rejectionReason, setRejectionReason] = useState(
+    claim?.rejection_reason ?? ""
+  )
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState("")
+
+  useEffect(() => {
+    setEditingClaimId(claims[0]?.id ?? null)
+  }, [pedido.id, claims.length])
+
+  useEffect(() => {
+    if (!claim) return
+    setStatus(claim.status)
+    setResolution(claim.resolution ?? "")
+    setAdminResponse(claim.admin_response ?? "")
+    setRejectionReason(claim.rejection_reason ?? "")
+    setMessage("")
+  }, [claim?.id])
+
+  const saveClaim = async () => {
+    if (!claim) return
+
+    setSaving(true)
+    setMessage("")
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setMessage("La sesión administrativa venció.")
+        return
+      }
+
+      const response = await fetch(`/api/admin/order-claims/${claim.id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status,
+          resolution: resolution || null,
+          admin_response: adminResponse,
+          rejection_reason: rejectionReason,
+        }),
+      })
+      const data = (await response.json()) as {
+        claim?: SupabaseOrderClaim
+        error?: string
+      }
+
+      if (!response.ok || !data.claim) {
+        setMessage(data.error || "No se pudo actualizar el reclamo.")
+        return
+      }
+
+      onClaimChange(data.claim)
+      setMessage("Reclamo actualizado.")
+    } catch {
+      setMessage("No se pudo actualizar el reclamo.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="admin-order-invoice-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+            Centro de reclamos
+          </p>
+          <h3 className="mt-2 text-lg font-black text-white">
+            {claims.length
+              ? `${claims.length} reclamo${claims.length === 1 ? "" : "s"}`
+              : "Sin reclamos"}
+          </h3>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-white/55">
+            Revisá la evidencia cargada por el cliente, cambiá el estado y
+            dejá una respuesta visible en su pedido.
+          </p>
+        </div>
+        {claims.length > 1 && (
+          <AdminSelect
+            title="Historial de reclamos"
+            compact
+            value={String(claim?.id ?? "")}
+            onChange={(value) => setEditingClaimId(Number(value))}
+          >
+            {claims.map((item) => (
+              <option key={item.id} value={item.id}>
+                #{item.id} · {getOrderClaimTypeLabel(item.claim_type)}
+              </option>
+            ))}
+          </AdminSelect>
+        )}
+      </div>
+
+      {!claim ? (
+        <p className="mt-4 rounded-xl border border-white/8 bg-[#111111] px-3 py-2 text-xs font-medium text-white/55">
+          Este pedido todavía no tiene reclamos cargados.
+        </p>
+      ) : (
+        <div className="mt-4 grid gap-4 border-t border-white/8 pt-4 lg:grid-cols-2">
+          <div className="space-y-3">
+            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <DetailValue
+                label="Tipo de reclamo"
+                value={getOrderClaimTypeLabel(claim.claim_type)}
+              />
+            </div>
+            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <DetailValue
+                label="Descripción"
+                value={claim.description || "Sin descripción"}
+                wide
+              />
+            </div>
+            {claim.failure_type && (
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue label="Tipo de falla" value={claim.failure_type} />
+              </div>
+            )}
+            {claim.started_at && (
+              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                <DetailValue label="Inicio de falla" value={claim.started_at} />
+              </div>
+            )}
+            <div className="rounded-xl border border-white/8 bg-[#111111] p-3">
+              <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                Evidencia
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(claim.order_claim_files ?? []).length ? (
+                  (claim.order_claim_files ?? []).map((file) => (
+                    <a
+                      key={file.id}
+                      href={file.signedUrl ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-9 items-center gap-2 rounded-xl border border-beyonix-blue-light/30 px-3 text-10px font-black uppercase tracking-wide text-beyonix-sky"
+                    >
+                      <Download className="size-3.5" />
+                      {file.file_name}
+                    </a>
+                  ))
+                ) : (
+                  <p className="text-sm font-semibold text-white/55">
+                    Sin archivos cargados.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
+                  Estado
+                </p>
+                <AdminSelect
+                  title="Estado del reclamo"
+                  value={status}
+                  onChange={(value) => setStatus(value as OrderClaimStatus)}
+                >
+                  <option value="recibido">Recibido</option>
+                  <option value="en_revision">En revisión</option>
+                  <option value="falta_informacion">Falta información</option>
+                  <option value="aprobado">Aprobado</option>
+                  <option value="rechazado">Rechazado</option>
+                  <option value="cerrado">Cerrado</option>
+                </AdminSelect>
+              </div>
+              <div>
+                <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
+                  Resolución
+                </p>
+                <AdminSelect
+                  title="Resolución del reclamo"
+                  value={resolution}
+                  onChange={(value) =>
+                    setResolution(value as OrderClaimResolution | "")
+                  }
+                >
+                  <option value="">Sin resolución</option>
+                  <option value="cambio_producto">Cambio de producto</option>
+                  <option value="reintegro_total">Reintegro total</option>
+                  <option value="reintegro_parcial">Reintegro parcial</option>
+                  <option value="cupon_descuento">Cupón de descuento</option>
+                  <option value="rechazado">Rechazado</option>
+                  <option value="otro">Otra solución</option>
+                </AdminSelect>
+              </div>
+            </div>
+            <textarea
+              value={adminResponse}
+              onChange={(event) => setAdminResponse(event.target.value)}
+              rows={4}
+              placeholder="Respuesta visible para el cliente."
+              className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+            />
+            <textarea
+              value={rejectionReason}
+              onChange={(event) => setRejectionReason(event.target.value)}
+              rows={3}
+              placeholder="Motivo de rechazo obligatorio si el estado es Rechazado."
+              className="w-full resize-none rounded-xl border border-white/10 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-white/48">
+                {message ||
+                  `Actual: ${getOrderClaimStatusLabel(claim.status)} · ${getOrderClaimResolutionLabel(claim.resolution)}`}
+              </p>
+              <button
+                type="button"
+                onClick={() => void saveClaim()}
+                disabled={saving}
+                className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+              >
+                {saving ? "Guardando..." : "Guardar reclamo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function AdminPedidos({
   notificationCount,
 }: {
   notificationCount: number
 }) {
+  const { isSuperAdmin } = useAuth()
   const { pedidos, loading, error, deletePedido, updatePedidoEstado, reloadPedidos } =
     usePedidos()
   const [search, setSearch] = useState("")
@@ -1684,6 +2167,9 @@ export function AdminPedidos({
   const [newOrderIds, setNewOrderIds] = useState<Set<number>>(() => new Set())
   const [unreadOrdersLoaded, setUnreadOrdersLoaded] = useState(false)
   const [notice, setNotice] = useState<AdminNotice>(null)
+  const [forcedStatusRequest, setForcedStatusRequest] =
+    useState<ForcedStatusRequest>(null)
+  const [forcedStatusLoading, setForcedStatusLoading] = useState(false)
 
   useEffect(() => {
     if (!notice) return
@@ -1802,8 +2288,29 @@ export function AdminPedidos({
   ) => {
     const pedidoId = pedido.id
     const estadoActual = pedido.estado
+    const isLocalRosarioOrder = isLocalRosarioDeliveryOrder(pedido)
 
     if (estadoActual === nextEstado) return
+
+    if (
+      (nextEstado === "en_camino" || nextEstado === "entregado") &&
+      !isLocalRosarioOrder
+    ) {
+      if (isSuperAdmin) {
+        setForcedStatusRequest({
+          pedido,
+          nextEstado,
+        })
+        return
+      }
+
+      setNotice({
+        type: "error",
+        message:
+          "Los estados En camino y Entregado se actualizan desde Andreani. Solo el envío local de Rosario puede cambiarlos manualmente.",
+      })
+      return
+    }
 
     if (nextEstado === "pagado" && estadoActual !== "pagado") {
       if (!isTransferOrder(pedido)) {
@@ -1819,6 +2326,20 @@ export function AdminPedidos({
       return
     }
 
+    if (
+      (nextEstado === "en_camino" || nextEstado === "entregado") &&
+      isLocalRosarioOrder
+    ) {
+      const updated = await updatePedidoEstado(pedidoId, nextEstado)
+      if (updated) {
+        setNotice({ type: "ok", message: "Estado del envío local actualizado." })
+        notifyOrderNotificationsChanged()
+      } else {
+        setNotice({ type: "error", message: "No se pudo actualizar el estado." })
+      }
+      return
+    }
+
     if (nextEstado === "enviado" || nextEstado === "en_camino") {
       const trackingNumber =
         prompt("Número de seguimiento (opcional)")?.trim() || null
@@ -1831,6 +2352,8 @@ export function AdminPedidos({
       if (updated) {
         setNotice({ type: "ok", message: "Estado del pedido actualizado." })
         notifyOrderNotificationsChanged()
+      } else {
+        setNotice({ type: "error", message: "No se pudo actualizar el estado." })
       }
       return
     }
@@ -1839,7 +2362,35 @@ export function AdminPedidos({
     if (updated) {
       setNotice({ type: "ok", message: "Estado del pedido actualizado." })
       notifyOrderNotificationsChanged()
+    } else {
+      setNotice({ type: "error", message: "No se pudo actualizar el estado." })
     }
+  }
+
+  const confirmForcedStatusChange = async () => {
+    if (!forcedStatusRequest) return
+
+    setForcedStatusLoading(true)
+    const updated = await updatePedidoEstado(
+      forcedStatusRequest.pedido.id,
+      forcedStatusRequest.nextEstado
+    )
+    setForcedStatusLoading(false)
+
+    if (updated) {
+      setNotice({
+        type: "ok",
+        message:
+          forcedStatusRequest.nextEstado === "entregado"
+            ? "Pedido marcado como Entregado por super admin."
+            : "Pedido marcado como En camino por super admin.",
+      })
+      setForcedStatusRequest(null)
+      notifyOrderNotificationsChanged()
+      return
+    }
+
+    setNotice({ type: "error", message: "No se pudo forzar el estado." })
   }
 
   const handlePaymentStatusChange = async (
@@ -1890,6 +2441,22 @@ export function AdminPedidos({
     setNotice({ type: "ok", message: "Estado de pago actualizado." })
     notifyOrderNotificationsChanged()
   }
+
+  const handleClaimChange = (pedidoId: number, claim: SupabaseOrderClaim) => {
+    setPreviewPedido((currentPedido) =>
+      currentPedido?.id === pedidoId
+        ? {
+            ...currentPedido,
+            order_claims: [
+              claim,
+              ...(currentPedido.order_claims ?? []).filter((item) => item.id !== claim.id),
+            ],
+          }
+        : currentPedido
+    )
+    void reloadPedidos()
+  }
+
 
   const handleOpenPaymentProof = async (pedidoId: number) => {
     const {
@@ -1990,7 +2557,7 @@ export function AdminPedidos({
       }
 
       const blob = await response.blob()
-      downloadBlob(blob, `factura-c-pedido-${pedidoId}.pdf`)
+      downloadBlob(blob, "Factura-BEYONIX.pdf")
       return { ok: true, message: "Factura descargada." }
     } catch (error) {
       console.error("ADMIN_INVOICE_DOWNLOAD_ERROR", error)
@@ -2369,17 +2936,25 @@ export function AdminPedidos({
       {previewPedido && (
         <PedidoDetailModal
           pedido={previewPedido}
+          isSuperAdmin={isSuperAdmin}
           onClose={() => setPreviewPedido(null)}
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) =>
             void handleEstadoChange(pedido, nextEstado)
           }
-          onPaymentStatusChange={handlePaymentStatusChange}
           onAndreaniAction={handleAndreaniAction}
           onIssueInvoice={handleIssueInvoice}
           onDownloadInvoice={handleDownloadInvoice}
+          onClaimChange={handleClaimChange}
         />
       )}
+      <ForcedStatusConfirmModal
+        request={forcedStatusRequest}
+        loading={forcedStatusLoading}
+        onCancel={() => setForcedStatusRequest(null)}
+        onConfirm={() => void confirmForcedStatusChange()}
+      />
     </div>
   )
 }
+

@@ -27,6 +27,7 @@ export interface InvoicePdfOrder {
   cliente_email?: string | null
   cliente_telefono?: string | null
   cliente_direccion?: string | null
+  cp_destino?: string | null
   localidad?: string | null
   provincia?: string | null
   invoice_number: number
@@ -84,6 +85,52 @@ function formatDate(value: string) {
     dateStyle: "short",
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(new Date(value))
+}
+
+function cleanInvoiceAddress(value?: string | null) {
+  return (value ?? "")
+    .replace(/\.?\s*referencias?:\s*.+$/i, "")
+    .trim()
+}
+
+function getAddressPostalCode(value?: string | null) {
+  return value?.match(/\bCP\s*([A-Z0-9 -]+)/i)?.[1]?.trim().replace(/\.$/, "") || ""
+}
+
+function getInvoiceAddressParts(order: InvoicePdfOrder) {
+  const cleanAddress = cleanInvoiceAddress(order.cliente_direccion)
+  const parts = cleanAddress
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !/^referencias?:/i.test(part))
+  const postalCode = order.cp_destino || getAddressPostalCode(cleanAddress)
+  const filteredParts = parts.filter((part) => {
+    if (/^cp\s+/i.test(part)) return false
+    if (order.localidad && part.toLowerCase() === order.localidad.toLowerCase()) return false
+    if (order.provincia && part.toLowerCase() === order.provincia.toLowerCase()) return false
+    return true
+  })
+  const street = filteredParts.shift() || cleanAddress || "No informada"
+  const floor =
+    filteredParts
+      .find((part) => /^piso\b/i.test(part))
+      ?.replace(/^piso\s*/i, "")
+      .trim() || ""
+  const apartment =
+    filteredParts
+      .find((part) => /^(depto|dpto|departamento)\b/i.test(part))
+      ?.replace(/^(depto|dpto|departamento)\.?\s*/i, "")
+      .trim() || ""
+  const place = [order.localidad, order.provincia].filter(Boolean).join(", ")
+
+  return {
+    street,
+    floor,
+    apartment,
+    place,
+    postalCode,
+  }
 }
 
 function formatMoney(value: number) {
@@ -476,13 +523,13 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
   )
 
   y -= 126
-  const address = [
-    order.cliente_direccion,
-    order.localidad,
-    order.provincia,
-  ]
-    .filter(Boolean)
-    .join(", ")
+  const addressParts = getInvoiceAddressParts(order)
+  const addressLines = [
+    `Dirección: ${addressParts.street}`,
+    `Piso: ${addressParts.floor || "-"}    Dpto: ${addressParts.apartment || "-"}`,
+    addressParts.place,
+    addressParts.postalCode ? `CP: ${addressParts.postalCode}` : "CP: -",
+  ].filter(Boolean)
   const clientLeftWidth = 238
   const clientRightX = MARGIN + 272
   const clientRightWidth = contentWidth - 286
@@ -498,15 +545,18 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     9.5,
     regular,
   )
-  const addressLines = wrapText(
-    `Dirección: ${address || "No informada"}`,
-    clientRightWidth,
+  const orderLines = wrapText(
+    `Pedido: BX-${1000 + order.id}`,
+    clientLeftWidth,
     9.5,
     regular,
   )
+  const wrappedAddressLines = addressLines.flatMap((line) =>
+    wrapText(line, clientRightWidth, 9.5, regular),
+  )
   const clientLines = Math.max(
-    nameLines.length + emailLines.length,
-    addressLines.length + 1,
+    nameLines.length + emailLines.length + orderLines.length,
+    wrappedAddressLines.length,
   )
   const clientHeight = Math.max(76, 39 + clientLines * 13)
 
@@ -527,26 +577,23 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     clientLeftWidth,
     9.5,
   )
-  drawWrappedText(
+  const emailHeight = drawWrappedText(
     `Email: ${order.cliente_email || "No informado"}`,
     MARGIN + 14,
     y - 39 - nameHeight,
     clientLeftWidth,
     9.5,
   )
-  const addressHeight = drawWrappedText(
-    `Dirección: ${address || "No informada"}`,
-    clientRightX,
-    y - 39,
-    clientRightWidth,
+  drawWrappedText(
+    `Pedido: BX-${1000 + order.id}`,
+    MARGIN + 14,
+    y - 45 - nameHeight - emailHeight,
+    clientLeftWidth,
     9.5,
   )
-  drawText(
-    `Pedido BEYONIX: BX-${1000 + order.id}`,
-    clientRightX,
-    y - 39 - addressHeight,
-    9.5,
-  )
+  wrappedAddressLines.forEach((line, index) => {
+    drawText(line, clientRightX, y - 39 - index * 13, 9.5)
+  })
 
   y -= clientHeight + 18
   drawText("DETALLE DE FACTURA", MARGIN, y, 10, true, BLUE)
@@ -732,8 +779,6 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
 }
 
 export function invoicePdfFilename(order: Pick<InvoicePdfOrder, "invoice_point" | "invoice_number">) {
-  return `factura-c-${formatInvoiceNumber(
-    order.invoice_point,
-    order.invoice_number,
-  )}.pdf`
+  void order
+  return "Factura-BEYONIX.pdf"
 }

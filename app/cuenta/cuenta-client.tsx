@@ -30,7 +30,18 @@ import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
-import type { SupabasePedido } from "@/lib/supabase/types"
+import {
+  getClaimDeadline,
+  getClaimFileValidationError,
+  getOrderClaimStatusLabel,
+  getOrderClaimTypeLabel,
+  isClaimWindowOpen,
+} from "@/lib/order-claims"
+import type {
+  OrderClaimType,
+  SupabaseOrderClaim,
+  SupabasePedido,
+} from "@/lib/supabase/types"
 import {
   FIELD_LIMITS,
   meetsPasswordRequirements,
@@ -330,40 +341,468 @@ function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
   )
 }
 
-function ReturnClaimPanel({ order }: { order: SupabasePedido }) {
-  const subject = encodeURIComponent(
-    `Reclamo por estado del producto - Pedido ${formatPublicOrderId(order.id)}`,
+function formatClaimDeadline(value: Date) {
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(value)
+}
+
+function ClaimFileInput({
+  label,
+  role,
+  accept,
+  required,
+  onFiles,
+}: {
+  label: string
+  role: string
+  accept: string
+  required?: boolean
+  onFiles: (role: string, files: File[]) => void | Promise<void>
+}) {
+  return (
+    <label className="block rounded-xl border border-white/8 bg-[#111111] p-3 transition-colors hover:bg-[#141414]">
+      <span className="text-10px font-black uppercase tracking-widest text-white/45">
+        {label} {required ? "*" : ""}
+      </span>
+      <input
+        type="file"
+        accept={accept}
+        multiple={!accept.includes("video")}
+        onChange={(event) =>
+          onFiles(role, Array.from(event.target.files ?? []))
+        }
+        className="mt-2 block w-full cursor-pointer text-xs font-semibold text-white/65 file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-beyonix-blue file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-wide file:text-beyonix-sky"
+      />
+    </label>
   )
-  const body = encodeURIComponent(
-    [
-      `Hola, necesito iniciar un reclamo por el estado del producto del pedido ${formatPublicOrderId(order.id)}.`,
-      "",
-      "Motivo del reclamo:",
-      "Producto/s afectado/s:",
-      "Fotos o vídeos adjuntos:",
-    ].join("\n"),
+}
+
+function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
+  const deliveredAt = order.delivered_at || order.created_at
+  const [claims, setClaims] = useState<SupabaseOrderClaim[]>(
+    order.order_claims ?? [],
+  )
+  const [selectedType, setSelectedType] =
+    useState<OrderClaimType>("transporte_48hs")
+  const [description, setDescription] = useState("")
+  const [failureType, setFailureType] = useState("")
+  const [startedAt, setStartedAt] = useState("")
+  const [fileMap, setFileMap] = useState<Record<string, File[]>>({})
+  const [checks, setChecks] = useState({
+    realInfo: false,
+    keptPackaging: false,
+    noMisuse: false,
+  })
+  const [reply, setReply] = useState("")
+  const [replyFiles, setReplyFiles] = useState<Record<string, File[]>>({})
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const transportOpen = isClaimWindowOpen(deliveredAt, "transporte_48hs")
+  const warrantyOpen = isClaimWindowOpen(deliveredAt, "garantia_beyonix")
+  const activeClaim = claims.find((claim) =>
+    ["recibido", "en_revision", "falta_informacion", "aprobado"].includes(
+      claim.status,
+    ),
   )
 
+  useEffect(() => {
+    let active = true
+
+    async function loadClaims() {
+      const response = await fetch(`/api/orders/${order.id}/claims`)
+      const data = (await response.json()) as {
+        claims?: SupabaseOrderClaim[]
+      }
+
+      if (active && response.ok) {
+        setClaims(data.claims ?? [])
+      }
+    }
+
+    void loadClaims()
+    return () => {
+      active = false
+    }
+  }, [order.id])
+
+  const validateEvidenceFiles = async (files: File[]) => {
+    const sizeOrTypeError = files
+      .map((file) => getClaimFileValidationError(file))
+      .find(Boolean)
+
+    if (sizeOrTypeError) return sizeOrTypeError
+
+    for (const file of files) {
+      if (!file.type.startsWith("video/")) continue
+
+      const duration = await new Promise<number>((resolve) => {
+        const video = document.createElement("video")
+        const url = URL.createObjectURL(file)
+
+        video.preload = "metadata"
+        video.onloadedmetadata = () => {
+          URL.revokeObjectURL(url)
+          resolve(video.duration)
+        }
+        video.onerror = () => {
+          URL.revokeObjectURL(url)
+          resolve(Number.POSITIVE_INFINITY)
+        }
+        video.src = url
+      })
+
+      if (!Number.isFinite(duration) || duration > 30) {
+        return "El video debe durar como máximo 30 segundos."
+      }
+    }
+
+    return ""
+  }
+
+  const setFiles = async (role: string, files: File[]) => {
+    setError("")
+    const validationError = await validateEvidenceFiles(files)
+
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setFileMap((current) => ({ ...current, [role]: files }))
+  }
+
+  const setExtraFiles = async (role: string, files: File[]) => {
+    setError("")
+    const validationError = await validateEvidenceFiles(files)
+
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setReplyFiles((current) => ({ ...current, [role]: files }))
+  }
+
+  const appendFiles = (formData: FormData, source: Record<string, File[]>) => {
+    Object.entries(source).forEach(([role, files]) => {
+      files.forEach((file) => {
+        formData.append("files", file)
+        formData.append("fileRoles", role)
+      })
+    })
+  }
+
+  const submitClaim = async () => {
+    setLoading(true)
+    setError("")
+
+    try {
+      const formData = new FormData()
+      formData.set("claimType", selectedType)
+      formData.set("description", description)
+      formData.set("failureType", failureType)
+      formData.set("startedAt", startedAt)
+      formData.set("confirm_real_info", String(checks.realInfo))
+      formData.set("confirm_kept_packaging", String(checks.keptPackaging))
+      formData.set("confirm_no_misuse", String(checks.noMisuse))
+      appendFiles(formData, fileMap)
+
+      const response = await fetch(`/api/orders/${order.id}/claims`, {
+        method: "POST",
+        body: formData,
+      })
+      const data = (await response.json()) as {
+        claim?: SupabaseOrderClaim
+        error?: string
+      }
+
+      if (!response.ok || !data.claim) {
+        setError(data.error || "No se pudo enviar el reclamo.")
+        return
+      }
+
+      setClaims((current) => [data.claim as SupabaseOrderClaim, ...current])
+      setDescription("")
+      setFailureType("")
+      setStartedAt("")
+      setFileMap({})
+    } catch {
+      setError("No se pudo enviar el reclamo.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const submitExtraInfo = async (claim: SupabaseOrderClaim) => {
+    setLoading(true)
+    setError("")
+
+    try {
+      const formData = new FormData()
+      formData.set("claimId", String(claim.id))
+      formData.set("message", reply)
+      appendFiles(formData, replyFiles)
+
+      const response = await fetch(`/api/orders/${order.id}/claims`, {
+        method: "POST",
+        body: formData,
+      })
+      const data = (await response.json()) as {
+        claim?: SupabaseOrderClaim
+        error?: string
+      }
+
+      if (!response.ok || !data.claim) {
+        setError(data.error || "No se pudo agregar información.")
+        return
+      }
+
+      setClaims((current) =>
+        current.map((currentClaim) =>
+          currentClaim.id === data.claim?.id ? data.claim : currentClaim,
+        ),
+      )
+      setReply("")
+      setReplyFiles({})
+    } catch {
+      setError("No se pudo agregar información.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
-    <section className="mb-4 rounded-xl border border-amber-300/30 bg-amber-400/10 p-4">
-      <p className="text-11px font-black uppercase tracking-widest text-amber-200">
-        Devolución por estado del producto
+    <section className="mb-4 rounded-2xl border border-beyonix-blue-light/20 bg-[linear-gradient(135deg,#0b1722_0%,#111111_58%,#181818_100%)] p-4">
+      <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+        Centro de reclamos
       </p>
       <h3 className="mt-2 text-xl font-black text-white">
-        Tienes 48 h desde la entrega para iniciar el reclamo.
+        Solicitar revisión
       </h3>
-      <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/72">
-        Si el producto llegó dañado o en mal estado, inicia el reclamo dentro
-        de las 48 h posteriores a la entrega. Este plazo permite gestionar la
-        devolución correspondiente con Andreani.
+      <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/68">
+        Elegí el motivo correcto para que podamos revisar la evidencia y darte
+        una respuesta desde este mismo pedido.
       </p>
-      <a
-        href={`mailto:beyonix.ar@gmail.com?subject=${subject}&body=${body}`}
-        className="mt-4 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-amber-300/35 bg-amber-300/15 px-4 text-xs font-black uppercase tracking-wide text-amber-100 transition-colors hover:bg-amber-300/25"
-      >
-        <Mail className="size-4" />
-        Iniciar reclamo
-      </a>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => setSelectedType("transporte_48hs")}
+          disabled={!transportOpen || Boolean(activeClaim)}
+          className={`rounded-2xl border p-4 text-left transition-colors ${
+            selectedType === "transporte_48hs"
+              ? "border-beyonix-blue-light/45 bg-beyonix-blue/30"
+              : "border-white/8 bg-[#111111] hover:bg-[#141414]"
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+          <p className="text-sm font-black text-white">
+            Mi producto llegó dañado
+          </p>
+          <p className="mt-2 text-xs font-semibold leading-5 text-white/62">
+            Si el paquete llegó golpeado, abierto o el producto sufrió daños
+            durante el envío, cargá la evidencia dentro de las primeras 48 hs
+            desde la entrega para que podamos gestionar el reclamo
+            correspondiente con Andreani.
+          </p>
+          <p className="mt-3 text-11px font-black uppercase tracking-wide text-beyonix-sky">
+            Límite: {formatClaimDeadline(getClaimDeadline(deliveredAt, "transporte_48hs"))}
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSelectedType("garantia_beyonix")}
+          disabled={!warrantyOpen || Boolean(activeClaim)}
+          className={`rounded-2xl border p-4 text-left transition-colors ${
+            selectedType === "garantia_beyonix"
+              ? "border-beyonix-blue-light/45 bg-beyonix-blue/30"
+              : "border-white/8 bg-[#111111] hover:bg-[#141414]"
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+          <p className="text-sm font-black text-white">
+            Solicitar garantía BEYONIX
+          </p>
+          <p className="mt-2 text-xs font-semibold leading-5 text-white/62">
+            Si el producto presenta una falla de funcionamiento dentro de los
+            30 días posteriores a la entrega, nuestro equipo revisará el caso y
+            te ofrecerá una solución.
+          </p>
+          <p className="mt-3 text-11px font-black uppercase tracking-wide text-beyonix-sky">
+            Límite: {formatClaimDeadline(getClaimDeadline(deliveredAt, "garantia_beyonix"))}
+          </p>
+        </button>
+      </div>
+
+      {!transportOpen && (
+        <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-400/8 px-3 py-2 text-xs font-semibold leading-5 text-amber-100">
+          El plazo de reclamo por transporte ya finalizó. Si el producto
+          presenta una falla de funcionamiento, podés solicitar garantía
+          BEYONIX.
+        </p>
+      )}
+
+      {activeClaim ? (
+        <div className="mt-4 rounded-2xl border border-white/8 bg-[#141414] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+                {getOrderClaimTypeLabel(activeClaim.claim_type)}
+              </p>
+              <h4 className="mt-1 text-lg font-black text-white">
+                {getOrderClaimStatusLabel(activeClaim.status)}
+              </h4>
+            </div>
+            <span className="rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/35 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-beyonix-sky">
+              Reclamo #{activeClaim.id}
+            </span>
+          </div>
+          {activeClaim.admin_response && (
+            <p className="mt-3 rounded-xl border border-white/8 bg-black/35 px-3 py-2 text-sm font-semibold leading-6 text-white/72">
+              {activeClaim.admin_response}
+            </p>
+          )}
+          {activeClaim.status === "falta_informacion" && (
+            <div className="mt-4 space-y-3">
+              <textarea
+                value={reply}
+                onChange={(event) => setReply(event.target.value)}
+                rows={3}
+                placeholder="Respondé al equipo o agregá detalles pendientes."
+                className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+              />
+              <ClaimFileInput
+                label="Nueva evidencia"
+                role="evidencia_adicional"
+                accept="image/*,video/*"
+                onFiles={setExtraFiles}
+              />
+              <button
+                type="button"
+                onClick={() => void submitExtraInfo(activeClaim)}
+                disabled={loading}
+                className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+              >
+                {loading ? "Enviando..." : "Agregar información"}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : warrantyOpen ? (
+        <div className="mt-4 space-y-3 rounded-2xl border border-white/8 bg-[#141414] p-4">
+          {selectedType === "garantia_beyonix" && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input
+                value={failureType}
+                onChange={(event) => setFailureType(event.target.value)}
+                placeholder="Tipo de falla"
+                className="h-11 rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34"
+              />
+              <input
+                value={startedAt}
+                onChange={(event) => setStartedAt(event.target.value)}
+                placeholder="Cuándo empezó la falla"
+                className="h-11 rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34"
+              />
+            </div>
+          )}
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={4}
+            placeholder="Describí brevemente qué pasó."
+            className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+          />
+
+          {selectedType === "transporte_48hs" ? (
+            <div className="grid gap-3 lg:grid-cols-3">
+              <ClaimFileInput label="Foto del embalaje exterior" role="embalaje_exterior" accept="image/*" required onFiles={setFiles} />
+              <ClaimFileInput label="Foto del producto completo" role="producto_completo" accept="image/*" required onFiles={setFiles} />
+              <ClaimFileInput label="Foto del daño" role="danio" accept="image/*" required onFiles={setFiles} />
+              <ClaimFileInput label="Video opcional (máximo 30 segundos)" role="video" accept="video/*" onFiles={setFiles} />
+            </div>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <ClaimFileInput label="Fotos de referencia" role="funcionamiento_foto" accept="image/*" onFiles={setFiles} />
+              <ClaimFileInput label="Video de funcionamiento (máximo 30 segundos)" role="video" accept="video/*" required onFiles={setFiles} />
+            </div>
+          )}
+
+          <div className="space-y-2 rounded-xl border border-white/8 bg-black/25 p-3">
+            {[
+              ["realInfo", "Confirmo que la información enviada es real y corresponde al producto recibido."],
+              ["keptPackaging", "Confirmo que conservé el embalaje, accesorios y comprobantes disponibles."],
+              ["noMisuse", "Confirmo que el producto no sufrió golpes, agua, manipulación indebida o mal uso."],
+            ].map(([key, label]) => (
+              <label key={key} className="flex gap-2 text-xs font-semibold leading-5 text-white/68">
+                <input
+                  type="checkbox"
+                  checked={checks[key as keyof typeof checks]}
+                  onChange={(event) =>
+                    setChecks((current) => ({
+                      ...current,
+                      [key]: event.target.checked,
+                    }))
+                  }
+                  className="mt-1 size-4 accent-[#112A43]"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+
+          {error && <p className="text-xs font-semibold text-red-300">{error}</p>}
+          <button
+            type="button"
+            onClick={() => void submitClaim()}
+            disabled={loading}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+          >
+            {loading ? "Enviando..." : "Enviar solicitud"}
+          </button>
+        </div>
+      ) : null}
+
+      {claims.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <p className="text-11px font-black uppercase tracking-widest text-white/42">
+            Historial
+          </p>
+          {claims.map((claim) => (
+            <div key={claim.id} className="rounded-xl border border-white/8 bg-[#111111] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-black text-white">
+                  {getOrderClaimTypeLabel(claim.claim_type)}
+                </p>
+                <span className="text-11px font-black uppercase tracking-wide text-beyonix-sky">
+                  {getOrderClaimStatusLabel(claim.status)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs font-semibold leading-5 text-white/55">
+                {claim.description}
+              </p>
+              {(claim.order_claim_files ?? []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(claim.order_claim_files ?? []).map((file) => (
+                    <a
+                      key={file.id}
+                      href={file.signedUrl ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-beyonix-blue-light/25 px-2 text-10px font-black uppercase tracking-wide text-beyonix-sky"
+                    >
+                      <Download className="size-3" />
+                      {file.file_name}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -761,6 +1200,9 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       name,
       email,
       address: deliveryAddress,
+      street,
+      streetNumber,
+      locality,
       province,
       postalCode,
       phone,
@@ -926,6 +1368,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
 }
 
 type ProfileView = "home" | "ordenes" | "datos" | "seguridad"
+type CustomerOrderDetailView = "detalle" | "factura" | "reclamo"
 const PASSWORD_CHANGE_COOLDOWN_DAYS = 15
 const PASSWORD_CHANGE_COOLDOWN_MS =
   PASSWORD_CHANGE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
@@ -1059,6 +1502,9 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(
     () => new Set(),
   )
+  const [orderDetailViews, setOrderDetailViews] = useState<
+    Record<number, CustomerOrderDetailView>
+  >({})
 
   const loadOrders = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -1194,6 +1640,21 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
     })
   }
 
+  const showOrderDetailView = (
+    orderId: number,
+    view: CustomerOrderDetailView,
+  ) => {
+    setExpandedOrderIds((currentIds) => {
+      const nextIds = new Set(currentIds)
+      nextIds.add(orderId)
+      return nextIds
+    })
+    setOrderDetailViews((currentViews) => ({
+      ...currentViews,
+      [orderId]: view,
+    }))
+  }
+
   const handleDownloadInvoice = async (orderId: number) => {
     setDownloadingInvoiceId(orderId)
     setInvoiceError("")
@@ -1211,7 +1672,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement("a")
       anchor.href = url
-      anchor.download = `factura-c-pedido-${orderId}.pdf`
+      anchor.download = "Factura-BEYONIX.pdf"
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
@@ -1263,6 +1724,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
             const isTransferOrder = order.payment_method_id === "transferencia"
             const isExpanded = expandedOrderIds.has(order.id)
             const orderStatusBadge = getClientOrderStatusBadge(order)
+            const activeOrderView = orderDetailViews[order.id] ?? "detalle"
 
             return (
               <article
@@ -1290,6 +1752,38 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                   </div>
 
                   <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        ["detalle", "Detalle"],
+                        ["factura", "Factura"],
+                        ["reclamo", "Reclamo"],
+                      ].map(([view, label]) => {
+                        const disabled =
+                          view === "reclamo" && order.estado !== "entregado"
+
+                        return (
+                          <button
+                            key={view}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() =>
+                              showOrderDetailView(
+                                order.id,
+                                view as CustomerOrderDetailView,
+                              )
+                            }
+                            className={
+                              "inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border px-3 text-10px font-black uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40 " +
+                              (isExpanded && activeOrderView === view
+                                ? "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky"
+                                : "border-beyonix-blue-light/25 bg-white/5 text-white/68 hover:border-beyonix-blue-light/45 hover:text-beyonix-sky")
+                            }
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
                     {isTransferOrder && (
                       <>
                         {hasProof ? (
@@ -1328,41 +1822,51 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
 
                 {isExpanded && (
                   <div className="border-t border-white/7 px-4 py-4 sm:px-5">
-                    <OrderProgressTimeline order={order} />
-
-                    {order.estado === "entregado" && (
-                      <ReturnClaimPanel order={order} />
-                    )}
-
-                    {order.invoice_status === "authorized" && (
+                    {activeOrderView === "factura" && (
                       <div className="mb-3 flex flex-col gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-xs font-black uppercase tracking-widest text-emerald-300">
-                            Factura disponible
+                            Factura electrónica
                           </p>
-                          <p className="mt-1 text-sm font-bold text-white">
-                            Factura C{" "}
-                            {formatCuentaInvoiceNumber(
-                              order.invoice_point,
-                              order.invoice_number,
-                            )}
-                          </p>
+                          {order.invoice_status === "authorized" ? (
+                            <p className="mt-1 text-sm font-bold text-white">
+                              Factura C{" "}
+                              {formatCuentaInvoiceNumber(
+                                order.invoice_point,
+                                order.invoice_number,
+                              )}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-sm font-bold text-white/68">
+                              La factura todavía no está disponible para este pedido.
+                            </p>
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          aria-label={"Descargar factura del pedido " + formatPublicOrderId(order.id)}
-                          title="Descargar factura"
-                          disabled={downloadingInvoiceId === order.id}
-                          onClick={() => void handleDownloadInvoice(order.id)}
-                          className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-60"
-                        >
-                          <Download className="size-4" />
-                          {downloadingInvoiceId === order.id
-                            ? "Preparando..."
-                            : "Descargar factura"}
-                        </button>
+                        {order.invoice_status === "authorized" && (
+                          <button
+                            type="button"
+                            aria-label={"Descargar factura del pedido " + formatPublicOrderId(order.id)}
+                            title="Descargar factura"
+                            disabled={downloadingInvoiceId === order.id}
+                            onClick={() => void handleDownloadInvoice(order.id)}
+                            className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <Download className="size-4" />
+                            {downloadingInvoiceId === order.id
+                              ? "Preparando..."
+                              : "Descargar factura"}
+                          </button>
+                        )}
                       </div>
                     )}
+
+                    {activeOrderView === "reclamo" && order.estado === "entregado" && (
+                      <ClaimsCenterPanel order={order} />
+                    )}
+
+                    {activeOrderView === "detalle" && (
+                      <>
+                    <OrderProgressTimeline order={order} />
 
                     <div className="mb-2 hidden grid-cols-account-order-item gap-4 px-3 xl:grid">
                       {[
@@ -1457,6 +1961,8 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                         )
                       })}
                     </div>
+                      </>
+                    )}
                   </div>
                 )}
               </article>

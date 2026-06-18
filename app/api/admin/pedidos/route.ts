@@ -1,10 +1,17 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
+import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
   SupabaseProducto,
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
+
+function stripClaimBucket(path: string) {
+  return path.startsWith(`${ORDER_CLAIM_BUCKET}/`)
+    ? path.slice(ORDER_CLAIM_BUCKET.length + 1)
+    : path
+}
 
 export async function GET(request: Request) {
   const auth = await requireOperator(request)
@@ -50,7 +57,7 @@ export async function GET(request: Request) {
         .filter((id): id is number => typeof id === "number")
     ),
   ]
-  const [productsResult, variantsResult, profilesResult] = await Promise.all([
+  const [productsResult, variantsResult, profilesResult, claimsResult] = await Promise.all([
     productIds.length
       ? auth.admin.from("productos").select("*").in("id", productIds)
       : Promise.resolve({ data: [], error: null }),
@@ -60,14 +67,28 @@ export async function GET(request: Request) {
     userIds.length
       ? auth.admin.from("profiles").select("id, username").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
+    auth.admin
+      .from("order_claims")
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .in(
+        "order_id",
+        pedidos.map((pedido) => pedido.id)
+      )
+      .order("created_at", { ascending: false }),
   ])
 
-  if (productsResult.error || variantsResult.error || profilesResult.error) {
+  if (
+    productsResult.error ||
+    variantsResult.error ||
+    profilesResult.error ||
+    claimsResult.error
+  ) {
     return Response.json(
       {
         error:
           productsResult.error?.message ||
           variantsResult.error?.message ||
+          claimsResult.error?.message ||
           profilesResult.error?.message ||
           "No se pudo cargar el detalle de los productos.",
       },
@@ -94,6 +115,7 @@ export async function GET(request: Request) {
     }>).map((profile) => [profile.id, profile.username])
   )
   const itemsByOrder = new Map<number, SupabasePedidoItem[]>()
+  const claimsByOrder = new Map<number, any[]>()
 
   for (const item of items) {
     const currentItems = itemsByOrder.get(item.orden_id) ?? []
@@ -106,6 +128,27 @@ export async function GET(request: Request) {
           : null,
     })
     itemsByOrder.set(item.orden_id, currentItems)
+  }
+
+  for (const claim of claimsResult.data ?? []) {
+    const signedFiles = await Promise.all(
+      (claim.order_claim_files ?? []).map(async (file: any) => {
+        const { data } = await auth.admin.storage
+          .from(ORDER_CLAIM_BUCKET)
+          .createSignedUrl(stripClaimBucket(file.file_path), 300)
+
+        return {
+          ...file,
+          signedUrl: data?.signedUrl ?? null,
+        }
+      })
+    )
+    const currentClaims = claimsByOrder.get(claim.order_id) ?? []
+    currentClaims.push({
+      ...claim,
+      order_claim_files: signedFiles,
+    })
+    claimsByOrder.set(claim.order_id, currentClaims)
   }
 
   return Response.json({
@@ -127,6 +170,7 @@ export async function GET(request: Request) {
         ...item,
         precio: auth.profile.rol === "operador" ? 0 : item.precio,
       })),
+      order_claims: claimsByOrder.get(pedido.id) ?? [],
     })),
   })
 }

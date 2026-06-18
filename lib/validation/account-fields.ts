@@ -53,6 +53,9 @@ export type RegisterValidationPayload = {
   name: string
   email: string
   address: string
+  street: string
+  streetNumber: string
+  locality: string
   province: string
   postalCode: string
   phone: string
@@ -209,29 +212,45 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
   const emailError = validateEmail(data.email)
   if (emailError) return emailError
 
-  if (data.address.trim()) {
-    const addressError = validateCleanText(
-      data.address,
-      "tu dirección",
-      FIELD_LIMITS.address,
-      {
-        minLength: 5,
-        pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
-        allowedHint: "Usá solo letras, números y signos comunes de dirección.",
-      }
-    )
-    if (addressError) return addressError
+  const streetError = validateCleanText(data.street, "la calle", 60, {
+    minLength: 2,
+    pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
+    allowedHint: "Usá solo letras, números y signos comunes en la calle.",
+  })
+  if (streetError) return streetError
+
+  if (!/^\d{1,8}$/.test(data.streetNumber.trim())) {
+    return "El número de calle es obligatorio y debe tener hasta 8 números."
   }
 
-  if (data.province.trim() && !isArgentinaProvince(data.province)) {
+  const addressError = validateCleanText(
+    data.address,
+    "tu dirección",
+    FIELD_LIMITS.address,
+    {
+      minLength: 5,
+      pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
+      allowedHint: "Usá solo letras, números y signos comunes de dirección.",
+    }
+  )
+  if (addressError) return addressError
+
+  const localityError = validateCleanText(data.locality, "la localidad", 60, {
+    minLength: 2,
+    pattern: /^[\p{L}\p{M}0-9\s.,'-]+$/u,
+    allowedHint: "Usá solo letras, números y signos comunes en la localidad.",
+  })
+  if (localityError) return localityError
+
+  if (!data.province.trim() || !isArgentinaProvince(data.province)) {
     return "Seleccioná una provincia válida."
   }
 
-  if (data.postalCode.trim() && !/^\d{4,8}$/.test(data.postalCode)) {
+  if (!/^\d{4,8}$/.test(data.postalCode.trim())) {
     return "El código postal debe tener entre 4 y 8 números."
   }
 
-  if (data.phone.trim() && !/^\d{8,15}$/.test(data.phone)) {
+  if (!/^\d{8,15}$/.test(data.phone.trim())) {
     return "El teléfono móvil debe tener entre 8 y 15 números."
   }
 

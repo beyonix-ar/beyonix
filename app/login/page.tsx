@@ -464,6 +464,9 @@ function LoginContent() {
       name,
       email,
       address: deliveryAddress,
+      street,
+      streetNumber,
+      locality,
       province,
       postalCode,
       phone,
@@ -686,15 +689,15 @@ function LoginContent() {
           </div>
         ) : (
           <div
-          className={`w-full rounded-2xl border border-white/10 bg-beyonix-surface-4 p-5 shadow-2xl lg:p-6 ${
+          className={`w-full rounded-2xl border border-white/10 bg-beyonix-surface-4 shadow-2xl ${
             mode === "login" ? "max-w-md" : "max-w-5xl"
-          }`}
+          } ${mode === "login" ? "p-5 lg:p-6" : "p-4 lg:p-5"}`}
         >
           <div
           className={
             mode === "login"
               ? "mb-6 space-y-5"
-              : "mb-4 grid gap-3 lg:grid-cols-login-register lg:items-end"
+              : "mb-3 grid gap-3 lg:grid-cols-login-register lg:items-end"
           }
         >
           <div>
@@ -743,7 +746,7 @@ function LoginContent() {
           key={mode}
           onSubmit={handleSubmit}
           autoComplete="on"
-          className={mode === "register" ? "grid gap-3 md:grid-cols-2" : "space-y-4"}
+          className={mode === "register" ? "grid gap-2.5 md:grid-cols-2" : "space-y-4"}
         >
           {mode === "register" && (
             <>
@@ -769,30 +772,32 @@ function LoginContent() {
 
           {mode === "register" && (
             <>
-              <div className="md:col-span-2 rounded-xl border border-beyonix-blue-light/12 bg-black/30 p-3">
-                <div className="mb-2">
+              <div className="md:col-span-2 rounded-xl border border-beyonix-blue-light/12 bg-black/30 p-2.5">
+                <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
                   <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-focus">
                     Dirección de entrega
                   </p>
                   <p className="mt-0.5 text-xs leading-4 text-white/45">
-                    Estos datos ayudan a preparar futuros envíos a domicilio.
+                    Datos necesarios para preparar envíos.
                   </p>
+                  </div>
                 </div>
 
-                <div className="grid gap-2.5 md:grid-cols-2">
-                  <Field name="street" label="Calle opcional" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" required={false} />
-                  <Field name="street-number" label="Número opcional" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" required={false} />
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Field name="street" label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" />
+                  <Field name="street-number" label="Número" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
                   <Field name="floor" label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
                   <Field name="apartment" label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
-                  <Field name="postal-code" label="Código postal opcional" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required={false} />
-                  <Field name="locality" label="Localidad opcional" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required={false} />
+                  <Field name="postal-code" label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required />
+                  <Field name="locality" label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required />
                   <div>
                     <label className="mb-1 block text-xs font-medium text-white/78">
-                      Provincia / Región opcional
+                      Provincia
                     </label>
                     <ProvinceSelect value={province} onChange={setProvince} compact />
                   </div>
-                  <Field name="phone" label="Teléfono móvil opcional" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel" required={false} />
+                  <Field name="phone" label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel" required />
                   <div className="md:col-span-2">
                     <TextareaField name="references" label="Referencias para llegar" value={references} onChange={setReferences} placeholder="Entre Córdoba y Entre Ríos, fachada blanca, portón negro, antes de llegar a la esquina." maxLength={FIELD_LIMITS.references} />
                   </div>

@@ -140,7 +140,7 @@ export function AdminSelect({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
-        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:border-[#112A43] hover:bg-[#112A43] focus:border-beyonix-blue-light disabled:cursor-not-allowed disabled:opacity-45 ${
+        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:bg-[#181818] focus:border-beyonix-blue-light disabled:cursor-not-allowed disabled:opacity-45 ${
           centered ? "justify-center" : "justify-between"
         } ${
           compact
@@ -229,7 +229,7 @@ export function AdminTextInput({
         placeholder={placeholder}
         inputMode={inputMode}
         onChange={(event) => onChange(event.target.value)}
-        className={`h-11 w-full rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none transition-colors placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light ${
+        className={`h-11 w-full rounded-18px border border-white/12 bg-[#141414] px-4 text-sm font-medium text-white/86 outline-none transition-colors placeholder:text-white/32 hover:bg-[#181818] focus:border-beyonix-blue-light ${
           icon ? "pl-11" : ""
         }`}
       />

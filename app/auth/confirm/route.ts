@@ -15,6 +15,14 @@ const CONFIRMATION_TYPES = new Set<EmailOtpType>([
   "invite",
 ])
 
+function getConfirmationVerificationTypes(type: EmailOtpType) {
+  if (type === "email") {
+    return ["signup", "email"] satisfies EmailOtpType[]
+  }
+
+  return [type]
+}
+
 function confirmationPage(
   success: boolean,
   confirmationEvent?: EmailConfirmationEvent
@@ -107,37 +115,58 @@ export async function GET(request: NextRequest) {
       },
     }
   )
-  const { data, error } = await auth.auth.verifyOtp({
-    token_hash: tokenHash,
-    type,
-  })
 
-  if (error || !data.user) {
+  type VerifyOtpResult = Awaited<ReturnType<typeof auth.auth.verifyOtp>>
+  let verificationResult: VerifyOtpResult | null = null
+  let verificationError: VerifyOtpResult["error"] | null = null
+
+  for (const verificationType of getConfirmationVerificationTypes(type)) {
+    const result = await auth.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: verificationType,
+    })
+
+    if (!result.error && result.data.user) {
+      verificationResult = result
+      break
+    }
+
+    verificationError = result.error
+  }
+
+  if (!verificationResult?.data.user) {
+    console.warn("AUTH_CONFIRM_VERIFY_FAILED", {
+      type,
+      message: verificationError?.message,
+      status: verificationError?.status,
+      code: verificationError?.code,
+    })
     return new NextResponse(confirmationPage(false), {
       status: 400,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     })
   }
 
+  const { user } = verificationResult.data
   const admin = createAdminClient()
   const { error: activationError } = await admin.auth.admin.updateUserById(
-    data.user.id,
+    user.id,
     {
       app_metadata: {
-        ...data.user.app_metadata,
+        ...user.app_metadata,
         account_activated: true,
         account_activated_at: new Date().toISOString(),
       },
       user_metadata: {
-        ...data.user.user_metadata,
+        ...user.user_metadata,
         pending_activation: false,
       },
     }
   )
 
   const confirmationEvent: EmailConfirmationEvent = {
-    userId: data.user.id,
-    email: data.user.email?.trim().toLowerCase() ?? "",
+    userId: user.id,
+    email: user.email?.trim().toLowerCase() ?? "",
     confirmedAt: Date.now(),
   }
 

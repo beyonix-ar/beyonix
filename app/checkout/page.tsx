@@ -44,6 +44,7 @@ import {
 import {
   Label,
 } from "@/components/ui/label"
+import { ProvinceSelect } from "@/components/province-select"
 
 import {
   Separator,
@@ -163,6 +164,18 @@ const checkoutSteps = [
 
 function hasLetters(value: string) {
   return /\p{L}/u.test(value)
+}
+
+function normalizePlaceName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
+
+function isRosarioLocality(value: string) {
+  return normalizePlaceName(value) === "rosario"
 }
 
 type RequiredCheckoutField =
@@ -436,7 +449,8 @@ export default function CheckoutPage() {
       : null
   const shippingCostReal =
     selectedShippingOption?.price ?? 0
-  const freeShippingApplied = manualShippingCost === 0
+  const freeShippingApplied =
+    manualShippingCost === 0 || selectedShippingOption?.price === 0
   const shippingCostCharged =
     selectedShippingOption &&
     !freeShippingApplied
@@ -480,6 +494,20 @@ export default function CheckoutPage() {
       setShippingMessage(
         "Completá código postal, provincia y localidad para cotizar Andreani."
       )
+      return
+    }
+
+    if (isRosarioLocality(localidad)) {
+      setShippingOptions([
+        {
+          type: "domicilio",
+          label: "Envío sin costo Rosario",
+          price: 0,
+          provider: "manual",
+        },
+      ])
+      setSelectedShippingType("domicilio")
+      setShippingMessage("Entrega local sin costo dentro de Rosario.")
       return
     }
 
@@ -615,6 +643,35 @@ export default function CheckoutPage() {
           postalCode: next.cpDestino,
         })
       }
+
+      return next
+    })
+  }
+
+  const handleProvinceChange = (value: string) => {
+    const normalizedValue = value.toLocaleUpperCase("es-AR")
+
+    hasEditedCheckoutFormRef.current = true
+
+    if (invalidField === "provincia") {
+      setInvalidField(null)
+    }
+
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        provincia: normalizedValue,
+      }
+
+      next.direccion = formatDeliveryAddress({
+        street: next.calle,
+        streetNumber: next.numero,
+        floor: next.piso,
+        apartment: next.departamento,
+        locality: next.localidad,
+        region: next.provincia,
+        postalCode: next.cpDestino,
+      })
 
       return next
     })
@@ -1027,17 +1084,25 @@ export default function CheckoutPage() {
                         <Input id="departamento" name="departamento" className={checkoutInputClassName} value={formData.departamento} onChange={handleInputChange} />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cpDestino">Código postal *</Label>
-                      <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} required />
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor="provincia">Provincia *</Label>
+                      <ProvinceSelect
+                        value={formData.provincia}
+                        onChange={handleProvinceChange}
+                      />
+                      {invalidField === "provincia" && (
+                        <p className="text-xs font-semibold text-red-300">
+                          Seleccioná una provincia.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="localidad">Localidad *</Label>
                       <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} required />
                     </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="provincia">Provincia *</Label>
-                      <Input id="provincia" name="provincia" className={getCheckoutInputClassName("provincia")} value={formData.provincia} onChange={handleInputChange} required />
+                    <div className="space-y-2">
+                      <Label htmlFor="cpDestino">Código postal *</Label>
+                      <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} required />
                     </div>
                     <div className="space-y-2 sm:col-span-2">
                       <Label htmlFor="referencias">Referencias opcionales</Label>
@@ -1091,7 +1156,9 @@ export default function CheckoutPage() {
                               {option.label}
                             </span>
                             <span className="mt-1 block text-sm text-white/45">
-                              Cotización Andreani
+                              {option.provider === "manual"
+                                ? "Entrega local BEYONIX"
+                                : "Cotización Andreani"}
                             </span>
                           </span>
                           <span className={freeShippingApplied ? "font-semibold text-emerald-400" : "font-semibold text-white"}>

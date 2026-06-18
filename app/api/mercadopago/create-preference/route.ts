@@ -95,10 +95,33 @@ function normalizeCustomer(customer: CheckoutPayload["customer"]) {
   }
 }
 
+function normalizePlaceName(value?: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
+
+function isRosarioCustomer(customer: CheckoutPayload["customer"]) {
+  return normalizePlaceName(customer?.localidad) === "rosario"
+}
+
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
-  productsTotal: number
+  productsTotal: number,
+  customer: CheckoutPayload["customer"]
 ) {
+  if (isRosarioCustomer(customer)) {
+    return {
+      shipping_provider: "manual",
+      shipping_type: "domicilio",
+      shipping_cost_real: 0,
+      shipping_cost_charged: 0,
+      free_shipping_applied: true,
+    }
+  }
+
   const realCost = Number(shipping?.costReal)
   const fallbackCost = getShippingCost(productsTotal)
   const shippingCostReal =
@@ -269,7 +292,11 @@ export async function POST(request: Request) {
         }
       }),
     )
-    const shipping = normalizeShipping(payload.shipping, baseTotals.productsTotal)
+    const shipping = normalizeShipping(
+      payload.shipping,
+      baseTotals.productsTotal,
+      payload.customer,
+    )
     const totals = calculateCartTotals(
       items.map((item) => {
         const product = productRows.find((row) => row.id === item.productId)!

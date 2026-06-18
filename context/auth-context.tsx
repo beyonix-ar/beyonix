@@ -889,6 +889,12 @@ export function AuthProvider({
               form.email,
             address:
               form.address ?? "",
+            street:
+              form.street ?? "",
+            streetNumber:
+              form.streetNumber ?? "",
+            locality:
+              form.locality ?? "",
             province:
               form.province ?? "",
             postalCode:

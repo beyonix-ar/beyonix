@@ -105,6 +105,7 @@ export async function updatePedidoEstado(
 ) {
   const payload = {
     estado,
+    ...(estado === "entregado" ? { delivered_at: new Date().toISOString() } : {}),
     ...(tracking ?? {}),
   }
   const { data, error } = await supabase

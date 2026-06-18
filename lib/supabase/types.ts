@@ -175,8 +175,21 @@ export interface SupabasePedido {
   invoice_cae_due?: string | null
   invoice_status?: "processing" | "authorized" | "error" | null
   invoice_created_at?: string | null
+  return_status?:
+    | "solicitada"
+    | "en_revision"
+    | "aprobada"
+    | "rechazada"
+    | "resuelta"
+    | null
+  return_reason?: string | null
+  return_requested_at?: string | null
+  return_resolved_at?: string | null
+  return_admin_note?: string | null
+  delivered_at?: string | null
   created_at: string
   orden_items?: SupabasePedidoItem[]
+  order_claims?: SupabaseOrderClaim[]
 }
 
 export interface SupabasePedidoItem {
@@ -188,6 +201,63 @@ export interface SupabasePedidoItem {
   precio: number
   productos?: SupabaseProducto | null
   producto_variantes?: SupabaseProductoVariante | null
+}
+
+export type OrderClaimType = "transporte_48hs" | "garantia_beyonix"
+export type OrderClaimStatus =
+  | "recibido"
+  | "en_revision"
+  | "falta_informacion"
+  | "aprobado"
+  | "rechazado"
+  | "cerrado"
+export type OrderClaimResolution =
+  | "cambio_producto"
+  | "reintegro_total"
+  | "reintegro_parcial"
+  | "cupon_descuento"
+  | "rechazado"
+  | "otro"
+
+export interface SupabaseOrderClaimFile {
+  id: number
+  claim_id: number
+  uploaded_by?: string | null
+  file_role: string
+  file_name: string
+  file_path: string
+  mime_type: string
+  file_size: number
+  signedUrl?: string | null
+  created_at: string
+}
+
+export interface SupabaseOrderClaimMessage {
+  id: number
+  claim_id: number
+  author_user_id?: string | null
+  author_role: "cliente" | "operador" | "admin" | "super_admin"
+  message: string
+  created_at: string
+}
+
+export interface SupabaseOrderClaim {
+  id: number
+  order_id: number
+  user_id: string
+  claim_type: OrderClaimType
+  status: OrderClaimStatus
+  failure_type?: string | null
+  description: string
+  started_at?: string | null
+  admin_response?: string | null
+  rejection_reason?: string | null
+  resolution?: OrderClaimResolution | null
+  closed_at?: string | null
+  created_at: string
+  updated_at: string
+  order_claim_files?: SupabaseOrderClaimFile[]
+  order_claim_messages?: SupabaseOrderClaimMessage[]
 }
 
 export interface SupabaseReview {
