@@ -1,5 +1,6 @@
 import {
   getEligibleReview,
+  getEligibleProductReview,
   toPublicReview,
   validateReviewComment,
 } from "@/lib/reviews/server"
@@ -15,17 +16,26 @@ export const dynamic = "force-dynamic"
 export async function GET(request: Request) {
   try {
     const { admin, user } = await getOptionalReviewUser(request)
-    const { data, error } = await admin
+    const productId = Number(new URL(request.url).searchParams.get("productId"))
+    const orderId = Number(new URL(request.url).searchParams.get("orderId"))
+    let reviewsQuery = admin
       .schema("public")
       .from("reviews")
-      .select("id, rating, comment, nickname, city, province, created_at")
+      .select("id, product_id, rating, comment, nickname, city, province, created_at")
       .eq("approved", true)
       .order("created_at", { ascending: false })
+
+    if (Number.isInteger(productId) && productId > 0) {
+      reviewsQuery = reviewsQuery.eq("product_id", productId)
+    }
+
+    const { data, error } = await reviewsQuery
 
     if (error) throw error
 
     let ownReviewIds = new Set<number>()
     let eligibleReview = null
+    let ownProductReviews: Array<Record<string, unknown>> = []
 
     if (user) {
       const [ownReviewsResult, role] = await Promise.all([
@@ -41,6 +51,20 @@ export async function GET(request: Request) {
         ownReviewIds = new Set(
           (ownReviewsResult.data ?? []).map((review) => Number(review.id))
         )
+      }
+
+      if (Number.isInteger(orderId) && orderId > 0) {
+        const ownProductResult = await admin
+          .schema("public")
+          .from("reviews")
+          .select("product_id, rating, comment")
+          .eq("user_id", user.id)
+          .eq("order_id", orderId)
+          .not("product_id", "is", null)
+
+        if (!ownProductResult.error) {
+          ownProductReviews = ownProductResult.data ?? []
+        }
       }
 
       if (role === "admin" || role === "super_admin") {
@@ -60,6 +84,7 @@ export async function GET(request: Request) {
           toPublicReview(review, ownReviewIds.has(Number(review.id)))
         ),
         eligibleReview,
+        ownProductReviews,
       },
       {
         headers: {
@@ -87,6 +112,7 @@ export async function POST(request: Request) {
       orderId?: number
       rating?: number
       comment?: string
+      productId?: number
     }
     const rating = Number(body.rating)
     const commentValidation = validateReviewComment(body.comment)
@@ -105,7 +131,16 @@ export async function POST(request: Request) {
       )
     }
 
-    const eligibleReview = await getEligibleReview(auth.admin, auth.user)
+    const productId = Number(body.productId)
+    const hasProduct = Number.isInteger(productId) && productId > 0
+    const eligibleReview = hasProduct
+      ? await getEligibleProductReview(
+          auth.admin,
+          auth.user,
+          Number(body.orderId),
+          productId,
+        )
+      : await getEligibleReview(auth.admin, auth.user)
 
     if (!eligibleReview || eligibleReview.orderId !== Number(body.orderId)) {
       return Response.json(
@@ -120,6 +155,7 @@ export async function POST(request: Request) {
       .insert({
         user_id: auth.user.id,
         order_id: eligibleReview.orderId,
+        product_id: hasProduct ? productId : null,
         rating,
         comment: commentValidation.comment,
         nickname: eligibleReview.nickname,
@@ -134,7 +170,7 @@ export async function POST(request: Request) {
 
     if (error?.code === "23505") {
       return Response.json(
-        { error: "Esta compra ya tiene una reseña." },
+        { error: hasProduct ? "Este producto ya tiene una reseña." : "Esta compra ya tiene una reseña." },
         { status: 409 }
       )
     }

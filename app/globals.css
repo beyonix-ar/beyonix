@@ -229,7 +229,7 @@
 }
 
 @utility grid-cols-admin-orders-pro {
-  grid-template-columns: minmax(54px, 0.58fr) minmax(76px, 0.88fr) minmax(96px, 1.18fr) minmax(44px, 0.42fr) minmax(60px, 0.58fr) minmax(74px, 0.72fr) minmax(100px, 0.92fr) minmax(90px, 0.92fr) minmax(100px, 1fr) minmax(86px, 0.82fr) 70px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
 }
 
 @utility w-admin-order-status {
@@ -1027,4 +1027,16 @@ body.product-modal-open .category-hero {
   .product-card-image {
     height: 100%;
   }
+}
+@supports selector(:has(*)) {
+  .account-page:has(.customer-order-detail) .account-welcome {
+    display: none;
+  }
+}
+
+.account-page button:not(:disabled),
+.account-page a[href],
+.account-page summary,
+.account-page label:has(input[type="file"]) {
+  cursor: pointer;
 }

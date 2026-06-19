@@ -42,6 +42,8 @@ function Field({
   autoComplete,
   showPasswordToggle,
   required = true,
+  onFocus,
+  onBlur,
 }: {
   name: string
   label: string
@@ -54,6 +56,8 @@ function Field({
   autoComplete?: string
   showPasswordToggle?: boolean
   required?: boolean
+  onFocus?: () => void
+  onBlur?: () => void
 }) {
   const [passwordVisible, setPasswordVisible] = useState(false)
   const inputType = showPasswordToggle && type === "password" && passwordVisible
@@ -78,8 +82,10 @@ function Field({
           maxLength={maxLength}
           inputMode={inputMode}
           autoComplete={autoComplete}
+          onFocus={onFocus}
+          onBlur={onBlur}
           onChange={(e) => onChange(e.target.value)}
-          className={`beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus ${
+          className={`beyonix-login-input h-10 w-full rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus ${
             showPasswordToggle ? "pr-12" : ""
           }`}
         />
@@ -131,7 +137,7 @@ function TextareaField({
         placeholder={placeholder}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-14 w-full resize-none rounded-lg border border-white/10 bg-black px-3 py-2 text-sm leading-5 text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-focus"
+        className="min-h-14 w-full resize-none rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 py-2 text-sm leading-5 text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus"
       />
     </div>
   )
@@ -154,8 +160,11 @@ function LoginContent() {
   const [locality, setLocality] = useState("")
   const [province, setProvince] = useState("")
   const [postalCode, setPostalCode] = useState("")
+  const [phoneAreaCode, setPhoneAreaCode] = useState("")
   const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [passwordFocused, setPasswordFocused] = useState(false)
   const [references, setReferences] = useState("")
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -173,6 +182,15 @@ function LoginContent() {
   const verificationEmail = searchParams.get("verificar-email")
   const confirmationPollInProgress = useRef(false)
   const confirmationCompletionStarted = useRef(false)
+  const registerRedirectTimeout = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (registerRedirectTimeout.current) {
+        window.clearTimeout(registerRedirectTimeout.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (searchParams.get("reset") !== "success") return
@@ -399,6 +417,10 @@ function LoginContent() {
     setConfirmationValidated(false)
     setFinishingConfirmation(false)
     confirmationCompletionStarted.current = false
+    if (registerRedirectTimeout.current) {
+      window.clearTimeout(registerRedirectTimeout.current)
+      registerRedirectTimeout.current = null
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -453,9 +475,17 @@ function LoginContent() {
             .join(", ")
       : ""
 
+    const mobilePhone = `${phoneAreaCode}${phone}`
+
     if (!meetsPasswordRequirements(password)) {
       setLoading(false)
       setError("La contraseña no cumple los requisitos.")
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setLoading(false)
+      setError("Las contraseñas no coinciden.")
       return
     }
 
@@ -469,7 +499,7 @@ function LoginContent() {
       locality,
       province,
       postalCode,
-      phone,
+      phone: mobilePhone,
       password,
       references,
     })
@@ -492,7 +522,7 @@ function LoginContent() {
       apartment,
       locality,
       postalCode,
-      phone,
+      phone: mobilePhone,
       province,
       references,
     })
@@ -507,22 +537,29 @@ function LoginContent() {
     if (result.requiresConfirmation) {
       const normalizedEmail = email.trim().toLowerCase()
 
-      setConfirmationEmail(normalizedEmail)
-      setConfirmationUserId(result.pendingUserId ?? "")
-      setConfirmationHandoff(result.confirmationHandoff ?? "")
-      setConfirmationValidated(false)
-      confirmationCompletionStarted.current = false
-      setMode("login")
-      window.history.replaceState(
-        null,
-        "",
-        `/login?verificar-email=${encodeURIComponent(normalizedEmail)}`
-      )
+      setSuccess("Cuenta creada con éxito!")
+      registerRedirectTimeout.current = window.setTimeout(() => {
+        setConfirmationEmail(normalizedEmail)
+        setConfirmationUserId(result.pendingUserId ?? "")
+        setConfirmationHandoff(result.confirmationHandoff ?? "")
+        setConfirmationValidated(false)
+        confirmationCompletionStarted.current = false
+        setMode("login")
+        window.history.replaceState(
+          null,
+          "",
+          `/login?verificar-email=${encodeURIComponent(normalizedEmail)}`
+        )
+        registerRedirectTimeout.current = null
+      }, 900)
       return
     }
 
-    setSuccess("Cuenta creada correctamente.")
-    router.replace(redirect)
+    setSuccess("Cuenta creada con éxito!")
+    registerRedirectTimeout.current = window.setTimeout(() => {
+      router.replace(redirect)
+      registerRedirectTimeout.current = null
+    }, 900)
   }
 
   const handleForgotPassword = async () => {
@@ -689,7 +726,7 @@ function LoginContent() {
           </div>
         ) : (
           <div
-          className={`w-full rounded-2xl border border-white/10 bg-beyonix-surface-4 shadow-2xl ${
+          className={`w-full rounded-2xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,#102438_0%,#141414_48%,#0b0b0b_100%)] shadow-2xl shadow-black/70 ${
             mode === "login" ? "max-w-md" : "max-w-5xl"
           } ${mode === "login" ? "p-5 lg:p-6" : "p-4 lg:p-5"}`}
         >
@@ -711,16 +748,16 @@ function LoginContent() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 rounded-xl border border-white/10 bg-black p-1">
+          <div className="grid max-w-sm grid-cols-2 rounded-xl border border-beyonix-blue-light/20 bg-[#050607] p-1 shadow-inner shadow-beyonix-blue/20">
             <button
               type="button"
               aria-label="Iniciar sesión"
               title="Iniciar sesión"
               onClick={() => handleModeChange("login")}
-              className={`h-10 cursor-pointer rounded-lg text-sm font-medium transition-all ${
+              className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
                 mode === "login"
-                  ? "bg-white text-black"
-                  : "text-white/70 hover:text-white"
+                  ? "border border-beyonix-blue-light/40 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
+                  : "text-white/70 hover:bg-beyonix-blue/18 hover:text-white"
               }`}
             >
               Iniciar sesión
@@ -731,10 +768,10 @@ function LoginContent() {
               aria-label="Registrarme"
               title="Registrarme"
               onClick={() => handleModeChange("register")}
-              className={`h-10 cursor-pointer rounded-lg text-sm font-medium transition-all ${
+              className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
                 mode === "register"
-                  ? "bg-white text-black"
-                  : "text-white/70 hover:text-white"
+                  ? "border border-beyonix-blue-light/40 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
+                  : "text-white/70 hover:bg-beyonix-blue/18 hover:text-white"
               }`}
             >
               Registrarme
@@ -746,63 +783,104 @@ function LoginContent() {
           key={mode}
           onSubmit={handleSubmit}
           autoComplete="on"
-          className={mode === "register" ? "grid gap-2.5 md:grid-cols-2" : "space-y-4"}
+          className={mode === "register" ? "space-y-3" : "space-y-4"}
         >
           {mode === "register" && (
             <>
-              <Field name="username" label="Nombre de usuario" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" maxLength={FIELD_LIMITS.username} autoComplete="username" />
-              <Field name="name" label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" maxLength={FIELD_LIMITS.name} autoComplete="name" />
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <Field name="username" label="Usuario*" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" maxLength={FIELD_LIMITS.username} autoComplete="username" />
+                <Field name="email" label="Email*" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
+              </div>
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <div className="relative">
+                  <Field
+                    name="password"
+                    label="Contraseña*"
+                    type="password"
+                    value={password}
+                    onChange={setPassword}
+                    placeholder="Creá una contraseña segura"
+                    maxLength={FIELD_LIMITS.password}
+                    autoComplete="new-password"
+                    showPasswordToggle
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => setPasswordFocused(false)}
+                  />
+                  {passwordFocused && (
+                    <div className="absolute left-0 top-[calc(100%+0.35rem)] z-30 w-full">
+                      <PasswordRequirements password={password} />
+                    </div>
+                  )}
+                </div>
+                <Field name="confirm-password" label="Confirmar contraseña*" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Repetí la contraseña" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
+              </div>
+              <Field name="name" label="Nombre y apellido*" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" maxLength={FIELD_LIMITS.name} autoComplete="name" />
+              <div className="grid gap-2.5 md:grid-cols-[minmax(0,2fr)_minmax(5.5rem,0.6fr)_minmax(4.75rem,0.45fr)_minmax(4.75rem,0.45fr)]">
+                <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" />
+                <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
+                <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
+                <Field name="apartment" label="Dpto" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
+              </div>
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-white/78">
+                    Provincia*
+                  </label>
+                  <ProvinceSelect value={province} onChange={setProvince} compact />
+                </div>
+                <Field name="locality" label="Localidad*" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required />
+              </div>
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <Field name="postal-code" label="Código postal*" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required />
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-white/78">
+                    Teléfono móvil*
+                  </label>
+                  <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
+                    <input
+                      id="phone-area-code"
+                      name="phone-area-code"
+                      type="tel"
+                      aria-label="Característica"
+                      title="Característica"
+                      required
+                      value={phoneAreaCode}
+                      placeholder="341"
+                      maxLength={4}
+                      inputMode="numeric"
+                      autoComplete="tel-area-code"
+                      onChange={(event) => setPhoneAreaCode(onlyDigits(event.target.value, 4))}
+                      className="beyonix-login-input h-10 w-full rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus"
+                    />
+                    <input
+                      id="phone"
+                      name="phone"
+                      type="tel"
+                      aria-label="Teléfono móvil"
+                      title="Teléfono móvil"
+                      required
+                      value={phone}
+                      placeholder="6000000"
+                      maxLength={11}
+                      inputMode="numeric"
+                      autoComplete="tel-national"
+                      onChange={(event) => setPhone(onlyDigits(event.target.value, 11))}
+                      className="beyonix-login-input h-10 w-full rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus"
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] leading-4 text-white/45">
+                    Ingresá la característica y el número sin 0 ni 15.
+                  </p>
+                </div>
+              </div>
+              <TextareaField name="references" label="Referencias para llegar (máximo 80 caracteres)" value={references} onChange={setReferences} placeholder="Fachada blanca, portón negro, antes de llegar a la esquina." maxLength={80} />
             </>
           )}
 
-          {mode === "login" ? (
+          {mode === "login" && (
             <>
               <Field name="username" label="Email o usuario" type="text" value={identifier} onChange={setIdentifier} placeholder="usuario.tech o nombre@email.com" maxLength={FIELD_LIMITS.loginIdentifier} autoComplete="username" />
               <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Contraseña" maxLength={FIELD_LIMITS.password} autoComplete="current-password" showPasswordToggle />
-            </>
-          ) : (
-            <>
-              <div>
-                <Field name="password" label="Contraseña" type="password" value={password} onChange={setPassword} placeholder="Creá una contraseña segura" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
-                <PasswordRequirements password={password} />
-              </div>
-              <Field name="email" label="Email" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
-            </>
-          )}
-
-          {mode === "register" && (
-            <>
-              <div className="md:col-span-2 rounded-xl border border-beyonix-blue-light/12 bg-black/30 p-2.5">
-                <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                  <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-focus">
-                    Dirección de entrega
-                  </p>
-                  <p className="mt-0.5 text-xs leading-4 text-white/45">
-                    Datos necesarios para preparar envíos.
-                  </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-2 md:grid-cols-2">
-                  <Field name="street" label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" />
-                  <Field name="street-number" label="Número" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
-                  <Field name="floor" label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
-                  <Field name="apartment" label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
-                  <Field name="postal-code" label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required />
-                  <Field name="locality" label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required />
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-white/78">
-                      Provincia
-                    </label>
-                    <ProvinceSelect value={province} onChange={setProvince} compact />
-                  </div>
-                  <Field name="phone" label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel" required />
-                  <div className="md:col-span-2">
-                    <TextareaField name="references" label="Referencias para llegar" value={references} onChange={setReferences} placeholder="Entre Córdoba y Entre Ríos, fachada blanca, portón negro, antes de llegar a la esquina." maxLength={FIELD_LIMITS.references} />
-                  </div>
-                </div>
-              </div>
             </>
           )}
 
@@ -830,21 +908,25 @@ function LoginContent() {
             </div>
           )}
 
-          <button
-            type="submit"
-            aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
-            title={mode === "login" ? "Ingresar" : "Crear cuenta"}
-            disabled={loading}
-            className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50 md:col-span-2"
-          >
-            {loading ? (
-              <Loader2 className="size-5 animate-spin" />
-            ) : mode === "login" ? (
-              "Ingresar"
-            ) : (
-              "Crear cuenta"
-            )}
-          </button>
+          <div className={mode === "register" ? "flex justify-center pt-1" : ""}>
+            <button
+              type="submit"
+              aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
+              title={mode === "login" ? "Ingresar" : "Crear cuenta"}
+              disabled={loading}
+              className={`flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-[linear-gradient(135deg,#112A43_0%,#1e4d7b_100%)] px-10 font-semibold text-white shadow-lg shadow-black/35 transition-all hover:border-beyonix-sky hover:brightness-110 disabled:opacity-50 ${
+                mode === "login" ? "w-full" : "min-w-44"
+              }`}
+            >
+              {loading ? (
+                <Loader2 className="size-5 animate-spin" />
+              ) : mode === "login" ? (
+                "Ingresar"
+              ) : (
+                "Crear cuenta"
+              )}
+            </button>
+          </div>
           </form>
           </div>
         )}

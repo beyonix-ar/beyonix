@@ -1,8 +1,10 @@
 ﻿"use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
+  ArrowLeft,
   Bell,
   CheckCircle2,
   CreditCard,
@@ -21,8 +23,10 @@ import {
 
 import { useAuth } from "@/context/auth-context"
 import { usePedidos } from "@/hooks/use-pedidos"
+import { AdminClaimManager } from "@/components/claims/admin-claim-manager"
 import { parseDeliveryAddress } from "@/lib/delivery-address"
 import {
+  CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS,
   getOrderClaimResolutionLabel,
   getOrderClaimStatusLabel,
   getOrderClaimTypeLabel,
@@ -30,7 +34,8 @@ import {
 import {
   getAdminOrderLastSeenAt,
   getSupabaseErrorDetails,
-  isOrderNewerThanLastSeen,
+  hasOrderAttentionAfter,
+  orderHasPendingClaimAction,
   markOrdersSeenAndGetPreviousLastSeen,
   notifyOrderNotificationsChanged,
 } from "@/lib/admin/order-notifications"
@@ -57,6 +62,10 @@ type AdminNotice = { type: "ok" | "error"; message: string } | null
 type ForcedStatusRequest = {
   pedido: SupabasePedido
   nextEstado: "en_camino" | "entregado"
+} | null
+type TrackingStatusRequest = {
+  pedido: SupabasePedido
+  nextEstado: string
 } | null
 type AdminOrderDetailView = "detalle" | "factura" | "reclamo"
 
@@ -197,6 +206,22 @@ function getCompactPaymentMethodLabel(pedido: SupabasePedido) {
 
 function isTransferOrder(pedido: SupabasePedido) {
   return pedido.payment_method_id === "transferencia"
+}
+
+function isOrderPaymentConfirmed(pedido: SupabasePedido) {
+  return (
+    pedido.payment_status === "confirmado" ||
+    pedido.payment_status === "approved" ||
+    ["pagado", "enviado", "en_camino", "entregado"].includes(pedido.estado)
+  )
+}
+
+function needsInvoiceReminder(pedido: SupabasePedido) {
+  return (
+    isOrderPaymentConfirmed(pedido) &&
+    pedido.invoice_status !== "authorized" &&
+    Number(pedido.total ?? 0) > 0
+  )
 }
 
 function isVisibleAdminOrder(pedido: SupabasePedido) {
@@ -443,91 +468,23 @@ function EstadoBadge({ estado }: { estado: string }) {
   )
 }
 
-function ProductsSummary({ pedido }: { pedido: SupabasePedido }) {
-  const items = pedido.orden_items ?? []
-
-  if (!items.length) {
-    return (
-      <span title="Sin detalle cargado" className="text-xs text-white/55">
-        Sin detalle cargado
-      </span>
-    )
+function getOrderStatusSelectClassName(status: string) {
+  const styles: Record<string, string> = {
+    pendiente:
+      "!border-amber-400/35 !bg-amber-400/10 !text-amber-200 hover:!bg-amber-400/14",
+    pagado:
+      "!border-emerald-400/35 !bg-emerald-400/10 !text-emerald-200 hover:!bg-emerald-400/14",
+    enviado:
+      "!border-beyonix-blue-light/45 !bg-beyonix-blue/35 !text-beyonix-sky hover:!bg-beyonix-blue/45",
+    en_camino:
+      "!border-sky-300/35 !bg-sky-400/10 !text-sky-200 hover:!bg-sky-400/14",
+    entregado:
+      "!border-emerald-300/45 !bg-emerald-500/12 !text-emerald-100 hover:!bg-emerald-500/16",
+    cancelado:
+      "!border-red-400/35 !bg-red-400/10 !text-red-200 hover:!bg-red-400/14",
   }
 
-  const principal = items[0]
-  const productName =
-    principal.productos?.nombre ?? `Producto #${principal.producto_id}`
-
-  return (
-    <div className="min-w-0">
-      <p
-        title={productName}
-        className="truncate text-sm font-black leading-5 text-white/95"
-      >
-        {productName}
-      </p>
-    </div>
-  )
-}
-
-function QuantitySummary({ pedido }: { pedido: SupabasePedido }) {
-  const items = pedido.orden_items ?? []
-
-  if (!items.length) {
-    return <span className="text-xs text-white/55">-</span>
-  }
-
-  const totalQuantity = items.reduce(
-    (sum, item) => sum + Number(item.cantidad ?? 0),
-    0
-  )
-
-  return (
-    <p
-      title={`${totalQuantity} unidades en total`}
-      className="text-center text-sm font-black text-white/95"
-    >
-      {totalQuantity}
-    </p>
-  )
-}
-
-function ColorSummary({ pedido }: { pedido: SupabasePedido }) {
-  const items = pedido.orden_items ?? []
-
-  if (!items.length) {
-    return <span className="text-xs text-white/55">-</span>
-  }
-
-  const principalColor = getItemColor(items[0])
-
-  return (
-    <div className="min-w-0 text-center">
-      <p title={principalColor} className="truncate text-sm font-black text-white/95">
-        {principalColor}
-      </p>
-    </div>
-  )
-}
-
-function getOrderProductName(pedido: SupabasePedido) {
-  const principal = pedido.orden_items?.[0]
-
-  if (!principal) return "Sin detalle cargado"
-
-  return principal.productos?.nombre ?? `Producto #${principal.producto_id}`
-}
-
-function getOrderQuantity(pedido: SupabasePedido) {
-  return (pedido.orden_items ?? []).reduce(
-    (sum, item) => sum + Number(item.cantidad ?? 0),
-    0
-  )
-}
-
-function getOrderColor(pedido: SupabasePedido) {
-  const principal = pedido.orden_items?.[0]
-  return principal ? getItemColor(principal) : "Sin color"
+  return styles[status] ?? ""
 }
 
 function getOrderFinancialBreakdown(pedido: SupabasePedido) {
@@ -1089,6 +1046,7 @@ function PedidoDetailModal({
   onIssueInvoice,
   onDownloadInvoice,
   onClaimChange,
+  embedded = false,
 }: {
   pedido: SupabasePedido
   isSuperAdmin: boolean
@@ -1106,6 +1064,7 @@ function PedidoDetailModal({
     pedidoId: number
   ) => Promise<{ ok: boolean; message: string }>
   onClaimChange: (pedidoId: number, claim: SupabaseOrderClaim) => void
+  embedded?: boolean
 }) {
   const items = pedido.orden_items ?? []
   const financialBreakdown = getOrderFinancialBreakdown(pedido)
@@ -1127,9 +1086,20 @@ function PedidoDetailModal({
   } | null>(null)
   const [activeView, setActiveView] =
     useState<AdminOrderDetailView>("detalle")
+  const showInvoiceReminder = needsInvoiceReminder(pedido)
   const destination =
     [pedido.localidad, pedido.provincia].filter(Boolean).join(", ") ||
     "No informado"
+  const pendingClaim = (pedido.order_claims ?? []).find(
+    (claim) => claim.admin_needs_action,
+  )
+  const lastCustomerMessage = pendingClaim
+    ? [...(pendingClaim.order_claim_messages ?? [])]
+        .filter((message) => message.author_role === "cliente")
+        .sort((first, second) =>
+          new Date(second.created_at).getTime() - new Date(first.created_at).getTime(),
+        )[0]
+    : null
 
   const handleModalAndreaniAction = async (action: AndreaniAction) => {
     setAndreaniLoading(action)
@@ -1157,19 +1127,19 @@ function PedidoDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#0b0b0b] shadow-2xl shadow-black/80">
-        <header className="flex items-start justify-between gap-4 border-b border-white/8 bg-[#141414] px-5 py-4 sm:px-6">
-          <div className="min-w-0">
-            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+    <div className={embedded ? "min-w-0 p-2 sm:p-3" : "fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm"}>
+      <div className={embedded ? "mx-auto flex w-full max-w-[1320px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0b0b0b]" : "flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#0b0b0b] shadow-2xl shadow-black/80"}>
+        <header className="flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-white/8 bg-[#141414] px-3 py-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <p className="sr-only">
               Detalle del pedido
             </p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-black text-white">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-black text-white">
                 Pedido #{formatPublicOrderId(pedido.id)}
               </h2>
               <EstadoBadge estado={pedido.estado} />
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {[
                   ["detalle", "Detalle"],
                   ["factura", "Factura"],
@@ -1179,28 +1149,33 @@ function PedidoDetailModal({
                     key={view}
                     type="button"
                     onClick={() => setActiveView(view as AdminOrderDetailView)}
-                    className={`inline-flex h-8 cursor-pointer items-center justify-center rounded-xl border px-3 text-10px font-black uppercase tracking-wide transition-colors ${
+                    className={`relative inline-flex h-7 cursor-pointer items-center justify-center rounded-lg border px-2.5 text-[9px] font-black uppercase tracking-wide transition-colors ${
                       activeView === view
                         ? "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky"
                         : "border-beyonix-blue-light/25 bg-[#111111] text-white/68 hover:border-beyonix-blue-light/45 hover:text-beyonix-sky"
                     }`}
                   >
                     {label}
+                    {view === "factura" && showInvoiceReminder && (
+                      <span className="absolute -right-1.5 -top-1.5">
+                        <InvoiceReminderBell compact />
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
             </div>
-            <p className="mt-2 text-sm text-white/55">
+            <p className="text-xs text-white/55">
               {formatOrderDate(pedido.created_at)} · {getPaymentMethodLabel(pedido)}
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-4">
+          <div className="flex shrink-0 items-center gap-3">
             <div className="hidden text-right sm:block">
               <p className="text-10px font-bold uppercase tracking-widest text-white/38">
                 Total
               </p>
-              <p className="mt-1 text-xl font-black text-white">
+              <p className="text-lg font-black text-white">
                 {formatPrice(pedido.total)}
               </p>
             </div>
@@ -1209,25 +1184,31 @@ function PedidoDetailModal({
               title="Cerrar detalle del pedido"
               aria-label="Cerrar detalle del pedido"
               onClick={onClose}
-              className="flex size-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 text-white/62 transition-colors hover:border-white/22 hover:text-white"
+              className={`cursor-pointer items-center justify-center rounded-xl border border-white/10 text-white/62 transition-colors hover:border-white/22 hover:text-white ${embedded ? "inline-flex h-9 gap-2 px-3 text-xs font-bold" : "flex size-9"}`}
             >
-              <X className="size-5" />
+              {embedded ? <><ArrowLeft className="size-4" />Volver</> : <X className="size-5" />}
             </button>
           </div>
         </header>
 
-        <div className="custom-scrollbar overflow-y-auto bg-[#0b0b0b] px-4 py-4 sm:px-6 sm:py-5">
+        <div className={`custom-scrollbar bg-[#0b0b0b] p-2.5 sm:p-3 ${embedded ? "" : "overflow-y-auto"}`}>
           {activeView === "detalle" && (
             <>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="admin-order-data-panel admin-order-client-panel rounded-2xl border border-white/8 p-4 sm:p-5">
+              {pendingClaim && (
+                <div className="mb-3 flex flex-col gap-3 rounded-xl border border-red-400/25 bg-red-500/8 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0"><div className="flex items-center gap-2"><OrderRowAttentionBell /><span className="text-xs font-black uppercase tracking-wide text-red-200">Reclamo pendiente</span></div><p className="mt-2 truncate text-sm font-bold text-white">{lastCustomerMessage?.message || pendingClaim.description}</p><p className="mt-1 text-[11px] text-white/50">Último mensaje del cliente</p></div>
+                  <button type="button" onClick={() => setActiveView("reclamo")} className="h-9 shrink-0 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Gestionar reclamo</button>
+                </div>
+              )}
+          <div className="grid gap-3 lg:grid-cols-2">
+            <section className="admin-order-data-panel admin-order-client-panel rounded-xl border border-white/8 p-3">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Cliente
               </p>
-              <h3 className="mt-3 text-lg font-black text-white">
+              <h3 className="mt-1 text-base font-black text-white">
                 {pedido.cliente_nombre || "Cliente sin nombre"}
               </h3>
-              <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div className="mt-2 grid gap-1.5 text-sm sm:grid-cols-2">
                 <DetailValue label="Email" value={pedido.cliente_email || "No informado"} />
                 <DetailValue
                   label="Teléfono"
@@ -1237,13 +1218,13 @@ function PedidoDetailModal({
               </div>
             </section>
 
-            <section className="admin-order-data-panel admin-order-payment-panel rounded-2xl border border-white/8 p-4 sm:p-5">
+            <section className="admin-order-data-panel admin-order-payment-panel rounded-xl border border-white/8 p-3">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Pago
               </p>
-              <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h3 className="text-lg font-black text-white">
+                  <h3 className="text-base font-black text-white">
                     {getPaymentMethodLabel(pedido)}
                   </h3>
                   <p
@@ -1256,13 +1237,13 @@ function PedidoDetailModal({
                     {getPaymentStatusLabel(pedido.payment_status)}
                   </p>
                 </div>
-                <p className="text-xl font-black text-white">
+                <p className="text-lg font-black text-white">
                   {formatPrice(pedido.total)}
                 </p>
               </div>
 
               {isTransferOrder(pedido) ? (
-                <div className="mt-4 space-y-4 border-t border-white/8 pt-4">
+                <div className="mt-2 space-y-2 border-t border-white/8 pt-2">
                   <TransferPaymentBadges pedido={pedido} />
                   <div className="w-full max-w-56">
                     <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
@@ -1273,6 +1254,9 @@ function PedidoDetailModal({
                       compact
                       centered
                       value={pedido.estado}
+                      triggerClassName={getOrderStatusSelectClassName(
+                        pedido.estado,
+                      )}
                       onChange={(value) => onEstadoChange(pedido, value)}
                     >
                       <option value="pendiente">Pendiente</option>
@@ -1291,7 +1275,7 @@ function PedidoDetailModal({
                       <option value="cancelado">Cancelado/Rechazado</option>
                     </AdminSelect>
                   </div>
-                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 p-3">
+                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/8 p-2">
                     <DetailValue
                       label="Comprobante actual"
                       value={pedido.payment_proof_file_name || "Sin comprobante"}
@@ -1311,7 +1295,7 @@ function PedidoDetailModal({
                   </div>
                 </div>
               ) : (
-                <div className="mt-4 grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-2">
+                <div className="mt-2 grid gap-2 border-t border-white/8 pt-2 sm:grid-cols-2">
                   <DetailValue label="ID de pago" value={pedido.payment_id || "No informado"} />
                   <DetailValue
                     label="Fecha de acreditación"
@@ -1322,14 +1306,14 @@ function PedidoDetailModal({
             </section>
           </div>
 
-          <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+          <section className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="admin-order-info-card min-h-12 rounded-lg border border-white/8 px-2.5 py-2">
               <DetailValue
                 label="Subtotal productos"
                 value={formatPrice(financialBreakdown.productsSubtotal)}
               />
             </div>
-            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <div className="admin-order-info-card min-h-12 rounded-lg border border-white/8 px-2.5 py-2">
               <DetailValue
                 label="Descuento transferencia"
                 value={
@@ -1339,7 +1323,7 @@ function PedidoDetailModal({
                 }
               />
             </div>
-            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <div className="admin-order-info-card min-h-12 rounded-lg border border-white/8 px-2.5 py-2">
               <DetailValue
                 label="Envío"
                 value={
@@ -1349,7 +1333,7 @@ function PedidoDetailModal({
                 }
               />
             </div>
-            <div className="admin-order-total-card rounded-xl border border-beyonix-blue-light/20 p-3">
+            <div className="admin-order-total-card min-h-12 rounded-lg border border-beyonix-blue-light/20 px-2.5 py-2">
               <DetailValue label="Total cobrado" value={formatPrice(pedido.total)} />
             </div>
           </section>
@@ -1464,7 +1448,7 @@ function PedidoDetailModal({
           )}
 
           {activeView === "reclamo" && (
-          <AdminClaimsCenterSection
+          <AdminClaimManager
             pedido={pedido}
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
           />
@@ -1472,7 +1456,7 @@ function PedidoDetailModal({
 
           {activeView === "detalle" && (
             <>
-          <section className="admin-order-products-panel mt-4 rounded-2xl border border-white/8 p-4 sm:p-5">
+           <section className="admin-order-products-panel mt-3 rounded-xl border border-white/8 p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -1482,10 +1466,10 @@ function PedidoDetailModal({
                   {items.reduce((sum, item) => sum + Number(item.cantidad ?? 0), 0)} unidades
                 </p>
               </div>
-              <p className="text-lg font-black text-white">{formatPrice(pedido.total)}</p>
+              <p className="text-base font-black text-white">{formatPrice(pedido.total)}</p>
             </div>
 
-            <div className="mt-4 space-y-3">
+            <div className="mt-2 space-y-1.5">
               {items.length ? (
                 items.map((item) => {
                   const image = getItemImage(item)
@@ -1497,10 +1481,10 @@ function PedidoDetailModal({
                   return (
                     <article
                       key={item.id}
-                      className="admin-order-item-card grid gap-3 rounded-xl border border-white/8 p-3 sm:grid-cols-admin-order-modal-item sm:items-center"
+                      className="admin-order-item-card grid min-h-16 gap-2 rounded-lg border border-white/8 p-2 sm:grid-cols-admin-order-modal-item sm:items-center"
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/8 bg-white">
                           {image ? (
                             <img
                               src={image}
@@ -1512,8 +1496,8 @@ function PedidoDetailModal({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-black text-white">{productName}</p>
-                          <p className="mt-1 text-xs text-white/48">
+                          <p className="text-sm font-black text-white">{productName}</p>
+                          <p className="mt-0.5 text-[10px] text-white/48">
                             Producto #{item.producto_id}
                           </p>
                         </div>
@@ -1536,14 +1520,14 @@ function PedidoDetailModal({
             </div>
           </section>
 
-          <section className="admin-order-shipping-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
+          <section className="admin-order-shipping-panel mt-3 rounded-xl border border-beyonix-blue-light/20 p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                   Envío
                 </p>
-                <h3 className="mt-2 flex items-center gap-2 text-lg font-black text-white">
-                  <Truck className="size-5 text-beyonix-sky" />
+                <h3 className="mt-1 flex items-center gap-2 text-sm font-black text-white">
+                  <Truck className="size-4 text-beyonix-sky" />
                   {isLocalRosarioOrder
                     ? "Envío sin costo"
                     : pedido.shipping_type === "sucursal"
@@ -1551,7 +1535,7 @@ function PedidoDetailModal({
                       : "Envío a domicilio"}
                 </h3>
                 {isLocalRosarioOrder && (
-                  <p className="mt-1 text-sm font-medium text-beyonix-sky/88">
+                  <p className="mt-0.5 text-xs font-medium text-beyonix-sky/88">
                     Entrega local dentro de Rosario.
                   </p>
                 )}
@@ -1565,8 +1549,8 @@ function PedidoDetailModal({
               </span>
             </div>
 
-            <div className="mt-4 grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <div className="mt-2 grid gap-2 border-t border-white/8 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                 <DetailValue
                   label="Proveedor"
                   value={
@@ -1576,19 +1560,19 @@ function PedidoDetailModal({
                   }
                 />
               </div>
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                 <DetailValue label="Estado" value={getAndreaniStatus(pedido)} />
               </div>
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                 <DetailValue label="Seguimiento" value={tracking || "Pendiente"} />
               </div>
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                 <DetailValue
                   label="Envío ID"
                   value={pedido.andreani_envio_id || "Pendiente"}
                 />
               </div>
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                 <DetailValue
                   label="Costo"
                   value={
@@ -1600,7 +1584,7 @@ function PedidoDetailModal({
                   }
                 />
               </div>
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                 <DetailValue label="Destino" value={destination} />
               </div>
             </div>
@@ -1624,11 +1608,11 @@ function PedidoDetailModal({
               </p>
             )}
 
-            <div className="mt-4 rounded-2xl border border-white/8 bg-black/35 p-3">
+            <div className="mt-2 rounded-lg border border-white/8 bg-black/35 p-2">
               <p className="text-10px font-bold uppercase tracking-widest text-white/38">
                 Acciones de Andreani
               </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-5">
                 <button
                   type="button"
                   title="Generar envío en Andreani"
@@ -1653,7 +1637,7 @@ function PedidoDetailModal({
                 </button>
                 {pedido.tracking_url ? (
                   <ExternalLink
-                    href={pedido.tracking_url}
+                    href={normalizeExternalUrl(pedido.tracking_url) ?? "#"}
                     label="Ver envío"
                     ariaLabel={`Abrir seguimiento del pedido ${pedido.id}`}
                   />
@@ -1732,6 +1716,37 @@ function DetailValue({
   )
 }
 
+function OrderRowAttentionBell() {
+  return (
+    <span
+      title="Este pedido tiene una notificación pendiente"
+      className="inline-flex size-7 items-center justify-center rounded-full border border-red-400/35 bg-red-500 text-white shadow-lg shadow-red-950/35"
+    >
+      <Bell className="size-3.5" />
+    </span>
+  )
+}
+
+function InvoiceReminderBell({ compact = false }: { compact?: boolean }) {
+  return (
+    <span
+      title="Factura pendiente"
+      className={`inline-flex items-center justify-center rounded-full border border-red-300/45 bg-red-500 text-white shadow-lg shadow-red-950/35 ${
+        compact ? "size-4" : "size-7"
+      }`}
+    >
+      <Bell className={compact ? "size-2.5" : "size-3.5"} />
+    </span>
+  )
+}
+
+function normalizeExternalUrl(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
 function getAddressReference(value?: string | null) {
   const match = value?.match(/referencias?:\s*(.+)$/i)
   return match?.[1]?.trim() || ""
@@ -1768,11 +1783,11 @@ function CustomerAddressDetails({ pedido }: { pedido: SupabasePedido }) {
   const reference = getAddressReference(pedido.cliente_direccion)
 
   return (
-    <div className="sm:col-span-2 rounded-xl border border-white/8 bg-[#111111] p-3">
+    <div className="sm:col-span-2 rounded-lg border border-white/8 bg-[#111111] p-2">
       <p className="text-10px font-bold uppercase tracking-widest text-white/38">
         Dirección
       </p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
         <DetailValue
           label="Calle y número"
           value={streetLine || cleanAddress || "No informada"}
@@ -1827,6 +1842,111 @@ function ExternalLink({
     >
       {label}
     </a>
+  )
+}
+
+function TrackingStatusModal({
+  request,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  request: TrackingStatusRequest
+  loading: boolean
+  onCancel: () => void
+  onConfirm: (tracking: {
+    tracking_number: string | null
+    tracking_url: string | null
+  }) => void
+}) {
+  const [trackingNumber, setTrackingNumber] = useState("")
+  const [trackingUrl, setTrackingUrl] = useState("")
+
+  useEffect(() => {
+    setTrackingNumber(
+      request?.pedido.andreani_tracking ||
+        request?.pedido.tracking_number ||
+        ""
+    )
+    setTrackingUrl(request?.pedido.tracking_url || "")
+  }, [request?.pedido.id])
+
+  if (!request) return null
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-beyonix-blue-light/25 bg-[#101010] shadow-2xl shadow-black/80">
+        <div className="border-b border-white/8 bg-[linear-gradient(135deg,#102438_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
+          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+            Datos de despacho
+          </p>
+          <h2 className="mt-2 text-xl font-black text-white">
+            Marcar pedido #{formatPublicOrderId(request.pedido.id)} como
+            despachado
+          </h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
+            El número de seguimiento se muestra en el pedido del cliente. El
+            link es opcional y solo hace falta si tenés una URL pública para
+            consultar el envío.
+          </p>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          <label className="block">
+            <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+              Número de seguimiento
+            </span>
+            <input
+              value={trackingNumber}
+              onChange={(event) => setTrackingNumber(event.target.value)}
+              placeholder="Ej: 360001234567890"
+              className="mt-2 h-11 w-full rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+              Link de seguimiento opcional
+            </span>
+            <input
+              value={trackingUrl}
+              onChange={(event) => setTrackingUrl(event.target.value)}
+              placeholder="https://..."
+              className="mt-2 h-11 w-full rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+            />
+          </label>
+
+          <div className="rounded-2xl border border-white/8 bg-black/25 px-3 py-2 text-xs font-semibold leading-5 text-white/55">
+            Podés dejar ambos campos vacíos si todavía no tenés datos de
+            seguimiento. El estado se actualizará igual.
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onConfirm({
+                tracking_number: trackingNumber.trim() || null,
+                tracking_url: normalizeExternalUrl(trackingUrl),
+              })
+            }
+            disabled={loading}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+          >
+            {loading ? "Guardando..." : "Guardar despacho"}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1918,6 +2038,12 @@ function AdminClaimsCenterSection({
   const [resolution, setResolution] = useState<OrderClaimResolution | "">(
     claim?.resolution ?? ""
   )
+  const [offeredResolutions, setOfferedResolutions] = useState<
+    OrderClaimResolution[]
+  >(claim?.offered_resolutions ?? [])
+  const [closeAfterResolution, setCloseAfterResolution] = useState(
+    claim?.status === "cerrado"
+  )
   const [adminResponse, setAdminResponse] = useState(
     claim?.admin_response ?? ""
   )
@@ -1935,10 +2061,20 @@ function AdminClaimsCenterSection({
     if (!claim) return
     setStatus(claim.status)
     setResolution(claim.resolution ?? "")
+    setOfferedResolutions(claim.offered_resolutions ?? [])
+    setCloseAfterResolution(claim.status === "cerrado")
     setAdminResponse(claim.admin_response ?? "")
     setRejectionReason(claim.rejection_reason ?? "")
     setMessage("")
   }, [claim?.id])
+
+  const toggleOfferedResolution = (item: OrderClaimResolution) => {
+    setOfferedResolutions((current) =>
+      current.includes(item)
+        ? current.filter((currentItem) => currentItem !== item)
+        : [...current, item],
+    )
+  }
 
   const saveClaim = async () => {
     if (!claim) return
@@ -1963,8 +2099,9 @@ function AdminClaimsCenterSection({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          status,
+          status: closeAfterResolution ? "cerrado" : status,
           resolution: resolution || null,
+          offered_resolutions: offeredResolutions,
           admin_response: adminResponse,
           rejection_reason: rejectionReason,
         }),
@@ -1980,6 +2117,12 @@ function AdminClaimsCenterSection({
       }
 
       onClaimChange(data.claim)
+      setStatus(data.claim.status)
+      setResolution(data.claim.resolution ?? "")
+      setOfferedResolutions(data.claim.offered_resolutions ?? [])
+      setCloseAfterResolution(data.claim.status === "cerrado")
+      setAdminResponse(data.claim.admin_response ?? "")
+      setRejectionReason(data.claim.rejection_reason ?? "")
       setMessage("Reclamo actualizado.")
     } catch {
       setMessage("No se pudo actualizar el reclamo.")
@@ -2091,7 +2234,9 @@ function AdminClaimsCenterSection({
                 >
                   <option value="recibido">Recibido</option>
                   <option value="en_revision">En revisión</option>
-                  <option value="falta_informacion">Falta información</option>
+                  <option value="falta_informacion">
+                    En conversación
+                  </option>
                   <option value="aprobado">Aprobado</option>
                   <option value="rechazado">Rechazado</option>
                   <option value="cerrado">Cerrado</option>
@@ -2099,7 +2244,7 @@ function AdminClaimsCenterSection({
               </div>
               <div>
                 <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
-                  Resolución
+                  Resolución final
                 </p>
                 <AdminSelect
                   title="Resolución del reclamo"
@@ -2118,11 +2263,87 @@ function AdminClaimsCenterSection({
                 </AdminSelect>
               </div>
             </div>
+            <div className="rounded-xl border border-white/8 bg-[#111111] p-3">
+              <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                Soluciones para ofrecer al cliente
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS.map((item) => (
+                  <label
+                    key={item}
+                    className="flex min-h-10 items-center gap-2 rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-xs font-bold leading-5 text-white/72"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={offeredResolutions.includes(item)}
+                      onChange={() => toggleOfferedResolution(item)}
+                      className="size-4 accent-[#112A43]"
+                    />
+                    {getOrderClaimResolutionLabel(item)}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-xs font-semibold leading-5 text-white/48">
+                El cliente podrá elegir solo entre las opciones marcadas.
+              </p>
+            </div>
+            {claim.customer_selected_resolution && (
+              <div className="rounded-xl border border-emerald-300/20 bg-emerald-400/8 px-3 py-2 text-xs font-semibold leading-5 text-emerald-100">
+                El cliente eligió:{" "}
+                <span className="font-black">
+                  {getOrderClaimResolutionLabel(
+                    claim.customer_selected_resolution,
+                  )}
+                </span>
+                .
+              </div>
+            )}
+            {(claim.order_claim_messages ?? []).length > 0 && (
+              <div className="rounded-xl border border-white/8 bg-[#111111] p-3">
+                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  Conversación con el cliente
+                </p>
+                <div className="mt-3 space-y-2">
+                  {[...(claim.order_claim_messages ?? [])]
+                    .sort(
+                      (a, b) =>
+                        new Date(a.created_at).getTime() -
+                        new Date(b.created_at).getTime(),
+                    )
+                    .map((message) => {
+                      const isCustomer = message.author_role === "cliente"
+
+                      return (
+                        <div
+                          key={message.id}
+                          className={`rounded-xl border px-3 py-2 ${
+                            isCustomer
+                              ? "border-beyonix-blue-light/20 bg-beyonix-blue/15"
+                              : "border-white/8 bg-black/35"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-10px font-black uppercase tracking-widest text-white/45">
+                              {isCustomer ? "Cliente" : "BEYONIX"}
+                            </p>
+                            <p className="text-10px font-semibold text-white/34">
+                              {formatOrderDate(message.created_at)}
+                            </p>
+                          </div>
+                          <p className="mt-1 text-sm font-semibold leading-6 text-white/72">
+                            {message.message}
+                          </p>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
             <textarea
               value={adminResponse}
               onChange={(event) => setAdminResponse(event.target.value)}
               rows={4}
-              placeholder="Respuesta visible para el cliente."
+              placeholder="Respuesta visible para el cliente. El reclamo seguirá abierto hasta que lo marques como Cerrado."
               className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
             />
             <textarea
@@ -2132,6 +2353,22 @@ function AdminClaimsCenterSection({
               placeholder="Motivo de rechazo obligatorio si el estado es Rechazado."
               className="w-full resize-none rounded-xl border border-white/10 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
             />
+            <label className="flex items-start gap-2 rounded-xl border border-white/8 bg-[#111111] px-3 py-2 text-xs font-semibold leading-5 text-white/62">
+              <input
+                type="checkbox"
+                checked={closeAfterResolution}
+                onChange={(event) =>
+                  setCloseAfterResolution(event.target.checked)
+                }
+                className="mt-0.5 size-4 accent-[#112A43]"
+              />
+              Dar por finalizada la conversación con el cliente al guardar. Se
+              requiere una resolución final.
+            </label>
+            <p className="text-xs font-semibold leading-5 text-white/46">
+              Para seguir hablando, dejá el estado como En revisión o En
+              conversación. Solo Cerrado o Rechazado finalizan el reclamo.
+            </p>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs font-semibold text-white/48">
                 {message ||
@@ -2155,21 +2392,29 @@ function AdminClaimsCenterSection({
 
 export function AdminPedidos({
   notificationCount,
+  initialOrderId,
 }: {
   notificationCount: number
+  initialOrderId?: number
 }) {
+  const router = useRouter()
   const { isSuperAdmin } = useAuth()
   const { pedidos, loading, error, deletePedido, updatePedidoEstado, reloadPedidos } =
     usePedidos()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [previewPedido, setPreviewPedido] = useState<SupabasePedido | null>(null)
-  const [newOrderIds, setNewOrderIds] = useState<Set<number>>(() => new Set())
-  const [unreadOrdersLoaded, setUnreadOrdersLoaded] = useState(false)
+  const [attentionOrderIds, setAttentionOrderIds] = useState<Set<number>>(
+    () => new Set()
+  )
+  const [attentionOrdersLoaded, setAttentionOrdersLoaded] = useState(false)
   const [notice, setNotice] = useState<AdminNotice>(null)
   const [forcedStatusRequest, setForcedStatusRequest] =
     useState<ForcedStatusRequest>(null)
   const [forcedStatusLoading, setForcedStatusLoading] = useState(false)
+  const [trackingStatusRequest, setTrackingStatusRequest] =
+    useState<TrackingStatusRequest>(null)
+  const [trackingStatusLoading, setTrackingStatusLoading] = useState(false)
 
   useEffect(() => {
     if (!notice) return
@@ -2177,6 +2422,19 @@ export function AdminPedidos({
     const timeout = window.setTimeout(() => setNotice(null), 4000)
     return () => window.clearTimeout(timeout)
   }, [notice])
+
+  useEffect(() => {
+    if (!attentionOrdersLoaded) return
+    if (notificationCount <= attentionOrderIds.size) return
+
+    setAttentionOrdersLoaded(false)
+    void reloadPedidos()
+  }, [
+    attentionOrderIds.size,
+    attentionOrdersLoaded,
+    notificationCount,
+    reloadPedidos,
+  ])
 
   useEffect(() => {
     if (!previewPedido) return
@@ -2191,34 +2449,41 @@ export function AdminPedidos({
   }, [pedidos, previewPedido])
 
   useEffect(() => {
+    if (!initialOrderId || loading) return
+    const pedido = pedidos.find((item) => item.id === initialOrderId) ?? null
+    setPreviewPedido(pedido)
+  }, [initialOrderId, loading, pedidos])
+
+  useEffect(() => {
     if (loading) return
-    if (unreadOrdersLoaded) return
+    if (attentionOrdersLoaded) return
 
     let active = true
 
-    async function loadUnreadOrders() {
+    async function loadAttentionOrders() {
       try {
         const lastSeenAt = await getAdminOrderLastSeenAt()
 
         if (!active) return
 
         if (!lastSeenAt) {
-          setUnreadOrdersLoaded(true)
+          setAttentionOrdersLoaded(true)
           return
         }
 
-        setNewOrderIds(
+        setAttentionOrderIds(
           new Set(
             pedidos
               .filter(
                 (pedido) =>
                   isVisibleAdminOrder(pedido) &&
-                  isOrderNewerThanLastSeen(pedido.created_at, lastSeenAt)
+                  orderHasPendingClaimAction(pedido) ||
+                  hasOrderAttentionAfter(pedido, lastSeenAt)
               )
               .map((pedido) => pedido.id)
           )
         )
-        setUnreadOrdersLoaded(true)
+        setAttentionOrdersLoaded(true)
       } catch (error) {
         console.error(
           "ADMIN_ORDER_VIEW_MARK_ERROR",
@@ -2227,21 +2492,22 @@ export function AdminPedidos({
       }
     }
 
-    void loadUnreadOrders()
+    void loadAttentionOrders()
 
     return () => {
       active = false
     }
-  }, [loading, pedidos, unreadOrdersLoaded])
+  }, [loading, pedidos, attentionOrdersLoaded])
 
   const handleOpenPedido = (pedido: SupabasePedido) => {
-    setPreviewPedido(pedido)
+    router.push(`/admin/pedidos/${pedido.id}`)
 
-    if (!newOrderIds.has(pedido.id)) return
+    if (orderHasPendingClaimAction(pedido)) return
+    if (!attentionOrderIds.has(pedido.id)) return
 
-    const remainingUnread = new Set(newOrderIds)
+    const remainingUnread = new Set(attentionOrderIds)
     remainingUnread.delete(pedido.id)
-    setNewOrderIds(remainingUnread)
+    setAttentionOrderIds(remainingUnread)
 
     if (remainingUnread.size === 0) {
       void markOrdersSeenAndGetPreviousLastSeen()
@@ -2341,20 +2607,10 @@ export function AdminPedidos({
     }
 
     if (nextEstado === "enviado" || nextEstado === "en_camino") {
-      const trackingNumber =
-        prompt("Número de seguimiento (opcional)")?.trim() || null
-      const trackingUrl = prompt("Link de seguimiento (opcional)")?.trim() || null
-
-      const updated = await updatePedidoEstado(pedidoId, nextEstado, {
-        tracking_number: trackingNumber,
-        tracking_url: trackingUrl,
+      setTrackingStatusRequest({
+        pedido,
+        nextEstado,
       })
-      if (updated) {
-        setNotice({ type: "ok", message: "Estado del pedido actualizado." })
-        notifyOrderNotificationsChanged()
-      } else {
-        setNotice({ type: "error", message: "No se pudo actualizar el estado." })
-      }
       return
     }
 
@@ -2365,6 +2621,30 @@ export function AdminPedidos({
     } else {
       setNotice({ type: "error", message: "No se pudo actualizar el estado." })
     }
+  }
+
+  const confirmTrackingStatusChange = async (tracking: {
+    tracking_number: string | null
+    tracking_url: string | null
+  }) => {
+    if (!trackingStatusRequest) return
+
+    setTrackingStatusLoading(true)
+    const updated = await updatePedidoEstado(
+      trackingStatusRequest.pedido.id,
+      trackingStatusRequest.nextEstado,
+      tracking
+    )
+    setTrackingStatusLoading(false)
+
+    if (updated) {
+      setNotice({ type: "ok", message: "Estado del pedido actualizado." })
+      setTrackingStatusRequest(null)
+      notifyOrderNotificationsChanged()
+      return
+    }
+
+    setNotice({ type: "error", message: "No se pudo actualizar el estado." })
   }
 
   const confirmForcedStatusChange = async () => {
@@ -2391,6 +2671,7 @@ export function AdminPedidos({
     }
 
     setNotice({ type: "error", message: "No se pudo forzar el estado." })
+    setForcedStatusRequest(null)
   }
 
   const handlePaymentStatusChange = async (
@@ -2599,51 +2880,84 @@ export function AdminPedidos({
     }
   }
 
+  if (initialOrderId) {
+    if (loading) {
+      return <div className="flex min-h-[50vh] items-center justify-center"><LoaderCircle className="size-8 animate-spin text-beyonix-sky" /></div>
+    }
+
+    if (!previewPedido) {
+      return <div className="p-6"><button type="button" onClick={() => router.push("/admin?section=pedidos")} className="cursor-pointer text-sm font-bold text-beyonix-sky">← Volver a pedidos</button><p className="mt-4 text-sm text-white/60">No encontramos este pedido.</p></div>
+    }
+
+    return (
+      <>
+        <PedidoDetailModal
+          embedded
+          pedido={previewPedido}
+          isSuperAdmin={isSuperAdmin}
+          onClose={() => router.push("/admin?section=pedidos")}
+          onOpenPaymentProof={handleOpenPaymentProof}
+          onEstadoChange={(pedido, nextEstado) => void handleEstadoChange(pedido, nextEstado)}
+          onAndreaniAction={handleAndreaniAction}
+          onIssueInvoice={handleIssueInvoice}
+          onDownloadInvoice={handleDownloadInvoice}
+          onClaimChange={handleClaimChange}
+        />
+        <ForcedStatusConfirmModal request={forcedStatusRequest} loading={forcedStatusLoading} onCancel={() => setForcedStatusRequest(null)} onConfirm={() => void confirmForcedStatusChange()} />
+        <TrackingStatusModal request={trackingStatusRequest} loading={trackingStatusLoading} onCancel={() => setTrackingStatusRequest(null)} onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)} />
+      </>
+    )
+  }
+
   return (
     <div className="min-w-0 space-y-5 p-3 sm:p-5 lg:p-6 2xl:p-8">
       <div className="rounded-3xl border border-white/8 bg-black/80 p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="min-w-0">
-          <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-            Pedidos
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-black text-white/95 sm:text-3xl">
-              Gestión de pedidos
-            </h1>
-            <OrderNotificationBell
-              count={unreadOrdersLoaded ? newOrderIds.size : notificationCount}
-            />
+          <div className="min-w-0">
+            <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+              Pedidos
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-black text-white/95 sm:text-3xl">
+                Gestión de pedidos
+              </h1>
+              <OrderNotificationBell
+                count={
+                  attentionOrdersLoaded
+                    ? attentionOrderIds.size
+                    : notificationCount
+                }
+              />
+            </div>
+            <p className="mt-2 text-sm text-white/68">
+              Seguimiento de pago, productos, envío y prioridad de despacho.
+            </p>
           </div>
-          <p className="mt-2 text-sm text-white/68">
-            Seguimiento de pago, productos, envío y prioridad de despacho.
-          </p>
-        </div>
 
-        <div className="grid w-full gap-3 sm:grid-cols-admin-order-filters xl:max-w-xl">
-          <AdminTextInput
-            title="Buscar pedido"
-            ariaLabel="Buscar pedido"
-            placeholder="Buscar pedido, cliente o producto"
-            value={search}
-            icon={<Search className="size-4" />}
-            onChange={setSearch}
-          />
+          <div className="grid w-full gap-3 sm:grid-cols-admin-order-filters xl:max-w-xl">
+            <AdminTextInput
+              title="Buscar pedido"
+              ariaLabel="Buscar pedido"
+              placeholder="Buscar pedido, cliente o producto"
+              value={search}
+              icon={<Search className="size-4" />}
+              onChange={setSearch}
+            />
 
-          <AdminSelect
-            title="Filtrar estado"
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(value as StatusFilter)}
-          >
-            <option value="todos">Todos los estados</option>
-            <option value="pendiente">Pendientes</option>
-            <option value="pagado">Pagados</option>
-            <option value="enviado">Despachados</option>
-            <option value="en_camino">En camino</option>
-            <option value="entregado">Entregados</option>
-            <option value="cancelado">Cancelados/Rechazados</option>
-          </AdminSelect>
-        </div>
+            <AdminSelect
+              title="Filtrar estado"
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(value as StatusFilter)}
+            >
+              <option value="todos">Todos los estados</option>
+              <option value="pendiente">Pendientes</option>
+              <option value="pagado">Pagados</option>
+              <option value="enviado">Despachados</option>
+              <option value="en_camino">En camino</option>
+              <option value="entregado">Entregados</option>
+              <option value="cancelado">Cancelados/Rechazados</option>
+            </AdminSelect>
+          </div>
         </div>
       </div>
 
@@ -2692,25 +3006,18 @@ export function AdminPedidos({
             <div className="hidden grid-cols-admin-orders-pro gap-3 rounded-2xl border border-white/8 bg-black/90 px-4 py-3 2xl:grid">
                 {[
                   "Pedido",
-                  "Cliente",
-                  "Productos",
-                  "Cantidad",
-                  "Color",
                   "Fecha",
+                  "Cliente",
                   "Estado",
                   "Despacho",
-                  "Pago",
+                  "Método de pago",
                   "Total",
                   "Acciones",
                 ].map((label) => (
                   <span
                     key={label}
                     title={label}
-                    className={`text-11px font-bold uppercase tracking-wide text-white/55 ${
-                      ["Pedido", "Cliente", "Productos"].includes(label)
-                        ? "text-left"
-                        : "text-center"
-                    }`}
+                    className="text-center text-11px font-bold uppercase tracking-wide text-white/55"
                   >
                     {label}
                   </span>
@@ -2719,15 +3026,17 @@ export function AdminPedidos({
 
               {pedidosFiltrados.map((pedido) => {
                 const dispatch = getDispatchAlert(pedido)
-                const isNewOrder = newOrderIds.has(pedido.id)
+                const hasPendingAttention = attentionOrderIds.has(pedido.id)
+                const hasPendingClaim = orderHasPendingClaimAction(pedido)
+                const showInvoiceReminder = needsInvoiceReminder(pedido)
                 const paymentMethod = getCompactPaymentMethodLabel(pedido)
                 const orderDate = formatOrderDateParts(pedido.created_at)
                 return (
                   <article
                     key={pedido.id}
                     className={`min-w-0 overflow-hidden rounded-2xl border p-4 transition sm:p-5 2xl:px-4 2xl:py-4 ${
-                      isNewOrder
-                        ? "border-emerald-400/35 bg-emerald-500/10 shadow-lg shadow-emerald-500/5 hover:bg-emerald-500/15"
+                      hasPendingAttention
+                        ? "border-red-400/35 bg-red-500/8 shadow-lg shadow-red-950/10 hover:bg-red-500/10"
                         : "border-white/8 bg-zinc-900/75 hover:border-beyonix-blue-light/45 hover:bg-zinc-900"
                     }`}
                   >
@@ -2738,12 +3047,10 @@ export function AdminPedidos({
                             <p className="text-base font-black text-white">
                               {formatPublicOrderId(pedido.id)}
                             </p>
+                            {showInvoiceReminder && <InvoiceReminderBell />}
                             <EstadoBadge estado={pedido.estado} />
-                            {isNewOrder && (
-                              <span className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-9px font-black uppercase tracking-widest text-emerald-300">
-                                Nuevo
-                              </span>
-                            )}
+                            {hasPendingAttention && <OrderRowAttentionBell />}
+                            {hasPendingClaim && <span className="rounded-full border border-red-400/30 bg-red-500/12 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-200">Reclamo pendiente</span>}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -2757,28 +3064,18 @@ export function AdminPedidos({
                       </div>
 
                       <div className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-4 py-4 sm:grid-cols-3">
-                        <MobileOrderField label="Cliente">
-                          <p title={getOrderUsername(pedido)} className="truncate">
-                            {getOrderUsername(pedido)}
-                          </p>
-                        </MobileOrderField>
-                        <MobileOrderField label="Producto">
-                          <p title={getOrderProductName(pedido)} className="truncate">
-                            {getOrderProductName(pedido)}
-                          </p>
-                        </MobileOrderField>
-                        <MobileOrderField label="Cantidad">
-                          {getOrderQuantity(pedido)}
-                        </MobileOrderField>
-                        <MobileOrderField label="Color">
-                          <p title={getOrderColor(pedido)} className="truncate">
-                            {getOrderColor(pedido)}
-                          </p>
-                        </MobileOrderField>
                         <MobileOrderField label="Fecha">
                           <p>{orderDate.date}</p>
                           <p className="text-xs font-medium text-white/48">
                             {orderDate.time}
+                          </p>
+                        </MobileOrderField>
+                        <MobileOrderField label="Cliente">
+                          <p
+                            title={getOrderUsername(pedido)}
+                            className="truncate uppercase"
+                          >
+                            {getOrderUsername(pedido).toLocaleUpperCase("es-AR")}
                           </p>
                         </MobileOrderField>
                       </div>
@@ -2835,35 +3132,28 @@ export function AdminPedidos({
                       </div>
                     </div>
 
-                    <div className="hidden min-w-0 grid-cols-admin-orders-pro items-center gap-3 2xl:grid">
-                  <div className="min-w-0">
-                    <div>
+                    <div className="hidden min-w-0 grid-cols-admin-orders-pro items-center gap-3 text-center 2xl:grid">
+                  <div className="relative flex min-w-0 items-center justify-center">
+                    {showInvoiceReminder && (
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2">
+                        <InvoiceReminderBell />
+                      </span>
+                    )}
+                    <div className="text-center">
                       <p className="text-11px font-black uppercase tracking-wide text-beyonix-sky">
                         #BX-
                       </p>
                       <p className="mt-0.5 text-sm font-black text-white/95">
                         {formatPublicOrderNumber(pedido.id)}
                       </p>
-                      {isNewOrder && (
-                        <span className="mt-1 inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-9px font-black uppercase tracking-widest text-emerald-300">
-                          Nuevo
+                      {hasPendingAttention && (
+                        <span className="mt-1 inline-flex">
+                          <OrderRowAttentionBell />
                         </span>
                       )}
+                      {hasPendingClaim && <span className="mt-1 block text-[9px] font-black uppercase tracking-wide text-red-300">Reclamo pendiente</span>}
                     </div>
                   </div>
-
-                  <div className="min-w-0">
-                    <p
-                      title={getOrderUsername(pedido)}
-                      className="truncate text-sm font-bold leading-5 text-white/92"
-                    >
-                      {getOrderUsername(pedido)}
-                    </p>
-                  </div>
-
-                  <ProductsSummary pedido={pedido} />
-                  <QuantitySummary pedido={pedido} />
-                  <ColorSummary pedido={pedido} />
 
                   <div title={formatOrderDate(pedido.created_at)} className="text-center">
                     <p className="text-sm font-black leading-5 text-white/95">
@@ -2871,6 +3161,15 @@ export function AdminPedidos({
                     </p>
                     <p className="text-11px font-bold leading-4 text-white/52">
                       {orderDate.time}
+                    </p>
+                  </div>
+
+                  <div className="flex min-w-0 justify-center">
+                    <p
+                      title={getOrderUsername(pedido)}
+                      className="truncate text-sm font-bold uppercase leading-5 text-white/92"
+                    >
+                      {getOrderUsername(pedido).toLocaleUpperCase("es-AR")}
                     </p>
                   </div>
 
@@ -2953,6 +3252,12 @@ export function AdminPedidos({
         loading={forcedStatusLoading}
         onCancel={() => setForcedStatusRequest(null)}
         onConfirm={() => void confirmForcedStatusChange()}
+      />
+      <TrackingStatusModal
+        request={trackingStatusRequest}
+        loading={trackingStatusLoading}
+        onCancel={() => setTrackingStatusRequest(null)}
+        onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)}
       />
     </div>
   )

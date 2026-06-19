@@ -7,6 +7,7 @@ import type {
 export const ORDER_CLAIM_BUCKET = "order-claim-evidence"
 export const ORDER_CLAIM_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 export const ORDER_CLAIM_VIDEO_MAX_BYTES = 40 * 1024 * 1024
+export const ORDER_CLAIM_FILE_MAX_BYTES = 10 * 1024 * 1024
 export const TRANSPORT_CLAIM_WINDOW_HOURS = 48
 export const WARRANTY_CLAIM_WINDOW_DAYS = 30
 
@@ -28,6 +29,15 @@ export const ORDER_CLAIM_RESOLUTIONS: OrderClaimResolution[] = [
   "otro",
 ]
 
+export const CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS: OrderClaimResolution[] =
+  [
+    "cambio_producto",
+    "reintegro_total",
+    "reintegro_parcial",
+    "cupon_descuento",
+    "otro",
+  ]
+
 export const ACTIVE_ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
   "recibido",
   "en_revision",
@@ -37,10 +47,10 @@ export const ACTIVE_ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
 
 export function getOrderClaimStatusLabel(status?: string | null) {
   const labels: Record<string, string> = {
-    recibido: "Recibido",
+    recibido: "En revisión",
     en_revision: "En revisión",
-    falta_informacion: "Falta información",
-    aprobado: "Aprobado",
+    falta_informacion: "Esperando respuesta del cliente",
+    aprobado: "Solución ofrecida",
     rechazado: "Rechazado",
     cerrado: "Cerrado",
   }
@@ -103,9 +113,15 @@ export function getClaimFileValidationError(file: File | null | undefined) {
 
   const isImage = file.type.startsWith("image/")
   const isVideo = file.type.startsWith("video/")
+  const isDocument = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+  ].includes(file.type)
 
-  if (!isImage && !isVideo) {
-    return "Subí imágenes o videos válidos."
+  if (!isImage && !isVideo && !isDocument) {
+    return "Subí una imagen, un video, un PDF o un documento válido."
   }
 
   if (isImage && file.size > ORDER_CLAIM_IMAGE_MAX_BYTES) {
@@ -114,6 +130,10 @@ export function getClaimFileValidationError(file: File | null | undefined) {
 
   if (isVideo && file.size > ORDER_CLAIM_VIDEO_MAX_BYTES) {
     return "El video puede pesar hasta 40 MB."
+  }
+
+  if (isDocument && file.size > ORDER_CLAIM_FILE_MAX_BYTES) {
+    return "Cada archivo puede pesar hasta 10 MB."
   }
 
   return ""

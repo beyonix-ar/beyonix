@@ -950,11 +950,11 @@ export default function CheckoutPage() {
                   </Link>
                   <Link
                     href="/cuenta?tab=ordenes"
-                    aria-label="Ir a Mis órdenes"
-                    title="Ir a Mis órdenes"
+                    aria-label="Ir a Mis compras"
+                    title="Ir a Mis compras"
                     className="block px-4 py-3 text-sm font-medium text-white/78 transition-colors hover:bg-beyonix-blue hover:text-white"
                   >
-                    Mis órdenes
+                    Mis compras
                   </Link>
                   <Link
                     href="/cuenta?tab=seguridad"

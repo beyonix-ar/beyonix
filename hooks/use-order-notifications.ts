@@ -49,9 +49,31 @@ export function useOrderNotifications() {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "ordenes",
+        },
+        () => {
+          void loadNotificationCount()
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_claims",
+        },
+        () => {
+          void loadNotificationCount()
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "order_claim_messages",
         },
         () => {
           void loadNotificationCount()

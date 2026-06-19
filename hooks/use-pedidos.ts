@@ -115,7 +115,12 @@ export function usePedidos() {
           setPedidos((prev) =>
             prev.map((p) =>
               p.id === updated.id
-                ? updated
+                ? {
+                    ...p,
+                    ...updated,
+                    orden_items: p.orden_items,
+                    order_claims: p.order_claims,
+                  }
                 : p
             )
           )

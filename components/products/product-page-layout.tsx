@@ -12,6 +12,7 @@ import {
 
 import { ProductDetailsGallery } from "./product-details-gallery"
 import { ProductDetailsPanel } from "./product-details-panel"
+import { ProductReviews } from "./product-reviews"
 
 interface ProductPageLayoutProps {
   producto: SupabaseProducto
@@ -52,8 +53,9 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
   }
 
   return (
-    <main className="grid min-h-screen bg-black pt-24 text-white lg:grid-cols-2">
-      <ProductDetailsGallery
+    <main className="min-h-screen bg-black pt-24 text-white">
+      <div className="grid lg:grid-cols-2">
+        <ProductDetailsGallery
         images={images}
         selectedImage={selectedImage}
         productName={producto.nombre}
@@ -63,7 +65,7 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
         onSelectImage={setSelectedImage}
       />
 
-      <ProductDetailsPanel
+        <ProductDetailsPanel
         product={producto}
         selectedColor={selectedColor}
         onColorChange={handleColorChange}
@@ -79,7 +81,9 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
         onViewCart={openCart}
         isInCart={isInCart(producto.id, selectedColor)}
         cartQuantity={cartQuantity}
-      />
+        />
+      </div>
+      <ProductReviews productId={producto.id} />
     </main>
   )
 }

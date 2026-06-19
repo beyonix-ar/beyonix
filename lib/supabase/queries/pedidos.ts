@@ -103,20 +103,35 @@ export async function updatePedidoEstado(
     tracking_url?: string | null
   }
 ) {
-  const payload = {
-    estado,
-    ...(estado === "entregado" ? { delivered_at: new Date().toISOString() } : {}),
-    ...(tracking ?? {}),
-  }
-  const { data, error } = await supabase
-    .from("ordenes")
-    .update(payload)
-    .eq("id", id)
-    .select()
-    .single()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
-  if (error) throw error
-  return data as SupabasePedido
+  if (!session?.access_token) {
+    throw new Error("La sesión administrativa venció.")
+  }
+
+  const response = await fetch(`/api/admin/pedidos/${id}/status`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      estado,
+      ...(tracking ?? {}),
+    }),
+  })
+  const data = (await response.json()) as {
+    order?: SupabasePedido
+    error?: string
+  }
+
+  if (!response.ok || !data.order) {
+    throw new Error(data.error || "No se pudo actualizar el estado del pedido.")
+  }
+
+  return data.order
 }
 
 export async function deletePedido(id: number) {

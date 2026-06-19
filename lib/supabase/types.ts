@@ -253,9 +253,14 @@ export interface SupabaseOrderClaim {
   admin_response?: string | null
   rejection_reason?: string | null
   resolution?: OrderClaimResolution | null
+  offered_resolutions?: OrderClaimResolution[]
+  customer_selected_resolution?: OrderClaimResolution | null
   closed_at?: string | null
   created_at: string
   updated_at: string
+  last_customer_message_at?: string | null
+  last_admin_response_at?: string | null
+  admin_needs_action?: boolean
   order_claim_files?: SupabaseOrderClaimFile[]
   order_claim_messages?: SupabaseOrderClaimMessage[]
 }
@@ -264,6 +269,7 @@ export interface SupabaseReview {
   id: number
   user_id: string
   order_id: number
+  product_id?: number | null
   rating: number
   comment: string
   nickname: string

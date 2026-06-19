@@ -6,7 +6,7 @@ export function PasswordRequirements({ password }: { password: string }) {
   const requirements = getPasswordRequirements(password)
 
   return (
-    <div className="mt-1.5 rounded-lg border border-white/10 bg-black/40 p-2.5">
+    <div className="mt-1.5 rounded-lg border border-beyonix-blue-light/30 bg-[#05090d] p-2.5 shadow-2xl shadow-black/70">
       <p className="text-xs font-semibold text-white/70">
         Requisitos de contraseña:
       </p>

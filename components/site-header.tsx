@@ -120,15 +120,15 @@ export function SiteHeader() {
               </button>
 
               {catOpen && (
-                <div className="absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-lg border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
+                <div className="absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-lg border border-beyonix-blue-light/30 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
                   {categories.map((category, i) => (
                     <Link
                       key={category.id}
                       href={`/categorias/${category.slug}`}
                       onClick={() => setCatOpen(false)}
-                      className={`block px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white ${
+                      className={`block px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky ${
                         i < categories.length - 1
-                          ? "border-b border-white/6"
+                          ? "border-b border-beyonix-blue-light/12"
                           : ""
                       }`}
                     >
@@ -143,7 +143,7 @@ export function SiteHeader() {
                   <Link
                     href="/categorias"
                     onClick={() => setCatOpen(false)}
-                    className="flex items-center gap-2 border-t border-white/6 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-white/5"
+                    className="flex items-center gap-2 border-t border-beyonix-blue-light/12 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-beyonix-blue/25"
                   >
                     Ver todas →
                   </Link>
@@ -168,9 +168,9 @@ export function SiteHeader() {
                     aria-label="Abrir menú de usuario"
                     title="Abrir menú de usuario"
                     onClick={() => setUserOpen((v) => !v)}
-                    className="flex h-12 max-w-300px cursor-pointer items-center gap-2.5 rounded-full border border-white/10 bg-white/3 pl-1.5 pr-3.5 text-white transition-all hover:border-white/22 hover:bg-white/7"
+                    className="flex h-12 max-w-300px cursor-pointer items-center gap-2.5 rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white transition-all hover:border-beyonix-blue-light hover:bg-beyonix-blue/18"
                   >
-                    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white text-black shadow-sm shadow-black/40">
+                    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-beyonix-blue-light/45 bg-white text-black shadow-sm shadow-black/40">
                       {user.avatarUrl ? (
                         <img
                           src={user.avatarUrl}
@@ -192,11 +192,11 @@ export function SiteHeader() {
                   </button>
 
                   {userOpen && (
-                    <div className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-lg border border-white/10 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
+                    <div className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-lg border border-beyonix-blue-light/30 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
                       <Link
                         href="/cuenta"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
+                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
                       >
                         <User className="size-3.5 shrink-0" />
                         Mi cuenta
@@ -204,7 +204,7 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=datos"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
+                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
                       >
                         <User className="size-3.5 shrink-0" />
                         Mis datos
@@ -212,15 +212,15 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
+                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
                       >
                         <Package className="size-3.5 shrink-0" />
-                        Mis órdenes
+                        Mis compras
                       </Link>
                       <Link
                         href="/cuenta?tab=seguridad"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
+                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
                       >
                         <ShieldCheck className="size-3.5 shrink-0" />
                         Seguridad
@@ -229,7 +229,7 @@ export function SiteHeader() {
                         <Link
                           href="/admin"
                           onClick={() => setUserOpen(false)}
-                          className="flex items-center gap-2.5 border-b border-white/6 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-white/5 hover:text-white"
+                          className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-beyonix-blue/25 hover:text-white"
                         >
                           <ShieldCheck className="size-3.5 shrink-0" />
                           Panel administrador
@@ -243,7 +243,7 @@ export function SiteHeader() {
                           logout()
                           setUserOpen(false)
                         }}
-                        className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-white/5 hover:text-white"
+                        className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
                       >
                         <LogOut className="size-3.5 shrink-0" />
                         Cerrar sesión
@@ -254,7 +254,7 @@ export function SiteHeader() {
               ) : (
                 <Link
                   href="/login?redirect=/cuenta"
-                  className="flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/10 px-3.5 text-sm font-medium text-white/72 transition-colors hover:border-white/20 hover:text-white"
+                  className="flex h-10 cursor-pointer items-center gap-2 rounded-full border border-beyonix-blue-light/30 px-3.5 text-sm font-medium text-white/72 transition-colors hover:border-beyonix-blue-light hover:text-white"
                 >
                   <User className="size-3.5" />
                   Iniciar sesión
@@ -267,7 +267,7 @@ export function SiteHeader() {
               onClick={openCart}
               aria-label="Abrir carrito"
               title="Abrir carrito"
-              className="relative flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/3 px-3 text-white transition-all hover:border-white/22 hover:bg-white/7"
+              className="relative flex h-10 cursor-pointer items-center gap-2 rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/10 px-3 text-white transition-all hover:border-beyonix-blue-light hover:bg-beyonix-blue/18"
             >
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white text-black">
                 <ShoppingBag className="size-3.5" />
@@ -355,7 +355,7 @@ export function SiteHeader() {
                     onClick={() => setMobileOpen(false)}
                     className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
                   >
-                    Mis órdenes
+                    Mis compras
                   </Link>
                   <Link
                     href="/cuenta?tab=seguridad"

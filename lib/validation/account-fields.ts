@@ -31,13 +31,13 @@ export const FIELD_LIMITS = {
   username: 18,
   name: 60,
   email: 120,
-  address: 90,
+  address: 180,
   province: 30,
   postalCode: 8,
   phone: 15,
   password: 20,
   loginIdentifier: 120,
-  references: 180,
+  references: 80,
 }
 
 function isArgentinaProvince(value: string) {

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
+import type { SupabasePedido } from "@/lib/supabase/types"
 
 export const ORDER_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:order-notifications-changed"
@@ -88,12 +89,54 @@ export async function getAdminOrderLastSeenAt() {
 }
 
 export function isOrderNewerThanLastSeen(
-  orderCreatedAt: string,
+  orderCreatedAt: string | null | undefined,
+  lastSeenAt: string | null
+) {
+  if (!orderCreatedAt) return false
+  if (!lastSeenAt) return true
+
+  return new Date(orderCreatedAt).getTime() > new Date(lastSeenAt).getTime()
+}
+
+function getTime(value?: string | null) {
+  if (!value) return 0
+
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : 0
+}
+
+export function getOrderAttentionAt(order: SupabasePedido) {
+  const dates = [order.created_at, order.return_requested_at]
+
+  for (const claim of order.order_claims ?? []) {
+    if (typeof claim.admin_needs_action === "boolean") continue
+    dates.push(claim.created_at)
+
+    for (const message of claim.order_claim_messages ?? []) {
+      if (message.author_role === "cliente") {
+        dates.push(message.created_at)
+      }
+    }
+  }
+
+  const latestTime = Math.max(...dates.map(getTime))
+  return latestTime > 0 ? new Date(latestTime).toISOString() : null
+}
+
+export function orderHasPendingClaimAction(order: SupabasePedido) {
+  return (order.order_claims ?? []).some((claim) => claim.admin_needs_action === true)
+}
+
+export function hasOrderAttentionAfter(
+  order: SupabasePedido,
   lastSeenAt: string | null
 ) {
   if (!lastSeenAt) return true
 
-  return new Date(orderCreatedAt).getTime() > new Date(lastSeenAt).getTime()
+  const attentionAt = getOrderAttentionAt(order)
+  if (!attentionAt) return false
+
+  return getTime(attentionAt) > getTime(lastSeenAt)
 }
 
 function isVisibleAdminOrderNotification(order: {
@@ -123,10 +166,11 @@ export async function getNewOrderNotificationCount() {
 
     if (!view.available) return 0
 
-    const { data, error } = await supabase
+    const { data: orders, error } = await supabase
       .from("ordenes")
-      .select("payment_method_id, payment_id, payment_status")
-      .gt("created_at", view.last_seen_at)
+      .select(
+        "id, created_at, return_requested_at, payment_method_id, payment_id, payment_status"
+      )
 
     if (error) {
       console.error(
@@ -136,7 +180,41 @@ export async function getNewOrderNotificationCount() {
       return 0
     }
 
-    return (data ?? []).filter(isVisibleAdminOrderNotification).length
+    const visibleOrderIds = new Set(
+      (orders ?? [])
+        .filter(isVisibleAdminOrderNotification)
+        .map((order) => order.id)
+    )
+    const attentionOrderIds = new Set<number>(
+      (orders ?? [])
+        .filter(isVisibleAdminOrderNotification)
+        .filter((order) =>
+          [order.created_at, order.return_requested_at].some((date) =>
+            isOrderNewerThanLastSeen(date, view.last_seen_at)
+          )
+        )
+        .map((order) => order.id)
+    )
+
+    const { data: claims, error: claimsError } = await supabase
+      .from("order_claims")
+      .select("id, order_id")
+      .eq("admin_needs_action", true)
+
+    if (claimsError) {
+      console.error(
+        "ORDER_CLAIMS_NOTIFICATIONS_COUNT_ERROR",
+        getSupabaseErrorDetails(claimsError)
+      )
+    } else {
+      for (const claim of claims ?? []) {
+        if (visibleOrderIds.has(claim.order_id)) {
+          attentionOrderIds.add(claim.order_id)
+        }
+      }
+    }
+
+    return attentionOrderIds.size
   } catch (error) {
     console.error(
       "ORDER_NOTIFICATIONS_UNEXPECTED_ERROR",

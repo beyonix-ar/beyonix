@@ -98,7 +98,7 @@ function SidebarItem({
         {item.notificationCount ? (
           <span
             title={`${item.notificationCount} pedidos requieren atención`}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue px-2 py-1 text-10px font-black text-beyonix-sky"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-400/35 bg-red-500 px-2 py-1 text-10px font-black text-white shadow-lg shadow-red-950/35"
           >
             <Bell className="size-3" />
             {item.notificationCount}
@@ -123,7 +123,7 @@ function getStoredAdminSection() {
   return getAdminSection(window.localStorage.getItem(ADMIN_SECTION_STORAGE_KEY))
 }
 
-export function AdminClient() {
+export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, isLoading, isInternal, isOperator, isSuperAdmin, logout } =
@@ -131,6 +131,7 @@ export function AdminClient() {
   const { notificationCount } = useOrderNotifications()
   const [section, setSection] = useState<AdminSection>(
     () =>
+      (initialOrderId ? "pedidos" : null) ||
       getAdminSection(searchParams.get("section")) ||
       getStoredAdminSection() ||
       "dashboard"
@@ -190,6 +191,10 @@ export function AdminClient() {
   }, [isOperator, isSuperAdmin, notificationCount])
 
   useEffect(() => {
+    if (initialOrderId) {
+      setSection("pedidos")
+      return
+    }
     const nextSection = getAdminSection(searchParams.get("section"))
 
     if (!nextSection) {
@@ -216,7 +221,7 @@ export function AdminClient() {
 
     setSection(nextSection)
     window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, nextSection)
-  }, [searchParams, navigation, router])
+  }, [searchParams, navigation, router, initialOrderId])
 
   useEffect(() => {
     if (isLoading) return
@@ -282,7 +287,7 @@ export function AdminClient() {
     dashboard: <AdminDashboard onNavigate={goToSection} />,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
-    pedidos: <AdminPedidos notificationCount={notificationCount} />,
+    pedidos: <AdminPedidos notificationCount={notificationCount} initialOrderId={initialOrderId} />,
     usuarios: !isOperator ? <AdminUsuarios /> : null,
     auditoria: isSuperAdmin ? <AdminAuditoria /> : null,
   }

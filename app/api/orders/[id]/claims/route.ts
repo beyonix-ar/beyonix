@@ -2,8 +2,10 @@ import { NextResponse } from "next/server"
 
 import {
   ACTIVE_ORDER_CLAIM_STATUSES,
+  CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS,
   ORDER_CLAIM_BUCKET,
   getClaimFileValidationError,
+  getOrderClaimResolutionLabel,
   isClaimWindowOpen,
   sanitizeClaimFileName,
 } from "@/lib/order-claims"
@@ -12,11 +14,7 @@ import { createClient } from "@/lib/supabase/server"
 import type { OrderClaimType } from "@/lib/supabase/types"
 
 const CLAIM_TYPES = ["transporte_48hs", "garantia_beyonix"]
-const CONFIRMATION_KEYS = [
-  "confirm_real_info",
-  "confirm_kept_packaging",
-  "confirm_no_misuse",
-]
+const PROBLEM_TYPES = ["danado", "incorrecto", "falla", "devolucion", "otro"]
 
 function stripBucket(path: string) {
   return path.startsWith(`${ORDER_CLAIM_BUCKET}/`)
@@ -170,9 +168,9 @@ export async function POST(
       return NextResponse.json({ error: "No encontramos el reclamo." }, { status: 404 })
     }
 
-    if (claim.status !== "falta_informacion") {
+    if (!ACTIVE_ORDER_CLAIM_STATUSES.includes(claim.status as any)) {
       return NextResponse.json(
-        { error: "Este reclamo no admite información adicional en este momento." },
+        { error: "Este reclamo ya no admite respuestas." },
         { status: 409 },
       )
     }
@@ -182,6 +180,20 @@ export async function POST(
         { error: "Agregá una respuesta o nueva evidencia." },
         { status: 400 },
       )
+    }
+
+    if (files.length > 0 && claim.status !== "falta_informacion") {
+      const { count } = await admin
+        .from("order_claim_files")
+        .select("id", { count: "exact", head: true })
+        .eq("claim_id", claim.id)
+
+      if ((count ?? 0) > 0) {
+        return NextResponse.json(
+          { error: "La evidencia ya fue enviada. Podrás adjuntar más archivos si BEYONIX solicita información adicional." },
+          { status: 409 },
+        )
+      }
     }
 
     if (message.length >= 5) {
@@ -204,6 +216,7 @@ export async function POST(
 
   const claimType = String(formData.get("claimType") ?? "") as OrderClaimType
   const failureType = String(formData.get("failureType") ?? "").trim()
+  const problemType = String(formData.get("problemType") ?? "").trim()
   const startedAt = String(formData.get("startedAt") ?? "").trim()
 
   if (!CLAIM_TYPES.includes(claimType)) {
@@ -217,13 +230,8 @@ export async function POST(
     )
   }
 
-  for (const key of CONFIRMATION_KEYS) {
-    if (formData.get(key) !== "true") {
-      return NextResponse.json(
-        { error: "Debés confirmar las declaraciones obligatorias." },
-        { status: 400 },
-      )
-    }
+  if (problemType && !PROBLEM_TYPES.includes(problemType)) {
+    return NextResponse.json({ error: "Motivo de reclamo inválido." }, { status: 400 })
   }
 
   if (description.length < 20) {
@@ -247,35 +255,6 @@ export async function POST(
     )
   }
 
-  const roleCounts = new Map<string, number>()
-  fileRoles.forEach((role) => roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1))
-
-  if (claimType === "transporte_48hs") {
-    for (const role of ["embalaje_exterior", "producto_completo", "danio"]) {
-      if (!roleCounts.get(role)) {
-        return NextResponse.json(
-          { error: "Faltan fotos obligatorias para el reclamo de entrega." },
-          { status: 400 },
-        )
-      }
-    }
-  }
-
-  if (claimType === "garantia_beyonix") {
-    if (!failureType || !startedAt) {
-      return NextResponse.json(
-        { error: "Completá el tipo de falla y cuándo empezó." },
-        { status: 400 },
-      )
-    }
-    if (!roleCounts.get("video")) {
-      return NextResponse.json(
-        { error: "Para garantía por funcionamiento necesitamos un video." },
-        { status: 400 },
-      )
-    }
-  }
-
   const { data: claim, error: claimError } = await admin
     .from("order_claims")
     .insert({
@@ -283,7 +262,7 @@ export async function POST(
       user_id: user.id,
       claim_type: claimType,
       status: "recibido",
-      failure_type: failureType || null,
+      failure_type: problemType || failureType || null,
       started_at: startedAt || null,
       description,
     })
@@ -305,6 +284,104 @@ export async function POST(
   })
 
   await uploadFiles(admin, claim.id, user.id, files, fileRoles)
+  return getClaimResponse(admin, claim.id)
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: "Debés iniciar sesión." }, { status: 401 })
+  }
+
+  const { id } = await params
+  const orderId = Number(id)
+
+  if (!Number.isFinite(orderId) || orderId <= 0) {
+    return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
+  }
+
+  const body = (await request.json()) as {
+    claimId?: unknown
+    selectedResolution?: unknown
+  }
+  const claimId = Number(body.claimId)
+  const selectedResolution = String(body.selectedResolution ?? "")
+
+  if (!Number.isFinite(claimId) || claimId <= 0) {
+    return NextResponse.json({ error: "Reclamo inválido." }, { status: 400 })
+  }
+
+  if (
+    !CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS.includes(
+      selectedResolution as any,
+    )
+  ) {
+    return NextResponse.json({ error: "Solución inválida." }, { status: 400 })
+  }
+
+  const admin = createAdminClient()
+  const { data: claim, error: claimError } = await admin
+    .from("order_claims")
+    .select("*")
+    .eq("id", claimId)
+    .eq("order_id", orderId)
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (claimError || !claim) {
+    return NextResponse.json(
+      { error: "No encontramos el reclamo." },
+      { status: 404 },
+    )
+  }
+
+  if (
+    !["recibido", "en_revision", "falta_informacion", "aprobado"].includes(
+      claim.status,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Este reclamo ya no admite selección de solución." },
+      { status: 409 },
+    )
+  }
+
+  if (!(claim.offered_resolutions ?? []).includes(selectedResolution)) {
+    return NextResponse.json(
+      { error: "Esta solución no está disponible para tu reclamo." },
+      { status: 409 },
+    )
+  }
+
+  const { error } = await admin
+    .from("order_claims")
+    .update({
+      customer_selected_resolution: selectedResolution,
+      status: "aprobado",
+    })
+    .eq("id", claim.id)
+
+  if (error) {
+    return NextResponse.json(
+      { error: "No se pudo guardar la solución elegida." },
+      { status: 500 },
+    )
+  }
+
+  await admin.from("order_claim_messages").insert({
+    claim_id: claim.id,
+    author_user_id: user.id,
+    author_role: "cliente",
+    message: `El cliente eligió: ${getOrderClaimResolutionLabel(selectedResolution)}.`,
+  })
+
   return getClaimResponse(admin, claim.id)
 }
 

@@ -1,38 +1,50 @@
-"use client"
+﻿"use client"
 // @refresh reset
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  Bell,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Camera,
+  CreditCard,
   Download,
   Eye,
   EyeOff,
   ExternalLink,
+  FileText,
   Hash,
   Lock,
   LogOut,
   Mail,
   MapPin,
+  MessageCircle,
+  Package,
+  Paperclip,
   Phone,
+  Send,
   Shield,
   ShoppingBag,
+  Star,
+  Truck,
   User,
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
 import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
+import { CustomerClaimExperience } from "@/components/claims/customer-claim-experience"
+import type { ClaimProblemId } from "@/components/claims/customer-claim-experience"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
 import {
   getClaimDeadline,
   getClaimFileValidationError,
+  getOrderClaimResolutionLabel,
   getOrderClaimStatusLabel,
   getOrderClaimTypeLabel,
   isClaimWindowOpen,
@@ -40,6 +52,8 @@ import {
 import type {
   OrderClaimType,
   SupabaseOrderClaim,
+  SupabaseOrderClaimFile,
+  SupabaseOrderClaimMessage,
   SupabasePedido,
 } from "@/lib/supabase/types"
 import {
@@ -76,6 +90,38 @@ function formatCuentaInvoiceNumber(
   number?: number | null,
 ) {
   return `${String(point ?? 0).padStart(4, "0")}-${String(number ?? 0).padStart(8, "0")}`
+}
+
+function formatOrderCardDate(value: string) {
+  const parts = new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).formatToParts(new Date(value))
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? ""
+  return `${part("day")}/${part("month")}/${part("year")} · ${part("hour")}:${part("minute")}`
+}
+
+function isInvoiceAvailable(order: SupabasePedido) {
+  return order.invoice_status === "authorized"
+}
+
+const DOWNLOADED_INVOICES_STORAGE_KEY = "beyonix:downloaded-invoices"
+
+function CustomerInvoiceBell() {
+  return (
+    <span
+      title="Tu factura ya está disponible"
+      className="inline-flex size-5 items-center justify-center rounded-full border border-red-300/45 bg-red-500 text-white shadow-lg shadow-red-950/35"
+    >
+      <Bell className="size-3" />
+    </span>
+  )
 }
 
 function getClientOrderStatusBadge(order: SupabasePedido) {
@@ -224,8 +270,6 @@ function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[] {
     Boolean(order.tracking_number || order.andreani_tracking)
   const isDelivered = estado === "entregado"
   const isInTransit = estado === "en_camino" || isDelivered || isAndreaniOrderInTransit(order)
-  const hasTracking = Boolean(order.tracking_number || order.andreani_tracking)
-
   if (isCanceled) {
     return [
       {
@@ -250,7 +294,7 @@ function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[] {
       },
       {
         label: "Comprobante inválido",
-        detail: "Pago no recibido. Puedes subir un nuevo comprobante.",
+        detail: "Pago no recibido. Podés subir un nuevo comprobante.",
         tone: "danger",
       },
     ]
@@ -278,15 +322,15 @@ function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[] {
     },
     {
       label: "Despacho",
-      detail: hasTracking
-        ? "Seguimiento " + (order.tracking_number || order.andreani_tracking)
-        : "Te enviaremos el seguimiento cuando salga.",
+      detail: isDispatched
+        ? "Tu pedido ya fue despachado."
+        : "Te avisaremos cuando salga.",
       tone: isDispatched ? "done" : "pending",
     },
     {
       label: "En camino",
       detail: isInTransit
-        ? "Andreani est? llevando el pedido al domicilio indicado."
+        ? "Andreani está llevando el pedido al domicilio indicado."
         : "Este paso se activa cuando Andreani inicia el transporte.",
       tone: isInTransit ? (isDelivered ? "done" : "current") : "pending",
     },
@@ -341,12 +385,184 @@ function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
   )
 }
 
+function normalizeTrackingUrl(value?: string | null) {
+  const trimmed = value?.trim()
+  if (!trimmed) return ""
+
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
+function OrderTrackingPanel({ order }: { order: SupabasePedido }) {
+  const trackingNumber = order.andreani_tracking || order.tracking_number || ""
+  const trackingUrl = normalizeTrackingUrl(order.tracking_url)
+
+  if (!trackingNumber && !trackingUrl) return null
+
+  return (
+    <div className="mb-4 rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/12 p-3">
+      <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+        Seguimiento del envío
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-white/45">
+            Número de seguimiento
+          </p>
+          <p className="mt-1 break-all text-sm font-black text-white">
+            {trackingNumber || "Pendiente"}
+          </p>
+        </div>
+        {trackingUrl && (
+          <a
+            href={trackingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-10 shrink-0 cursor-pointer self-center items-center justify-center rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover"
+          >
+            Ver seguimiento
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function formatClaimDeadline(value: Date) {
   return new Intl.DateTimeFormat("es-AR", {
     dateStyle: "short",
-    timeStyle: "short",
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(value)
+}
+
+function formatClaimActivityDate(value: string) {
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(value))
+}
+
+function getClaimTitle(claim: SupabaseOrderClaim) {
+  if (claim.claim_type === "transporte_48hs") return "Reclamo por entrega"
+  if (claim.claim_type === "garantia_beyonix") return "Garantía del producto"
+  return getOrderClaimTypeLabel(claim.claim_type)
+}
+
+function getClaimStatusBadge(status: SupabaseOrderClaim["status"]) {
+  const styles: Record<SupabaseOrderClaim["status"], string> = {
+    recibido: "border-sky-300/35 bg-[#112A43] text-white",
+    en_revision: "border-amber-300/40 bg-amber-400/12 text-white",
+    falta_informacion: "border-beyonix-blue-light/45 bg-[#112A43] text-white",
+    aprobado: "border-emerald-300/35 bg-emerald-400/12 text-white",
+    rechazado: "border-red-300/35 bg-red-500/12 text-white",
+    cerrado: "border-emerald-300/35 bg-emerald-500/12 text-white",
+  }
+
+  return styles[status] ?? "border-white/10 bg-[#181818] text-white"
+}
+
+function getClaimStatusText(status: SupabaseOrderClaim["status"]) {
+  if (status === "falta_informacion") return "Esperando respuesta del cliente"
+  if (status === "aprobado" || status === "cerrado") return "Resuelto"
+  return getOrderClaimStatusLabel(status)
+}
+
+function getClaimOrderProduct(order: SupabasePedido) {
+  const items = order.orden_items ?? []
+
+  if (!items.length) return "No informado"
+  if (items.length === 1) {
+    return items[0].productos?.nombre ?? `Producto #${items[0].producto_id}`
+  }
+
+  const firstName = items[0].productos?.nombre ?? `Producto #${items[0].producto_id}`
+  return `${firstName} + ${items.length - 1} más`
+}
+
+function getClaimInitialFiles(claim: SupabaseOrderClaim) {
+  const firstCustomerMessage = (claim.order_claim_messages ?? [])
+    .filter((message) => message.author_role === "cliente")
+    .sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    )[0]
+
+  if (!firstCustomerMessage) return claim.order_claim_files ?? []
+
+  return (claim.order_claim_files ?? []).filter(
+    (file) =>
+      new Date(file.created_at).getTime() <=
+      new Date(firstCustomerMessage.created_at).getTime() + 60_000,
+  )
+}
+
+function getReplyFilesList(files: Record<string, File[]>) {
+  return Object.values(files).flat()
+}
+
+function ClaimAttachmentChip({
+  file,
+}: {
+  file: SupabaseOrderClaimFile
+}) {
+  const isImage = file.mime_type?.startsWith("image/")
+  const isVideo = file.mime_type?.startsWith("video/")
+
+  return (
+    <a
+      href={file.signedUrl ?? undefined}
+      target="_blank"
+      rel="noreferrer"
+      title={file.file_name}
+      className="group inline-flex max-w-full items-center gap-2 rounded-xl border border-beyonix-blue-light/25 bg-black px-2.5 py-2 text-xs font-bold text-white transition-colors hover:border-beyonix-blue-light hover:bg-[#112A43]"
+    >
+      {isImage && file.signedUrl ? (
+        <span
+          className="size-8 shrink-0 rounded-lg border border-white/10 bg-cover bg-center"
+          style={{ backgroundImage: `url(${file.signedUrl})` }}
+        />
+      ) : isVideo ? (
+        <Camera className="size-4 shrink-0 text-beyonix-sky" />
+      ) : (
+        <FileText className="size-4 shrink-0 text-beyonix-sky" />
+      )}
+      <span className="min-w-0 truncate">{file.file_name}</span>
+      <Download className="size-3.5 shrink-0 text-white/70 group-hover:text-white" />
+    </a>
+  )
+}
+
+function ClaimFilePicker({
+  label,
+  role,
+  accept,
+  required,
+  onFiles,
+}: {
+  label: string
+  role: string
+  accept: string
+  required?: boolean
+  onFiles: (role: string, files: File[]) => void | Promise<void>
+}) {
+  return (
+    <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 bg-[#181818] px-3 text-xs font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-blue-light hover:bg-[#112A43]">
+      <Paperclip className="size-4 text-beyonix-sky" />
+      {label}
+      {required ? "*" : ""}
+      <input
+        type="file"
+        accept={accept}
+        multiple={!accept.includes("video")}
+        onChange={(event) =>
+          onFiles(role, Array.from(event.target.files ?? []))
+        }
+        className="sr-only"
+      />
+    </label>
+  )
 }
 
 function ClaimFileInput({
@@ -380,6 +596,371 @@ function ClaimFileInput({
   )
 }
 
+function ClaimHeaderCard({
+  claim,
+  order,
+  deliveredAt,
+}: {
+  claim: SupabaseOrderClaim
+  order: SupabasePedido
+  deliveredAt: string
+}) {
+  const isTransportClaim = claim.claim_type === "transporte_48hs"
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+            Centro de reclamos
+          </p>
+          <h3 className="mt-2 text-2xl font-black text-white">
+            {getClaimTitle(claim)}
+          </h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={`rounded-full border px-3 py-1 text-10px font-black uppercase tracking-wide ${getClaimStatusBadge(claim.status)}`}>
+              {getClaimStatusText(claim.status)}
+            </span>
+            <span className="rounded-full border border-beyonix-blue-light/25 bg-[#181818] px-3 py-1 text-10px font-black uppercase tracking-wide text-white">
+              Reclamo #{claim.id}
+            </span>
+            <span className="rounded-full border border-white/8 bg-[#181818] px-3 py-1 text-10px font-black uppercase tracking-wide text-white">
+              Pedido #{formatPublicOrderId(order.id)}
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-2 text-sm font-bold text-white sm:grid-cols-2 xl:min-w-[25rem]">
+          <div className="rounded-xl border border-white/8 bg-[#181818] p-3">
+            <p className="text-10px font-black uppercase tracking-widest text-white/55">
+              Producto
+            </p>
+            <p className="mt-1 truncate text-white" title={getClaimOrderProduct(order)}>
+              {getClaimOrderProduct(order)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/8 bg-[#181818] p-3">
+            <p className="text-10px font-black uppercase tracking-widest text-white/55">
+              Tiempo estimado
+            </p>
+            <p className="mt-1 text-white">
+              {isTransportClaim
+                ? "Respuesta antes de 48hs hábiles"
+                : `Garantía hasta ${formatClaimDeadline(
+                    getClaimDeadline(deliveredAt, "garantia_beyonix"),
+                  )}`}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ClaimSummaryCard({
+  claim,
+}: {
+  claim: SupabaseOrderClaim
+}) {
+  const initialFiles = getClaimInitialFiles(claim)
+
+  return (
+    <aside className="space-y-3">
+      <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+        <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+          Resumen del problema
+        </p>
+        <h4 className="mt-3 text-lg font-black text-white">
+          Problema informado
+        </h4>
+        <p className="mt-2 text-sm font-semibold leading-6 text-white">
+          {claim.description}
+        </p>
+        {claim.failure_type && (
+          <div className="mt-3 rounded-xl border border-white/8 bg-[#181818] p-3">
+            <p className="text-10px font-black uppercase tracking-widest text-white/55">
+              Tipo de falla
+            </p>
+            <p className="mt-1 text-sm font-bold text-white">
+              {claim.failure_type}
+            </p>
+          </div>
+        )}
+        {claim.started_at && (
+          <div className="mt-3 rounded-xl border border-white/8 bg-[#181818] p-3">
+            <p className="text-10px font-black uppercase tracking-widest text-white/55">
+              Inicio informado
+            </p>
+            <p className="mt-1 text-sm font-bold text-white">
+              {claim.started_at}
+            </p>
+          </div>
+        )}
+        {initialFiles.length > 0 && (
+          <div className="mt-4">
+            <p className="mb-2 text-10px font-black uppercase tracking-widest text-white/55">
+              Evidencia inicial
+            </p>
+            <div className="grid gap-2">
+              {initialFiles.map((file) => (
+                <ClaimAttachmentChip key={file.id} file={file} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {(claim.offered_resolutions ?? []).length > 0 && (
+        <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+            Solución
+          </p>
+          {claim.customer_selected_resolution ? (
+            <p className="mt-3 text-sm font-semibold leading-6 text-white">
+              Elegiste{" "}
+              <span className="font-black">
+                {getOrderClaimResolutionLabel(
+                  claim.customer_selected_resolution,
+                )}
+              </span>
+              . BEYONIX continuará la gestión desde el chat.
+            </p>
+          ) : (
+            <p className="mt-3 text-sm font-semibold leading-6 text-white">
+              BEYONIX te ofreció opciones de solución. Elegí una desde el chat
+              para continuar.
+            </p>
+          )}
+        </div>
+      )}
+    </aside>
+  )
+}
+
+function ClaimMessageBubble({
+  message,
+}: {
+  message: SupabaseOrderClaimMessage
+}) {
+  const isCustomer = message.author_role === "cliente"
+
+  return (
+    <div className={`flex ${isCustomer ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[min(42rem,92%)] rounded-2xl border px-4 py-3 ${
+          isCustomer
+            ? "border-beyonix-blue-light/35 bg-[#112A43] text-white"
+            : "border-beyonix-blue-light/20 bg-[#181818] text-white"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-10px font-black uppercase tracking-widest text-white">
+            {isCustomer ? "Vos" : "BEYONIX"}
+          </p>
+          <p className="text-10px font-semibold text-white/70">
+            {formatCuentaOrderDate(message.created_at)}
+          </p>
+        </div>
+        <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-white">
+          {message.message}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function ClaimChat({
+  claim,
+  onChooseResolution,
+  loading,
+}: {
+  claim: SupabaseOrderClaim
+  onChooseResolution: (claim: SupabaseOrderClaim, resolution: string) => void
+  loading: boolean
+}) {
+  const messages = [...(claim.order_claim_messages ?? [])].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  )
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+      <div className="flex items-center justify-between gap-3 border-b border-white/8 pb-3">
+        <div>
+          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+            Chat de soporte
+          </p>
+          <h4 className="mt-1 text-lg font-black text-white">
+            Conversación con BEYONIX
+          </h4>
+        </div>
+        <span className="rounded-full border border-beyonix-blue-light/25 bg-[#181818] px-3 py-1 text-10px font-black uppercase tracking-wide text-white">
+          {messages.length} mensajes
+        </span>
+      </div>
+      <div className="mt-4 space-y-3">
+        {messages.length ? (
+          messages.map((message) => (
+            <ClaimMessageBubble key={message.id} message={message} />
+          ))
+        ) : (
+          <div className="rounded-2xl border border-white/8 bg-[#181818] p-4 text-sm font-semibold text-white">
+            Todavía no hay mensajes en este reclamo.
+          </div>
+        )}
+      </div>
+      {(claim.offered_resolutions ?? []).length > 0 &&
+        !claim.customer_selected_resolution && (
+          <div className="mt-4 rounded-2xl border border-beyonix-blue-light/20 bg-[#181818] p-3">
+            <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+              Soluciones disponibles
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {(claim.offered_resolutions ?? []).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => onChooseResolution(claim, item)}
+                  disabled={loading}
+                  className="min-h-10 cursor-pointer rounded-xl border border-beyonix-blue-light/30 bg-[#112A43] px-3 py-2 text-left text-xs font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+                >
+                  {getOrderClaimResolutionLabel(item)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+    </div>
+  )
+}
+
+function ClaimReplyBox({
+  reply,
+  replyFiles,
+  loading,
+  error,
+  onReplyChange,
+  onFiles,
+  onSubmit,
+}: {
+  reply: string
+  replyFiles: Record<string, File[]>
+  loading: boolean
+  error: string
+  onReplyChange: (value: string) => void
+  onFiles: (role: string, files: File[]) => void | Promise<void>
+  onSubmit: () => void
+}) {
+  const files = getReplyFilesList(replyFiles)
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+      <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+        Responder
+      </p>
+      <textarea
+        value={reply}
+        onChange={(event) => onReplyChange(event.target.value)}
+        rows={4}
+        placeholder="Escribí tu mensaje..."
+        className="mt-3 w-full resize-none rounded-2xl border border-beyonix-blue-light/25 bg-[#181818] px-4 py-3 text-sm font-semibold leading-6 text-white outline-none placeholder:text-white/55 focus:border-beyonix-blue-light"
+      />
+      {files.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {files.map((file) => (
+            <span
+              key={`${file.name}-${file.size}`}
+              title={file.name}
+              className="inline-flex max-w-56 items-center gap-2 rounded-xl border border-beyonix-blue-light/25 bg-[#181818] px-3 py-2 text-xs font-bold text-white"
+            >
+              <FileText className="size-4 shrink-0 text-beyonix-sky" />
+              <span className="truncate">{file.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="mt-3 rounded-xl border border-red-300/25 bg-red-500/10 px-3 py-2 text-xs font-bold text-white">
+          {error}
+        </p>
+      )}
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <ClaimFilePicker
+          label="Adjuntar archivo"
+          role="evidencia_adicional"
+          accept="image/*,video/*"
+          onFiles={onFiles}
+        />
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={loading}
+          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/45 bg-[#112A43] px-5 text-xs font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+        >
+          <Send className="size-4" />
+          {loading ? "Enviando..." : "Enviar respuesta"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ClaimActivityTimeline({ claim }: { claim: SupabaseOrderClaim }) {
+  const sortedMessages = [...(claim.order_claim_messages ?? [])].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  )
+  const events = [
+    {
+      at: claim.created_at,
+      label: "Reclamo creado",
+    },
+    ...sortedMessages
+      .slice(1)
+      .map((message) => ({
+        at: message.created_at,
+        label:
+          message.author_role === "cliente"
+            ? "Cliente respondió"
+            : "BEYONIX respondió",
+      })),
+    ...(claim.order_claim_files ?? [])
+      .filter(
+        (file) =>
+          new Date(file.created_at).getTime() >
+          new Date(claim.created_at).getTime() + 60_000,
+      )
+      .map((file) => ({
+        at: file.created_at,
+        label: `Archivo agregado: ${file.file_name}`,
+      })),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+
+  if (events.length <= 1) return null
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+      <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+        Actividad del reclamo
+      </p>
+      <div className="mt-3 space-y-2">
+        {events.map((event, index) => (
+          <div
+            key={`${event.at}-${index}`}
+            className="flex gap-3 text-xs font-semibold leading-5 text-white"
+          >
+            <span className="mt-1 size-2 shrink-0 rounded-full bg-beyonix-sky" />
+            <p className="min-w-0">
+              <span className="text-white/70">
+                {formatClaimActivityDate(event.at)}
+              </span>{" "}
+              — {event.label}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
   const deliveredAt = order.delivered_at || order.created_at
   const [claims, setClaims] = useState<SupabaseOrderClaim[]>(
@@ -407,6 +988,7 @@ function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
       claim.status,
     ),
   )
+  const displayedClaim = activeClaim ?? claims[0]
 
   useEffect(() => {
     let active = true
@@ -574,123 +1156,158 @@ function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
     }
   }
 
+  const submitResolutionChoice = async (
+    claim: SupabaseOrderClaim,
+    selectedResolution: string,
+  ) => {
+    setLoading(true)
+    setError("")
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}/claims`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          claimId: claim.id,
+          selectedResolution,
+        }),
+      })
+      const data = (await response.json()) as {
+        claim?: SupabaseOrderClaim
+        error?: string
+      }
+
+      if (!response.ok || !data.claim) {
+        setError(data.error || "No se pudo guardar la solución elegida.")
+        return
+      }
+
+      setClaims((current) =>
+        current.map((currentClaim) =>
+          currentClaim.id === data.claim?.id ? data.claim : currentClaim,
+        ),
+      )
+    } catch {
+      setError("No se pudo guardar la solución elegida.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (displayedClaim) {
+    const conversationOpen = Boolean(activeClaim)
+
+    return (
+      <section className="mb-4 space-y-4 rounded-2xl border border-beyonix-blue-light/20 bg-black p-4">
+        <ClaimHeaderCard
+          claim={displayedClaim}
+          order={order}
+          deliveredAt={deliveredAt}
+        />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.36fr)]">
+          <div className="min-w-0 space-y-4">
+            <ClaimChat
+              claim={displayedClaim}
+              loading={loading}
+              onChooseResolution={(claim, resolution) =>
+                void submitResolutionChoice(claim, resolution)
+              }
+            />
+            {conversationOpen ? (
+              <ClaimReplyBox
+                reply={reply}
+                replyFiles={replyFiles}
+                loading={loading}
+                error={error}
+                onReplyChange={setReply}
+                onFiles={setExtraFiles}
+                onSubmit={() => void submitExtraInfo(displayedClaim)}
+              />
+            ) : (
+              <div className="rounded-2xl border border-white/8 bg-[#141414] p-4 text-sm font-semibold leading-6 text-white">
+                Este reclamo está finalizado. La conversación permanece
+                disponible como referencia.
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 space-y-4">
+            <ClaimSummaryCard claim={displayedClaim} />
+            <ClaimActivityTimeline claim={displayedClaim} />
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   return (
-    <section className="mb-4 rounded-2xl border border-beyonix-blue-light/20 bg-[linear-gradient(135deg,#0b1722_0%,#111111_58%,#181818_100%)] p-4">
-      <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-        Centro de reclamos
-      </p>
-      <h3 className="mt-2 text-xl font-black text-white">
-        Solicitar revisión
-      </h3>
-      <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/68">
-        Elegí el motivo correcto para que podamos revisar la evidencia y darte
-        una respuesta desde este mismo pedido.
-      </p>
-
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => setSelectedType("transporte_48hs")}
-          disabled={!transportOpen || Boolean(activeClaim)}
-          className={`rounded-2xl border p-4 text-left transition-colors ${
-            selectedType === "transporte_48hs"
-              ? "border-beyonix-blue-light/45 bg-beyonix-blue/30"
-              : "border-white/8 bg-[#111111] hover:bg-[#141414]"
-          } disabled:cursor-not-allowed disabled:opacity-50`}
-        >
-          <p className="text-sm font-black text-white">
-            Mi producto llegó dañado
-          </p>
-          <p className="mt-2 text-xs font-semibold leading-5 text-white/62">
-            Si el paquete llegó golpeado, abierto o el producto sufrió daños
-            durante el envío, cargá la evidencia dentro de las primeras 48 hs
-            desde la entrega para que podamos gestionar el reclamo
-            correspondiente con Andreani.
-          </p>
-          <p className="mt-3 text-11px font-black uppercase tracking-wide text-beyonix-sky">
-            Límite: {formatClaimDeadline(getClaimDeadline(deliveredAt, "transporte_48hs"))}
-          </p>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSelectedType("garantia_beyonix")}
-          disabled={!warrantyOpen || Boolean(activeClaim)}
-          className={`rounded-2xl border p-4 text-left transition-colors ${
-            selectedType === "garantia_beyonix"
-              ? "border-beyonix-blue-light/45 bg-beyonix-blue/30"
-              : "border-white/8 bg-[#111111] hover:bg-[#141414]"
-          } disabled:cursor-not-allowed disabled:opacity-50`}
-        >
-          <p className="text-sm font-black text-white">
-            Solicitar garantía BEYONIX
-          </p>
-          <p className="mt-2 text-xs font-semibold leading-5 text-white/62">
-            Si el producto presenta una falla de funcionamiento dentro de los
-            30 días posteriores a la entrega, nuestro equipo revisará el caso y
-            te ofrecerá una solución.
-          </p>
-          <p className="mt-3 text-11px font-black uppercase tracking-wide text-beyonix-sky">
-            Límite: {formatClaimDeadline(getClaimDeadline(deliveredAt, "garantia_beyonix"))}
-          </p>
-        </button>
+    <section className="mb-4 rounded-2xl border border-beyonix-blue-light/20 bg-black p-4">
+      <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+        <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+          Centro de reclamos
+        </p>
+        <h3 className="mt-2 text-2xl font-black text-white">
+          Solicitar revisión
+        </h3>
+        <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white">
+          Elegí el motivo correcto para que podamos revisar la evidencia y darte
+          una respuesta desde este mismo pedido.
+        </p>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setSelectedType("transporte_48hs")}
+            disabled={!transportOpen}
+            className={`rounded-2xl border p-4 text-left transition-colors ${
+              selectedType === "transporte_48hs"
+                ? "border-beyonix-blue-light/45 bg-[#112A43]"
+                : "border-white/8 bg-[#181818] hover:border-beyonix-blue-light/25"
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            <p className="text-base font-black text-white">
+              Mi producto llegó dañado
+            </p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white">
+              Si el paquete llegó golpeado, abierto o el producto sufrió daños
+              durante el envío, cargá la evidencia para iniciar la revisión.
+            </p>
+            <p className="mt-3 text-11px font-black uppercase tracking-wide text-white">
+              Límite: {formatClaimDeadline(getClaimDeadline(deliveredAt, "transporte_48hs"))}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedType("garantia_beyonix")}
+            disabled={!warrantyOpen}
+            className={`rounded-2xl border p-4 text-left transition-colors ${
+              selectedType === "garantia_beyonix"
+                ? "border-beyonix-blue-light/45 bg-[#112A43]"
+                : "border-white/8 bg-[#181818] hover:border-beyonix-blue-light/25"
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            <p className="text-base font-black text-white">
+              Solicitar garantía BEYONIX
+            </p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white">
+              Si el producto presenta una falla de funcionamiento, nuestro
+              equipo revisará el caso y te ofrecerá una solución.
+            </p>
+            <p className="mt-3 text-11px font-black uppercase tracking-wide text-white">
+              Límite: {formatClaimDeadline(getClaimDeadline(deliveredAt, "garantia_beyonix"))}
+            </p>
+          </button>
+        </div>
       </div>
 
       {!transportOpen && (
-        <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-400/8 px-3 py-2 text-xs font-semibold leading-5 text-amber-100">
+        <p className="mt-4 rounded-xl border border-amber-300/25 bg-amber-400/10 px-3 py-2 text-xs font-semibold leading-5 text-white">
           El plazo de reclamo por transporte ya finalizó. Si el producto
-          presenta una falla de funcionamiento, podés solicitar garantía
-          BEYONIX.
+          presenta una falla, podés solicitar garantía BEYONIX.
         </p>
       )}
 
-      {activeClaim ? (
-        <div className="mt-4 rounded-2xl border border-white/8 bg-[#141414] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-                {getOrderClaimTypeLabel(activeClaim.claim_type)}
-              </p>
-              <h4 className="mt-1 text-lg font-black text-white">
-                {getOrderClaimStatusLabel(activeClaim.status)}
-              </h4>
-            </div>
-            <span className="rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/35 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-beyonix-sky">
-              Reclamo #{activeClaim.id}
-            </span>
-          </div>
-          {activeClaim.admin_response && (
-            <p className="mt-3 rounded-xl border border-white/8 bg-black/35 px-3 py-2 text-sm font-semibold leading-6 text-white/72">
-              {activeClaim.admin_response}
-            </p>
-          )}
-          {activeClaim.status === "falta_informacion" && (
-            <div className="mt-4 space-y-3">
-              <textarea
-                value={reply}
-                onChange={(event) => setReply(event.target.value)}
-                rows={3}
-                placeholder="Respondé al equipo o agregá detalles pendientes."
-                className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
-              />
-              <ClaimFileInput
-                label="Nueva evidencia"
-                role="evidencia_adicional"
-                accept="image/*,video/*"
-                onFiles={setExtraFiles}
-              />
-              <button
-                type="button"
-                onClick={() => void submitExtraInfo(activeClaim)}
-                disabled={loading}
-                className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
-              >
-                {loading ? "Enviando..." : "Agregar información"}
-              </button>
-            </div>
-          )}
-        </div>
-      ) : warrantyOpen ? (
+      {warrantyOpen ? (
         <div className="mt-4 space-y-3 rounded-2xl border border-white/8 bg-[#141414] p-4">
           {selectedType === "garantia_beyonix" && (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -698,13 +1315,13 @@ function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
                 value={failureType}
                 onChange={(event) => setFailureType(event.target.value)}
                 placeholder="Tipo de falla"
-                className="h-11 rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34"
+                className="h-11 rounded-xl border border-beyonix-blue-light/25 bg-[#181818] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/55"
               />
               <input
                 value={startedAt}
                 onChange={(event) => setStartedAt(event.target.value)}
                 placeholder="Cuándo empezó la falla"
-                className="h-11 rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34"
+                className="h-11 rounded-xl border border-beyonix-blue-light/25 bg-[#181818] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/55"
               />
             </div>
           )}
@@ -713,7 +1330,7 @@ function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
             onChange={(event) => setDescription(event.target.value)}
             rows={4}
             placeholder="Describí brevemente qué pasó."
-            className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+            className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#181818] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/55 focus:border-beyonix-blue-light"
           />
 
           {selectedType === "transporte_48hs" ? (
@@ -730,13 +1347,13 @@ function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
             </div>
           )}
 
-          <div className="space-y-2 rounded-xl border border-white/8 bg-black/25 p-3">
+          <div className="space-y-2 rounded-xl border border-white/8 bg-[#181818] p-3">
             {[
               ["realInfo", "Confirmo que la información enviada es real y corresponde al producto recibido."],
               ["keptPackaging", "Confirmo que conservé el embalaje, accesorios y comprobantes disponibles."],
               ["noMisuse", "Confirmo que el producto no sufrió golpes, agua, manipulación indebida o mal uso."],
             ].map(([key, label]) => (
-              <label key={key} className="flex gap-2 text-xs font-semibold leading-5 text-white/68">
+              <label key={key} className="flex gap-2 text-xs font-semibold leading-5 text-white">
                 <input
                   type="checkbox"
                   checked={checks[key as keyof typeof checks]}
@@ -753,56 +1370,21 @@ function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
             ))}
           </div>
 
-          {error && <p className="text-xs font-semibold text-red-300">{error}</p>}
+          {error && (
+            <p className="rounded-xl border border-red-300/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-white">
+              {error}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => void submitClaim()}
             disabled={loading}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-[#112A43] px-4 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
           >
             {loading ? "Enviando..." : "Enviar solicitud"}
           </button>
         </div>
       ) : null}
-
-      {claims.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <p className="text-11px font-black uppercase tracking-widest text-white/42">
-            Historial
-          </p>
-          {claims.map((claim) => (
-            <div key={claim.id} className="rounded-xl border border-white/8 bg-[#111111] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-black text-white">
-                  {getOrderClaimTypeLabel(claim.claim_type)}
-                </p>
-                <span className="text-11px font-black uppercase tracking-wide text-beyonix-sky">
-                  {getOrderClaimStatusLabel(claim.status)}
-                </span>
-              </div>
-              <p className="mt-1 text-xs font-semibold leading-5 text-white/55">
-                {claim.description}
-              </p>
-              {(claim.order_claim_files ?? []).length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(claim.order_claim_files ?? []).map((file) => (
-                    <a
-                      key={file.id}
-                      href={file.signedUrl ?? undefined}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-beyonix-blue-light/25 px-2 text-10px font-black uppercase tracking-wide text-beyonix-sky"
-                    >
-                      <Download className="size-3" />
-                      {file.file_name}
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </section>
   )
 }
@@ -1476,7 +2058,7 @@ function PaymentProofViewButton({ order }: { order: SupabasePedido }) {
         title="Ver comprobante"
         disabled={loading}
         onClick={() => void handleOpenProof()}
-        className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#112A43] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:bg-[#183B5E] disabled:cursor-wait disabled:opacity-60"
+        className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white transition-colors hover:border-blue-300/30 hover:bg-[#112A43] disabled:cursor-wait disabled:opacity-60"
       >
         <ExternalLink className="size-4" />
         {loading ? "Abriendo..." : "Ver comprobante"}
@@ -1490,6 +2072,127 @@ function PaymentProofViewButton({ order }: { order: SupabasePedido }) {
   )
 }
 
+function OrderProductFeedback({ order }: { order: SupabasePedido }) {
+  const items = order.orden_items ?? []
+  const [ratings, setRatings] = useState<Record<number, number>>({})
+  const [comments, setComments] = useState<Record<number, string>>({})
+  const [activeProductId, setActiveProductId] = useState<number | null>(null)
+  const [hoverRatings, setHoverRatings] = useState<Record<number, number>>({})
+  const [submitted, setSubmitted] = useState<Set<number>>(() => new Set())
+  const [submitting, setSubmitting] = useState<number | null>(null)
+  const [feedbackMessage, setFeedbackMessage] = useState("")
+
+  useEffect(() => {
+    let active = true
+    const loadOwnReviews = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch(`/api/reviews?orderId=${order.id}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        cache: "no-store",
+      })
+      const data = (await response.json()) as {
+        ownProductReviews?: Array<{ product_id: number; rating: number; comment: string }>
+      }
+      if (!active || !response.ok) return
+      const reviews = data.ownProductReviews ?? []
+      setSubmitted(new Set(reviews.map((review) => Number(review.product_id))))
+      setRatings(Object.fromEntries(reviews.map((review) => [Number(review.product_id), Number(review.rating)])))
+      setComments(Object.fromEntries(reviews.map((review) => [Number(review.product_id), String(review.comment)])))
+    }
+    void loadOwnReviews()
+    return () => { active = false }
+  }, [order.id])
+
+  const submitReview = async (productId: number) => {
+    const rating = ratings[productId]
+    const comment = comments[productId]?.trim() ?? ""
+    if (!rating || !comment) {
+      setFeedbackMessage("Elegí una puntuación y escribí una reseña breve.")
+      return
+    }
+
+    setSubmitting(productId)
+    setFeedbackMessage("")
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ orderId: order.id, productId, rating, comment }),
+      })
+      const data = (await response.json()) as { error?: string }
+      if (!response.ok) {
+        setFeedbackMessage(data.error || "No pudimos guardar la reseña.")
+        return
+      }
+      setSubmitted((current) => new Set(current).add(productId))
+      setActiveProductId(null)
+      setFeedbackMessage("¡Gracias por compartir tu experiencia!")
+    } catch {
+      setFeedbackMessage("No pudimos guardar la reseña. Intentá nuevamente.")
+    } finally {
+      setSubmitting(null)
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-white/8 bg-[#141414] p-3 sm:p-4">
+      <h4 className="text-sm font-black text-white">¿Qué te pareció tu compra?</h4>
+      <div className="mt-3 space-y-2">
+        {items.map((item) => {
+          const productId = Number(item.producto_id)
+          const productName = item.productos?.nombre ?? `Producto #${productId}`
+          const image = getCuentaItemImage(item)
+          const selectedRating = ratings[productId] ?? 0
+          const visualRating = hoverRatings[productId] ?? selectedRating
+          return (
+            <div key={item.id} className="rounded-lg border border-white/8 bg-[#181818] p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={productName} className="size-full object-contain" /> : <Package className="size-4 text-black/30" />}</div>
+                  <p className="truncate text-xs font-black text-white">{productName}</p>
+                </div>
+                {submitted.has(productId) ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300"><Check className="size-3.5" />Reseña enviada</span> : <div className="flex items-center gap-1" aria-label={`Calificar ${productName}`} onMouseLeave={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })}>{[1, 2, 3, 4, 5].map((rating) => <button key={rating} type="button" aria-label={`${rating} estrellas`} onMouseEnter={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onFocus={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onBlur={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })} onClick={() => { setRatings((current) => ({ ...current, [productId]: rating })); setActiveProductId(productId); setFeedbackMessage("") }} className="cursor-pointer p-0.5"><Star className={`size-5 transition-colors ${rating <= visualRating ? "fill-amber-300 text-amber-300" : "text-white/25"}`} /></button>)}</div>}
+              </div>
+              {activeProductId === productId && !submitted.has(productId) && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={comments[productId] ?? ""} maxLength={150} onChange={(event) => setComments((current) => ({ ...current, [productId]: event.target.value }))} placeholder="Contanos brevemente tu experiencia" className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-blue-300/40" /><button type="button" disabled={submitting === productId} onClick={() => void submitReview(productId)} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-50">{submitting === productId ? "Enviando..." : "Enviar reseña"}</button></div>}
+            </div>
+          )
+        })}
+      </div>
+      {feedbackMessage && <p className="mt-2 text-xs font-bold text-white/70">{feedbackMessage}</p>}
+    </section>
+  )
+}
+
+function DeliveredPurchaseHelp({ order, onClaim }: { order: SupabasePedido; onClaim: (problem: ClaimProblemId) => void }) {
+  const helpOptions: Array<[string, ClaimProblemId]> = [
+    ["Recibí el producto con un problema", "falla"],
+    ["Recibí el paquete sin el producto", "incorrecto"],
+    ["Nunca llegó el envío", "otro"],
+    ["Quiero cambiar o devolver un producto", "devolucion"],
+    ["Cómo cuidar el producto para devolverlo", "devolucion"],
+  ]
+
+  return (
+    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+      <OrderProductFeedback order={order} />
+      <div className="space-y-3">
+        <section className="rounded-xl border border-white/8 bg-[#141414] p-3 sm:p-4">
+          <h4 className="text-sm font-black text-white">Ayuda con la compra</h4>
+          <div className="mt-2 divide-y divide-white/8">{helpOptions.map(([label, problem]) => <button key={label} type="button" onClick={() => onClaim(problem)} className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-3 py-2 text-left text-xs font-bold text-white/80 hover:text-white"><span>{label}</span><ChevronRight className="size-3.5 shrink-0 text-blue-300" /></button>)}</div>
+        </section>
+        <section className="rounded-xl border border-blue-300/15 bg-[#141414] p-3 sm:p-4">
+          <p className="text-xs font-bold leading-5 text-white/75">Podés solicitar cambio o devolución dentro del plazo disponible.</p>
+          <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => onClaim("devolucion")} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Cambiar producto</button><button type="button" onClick={() => onClaim("devolucion")} className="h-9 cursor-pointer rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white">Devolver producto</button></div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
 function MisOrdenes({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const [orders, setOrders] = useState<SupabasePedido[]>([])
@@ -1499,12 +2202,30 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
     null,
   )
   const [invoiceError, setInvoiceError] = useState("")
+  const [downloadedInvoiceIds, setDownloadedInvoiceIds] = useState<Set<number>>(
+    () => new Set(),
+  )
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(
     () => new Set(),
   )
   const [orderDetailViews, setOrderDetailViews] = useState<
     Record<number, CustomerOrderDetailView>
   >({})
+  const [openMoreOptionsId, setOpenMoreOptionsId] = useState<number | null>(null)
+  const [claimProblemByOrder, setClaimProblemByOrder] = useState<Record<number, ClaimProblemId | undefined>>({})
+
+  useEffect(() => {
+    if (openMoreOptionsId === null) return
+
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Element && target.closest(`[data-order-menu="${openMoreOptionsId}"]`)) return
+      setOpenMoreOptionsId(null)
+    }
+
+    document.addEventListener("pointerdown", closeOutside)
+    return () => document.removeEventListener("pointerdown", closeOutside)
+  }, [openMoreOptionsId])
 
   const loadOrders = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -1523,7 +2244,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
         .order("created_at", { ascending: false })
 
       if (ordersError) {
-        setError("No se pudieron cargar tus órdenes.")
+        setError("No se pudieron cargar tus compras.")
         if (!silent) setLoading(false)
         return
       }
@@ -1562,6 +2283,21 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void loadOrders()
   }, [loadOrders])
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DOWNLOADED_INVOICES_STORAGE_KEY)
+      const ids = raw ? (JSON.parse(raw) as unknown) : []
+
+      if (Array.isArray(ids)) {
+        setDownloadedInvoiceIds(
+          new Set(ids.filter((id): id is number => typeof id === "number")),
+        )
+      }
+    } catch {
+      setDownloadedInvoiceIds(new Set())
+    }
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -1655,6 +2391,11 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
     }))
   }
 
+  const showClaimView = (orderId: number, problem?: ClaimProblemId) => {
+    setClaimProblemByOrder((current) => ({ ...current, [orderId]: problem }))
+    showOrderDetailView(orderId, "reclamo")
+  }
+
   const handleDownloadInvoice = async (orderId: number) => {
     setDownloadingInvoiceId(orderId)
     setInvoiceError("")
@@ -1677,6 +2418,15 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
       anchor.click()
       anchor.remove()
       URL.revokeObjectURL(url)
+      setDownloadedInvoiceIds((currentIds) => {
+        const nextIds = new Set(currentIds)
+        nextIds.add(orderId)
+        window.localStorage.setItem(
+          DOWNLOADED_INVOICES_STORAGE_KEY,
+          JSON.stringify([...nextIds]),
+        )
+        return nextIds
+      })
     } catch {
       setInvoiceError("No se pudo descargar la factura. Inténtalo de nuevo.")
     } finally {
@@ -1687,11 +2437,17 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
   return (
     <AccountViewFrame
       onBack={onBack}
-      kicker="Mis órdenes"
+      kicker="Mis compras"
       title="Historial de compras"
-      maxWidth="max-w-5xl"
+      maxWidth="max-w-6xl"
       hideHeading
     >
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-white">Mis compras</h1>
+        <p className="mt-1 text-sm text-[#A0A0A0]">
+          Revisá el estado de tus pedidos, facturas y comprobantes.
+        </p>
+      </div>
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, index) => (
@@ -1712,130 +2468,134 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
           <p className="text-xs text-white/40 mt-1">Cuando compres algo aparecerá aquí.</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {invoiceError && (
             <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-4 py-3 text-sm text-red-200">
               {invoiceError}
             </div>
           )}
-          {orders.map((order) => {
+          {[...orders]
+            .sort(
+              (first, second) =>
+                new Date(second.created_at).getTime() -
+                new Date(first.created_at).getTime(),
+            )
+            .map((order) => {
             const items = order.orden_items ?? []
             const hasProof = Boolean(order.payment_proof_url)
             const isTransferOrder = order.payment_method_id === "transferencia"
             const isExpanded = expandedOrderIds.has(order.id)
             const orderStatusBadge = getClientOrderStatusBadge(order)
             const activeOrderView = orderDetailViews[order.id] ?? "detalle"
+            const invoiceAvailable = isInvoiceAvailable(order)
+            const showInvoiceNotification =
+              invoiceAvailable && !downloadedInvoiceIds.has(order.id)
+            const firstItem = items[0]
+            const firstProductImage = firstItem ? getCuentaItemImage(firstItem) : ""
+            const firstProductName = firstItem?.productos?.nombre ?? "Productos del pedido"
+            const productCount = items.reduce(
+              (total, item) => total + Number(item.cantidad ?? 0),
+              0,
+            )
+            const trackingUrl = normalizeTrackingUrl(order.tracking_url)
+            const shippingLabel =
+              order.estado === "entregado"
+                ? "Entregado"
+                : order.estado === "en_camino" || order.estado === "enviado"
+                  ? "En camino"
+                  : "Preparando envío"
+            const shippingDetail =
+              order.estado === "entregado" && order.delivered_at
+                ? formatOrderCardDate(order.delivered_at).split(" · ")[0]
+                : trackingUrl || order.andreani_tracking || order.tracking_number
+                  ? "Andreani · Seguimiento disponible"
+                  : "Te avisaremos cuando sea despachado"
+            const hasMoreOptions =
+              invoiceAvailable || (isTransferOrder && hasProof) || Boolean(trackingUrl)
+            const detailIsOpen = isExpanded && activeOrderView === "detalle"
 
             return (
               <article
                 key={order.id}
-                className="overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface shadow-xl shadow-black/20"
+                className="relative overflow-visible rounded-[18px] border border-[#252525] bg-[#141414] shadow-xl shadow-black/20"
               >
-                <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <span className="block text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                        Pedido #{formatPublicOrderId(order.id)}
-                      </span>
-                      <span
-                        className={"w-fit rounded-full border px-3 py-1 text-10px font-black uppercase tracking-wide " + orderStatusBadge.className}
-                      >
-                        {orderStatusBadge.label}
-                      </span>
+                <div className="p-4 sm:p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-4">
+                      <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
+                        {firstProductImage ? (
+                          <img src={firstProductImage} alt={firstProductName} className="size-full object-contain" />
+                        ) : (
+                          <ShoppingBag className="size-7 text-black/30" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-base font-black text-white">
+                          Pedido #{formatPublicOrderId(order.id)}
+                        </p>
+                        <p className="mt-1 text-sm text-[#A0A0A0]">
+                          {formatOrderCardDate(order.created_at)}
+                        </p>
+                        <span className={"mt-2 inline-flex w-fit rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide " + orderStatusBadge.className}>
+                          {orderStatusBadge.label}
+                        </span>
+                      </div>
                     </div>
-                    <span className="mt-1 block text-sm text-white/55">
-                      {formatCuentaOrderDate(order.created_at)}
-                    </span>
-                    <span className="mt-1 block text-xl font-black text-white">
-                      {formatCuentaPrice(Number(order.total ?? 0))}
-                    </span>
+                    <div className="shrink-0 sm:text-right">
+                      <p className="text-xs font-bold uppercase tracking-widest text-[#A0A0A0]">Total</p>
+                      <p className="mt-1 text-2xl font-black text-white">{formatCuentaPrice(Number(order.total ?? 0))}</p>
+                    </div>
                   </div>
 
-                  <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
-                    <div className="flex flex-wrap gap-1.5">
-                      {[
-                        ["detalle", "Detalle"],
-                        ["factura", "Factura"],
-                        ["reclamo", "Reclamo"],
-                      ].map(([view, label]) => {
-                        const disabled =
-                          view === "reclamo" && order.estado !== "entregado"
-
-                        return (
-                          <button
-                            key={view}
-                            type="button"
-                            disabled={disabled}
-                            onClick={() =>
-                              showOrderDetailView(
-                                order.id,
-                                view as CustomerOrderDetailView,
-                              )
-                            }
-                            className={
-                              "inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border px-3 text-10px font-black uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40 " +
-                              (isExpanded && activeOrderView === view
-                                ? "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky"
-                                : "border-beyonix-blue-light/25 bg-white/5 text-white/68 hover:border-beyonix-blue-light/45 hover:text-beyonix-sky")
-                            }
-                          >
-                            {label}
-                          </button>
-                        )
-                      })}
+                  <div className="mt-5 grid border-y border-white/8 py-4 sm:grid-cols-3 sm:divide-x sm:divide-white/8">
+                    <div className="flex items-center gap-3 px-1 py-2 sm:px-4 sm:py-0 sm:first:pl-0">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><CreditCard className="size-5 text-blue-300" /></span>
+                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Pago</p><p className="mt-1 text-sm font-bold text-white">{isTransferOrder ? "Transferencia bancaria" : "Mercado Pago"}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{getPaymentProgressLabel(order)}</p></div>
                     </div>
-                    {isTransferOrder && (
-                      <>
-                        {hasProof ? (
-                          <>
-                            <PaymentProofViewButton order={order} />
-                            <PaymentProofActionButton
-                              orderId={order.id}
-                              initialUploaded
-                              onUploaded={handlePaymentProofUploaded}
-                              className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/7 px-3 text-11px font-black uppercase tracking-wide text-white/82 transition-colors hover:border-beyonix-blue-light/35 hover:bg-white/12 disabled:cursor-wait disabled:opacity-60"
-                            />
-                          </>
-                        ) : (
-                          <PaymentProofActionButton
-                            orderId={order.id}
-                            onUploaded={handlePaymentProofUploaded}
-                            className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-400/35 bg-emerald-500/15 px-3 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
-                          />
-                        )}
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      aria-expanded={isExpanded}
-                      aria-label={(isExpanded ? "Ocultar" : "Ver") + " detalle del pedido " + formatPublicOrderId(order.id)}
-                      title={(isExpanded ? "Ocultar" : "Ver") + " detalle"}
-                      onClick={() => toggleOrderDetails(order.id)}
-                      className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/70 transition-colors hover:border-beyonix-blue-light/35 hover:text-white"
-                    >
-                      <ChevronDown
-                        className={"size-5 transition-transform " + (isExpanded ? "rotate-180" : "")}
-                      />
-                    </button>
+                    <div className="flex items-center gap-3 border-t border-white/8 px-1 py-3 sm:border-0 sm:px-4 sm:py-0">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Truck className="size-5 text-blue-300" /></span>
+                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Envío</p><p className="mt-1 text-sm font-bold text-white">{shippingLabel}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{shippingDetail}</p></div>
+                    </div>
+                    <div className="flex items-center gap-3 border-t border-white/8 px-1 pt-3 sm:border-0 sm:px-4 sm:py-0 sm:last:pr-0">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Package className="size-5 text-blue-300" /></span>
+                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Productos</p><p className="mt-1 text-sm font-bold text-white">{productCount} {productCount === 1 ? "producto" : "productos"}</p></div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" aria-expanded={detailIsOpen} onClick={() => detailIsOpen ? toggleOrderDetails(order.id) : showOrderDetailView(order.id, "detalle")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#112A43] bg-[#112A43] px-4 text-xs font-black text-white"><FileText className="size-4" />{detailIsOpen ? "Ocultar detalle" : "Ver detalle"}</button>
+                      <button type="button" disabled={!invoiceAvailable} onClick={() => showOrderDetailView(order.id, "factura")} className="relative inline-flex h-10 items-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:text-[#A0A0A0]"><Download className="size-4" />{invoiceAvailable ? "Ver factura" : "Factura pendiente"}{showInvoiceNotification && <span className="absolute -right-1.5 -top-1.5"><CustomerInvoiceBell /></span>}</button>
+                      {isTransferOrder && (hasProof ? <PaymentProofViewButton order={order} /> : <PaymentProofActionButton orderId={order.id} onUploaded={handlePaymentProofUploaded} className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white disabled:opacity-60" />)}
+                      {order.estado === "entregado" && <button type="button" aria-expanded={isExpanded && activeOrderView === "reclamo"} onClick={() => isExpanded && activeOrderView === "reclamo" ? toggleOrderDetails(order.id) : showClaimView(order.id)} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white"><MessageCircle className="size-4" />{isExpanded && activeOrderView === "reclamo" ? "Ocultar reclamo" : "Necesito ayuda"}</button>}
+                    </div>
+                    {hasMoreOptions && <div data-order-menu={order.id} className="relative z-10 w-fit lg:ml-auto"><button type="button" aria-expanded={openMoreOptionsId === order.id} onClick={() => setOpenMoreOptionsId((current) => current === order.id ? null : order.id)} className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black leading-none text-white"><span className="leading-none">Más opciones</span><span className="flex size-3.5 shrink-0 items-center justify-center"><ChevronDown className={`block size-3.5 transition-transform ${openMoreOptionsId === order.id ? "rotate-180" : ""}`} /></span></button>{openMoreOptionsId === order.id && <div className="absolute right-0 top-12 z-30 flex min-w-56 flex-col gap-1 rounded-xl border border-white/10 bg-[#181818] p-2 shadow-2xl shadow-black/60">{invoiceAvailable && <button type="button" disabled={downloadingInvoiceId === order.id} onClick={() => { setOpenMoreOptionsId(null); void handleDownloadInvoice(order.id) }} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-xs font-bold text-white hover:bg-[#112A43]"><Download className="size-4" />Descargar factura</button>}{isTransferOrder && hasProof && <PaymentProofActionButton orderId={order.id} initialUploaded onUploaded={(updatedOrder) => { setOpenMoreOptionsId(null); handlePaymentProofUploaded(updatedOrder) }} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-xs font-bold text-white hover:bg-[#112A43]" />}{trackingUrl && <a href={trackingUrl} target="_blank" rel="noreferrer" onClick={() => setOpenMoreOptionsId(null)} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-3 text-xs font-bold text-white hover:bg-[#112A43]"><Truck className="size-4" />Seguimiento Andreani</a>}</div>}</div>}
                   </div>
                 </div>
 
                 {isExpanded && (
-                  <div className="border-t border-white/7 px-4 py-4 sm:px-5">
+                  <div className="customer-order-detail border-t border-white/7 px-3 py-3 sm:px-4">
                     {activeOrderView === "factura" && (
                       <div className="mb-3 flex flex-col gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-xs font-black uppercase tracking-widest text-emerald-300">
-                            Factura electrónica
-                          </p>
-                          {order.invoice_status === "authorized" ? (
-                            <p className="mt-1 text-sm font-bold text-white">
-                              Factura C{" "}
-                              {formatCuentaInvoiceNumber(
-                                order.invoice_point,
-                                order.invoice_number,
-                              )}
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-black uppercase tracking-widest text-emerald-300">
+                              Factura electrónica
                             </p>
+                          </div>
+                          {order.invoice_status === "authorized" ? (
+                            <>
+                              <p className="mt-2 text-sm font-black text-white">
+                                Tu factura ya está disponible.
+                              </p>
+                              <p className="mt-1 text-sm font-bold text-white/72">
+                                Factura C{" "}
+                                {formatCuentaInvoiceNumber(
+                                  order.invoice_point,
+                                  order.invoice_number,
+                                )}
+                              </p>
+                            </>
                           ) : (
                             <p className="mt-1 text-sm font-bold text-white/68">
                               La factura todavía no está disponible para este pedido.
@@ -1861,12 +2621,13 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                     )}
 
                     {activeOrderView === "reclamo" && order.estado === "entregado" && (
-                      <ClaimsCenterPanel order={order} />
+                      <CustomerClaimExperience order={order} initialProblem={claimProblemByOrder[order.id]} />
                     )}
 
                     {activeOrderView === "detalle" && (
                       <>
                     <OrderProgressTimeline order={order} />
+                    <OrderTrackingPanel order={order} />
 
                     <div className="mb-2 hidden grid-cols-account-order-item gap-4 px-3 xl:grid">
                       {[
@@ -1961,6 +2722,12 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                         )
                       })}
                     </div>
+                    {order.estado === "entregado" && (
+                      <DeliveredPurchaseHelp
+                        order={order}
+                        onClaim={(problem) => showClaimView(order.id, problem)}
+                      />
+                    )}
                       </>
                     )}
                   </div>
@@ -2740,7 +3507,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   if (view === "seguridad") return <Seguridad onBack={() => goToView("home")} />
 
   const menuItems = [
-    { icon: ShoppingBag, label: "Mis órdenes", sub: "Historial de compras", view: "ordenes" as ProfileView },
+    { icon: ShoppingBag, label: "Mis compras", sub: "Historial de compras", view: "ordenes" as ProfileView },
     { icon: User, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
     { icon: Lock, label: "Seguridad", sub: "Contraseña y acceso", view: "seguridad" as ProfileView },
   ]
@@ -2858,17 +3625,17 @@ export function CuentaClient() {
 
   return (
     <main className="min-h-screen bg-black pt-20">
-      <div className="container mx-auto max-w-5xl px-4 py-12 lg:py-16">
+      <div className="account-page container mx-auto max-w-7xl px-4 py-8 lg:py-10">
         {user ? (
           <>
-            <div className="mb-8">
+            {initialView !== "ordenes" && <div className="account-welcome mb-8">
               <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan mb-2">
                 Mi cuenta
               </p>
               <h1 className="text-2xl font-bold text-white tracking-tight">
                 Hola, {(user.username || user.name.split(" ")[0]).toUpperCase()}
               </h1>
-            </div>
+            </div>}
             <ProfilePanel initialView={initialView} />
           </>
         ) : null}
@@ -2883,7 +3650,7 @@ export function CuentaClient() {
               </h1>
               <p className="text-sm text-white/50">
                 {tab === "login"
-                  ? "Inicia sesión para ver tus órdenes y datos."
+                  ? "Inicia sesión para ver tus compras y datos."
                   : "Registrate para comprar en BEYONIX."}
               </p>
             </div>

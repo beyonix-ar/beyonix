@@ -12,6 +12,7 @@ interface AdminSelectProps {
   compact?: boolean
   centered?: boolean
   disabled?: boolean
+  triggerClassName?: string
   onChange: (value: string) => void
 }
 
@@ -33,6 +34,7 @@ export function AdminSelect({
   compact = false,
   centered = false,
   disabled = false,
+  triggerClassName = "",
   onChange,
 }: AdminSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -140,7 +142,7 @@ export function AdminSelect({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
-        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:bg-[#181818] focus:border-beyonix-blue-light disabled:cursor-not-allowed disabled:opacity-45 ${
+        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:bg-[#181818] focus:border-beyonix-blue-light disabled:cursor-not-allowed disabled:opacity-45 ${triggerClassName} ${
           centered ? "justify-center" : "justify-between"
         } ${
           compact
