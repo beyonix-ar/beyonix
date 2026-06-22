@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
+import { CustomerNotificationsBell } from "@/components/customer-notifications-bell"
 import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
@@ -27,6 +28,7 @@ export function SiteHeader() {
   const [categories, setCategories] = useState<SupabaseCategoria[]>([])
   const [catOpen, setCatOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const catRef = useRef<HTMLDivElement>(null)
@@ -82,10 +84,14 @@ export function SiteHeader() {
     return () => window.removeEventListener("resize", handleResize)
   }, [])
 
+  useEffect(() => {
+    if (!user) setNotificationsOpen(false)
+  }, [user])
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black">
       <nav className="container mx-auto px-4 lg:px-8">
-        <div className="grid h-16 grid-cols-site-header items-center lg:h-18">
+        <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto] items-center lg:h-18 lg:grid-cols-site-header">
           <BeyonixLogoLink />
 
           <div className="hidden items-center justify-center gap-7 lg:flex">
@@ -108,7 +114,11 @@ export function SiteHeader() {
                 type="button"
                 aria-label="Abrir categorías"
                 title="Abrir categorías"
-                onClick={() => setCatOpen((v) => !v)}
+                onClick={() => {
+                  setCatOpen((v) => !v)
+                  setNotificationsOpen(false)
+                  setUserOpen(false)
+                }}
                 className="flex cursor-pointer items-center gap-1.5 text-15px font-medium text-white/78 transition-colors hover:text-white"
               >
                 Categorías
@@ -160,6 +170,22 @@ export function SiteHeader() {
           </div>
 
           <div className="flex items-center justify-end gap-2">
+            {user && (
+              <CustomerNotificationsBell
+                userId={user.id}
+                open={notificationsOpen}
+                onOpenChange={(nextOpen) => {
+                  setNotificationsOpen(nextOpen)
+
+                  if (nextOpen) {
+                    setCatOpen(false)
+                    setUserOpen(false)
+                    setMobileOpen(false)
+                  }
+                }}
+              />
+            )}
+
             <div ref={userRef} className="relative hidden lg:block">
               {user ? (
                 <>
@@ -167,7 +193,11 @@ export function SiteHeader() {
                     type="button"
                     aria-label="Abrir menú de usuario"
                     title="Abrir menú de usuario"
-                    onClick={() => setUserOpen((v) => !v)}
+                    onClick={() => {
+                      setUserOpen((v) => !v)
+                      setNotificationsOpen(false)
+                      setCatOpen(false)
+                    }}
                     className="flex h-12 max-w-300px cursor-pointer items-center gap-2.5 rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white transition-all hover:border-beyonix-blue-light hover:bg-beyonix-blue/18"
                   >
                     <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-beyonix-blue-light/45 bg-white text-black shadow-sm shadow-black/40">
@@ -290,7 +320,12 @@ export function SiteHeader() {
 
             <button
               type="button"
-              onClick={() => setMobileOpen((v) => !v)}
+              onClick={() => {
+                setMobileOpen((v) => !v)
+                setNotificationsOpen(false)
+                setCatOpen(false)
+                setUserOpen(false)
+              }}
               aria-label="Abrir menú"
               title="Abrir menú"
               className="flex size-10 cursor-pointer items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/8 hover:text-white lg:hidden"

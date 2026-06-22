@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
-  Bell,
   History,
   LogOut,
   Menu,
@@ -18,6 +17,7 @@ import {
 
 import { useAuth } from "@/context/auth-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import type { AdminOrderNotificationTone } from "@/lib/admin/order-notifications"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
@@ -52,6 +52,7 @@ interface NavigationItem {
   description: string
   icon: ReactNode
   notificationCount?: number
+  notificationTone?: AdminOrderNotificationTone
 }
 
 function SidebarItem({
@@ -98,9 +99,14 @@ function SidebarItem({
         {item.notificationCount ? (
           <span
             title={`${item.notificationCount} pedidos requieren atención`}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-400/35 bg-red-500 px-2 py-1 text-10px font-black text-white shadow-lg shadow-red-950/35"
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black text-white transition-colors ${
+              item.notificationTone === "issue"
+                ? "border-[#EF4444]/50 bg-[#EF4444] shadow-[0_0_14px_rgba(239,68,68,0.35)] group-hover:bg-[#DC2626]"
+                : item.notificationTone === "message"
+                  ? "border-[#2563EB]/50 bg-[#2563EB] shadow-[0_0_14px_rgba(37,99,235,0.35)] group-hover:bg-[#1D4ED8]"
+                  : "border-[#16A34A]/50 bg-[#16A34A] shadow-[0_0_14px_rgba(22,163,74,0.35)] group-hover:bg-[#15803D]"
+            }`}
           >
-            <Bell className="size-3" />
             {item.notificationCount}
           </span>
         ) : null}
@@ -128,7 +134,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   const searchParams = useSearchParams()
   const { user, isLoading, isInternal, isOperator, isSuperAdmin, logout } =
     useAuth()
-  const { notificationCount } = useOrderNotifications()
+  const { notificationCount, notificationTone } = useOrderNotifications()
   const [section, setSection] = useState<AdminSection>(
     () =>
       (initialOrderId ? "pedidos" : null) ||
@@ -158,6 +164,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         description: "Ventas, pagos, comprobantes y envíos",
         icon: <ShoppingCart className="size-4" />,
         notificationCount,
+        notificationTone,
       },
     ]
 
@@ -188,7 +195,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           ]
         : []),
     ]
-  }, [isOperator, isSuperAdmin, notificationCount])
+  }, [isOperator, isSuperAdmin, notificationCount, notificationTone])
 
   useEffect(() => {
     if (initialOrderId) {
@@ -287,7 +294,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     dashboard: <AdminDashboard onNavigate={goToSection} />,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
-    pedidos: <AdminPedidos notificationCount={notificationCount} initialOrderId={initialOrderId} />,
+    pedidos: <AdminPedidos notificationCount={notificationCount} notificationTone={notificationTone} initialOrderId={initialOrderId} />,
     usuarios: !isOperator ? <AdminUsuarios /> : null,
     auditoria: isSuperAdmin ? <AdminAuditoria /> : null,
   }

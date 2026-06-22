@@ -32,63 +32,65 @@ export function CartSummary({
   const isFreeShipping = hasFreeShipping(totals.productsTotal)
 
   return (
-    <div className="space-y-4 border-t border-beyonix-blue-light bg-beyonix-surface p-4">
-      
+    <div className="space-y-2 border-t border-beyonix-blue-light/60 bg-beyonix-surface px-4 py-2.5">
       <FreeShippingBar subtotal={totals.productsTotal} />
 
-      <div className="space-y-2 rounded-xl border border-beyonix-blue-light bg-beyonix-surface-3 p-3">
-        <div className="flex justify-between text-sm">
-          <span className="text-white/60">Subtotal</span>
-          <span className="text-white">{formatPrice(totals.subtotal)}</span>
-        </div>
+      <div className="rounded-xl border border-beyonix-blue-light/60 bg-beyonix-surface-3 px-3 py-2.5">
+        <h3 className="mb-2 text-sm font-bold tracking-wide text-white">
+          Resumen del pedido
+        </h3>
 
-        {totals.discount > 0 && (
-          <div className="flex justify-between text-sm items-center">
-            <span className="flex items-center gap-2 text-beyonix-sky">
-              Descuento
-              {ACTIVE_SALE_EVENT !== "none" && (
-                <span className="text-9px text-emerald-400/80 tracking-wide">
-                  {ACTIVE_SALE_EVENT.toUpperCase()}
-                </span>
-              )}
-            </span>
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-sm">
+            <span className="text-white/60">Subtotal</span>
+            <span className="text-white">{formatPrice(totals.subtotal)}</span>
+          </div>
 
-            <span className="text-emerald-400 font-medium tracking-wide">
-              -{formatPrice(totals.discount)}
+          {totals.discount > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2 text-beyonix-sky">
+                Descuento
+                {ACTIVE_SALE_EVENT !== "none" && (
+                  <span className="text-9px tracking-wide text-emerald-400/80">
+                    {ACTIVE_SALE_EVENT.toUpperCase()}
+                  </span>
+                )}
+              </span>
+
+              <span className="font-medium tracking-wide text-emerald-400">
+                -{formatPrice(totals.discount)}
+              </span>
+            </div>
+          )}
+
+          <div className="flex justify-between text-sm">
+            <span className="text-white/60">Envío</span>
+            <span
+              className={`${
+                isFreeShipping
+                  ? "beyonix-success-glow font-semibold text-emerald-400"
+                  : "text-white"
+              }`}
+            >
+              {isFreeShipping ? "GRATIS" : formatPrice(totals.shipping)}
             </span>
           </div>
-        )}
 
-        <div className="flex justify-between text-sm">
-          <span className="text-white/60">Envío</span>
-          <span
-            className={`${
-              isFreeShipping
-                ? "text-emerald-400 font-semibold beyonix-success-glow"
-                : "text-white"
-            }`}
-          >
-            {isFreeShipping ? "GRATIS" : formatPrice(totals.shipping)}
-          </span>
-        </div>
+          <Separator />
 
-        <Separator />
-
-        <div className="flex justify-between font-bold text-lg">
-          <span className="text-white">Total</span>
-          <span className="text-white">{formatPrice(totals.total)}</span>
+          <div className="flex justify-between text-base font-bold">
+            <span className="text-white">Total</span>
+            <span className="text-white">{formatPrice(totals.total)}</span>
+          </div>
         </div>
       </div>
 
-      <div className="rounded-md border border-white/10 bg-black px-3 py-2 text-center">
-        <p
-          className="text-16px mb-0 tracking-widest font-bold"
-          style={{ color: "#005799" }}
-        >
+      <div className="rounded-lg border border-white/10 bg-black px-3 py-1.5 text-center font-heading">
+        <p className="text-sm font-bold tracking-widest text-white">
           IMPORTANTE
         </p>
 
-        <p className="text-sm text-white">
+        <p className="text-xs font-medium leading-snug text-white">
           Verificá variante y color antes de finalizar la compra
         </p>
       </div>
@@ -97,7 +99,7 @@ export function CartSummary({
         type="button"
         aria-label="Finalizar compra"
         title="Finalizar compra"
-        className="h-12 w-full text-base font-semibold text-white transition-colors"
+        className="h-10 w-full text-sm font-semibold text-white transition-colors"
         style={{ backgroundColor: "#112A43" }}
         onMouseEnter={(event) => {
           event.currentTarget.style.backgroundColor = "#1E4A73"
@@ -116,7 +118,7 @@ export function CartSummary({
         aria-label="Seguir comprando"
         title="Seguir comprando"
         size="lg"
-        className="h-11 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors"
+        className="h-9 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors"
         onMouseEnter={(event) => {
           event.currentTarget.style.backgroundColor = "#1E4A73"
         }}

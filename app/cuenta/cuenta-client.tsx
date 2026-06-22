@@ -7,7 +7,6 @@ import { useRouter, useSearchParams } from "next/navigation"
 import {
   Bell,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Camera,
@@ -361,17 +360,17 @@ function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
         : "md:grid-cols-5"
 
   return (
-    <div className="mb-4 rounded-xl border border-white/8 bg-black/25 p-3">
-      <p className="mb-3 text-11px font-black uppercase tracking-widest text-white/45">
+    <div className="mb-3 rounded-xl border border-white/8 bg-black/25 p-2.5">
+      <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/45">
         Estado del pedido
       </p>
-      <div className={"grid gap-2 " + gridClassName}>
+      <div className={"grid gap-1.5 " + gridClassName}>
         {steps.map((step, index) => (
           <div
             key={step.label + "-" + index}
-            className={"relative rounded-lg border p-3 " + toneClassNames[step.tone]}
+            className={"relative rounded-lg border p-2.5 " + toneClassNames[step.tone]}
           >
-            <span className="mb-2 flex size-6 items-center justify-center rounded-full border border-current text-11px font-black">
+            <span className="mb-1.5 flex size-6 items-center justify-center rounded-full border border-current text-11px font-black">
               {step.tone === "done" ? <Check className="size-3.5" /> : index + 1}
             </span>
             <p className="text-xs font-black text-white">{step.label}</p>
@@ -399,11 +398,11 @@ function OrderTrackingPanel({ order }: { order: SupabasePedido }) {
   if (!trackingNumber && !trackingUrl) return null
 
   return (
-    <div className="mb-4 rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/12 p-3">
+    <div className="mb-3 rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/12 p-2.5">
       <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
         Seguimiento del envío
       </p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
+      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-white/45">
             Número de seguimiento
@@ -2139,9 +2138,9 @@ function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   }
 
   return (
-    <section className="rounded-xl border border-white/8 bg-[#141414] p-3 sm:p-4">
-      <h4 className="text-sm font-black text-white">¿Qué te pareció tu compra?</h4>
-      <div className="mt-3 space-y-2">
+    <section className="rounded-xl border border-white/8 bg-[#141414] p-3">
+      <h4 className="text-sm font-black text-white">Reseña del producto</h4>
+      <div className="mt-2 space-y-2">
         {items.map((item) => {
           const productId = Number(item.producto_id)
           const productName = item.productos?.nombre ?? `Producto #${productId}`
@@ -2149,15 +2148,15 @@ function OrderProductFeedback({ order }: { order: SupabasePedido }) {
           const selectedRating = ratings[productId] ?? 0
           const visualRating = hoverRatings[productId] ?? selectedRating
           return (
-            <div key={item.id} className="rounded-lg border border-white/8 bg-[#181818] p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div key={item.id} className="rounded-lg border border-white/8 bg-[#181818] p-2.5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={productName} className="size-full object-contain" /> : <Package className="size-4 text-black/30" />}</div>
                   <p className="truncate text-xs font-black text-white">{productName}</p>
                 </div>
                 {submitted.has(productId) ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300"><Check className="size-3.5" />Reseña enviada</span> : <div className="flex items-center gap-1" aria-label={`Calificar ${productName}`} onMouseLeave={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })}>{[1, 2, 3, 4, 5].map((rating) => <button key={rating} type="button" aria-label={`${rating} estrellas`} onMouseEnter={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onFocus={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onBlur={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })} onClick={() => { setRatings((current) => ({ ...current, [productId]: rating })); setActiveProductId(productId); setFeedbackMessage("") }} className="cursor-pointer p-0.5"><Star className={`size-5 transition-colors ${rating <= visualRating ? "fill-amber-300 text-amber-300" : "text-white/25"}`} /></button>)}</div>}
               </div>
-              {activeProductId === productId && !submitted.has(productId) && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={comments[productId] ?? ""} maxLength={150} onChange={(event) => setComments((current) => ({ ...current, [productId]: event.target.value }))} placeholder="Contanos brevemente tu experiencia" className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-blue-300/40" /><button type="button" disabled={submitting === productId} onClick={() => void submitReview(productId)} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-50">{submitting === productId ? "Enviando..." : "Enviar reseña"}</button></div>}
+              {activeProductId === productId && !submitted.has(productId) && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={comments[productId] ?? ""} maxLength={150} onChange={(event) => setComments((current) => ({ ...current, [productId]: event.target.value }))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (submitting === productId || !(comments[productId]?.trim()) || !ratings[productId]) return; void submitReview(productId) }} placeholder="Contanos brevemente tu experiencia" className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-blue-300/40" /><button type="button" disabled={submitting === productId} onClick={() => void submitReview(productId)} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-50">{submitting === productId ? "Enviando..." : "Enviar reseña"}</button></div>}
             </div>
           )
         })}
@@ -2167,34 +2166,17 @@ function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   )
 }
 
-function DeliveredPurchaseHelp({ order, onClaim }: { order: SupabasePedido; onClaim: (problem: ClaimProblemId) => void }) {
-  const helpOptions: Array<[string, ClaimProblemId]> = [
-    ["Recibí el producto con un problema", "falla"],
-    ["Recibí el paquete sin el producto", "incorrecto"],
-    ["Nunca llegó el envío", "otro"],
-    ["Quiero cambiar o devolver un producto", "devolucion"],
-    ["Cómo cuidar el producto para devolverlo", "devolucion"],
-  ]
-
-  return (
-    <div className="mt-4 grid gap-3 lg:grid-cols-2">
-      <OrderProductFeedback order={order} />
-      <div className="space-y-3">
-        <section className="rounded-xl border border-white/8 bg-[#141414] p-3 sm:p-4">
-          <h4 className="text-sm font-black text-white">Ayuda con la compra</h4>
-          <div className="mt-2 divide-y divide-white/8">{helpOptions.map(([label, problem]) => <button key={label} type="button" onClick={() => onClaim(problem)} className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-3 py-2 text-left text-xs font-bold text-white/80 hover:text-white"><span>{label}</span><ChevronRight className="size-3.5 shrink-0 text-blue-300" /></button>)}</div>
-        </section>
-        <section className="rounded-xl border border-blue-300/15 bg-[#141414] p-3 sm:p-4">
-          <p className="text-xs font-bold leading-5 text-white/75">Podés solicitar cambio o devolución dentro del plazo disponible.</p>
-          <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => onClaim("devolucion")} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Cambiar producto</button><button type="button" onClick={() => onClaim("devolucion")} className="h-9 cursor-pointer rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white">Devolver producto</button></div>
-        </section>
-      </div>
-    </div>
-  )
-}
-
 function MisOrdenes({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const requestedOrderId = Number(searchParams.get("order"))
+  const requestedOrderView = searchParams.get("tab")
+  const initialOrderView: CustomerOrderDetailView =
+    requestedOrderView === "factura" || requestedOrderView === "reclamo"
+      ? requestedOrderView
+      : "detalle"
+  const hasRequestedOrder = Number.isInteger(requestedOrderId) && requestedOrderId > 0
   const [orders, setOrders] = useState<SupabasePedido[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -2206,26 +2188,12 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
     () => new Set(),
   )
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(
-    () => new Set(),
+    () => new Set(hasRequestedOrder ? [requestedOrderId] : []),
   )
   const [orderDetailViews, setOrderDetailViews] = useState<
     Record<number, CustomerOrderDetailView>
-  >({})
-  const [openMoreOptionsId, setOpenMoreOptionsId] = useState<number | null>(null)
+  >(() => hasRequestedOrder ? { [requestedOrderId]: initialOrderView } : {})
   const [claimProblemByOrder, setClaimProblemByOrder] = useState<Record<number, ClaimProblemId | undefined>>({})
-
-  useEffect(() => {
-    if (openMoreOptionsId === null) return
-
-    const closeOutside = (event: PointerEvent) => {
-      const target = event.target
-      if (target instanceof Element && target.closest(`[data-order-menu="${openMoreOptionsId}"]`)) return
-      setOpenMoreOptionsId(null)
-    }
-
-    document.addEventListener("pointerdown", closeOutside)
-    return () => document.removeEventListener("pointerdown", closeOutside)
-  }, [openMoreOptionsId])
 
   const loadOrders = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -2283,6 +2251,13 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void loadOrders()
   }, [loadOrders])
+
+  useEffect(() => {
+    if (!hasRequestedOrder) return
+
+    const section = initialOrderView === "reclamo" ? "?section=reclamo" : ""
+    router.replace(`/cuenta/compras/${requestedOrderId}${section}`)
+  }, [hasRequestedOrder, initialOrderView, requestedOrderId, router])
 
   useEffect(() => {
     try {
@@ -2357,23 +2332,9 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
               invoice_number:
                 updatedOrder.invoice_number ?? order.invoice_number,
             }
-          : order
-      )
+          : order,
+      ),
     )
-  }
-
-  const toggleOrderDetails = (orderId: number) => {
-    setExpandedOrderIds((currentIds) => {
-      const nextIds = new Set(currentIds)
-
-      if (nextIds.has(orderId)) {
-        nextIds.delete(orderId)
-      } else {
-        nextIds.add(orderId)
-      }
-
-      return nextIds
-    })
   }
 
   const showOrderDetailView = (
@@ -2389,6 +2350,11 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
       ...currentViews,
       [orderId]: view,
     }))
+
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.set("tab", view)
+    nextParams.set("order", String(orderId))
+    router.replace(`/cuenta?${nextParams.toString()}`, { scroll: false })
   }
 
   const showClaimView = (orderId: number, problem?: ClaimProblemId) => {
@@ -2468,7 +2434,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
           <p className="text-xs text-white/40 mt-1">Cuando compres algo aparecerá aquí.</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8 sm:space-y-10">
           {invoiceError && (
             <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-4 py-3 text-sm text-red-200">
               {invoiceError}
@@ -2480,11 +2446,10 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                 new Date(second.created_at).getTime() -
                 new Date(first.created_at).getTime(),
             )
-            .map((order) => {
+            .map((order, orderIndex) => {
             const items = order.orden_items ?? []
             const hasProof = Boolean(order.payment_proof_url)
             const isTransferOrder = order.payment_method_id === "transferencia"
-            const isExpanded = expandedOrderIds.has(order.id)
             const orderStatusBadge = getClientOrderStatusBadge(order)
             const activeOrderView = orderDetailViews[order.id] ?? "detalle"
             const invoiceAvailable = isInvoiceAvailable(order)
@@ -2510,19 +2475,18 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                 : trackingUrl || order.andreani_tracking || order.tracking_number
                   ? "Andreani · Seguimiento disponible"
                   : "Te avisaremos cuando sea despachado"
-            const hasMoreOptions =
-              invoiceAvailable || (isTransferOrder && hasProof) || Boolean(trackingUrl)
-            const detailIsOpen = isExpanded && activeOrderView === "detalle"
 
             return (
               <article
                 key={order.id}
-                className="relative overflow-visible rounded-[18px] border border-[#252525] bg-[#141414] shadow-xl shadow-black/20"
+                className={`relative overflow-visible rounded-[18px] border border-[#252525] shadow-[0_-1px_10px_rgba(17,42,67,0.16),0_20px_35px_rgba(0,0,0,0.2)] before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-[rgba(17,42,67,0.6)] before:content-[''] ${
+                  orderIndex % 2 === 0 ? "bg-[#111111]" : "bg-[#171717]"
+                }`}
               >
-                <div className="p-4 sm:p-6">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex min-w-0 items-center gap-4">
-                      <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
+                      <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
                         {firstProductImage ? (
                           <img src={firstProductImage} alt={firstProductName} className="size-full object-contain" />
                         ) : (
@@ -2547,7 +2511,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                     </div>
                   </div>
 
-                  <div className="mt-5 grid border-y border-white/8 py-4 sm:grid-cols-3 sm:divide-x sm:divide-white/8">
+                  <div className="mt-4 grid border-y border-white/8 py-3 sm:grid-cols-3 sm:divide-x sm:divide-white/8">
                     <div className="flex items-center gap-3 px-1 py-2 sm:px-4 sm:py-0 sm:first:pl-0">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><CreditCard className="size-5 text-blue-300" /></span>
                       <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Pago</p><p className="mt-1 text-sm font-bold text-white">{isTransferOrder ? "Transferencia bancaria" : "Mercado Pago"}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{getPaymentProgressLabel(order)}</p></div>
@@ -2562,19 +2526,19 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                     </div>
                   </div>
 
-                  <div className="mt-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" aria-expanded={detailIsOpen} onClick={() => detailIsOpen ? toggleOrderDetails(order.id) : showOrderDetailView(order.id, "detalle")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#112A43] bg-[#112A43] px-4 text-xs font-black text-white"><FileText className="size-4" />{detailIsOpen ? "Ocultar detalle" : "Ver detalle"}</button>
-                      <button type="button" disabled={!invoiceAvailable} onClick={() => showOrderDetailView(order.id, "factura")} className="relative inline-flex h-10 items-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:text-[#A0A0A0]"><Download className="size-4" />{invoiceAvailable ? "Ver factura" : "Factura pendiente"}{showInvoiceNotification && <span className="absolute -right-1.5 -top-1.5"><CustomerInvoiceBell /></span>}</button>
-                      {isTransferOrder && (hasProof ? <PaymentProofViewButton order={order} /> : <PaymentProofActionButton orderId={order.id} onUploaded={handlePaymentProofUploaded} className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white disabled:opacity-60" />)}
-                      {order.estado === "entregado" && <button type="button" aria-expanded={isExpanded && activeOrderView === "reclamo"} onClick={() => isExpanded && activeOrderView === "reclamo" ? toggleOrderDetails(order.id) : showClaimView(order.id)} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white"><MessageCircle className="size-4" />{isExpanded && activeOrderView === "reclamo" ? "Ocultar reclamo" : "Necesito ayuda"}</button>}
-                    </div>
-                    {hasMoreOptions && <div data-order-menu={order.id} className="relative z-10 w-fit lg:ml-auto"><button type="button" aria-expanded={openMoreOptionsId === order.id} onClick={() => setOpenMoreOptionsId((current) => current === order.id ? null : order.id)} className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black leading-none text-white"><span className="leading-none">Más opciones</span><span className="flex size-3.5 shrink-0 items-center justify-center"><ChevronDown className={`block size-3.5 transition-transform ${openMoreOptionsId === order.id ? "rotate-180" : ""}`} /></span></button>{openMoreOptionsId === order.id && <div className="absolute right-0 top-12 z-30 flex min-w-56 flex-col gap-1 rounded-xl border border-white/10 bg-[#181818] p-2 shadow-2xl shadow-black/60">{invoiceAvailable && <button type="button" disabled={downloadingInvoiceId === order.id} onClick={() => { setOpenMoreOptionsId(null); void handleDownloadInvoice(order.id) }} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-xs font-bold text-white hover:bg-[#112A43]"><Download className="size-4" />Descargar factura</button>}{isTransferOrder && hasProof && <PaymentProofActionButton orderId={order.id} initialUploaded onUploaded={(updatedOrder) => { setOpenMoreOptionsId(null); handlePaymentProofUploaded(updatedOrder) }} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-xs font-bold text-white hover:bg-[#112A43]" />}{trackingUrl && <a href={trackingUrl} target="_blank" rel="noreferrer" onClick={() => setOpenMoreOptionsId(null)} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-3 text-xs font-bold text-white hover:bg-[#112A43]"><Truck className="size-4" />Seguimiento Andreani</a>}</div>}</div>}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}`)} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#112A43] bg-[#112A43] px-4 text-xs font-black text-white transition-colors hover:border-blue-300/35 hover:bg-[#173652]"><FileText className="size-4" />Ver compra</button>
                   </div>
                 </div>
 
-                {isExpanded && (
+                {false && (
                   <div className="customer-order-detail border-t border-white/7 px-3 py-3 sm:px-4">
+                    <div className="mb-3 flex flex-wrap gap-2 rounded-xl border border-white/8 bg-black/25 p-2.5">
+                      <button type="button" onClick={() => showOrderDetailView(order.id, "detalle")} className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black text-white transition-colors ${activeOrderView === "detalle" ? "border-beyonix-blue-light/45 bg-[#112A43]" : "border-white/12 bg-[#181818] hover:border-blue-300/30"}`}><FileText className="size-4" />Estado y productos</button>
+                      {invoiceAvailable && <button type="button" onClick={() => showOrderDetailView(order.id, "factura")} className={`relative inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black text-white transition-colors ${activeOrderView === "factura" ? "border-beyonix-blue-light/45 bg-[#112A43]" : "border-white/12 bg-[#181818] hover:border-blue-300/30"}`}><Download className="size-4" />Ver factura{showInvoiceNotification && <span className="absolute -right-1.5 -top-1.5"><CustomerInvoiceBell /></span>}</button>}
+                      {isTransferOrder && (hasProof ? <PaymentProofViewButton order={order} /> : <PaymentProofActionButton orderId={order.id} onUploaded={handlePaymentProofUploaded} className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-3 text-xs font-black text-white transition-colors hover:border-blue-300/30 hover:bg-[#112A43] disabled:opacity-60" />)}
+                      {order.estado === "entregado" && <button type="button" aria-expanded={activeOrderView === "reclamo"} onClick={() => showClaimView(order.id)} className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black text-white transition-colors ${activeOrderView === "reclamo" ? "border-beyonix-blue-light/45 bg-[#112A43]" : "border-white/12 bg-[#181818] hover:border-blue-300/30"}`}><MessageCircle className="size-4" />Necesito ayuda</button>}
+                    </div>
                     {activeOrderView === "factura" && (
                       <div className="mb-3 flex flex-col gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
@@ -2647,7 +2611,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                       ))}
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {items.map((item) => {
                         const quantity = Number(item.cantidad ?? 0)
                         const unitPrice = Number(item.precio ?? 0)
@@ -2659,10 +2623,10 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                         return (
                           <div
                             key={item.id}
-                            className="grid gap-4 rounded-xl border border-white/6 bg-black/35 p-3 sm:grid-cols-account-order-item sm:items-center"
+                            className="grid gap-3 rounded-xl border border-white/6 bg-black/35 p-2.5 sm:grid-cols-account-order-item sm:items-center"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
+                              <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
                                 {image ? (
                                   <img
                                     src={image}
@@ -2722,12 +2686,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                         )
                       })}
                     </div>
-                    {order.estado === "entregado" && (
-                      <DeliveredPurchaseHelp
-                        order={order}
-                        onClaim={(problem) => showClaimView(order.id, problem)}
-                      />
-                    )}
+                    {order.estado === "entregado" && <div className="mt-3"><OrderProductFeedback order={order} /></div>}
                       </>
                     )}
                   </div>
@@ -3584,17 +3543,303 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   )
 }
 
+export function CompraDetalleClient({ orderId }: { orderId: number }) {
+  const { user, isLoading } = useAuth()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [order, setOrder] = useState<SupabasePedido | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false)
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" })
+  }, [orderId])
+
+  useEffect(() => {
+    if (searchParams.get("section") !== "reclamo") return
+    router.replace(`/cuenta/compras/${orderId}/ayuda`)
+  }, [orderId, router, searchParams])
+
+  useEffect(() => {
+    if (isLoading) return
+    if (!user) {
+      router.replace(`/login?redirect=/cuenta/compras/${orderId}`)
+      return
+    }
+
+    const currentUser = user
+    let active = true
+
+    async function loadOrder() {
+      setLoading(true)
+      setError("")
+      const { data, error: orderError } = await supabase
+        .from("ordenes")
+        .select("*, orden_items(*, productos(*), producto_variantes(*))")
+        .eq("id", orderId)
+        .maybeSingle()
+
+      if (!active) return
+
+      if (orderError || !data) {
+        setError("No encontramos esta compra.")
+        setLoading(false)
+        return
+      }
+
+      const currentOrder = data as SupabasePedido
+      const userValues = [currentUser.id, currentUser.email]
+        .filter(Boolean)
+        .map((value) => String(value).trim().toLowerCase())
+      const orderValues = [currentOrder.usuario_id, currentOrder.cliente_email]
+        .filter(Boolean)
+        .map((value) => String(value).trim().toLowerCase())
+
+      if (!orderValues.some((value) => userValues.includes(value))) {
+        setError("No tenés acceso a esta compra.")
+        setLoading(false)
+        return
+      }
+
+      setOrder(currentOrder)
+      setLoading(false)
+    }
+
+    void loadOrder()
+    return () => { active = false }
+  }, [isLoading, orderId, router, user])
+
+  const handleProofUploaded = (updatedOrder: SupabasePedido) => {
+    setOrder((current) => current ? { ...current, ...updatedOrder, orden_items: current.orden_items } : current)
+  }
+
+  const handleDownloadInvoice = async () => {
+    if (!order) return
+    setDownloadingInvoice(true)
+    setError("")
+    try {
+      const response = await fetch(`/api/orders/${order.id}/invoice`)
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        throw new Error(data.error || "No se pudo descargar la factura.")
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = "Factura-BEYONIX.pdf"
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : "No se pudo descargar la factura.")
+    } finally {
+      setDownloadingInvoice(false)
+    }
+  }
+
+  if (isLoading || loading) {
+    return <main className="flex min-h-screen items-center justify-center bg-[#05070A] pt-20"><div className="size-9 animate-spin rounded-full border-2 border-white/10 border-t-blue-300" /></main>
+  }
+
+  if (!order) {
+    return <main className="min-h-screen bg-[#05070A] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#0D1117] p-6 text-center"><p className="text-sm font-bold text-white">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a Mis compras</button></div></main>
+  }
+
+  const items = order.orden_items ?? []
+  const productsSubtotal = items.reduce(
+    (sum, item) => sum + Number(item.precio ?? 0) * Number(item.cantidad ?? 0),
+    0,
+  )
+  const discount = Number(order.transfer_discount_amount ?? 0)
+  const shipping = Number(
+    order.shipping_cost_charged ?? Math.max(0, Number(order.total) + discount - productsSubtotal),
+  )
+  const invoiceAvailable = isInvoiceAvailable(order)
+  const hasProof = Boolean(order.payment_proof_url)
+  const status = getClientOrderStatusBadge(order)
+
+  return (
+    <main className="min-h-screen bg-[#05070A] px-3 pb-12 pt-24 font-heading sm:px-5 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a Mis compras</button>
+
+        <header className="mt-4 rounded-3xl border border-[#112A43]/70 bg-[#0D1117] p-4 shadow-[0_0_28px_rgba(17,42,67,0.22)] sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-11px font-black uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
+              <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">Pedido #{formatPublicOrderId(order.id)}</h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/58"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/35 bg-emerald-500/15 px-5 py-3 lg:min-w-56 lg:text-right">
+              <p className="text-10px font-black uppercase tracking-widest text-emerald-200">Total pagado</p>
+              <p className="mt-1 text-2xl font-black text-white">{formatCuentaPrice(Number(order.total))}</p>
+            </div>
+          </div>
+        </header>
+
+        {error && <p className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">{error}</p>}
+
+        <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.75fr)]">
+          <div className="space-y-4">
+            <section className="rounded-2xl border border-white/9 bg-[#0D1117] p-3 sm:p-4">
+              <OrderProgressTimeline order={order} />
+              <OrderTrackingPanel order={order} />
+            </section>
+
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3 sm:p-4">
+              <h2 className="text-base font-black text-white">Productos comprados</h2>
+              <div className="mt-3 space-y-2">
+                {items.map((item) => {
+                  const quantity = Number(item.cantidad ?? 0)
+                  const unitPrice = Number(item.precio ?? 0)
+                  const name = item.productos?.nombre ?? `Producto #${item.producto_id}`
+                  const image = getCuentaItemImage(item)
+                  return <div key={item.id} className="grid gap-3 rounded-xl border border-white/8 bg-[#1B2028] p-3 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
+                    <div className="flex min-w-0 items-center gap-3"><div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">{image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-5 text-black/30" />}</div><div className="min-w-0"><p className="text-sm font-black text-white">{name}</p><p className="mt-1 text-xs text-white/55">{getCuentaItemColor(item)}</p></div></div>
+                    <div><p className="text-10px font-bold uppercase tracking-widest text-white/40">Cantidad</p><p className="mt-1 text-sm font-black text-white">{quantity}</p></div>
+                    <div><p className="text-10px font-bold uppercase tracking-widest text-white/40">Precio unitario</p><p className="mt-1 text-sm font-black text-white">{formatCuentaPrice(unitPrice)}</p></div>
+                    <div><p className="text-10px font-bold uppercase tracking-widest text-white/40">Subtotal</p><p className="mt-1 text-sm font-black text-white">{formatCuentaPrice(unitPrice * quantity)}</p></div>
+                  </div>
+                })}
+              </div>
+            </section>
+
+            {order.estado === "entregado" && <OrderProductFeedback order={order} />}
+          </div>
+
+          <aside className="space-y-4 lg:sticky lg:top-24">
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-4">
+              <h2 className="text-base font-black text-white">Resumen de pago</h2>
+              <dl className="mt-3 space-y-2 text-sm"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-bold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-bold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-bold">− {formatCuentaPrice(discount)}</dd></div>}</dl>
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-3"><span className="text-xs font-black uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-lg text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
+            </section>
+
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-4">
+              <h2 className="text-base font-black text-white">Factura</h2>
+              {invoiceAvailable ? <><p className="mt-2 text-xs font-semibold text-white/60">Factura C {formatCuentaInvoiceNumber(order.invoice_point, order.invoice_number)}</p><button type="button" disabled={downloadingInvoice} onClick={() => void handleDownloadInvoice()} className="mt-3 inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60"><Download className="size-4" />{downloadingInvoice ? "Preparando..." : "Descargar factura"}</button></> : <p className="mt-2 rounded-xl bg-[#1B2028] px-3 py-2.5 text-xs font-semibold text-white/65">Factura pendiente de emisión</p>}
+            </section>
+
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-4">
+              <h2 className="text-base font-black text-white">Comprobante</h2>
+              <div className="mt-3">{hasProof ? <PaymentProofViewButton order={order} /> : order.payment_method_id === "transferencia" ? <PaymentProofActionButton orderId={order.id} onUploaded={handleProofUploaded} className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60" /> : <p className="rounded-xl bg-[#1B2028] px-3 py-2.5 text-xs font-semibold text-white/65">Este medio de pago no requiere comprobante.</p>}</div>
+            </section>
+
+            <section className="rounded-2xl border border-blue-300/15 bg-[#141820] p-4">
+              <h2 className="text-base font-black text-white">Ayuda y reclamos</h2>
+              <p className="mt-1 text-xs leading-5 text-white/58">Si tuviste un problema con esta compra, estamos para ayudarte.</p>
+              <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)} className="mt-3 inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-300/20 bg-[#112A43] px-4 text-xs font-black text-white"><MessageCircle className="size-4" />Necesito ayuda con esta compra</button>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+export function CompraAyudaClient({ orderId }: { orderId: number }) {
+  const { user, isLoading } = useAuth()
+  const router = useRouter()
+  const [order, setOrder] = useState<SupabasePedido | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" })
+  }, [orderId])
+
+  useEffect(() => {
+    if (isLoading) return
+    if (!user) {
+      router.replace(`/login?redirect=/cuenta/compras/${orderId}/ayuda`)
+      return
+    }
+
+    const currentUser = user
+    let active = true
+
+    async function loadOrder() {
+      setLoading(true)
+      const { data, error: orderError } = await supabase
+        .from("ordenes")
+        .select("*, orden_items(*, productos(*), producto_variantes(*))")
+        .eq("id", orderId)
+        .maybeSingle()
+
+      if (!active) return
+      if (orderError || !data) {
+        setError("No encontramos esta compra.")
+        setLoading(false)
+        return
+      }
+
+      const currentOrder = data as SupabasePedido
+      const userValues = [currentUser.id, currentUser.email]
+        .filter(Boolean)
+        .map((value) => String(value).trim().toLowerCase())
+      const orderValues = [currentOrder.usuario_id, currentOrder.cliente_email]
+        .filter(Boolean)
+        .map((value) => String(value).trim().toLowerCase())
+
+      if (!orderValues.some((value) => userValues.includes(value))) {
+        setError("No tenés acceso a esta compra.")
+        setLoading(false)
+        return
+      }
+
+      setOrder(currentOrder)
+      setLoading(false)
+    }
+
+    void loadOrder()
+    return () => { active = false }
+  }, [isLoading, orderId, router, user])
+
+  if (isLoading || loading) {
+    return <main className="flex min-h-screen items-center justify-center bg-[#05070A] pt-20"><div className="size-9 animate-spin rounded-full border-2 border-white/10 border-t-blue-300" /></main>
+  }
+
+  if (!order) {
+    return <main className="min-h-screen bg-[#05070A] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#0D1117] p-6 text-center"><p className="text-sm font-bold text-white">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push(`/cuenta/compras/${orderId}`)} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a la compra</button></div></main>
+  }
+
+  return (
+    <main className="min-h-screen bg-[#05070A] px-3 pb-12 pt-24 font-heading sm:px-5 lg:px-8">
+      <div className="mx-auto max-w-5xl">
+        <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}`)} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a la compra</button>
+
+        <header className="mt-4 rounded-3xl border border-[#112A43]/70 bg-[#0D1117] p-4 shadow-[0_0_28px_rgba(17,42,67,0.22)] sm:p-5">
+          <p className="text-11px font-black uppercase tracking-[0.18em] text-blue-300">Pedido #{formatPublicOrderId(order.id)}</p>
+          <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">Ayuda con tu compra</h1>
+          <p className="mt-2 text-xs font-semibold text-white/52">{formatOrderCardDate(order.created_at)}</p>
+          <p className="mt-3 text-sm font-semibold text-white/70">Seleccioná el producto y contanos qué pasó.</p>
+        </header>
+
+        <section className="customer-claim-experience mt-4">
+          <CustomerClaimExperience order={order} />
+        </section>
+      </div>
+    </main>
+  )
+}
+
 export function CuentaClient() {
   const { user, isLoading } = useAuth()
   const [tab, setTab] = useState<"login" | "register">("login")
   const searchParams = useSearchParams()
 
-  const tabParam = searchParams.get("tab") as ProfileView | null
+  const tabParam = searchParams.get("tab")
   const initialView: ProfileView =
     tabParam === "ordenes" ||
     tabParam === "datos" ||
     tabParam === "seguridad"
       ? tabParam
+      : tabParam === "detalle" ||
+          tabParam === "factura" ||
+          tabParam === "reclamo"
+        ? "ordenes"
       : "home"
 
   useEffect(() => {

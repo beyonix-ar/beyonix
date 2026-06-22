@@ -18,13 +18,16 @@ import {
   ChevronDown,
   CircleUserRound,
   Clock3,
+  Home,
   Instagram,
   Landmark,
   Mail,
+  MapPin,
   Minus,
   Plus,
   Smartphone,
   Truck,
+  UserRound,
 } from "lucide-react"
 
 import {
@@ -110,13 +113,13 @@ const paymentMethods = [
   {
     id: "transferencia",
     name: "Transferencia bancaria",
-    description: "Transferencia con 5% OFF y validación manual",
+    description: `Transferencia con ${TRANSFER_DISCOUNT_PERCENT}% OFF y validación manual`,
     icon: Landmark,
   },
 ]
 
 const checkoutInputClassName =
-  "beyonix-checkout-input border-white/15 bg-neutral-900 uppercase text-white placeholder:normal-case placeholder:text-white/35 focus-visible:border-beyonix-focus focus-visible:ring-beyonix-focus"
+  "beyonix-checkout-input h-9 rounded-xl border-[#30363D] bg-[#1F242B] font-heading uppercase text-white placeholder:normal-case placeholder:text-white/40 hover:border-[#46505c] focus-visible:border-[#112A43] focus-visible:ring-1 focus-visible:ring-[#112A43]/70"
 
 const CHECKOUT_EMAIL = "beyonix.ar@gmail.com"
 const CHECKOUT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CHECKOUT_EMAIL)}&su=${encodeURIComponent("Consulta sobre mi compra en BEYONIX")}`
@@ -460,6 +463,9 @@ export default function CheckoutPage() {
     shippingCost: shippingCostCharged,
   })
   const isTransferPayment = selectedPayment === "transferencia"
+  const isSelectedPaymentValid = paymentMethods.some(
+    (method) => method.id === selectedPayment,
+  )
   const transferPaymentTotals = calculateTransferPaymentTotal(
     totals.productsTotal,
     totals.shipping,
@@ -685,6 +691,10 @@ export default function CheckoutPage() {
     isRecipientStepValid &&
       isShippingStepValid
   )
+  const isCurrentStepValid =
+    currentStep === 1
+      ? isRecipientStepValid
+      : isShippingStepValid
   const getCheckoutInputClassName = (
     field: RequiredCheckoutField
   ) =>
@@ -877,7 +887,7 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <main className="bg-background">
+      <main className="bg-[#05070A] font-heading">
       <header className="border-b border-border bg-black sticky top-0 z-50">
         <div className="container mx-auto px-4 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
@@ -985,7 +995,7 @@ export default function CheckoutPage() {
 
       <div className="container mx-auto px-4 py-5 lg:px-8 lg:py-7">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-5 flex items-end justify-between gap-4">
+          <div className="mb-4 flex items-end justify-between gap-4">
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.2em] text-beyonix-cyan/75">
                 Compra segura
@@ -1000,7 +1010,7 @@ export default function CheckoutPage() {
             </span>
           </div>
 
-          <div className="mb-5 grid grid-cols-3 gap-2" aria-label="Progreso del checkout">
+          <div className="mb-3 grid grid-cols-3 gap-2 lg:gap-3" aria-label="Progreso del checkout">
             {checkoutSteps.map((step) => {
               const active =
                 currentStep === step.id
@@ -1011,7 +1021,7 @@ export default function CheckoutPage() {
                 <div
                   key={step.id}
                   className={cn(
-                    "flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-all",
+                    "flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
                     active
                       ? "border-beyonix-blue-light bg-beyonix-blue/45 text-white"
                       : complete
@@ -1021,7 +1031,7 @@ export default function CheckoutPage() {
                 >
                   <span
                     className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
+                      "flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
                       active || complete
                         ? "border-beyonix-sky/35 bg-beyonix-blue text-beyonix-sky"
                         : "border-white/10 bg-black/35"
@@ -1044,69 +1054,117 @@ export default function CheckoutPage() {
           <form
             id="checkout-form"
             onSubmit={handleSubmit}
-            className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-7"
+            className="grid items-stretch gap-5 lg:grid-cols-3 lg:gap-3"
           >
-            <section className="checkout-panel flex min-h-[520px] flex-col rounded-2xl border p-4 sm:p-6">
+            <section className="checkout-panel flex min-h-[480px] flex-col rounded-2xl border px-4 pb-3 pt-4 shadow-xl shadow-black/25 sm:px-5 sm:pb-4 sm:pt-5 lg:col-span-2">
               {currentStep === 1 && (
-                <div className="animate-in fade-in slide-in-from-right-2 flex-1 space-y-4 rounded-2xl border border-white/8 bg-[#181818] p-4 duration-300 sm:p-5">
-                  <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
+                <div className="animate-in fade-in slide-in-from-right-2 space-y-4 rounded-2xl border border-[#30363D]/80 bg-[#15191F] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] duration-300 sm:px-5 sm:py-4 [&_label]:text-[13px]">
+                  <h2 className="border-l-4 border-beyonix-blue py-0.5 pl-3 text-xl font-bold text-foreground">
                     Datos de quien recibe
                   </h2>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="nombre">Nombre completo *</Label>
-                      <Input id="nombre" name="nombre" className={getCheckoutInputClassName("nombre")} value={formData.nombre} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email *</Label>
-                      <Input id="email" name="email" type="email" className={getCheckoutInputClassName("email")} value={formData.email} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="telefono">Teléfono *</Label>
-                      <Input id="telefono" name="telefono" type="tel" className={getCheckoutInputClassName("telefono")} value={formData.telefono} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="calle">Calle *</Label>
-                      <Input id="calle" name="calle" className={getCheckoutInputClassName("calle")} value={formData.calle} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="numero">Número *</Label>
-                      <Input id="numero" name="numero" inputMode="numeric" className={getCheckoutInputClassName("numero")} value={formData.numero} onChange={handleInputChange} required />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="piso">Piso opcional</Label>
-                        <Input id="piso" name="piso" className={checkoutInputClassName} value={formData.piso} onChange={handleInputChange} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="departamento">Departamento opcional</Label>
-                        <Input id="departamento" name="departamento" className={checkoutInputClassName} value={formData.departamento} onChange={handleInputChange} />
-                      </div>
-                    </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="provincia">Provincia *</Label>
-                      <ProvinceSelect
-                        value={formData.provincia}
-                        onChange={handleProvinceChange}
-                      />
-                      {invalidField === "provincia" && (
-                        <p className="text-xs font-semibold text-red-300">
-                          Seleccioná una provincia.
+                  <div className="space-y-4">
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-3">
+                        <p className="shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/45">
+                          Datos personales
                         </p>
-                      )}
+                        <span className="h-px flex-1 bg-[#30363D]" />
+                      </div>
+
+                      <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label htmlFor="nombre" className="text-white/75">
+                            <UserRound aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Nombre completo *
+                          </Label>
+                          <Input id="nombre" name="nombre" className={getCheckoutInputClassName("nombre")} value={formData.nombre} onChange={handleInputChange} required />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="email" className="text-white/75">
+                            <Mail aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Email *
+                          </Label>
+                          <Input id="email" name="email" type="email" className={getCheckoutInputClassName("email")} value={formData.email} onChange={handleInputChange} required />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="telefono" className="text-white/75">
+                            <Smartphone aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Teléfono *
+                          </Label>
+                          <Input id="telefono" name="telefono" type="tel" className={getCheckoutInputClassName("telefono")} value={formData.telefono} onChange={handleInputChange} required />
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="localidad">Localidad *</Label>
-                      <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cpDestino">Código postal *</Label>
-                      <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="referencias">Referencias opcionales</Label>
-                      <Input id="referencias" name="referencias" className={checkoutInputClassName} value={formData.referencias} onChange={handleInputChange} />
+
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-3">
+                        <p className="shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/45">
+                          Dirección de entrega
+                        </p>
+                        <span className="h-px flex-1 bg-[#30363D]" />
+                      </div>
+
+                      <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label htmlFor="calle" className="text-white/75">
+                            <Home aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Calle *
+                          </Label>
+                          <Input id="calle" name="calle" className={getCheckoutInputClassName("calle")} value={formData.calle} onChange={handleInputChange} required />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="numero" className="text-white/75">
+                            <Home aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Número *
+                          </Label>
+                          <Input id="numero" name="numero" inputMode="numeric" className={getCheckoutInputClassName("numero")} value={formData.numero} onChange={handleInputChange} required />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 sm:col-span-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="piso" className="text-white/75">Piso opcional</Label>
+                            <Input id="piso" name="piso" className={checkoutInputClassName} value={formData.piso} onChange={handleInputChange} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="departamento" className="text-white/75">Departamento opcional</Label>
+                            <Input id="departamento" name="departamento" className={checkoutInputClassName} value={formData.departamento} onChange={handleInputChange} />
+                          </div>
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <Label htmlFor="provincia" className="text-white/75">
+                            <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Provincia *
+                          </Label>
+                          <ProvinceSelect
+                            value={formData.provincia}
+                            onChange={handleProvinceChange}
+                            appearance="checkout"
+                          />
+                          {invalidField === "provincia" && (
+                            <p className="text-xs font-semibold text-red-300">
+                              Seleccioná una provincia.
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="localidad" className="text-white/75">
+                            <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Localidad *
+                          </Label>
+                          <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} required />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="cpDestino" className="text-white/75">
+                            <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            Código postal *
+                          </Label>
+                          <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} required />
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <Label htmlFor="referencias" className="text-white/75">Referencias opcionales</Label>
+                          <Input id="referencias" name="referencias" className={checkoutInputClassName} value={formData.referencias} onChange={handleInputChange} />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1291,7 +1349,7 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <div className="mt-auto flex items-center justify-between gap-3 border-t border-white/8 pt-4">
+              <div className="mt-auto flex items-center justify-between gap-3 border-t border-white/8 pt-3">
                 <button
                   type="button"
                   disabled={currentStep === 1}
@@ -1303,7 +1361,7 @@ export default function CheckoutPage() {
                       ) as CheckoutStep
                     )
                   }
-                  className="h-11 min-w-120px cursor-pointer rounded-xl border border-white/10 bg-[#181818] px-5 text-sm font-semibold text-white/70 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                  className="h-10 min-w-110px cursor-pointer rounded-xl border border-white/10 bg-[#181818] px-4 text-sm font-semibold text-white/70 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
                 >
                   Anterior
                 </button>
@@ -1312,7 +1370,12 @@ export default function CheckoutPage() {
                   <button
                     type="button"
                     onClick={goToNextStep}
-                    className="h-11 min-w-150px cursor-pointer rounded-xl bg-beyonix-blue px-6 text-sm font-semibold text-white transition-colors hover:bg-beyonix-blue-hover"
+                    className={cn(
+                      "h-10 min-w-140px cursor-pointer rounded-xl px-5 text-sm font-semibold text-white transition-colors",
+                      isCurrentStepValid
+                        ? "bg-[#16A34A] hover:bg-[#15803D]"
+                        : "bg-beyonix-blue hover:bg-beyonix-blue-hover"
+                    )}
                   >
                     Continuar
                   </button>
@@ -1320,11 +1383,13 @@ export default function CheckoutPage() {
                   <Button
                     type="submit"
                     className={cn(
-                      "h-11 min-w-180px",
+                      "h-10 min-w-180px",
                       isFormValid &&
                       !isProcessing &&
                       !stockError
-                        ? "bg-beyonix-blue text-white hover:bg-beyonix-blue-hover"
+                        ? isTransferPayment && isSelectedPaymentValid
+                          ? "bg-[#16A34A] text-white hover:bg-[#15803D]"
+                          : "bg-beyonix-blue text-white hover:bg-beyonix-blue-hover"
                         : "cursor-not-allowed bg-neutral-700 text-white/55 hover:bg-neutral-700"
                     )}
                     disabled={
@@ -1343,26 +1408,26 @@ export default function CheckoutPage() {
               </div>
             </section>
 
-            <aside className="checkout-panel relative h-full min-h-[520px] overflow-hidden rounded-2xl border p-4 shadow-2xl shadow-black/25 sm:p-5">
+            <aside className="checkout-panel relative h-fit self-start overflow-hidden rounded-2xl border px-4 py-3 shadow-2xl shadow-black/25 lg:sticky lg:top-24">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-beyonix-blue-light/75 to-transparent" />
               <div className="flex items-center justify-between gap-3">
                 <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
                   Resumen del pedido
                 </h2>
-                <span className="rounded-full border border-beyonix-blue-light/25 bg-beyonix-blue/25 px-2.5 py-1 text-10px font-semibold uppercase tracking-widest text-beyonix-sky">
+                <span className="rounded-full border border-beyonix-blue-light/30 bg-transparent px-2.5 py-1 text-10px font-semibold uppercase tracking-widest text-white/60">
                   {items.reduce((total, item) => total + item.quantity, 0)} unidades
                 </span>
               </div>
 
-              <div className="my-4 rounded-xl border border-beyonix-blue-light/18 bg-linear-to-br from-[#1b1d20] to-[#141414] p-3 shadow-inner shadow-black/20">
+              <div className="my-2.5 rounded-xl border border-[#30363D] bg-[#15191F] px-3 py-2 shadow-inner shadow-black/20">
                 <FreeShippingBar subtotal={baseTotals.productsTotal} />
               </div>
 
-              <div className="max-h-[330px] space-y-3 overflow-y-auto pr-1 custom-scrollbar">
+              <div className="custom-scrollbar max-h-[320px] space-y-1.5 overflow-y-auto pr-1">
                 {items.map((item) => (
                   <div
                     key={`${item.product.id}-${item.variantId ?? item.color}`}
-                    className="checkout-order-item group grid min-h-112px grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border p-2.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
+                    className="checkout-order-item group grid min-h-104px grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#30363D] bg-[#15191F] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
                   >
                     <div className="h-full min-h-92px overflow-hidden rounded-lg border border-white/8 bg-beyonix-surface-3">
                       <TransparencyAwareImage
@@ -1375,20 +1440,20 @@ export default function CheckoutPage() {
                     <div className="flex min-w-0 flex-col justify-between py-0.5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="line-clamp-2 text-sm font-semibold text-foreground">
+                          <p className="line-clamp-2 text-sm font-bold text-foreground">
                             {item.product.nombre}
                           </p>
                           {(item.variantName || item.colorHex) && (
-                            <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-white/8 bg-black/25 px-2.5 py-1">
+                            <div className="mt-1 inline-flex max-w-full items-center gap-1.5">
                               {item.colorHex && (
                                 <span
-                                  className="size-3 shrink-0 rounded-full border border-white/35 shadow-sm shadow-black"
+                                  className="size-2.5 shrink-0 rounded-full border border-white/35 shadow-sm shadow-black"
                                   style={{
                                     backgroundColor: item.colorHex,
                                   }}
                                 />
                               )}
-                              <span className="truncate text-10px font-semibold uppercase tracking-wider text-white/65">
+                              <span className="truncate text-xs capitalize text-white/60">
                                 {item.variantName || item.color}
                               </span>
                             </div>
@@ -1399,39 +1464,42 @@ export default function CheckoutPage() {
                         </span>
                       </div>
 
-                      <div className="mt-2 flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          aria-label="Quitar una unidad"
-                          onClick={() =>
-                            decreaseQuantity(item.product.id, item.color)
-                          }
-                          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-black/30 text-white/65 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white"
-                        >
-                          <Minus className="size-3.5" />
-                        </button>
-                        <span className="flex h-8 min-w-10 items-center justify-center rounded-lg border border-beyonix-blue-light/25 bg-beyonix-blue/20 px-2 text-sm font-semibold tabular-nums text-white">
-                          {item.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label="Agregar una unidad"
-                          onClick={() =>
-                            increaseQuantity(item.product.id, item.color)
-                          }
-                          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-black/30 text-white/65 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white"
-                        >
-                          <Plus className="size-3.5" />
-                        </button>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <span className="text-11px font-medium text-white/55">Cant.</span>
+                        <div className="inline-flex h-7 items-center overflow-hidden rounded-full border border-beyonix-blue-light/35 bg-black/40">
+                          <button
+                            type="button"
+                            aria-label="Quitar una unidad"
+                            onClick={() =>
+                              decreaseQuantity(item.product.id, item.color)
+                            }
+                            className="flex h-full w-7 cursor-pointer items-center justify-center border-r border-white/10 text-white/65 transition-colors hover:bg-beyonix-blue/45 hover:text-white"
+                          >
+                            <Minus className="size-3" />
+                          </button>
+                          <span className="flex h-full min-w-8 items-center justify-center px-1.5 text-xs font-bold tabular-nums text-white">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="Agregar una unidad"
+                            onClick={() =>
+                              increaseQuantity(item.product.id, item.color)
+                            }
+                            className="flex h-full w-7 cursor-pointer items-center justify-center border-l border-white/10 text-white/65 transition-colors hover:bg-beyonix-blue/45 hover:text-white"
+                          >
+                            <Plus className="size-3" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <Separator className="my-4" />
+              <Separator className="my-2 bg-[#242424]" />
 
-              <div className="space-y-2 text-sm">
+              <div className="space-y-1 rounded-xl border border-[#242a31] bg-[#090C10] px-3 py-2.5 text-sm shadow-inner shadow-black/20">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatPrice(totals.subtotal)}</span>
@@ -1447,10 +1515,11 @@ export default function CheckoutPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Envío</span>
                   <span className={
-                    selectedShippingOption &&
-                    totals.shipping === 0
-                      ? "font-semibold text-emerald-400"
-                      : ""
+                    !selectedShippingOption
+                      ? "text-white/45"
+                      : totals.shipping === 0
+                        ? "font-semibold text-emerald-400"
+                        : "text-white"
                   }>
                     {!selectedShippingOption
                       ? "A definir"
@@ -1469,9 +1538,9 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
-                <Separator />
-                <div className="flex items-end justify-between pt-1">
-                  <span className="font-semibold">Total</span>
+                <Separator className="bg-[#242424]" />
+                <div className="flex items-end justify-between pt-0.5 font-heading text-white">
+                  <span className="font-bold">Total</span>
                   <span className="text-xl font-bold">
                     {formatPrice(finalTotal)}
                   </span>
@@ -1489,7 +1558,7 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <p className="mt-4 text-center text-xs text-muted-foreground">
+              <p className="mt-2.5 text-center text-xs text-muted-foreground">
                 Al completar tu compra aceptás nuestros{" "}
                 <Link
                   href="/terminos"

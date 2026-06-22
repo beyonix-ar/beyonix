@@ -156,15 +156,27 @@ function isVisibleAdminOrderNotification(order: {
   return !isMercadoPago || order.payment_status === "approved"
 }
 
-export async function getNewOrderNotificationCount() {
+export type AdminOrderNotificationTone = "order" | "message" | "issue"
+
+export interface AdminOrderNotificationSummary {
+  count: number
+  tone: AdminOrderNotificationTone
+}
+
+const EMPTY_NOTIFICATION_SUMMARY: AdminOrderNotificationSummary = {
+  count: 0,
+  tone: "order",
+}
+
+export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotificationSummary> {
   try {
     const adminId = await getCurrentAdminId()
 
-    if (!adminId) return 0
+    if (!adminId) return EMPTY_NOTIFICATION_SUMMARY
 
     const view = await getAdminOrderView(adminId)
 
-    if (!view.available) return 0
+    if (!view.available) return EMPTY_NOTIFICATION_SUMMARY
 
     const { data: orders, error } = await supabase
       .from("ordenes")
@@ -177,7 +189,7 @@ export async function getNewOrderNotificationCount() {
         "ORDER_NOTIFICATIONS_COUNT_ERROR",
         getSupabaseErrorDetails(error)
       )
-      return 0
+      return EMPTY_NOTIFICATION_SUMMARY
     }
 
     const visibleOrderIds = new Set(
@@ -195,6 +207,17 @@ export async function getNewOrderNotificationCount() {
         )
         .map((order) => order.id)
     )
+    const issueOrderIds = new Set<number>(
+      (orders ?? [])
+        .filter(isVisibleAdminOrderNotification)
+        .filter((order) =>
+          isOrderNewerThanLastSeen(
+            order.return_requested_at,
+            view.last_seen_at,
+          ),
+        )
+        .map((order) => order.id),
+    )
 
     const { data: claims, error: claimsError } = await supabase
       .from("order_claims")
@@ -210,18 +233,26 @@ export async function getNewOrderNotificationCount() {
       for (const claim of claims ?? []) {
         if (visibleOrderIds.has(claim.order_id)) {
           attentionOrderIds.add(claim.order_id)
+          issueOrderIds.add(claim.order_id)
         }
       }
     }
 
-    return attentionOrderIds.size
+    return {
+      count: attentionOrderIds.size,
+      tone: issueOrderIds.size > 0 ? "issue" : "order",
+    }
   } catch (error) {
     console.error(
       "ORDER_NOTIFICATIONS_UNEXPECTED_ERROR",
       getSupabaseErrorDetails(error)
     )
-    return 0
+    return EMPTY_NOTIFICATION_SUMMARY
   }
+}
+
+export async function getNewOrderNotificationCount() {
+  return (await getNewOrderNotificationSummary()).count
 }
 
 export async function markOrdersSeenAndGetPreviousLastSeen() {

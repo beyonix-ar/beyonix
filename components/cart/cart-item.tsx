@@ -23,7 +23,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const hasColor = Boolean(colorHex)
 
   return (
-    <div className="flex gap-4 rounded-lg border border-white/10 bg-beyonix-surface-3 p-2">
+    <div className="relative flex gap-3 rounded-xl border border-white/10 bg-beyonix-surface-3 p-2 shadow-sm shadow-black/30">
       <div className="relative size-20 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white p-1">
         <Image
           src={image || "/placeholder.svg"}
@@ -34,23 +34,14 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
         />
       </div>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex min-h-20 flex-col justify-center">
-          <div className="grid grid-cols-product-cart gap-x-2 gap-y-0.5 text-xs">
-            <span className="text-white/60">Producto:</span>
-            <h4 className="line-clamp-2 font-semibold text-white">
-              {product.nombre}
-            </h4>
-
-            <span className="text-white/60">Precio:</span>
-            <p className="font-semibold text-white/90">{formatPrice(price)}</p>
-
-            <span className="text-white/60">Unidades:</span>
-            <p className="font-semibold text-white">x{quantity}</p>
-          </div>
+      <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+        <div className="pr-8">
+          <h4 className="line-clamp-2 text-sm font-bold leading-snug text-white">
+            {product.nombre}
+          </h4>
 
           {colorName && (
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1 flex items-center gap-1.5">
               {hasColor && (
                 <span
                   style={{
@@ -59,56 +50,64 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                   className="size-3 rounded-full border border-white/20"
                 />
               )}
-              <span className="text-xs capitalize text-white/70">{colorName}</span>
+              <span className="text-xs capitalize text-white/65">{colorName}</span>
             </div>
           )}
         </div>
 
-        <div className="mt-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="size-6 border-white/15 bg-black text-white hover:bg-neutral-900"
-              aria-label="Disminuir cantidad"
-              title="Disminuir cantidad"
-              onClick={() => onUpdateQuantity(product.id, color, quantity - 1)}
-              disabled={quantity <= 1}
-            >
-              <Minus className="size-3" />
-            </Button>
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <p className="shrink-0 text-sm font-semibold text-white/90">
+            {formatPrice(price)}
+          </p>
 
-            <span className="flex size-6 items-center justify-center text-xs font-medium text-white">
-              {quantity}
-            </span>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="text-11px font-medium text-white/60">Cant.</span>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="size-6 border-white/15 bg-black text-white hover:bg-neutral-900"
-              aria-label="Aumentar cantidad"
-              title="Aumentar cantidad"
-              onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
-            >
-              <Plus className="size-3" />
-            </Button>
+            <div className="inline-flex h-7 items-center overflow-hidden rounded-full border border-beyonix-blue-light/60 bg-black">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-full w-7 rounded-none border-0 border-r border-white/10 bg-transparent text-white hover:bg-beyonix-blue/60"
+                aria-label="Disminuir cantidad"
+                title="Disminuir cantidad"
+                onClick={() => onUpdateQuantity(product.id, color, quantity - 1)}
+                disabled={quantity <= 1}
+              >
+                <Minus className="size-3" />
+              </Button>
+
+              <span className="flex h-full min-w-8 items-center justify-center px-1.5 text-xs font-bold text-white">
+                {quantity}
+              </span>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-full w-7 rounded-none border-0 border-l border-white/10 bg-transparent text-white hover:bg-beyonix-blue/60"
+                aria-label="Aumentar cantidad"
+                title="Aumentar cantidad"
+                onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
+              >
+                <Plus className="size-3" />
+              </Button>
+            </div>
           </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7 bg-black text-white/70 hover:bg-black hover:text-red-500"
-            aria-label="Eliminar producto"
-            title="Eliminar producto"
-            onClick={() => onRemove(product.id, color)}
-          >
-            <Trash2 className="size-4" />
-          </Button>
         </div>
       </div>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="absolute right-2 top-2 size-8 rounded-full bg-transparent text-white/60 hover:bg-white/5 hover:text-red-400"
+        aria-label="Eliminar producto"
+        title="Eliminar producto"
+        onClick={() => onRemove(product.id, color)}
+      >
+        <Trash2 className="size-4" />
+      </Button>
     </div>
   )
 }

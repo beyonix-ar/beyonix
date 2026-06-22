@@ -9,22 +9,24 @@ import {
   FileText,
 } from "lucide-react"
 
-import { PaymentProofUploader } from "@/components/payment-proof-uploader"
+import {
+  PaymentProofActionButton,
+  PaymentProofUploader,
+} from "@/components/payment-proof-uploader"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const PAYMENT_STATUS_CONTENT = {
   pendiente_comprobante: {
     title: "Comprobante pendiente",
-    description: "Sube tu comprobante para que podamos validar el pago.",
+    description: "Subí el comprobante para validar tu pago.",
     icon: Clock3,
-    className: "border-amber-400/20 bg-amber-400/8 text-amber-200",
+    className: "border-amber-300/15 bg-amber-300/[0.06] text-amber-100",
   },
   en_revision: {
     title: "Pago en revisión",
-    description:
-      "Recibimos tu comprobante. Te avisaremos cuando sea aprobado.",
+    description: "Recibimos tu comprobante correctamente.",
     icon: Clock3,
-    className: "border-[#112A43] bg-[#112A43]/30 text-white",
+    className: "border-amber-300/15 bg-amber-300/[0.06] text-amber-100",
   },
   confirmado: {
     title: "Pago confirmado",
@@ -69,9 +71,9 @@ export function CustomerPaymentProof({
   ].includes(paymentStatus)
   const fileName = order.payment_proof_file_name || "Comprobante de pago"
   const isImage = /\.(jpe?g|png|webp)$/i.test(fileName)
-  const isPdf = /\.pdf$/i.test(fileName)
   const [signedUrl, setSignedUrl] = useState("")
   const [previewError, setPreviewError] = useState("")
+  const compactLayout = !showHeading
 
   useEffect(() => {
     let active = true
@@ -123,13 +125,13 @@ export function CustomerPaymentProof({
       )}
 
       <div
-        className={`${showHeading ? "mt-3" : ""} rounded-xl border px-4 py-3 ${status.className}`}
+        className={`${showHeading ? "mt-3" : ""} rounded-xl border ${compactLayout ? "px-3 py-2.5" : "px-4 py-3"} ${status.className}`}
       >
-        <div className="flex items-start gap-3">
-          <StatusIcon className="mt-0.5 size-5 shrink-0" />
+        <div className={`flex items-start ${compactLayout ? "gap-2.5" : "gap-3"}`}>
+          <StatusIcon className={`mt-0.5 shrink-0 ${compactLayout ? "size-4" : "size-5"}`} />
           <div>
             <p className="text-sm font-black">{status.title}</p>
-            <p className="mt-1 text-sm leading-5 text-white/65">
+            <p className={`${compactLayout ? "mt-0.5 text-xs text-[#C8C8C8]" : "mt-1 text-sm text-white/65"} leading-5`}>
               {status.description}
             </p>
           </div>
@@ -137,7 +139,7 @@ export function CustomerPaymentProof({
       </div>
 
       {showProof && (
-        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-white/10 bg-[#141414] p-3 sm:flex-row sm:items-center">
+        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-[#303846] bg-[#1B2028] p-3 sm:flex-row sm:items-center">
           {isImage && signedUrl ? (
             <img
               src={signedUrl}
@@ -152,7 +154,7 @@ export function CustomerPaymentProof({
 
           <div className="min-w-0 flex-1">
             <p className="text-10px font-black uppercase tracking-widest text-white/40">
-              {isPdf ? "PDF cargado" : "Comprobante cargado"}
+              Comprobante enviado
             </p>
             <p className="mt-1 truncate text-sm font-semibold text-white">
               {fileName}
@@ -176,11 +178,25 @@ export function CustomerPaymentProof({
         </div>
       )}
 
-      {canReplace && (
-        <div className="mt-3">
+      {canReplace && hasProof && (
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#303846] bg-[#1B2028] px-3 py-2">
+          <p className="text-xs text-[#C8C8C8]">
+            ¿Subiste el archivo equivocado?
+          </p>
+          <PaymentProofActionButton
+            orderId={order.id}
+            initialUploaded
+            label="Cambiar comprobante"
+            onUploaded={onUploaded}
+            className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-beyonix-sky transition-colors hover:text-white"
+          />
+        </div>
+      )}
+
+      {canReplace && !hasProof && (
+        <div className={compactLayout ? "mt-2.5" : "mt-3"}>
           <PaymentProofUploader
             orderId={order.id}
-            initialUploaded={hasProof}
             compact
             onUploaded={onUploaded}
           />

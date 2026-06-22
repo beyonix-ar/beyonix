@@ -120,7 +120,7 @@ export function CartDrawer({
       <div
         ref={drawerRef}
         className={cn(
-          "absolute right-0 top-0 z-10 flex h-full w-full max-w-md flex-col border-l border-beyonix-blue-light bg-beyonix-surface shadow-xl shadow-beyonix-blue",
+          "absolute right-0 top-0 z-10 flex h-full w-[min(560px,100vw)] flex-col border-l border-beyonix-blue-light/60 bg-beyonix-surface font-heading shadow-xl shadow-beyonix-blue",
           "animate-in slide-in-from-right duration-300"
         )}
       >
@@ -151,7 +151,7 @@ export function CartDrawer({
         ) : (
           <>
             {/* Items */}
-            <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
+            <div className="custom-scrollbar min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3">
               {items.map(
                 (item, index) => (
                   <CartItemRow
@@ -169,28 +169,30 @@ export function CartDrawer({
             </div>
 
             {/* Summary */}
-            <CartSummary
-              subtotal={subtotal}
-              items={items.map(
-                (item) => ({
-                  product: {
-                    id: item.product.id,
-                    precio:
-                      item.product
-                        .precio,
-                  },
+            <div className="shrink-0">
+              <CartSummary
+                subtotal={subtotal}
+                items={items.map(
+                  (item) => ({
+                    product: {
+                      id: item.product.id,
+                      precio:
+                        item.product
+                          .precio,
+                    },
 
-                  quantity:
-                    item.quantity,
-                })
-              )}
-              onCheckout={() => {
-                onClose()
+                    quantity:
+                      item.quantity,
+                  })
+                )}
+                onCheckout={() => {
+                  onClose()
 
-                router.push("/checkout")
-              }}
-              onContinueShopping={onClose}
-            />
+                  router.push("/checkout")
+                }}
+                onContinueShopping={onClose}
+              />
+            </div>
           </>
         )}
       </div>

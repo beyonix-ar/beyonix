@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/server"
 import type { OrderClaimType } from "@/lib/supabase/types"
 
 const CLAIM_TYPES = ["transporte_48hs", "garantia_beyonix"]
-const PROBLEM_TYPES = ["danado", "incorrecto", "falla", "devolucion", "otro"]
+const PROBLEM_TYPES = ["danado", "incorrecto", "falla", "devolucion", "no_llego", "otro"]
 
 function stripBucket(path: string) {
   return path.startsWith(`${ORDER_CLAIM_BUCKET}/`)
@@ -142,7 +142,10 @@ export async function POST(
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 
-  if (order.estado !== "entregado") {
+  const isMissingDeliveryClaim =
+    String(formData.get("problemType") ?? "") === "no_llego"
+
+  if (order.estado !== "entregado" && !isMissingDeliveryClaim) {
     return NextResponse.json(
       { error: "El pedido debe estar entregado para iniciar un reclamo." },
       { status: 409 },
@@ -223,7 +226,10 @@ export async function POST(
     return NextResponse.json({ error: "Tipo de reclamo inválido." }, { status: 400 })
   }
 
-  if (!isClaimWindowOpen(getDeliveryDate(order), claimType)) {
+  if (
+    problemType !== "no_llego" &&
+    !isClaimWindowOpen(getDeliveryDate(order), claimType)
+  ) {
     return NextResponse.json(
       { error: "El plazo para este tipo de reclamo ya finalizó." },
       { status: 409 },

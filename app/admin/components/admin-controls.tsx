@@ -13,6 +13,7 @@ interface AdminSelectProps {
   centered?: boolean
   disabled?: boolean
   triggerClassName?: string
+  leadingIcon?: React.ReactNode
   onChange: (value: string) => void
 }
 
@@ -35,6 +36,7 @@ export function AdminSelect({
   centered = false,
   disabled = false,
   triggerClassName = "",
+  leadingIcon,
   onChange,
 }: AdminSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -150,8 +152,9 @@ export function AdminSelect({
             : "h-11 w-full gap-3 px-4 text-sm"
         }`}
       >
-        <span className={`min-w-0 truncate ${centered ? "px-4 text-center" : ""}`}>
-          {selectedOption?.label}
+        <span className={`flex min-w-0 items-center gap-2 truncate ${centered ? "px-4 text-center" : ""}`}>
+          {leadingIcon && <span className="shrink-0">{leadingIcon}</span>}
+          <span className="truncate">{selectedOption?.label}</span>
         </span>
         <ChevronDown
           className={`size-4 shrink-0 text-beyonix-sky/75 transition-transform ${

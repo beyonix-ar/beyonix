@@ -30,7 +30,7 @@ export function FreeShippingBar({ subtotal }: Props) {
   const isComplete = hasFreeShipping(subtotal)
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <p
         className={`flex items-center gap-2 transition-all duration-300 ${
           isComplete
@@ -62,11 +62,11 @@ export function FreeShippingBar({ subtotal }: Props) {
           </>
         ) : (
           <span className="text-white/80 text-sm">
-            Estás a{" "}
+            🚚 Te faltan{" "}
             <span className="text-white font-semibold tracking-wide">
               {formatPrice(remaining)}
             </span>{" "}
-            <span className="text-white/80 text-sm">del envío gratis</span>
+            <span className="text-white/80 text-sm">para envío gratis</span>
           </span>
         )}
       </p>

@@ -721,8 +721,8 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 
 .beyonix-checkout-input,
 .beyonix-checkout-input:focus {
-  background: #202020 !important;
-  background-color: #202020 !important;
+  background: #1F242B !important;
+  background-color: #1F242B !important;
   background-image: none !important;
   color: #ffffff !important;
   caret-color: #ffffff !important;
@@ -736,21 +736,21 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 .beyonix-checkout-input:-webkit-autofill:hover,
 .beyonix-checkout-input:-webkit-autofill:focus,
 .beyonix-checkout-input:-webkit-autofill:active {
-  background: #202020 !important;
-  background-color: #202020 !important;
+  background: #1F242B !important;
+  background-color: #1F242B !important;
   background-image: none !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
   caret-color: #ffffff !important;
-  box-shadow: 0 0 0 1000px #202020 inset !important;
-  -webkit-box-shadow: 0 0 0 1000px #202020 inset !important;
+  box-shadow: 0 0 0 1000px #1F242B inset !important;
+  -webkit-box-shadow: 0 0 0 1000px #1F242B inset !important;
   transition: background-color 9999s ease-out 0s !important;
 }
 
 .checkout-panel {
-  background: #121212 !important;
-  background-color: #121212 !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: #0D1117 !important;
+  background-color: #0D1117 !important;
+  border-color: #30363D !important;
   background-image: none !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
@@ -765,8 +765,8 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 
 .checkout-option,
 .checkout-order-item {
-  background-color: #1b1b1b;
-  border-color: rgba(255, 255, 255, 0.12);
+  background-color: #15191F;
+  border-color: #30363D;
 }
 
 .checkout-option-selected {
@@ -808,55 +808,56 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 }
 
 .admin-order-data-panel {
-  background-color: #111111 !important;
+  background-color: #0D1117 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .admin-order-client-panel {
   background:
-    linear-gradient(145deg, rgba(17, 17, 17, 0.98), rgba(12, 12, 12, 0.98))
+    linear-gradient(145deg, rgba(13, 17, 23, 0.98), rgba(21, 25, 31, 0.92))
     !important;
 }
 
 .admin-order-payment-panel {
   background:
-    linear-gradient(145deg, rgba(17, 42, 67, 0.22), rgba(17, 17, 17, 0.98) 54%, rgba(12, 12, 12, 0.98))
+    linear-gradient(145deg, rgba(17, 42, 67, 0.26), rgba(13, 17, 23, 0.98) 54%, rgba(21, 25, 31, 0.94))
     !important;
 }
 
 .admin-order-products-panel {
   background:
-    linear-gradient(145deg, rgba(17, 42, 67, 0.2), rgba(20, 20, 20, 0.98) 46%, rgba(15, 15, 15, 0.98))
+    linear-gradient(145deg, rgba(17, 42, 67, 0.2), rgba(13, 17, 23, 0.98) 46%, rgba(21, 25, 31, 0.96))
     !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .admin-order-shipping-panel {
   background:
-    linear-gradient(145deg, rgba(17, 42, 67, 0.44), rgba(20, 20, 20, 0.98) 58%, rgba(14, 14, 14, 0.98))
+    linear-gradient(145deg, rgba(17, 42, 67, 0.4), rgba(13, 17, 23, 0.98) 58%, rgba(21, 25, 31, 0.96))
     !important;
 }
 
 .admin-order-invoice-panel {
   background:
-    linear-gradient(145deg, rgba(12, 35, 55, 0.72), rgba(20, 20, 20, 0.98) 56%, rgba(13, 13, 13, 0.98))
+    linear-gradient(145deg, rgba(12, 35, 55, 0.72), rgba(13, 17, 23, 0.98) 56%, rgba(21, 25, 31, 0.96))
     !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .admin-order-info-card {
-  background-color: #101010;
+  background-color: #15191F;
 }
 
 .admin-order-proof-card,
 .admin-order-item-card {
-  background-color: #181818;
+  background-color: #1B2028;
 }
 
 .admin-order-total-card {
-  background:
-    linear-gradient(145deg, rgba(17, 42, 67, 0.42), rgba(13, 20, 28, 0.98))
-    !important;
+  background: #16A34A !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 18px rgba(22, 163, 74, 0.2) !important;
 }
 
 @keyframes beyonix-shooting-star-flight {
@@ -1039,4 +1040,29 @@ body.product-modal-open .category-hero {
 .account-page summary,
 .account-page label:has(input[type="file"]) {
   cursor: pointer;
+}
+
+.customer-claim-experience button:not(:disabled),
+.customer-claim-experience summary,
+.customer-claim-experience label:has(input:not(:disabled)) {
+  cursor: pointer;
+}
+
+.customer-claim-experience button:disabled,
+.customer-claim-experience label:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+.admin-claim-manager button:not(:disabled),
+.admin-claim-manager a[href],
+.admin-claim-manager select:not(:disabled),
+.admin-claim-manager summary,
+.admin-claim-manager label:has(input:not(:disabled)) {
+  cursor: pointer;
+}
+
+.admin-claim-manager button:disabled,
+.admin-claim-manager select:disabled,
+.admin-claim-manager label:has(input:disabled) {
+  cursor: not-allowed;
 }

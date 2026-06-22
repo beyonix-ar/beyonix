@@ -19,10 +19,12 @@ export function ProvinceSelect({
   value,
   onChange,
   compact = false,
+  appearance = "default",
 }: {
   value: string
   onChange: (value: string) => void
   compact?: boolean
+  appearance?: "default" | "checkout"
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -37,6 +39,7 @@ export function ProvinceSelect({
   const selectedLabel = value
     ? value.toLocaleUpperCase("es-AR")
     : "Seleccioná una provincia"
+  const isCheckoutAppearance = appearance === "checkout"
 
   useEffect(() => {
     const selectedIndex = options.findIndex(
@@ -135,12 +138,18 @@ export function ProvinceSelect({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleTriggerKeyDown}
-        className={`flex w-full cursor-pointer items-center justify-between gap-3 border bg-black text-left text-sm transition-colors focus-visible:border-beyonix-focus focus-visible:outline-none focus-visible:ring-0 ${
-          compact ? "h-10 rounded-lg px-3" : "h-12 rounded-xl px-4"
-        } ${
-          open
-            ? "border-beyonix-focus text-white"
-            : "border-white/10 text-white hover:border-white/18"
+        className={`flex w-full cursor-pointer items-center justify-between gap-3 border text-left text-sm transition-all focus-visible:outline-none ${
+          isCheckoutAppearance
+            ? `h-9 rounded-xl bg-[#1F242B] px-3 font-heading ${
+                open
+                  ? "border-[#112A43] text-white shadow-[0_0_0_2px_rgba(17,42,67,0.28)]"
+                  : "border-[#30363D] text-white hover:border-[#46505c]"
+              }`
+            : `${compact ? "h-10 rounded-lg px-3" : "h-12 rounded-xl px-4"} bg-black focus-visible:border-beyonix-focus focus-visible:ring-0 ${
+                open
+                  ? "border-beyonix-focus text-white"
+                  : "border-white/10 text-white hover:border-white/18"
+              }`
         } ${value ? "" : "text-white/35"}`}
       >
         <span className="min-w-0 truncate">{selectedLabel}</span>
@@ -155,8 +164,10 @@ export function ProvinceSelect({
         <div
           role="listbox"
           aria-label="Provincias"
-          className={`absolute left-0 z-50 w-full overflow-hidden rounded-xl border border-beyonix-focus/70 bg-black p-1 shadow-2xl shadow-black/70 ${
-            compact ? "top-11" : "top-14"
+          className={`absolute left-0 z-50 w-full overflow-hidden border p-1 shadow-2xl shadow-black/70 ${
+            isCheckoutAppearance
+              ? "top-[38px] rounded-xl border-[#30363D] bg-[#15191F] font-heading"
+              : `${compact ? "top-11" : "top-14"} rounded-xl border-beyonix-focus/70 bg-black`
           }`}
         >
           <div className="custom-scrollbar max-h-64 overflow-y-auto py-1">

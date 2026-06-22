@@ -192,6 +192,18 @@ export interface SupabasePedido {
   order_claims?: SupabaseOrderClaim[]
 }
 
+export interface SupabaseCustomerNotification {
+  id: string
+  user_id: string
+  type: string
+  title: string
+  body: string
+  action_url: string | null
+  order_id: number | null
+  is_read: boolean
+  created_at: string
+}
+
 export interface SupabasePedidoItem {
   id: number
   orden_id: number

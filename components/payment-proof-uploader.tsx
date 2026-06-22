@@ -25,6 +25,7 @@ interface PaymentProofActionButtonProps {
   initialUploaded?: boolean
   onUploaded?: (order: SupabasePedido) => void
   className?: string
+  label?: string
 }
 
 export function PaymentProofUploader({
@@ -97,8 +98,8 @@ export function PaymentProofUploader({
   }
 
   return (
-    <div className="rounded-2xl border border-[#112A43] bg-[#0B0B0B] p-4 sm:p-5">
-      <div className={compact ? "space-y-3" : "space-y-4"}>
+    <div className={`border ${compact ? "rounded-xl border-[#303846] bg-[#1B2028] p-3 shadow-[0_0_24px_rgba(17,42,67,0.16)]" : "rounded-2xl border-[#112A43] bg-[#0B0B0B] p-4 sm:p-5"}`}>
+      <div className={compact ? "space-y-2.5" : "space-y-4"}>
         <div>
           <p className="text-11px font-black uppercase tracking-widest text-white/70">
             {actionLabel}
@@ -138,52 +139,54 @@ export function PaymentProofUploader({
               }
             }}
             onDrop={handleDrop}
-            className={`mt-3 flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-beyonix-focus ${
+            className={`${compact ? "mt-2 min-h-32 px-4 py-3" : "mt-3 min-h-44 px-5 py-6"} flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-beyonix-focus ${
               isDragging
                 ? "border-beyonix-sky bg-[#112A43] shadow-[0_0_0_3px_rgba(79,131,173,0.12)]"
                 : file
                   ? "border-emerald-400/35 bg-emerald-400/5"
-                : "border-white/20 bg-[#141414] hover:border-[#112A43] hover:bg-[#181818]"
+                : compact
+                  ? "border-[#303846] bg-[#222832] hover:border-[#112A43] hover:bg-[#252c37]"
+                  : "border-white/20 bg-[#141414] hover:border-[#112A43] hover:bg-[#181818]"
             }`}
           >
-            <span className={`flex size-12 items-center justify-center rounded-xl border ${
+            <span className={`flex items-center justify-center rounded-xl border ${compact ? "size-10" : "size-12"} ${
               file
                 ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
                 : "border-[#112A43] bg-[#112A43]/40 text-white"
             }`}>
               {file ? (
-                <FileCheck2 className="size-6" />
+                <FileCheck2 className={compact ? "size-5" : "size-6"} />
               ) : (
-                <ImageUp className="size-6" />
+                <ImageUp className={compact ? "size-5" : "size-6"} />
               )}
             </span>
 
             {file ? (
               <>
-                <p className="mt-3 max-w-full truncate text-sm font-semibold text-white">
+                <p className={`${compact ? "mt-2" : "mt-3"} max-w-full truncate text-sm font-semibold text-white`}>
                   {file.name}
                 </p>
-                <p className="mt-1 text-xs text-white/50">
+                <p className={`mt-1 text-xs ${compact ? "text-[#9CA3AF]" : "text-white/50"}`}>
                   {(file.size / 1024 / 1024).toFixed(2)} MB · Toca para reemplazar
                 </p>
               </>
             ) : (
               <>
-                <p className="mt-3 text-sm font-semibold text-white">
+                <p className={`${compact ? "mt-2" : "mt-3"} text-sm font-semibold text-white`}>
                   Arrastra el comprobante aquí
                 </p>
-                <p className="mt-1 text-xs text-white/55">
+                <p className={`mt-1 text-xs ${compact ? "text-[#C8C8C8]" : "text-white/55"}`}>
                   o toca para elegirlo desde tu dispositivo
                 </p>
               </>
             )}
 
-            <span className="mt-4 rounded-lg bg-[#112A43] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#183B5E]">
+            <span className={`${compact ? "mt-2.5 px-3 py-1.5" : "mt-4 px-4 py-2"} rounded-lg bg-[#112A43] text-xs font-semibold text-white transition-colors hover:bg-[#183B5E]`}>
               Seleccionar archivo
             </span>
           </div>
 
-          <p className="mt-2 text-center text-xs leading-5 text-white/45">
+          <p className={`${compact ? "mt-1.5 leading-4 text-[#9CA3AF]" : "mt-2 leading-5 text-white/45"} text-center text-xs`}>
             JPG, PNG, WEBP o PDF · Máximo 5 MB
           </p>
         </div>
@@ -200,7 +203,11 @@ export function PaymentProofUploader({
           title={actionLabel}
           onClick={handleUpload}
           disabled={uploading || Boolean(error) || !file}
-          className="w-full cursor-pointer bg-[#112A43] text-white hover:bg-[#183B5E] disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-white/55"
+          className={`w-full cursor-pointer text-white ${
+            file && !error
+              ? "bg-[#16A34A] hover:bg-[#15803D]"
+              : "bg-[#112A43] hover:bg-[#183B5E]"
+          } disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-white/55`}
         >
           <Upload className="mr-2 size-4" />
           {uploading ? "Subiendo..." : actionLabel}
@@ -215,11 +222,13 @@ export function PaymentProofActionButton({
   initialUploaded = false,
   onUploaded,
   className = "",
+  label,
 }: PaymentProofActionButtonProps) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
-  const actionLabel = initialUploaded ? "Editar comprobante" : "Agregar comprobante"
+  const actionLabel =
+    label ?? (initialUploaded ? "Editar comprobante" : "Agregar comprobante")
 
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>,
