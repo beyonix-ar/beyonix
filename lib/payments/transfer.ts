@@ -1,6 +1,8 @@
 import { TRANSFER_DISCOUNT } from "@/lib/store-config"
 
 export const TRANSFER_ALIAS = "beyonix"
+export const TRANSFER_ACCOUNT_HOLDER = "Lucas Espinosa"
+export const TRANSFER_CVU = "0000003100060656803844"
 export const TRANSFER_DISCOUNT_PERCENT = TRANSFER_DISCOUNT * 100
 export const PAYMENT_PROOF_BUCKET = "payment-proofs"
 export const PAYMENT_PROOF_MAX_SIZE = 5 * 1024 * 1024
@@ -8,7 +10,6 @@ export const PAYMENT_PROOF_MAX_SIZE = 5 * 1024 * 1024
 export const PAYMENT_PROOF_ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
-  "image/webp",
   "application/pdf",
 ]
 
@@ -16,7 +17,6 @@ export const PAYMENT_PROOF_ALLOWED_EXTENSIONS = [
   "jpg",
   "jpeg",
   "png",
-  "webp",
   "pdf",
 ]
 
@@ -54,7 +54,7 @@ export function getPaymentProofValidationError(file: File | null) {
   const validExtension = PAYMENT_PROOF_ALLOWED_EXTENSIONS.includes(extension)
 
   if (!validType || !validExtension) {
-    return "El comprobante debe ser JPG, PNG, WEBP o PDF."
+    return "El comprobante debe ser JPG, JPEG, PNG o PDF."
   }
 
   if (file.size > PAYMENT_PROOF_MAX_SIZE) {

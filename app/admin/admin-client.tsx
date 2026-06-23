@@ -17,6 +17,7 @@ import {
 
 import { useAuth } from "@/context/auth-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import type { AdminOrderNotificationTone } from "@/lib/admin/order-notifications"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
@@ -98,13 +99,15 @@ function SidebarItem({
         </span>
         {item.notificationCount ? (
           <span
-            title={`${item.notificationCount} pedidos requieren atención`}
+            title={`${item.notificationCount} notificaciones requieren atención`}
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black text-white transition-colors ${
               item.notificationTone === "issue"
                 ? "border-[#EF4444]/50 bg-[#EF4444] shadow-[0_0_14px_rgba(239,68,68,0.35)] group-hover:bg-[#DC2626]"
                 : item.notificationTone === "message"
                   ? "border-[#2563EB]/50 bg-[#2563EB] shadow-[0_0_14px_rgba(37,99,235,0.35)] group-hover:bg-[#1D4ED8]"
-                  : "border-[#16A34A]/50 bg-[#16A34A] shadow-[0_0_14px_rgba(22,163,74,0.35)] group-hover:bg-[#15803D]"
+                  : item.notificationTone === "invoice"
+                    ? "border-violet-400/50 bg-violet-600 shadow-[0_0_14px_rgba(124,58,237,0.35)] group-hover:bg-violet-700"
+                    : "border-[#16A34A]/50 bg-[#16A34A] shadow-[0_0_14px_rgba(22,163,74,0.35)] group-hover:bg-[#15803D]"
             }`}
           >
             {item.notificationCount}
@@ -134,7 +137,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   const searchParams = useSearchParams()
   const { user, isLoading, isInternal, isOperator, isSuperAdmin, logout } =
     useAuth()
-  const { notificationCount, notificationTone } = useOrderNotifications()
+  const { notificationCount, notificationTone, notificationGroups } =
+    useOrderNotifications()
   const [section, setSection] = useState<AdminSection>(
     () =>
       (initialOrderId ? "pedidos" : null) ||
@@ -294,14 +298,14 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     dashboard: <AdminDashboard onNavigate={goToSection} />,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
-    pedidos: <AdminPedidos notificationCount={notificationCount} notificationTone={notificationTone} initialOrderId={initialOrderId} />,
+    pedidos: <AdminPedidos notificationCount={notificationCount} notificationGroups={notificationGroups} initialOrderId={initialOrderId} />,
     usuarios: !isOperator ? <AdminUsuarios /> : null,
     auditoria: isSuperAdmin ? <AdminAuditoria /> : null,
   }
 
   const sidebar = (
     <aside className="flex h-full w-280px flex-col border-r border-white/7 bg-black">
-      <div className="border-b border-white/7 px-5 py-5">
+      <div className="flex items-start justify-between gap-3 border-b border-white/7 px-5 py-5">
         <button
           type="button"
           title="Ir al inicio"
@@ -312,10 +316,15 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             Panel administrativo
           </p>
-          <h1 className="text-2xl font-black text-white transition-colors group-hover:text-[#112A43]">
+          <h1 className="text-2xl font-black text-white transition-colors duration-150 group-hover:text-[#2F6FA3]">
             BEYONIX
           </h1>
         </button>
+        <AdminNotificationsBell
+          count={notificationCount}
+          tone={notificationTone}
+          groups={notificationGroups}
+        />
       </div>
 
       <div className="border-b border-white/7 p-4">
@@ -374,7 +383,11 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           <Menu className="size-5" />
         </button>
         <p className="text-sm font-black tracking-widest">BEYONIX ADMIN</p>
-        <span className="size-10" />
+        <AdminNotificationsBell
+          count={notificationCount}
+          tone={notificationTone}
+          groups={notificationGroups}
+        />
       </header>
 
       {mobileOpen && (

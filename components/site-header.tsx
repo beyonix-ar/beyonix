@@ -16,14 +16,17 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { CustomerNotificationsBell } from "@/components/customer-notifications-bell"
+import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
+import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 export function SiteHeader() {
   const { cart, total, openCart } = useCart()
   const { user, isLoading, isInternal, logout } = useAuth()
+  const adminNotifications = useOrderNotifications(isInternal)
 
   const [categories, setCategories] = useState<SupabaseCategoria[]>([])
   const [catOpen, setCatOpen] = useState(false)
@@ -170,21 +173,28 @@ export function SiteHeader() {
           </div>
 
           <div className="flex items-center justify-end gap-2">
-            {user && (
-              <CustomerNotificationsBell
-                userId={user.id}
-                open={notificationsOpen}
-                onOpenChange={(nextOpen) => {
-                  setNotificationsOpen(nextOpen)
+            {user &&
+              (isInternal ? (
+                <AdminNotificationsBell
+                  count={adminNotifications.notificationCount}
+                  tone={adminNotifications.notificationTone}
+                  groups={adminNotifications.notificationGroups}
+                />
+              ) : (
+                <CustomerNotificationsBell
+                  userId={user.id}
+                  open={notificationsOpen}
+                  onOpenChange={(nextOpen) => {
+                    setNotificationsOpen(nextOpen)
 
-                  if (nextOpen) {
-                    setCatOpen(false)
-                    setUserOpen(false)
-                    setMobileOpen(false)
-                  }
-                }}
-              />
-            )}
+                    if (nextOpen) {
+                      setCatOpen(false)
+                      setUserOpen(false)
+                      setMobileOpen(false)
+                    }
+                  }}
+                />
+              ))}
 
             <div ref={userRef} className="relative hidden lg:block">
               {user ? (

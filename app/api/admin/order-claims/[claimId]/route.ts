@@ -32,6 +32,32 @@ async function attachSignedUrls(admin: any, claim: any) {
   }
 }
 
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ claimId: string }> },
+) {
+  const auth = await requireOperator(request)
+  if ("error" in auth) return auth.error
+
+  const { claimId } = await params
+  const id = Number(claimId)
+  if (!Number.isFinite(id) || id <= 0) {
+    return NextResponse.json({ error: "Reclamo inválido." }, { status: 400 })
+  }
+
+  const { data, error } = await auth.admin
+    .from("order_claims")
+    .select("*, order_claim_files(*), order_claim_messages(*)")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (error || !data) {
+    return NextResponse.json({ error: "No encontramos el reclamo." }, { status: 404 })
+  }
+
+  return NextResponse.json({ claim: await attachSignedUrls(auth.admin, data) })
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ claimId: string }> },
@@ -53,6 +79,7 @@ export async function PATCH(
     rejection_reason?: unknown
     resolution?: unknown
     offered_resolutions?: unknown
+    append_message?: unknown
   }
   const status = String(body.status ?? "")
   const resolution = body.resolution ? String(body.resolution) : null
@@ -111,14 +138,19 @@ export async function PATCH(
 
   const { data: currentClaim } = await auth.admin
     .from("order_claims")
-    .select("admin_response")
+    .select("admin_response, status, first_reviewed_at")
     .eq("id", id)
     .maybeSingle()
   const shouldInsertAdminMessage =
     Boolean(adminResponse) &&
-    adminResponse !== String(currentClaim?.admin_response ?? "").trim()
+    (body.append_message === true ||
+      adminResponse !== String(currentClaim?.admin_response ?? "").trim())
 
   const finalStatus = status === "rechazado" || status === "cerrado"
+  const isFirstReview =
+    currentClaim?.status === "recibido" &&
+    status === "en_revision" &&
+    !currentClaim.first_reviewed_at
   const { data, error } = await auth.admin
     .from("order_claims")
     .update({
@@ -128,6 +160,12 @@ export async function PATCH(
       resolution,
       offered_resolutions: offeredResolutions,
       closed_at: finalStatus ? new Date().toISOString() : null,
+      ...(isFirstReview
+        ? {
+            first_reviewed_at: new Date().toISOString(),
+            first_reviewed_by: auth.user.id,
+          }
+        : {}),
     })
     .eq("id", id)
     .select("*, order_claim_files(*), order_claim_messages(*)")

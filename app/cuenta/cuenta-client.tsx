@@ -3810,11 +3810,8 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
       <div className="mx-auto max-w-5xl">
         <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}`)} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a la compra</button>
 
-        <header className="mt-4 rounded-3xl border border-[#112A43]/70 bg-[#0D1117] p-4 shadow-[0_0_28px_rgba(17,42,67,0.22)] sm:p-5">
-          <p className="text-11px font-black uppercase tracking-[0.18em] text-blue-300">Pedido #{formatPublicOrderId(order.id)}</p>
-          <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">Ayuda con tu compra</h1>
-          <p className="mt-2 text-xs font-semibold text-white/52">{formatOrderCardDate(order.created_at)}</p>
-          <p className="mt-3 text-sm font-semibold text-white/70">Seleccioná el producto y contanos qué pasó.</p>
+        <header className="mt-3 rounded-xl border border-[#112A43]/55 bg-[#0D1117] px-4 py-3 shadow-[0_0_18px_rgba(17,42,67,0.16)]">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><h1 className="text-lg font-black text-white">Ayuda con tu compra</h1><p className="mt-0.5 text-xs font-semibold text-white/55">Pedido #{formatPublicOrderId(order.id)} · {formatOrderCardDate(order.created_at)}</p></div><p className="text-xs font-semibold text-white/65">Seleccioná el producto y contanos qué pasó.</p></div>
         </header>
 
         <section className="customer-claim-experience mt-4">

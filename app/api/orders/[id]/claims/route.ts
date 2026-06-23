@@ -178,6 +178,21 @@ export async function POST(
       )
     }
 
+    const { data: latestMessage } = await admin
+      .from("order_claim_messages")
+      .select("author_role")
+      .eq("claim_id", claim.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (latestMessage?.author_role === "cliente") {
+      return NextResponse.json(
+        { error: "Mensaje enviado. Esperá la respuesta de BEYONIX para continuar." },
+        { status: 409 },
+      )
+    }
+
     if (message.length < 5 && files.length === 0) {
       return NextResponse.json(
         { error: "Agregá una respuesta o nueva evidencia." },
@@ -205,6 +220,13 @@ export async function POST(
         author_user_id: user.id,
         author_role: "cliente",
         message,
+      })
+    } else if (files.length > 0) {
+      await admin.from("order_claim_messages").insert({
+        claim_id: claim.id,
+        author_user_id: user.id,
+        author_role: "cliente",
+        message: "El cliente adjuntó nueva evidencia.",
       })
     }
 
@@ -316,15 +338,18 @@ export async function PATCH(
   const body = (await request.json()) as {
     claimId?: unknown
     selectedResolution?: unknown
+    decision?: unknown
   }
   const claimId = Number(body.claimId)
   const selectedResolution = String(body.selectedResolution ?? "")
+  const decision = body.decision === "reject" ? "reject" : "accept"
 
   if (!Number.isFinite(claimId) || claimId <= 0) {
     return NextResponse.json({ error: "Reclamo inválido." }, { status: 400 })
   }
 
   if (
+    decision === "accept" &&
     !CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS.includes(
       selectedResolution as any,
     )
@@ -359,18 +384,25 @@ export async function PATCH(
     )
   }
 
-  if (!(claim.offered_resolutions ?? []).includes(selectedResolution)) {
+  if (
+    decision === "accept" &&
+    !(claim.offered_resolutions ?? []).includes(selectedResolution)
+  ) {
     return NextResponse.json(
       { error: "Esta solución no está disponible para tu reclamo." },
       { status: 409 },
     )
   }
 
+  const accepted = decision === "accept"
   const { error } = await admin
     .from("order_claims")
     .update({
-      customer_selected_resolution: selectedResolution,
-      status: "aprobado",
+      customer_selected_resolution: accepted ? selectedResolution : null,
+      resolution: accepted ? selectedResolution : null,
+      offered_resolutions: accepted ? claim.offered_resolutions ?? [] : [],
+      status: accepted ? "cerrado" : "en_revision",
+      closed_at: accepted ? new Date().toISOString() : null,
     })
     .eq("id", claim.id)
 
@@ -385,7 +417,9 @@ export async function PATCH(
     claim_id: claim.id,
     author_user_id: user.id,
     author_role: "cliente",
-    message: `El cliente eligió: ${getOrderClaimResolutionLabel(selectedResolution)}.`,
+    message: accepted
+      ? `El cliente aceptó la solución: ${getOrderClaimResolutionLabel(selectedResolution)}.`
+      : "El cliente rechazó la solución ofrecida. El reclamo volvió a revisión.",
   })
 
   return getClaimResponse(admin, claim.id)

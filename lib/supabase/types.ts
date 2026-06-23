@@ -270,6 +270,8 @@ export interface SupabaseOrderClaim {
   closed_at?: string | null
   created_at: string
   updated_at: string
+  first_reviewed_at?: string | null
+  first_reviewed_by?: string | null
   last_customer_message_at?: string | null
   last_admin_response_at?: string | null
   admin_needs_action?: boolean

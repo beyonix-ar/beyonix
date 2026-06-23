@@ -16,7 +16,11 @@ import { Footer } from "@/components/footer"
 import { CustomerPaymentProof } from "@/components/customer-payment-proof"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/context/cart-context"
-import { TRANSFER_ALIAS } from "@/lib/payments/transfer"
+import {
+  TRANSFER_ACCOUNT_HOLDER,
+  TRANSFER_ALIAS,
+  TRANSFER_CVU,
+} from "@/lib/payments/transfer"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const formatPrice = (price: number) =>
@@ -204,14 +208,50 @@ function CheckoutSuccessContent() {
                     </p>
                   </div>
 
-                  <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                    <div className="grid grid-cols-2 gap-3">
+                  <div className="mt-3">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-10px font-semibold uppercase tracking-wider text-[#9CA3AF]">
+                            Alias
+                          </p>
+                          <p className="mt-0.5 text-lg font-bold uppercase tracking-wide text-white">
+                            {TRANSFER_ALIAS}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="Copiar alias de transferencia"
+                          title="Copiar alias"
+                          onClick={() => void handleCopyAlias()}
+                          className={`inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                            aliasCopied
+                              ? "bg-[#16A34A] hover:bg-[#15803D]"
+                              : "bg-[#112A43] hover:bg-[#183B5E]"
+                          }`}
+                        >
+                          {aliasCopied ? (
+                            <Check className="size-3.5" />
+                          ) : (
+                            <Copy className="size-3.5" />
+                          )}
+                          {aliasCopied ? "Alias copiado" : "Copiar alias"}
+                        </button>
+                      </div>
                       <div>
                         <p className="text-10px font-semibold uppercase tracking-wider text-[#9CA3AF]">
-                          Alias
+                          Titular
                         </p>
-                        <p className="mt-0.5 text-lg font-bold uppercase tracking-wide text-white">
-                          {TRANSFER_ALIAS}
+                        <p className="mt-0.5 text-sm font-bold text-white">
+                          {TRANSFER_ACCOUNT_HOLDER}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-10px font-semibold uppercase tracking-wider text-[#9CA3AF]">
+                          CVU
+                        </p>
+                        <p className="mt-0.5 break-all text-sm font-bold tracking-wide text-white">
+                          {TRANSFER_CVU}
                         </p>
                       </div>
                       <div>
@@ -228,24 +268,6 @@ function CheckoutSuccessContent() {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      aria-label="Copiar alias de transferencia"
-                      title="Copiar alias"
-                      onClick={() => void handleCopyAlias()}
-                      className={`inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold text-white transition-colors ${
-                        aliasCopied
-                          ? "bg-[#16A34A] hover:bg-[#15803D]"
-                          : "bg-[#112A43] hover:bg-[#183B5E]"
-                      }`}
-                    >
-                      {aliasCopied ? (
-                        <Check className="size-3.5" />
-                      ) : (
-                        <Copy className="size-3.5" />
-                      )}
-                      {aliasCopied ? "Alias copiado" : "Copiar alias"}
-                    </button>
                   </div>
                 </div>
 
@@ -324,7 +346,7 @@ function CheckoutSuccessContent() {
               type="button"
               aria-label="Ir a productos"
               title="Ir a productos"
-              className={`h-10 w-full text-sm font-semibold text-white ${
+              className={`h-10 w-full cursor-pointer text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
                 isProofPending
                   ? "border border-[#303846] bg-[#141820] hover:border-beyonix-blue-light/45 hover:bg-[#1B2028]"
                   : "bg-beyonix-blue hover:bg-beyonix-blue-hover"
@@ -348,7 +370,7 @@ function CheckoutSuccessContent() {
               aria-label="Ir al inicio"
               title="Ir al inicio"
               variant="outline"
-              className="h-10 w-full border-[#303846] bg-transparent text-sm text-[#C8C8C8] hover:border-beyonix-blue-light/55 hover:bg-[#112A43] hover:text-white"
+              className="h-10 w-full cursor-pointer border-[#303846] bg-transparent text-sm text-[#C8C8C8] hover:border-beyonix-blue-light/55 hover:bg-[#112A43] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Link
                 href="/"

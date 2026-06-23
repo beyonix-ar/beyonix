@@ -7,6 +7,26 @@ import { SiteHeader } from "@/components/site-header"
 
 import { Footer } from "@/components/footer"
 import { useClientPresence } from "@/hooks/use-client-presence"
+import { useAuth } from "@/context/auth-context"
+import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
+
+function CheckoutAdminNotifications() {
+  const { isInternal } = useAuth()
+  const notifications = useOrderNotifications(isInternal)
+
+  if (!isInternal) return null
+
+  return (
+    <div className="fixed right-4 top-4 z-100">
+      <AdminNotificationsBell
+        count={notifications.notificationCount}
+        tone={notifications.notificationTone}
+        groups={notifications.notificationGroups}
+      />
+    </div>
+  )
+}
 
 function forceScrollTop() {
   window.scrollTo(0, 0)
@@ -67,7 +87,16 @@ export function LayoutShell({
     )
 
   // Admin layout
-  if (isAdmin || isPasswordReset || isAuthPage || isCheckoutPage) {
+  if (isCheckoutPage) {
+    return (
+      <>
+        {pathname !== "/checkout" && <CheckoutAdminNotifications />}
+        {children}
+      </>
+    )
+  }
+
+  if (isAdmin || isPasswordReset || isAuthPage) {
     return children
   }
 

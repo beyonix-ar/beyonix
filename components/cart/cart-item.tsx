@@ -68,7 +68,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-full w-7 rounded-none border-0 border-r border-white/10 bg-transparent text-white hover:bg-beyonix-blue/60"
+                className="h-full w-7 rounded-none border-0 border-r border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
                 aria-label="Disminuir cantidad"
                 title="Disminuir cantidad"
                 onClick={() => onUpdateQuantity(product.id, color, quantity - 1)}
@@ -101,7 +101,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
         type="button"
         variant="ghost"
         size="icon"
-        className="absolute right-2 top-2 size-8 rounded-full bg-transparent text-white/60 hover:bg-white/5 hover:text-red-400"
+        className="absolute right-2 top-2 size-8 cursor-pointer rounded-full border border-red-500/20 bg-red-950/20 text-red-400 transition-colors hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-300"
         aria-label="Eliminar producto"
         title="Eliminar producto"
         onClick={() => onRemove(product.id, color)}

@@ -26,6 +26,7 @@ import {
   Minus,
   Plus,
   Smartphone,
+  Trash2,
   Truck,
   UserRound,
 } from "lucide-react"
@@ -75,6 +76,8 @@ import {
 } from "@/lib/validation/content-filter"
 import {
   TRANSFER_ALIAS,
+  TRANSFER_ACCOUNT_HOLDER,
+  TRANSFER_CVU,
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotal,
 } from "@/lib/payments/transfer"
@@ -86,6 +89,8 @@ import {
 } from "@/lib/utils"
 import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
 import { Footer } from "@/components/footer"
+import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
+import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 
 function formatPrice(
@@ -224,8 +229,10 @@ export default function CheckoutPage() {
   const {
     user,
     isLoading,
+    isInternal,
     logout,
   } = useAuth()
+  const adminNotifications = useOrderNotifications(isInternal)
   const {
     cart: items,
     cartSessionId,
@@ -233,6 +240,7 @@ export default function CheckoutPage() {
     clearCart,
     increaseQuantity,
     decreaseQuantity,
+    removeFromCart,
   } = useCart()
 
   const [mounted, setMounted] =
@@ -911,12 +919,19 @@ export default function CheckoutPage() {
               href="/"
               aria-label="Ir al inicio de BEYONIX"
               title="Ir al inicio de BEYONIX"
-              className="font-heading text-26px font-bold tracking-tight text-foreground transition-colors hover:text-[#112A43] lg:text-28px"
+              className="cursor-pointer font-heading text-26px font-bold tracking-tight text-foreground transition-colors duration-150 hover:text-[#2F6FA3] lg:text-28px"
             >
               BEYONIX
             </Link>
 
-            <div className="relative flex min-w-20 justify-end">
+            <div className="relative flex min-w-20 justify-end gap-2">
+              {isInternal && (
+                <AdminNotificationsBell
+                  count={adminNotifications.notificationCount}
+                  tone={adminNotifications.notificationTone}
+                  groups={adminNotifications.notificationGroups}
+                />
+              )}
               <button
                 type="button"
                 aria-label="Abrir menú de cuenta"
@@ -1285,6 +1300,14 @@ export default function CheckoutPage() {
                         </p>
                         <p className="mt-2 text-base font-semibold text-white">
                           Alias: <span className="uppercase text-beyonix-sky">{TRANSFER_ALIAS}</span>
+                          <br />
+                          <span className="text-sm font-medium">
+                            Titular: {TRANSFER_ACCOUNT_HOLDER}
+                          </span>
+                          <br />
+                          <span className="text-xs font-medium">
+                            CVU: {TRANSFER_CVU}
+                          </span>
                         </p>
                         <p className="mt-1 text-sm text-white/55">
                           {TRANSFER_DISCOUNT_PERCENT}% OFF con validación manual.
@@ -1297,9 +1320,11 @@ export default function CheckoutPage() {
                         </span>
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
-                            Horarios de atención
+                            Validación de pagos
                           </p>
                           <p className="mt-2 text-sm text-white/75">
+                            Comprobantes revisados:
+                            <br />
                             Lunes a viernes: 7:00 a 20:00 hs
                           </p>
                           <p className="mt-1 text-sm text-white/55">
@@ -1312,7 +1337,7 @@ export default function CheckoutPage() {
 
                   <div className="rounded-xl border border-white/8 bg-[#141414] p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
-                      ¿Necesitás ayuda?
+                      ¿Necesitás ayuda con tu pago?
                     </p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <a
@@ -1326,7 +1351,7 @@ export default function CheckoutPage() {
                         </span>
                         <span>
                           <span className="block text-sm font-semibold text-white">Instagram</span>
-                          <span className="block text-xs text-white/50 group-hover:text-white/75">@beyonix.ar</span>
+                          <span className="block text-xs text-white/50 group-hover:text-white/75">Atención rápida</span>
                         </span>
                       </a>
 
@@ -1341,7 +1366,7 @@ export default function CheckoutPage() {
                         </span>
                         <span className="min-w-0">
                           <span className="block text-sm font-semibold text-white">Email</span>
-                          <span className="block truncate text-xs text-white/50 group-hover:text-white/75">{CHECKOUT_EMAIL}</span>
+                          <span className="block truncate text-xs text-white/50 group-hover:text-white/75">Consultas administrativas</span>
                         </span>
                       </a>
                     </div>
@@ -1464,33 +1489,50 @@ export default function CheckoutPage() {
                         </span>
                       </div>
 
-                      <div className="mt-1 flex items-center gap-1.5">
-                        <span className="text-11px font-medium text-white/55">Cant.</span>
-                        <div className="inline-flex h-7 items-center overflow-hidden rounded-full border border-beyonix-blue-light/35 bg-black/40">
-                          <button
-                            type="button"
-                            aria-label="Quitar una unidad"
-                            onClick={() =>
-                              decreaseQuantity(item.product.id, item.color)
-                            }
-                            className="flex h-full w-7 cursor-pointer items-center justify-center border-r border-white/10 text-white/65 transition-colors hover:bg-beyonix-blue/45 hover:text-white"
-                          >
-                            <Minus className="size-3" />
-                          </button>
-                          <span className="flex h-full min-w-8 items-center justify-center px-1.5 text-xs font-bold tabular-nums text-white">
-                            {item.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label="Agregar una unidad"
-                            onClick={() =>
-                              increaseQuantity(item.product.id, item.color)
-                            }
-                            className="flex h-full w-7 cursor-pointer items-center justify-center border-l border-white/10 text-white/65 transition-colors hover:bg-beyonix-blue/45 hover:text-white"
-                          >
-                            <Plus className="size-3" />
-                          </button>
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span className="text-11px font-medium text-white/55">Cant.</span>
+                          <div className="inline-flex h-7 items-center overflow-hidden rounded-full border border-beyonix-blue-light/35 bg-black/40">
+                            <button
+                              type="button"
+                              aria-label="Disminuir cantidad"
+                              title="Disminuir cantidad"
+                              onClick={() =>
+                                item.quantity > 1 &&
+                                decreaseQuantity(item.product.id, item.color)
+                              }
+                              disabled={item.quantity <= 1}
+                              className="flex h-full w-7 items-center justify-center border-r border-white/10 text-white/65 transition-colors enabled:cursor-pointer enabled:hover:bg-beyonix-blue/45 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              <Minus className="size-3" />
+                            </button>
+                            <span className="flex h-full min-w-8 items-center justify-center px-1.5 text-xs font-bold tabular-nums text-white">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label="Agregar una unidad"
+                              onClick={() =>
+                                increaseQuantity(item.product.id, item.color)
+                              }
+                              className="flex h-full w-7 cursor-pointer items-center justify-center border-l border-white/10 text-white/65 transition-colors hover:bg-beyonix-blue/45 hover:text-white"
+                            >
+                              <Plus className="size-3" />
+                            </button>
+                          </div>
                         </div>
+
+                        <button
+                          type="button"
+                          title="Eliminar producto"
+                          aria-label="Eliminar producto"
+                          onClick={() =>
+                            removeFromCart(item.product.id, item.color)
+                          }
+                          className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-red-500/25 bg-red-950/25 text-red-400 transition-colors hover:border-red-400/55 hover:bg-red-500/20 hover:text-red-300"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
                       </div>
                     </div>
                   </div>

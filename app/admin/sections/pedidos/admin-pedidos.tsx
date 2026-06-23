@@ -1,12 +1,14 @@
 ﻿"use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
   ArrowLeft,
   Bell,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   CreditCard,
   Download,
@@ -34,15 +36,21 @@ import {
   getOrderClaimTypeLabel,
 } from "@/lib/order-claims"
 import {
+  type AdminOrderNotificationGroups,
   type AdminOrderNotificationTone,
   getAdminOrderLastSeenAt,
   getSupabaseErrorDetails,
   hasOrderAttentionAfter,
+  isOrderNewerThanLastSeen,
   orderHasPendingClaimAction,
   markOrdersSeenAndGetPreviousLastSeen,
   notifyOrderNotificationsChanged,
 } from "@/lib/admin/order-notifications"
 import { supabase } from "@/lib/supabase/client"
+import {
+  isAdminPaymentProofSeen,
+  markAdminPaymentProofSeen,
+} from "@/lib/admin/order-event-views"
 import type {
   OrderClaimResolution,
   OrderClaimStatus,
@@ -76,6 +84,34 @@ type AdminOrderDetailView =
   | "envio"
   | "mensajes"
   | "reclamos"
+
+type PaymentStatusValue = "pendiente_comprobante" | "confirmado" | "rechazado"
+
+const PAYMENT_STATUS_OPTIONS: Array<{
+  value: PaymentStatusValue
+  label: string
+  tone: string
+  dot: string
+}> = [
+  {
+    value: "pendiente_comprobante",
+    label: "Pendiente",
+    tone: "text-white/82",
+    dot: "bg-amber-300/70",
+  },
+  {
+    value: "confirmado",
+    label: "Confirmado",
+    tone: "text-white/82",
+    dot: "bg-emerald-300/70",
+  },
+  {
+    value: "rechazado",
+    label: "Rechazado",
+    tone: "text-white/82",
+    dot: "bg-red-300/70",
+  },
+]
 
 const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "resumen",
@@ -242,6 +278,7 @@ function isOrderPaymentConfirmed(pedido: SupabasePedido) {
 
 function needsInvoiceReminder(pedido: SupabasePedido) {
   return (
+    !isRejectedPayment(pedido.payment_status) &&
     isOrderPaymentConfirmed(pedido) &&
     pedido.invoice_status !== "authorized" &&
     Number(pedido.total ?? 0) > 0
@@ -277,6 +314,18 @@ function getPaymentStatusLabel(status?: string | null) {
 
 function isRejectedPayment(status?: string | null) {
   return status === "rechazado" || status === "rejected"
+}
+
+function getDisplayedOrderStatus(pedido: SupabasePedido) {
+  if (!isTransferOrder(pedido)) return pedido.estado
+  if (isRejectedPayment(pedido.payment_status)) return "rechazado"
+  if (
+    pedido.payment_status === "confirmado" ||
+    pedido.payment_status === "approved"
+  ) {
+    return "pagado"
+  }
+  return "pendiente"
 }
 
 function isApprovedPayment(pedido: SupabasePedido) {
@@ -378,7 +427,7 @@ function TransferPaymentBadges({ pedido }: { pedido: SupabasePedido }) {
   )
 }
 
-type AdminNotificationTone = "order" | "message" | "issue"
+type AdminNotificationTone = "order" | "message" | "issue" | "invoice"
 
 const ADMIN_NOTIFICATION_TONE_CLASSES: Record<
   AdminNotificationTone,
@@ -402,6 +451,12 @@ const ADMIN_NOTIFICATION_TONE_CLASSES: Record<
     badge:
       "border-[#EF4444]/50 bg-[#EF4444] hover:bg-[#DC2626] shadow-[0_0_12px_rgba(239,68,68,0.35)]",
   },
+  invoice: {
+    bell:
+      "border-violet-400/45 bg-violet-600 hover:bg-violet-700 shadow-[0_0_16px_rgba(124,58,237,0.35)]",
+    badge:
+      "border-violet-400/50 bg-violet-600 hover:bg-violet-700 shadow-[0_0_12px_rgba(124,58,237,0.35)]",
+  },
 }
 
 function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
@@ -414,6 +469,14 @@ function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone
 
   if (hasIssue) return "issue"
 
+  const hasPaymentProofToReview =
+    Boolean(pedido.payment_proof_url) &&
+    pedido.payment_status === "en_revision"
+
+  if (hasPaymentProofToReview) return "message"
+
+  if (needsInvoiceReminder(pedido)) return "invoice"
+
   const hasCustomerMessage = (pedido.order_claims ?? []).some(
     (claim) =>
       Boolean(claim.last_customer_message_at) &&
@@ -425,10 +488,38 @@ function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone
   return "order"
 }
 
+function orderMatchesNotificationTone(
+  pedido: SupabasePedido,
+  tone: AdminNotificationTone,
+  lastSeenAt: string | null,
+) {
+  if (tone === "issue") {
+    return (
+      orderHasPendingClaimAction(pedido) ||
+      isOrderNewerThanLastSeen(pedido.return_requested_at, lastSeenAt)
+    )
+  }
+
+  if (tone === "message") {
+    return (
+      (Boolean(pedido.payment_proof_url) &&
+        pedido.payment_status === "en_revision") ||
+      (pedido.order_claims ?? []).some((claim) =>
+        isOrderNewerThanLastSeen(claim.last_customer_message_at, lastSeenAt),
+      )
+    )
+  }
+
+  if (tone === "invoice") return needsInvoiceReminder(pedido)
+
+  return isOrderNewerThanLastSeen(pedido.created_at, lastSeenAt)
+}
+
 interface AdminNotificationSummary {
   order: number
   message: number
   issue: number
+  invoice: number
 }
 
 function OrderNotificationBell({
@@ -440,9 +531,18 @@ function OrderNotificationBell({
   activeFilter: AdminNotificationTone | "all"
   onSelect: (tone: AdminNotificationTone) => void
 }) {
-  const count = summary.order + summary.message + summary.issue
+  const [open, setOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const count = summary.order + summary.message + summary.issue + summary.invoice
   const tone: AdminNotificationTone =
-    summary.issue > 0 ? "issue" : summary.message > 0 ? "message" : "order"
+    summary.issue > 0
+      ? "issue"
+      : summary.message > 0
+        ? "message"
+        : summary.invoice > 0
+          ? "invoice"
+          : "order"
   const toneClasses = ADMIN_NOTIFICATION_TONE_CLASSES[tone]
   const groups: Array<{
     tone: AdminNotificationTone
@@ -456,26 +556,55 @@ function OrderNotificationBell({
     },
     {
       tone: "message",
-      label: "Mensajes y consultas",
-      description: "Tenés respuestas o preguntas de clientes.",
+      label: "Comprobantes / mensajes / consultas",
+      description: "Comprobantes recibidos y respuestas pendientes.",
     },
     {
       tone: "order",
       label: "Pedidos nuevos",
       description: "Ventas pendientes de gestionar.",
     },
+    {
+      tone: "invoice",
+      label: "Facturas pendientes",
+      description: "Pagos confirmados que requieren facturación.",
+    },
   ]
 
+  useEffect(() => {
+    if (!open) return
+
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (buttonRef.current?.contains(target) || dropdownRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+
+    document.addEventListener("mousedown", handleOutside)
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("mousedown", handleOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [open])
+
   return (
-    <details className="group/admin-notifications relative">
-      <summary
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
         title={
           count
             ? `${count} notificaciones requieren atención`
             : "Sin notificaciones pendientes"
         }
         aria-label="Abrir notificaciones de pedidos"
-        className={`relative inline-flex size-10 cursor-pointer list-none items-center justify-center rounded-full border text-white transition-colors [&::-webkit-details-marker]:hidden ${
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={`relative inline-flex size-10 cursor-pointer items-center justify-center rounded-full border text-white transition-colors ${
           count > 0 ? toneClasses.bell : "border-white/12 bg-black"
         }`}
       >
@@ -485,9 +614,9 @@ function OrderNotificationBell({
             {count > 99 ? "99+" : count}
           </span>
         )}
-      </summary>
+      </button>
 
-      <div className="absolute left-0 top-12 z-40 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#0D1117] font-heading shadow-2xl shadow-black/75">
+      {open && <div ref={dropdownRef} className="absolute left-0 top-12 z-40 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#0D1117] font-heading shadow-2xl shadow-black/75">
         <div className="border-b border-white/8 px-4 py-3">
           <h2 className="text-sm font-black text-white">Notificaciones</h2>
           <p className="mt-0.5 text-10px text-white/48">
@@ -505,9 +634,9 @@ function OrderNotificationBell({
                 key={group.tone}
                 type="button"
                 disabled={groupCount === 0}
-                onClick={(event) => {
+                onClick={() => {
                   onSelect(group.tone)
-                  event.currentTarget.closest("details")?.removeAttribute("open")
+                  setOpen(false)
                 }}
                 className={`flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-all disabled:cursor-default disabled:opacity-35 ${
                   activeFilter === group.tone
@@ -531,8 +660,8 @@ function OrderNotificationBell({
             )
           })}
         </div>
-      </div>
-    </details>
+      </div>}
+    </div>
   )
 }
 
@@ -609,6 +738,7 @@ function EstadoBadge({ estado }: { estado: string }) {
     en_camino: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     entregado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
     cancelado: "border-red-500/20 bg-red-500/10 text-red-300",
+    rechazado: "border-red-500/20 bg-red-500/10 text-red-300",
   }
   const labels: Record<string, string> = {
     pendiente: "Pendiente",
@@ -617,6 +747,7 @@ function EstadoBadge({ estado }: { estado: string }) {
     en_camino: "En camino",
     entregado: "Entregado",
     cancelado: "Cancelado/Rechazado",
+    rechazado: "Rechazado",
   }
 
   return (
@@ -627,6 +758,120 @@ function EstadoBadge({ estado }: { estado: string }) {
     >
       {labels[estado] ?? estado}
     </span>
+  )
+}
+
+function PaymentStatusBadge({ status }: { status?: string | null }) {
+  const value: PaymentStatusValue =
+    status === "confirmado" || status === "approved"
+      ? "confirmado"
+      : isRejectedPayment(status)
+        ? "rechazado"
+        : "pendiente_comprobante"
+  const option = PAYMENT_STATUS_OPTIONS.find((item) => item.value === value)!
+  const label = value === "confirmado" ? "Pago confirmado" : option.label
+
+  return (
+    <span
+      className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${
+        value === "confirmado"
+          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+          : value === "rechazado"
+            ? "border-red-500/20 bg-red-500/10 text-red-300"
+            : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+      }`}
+    >
+      <span className={`size-2 rounded-full ${option.dot}`} />
+      {label}
+    </span>
+  )
+}
+
+function PaymentStatusDropdown({
+  value,
+  onChange,
+}: {
+  value: PaymentStatusValue
+  onChange: (value: PaymentStatusValue) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const selected =
+    PAYMENT_STATUS_OPTIONS.find((option) => option.value === value) ??
+    PAYMENT_STATUS_OPTIONS[0]
+
+  useEffect(() => {
+    if (!open) return
+
+    const handleOutside = (event: MouseEvent) => {
+      if (!dropdownRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+
+    document.addEventListener("mousedown", handleOutside)
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("mousedown", handleOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [open])
+
+  return (
+    <div ref={dropdownRef} className="relative w-fit">
+      <button
+        type="button"
+        title="Estado del pago"
+        aria-label="Estado del pago"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-8 min-w-40 cursor-pointer items-center gap-2 rounded-lg border border-[#263241] bg-[#0D1117] px-2.5 text-left shadow-sm transition-colors hover:bg-[#15191F]"
+      >
+        <span className={`size-1.5 rounded-full ${selected.dot}`} />
+        <span className={`min-w-0 flex-1 text-xs font-semibold ${selected.tone}`}>
+          {selected.label}
+        </span>
+        <ChevronDown
+          className={`size-3.5 text-white/50 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Estado del pago"
+          className="absolute left-0 top-9 z-50 w-44 overflow-hidden rounded-xl border border-[#263241] bg-[#0D1117] p-1 shadow-2xl shadow-black/70"
+        >
+          {PAYMENT_STATUS_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={value === option.value}
+              onClick={() => {
+                onChange(option.value)
+                setOpen(false)
+              }}
+              className={`flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left transition-colors ${
+                value === option.value
+                  ? "bg-[#15191F]"
+                  : "hover:bg-[#15191F]"
+              }`}
+            >
+              <span className={`size-1.5 rounded-full ${option.dot}`} />
+              <span className={`text-xs font-semibold ${option.tone}`}>
+                {option.label}
+              </span>
+              {value === option.value && (
+                <Check className="ml-auto size-3 text-white/45" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -647,18 +892,6 @@ function getOrderStatusSelectClassName(status: string) {
   }
 
   return styles[status] ?? ""
-}
-
-function getPaymentStatusSelectClassName(status?: string | null) {
-  if (status === "confirmado" || status === "approved") {
-    return "!h-11 !border-emerald-400/35 !bg-emerald-400/10 !px-3 !text-emerald-200 hover:!bg-emerald-400/14"
-  }
-
-  if (isRejectedPayment(status)) {
-    return "!h-11 !border-red-400/35 !bg-red-400/10 !px-3 !text-red-200 hover:!bg-red-400/14"
-  }
-
-  return "!h-11 !border-amber-400/35 !bg-amber-400/10 !px-3 !text-amber-200 hover:!bg-amber-400/14"
 }
 
 function getOrderFinancialBreakdown(pedido: SupabasePedido) {
@@ -938,7 +1171,7 @@ function PedidoPreviewModal({
                   Estado del pedido
                 </p>
                 <div className="mt-2">
-                  <EstadoBadge estado={pedido.estado} />
+                  <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
                 </div>
               </div>
               <div className="rounded-xl border border-white/7 bg-white/3 p-3">
@@ -1259,6 +1492,7 @@ function PedidoDetailModal({
   } | null>(null)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [invoiceDownloading, setInvoiceDownloading] = useState(false)
+  const [paymentProofSeen, setPaymentProofSeen] = useState(true)
   const [invoiceNotice, setInvoiceNotice] = useState<{
     ok: boolean
     message: string
@@ -1268,6 +1502,11 @@ function PedidoDetailModal({
       getAdminOrderDetailView(searchParams.get("tab")),
     )
   const showInvoiceReminder = needsInvoiceReminder(pedido)
+  const showPaymentProofIndicator =
+    isTransferOrder(pedido) &&
+    pedido.payment_status === "en_revision" &&
+    Boolean(pedido.payment_proof_url) &&
+    !paymentProofSeen
   const destination =
     [pedido.localidad, pedido.provincia].filter(Boolean).join(", ") ||
     "No informado"
@@ -1284,6 +1523,24 @@ function PedidoDetailModal({
   useEffect(() => {
     setActiveView(getAdminOrderDetailView(searchParams.get("tab")))
   }, [pedido.id, searchParams])
+
+  useEffect(() => {
+    let active = true
+    setPaymentProofSeen(true)
+
+    if (!pedido.payment_proof_url || !pedido.payment_proof_uploaded_at) return
+
+    void isAdminPaymentProofSeen(
+      pedido.id,
+      pedido.payment_proof_uploaded_at,
+    ).then((seen) => {
+      if (active) setPaymentProofSeen(seen)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [pedido.id, pedido.payment_proof_uploaded_at, pedido.payment_proof_url])
 
   const showDetailView = (view: AdminOrderDetailView) => {
     setActiveView(view)
@@ -1317,6 +1574,15 @@ function PedidoDetailModal({
     setInvoiceDownloading(false)
   }
 
+  const handleViewPaymentProof = () => {
+    onOpenPaymentProof(pedido.id)
+    setPaymentProofSeen(true)
+    void markAdminPaymentProofSeen(
+      pedido.id,
+      pedido.payment_proof_uploaded_at,
+    )
+  }
+
   return (
     <div className={embedded ? "min-w-0 px-2 pb-2 pt-4 sm:px-3 sm:pb-3 sm:pt-5" : "fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 pb-6 pt-9 backdrop-blur-sm"}>
       <div className={embedded ? "mx-auto flex w-full max-w-[1320px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#05070A]" : "flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#05070A] shadow-2xl shadow-black/80"}>
@@ -1328,7 +1594,11 @@ function PedidoDetailModal({
                 <h2 className="text-xl font-black text-white">
                   Pedido #{formatPublicOrderId(pedido.id)}
                 </h2>
-                <EstadoBadge estado={pedido.estado} />
+                {isTransferOrder(pedido) ? (
+                  <PaymentStatusBadge status={pedido.payment_status} />
+                ) : (
+                  <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
+                )}
               </div>
               <p className="mt-1 text-xs text-white/60">
                 {formatOrderDate(pedido.created_at)} · {getPaymentMethodLabel(pedido)}
@@ -1376,6 +1646,12 @@ function PedidoDetailModal({
                     <InvoiceReminderBell compact />
                   </span>
                 )}
+                {view === "pago" && showPaymentProofIndicator && (
+                  <span
+                    title="Comprobante nuevo pendiente de revisión"
+                    className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.55)]"
+                  />
+                )}
                 {view === "reclamos" && pendingClaim && (
                   <span className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.45)]" />
                 )}
@@ -1390,37 +1666,32 @@ function PedidoDetailModal({
           <div className="grid gap-3 lg:grid-cols-2">
             {activeView === "resumen" && (
             <section className="admin-order-data-panel admin-order-client-panel rounded-xl border border-white/8 p-3 lg:col-span-2">
-              <div className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
-                <div>
+              <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+                <div className="space-y-2">
                   <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                     Cliente
                   </p>
                   <h3 className="mt-1 text-base font-black text-white">
                     {pedido.cliente_nombre || "Cliente sin nombre"}
                   </h3>
+                  <DetailValue
+                    label="Email"
+                    value={pedido.cliente_email || "No informado"}
+                  />
                 </div>
 
-                <div>
+                <div className="space-y-2">
                   <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                     Usuario
                   </p>
                   <p className="mt-1 text-sm font-black uppercase text-white">
                     {pedido.cliente_username || "Sin usuario"}
                   </p>
+                  <DetailValue
+                    label="Teléfono"
+                    value={pedido.cliente_telefono || "No informado"}
+                  />
                 </div>
-
-                <DetailValue
-                  label="Email"
-                  value={pedido.cliente_email || "No informado"}
-                />
-                <DetailValue
-                  label="Rol"
-                  value={pedido.usuario_id ? "Cliente" : "Sin cuenta asociada"}
-                />
-                <DetailValue
-                  label="Teléfono"
-                  value={pedido.cliente_telefono || "No informado"}
-                />
               </div>
               <div className="mt-2 grid gap-1.5 text-sm sm:grid-cols-2">
                 <CustomerAddressDetails pedido={pedido} />
@@ -1433,25 +1704,13 @@ function PedidoDetailModal({
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Método de pago
               </p>
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-base font-black text-white">
-                    {getPaymentMethodLabel(pedido)}
-                  </h3>
-                </div>
-                <div className="text-right">
-                  <p className="text-10px font-bold uppercase tracking-widest text-white/45">
-                    Total recibido
-                  </p>
-                  <p className="mt-0.5 text-lg font-black text-white">
-                    {formatPrice(pedido.total)}
-                  </p>
-                </div>
-              </div>
+              <h3 className="mt-1 text-base font-black text-white">
+                {getPaymentMethodLabel(pedido)}
+              </h3>
 
               {isTransferOrder(pedido) ? (
                 <div className="mt-2 space-y-2 border-t border-white/8 pt-2">
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                       <DetailValue
                         label="Descuento aplicado"
@@ -1468,30 +1727,23 @@ function PedidoDetailModal({
                         value={formatOptionalOrderDate(pedido.paid_at)}
                       />
                     </div>
-                  </div>
-                  <div className="w-full max-w-xs rounded-xl border border-white/8 bg-[#1B2028] p-3">
-                    <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/55">
-                      Estado del pago
-                    </p>
-                    <AdminSelect
-                      title="Estado del pago"
-                      value={paymentStatusValue}
-                      leadingIcon={
-                        paymentStatusValue === "confirmado"
-                          ? <CheckCircle2 className="size-4 text-emerald-300" />
-                          : paymentStatusValue === "rechazado"
-                            ? <AlertTriangle className="size-4 text-red-300" />
-                            : <Clock3 className="size-4 text-amber-300" />
-                      }
-                      triggerClassName={getPaymentStatusSelectClassName(
-                        paymentStatusValue,
-                      )}
-                      onChange={(value) => onPaymentStatusChange(pedido.id, value)}
-                    >
-                      <option value="pendiente_comprobante">Pendiente</option>
-                      <option value="confirmado">Confirmado</option>
-                      <option value="rechazado">Rechazado</option>
-                    </AdminSelect>
+                    <div className="w-fit rounded-lg border border-white/8 bg-[#1B2028] p-2">
+                      <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/55">
+                        Estado del pago
+                      </p>
+                      <PaymentStatusDropdown
+                        value={paymentStatusValue}
+                        onChange={(value) => onPaymentStatusChange(pedido.id, value)}
+                      />
+                    </div>
+                    <div className="rounded-lg bg-[#16A34A] px-3 py-2">
+                      <p className="text-10px font-bold uppercase tracking-widest text-white/80">
+                        Total recibido
+                      </p>
+                      <p className="mt-0.5 text-lg font-black text-white">
+                        {formatPrice(pedido.total)}
+                      </p>
+                    </div>
                   </div>
                   <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/8 p-2">
                     <DetailValue
@@ -1503,7 +1755,7 @@ function PedidoDetailModal({
                         type="button"
                         title="Ver comprobante"
                         aria-label={`Ver comprobante del pedido ${pedido.id}`}
-                        onClick={() => onOpenPaymentProof(pedido.id)}
+                        onClick={handleViewPaymentProof}
                         className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:bg-beyonix-blue"
                       >
                         <Download className="size-4" />
@@ -1513,7 +1765,7 @@ function PedidoDetailModal({
                   </div>
                 </div>
               ) : (
-                <div className="mt-2 grid gap-2 border-t border-white/8 pt-2 sm:grid-cols-3">
+                <div className="mt-2 grid gap-2 border-t border-white/8 pt-2 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
                     <DetailValue
                       label="Estado del pago"
@@ -1525,6 +1777,14 @@ function PedidoDetailModal({
                     label="Fecha de acreditación"
                     value={formatOptionalOrderDate(pedido.paid_at)}
                   />
+                  <div className="rounded-lg bg-[#16A34A] px-3 py-2">
+                    <p className="text-10px font-bold uppercase tracking-widest text-white/80">
+                      Total recibido
+                    </p>
+                    <p className="mt-0.5 text-lg font-black text-white">
+                      {formatPrice(pedido.total)}
+                    </p>
+                  </div>
                 </div>
               )}
             </section>
@@ -2019,7 +2279,7 @@ function InvoiceReminderBell({ compact = false }: { compact?: boolean }) {
   return (
     <span
       title="Factura pendiente"
-      className={`inline-flex items-center justify-center rounded-full border border-[#2563EB]/45 bg-[#2563EB] text-white shadow-[0_0_12px_rgba(37,99,235,0.35)] transition-colors hover:bg-[#1D4ED8] ${
+      className={`inline-flex items-center justify-center rounded-full border border-violet-400/45 bg-violet-600 text-white shadow-[0_0_12px_rgba(124,58,237,0.35)] transition-colors hover:bg-violet-700 ${
         compact ? "size-4" : "size-7"
       }`}
     >
@@ -2680,26 +2940,37 @@ function AdminClaimsCenterSection({
 
 export function AdminPedidos({
   notificationCount,
-  notificationTone,
+  notificationGroups,
   initialOrderId,
 }: {
   notificationCount: number
-  notificationTone: AdminOrderNotificationTone
+  notificationGroups: AdminOrderNotificationGroups
   initialOrderId?: number
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { isSuperAdmin } = useAuth()
   const { pedidos, loading, error, deletePedido, updatePedidoEstado, reloadPedidos } =
     usePedidos()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [attentionFilter, setAttentionFilter] =
-    useState<AdminNotificationTone | "all">("all")
+    useState<AdminNotificationTone | "all">(() => {
+      const value = searchParams.get("attention")
+      return value === "order" ||
+        value === "message" ||
+        value === "issue" ||
+        value === "invoice"
+        ? value
+        : "all"
+    })
   const [previewPedido, setPreviewPedido] = useState<SupabasePedido | null>(null)
   const [attentionOrderIds, setAttentionOrderIds] = useState<Set<number>>(
     () => new Set()
   )
+  const [attentionLastSeenAt, setAttentionLastSeenAt] = useState<string | null>(null)
   const [attentionOrdersLoaded, setAttentionOrdersLoaded] = useState(false)
+  const previousNotificationCountRef = useRef(notificationCount)
   const [notice, setNotice] = useState<AdminNotice>(null)
   const [forcedStatusRequest, setForcedStatusRequest] =
     useState<ForcedStatusRequest>(null)
@@ -2716,29 +2987,25 @@ export function AdminPedidos({
   }, [notice])
 
   useEffect(() => {
-    if (!attentionOrdersLoaded) return
-    if (notificationCount <= attentionOrderIds.size) return
+    if (previousNotificationCountRef.current === notificationCount) return
 
+    previousNotificationCountRef.current = notificationCount
     setAttentionOrdersLoaded(false)
     void reloadPedidos()
   }, [
-    attentionOrderIds.size,
-    attentionOrdersLoaded,
     notificationCount,
     reloadPedidos,
   ])
 
   useEffect(() => {
-    if (!previewPedido) return
+    setPreviewPedido((currentPedido) => {
+      if (!currentPedido) return currentPedido
 
-    const updatedPedido = pedidos.find(
-      (pedido) => pedido.id === previewPedido.id
-    )
-
-    if (updatedPedido && updatedPedido !== previewPedido) {
-      setPreviewPedido(updatedPedido)
-    }
-  }, [pedidos, previewPedido])
+      return (
+        pedidos.find((pedido) => pedido.id === currentPedido.id) ?? currentPedido
+      )
+    })
+  }, [pedidos])
 
   useEffect(() => {
     if (!initialOrderId || loading) return
@@ -2759,9 +3026,12 @@ export function AdminPedidos({
         if (!active) return
 
         if (!lastSeenAt) {
+          setAttentionLastSeenAt(null)
           setAttentionOrdersLoaded(true)
           return
         }
+
+        setAttentionLastSeenAt(lastSeenAt)
 
         setAttentionOrderIds(
           new Set(
@@ -2769,8 +3039,8 @@ export function AdminPedidos({
               .filter(
                 (pedido) =>
                   isVisibleAdminOrder(pedido) &&
-                  orderHasPendingClaimAction(pedido) ||
-                  hasOrderAttentionAfter(pedido, lastSeenAt)
+                  (orderHasPendingClaimAction(pedido) ||
+                    hasOrderAttentionAfter(pedido, lastSeenAt))
               )
               .map((pedido) => pedido.id)
           )
@@ -2827,15 +3097,21 @@ export function AdminPedidos({
         .toLowerCase()
         .includes(normalizedSearch)
       const matchesStatus =
-        statusFilter === "todos" || pedido.estado === statusFilter
+        statusFilter === "todos" ||
+        (statusFilter === "cancelado"
+          ? ["cancelado", "rechazado"].includes(getDisplayedOrderStatus(pedido))
+          : getDisplayedOrderStatus(pedido) === statusFilter)
       const matchesAttention =
         attentionFilter === "all" ||
-        (attentionOrderIds.has(pedido.id) &&
-          getOrderNotificationTone(pedido) === attentionFilter)
+        orderMatchesNotificationTone(
+          pedido,
+          attentionFilter,
+          attentionLastSeenAt,
+        )
 
       return matchesSearch && matchesStatus && matchesAttention
     })
-  }, [attentionFilter, attentionOrderIds, pedidos, search, statusFilter])
+  }, [attentionFilter, attentionLastSeenAt, attentionOrderIds, pedidos, search, statusFilter])
 
   const handleDelete = async (id: number) => {
     const ok = confirm("¿Eliminar pedido?")
@@ -3061,6 +3337,14 @@ export function AdminPedidos({
     }
 
     window.open(data.signedUrl, "_blank", "noopener,noreferrer")
+    const pedido =
+      previewPedido?.id === pedidoId
+        ? previewPedido
+        : pedidos.find((item) => item.id === pedidoId)
+    void markAdminPaymentProofSeen(
+      pedidoId,
+      pedido?.payment_proof_uploaded_at,
+    )
   }
 
   const handleIssueInvoice = async (pedidoId: number) => {
@@ -3177,30 +3461,13 @@ export function AdminPedidos({
   }
 
   const notificationSummary = useMemo<AdminNotificationSummary>(() => {
-    const summary: AdminNotificationSummary = {
-      order: 0,
-      message: 0,
-      issue: 0,
+    return {
+      order: notificationGroups.order,
+      message: notificationGroups.message,
+      issue: notificationGroups.issue,
+      invoice: notificationGroups.invoice,
     }
-
-    if (!attentionOrdersLoaded) {
-      summary[notificationTone] = notificationCount
-      return summary
-    }
-
-    for (const pedido of pedidos) {
-      if (!attentionOrderIds.has(pedido.id)) continue
-      summary[getOrderNotificationTone(pedido)] += 1
-    }
-
-    return summary
-  }, [
-    attentionOrderIds,
-    attentionOrdersLoaded,
-    notificationCount,
-    notificationTone,
-    pedidos,
-  ])
+  }, [notificationGroups])
 
   if (initialOrderId) {
     if (loading) {
@@ -3373,7 +3640,8 @@ export function AdminPedidos({
 
               {pedidosFiltrados.map((pedido) => {
                 const dispatch = getDispatchAlert(pedido)
-                const hasPendingAttention = attentionOrderIds.has(pedido.id)
+                const hasPendingAttention =
+                  attentionOrderIds.has(pedido.id) || needsInvoiceReminder(pedido)
                 const hasPendingClaim = orderHasPendingClaimAction(pedido)
                 const attentionTone = getOrderNotificationTone(pedido)
                 const showInvoiceReminder = needsInvoiceReminder(pedido)
@@ -3386,7 +3654,11 @@ export function AdminPedidos({
                       hasPendingAttention
                         ? attentionTone === "issue"
                           ? "border-[#EF4444]/35 bg-[#EF4444]/8 shadow-[0_0_16px_rgba(239,68,68,0.12)] hover:bg-[#DC2626]/10"
-                          : "border-[#16A34A]/35 bg-[#16A34A]/8 shadow-[0_0_16px_rgba(22,163,74,0.12)] hover:bg-[#15803D]/10"
+                          : attentionTone === "message"
+                            ? "border-[#2563EB]/35 bg-[#2563EB]/8 shadow-[0_0_16px_rgba(37,99,235,0.12)] hover:bg-[#1D4ED8]/10"
+                            : attentionTone === "invoice"
+                              ? "border-violet-400/35 bg-violet-500/8 shadow-[0_0_16px_rgba(124,58,237,0.12)] hover:bg-violet-500/10"
+                              : "border-[#16A34A]/35 bg-[#16A34A]/8 shadow-[0_0_16px_rgba(22,163,74,0.12)] hover:bg-[#15803D]/10"
                         : "border-white/8 bg-zinc-900/75 hover:border-beyonix-blue-light/45 hover:bg-zinc-900"
                     }`}
                   >
@@ -3398,7 +3670,7 @@ export function AdminPedidos({
                               {formatPublicOrderId(pedido.id)}
                             </p>
                             {showInvoiceReminder && <InvoiceReminderBell />}
-                            <EstadoBadge estado={pedido.estado} />
+                            <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
                             {hasPendingClaim && <span className="rounded-full border border-red-400/30 bg-red-500/12 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-200">Reclamo pendiente</span>}
                           </div>
                         </div>
@@ -3432,7 +3704,7 @@ export function AdminPedidos({
                       <div className="grid min-w-0 gap-4 border-y border-white/7 py-4 sm:grid-cols-3">
                         <MobileOrderField label="Estado">
                           <div className="flex min-w-0">
-                            <EstadoBadge estado={pedido.estado} />
+                            <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
                           </div>
                         </MobileOrderField>
                         <MobileOrderField label="Despacho">
@@ -3519,7 +3791,7 @@ export function AdminPedidos({
 
                   <div className="text-center">
                     <div className="flex justify-center">
-                      <EstadoBadge estado={pedido.estado} />
+                      <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
                     </div>
                   </div>
 

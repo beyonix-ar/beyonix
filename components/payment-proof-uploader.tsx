@@ -108,7 +108,7 @@ export function PaymentProofUploader({
             ref={inputRef}
             id={`payment-proof-${orderId}`}
             type="file"
-            accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
             onChange={handleFileChange}
             className="sr-only"
           />
@@ -187,7 +187,7 @@ export function PaymentProofUploader({
           </div>
 
           <p className={`${compact ? "mt-1.5 leading-4 text-[#9CA3AF]" : "mt-2 leading-5 text-white/45"} text-center text-xs`}>
-            JPG, PNG, WEBP o PDF · Máximo 5 MB
+            JPG, JPEG, PNG o PDF · Máximo 5 MB
           </p>
         </div>
 
@@ -275,7 +275,7 @@ export function PaymentProofActionButton({
         ref={inputRef}
         id={`payment-proof-action-${orderId}`}
         type="file"
-        accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+        accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
         onChange={(event) => void handleFileChange(event)}
         className="sr-only"
       />
@@ -285,7 +285,7 @@ export function PaymentProofActionButton({
         title={actionLabel}
         disabled={uploading}
         onClick={() => inputRef.current?.click()}
-        className={className}
+        className={`${className} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
       >
         <Upload className="size-4" />
         {uploading ? "Subiendo..." : actionLabel}

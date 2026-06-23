@@ -88,7 +88,8 @@ export function CustomerNotificationsBell({
   onOpenChange,
 }: CustomerNotificationsBellProps) {
   const router = useRouter()
-  const wrapperRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [notifications, setNotifications] = useState<SupabaseCustomerNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -147,9 +148,9 @@ export function CustomerNotificationsBell({
     if (!open) return
 
     const handleOutside = (event: MouseEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
-        onOpenChange(false)
-      }
+      const target = event.target as Node
+      if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      onOpenChange(false)
     }
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") onOpenChange(false)
@@ -213,8 +214,9 @@ export function CustomerNotificationsBell({
   }, [handleMarkAllRead, loading, open, unreadCount])
 
   return (
-    <div ref={wrapperRef} className="relative shrink-0">
+    <div className="relative shrink-0">
       <button
+        ref={buttonRef}
         type="button"
         aria-label="Abrir notificaciones"
         title="Notificaciones"
@@ -232,7 +234,7 @@ export function CustomerNotificationsBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-60 w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#303846] bg-[#0D1117] font-heading shadow-2xl shadow-black/70">
+        <div ref={panelRef} className="absolute right-0 top-12 z-60 w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#303846] bg-[#0D1117] font-heading shadow-2xl shadow-black/70">
           <div className="flex items-center justify-between gap-3 border-b border-[#303846] px-4 py-3">
             <div>
               <h2 className="text-sm font-bold text-white">Notificaciones</h2>

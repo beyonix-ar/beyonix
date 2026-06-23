@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   AlertTriangle,
   ArrowLeft,
@@ -84,9 +84,10 @@ function formatDate(value: string) {
 }
 
 function statusInfo(status: SupabaseOrderClaim["status"]) {
-  if (status === "falta_informacion") return { label: "Necesitamos información", dot: "bg-blue-400", style: "border-blue-300/25 bg-blue-400/10" }
+  if (status === "recibido") return { label: "Reclamo recibido", dot: "bg-blue-400", style: "border-blue-300/25 bg-blue-400/10" }
+  if (status === "falta_informacion") return { label: "Esperando tu respuesta", dot: "bg-orange-400", style: "border-orange-300/25 bg-orange-400/10" }
   if (status === "aprobado") return { label: "Solución ofrecida", dot: "bg-blue-300", style: "border-blue-300/25 bg-[#112A43]" }
-  if (status === "cerrado") return { label: "Cerrado", dot: "bg-emerald-400", style: "border-emerald-300/25 bg-emerald-400/10" }
+  if (status === "cerrado") return { label: "Resuelto", dot: "bg-emerald-400", style: "border-emerald-300/25 bg-emerald-400/10" }
   if (status === "rechazado") return { label: "Rechazado", dot: "bg-red-400", style: "border-red-300/25 bg-red-400/10" }
   return { label: "En revisión", dot: "bg-amber-400", style: "border-amber-300/25 bg-amber-400/10" }
 }
@@ -142,14 +143,21 @@ export function CustomerClaimExperience({ order, initialProblem }: { order: Supa
   const replyRef = useRef<HTMLTextAreaElement>(null)
   const chatRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    let mounted = true
-    fetch(`/api/orders/${order.id}/claims`).then(async (response) => {
-      const data = (await response.json()) as { claims?: SupabaseOrderClaim[] }
-      if (mounted && response.ok) setClaims(data.claims ?? [])
-    })
-    return () => { mounted = false }
+  const loadClaims = useCallback(async () => {
+    const response = await fetch(`/api/orders/${order.id}/claims`)
+    const data = (await response.json()) as { claims?: SupabaseOrderClaim[] }
+    if (response.ok) setClaims(data.claims ?? [])
   }, [order.id])
+
+  useEffect(() => {
+    void loadClaims()
+    const intervalId = window.setInterval(() => void loadClaims(), 5000)
+    window.addEventListener("focus", loadClaims)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener("focus", loadClaims)
+    }
+  }, [loadClaims])
 
   useEffect(() => {
     if (!initialProblem || claims.length > 0) return
@@ -196,6 +204,8 @@ export function CustomerClaimExperience({ order, initialProblem }: { order: Supa
   }
 
   const sendReply = async (currentClaim: SupabaseOrderClaim) => {
+    const currentMessages = [...(currentClaim.order_claim_messages ?? [])].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at))
+    if (currentMessages[currentMessages.length - 1]?.author_role === "cliente") return setError("Mensaje enviado. Esperá la respuesta de BEYONIX para continuar.")
     if (reply.trim().length < 5 && replyFiles.length === 0) return setError("Escribí un mensaje o adjuntá un archivo.")
     const fileError = validateFiles(replyFiles)
     if (fileError) return setError(fileError)
@@ -215,11 +225,21 @@ export function CustomerClaimExperience({ order, initialProblem }: { order: Supa
     if (!selectedResolution) return setError("Elegí una de las soluciones ofrecidas.")
     setLoading(true); setError("")
     try {
-      const response = await fetch(`/api/orders/${order.id}/claims`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ claimId: currentClaim.id, selectedResolution }) })
+      const response = await fetch(`/api/orders/${order.id}/claims`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ claimId: currentClaim.id, selectedResolution, decision: "accept" }) })
       const data = (await response.json()) as { claim?: SupabaseOrderClaim; error?: string }
       if (!response.ok || !data.claim) return setError(data.error || "No se pudo aceptar la solución.")
       setClaims((current) => current.map((item) => item.id === data.claim!.id ? data.claim! : item))
     } catch { setError("No se pudo aceptar la solución.") } finally { setLoading(false) }
+  }
+
+  const rejectResolution = async (currentClaim: SupabaseOrderClaim) => {
+    setLoading(true); setError("")
+    try {
+      const response = await fetch(`/api/orders/${order.id}/claims`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ claimId: currentClaim.id, decision: "reject" }) })
+      const data = (await response.json()) as { claim?: SupabaseOrderClaim; error?: string }
+      if (!response.ok || !data.claim) return setError(data.error || "No se pudo rechazar la solución.")
+      setClaims((current) => current.map((item) => item.id === data.claim!.id ? data.claim! : item)); setSelectedResolution(null)
+    } catch { setError("No se pudo rechazar la solución.") } finally { setLoading(false) }
   }
 
   if (justCreated) {
@@ -230,18 +250,23 @@ export function CustomerClaimExperience({ order, initialProblem }: { order: Supa
   if (claim) {
     const info = statusInfo(claim.status)
     const messages = [...(claim.order_claim_messages ?? [])].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at))
+    const customerTurnLocked = messages[messages.length - 1]?.author_role === "cliente"
     const offered = claim.offered_resolutions ?? []
+    const offerMessage = offered.length > 0
+      ? [...messages].reverse().find((message) => message.author_role !== "cliente" && message.message.startsWith("Te ofrecemos:"))
+      : undefined
+    const visibleMessages = offerMessage
+      ? messages.filter((message) => message.id !== offerMessage.id)
+      : messages
     const open = !["cerrado", "rechazado"].includes(claim.status)
     const evidenceSent = (claim.order_claim_files ?? []).length > 0
     const canUploadEvidence = !evidenceSent || claim.status === "falta_informacion"
     return <section className="mb-1 rounded-xl border border-blue-300/15 bg-[#141414] p-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/8 pb-2.5"><div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">Reclamo #{claim.id}</p><h3 className="text-base font-black text-white">Seguimiento del caso</h3></div><span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black text-white ${info.style}`}><span className={`size-2 rounded-full ${info.dot}`} />{info.label}</span></div><p className="mt-2 truncate text-[11px] text-white/55">Pedido BX-{1000 + order.id} · {PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Solicitud de ayuda"}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/8 pb-2"><div><h3 className="text-base font-black text-white">Reclamo #{claim.id}</h3><p className="mt-0.5 text-[11px] text-white/55">Pedido #BX-{1000 + order.id} · {PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Solicitud de ayuda"}</p></div><span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black text-white ${info.style}`}><span className={`size-2 rounded-full ${info.dot}`} />Estado: {info.label}</span></div>
       {claim.rejection_reason && <div className="mt-2.5 rounded-xl border border-red-300/20 bg-red-500/8 p-3"><p className="text-xs font-black text-white">Motivo del rechazo</p><p className="mt-1 text-xs leading-5 text-white/85">{claim.rejection_reason}</p></div>}
-      {offered.length > 0 && !claim.customer_selected_resolution && <div className="mt-2.5 rounded-xl border border-blue-300/20 bg-[#141414] p-3"><p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">BEYONIX te ofrece</p><div className="mt-2 flex flex-wrap gap-1.5">{offered.map((resolution) => <button type="button" key={resolution} onClick={() => setSelectedResolution(resolution)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black text-white ${selectedResolution === resolution ? "border-blue-300/55 bg-[#112A43]" : "border-blue-300/15 bg-[#181818]"}`}><Check className="size-3.5 text-blue-300" />{getOrderClaimResolutionLabel(resolution)}</button>)}</div><div className="mt-2.5 flex flex-wrap gap-2"><button type="button" disabled={loading} onClick={() => void acceptResolution(claim)} className="h-9 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Aceptar solución</button><button type="button" onClick={() => { replyRef.current?.focus(); replyRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }) }} className="h-9 rounded-lg border border-blue-300/15 bg-[#181818] px-4 text-xs font-black text-white">Necesito ayuda</button></div></div>}
-      {claim.customer_selected_resolution && <div className="mt-2.5 rounded-xl border border-emerald-300/20 bg-[#141414] px-3 py-2 text-xs font-bold text-white">Aceptaste: {getOrderClaimResolutionLabel(claim.customer_selected_resolution)}.</div>}
-      <div className="mt-2.5 overflow-hidden rounded-lg bg-[#181818]"><div className="border-b border-white/8 px-3 py-2"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">Chat</p></div><div ref={chatRef} className="max-h-[18rem] space-y-1.5 overflow-y-auto p-2.5">{messages.map((message) => { const customer = message.author_role === "cliente"; return <div key={message.id} className={`flex ${customer ? "justify-end" : "justify-start"}`}><div className={`max-w-[82%] rounded-lg px-2.5 py-1.5 ${customer ? "bg-[#112A43]" : "bg-black/45"}`}><p className="text-[10px] font-black text-blue-200">{customer ? "Vos" : "BEYONIX"}</p><p className="whitespace-pre-wrap text-xs leading-4 text-white">{message.message}</p><p className="mt-0.5 text-[9px] text-white/45">{formatDate(message.created_at)}</p></div></div> })}{messages.length === 0 && <p className="text-xs text-white/65">La conversación todavía no tiene mensajes.</p>}</div></div>
+      <div className="mt-2.5 overflow-hidden rounded-lg border border-white/7 bg-[#181818]"><div className="border-b border-white/8 px-3 py-2"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">Conversación</p></div><div ref={chatRef} className="min-h-72 max-h-[32rem] space-y-2 overflow-y-auto p-2.5">{visibleMessages.map((message) => { const customer = message.author_role === "cliente"; return <div key={message.id} className={`flex ${customer ? "justify-end" : "justify-start"}`}><div className={`max-w-[82%] rounded-lg px-2.5 py-1.5 ${customer ? "bg-[#112A43]" : "bg-black/45"}`}><p className="text-[10px] font-black text-blue-200">{customer ? "Vos" : "BEYONIX"}</p><p className="whitespace-pre-wrap text-xs leading-4 text-white">{message.message}</p><p className="mt-0.5 text-[9px] text-white/45">{formatDate(message.created_at)}</p></div></div> })}{visibleMessages.length === 0 && offered.length === 0 && <p className="text-xs text-white/65">La conversación todavía no tiene mensajes.</p>}{offered.length > 0 && <div className="flex justify-start"><div className="w-full max-w-[88%] rounded-xl border border-blue-300/18 bg-[#101820] p-2.5"><p className="text-xs font-black text-white"><span className="text-blue-300">BEYONIX</span> te ofreció una solución</p><p className="mt-1.5 text-[10px] font-bold uppercase tracking-wide text-white/50">Opciones</p><div className="mt-1.5 flex flex-wrap gap-1.5">{offered.map((resolution) => { const selected = selectedResolution === resolution || claim.customer_selected_resolution === resolution; return <button type="button" key={resolution} disabled={Boolean(claim.customer_selected_resolution)} onClick={() => setSelectedResolution(resolution)} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-black text-white transition-colors ${claim.customer_selected_resolution === resolution ? "border-emerald-400/55 bg-emerald-700/65" : selected ? "border-blue-300/45 bg-[#162D43]" : "border-white/10 bg-[#121A22] hover:border-blue-300/35"} disabled:cursor-default disabled:opacity-100`}><Check className={`size-3 ${selected ? "text-emerald-300" : "text-blue-300"}`} />{getOrderClaimResolutionLabel(resolution)}</button> })}</div>{claim.customer_selected_resolution ? <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-400/35 bg-emerald-700/35 px-2.5 py-2"><span className="size-2 rounded-full bg-emerald-400" /><span className="text-[10px] font-bold uppercase tracking-wide text-emerald-100">Elegiste</span><strong className="text-xs text-white">{getOrderClaimResolutionLabel(claim.customer_selected_resolution)}</strong></div> : <div className="mt-2.5 flex flex-wrap gap-2"><button type="button" disabled={loading || !selectedResolution} onClick={() => void acceptResolution(claim)} className="h-9 rounded-lg bg-[#16A34A] px-3.5 text-xs font-black text-white shadow-[0_0_10px_rgba(22,163,74,0.24)] transition-colors hover:bg-[#15803D] disabled:cursor-not-allowed disabled:opacity-45">Aceptar solución</button><button type="button" disabled={loading} onClick={() => void rejectResolution(claim)} className="h-9 rounded-lg border border-red-400/45 bg-red-950/55 px-3.5 text-xs font-black text-white transition-colors hover:border-red-300 hover:bg-red-900/65 disabled:cursor-not-allowed disabled:opacity-45">Rechazar solución</button></div>}<p className="mt-1.5 text-[9px] text-white/40">{offerMessage ? formatDate(offerMessage.created_at) : formatDate(claim.updated_at)}</p></div></div>}</div></div>
       {evidenceSent && <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#181818] px-3 py-2"><span className="text-xs font-bold text-emerald-300"><Check className="mr-1 inline size-3.5" />Evidencia enviada</span><details><summary className="cursor-pointer text-xs font-black text-blue-300">Ver archivos enviados ({claim.order_claim_files?.length})</summary><div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{claim.order_claim_files?.map((file) => <FilePreview key={file.id} file={file} />)}</div></details></div>}
-      {open ? <div className="mt-2.5"><textarea ref={replyRef} value={reply} onChange={(event) => setReply(event.target.value)} rows={2} placeholder="Escribí tu mensaje" className="w-full resize-none rounded-lg border border-blue-300/15 bg-[#181818] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/50 focus:border-blue-300/50" /><div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">{canUploadEvidence ? <div className="min-w-0 flex-1"><EvidenceUploader files={replyFiles} onChange={setReplyFiles} disabled={loading} /></div> : <p className="text-[11px] text-white/55">Podrás adjuntar nueva evidencia si BEYONIX solicita más información.</p>}<button type="button" disabled={loading} onClick={() => void sendReply(claim)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-50"><Send className="size-3.5" />{loading ? "Enviando..." : "Enviar"}</button></div>{error && <p className="mt-2 text-xs font-bold text-red-300">{error}</p>}</div> : <p className="mt-2.5 rounded-lg bg-[#181818] px-3 py-2 text-xs text-white/70">Este caso está finalizado. Podés consultar la conversación cuando quieras.</p>}
+      {open ? <div className="mt-2.5"><textarea ref={replyRef} value={reply} disabled={customerTurnLocked || loading} onChange={(event) => setReply(event.target.value)} rows={2} placeholder="Escribí tu mensaje" className="w-full resize-none rounded-lg border border-blue-300/15 bg-[#181818] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/50 focus:border-blue-300/50 disabled:cursor-not-allowed disabled:opacity-45" />{customerTurnLocked && <p className="mt-2 rounded-lg border border-orange-300/15 bg-orange-400/8 px-3 py-2 text-xs font-bold text-orange-100">Mensaje enviado. Esperá la respuesta de BEYONIX para continuar.</p>}<div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">{canUploadEvidence ? <div className={`min-w-0 flex-1 ${customerTurnLocked ? "opacity-45" : ""}`}><EvidenceUploader files={replyFiles} onChange={setReplyFiles} disabled={loading || customerTurnLocked} /></div> : <p className="text-[11px] text-white/55">Podrás adjuntar nueva evidencia si BEYONIX solicita más información.</p>}<button type="button" disabled={loading || customerTurnLocked} onClick={() => void sendReply(claim)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45"><Send className="size-3.5" />{loading ? "Enviando..." : "Enviar"}</button></div>{error && <p className="mt-2 text-xs font-bold text-red-300">{error}</p>}</div> : <p className="mt-2.5 rounded-lg border border-emerald-300/15 bg-emerald-500/8 px-3 py-2 text-xs font-bold text-emerald-100">{claim.customer_selected_resolution ? `Caso finalizado. Solución aceptada: ${getOrderClaimResolutionLabel(claim.customer_selected_resolution)}.` : "Caso finalizado. Podés consultar la conversación cuando quieras."}</p>}
     </section>
   }
 

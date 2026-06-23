@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
+import { getSeenAdminPaymentProofOrderIds } from "@/lib/admin/order-event-views"
 
 export const ORDER_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:order-notifications-changed"
@@ -106,7 +107,11 @@ function getTime(value?: string | null) {
 }
 
 export function getOrderAttentionAt(order: SupabasePedido) {
-  const dates = [order.created_at, order.return_requested_at]
+  const dates = [
+    order.created_at,
+    order.return_requested_at,
+    order.payment_proof_uploaded_at,
+  ]
 
   for (const claim of order.order_claims ?? []) {
     if (typeof claim.admin_needs_action === "boolean") continue
@@ -156,16 +161,30 @@ function isVisibleAdminOrderNotification(order: {
   return !isMercadoPago || order.payment_status === "approved"
 }
 
-export type AdminOrderNotificationTone = "order" | "message" | "issue"
+export type AdminOrderNotificationTone = "order" | "message" | "issue" | "invoice"
 
 export interface AdminOrderNotificationSummary {
   count: number
   tone: AdminOrderNotificationTone
+  groups: AdminOrderNotificationGroups
+}
+
+export interface AdminOrderNotificationGroups {
+  order: number
+  message: number
+  issue: number
+  invoice: number
 }
 
 const EMPTY_NOTIFICATION_SUMMARY: AdminOrderNotificationSummary = {
   count: 0,
   tone: "order",
+  groups: {
+    order: 0,
+    message: 0,
+    issue: 0,
+    invoice: 0,
+  },
 }
 
 export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotificationSummary> {
@@ -181,7 +200,7 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
     const { data: orders, error } = await supabase
       .from("ordenes")
       .select(
-        "id, created_at, return_requested_at, payment_method_id, payment_id, payment_status"
+        "id, created_at, return_requested_at, estado, total, payment_method_id, payment_id, payment_status, payment_proof_url, payment_proof_uploaded_at, invoice_status"
       )
 
     if (error) {
@@ -197,15 +216,34 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
         .filter(isVisibleAdminOrderNotification)
         .map((order) => order.id)
     )
-    const attentionOrderIds = new Set<number>(
+    const newOrderIds = new Set<number>(
       (orders ?? [])
         .filter(isVisibleAdminOrderNotification)
         .filter((order) =>
-          [order.created_at, order.return_requested_at].some((date) =>
-            isOrderNewerThanLastSeen(date, view.last_seen_at)
-          )
+          isOrderNewerThanLastSeen(order.created_at, view.last_seen_at)
         )
         .map((order) => order.id)
+    )
+    const proofEvents = (orders ?? [])
+      .filter(isVisibleAdminOrderNotification)
+      .filter(
+        (order) =>
+          Boolean(order.payment_proof_url) &&
+          order.payment_status === "en_revision" &&
+          Boolean(order.payment_proof_uploaded_at),
+      )
+      .map((order) => ({
+        id: order.id,
+        eventAt: order.payment_proof_uploaded_at,
+      }))
+    const seenProofOrderIds = await getSeenAdminPaymentProofOrderIds(
+      adminId,
+      proofEvents,
+    )
+    const messageOrderIds = new Set<number>(
+      proofEvents
+        .filter((event) => !seenProofOrderIds.has(event.id))
+        .map((event) => event.id),
     )
     const issueOrderIds = new Set<number>(
       (orders ?? [])
@@ -221,7 +259,7 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
 
     const { data: claims, error: claimsError } = await supabase
       .from("order_claims")
-      .select("id, order_id")
+      .select("id, order_id, last_customer_message_at")
       .eq("admin_needs_action", true)
 
     if (claimsError) {
@@ -232,15 +270,48 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
     } else {
       for (const claim of claims ?? []) {
         if (visibleOrderIds.has(claim.order_id)) {
-          attentionOrderIds.add(claim.order_id)
           issueOrderIds.add(claim.order_id)
+          if (
+            isOrderNewerThanLastSeen(
+              claim.last_customer_message_at,
+              view.last_seen_at,
+            )
+          ) {
+            messageOrderIds.add(claim.order_id)
+          }
         }
       }
     }
 
+    const groups: AdminOrderNotificationGroups = {
+      order: newOrderIds.size,
+      message: messageOrderIds.size,
+      issue: issueOrderIds.size,
+      invoice: (orders ?? []).filter(
+        (order) =>
+          isVisibleAdminOrderNotification(order) &&
+          Number(order.total ?? 0) > 0 &&
+          !["rechazado", "rejected"].includes(order.payment_status ?? "") &&
+          (order.payment_status === "confirmado" ||
+            order.payment_status === "approved" ||
+            ["pagado", "enviado", "en_camino", "entregado"].includes(
+              order.estado ?? "",
+            )) &&
+          order.invoice_status !== "authorized",
+      ).length,
+    }
+
     return {
-      count: attentionOrderIds.size,
-      tone: issueOrderIds.size > 0 ? "issue" : "order",
+      count: groups.order + groups.message + groups.issue + groups.invoice,
+      tone:
+        groups.issue > 0
+          ? "issue"
+          : groups.message > 0
+            ? "message"
+            : groups.invoice > 0
+              ? "invoice"
+              : "order",
+      groups,
     }
   } catch (error) {
     console.error(

@@ -1,7 +1,17 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { Check, Download, FileText, Send } from "lucide-react"
+import {
+  Check,
+  ChevronDown,
+  Download,
+  FileText,
+  Percent,
+  RefreshCcw,
+  Send,
+  Sparkles,
+  WalletCards,
+} from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
@@ -29,14 +39,37 @@ const STATUS_OPTIONS: Array<{
   value: OrderClaimStatus
   label: string
   tone: string
+  dot: string
 }> = [
-  { value: "recibido", label: "Abierto", tone: "text-blue-200" },
-  { value: "en_revision", label: "En revisión", tone: "text-amber-200" },
-  { value: "falta_informacion", label: "Esperando cliente", tone: "text-blue-200" },
-  { value: "aprobado", label: "Solución ofrecida", tone: "text-violet-200" },
-  { value: "cerrado", label: "Resuelto", tone: "text-emerald-200" },
-  { value: "rechazado", label: "Rechazado", tone: "text-red-200" },
+  { value: "en_revision", label: "En revisión", tone: "text-amber-200", dot: "bg-amber-400" },
+  { value: "aprobado", label: "Solución ofrecida", tone: "text-blue-200", dot: "bg-blue-400" },
+  { value: "cerrado", label: "Resuelto", tone: "text-emerald-200", dot: "bg-emerald-400" },
+  { value: "rechazado", label: "Rechazado", tone: "text-red-200", dot: "bg-red-400" },
 ]
+
+const OPEN_STATUS = {
+  value: "recibido" as const,
+  label: "Abierto",
+  tone: "text-blue-200",
+  dot: "bg-blue-400",
+}
+
+const WAITING_CUSTOMER_STATUS = {
+  value: "falta_informacion" as const,
+  label: "Esperando cliente",
+  tone: "text-orange-200",
+  dot: "bg-orange-400",
+}
+
+const SOLUTION_OPTIONS = [
+  { value: "cambio_producto" as const, icon: RefreshCcw },
+  { value: "reintegro_total" as const, icon: WalletCards },
+  { value: "reintegro_parcial" as const, icon: WalletCards },
+  { value: "cupon_descuento" as const, icon: Percent },
+  { value: "otro" as const, icon: Sparkles },
+].filter((option) =>
+  CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS.includes(option.value),
+)
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-AR", {
@@ -68,6 +101,7 @@ function getClaimDescription(claim: SupabaseOrderClaim, order: SupabasePedido) {
 }
 
 function getStatusLabel(status: OrderClaimStatus) {
+  if (status === "recibido") return OPEN_STATUS.label
   return STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
 }
 
@@ -87,9 +121,12 @@ export function AdminClaimManager({
   const [solutions, setSolutions] = useState<OrderClaimResolution[]>([])
   const [otherSolution, setOtherSolution] = useState("")
   const [solutionOpen, setSolutionOpen] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState("")
   const chatRef = useRef<HTMLDivElement>(null)
+  const statusDropdownRef = useRef<HTMLDivElement>(null)
+  const firstReviewAttemptedRef = useRef<Set<number>>(new Set())
   const messageCount = claim?.order_claim_messages?.length ?? 0
 
   useLayoutEffect(() => {
@@ -106,6 +143,48 @@ export function AdminClaimManager({
     setNotice("")
     setSolutionOpen(false)
   }, [claim?.id])
+
+  useEffect(() => {
+    if (!statusOpen) return
+    const closeDropdown = (event: PointerEvent) => {
+      if (!statusDropdownRef.current?.contains(event.target as Node)) {
+        setStatusOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", closeDropdown)
+    return () => document.removeEventListener("pointerdown", closeDropdown)
+  }, [statusOpen])
+
+  useEffect(() => {
+    if (!claim) return
+    let active = true
+
+    const refreshClaim = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      const response = await fetch(`/api/admin/order-claims/${claim.id}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = (await response.json()) as { claim?: SupabaseOrderClaim }
+      if (!active || !response.ok || !data.claim) return
+
+      const nextMessageCount = data.claim.order_claim_messages?.length ?? 0
+      if (
+        data.claim.updated_at !== claim.updated_at ||
+        nextMessageCount !== messageCount
+      ) {
+        onClaimChange(data.claim)
+      }
+    }
+
+    const intervalId = window.setInterval(() => void refreshClaim(), 5000)
+    window.addEventListener("focus", refreshClaim)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+      window.removeEventListener("focus", refreshClaim)
+    }
+  }, [claim?.id, claim?.updated_at, messageCount, onClaimChange])
 
   const updateClaim = async (
     overrides: Record<string, unknown>,
@@ -163,6 +242,19 @@ export function AdminClaimManager({
     }
   }
 
+  useEffect(() => {
+    if (!claim || claim.status !== "recibido") return
+    if (firstReviewAttemptedRef.current.has(claim.id)) return
+
+    firstReviewAttemptedRef.current.add(claim.id)
+    void updateClaim(
+      { status: "en_revision" },
+      "Reclamo abierto por primera vez. Estado actualizado a En revisión.",
+    ).then((updated) => {
+      if (!updated) firstReviewAttemptedRef.current.delete(claim.id)
+    })
+  }, [claim?.id, claim?.status])
+
   const sendResponse = async () => {
     if (!claim || response.trim().length < 2) {
       setNotice("Escribí una respuesta para el cliente.")
@@ -170,7 +262,11 @@ export function AdminClaimManager({
     }
 
     const sent = await updateClaim(
-      { status: claim.status, admin_response: response.trim() },
+      {
+        status: "falta_informacion",
+        admin_response: response.trim(),
+        append_message: true,
+      },
       "Respuesta enviada al cliente.",
     )
     if (sent) setResponse("")
@@ -227,6 +323,7 @@ export function AdminClaimManager({
         offered_resolutions: solutions,
         resolution: null,
         admin_response: message,
+        append_message: true,
       },
       "Solución enviada al cliente.",
     )
@@ -262,15 +359,25 @@ export function AdminClaimManager({
     : claim.status === "rechazado"
       ? "Rechazada"
       : "Pendiente de respuesta"
+  const selectedStatus = status === "recibido"
+    ? OPEN_STATUS
+    : status === "falta_informacion"
+      ? WAITING_CUSTOMER_STATUS
+      : STATUS_OPTIONS.find((option) => option.value === status) ?? STATUS_OPTIONS[0]
+  const currentClaimStatus = claim.status === "recibido"
+    ? OPEN_STATUS
+    : claim.status === "falta_informacion"
+      ? WAITING_CUSTOMER_STATUS
+      : STATUS_OPTIONS.find((option) => option.value === claim.status) ?? STATUS_OPTIONS[0]
 
   return (
     <section className="admin-claim-manager mt-3 overflow-hidden rounded-2xl border border-blue-300/20 bg-[#0D1117] shadow-[0_0_24px_rgba(17,42,67,0.18)]">
-      <header className="border-b border-white/8 bg-[#11161D] px-3 py-3 sm:px-4">
+      <header className="border-b border-white/8 bg-[#11161D] px-3 py-2.5 sm:px-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <h3 className="text-lg font-black text-white">Reclamo #{claim.id}</h3>
-              <span className="text-xs font-bold text-amber-200">{getStatusLabel(claim.status)}</span>
+              <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${currentClaimStatus.tone}`}><span className={`size-2 rounded-full ${currentClaimStatus.dot}`} />{currentClaimStatus.label}</span>
               {claims.length > 1 && (
                 <select value={claim.id} onChange={(event) => setClaimId(Number(event.target.value))} className="h-8 rounded-lg border border-white/12 bg-[#15191F] px-2 text-xs font-bold text-white outline-none">
                   {claims.map((item) => <option key={item.id} value={item.id}>Reclamo #{item.id}</option>)}
@@ -281,12 +388,15 @@ export function AdminClaimManager({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex h-9 items-center gap-2 rounded-lg border border-white/12 bg-[#15191F] px-2.5">
-              <span className="text-10px font-black uppercase tracking-wide text-[#8EA0B5]">Estado</span>
-              <select value={status} onChange={(event) => setStatus(event.target.value as OrderClaimStatus)} className={`cursor-pointer bg-transparent text-xs font-black outline-none ${STATUS_OPTIONS.find((option) => option.value === status)?.tone ?? "text-white"}`}>
-                {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value} className="bg-[#15191F] text-white">{option.label}</option>)}
-              </select>
-            </label>
+            <div ref={statusDropdownRef} className="relative z-30">
+              <button type="button" aria-haspopup="listbox" aria-expanded={statusOpen} onClick={() => setStatusOpen((current) => !current)} className="flex h-9 min-w-52 items-center gap-2 rounded-lg border border-white/12 bg-[#15191F] px-2.5 text-left shadow-sm transition-colors hover:border-blue-300/35">
+                <span className="text-10px font-black uppercase tracking-wide text-[#8EA0B5]">Estado</span>
+                <span className={`size-2 rounded-full ${selectedStatus.dot}`} />
+                <span className={`min-w-0 flex-1 text-xs font-black ${selectedStatus.tone}`}>{selectedStatus.label}</span>
+                <ChevronDown className={`size-3.5 text-white/50 transition-transform ${statusOpen ? "rotate-180" : ""}`} />
+              </button>
+              {statusOpen && <div role="listbox" className="absolute right-0 top-11 w-full min-w-56 overflow-hidden rounded-xl border border-white/12 bg-[#0D1117] p-1.5 shadow-2xl shadow-black/70">{STATUS_OPTIONS.map((option) => <button key={option.value} type="button" role="option" aria-selected={status === option.value} onClick={() => { setStatus(option.value); setStatusOpen(false) }} className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors ${status === option.value ? "bg-[#112A43]" : "hover:bg-[#1B2028]"}`}><span className={`size-2 rounded-full ${option.dot}`} /><span className={`text-xs font-black ${option.tone}`}>{option.label}</span>{status === option.value && <Check className="ml-auto size-3.5 text-blue-300" />}</button>)}</div>}
+            </div>
             {(statusChanged || status === "rechazado") && <button type="button" disabled={saving} onClick={() => void changeStatus()} className="h-9 rounded-lg border border-white/12 bg-[#1B2028] px-3 text-xs font-black text-white disabled:opacity-45">Guardar</button>}
             <button type="button" onClick={() => setSolutionOpen((current) => !current)} className="h-9 rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white">{solutionOpen ? "Cerrar soluciones" : "Ofrecer solución"}</button>
           </div>
@@ -299,15 +409,12 @@ export function AdminClaimManager({
         )}
 
         {solutionOpen && (
-          <div className="mt-3 rounded-xl border border-blue-300/15 bg-[#0D1117] p-3">
+          <div className="mt-2.5 rounded-xl border border-blue-300/15 bg-[#0D1117] p-2.5">
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-              {CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS.map((solution) => (
-                <label key={solution} className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 text-xs font-bold text-white transition-colors ${solutions.includes(solution) ? "border-blue-300/45 bg-[#112A43]" : "border-white/9 bg-[#15191F] hover:border-blue-300/25"}`}>
-                  <input type="checkbox" checked={solutions.includes(solution)} onChange={() => setSolutions((current) => current.includes(solution) ? current.filter((item) => item !== solution) : [...current, solution])} className="size-3.5 accent-blue-300" />
-                  <Check className="size-3.5 shrink-0 text-blue-300" />
-                  <span>{getOrderClaimResolutionLabel(solution)}</span>
-                </label>
-              ))}
+              {SOLUTION_OPTIONS.map(({ value: solution, icon: SolutionIcon }) => {
+                const selected = solutions.includes(solution)
+                return <button key={solution} type="button" aria-pressed={selected} onClick={() => setSolutions((current) => selected ? current.filter((item) => item !== solution) : [...current, solution])} className={`group relative flex min-h-12 items-center gap-2.5 rounded-lg border px-2.5 text-left text-xs font-bold text-white transition-all ${selected ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_14px_rgba(17,42,67,0.38)]" : "border-white/9 bg-[#15191F] hover:border-blue-300/35 hover:shadow-[0_0_12px_rgba(17,42,67,0.2)]"}`}><span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${selected ? "bg-blue-300/15 text-blue-200" : "bg-[#1B2028] text-[#8EA0B5] group-hover:text-blue-300"}`}><SolutionIcon className="size-3.5" /></span><span className="min-w-0 flex-1">{getOrderClaimResolutionLabel(solution)}</span><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-blue-300 bg-blue-300 text-[#0D1117]" : "border-white/15 text-transparent"}`}><Check className="size-3" /></span></button>
+              })}
             </div>
             {solutions.includes("otro") && <input value={otherSolution} onChange={(event) => setOtherSolution(event.target.value)} placeholder="Describí la otra solución" className="mt-2 h-9 w-full rounded-lg border border-white/12 bg-[#15191F] px-3 text-xs text-white outline-none" />}
             <div className="mt-2 flex justify-end"><button type="button" disabled={saving || solutions.length === 0} onClick={() => void offerSolution()} className="h-9 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-45">Enviar solución al cliente</button></div>
@@ -316,13 +423,13 @@ export function AdminClaimManager({
       </header>
 
       {offeredSolutions.length > 0 && !solutionOpen && (
-        <div className="mx-3 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-300/15 bg-[#15191F] px-3 py-2 sm:mx-4">
-          <div><p className="text-10px font-black uppercase tracking-widest text-blue-300">Solución ofrecida</p><p className="mt-0.5 text-xs font-bold text-white">{offeredSolutions.map(getOrderClaimResolutionLabel).join(" · ")}</p></div>
-          <div className="text-right"><p className="text-10px text-[#8EA0B5]">{formatDate(claim.updated_at)}</p><p className={`mt-0.5 text-xs font-black ${claim.customer_selected_resolution ? "text-emerald-300" : "text-amber-200"}`}>{solutionState}</p></div>
+        <div className="mx-3 mt-3 grid gap-2 rounded-xl border border-blue-300/15 bg-[#15191F] px-3 py-2 sm:mx-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div><p className="text-10px font-black uppercase tracking-widest text-blue-300">Soluciones ofrecidas</p><div className="mt-1 flex flex-wrap gap-1.5">{offeredSolutions.map((solution) => <span key={solution} className={`rounded-full border px-2.5 py-1 text-10px font-black text-white ${claim.customer_selected_resolution === solution ? "border-emerald-400/60 bg-emerald-700/70" : "border-white/10 bg-[#1B2028]"}`}>{getOrderClaimResolutionLabel(solution)}</span>)}</div></div>
+          {claim.customer_selected_resolution ? <div className="rounded-lg border border-emerald-400/55 bg-emerald-700/75 px-3 py-2 text-white shadow-[0_0_14px_rgba(22,163,74,0.2)]"><p className="text-9px font-black uppercase tracking-widest text-emerald-100">Solución elegida por el cliente</p><p className="mt-0.5 text-sm font-black">● {getOrderClaimResolutionLabel(claim.customer_selected_resolution)}</p><span className="mt-1 inline-flex rounded-full bg-emerald-950/45 px-2 py-0.5 text-9px font-black uppercase tracking-wide">Aceptada por el cliente</span></div> : <div className="text-right"><p className="text-10px text-[#8EA0B5]">{formatDate(claim.updated_at)}</p><p className="mt-0.5 text-xs font-black text-amber-200">{solutionState}</p></div>}
         </div>
       )}
 
-      <div className="grid gap-3 p-3 lg:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)] sm:p-4">
+      <div className="grid gap-3 p-3 lg:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)] sm:px-4 sm:py-3">
         <aside className="space-y-3">
           <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
             <h4 className="text-sm font-black text-white">Información del caso</h4>
