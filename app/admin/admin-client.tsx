@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
+  FileText,
   History,
   LogOut,
   Menu,
@@ -16,14 +17,19 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
-import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import { useAdminNotifications } from "@/hooks/use-admin-notifications"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
-import type { AdminOrderNotificationTone } from "@/lib/admin/order-notifications"
+import { supabase } from "@/lib/supabase/client"
+import {
+  markAdminOrderNewNotificationRead,
+  type AdminNotificationTone,
+} from "@/lib/admin/admin-notifications"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
 import { AdminClientes } from "./sections/clientes/admin-clientes"
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
+import { AdminFacturacion } from "./sections/facturacion/admin-facturacion"
 import { AdminPedidos } from "./sections/pedidos/admin-pedidos"
 import { AdminProductos } from "./sections/productos/admin-productos"
 import { AdminUsuarios } from "./sections/usuarios/admin-usuarios"
@@ -32,6 +38,7 @@ export type AdminSection =
   | "dashboard"
   | "productos"
   | "clientes"
+  | "facturacion"
   | "pedidos"
   | "usuarios"
   | "auditoria"
@@ -40,6 +47,7 @@ const ADMIN_SECTIONS: AdminSection[] = [
   "dashboard",
   "productos",
   "clientes",
+  "facturacion",
   "pedidos",
   "usuarios",
   "auditoria",
@@ -53,7 +61,7 @@ interface NavigationItem {
   description: string
   icon: ReactNode
   notificationCount?: number
-  notificationTone?: AdminOrderNotificationTone
+  notificationTone?: AdminNotificationTone
 }
 
 function SidebarItem({
@@ -74,14 +82,14 @@ function SidebarItem({
       className={`group flex min-h-48px w-full cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
         active
           ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-beyonix-slider"
-          : "border-transparent text-white/70 hover:border-white/8 hover:bg-white/5 hover:text-white"
+          : "border-[#1e6fae]/25 text-white/70 hover:border-[#1e6fae]/55 hover:bg-[#112A43]/45 hover:text-white hover:shadow-[0_0_0_1px_rgba(30,111,174,0.22)]"
       }`}
     >
       <span
         className={`flex size-10 shrink-0 items-center justify-center rounded-xl border ${
           active
             ? "border-beyonix-sky/30 bg-black/20 text-beyonix-sky"
-            : "border-white/8 bg-white/4 text-white/68 group-hover:text-white"
+            : "border-[#1e6fae]/25 bg-white/4 text-white/68 group-hover:border-[#1e6fae]/50 group-hover:bg-[#112A43]/45 group-hover:text-beyonix-sky"
         }`}
       >
         {item.icon}
@@ -101,13 +109,17 @@ function SidebarItem({
           <span
             title={`${item.notificationCount} notificaciones requieren atención`}
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black text-white transition-colors ${
-              item.notificationTone === "issue"
-                ? "border-[#EF4444]/50 bg-[#EF4444] shadow-[0_0_14px_rgba(239,68,68,0.35)] group-hover:bg-[#DC2626]"
+              item.notificationTone === "claim"
+                ? "border-red-400/35 bg-red-500/20 text-red-100 group-hover:border-red-300/45 group-hover:bg-red-500/28"
                 : item.notificationTone === "message"
                   ? "border-[#2563EB]/50 bg-[#2563EB] shadow-[0_0_14px_rgba(37,99,235,0.35)] group-hover:bg-[#1D4ED8]"
-                  : item.notificationTone === "invoice"
-                    ? "border-violet-400/50 bg-violet-600 shadow-[0_0_14px_rgba(124,58,237,0.35)] group-hover:bg-violet-700"
-                    : "border-[#16A34A]/50 bg-[#16A34A] shadow-[0_0_14px_rgba(22,163,74,0.35)] group-hover:bg-[#15803D]"
+                  : item.notificationTone === "payment"
+                    ? "border-[#2563EB]/50 bg-[#2563EB] shadow-[0_0_14px_rgba(37,99,235,0.35)] group-hover:bg-[#1D4ED8]"
+                    : item.notificationTone === "invoice"
+                      ? "border-violet-400/50 bg-violet-600 shadow-[0_0_14px_rgba(124,58,237,0.35)] group-hover:bg-violet-700"
+                    : item.notificationTone === "shipping"
+                      ? "border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2] group-hover:border-[#77E6E2]/40"
+                      : "border-[#16A34A]/50 bg-[#16A34A] shadow-[0_0_14px_rgba(22,163,74,0.35)] group-hover:bg-[#15803D]"
             }`}
           >
             {item.notificationCount}
@@ -137,8 +149,15 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   const searchParams = useSearchParams()
   const { user, isLoading, isInternal, isOperator, isSuperAdmin, logout } =
     useAuth()
-  const { notificationCount, notificationTone, notificationGroups } =
-    useOrderNotifications()
+  const {
+    notificationCount,
+    notificationTone,
+    notificationGroups,
+    notifications,
+    loading: notificationsLoading,
+    error: notificationsError,
+    reloadNotifications,
+  } = useAdminNotifications(isInternal)
   const [section, setSection] = useState<AdminSection>(
     () =>
       (initialOrderId ? "pedidos" : null) ||
@@ -147,6 +166,66 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       "dashboard"
   )
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [invoicePendingCount, setInvoicePendingCount] = useState(0)
+
+  const loadInvoicePendingCount = useCallback(async () => {
+    if (!isInternal || isOperator) {
+      setInvoicePendingCount(0)
+      return
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setInvoicePendingCount(0)
+      return
+    }
+
+    const response = await fetch("/api/admin/facturacion", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+
+    if (!response.ok) {
+      setInvoicePendingCount(0)
+      return
+    }
+
+    const data = (await response.json()) as {
+      orders?: Array<{ invoice_status?: string | null }>
+    }
+
+    setInvoicePendingCount(
+      (data.orders ?? []).filter(
+        (order) =>
+          order.invoice_status == null ||
+          order.invoice_status === "pending" ||
+          order.invoice_status === "error",
+      ).length,
+    )
+  }, [isInternal, isOperator])
+
+  useEffect(() => {
+    void loadInvoicePendingCount()
+
+    const channel = supabase
+      .channel("admin-invoice-sidebar-count")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ordenes" },
+        () => {
+          void loadInvoicePendingCount()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [loadInvoicePendingCount])
 
   const navigation = useMemo<NavigationItem[]>(() => {
     const operational: NavigationItem[] = [
@@ -177,6 +256,14 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     return [
       ...operational,
       {
+        key: "facturacion",
+        label: "Facturación",
+        description: "Facturas C pendientes",
+        icon: <FileText className="size-4" />,
+        notificationCount: invoicePendingCount,
+        notificationTone: "invoice",
+      },
+      {
         key: "clientes",
         label: "Clientes",
         description: "Cuentas y compras",
@@ -199,7 +286,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           ]
         : []),
     ]
-  }, [isOperator, isSuperAdmin, notificationCount, notificationTone])
+  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationTone])
 
   useEffect(() => {
     if (initialOrderId) {
@@ -252,11 +339,19 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
 
     const nextParams = new URLSearchParams(searchParams.toString())
     nextParams.set("section", nextSection)
+    nextParams.delete("attention")
 
     router.replace(`/admin?${nextParams.toString()}`, {
       scroll: false,
     })
   }
+
+  useEffect(() => {
+    if (isLoading || !user || !isInternal) return
+    if (!initialOrderId) return
+
+    void markAdminOrderNewNotificationRead(initialOrderId)
+  }, [initialOrderId, isInternal, isLoading, user])
 
   const handleLogout = async () => {
     await logout()
@@ -298,7 +393,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     dashboard: <AdminDashboard onNavigate={goToSection} />,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
-    pedidos: <AdminPedidos notificationCount={notificationCount} notificationGroups={notificationGroups} initialOrderId={initialOrderId} />,
+    facturacion: !isOperator ? <AdminFacturacion /> : null,
+    pedidos: <AdminPedidos initialOrderId={initialOrderId} />,
     usuarios: !isOperator ? <AdminUsuarios /> : null,
     auditoria: isSuperAdmin ? <AdminAuditoria /> : null,
   }
@@ -324,6 +420,11 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           count={notificationCount}
           tone={notificationTone}
           groups={notificationGroups}
+          notifications={notifications}
+          loading={notificationsLoading}
+          error={notificationsError}
+          onRetry={reloadNotifications}
+          align="start"
         />
       </div>
 
@@ -387,6 +488,10 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           count={notificationCount}
           tone={notificationTone}
           groups={notificationGroups}
+          notifications={notifications}
+          loading={notificationsLoading}
+          error={notificationsError}
+          onRetry={reloadNotifications}
         />
       </header>
 

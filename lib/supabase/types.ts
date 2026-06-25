@@ -173,7 +173,8 @@ export interface SupabasePedido {
   invoice_point?: number | null
   invoice_cae?: string | null
   invoice_cae_due?: string | null
-  invoice_status?: "processing" | "authorized" | "error" | null
+  invoice_status?: "pending" | "processing" | "authorized" | "error" | null
+  invoice_error?: string | null
   invoice_created_at?: string | null
   return_status?:
     | "solicitada"
@@ -221,6 +222,7 @@ export type OrderClaimStatus =
   | "en_revision"
   | "falta_informacion"
   | "aprobado"
+  | "reintegro_pendiente"
   | "rechazado"
   | "cerrado"
 export type OrderClaimResolution =
@@ -267,6 +269,13 @@ export interface SupabaseOrderClaim {
   resolution?: OrderClaimResolution | null
   offered_resolutions?: OrderClaimResolution[]
   customer_selected_resolution?: OrderClaimResolution | null
+  refund_account_holder?: string | null
+  refund_account_identifier?: string | null
+  refund_bank?: string | null
+  refund_amount_confirmed?: string | null
+  refund_details_submitted_at?: string | null
+  refund_completed_at?: string | null
+  refund_completed_by?: string | null
   closed_at?: string | null
   created_at: string
   updated_at: string

@@ -3,9 +3,11 @@
 import Link from "next/link"
 import { ArrowRight, CheckCircle2, PackageCheck, Sparkles } from "lucide-react"
 
+import { beyonixHoverBorder, cn } from "@/lib/utils"
+
 const trustItems = [
   {
-    title: "Seleccion cuidada",
+    title: "Selección cuidada",
     sub: "Productos elegidos con criterio",
     icon: CheckCircle2,
   },
@@ -29,7 +31,7 @@ export function HeroSection() {
           <div className="max-w-3xl">
             <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/4 px-3.5 py-2 text-11px font-semibold uppercase tracking-widest text-white/72 lg:mb-6">
               <span className="inline-block size-1.5 rounded-full bg-beyonix-cyan" />
-              Conexion y comodidad
+              Conexión y comodidad
             </span>
 
             <h1 className="mb-5 max-w-3xl text-4xl font-bold leading-1-1 tracking-tight text-white sm:text-5xl lg:text-6xl">
@@ -43,7 +45,10 @@ export function HeroSection() {
             <div className="flex flex-col items-start gap-3 sm:flex-row">
               <Link
                 href="/productos"
-                className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-black transition-colors hover:bg-white/90 sm:h-12 sm:px-6"
+                className={cn(
+                  "inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-black hover:bg-white/90 sm:h-12 sm:px-6",
+                  beyonixHoverBorder
+                )}
               >
                 Explorar tienda
                 <ArrowRight className="size-4" />
@@ -51,9 +56,12 @@ export function HeroSection() {
 
               <Link
                 href="/categorias"
-                className="inline-flex h-11 cursor-pointer items-center rounded-lg border border-white/18 px-5 text-sm font-medium text-white transition-colors hover:border-white/32 hover:bg-white/6 sm:h-12 sm:px-6"
+                className={cn(
+                  "inline-flex h-11 cursor-pointer items-center rounded-lg px-5 text-sm font-medium text-white hover:bg-white/6 sm:h-12 sm:px-6",
+                  beyonixHoverBorder
+                )}
               >
-                Ver categorias
+                Ver categorías
               </Link>
             </div>
           </div>

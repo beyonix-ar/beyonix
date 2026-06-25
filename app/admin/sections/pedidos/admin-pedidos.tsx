@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
   ArrowLeft,
-  Bell,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -15,7 +14,6 @@ import {
   Eye,
   FileText,
   LoaderCircle,
-  MessageCircle,
   Printer,
   RefreshCw,
   Search,
@@ -36,8 +34,6 @@ import {
   getOrderClaimTypeLabel,
 } from "@/lib/order-claims"
 import {
-  type AdminOrderNotificationGroups,
-  type AdminOrderNotificationTone,
   getAdminOrderLastSeenAt,
   getSupabaseErrorDetails,
   hasOrderAttentionAfter,
@@ -51,6 +47,7 @@ import {
   isAdminPaymentProofSeen,
   markAdminPaymentProofSeen,
 } from "@/lib/admin/order-event-views"
+import { markAdminClaimNotificationsRead } from "@/lib/admin/admin-notifications"
 import type {
   OrderClaimResolution,
   OrderClaimStatus,
@@ -82,7 +79,6 @@ type AdminOrderDetailView =
   | "resumen"
   | "pago"
   | "envio"
-  | "mensajes"
   | "reclamos"
 
 type PaymentStatusValue = "pendiente_comprobante" | "confirmado" | "rechazado"
@@ -117,7 +113,6 @@ const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "resumen",
   "pago",
   "envio",
-  "mensajes",
   "reclamos",
 ]
 
@@ -285,17 +280,23 @@ function needsInvoiceReminder(pedido: SupabasePedido) {
   )
 }
 
+function needsShippingReminder(pedido: SupabasePedido) {
+  return (
+    pedido.invoice_status === "authorized" &&
+    Boolean(pedido.invoice_cae) &&
+    ![
+      "preparado",
+      "enviado",
+      "en_camino",
+      "entregado",
+      "cancelado",
+      "rechazado",
+    ].includes(pedido.estado ?? "")
+  )
+}
+
 function isVisibleAdminOrder(pedido: SupabasePedido) {
-  if (isTransferOrder(pedido)) return true
-
-  const isMercadoPago =
-    pedido.payment_method_id === "mercadopago" ||
-    Boolean(pedido.payment_id) ||
-    ["pending_checkout", "pending", "rejected", "cancelled"].includes(
-      pedido.payment_status ?? ""
-    )
-
-  return !isMercadoPago || pedido.payment_status === "approved"
+  return Number.isFinite(pedido.id)
 }
 
 function getPaymentStatusLabel(status?: string | null) {
@@ -427,39 +428,17 @@ function TransferPaymentBadges({ pedido }: { pedido: SupabasePedido }) {
   )
 }
 
-type AdminNotificationTone = "order" | "message" | "issue" | "invoice"
-
-const ADMIN_NOTIFICATION_TONE_CLASSES: Record<
-  AdminNotificationTone,
-  { bell: string; badge: string }
-> = {
-  order: {
-    bell:
-      "border-[#16A34A]/45 bg-[#16A34A] hover:bg-[#15803D] shadow-[0_0_16px_rgba(22,163,74,0.35)]",
-    badge:
-      "border-[#16A34A]/50 bg-[#16A34A] hover:bg-[#15803D] shadow-[0_0_12px_rgba(22,163,74,0.35)]",
-  },
-  message: {
-    bell:
-      "border-[#2563EB]/45 bg-[#2563EB] hover:bg-[#1D4ED8] shadow-[0_0_16px_rgba(37,99,235,0.35)]",
-    badge:
-      "border-[#2563EB]/50 bg-[#2563EB] hover:bg-[#1D4ED8] shadow-[0_0_12px_rgba(37,99,235,0.35)]",
-  },
-  issue: {
-    bell:
-      "border-[#EF4444]/45 bg-[#EF4444] hover:bg-[#DC2626] shadow-[0_0_16px_rgba(239,68,68,0.35)]",
-    badge:
-      "border-[#EF4444]/50 bg-[#EF4444] hover:bg-[#DC2626] shadow-[0_0_12px_rgba(239,68,68,0.35)]",
-  },
-  invoice: {
-    bell:
-      "border-violet-400/45 bg-violet-600 hover:bg-violet-700 shadow-[0_0_16px_rgba(124,58,237,0.35)]",
-    badge:
-      "border-violet-400/50 bg-violet-600 hover:bg-violet-700 shadow-[0_0_12px_rgba(124,58,237,0.35)]",
-  },
-}
+type AdminNotificationTone =
+  | "order"
+  | "message"
+  | "payment"
+  | "invoice"
+  | "shipping"
+  | "claim"
 
 function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
+  if (needsShippingReminder(pedido)) return "shipping"
+
   const hasIssue =
     orderHasPendingClaimAction(pedido) ||
     Boolean(pedido.return_requested_at && !pedido.return_resolved_at) ||
@@ -467,13 +446,13 @@ function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone
     pedido.estado === "cancelado" ||
     getDispatchAlert(pedido).label === "Urgente"
 
-  if (hasIssue) return "issue"
+  if (hasIssue) return "claim"
 
   const hasPaymentProofToReview =
     Boolean(pedido.payment_proof_url) &&
     pedido.payment_status === "en_revision"
 
-  if (hasPaymentProofToReview) return "message"
+  if (hasPaymentProofToReview) return "payment"
 
   if (needsInvoiceReminder(pedido)) return "invoice"
 
@@ -493,176 +472,32 @@ function orderMatchesNotificationTone(
   tone: AdminNotificationTone,
   lastSeenAt: string | null,
 ) {
-  if (tone === "issue") {
+  if (tone === "claim") {
     return (
       orderHasPendingClaimAction(pedido) ||
       isOrderNewerThanLastSeen(pedido.return_requested_at, lastSeenAt)
     )
   }
 
-  if (tone === "message") {
+  if (tone === "payment") {
     return (
-      (Boolean(pedido.payment_proof_url) &&
-        pedido.payment_status === "en_revision") ||
-      (pedido.order_claims ?? []).some((claim) =>
+      Boolean(pedido.payment_proof_url) &&
+      pedido.payment_status === "en_revision"
+    )
+  }
+
+  if (tone === "message") {
+    return (pedido.order_claims ?? []).some(
+      (claim) =>
+        Boolean(claim.first_reviewed_at) &&
         isOrderNewerThanLastSeen(claim.last_customer_message_at, lastSeenAt),
-      )
     )
   }
 
   if (tone === "invoice") return needsInvoiceReminder(pedido)
+  if (tone === "shipping") return needsShippingReminder(pedido)
 
   return isOrderNewerThanLastSeen(pedido.created_at, lastSeenAt)
-}
-
-interface AdminNotificationSummary {
-  order: number
-  message: number
-  issue: number
-  invoice: number
-}
-
-function OrderNotificationBell({
-  summary,
-  activeFilter,
-  onSelect,
-}: {
-  summary: AdminNotificationSummary
-  activeFilter: AdminNotificationTone | "all"
-  onSelect: (tone: AdminNotificationTone) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const count = summary.order + summary.message + summary.issue + summary.invoice
-  const tone: AdminNotificationTone =
-    summary.issue > 0
-      ? "issue"
-      : summary.message > 0
-        ? "message"
-        : summary.invoice > 0
-          ? "invoice"
-          : "order"
-  const toneClasses = ADMIN_NOTIFICATION_TONE_CLASSES[tone]
-  const groups: Array<{
-    tone: AdminNotificationTone
-    label: string
-    description: string
-  }> = [
-    {
-      tone: "issue",
-      label: "Reclamos y devoluciones",
-      description: "Requieren revisión prioritaria.",
-    },
-    {
-      tone: "message",
-      label: "Comprobantes / mensajes / consultas",
-      description: "Comprobantes recibidos y respuestas pendientes.",
-    },
-    {
-      tone: "order",
-      label: "Pedidos nuevos",
-      description: "Ventas pendientes de gestionar.",
-    },
-    {
-      tone: "invoice",
-      label: "Facturas pendientes",
-      description: "Pagos confirmados que requieren facturación.",
-    },
-  ]
-
-  useEffect(() => {
-    if (!open) return
-
-    const handleOutside = (event: MouseEvent) => {
-      const target = event.target as Node
-      if (buttonRef.current?.contains(target) || dropdownRef.current?.contains(target)) return
-      setOpen(false)
-    }
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
-    }
-
-    document.addEventListener("mousedown", handleOutside)
-    document.addEventListener("keydown", handleEscape)
-    return () => {
-      document.removeEventListener("mousedown", handleOutside)
-      document.removeEventListener("keydown", handleEscape)
-    }
-  }, [open])
-
-  return (
-    <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        title={
-          count
-            ? `${count} notificaciones requieren atención`
-            : "Sin notificaciones pendientes"
-        }
-        aria-label="Abrir notificaciones de pedidos"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className={`relative inline-flex size-10 cursor-pointer items-center justify-center rounded-full border text-white transition-colors ${
-          count > 0 ? toneClasses.bell : "border-white/12 bg-black"
-        }`}
-      >
-        <Bell className="size-4 text-white" />
-        {count > 0 && (
-          <span className={`absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-black px-1 text-10px font-black leading-none text-white transition-colors ${toneClasses.badge}`}>
-            {count > 99 ? "99+" : count}
-          </span>
-        )}
-      </button>
-
-      {open && <div ref={dropdownRef} className="absolute left-0 top-12 z-40 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#0D1117] font-heading shadow-2xl shadow-black/75">
-        <div className="border-b border-white/8 px-4 py-3">
-          <h2 className="text-sm font-black text-white">Notificaciones</h2>
-          <p className="mt-0.5 text-10px text-white/48">
-            {count > 0 ? `${count} pendientes` : "Todo está al día"}
-          </p>
-        </div>
-
-        <div className="space-y-1.5 p-2">
-          {groups.map((group) => {
-            const groupCount = summary[group.tone]
-            const groupClasses = ADMIN_NOTIFICATION_TONE_CLASSES[group.tone]
-
-            return (
-              <button
-                key={group.tone}
-                type="button"
-                disabled={groupCount === 0}
-                onClick={() => {
-                  onSelect(group.tone)
-                  setOpen(false)
-                }}
-                className={`flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-all disabled:cursor-default disabled:opacity-35 ${
-                  activeFilter === group.tone
-                    ? "border-white/18 bg-[#1B2028]"
-                    : "border-white/8 bg-[#141820] hover:bg-[#1B2028]"
-                } ${groupCount > 0 ? "cursor-pointer" : ""}`}
-              >
-                <span className={`mt-1 size-2.5 shrink-0 rounded-full ${groupClasses.badge}`} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-black text-white">
-                      {group.label}
-                    </span>
-                    <span className="text-xs font-black text-white">{groupCount}</span>
-                  </span>
-                  <span className="mt-0.5 block text-10px leading-4 text-white/55">
-                    {group.description}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </div>}
-    </div>
-  )
 }
 
 async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
@@ -943,7 +778,7 @@ function PedidoPreviewModal({
   pedido: SupabasePedido
   pedidos: SupabasePedido[]
   onClose: () => void
-  onOpenPaymentProof: (pedidoId: number) => void
+  onOpenPaymentProof: (pedidoId: number) => Promise<boolean>
   onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
 }) {
   const clientKey = getPedidoClientKey(pedido)
@@ -1459,7 +1294,7 @@ function PedidoDetailModal({
   pedido: SupabasePedido
   isSuperAdmin: boolean
   onClose: () => void
-  onOpenPaymentProof: (pedidoId: number) => void
+  onOpenPaymentProof: (pedidoId: number) => Promise<boolean>
   onEstadoChange: (pedido: SupabasePedido, nextEstado: string) => void
   onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
   onAndreaniAction: (
@@ -1502,6 +1337,7 @@ function PedidoDetailModal({
       getAdminOrderDetailView(searchParams.get("tab")),
     )
   const showInvoiceReminder = needsInvoiceReminder(pedido)
+  const showShippingReminder = needsShippingReminder(pedido)
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
     pedido.payment_status === "en_revision" &&
@@ -1542,6 +1378,29 @@ function PedidoDetailModal({
     }
   }, [pedido.id, pedido.payment_proof_uploaded_at, pedido.payment_proof_url])
 
+  useEffect(() => {
+    if (activeView !== "pago") return
+    if (!showPaymentProofIndicator) return
+
+    setPaymentProofSeen(true)
+    void markAdminPaymentProofSeen(
+      pedido.id,
+      pedido.payment_proof_uploaded_at,
+    )
+  }, [
+    activeView,
+    pedido.id,
+    pedido.payment_proof_uploaded_at,
+    showPaymentProofIndicator,
+  ])
+
+  useEffect(() => {
+    if (activeView !== "reclamos") return
+    if (!pendingClaim) return
+
+    void markAdminClaimNotificationsRead(pedido.id)
+  }, [activeView, pedido.id, pendingClaim?.id])
+
   const showDetailView = (view: AdminOrderDetailView) => {
     setActiveView(view)
     const nextParams = new URLSearchParams(searchParams.toString())
@@ -1574,13 +1433,9 @@ function PedidoDetailModal({
     setInvoiceDownloading(false)
   }
 
-  const handleViewPaymentProof = () => {
-    onOpenPaymentProof(pedido.id)
-    setPaymentProofSeen(true)
-    void markAdminPaymentProofSeen(
-      pedido.id,
-      pedido.payment_proof_uploaded_at,
-    )
+  const handleViewPaymentProof = async () => {
+    const opened = await onOpenPaymentProof(pedido.id)
+    if (opened) setPaymentProofSeen(true)
   }
 
   return (
@@ -1626,7 +1481,6 @@ function PedidoDetailModal({
               { view: "resumen", label: "Resumen", icon: FileText },
               { view: "pago", label: "Pago", icon: CreditCard },
               { view: "envio", label: "Envío", icon: Truck },
-              { view: "mensajes", label: "Mensajes", icon: MessageCircle },
               { view: "reclamos", label: "Reclamos", icon: AlertTriangle },
             ].map(({ view, label, icon: ViewIcon }) => (
               <button
@@ -1650,6 +1504,12 @@ function PedidoDetailModal({
                   <span
                     title="Comprobante nuevo pendiente de revisión"
                     className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.55)]"
+                  />
+                )}
+                {view === "envio" && showShippingReminder && (
+                  <span
+                    title="Envío pendiente"
+                    className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-[#77E6E2] shadow-[0_0_8px_rgba(119,230,226,0.45)]"
                   />
                 )}
                 {view === "reclamos" && pendingClaim && (
@@ -1755,7 +1615,7 @@ function PedidoDetailModal({
                         type="button"
                         title="Ver comprobante"
                         aria-label={`Ver comprobante del pedido ${pedido.id}`}
-                        onClick={handleViewPaymentProof}
+                        onClick={() => void handleViewPaymentProof()}
                         className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:bg-beyonix-blue"
                       >
                         <Download className="size-4" />
@@ -1937,34 +1797,6 @@ function PedidoDetailModal({
             </p>
           )}
           </section>
-          )}
-
-          {activeView === "mensajes" && (
-            <section className="rounded-2xl border border-[#2563EB]/25 bg-[#0D1117] p-5 shadow-[0_0_22px_rgba(37,99,235,0.10)]">
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-xl border border-[#2563EB]/30 bg-[#2563EB]/15 text-blue-300">
-                  <MessageCircle className="size-5" />
-                </span>
-                <div>
-                  <p className="text-11px font-bold uppercase tracking-widest text-blue-300">
-                    Comunicación
-                  </p>
-                  <h3 className="mt-0.5 text-lg font-black text-white">
-                    Mensajes del pedido
-                  </h3>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-white/8 bg-[#15191F] px-4 py-8 text-center">
-                <p className="text-sm font-bold text-white">
-                  No hay mensajes generales en este pedido
-                </p>
-                <p className="mx-auto mt-1.5 max-w-lg text-xs leading-5 text-white/60">
-                  Las conversaciones vinculadas con garantías, devoluciones o
-                  problemas se mantienen separadas en la pestaña Reclamos.
-                </p>
-              </div>
-            </section>
           )}
 
           {activeView === "reclamos" && (
@@ -2284,6 +2116,19 @@ function InvoiceReminderBell({ compact = false }: { compact?: boolean }) {
       }`}
     >
       <FileText className={compact ? "size-2.5" : "size-3.5"} />
+    </span>
+  )
+}
+
+function ShippingReminderBadge({ compact = false }: { compact?: boolean }) {
+  return (
+    <span
+      title="Envío pendiente"
+      className={`inline-flex items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2] transition-colors hover:border-[#77E6E2]/40 ${
+        compact ? "size-4" : "size-7"
+      }`}
+    >
+      <Truck className={compact ? "size-2.5" : "size-3.5"} />
     </span>
   )
 }
@@ -2939,12 +2784,8 @@ function AdminClaimsCenterSection({
 }
 
 export function AdminPedidos({
-  notificationCount,
-  notificationGroups,
   initialOrderId,
 }: {
-  notificationCount: number
-  notificationGroups: AdminOrderNotificationGroups
   initialOrderId?: number
 }) {
   const router = useRouter()
@@ -2959,18 +2800,25 @@ export function AdminPedidos({
       const value = searchParams.get("attention")
       return value === "order" ||
         value === "message" ||
-        value === "issue" ||
-        value === "invoice"
+        value === "payment" ||
+        value === "invoice" ||
+        value === "shipping"
         ? value
+        : value === "claim" || value === "issue"
+          ? "claim"
         : "all"
     })
   const [previewPedido, setPreviewPedido] = useState<SupabasePedido | null>(null)
+  const [newOrderIds, setNewOrderIds] = useState<Set<number>>(() => new Set())
+  const knownOrderIdsRef = useRef<Set<number> | null>(null)
+  const newOrderTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  )
   const [attentionOrderIds, setAttentionOrderIds] = useState<Set<number>>(
     () => new Set()
   )
   const [attentionLastSeenAt, setAttentionLastSeenAt] = useState<string | null>(null)
   const [attentionOrdersLoaded, setAttentionOrdersLoaded] = useState(false)
-  const previousNotificationCountRef = useRef(notificationCount)
   const [notice, setNotice] = useState<AdminNotice>(null)
   const [forcedStatusRequest, setForcedStatusRequest] =
     useState<ForcedStatusRequest>(null)
@@ -2980,22 +2828,63 @@ export function AdminPedidos({
   const [trackingStatusLoading, setTrackingStatusLoading] = useState(false)
 
   useEffect(() => {
+    if (loading) return
+
+    const currentIds = new Set(pedidos.map((pedido) => pedido.id))
+    const knownIds = knownOrderIdsRef.current
+    knownOrderIdsRef.current = currentIds
+
+    if (!knownIds) return
+
+    const addedIds = [...currentIds].filter((id) => !knownIds.has(id))
+    if (addedIds.length === 0) return
+
+    setNewOrderIds((current) => new Set([...current, ...addedIds]))
+    for (const id of addedIds) {
+      const previousTimer = newOrderTimersRef.current.get(id)
+      if (previousTimer) clearTimeout(previousTimer)
+
+      const timer = setTimeout(() => {
+        setNewOrderIds((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+        newOrderTimersRef.current.delete(id)
+      }, 8000)
+      newOrderTimersRef.current.set(id, timer)
+    }
+  }, [loading, pedidos])
+
+  useEffect(() => {
+    const timers = newOrderTimersRef.current
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer)
+      timers.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    const value = searchParams.get("attention")
+    setAttentionFilter(
+      value === "order" ||
+        value === "message" ||
+        value === "payment" ||
+        value === "invoice" ||
+        value === "shipping"
+        ? value
+        : value === "claim" || value === "issue"
+          ? "claim"
+        : "all",
+    )
+  }, [searchParams])
+
+  useEffect(() => {
     if (!notice) return
 
     const timeout = window.setTimeout(() => setNotice(null), 4000)
     return () => window.clearTimeout(timeout)
   }, [notice])
-
-  useEffect(() => {
-    if (previousNotificationCountRef.current === notificationCount) return
-
-    previousNotificationCountRef.current = notificationCount
-    setAttentionOrdersLoaded(false)
-    void reloadPedidos()
-  }, [
-    notificationCount,
-    reloadPedidos,
-  ])
 
   useEffect(() => {
     setPreviewPedido((currentPedido) => {
@@ -3256,7 +3145,7 @@ export function AdminPedidos({
 
     if (!session?.access_token) {
       setNotice({ type: "error", message: "La sesión administrativa venció." })
-      return
+      return false
     }
 
     const response = await fetch(`/api/admin/pedidos/${pedidoId}/payment-status`, {
@@ -3274,7 +3163,7 @@ export function AdminPedidos({
         type: "error",
         message: data.error || "No se pudo actualizar el estado de pago.",
       })
-      return
+      return false
     }
 
     if (data.order) {
@@ -3318,7 +3207,7 @@ export function AdminPedidos({
 
     if (!session?.access_token) {
       setNotice({ type: "error", message: "La sesión administrativa venció." })
-      return
+      return false
     }
 
     const response = await fetch(`/api/admin/payment-proofs/${pedidoId}`, {
@@ -3333,7 +3222,7 @@ export function AdminPedidos({
         type: "error",
         message: data.error || "No se pudo abrir el comprobante.",
       })
-      return
+      return false
     }
 
     window.open(data.signedUrl, "_blank", "noopener,noreferrer")
@@ -3341,10 +3230,11 @@ export function AdminPedidos({
       previewPedido?.id === pedidoId
         ? previewPedido
         : pedidos.find((item) => item.id === pedidoId)
-    void markAdminPaymentProofSeen(
+    await markAdminPaymentProofSeen(
       pedidoId,
       pedido?.payment_proof_uploaded_at,
     )
+    return true
   }
 
   const handleIssueInvoice = async (pedidoId: number) => {
@@ -3460,15 +3350,6 @@ export function AdminPedidos({
     }
   }
 
-  const notificationSummary = useMemo<AdminNotificationSummary>(() => {
-    return {
-      order: notificationGroups.order,
-      message: notificationGroups.message,
-      issue: notificationGroups.issue,
-      invoice: notificationGroups.invoice,
-    }
-  }, [notificationGroups])
-
   if (initialOrderId) {
     if (loading) {
       return <div className="flex min-h-[50vh] items-center justify-center"><LoaderCircle className="size-8 animate-spin text-beyonix-sky" /></div>
@@ -3513,16 +3394,6 @@ export function AdminPedidos({
               <h1 className="text-2xl font-black text-white/95 sm:text-3xl">
                 Gestión de pedidos
               </h1>
-              <OrderNotificationBell
-                summary={notificationSummary}
-                activeFilter={attentionFilter}
-                onSelect={(tone) => {
-                  setAttentionFilter((current) =>
-                    current === tone ? "all" : tone,
-                  )
-                  setStatusFilter("todos")
-                }}
-              />
             </div>
             <p className="mt-2 text-sm text-white/68">
               Seguimiento de pago, productos, envío y prioridad de despacho.
@@ -3559,15 +3430,26 @@ export function AdminPedidos({
       {attentionFilter !== "all" && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#141820] px-3 py-2 text-xs text-white/70">
           <span>
-            Filtro de notificaciones: {attentionFilter === "issue"
-              ? "Reclamos y devoluciones"
+            Filtro de notificaciones: {attentionFilter === "claim"
+              ? "Reclamos por responder"
               : attentionFilter === "message"
-                ? "Mensajes y consultas"
-                : "Pedidos nuevos"}
+                ? "Mensajes nuevos"
+                : attentionFilter === "payment"
+                  ? "Comprobantes nuevos"
+                : attentionFilter === "invoice"
+                  ? "Facturas pendientes"
+                : attentionFilter === "shipping"
+                  ? "Envíos pendientes"
+                  : "Pedidos nuevos"}
           </span>
           <button
             type="button"
-            onClick={() => setAttentionFilter("all")}
+            onClick={() => {
+              setAttentionFilter("all")
+              const nextParams = new URLSearchParams(searchParams.toString())
+              nextParams.delete("attention")
+              router.replace(`/admin?${nextParams.toString()}`, { scroll: false })
+            }}
             className="cursor-pointer font-black text-beyonix-sky hover:text-white"
           >
             Ver todos
@@ -3641,25 +3523,37 @@ export function AdminPedidos({
               {pedidosFiltrados.map((pedido) => {
                 const dispatch = getDispatchAlert(pedido)
                 const hasPendingAttention =
-                  attentionOrderIds.has(pedido.id) || needsInvoiceReminder(pedido)
+                  attentionOrderIds.has(pedido.id) ||
+                  needsInvoiceReminder(pedido) ||
+                  needsShippingReminder(pedido)
                 const hasPendingClaim = orderHasPendingClaimAction(pedido)
                 const attentionTone = getOrderNotificationTone(pedido)
                 const showInvoiceReminder = needsInvoiceReminder(pedido)
+                const showShippingReminder = needsShippingReminder(pedido)
                 const paymentMethod = getCompactPaymentMethodLabel(pedido)
                 const orderDate = formatOrderDateParts(pedido.created_at)
+                const isNewOrder = newOrderIds.has(pedido.id)
                 return (
                   <article
                     key={pedido.id}
                     className={`min-w-0 overflow-hidden rounded-2xl border p-4 transition sm:p-5 2xl:px-4 2xl:py-4 ${
                       hasPendingAttention
-                        ? attentionTone === "issue"
+                        ? attentionTone === "claim"
                           ? "border-[#EF4444]/35 bg-[#EF4444]/8 shadow-[0_0_16px_rgba(239,68,68,0.12)] hover:bg-[#DC2626]/10"
                           : attentionTone === "message"
-                            ? "border-[#2563EB]/35 bg-[#2563EB]/8 shadow-[0_0_16px_rgba(37,99,235,0.12)] hover:bg-[#1D4ED8]/10"
-                            : attentionTone === "invoice"
-                              ? "border-violet-400/35 bg-violet-500/8 shadow-[0_0_16px_rgba(124,58,237,0.12)] hover:bg-violet-500/10"
-                              : "border-[#16A34A]/35 bg-[#16A34A]/8 shadow-[0_0_16px_rgba(22,163,74,0.12)] hover:bg-[#15803D]/10"
+                            ? "border-sky-400/35 bg-sky-500/8 shadow-[0_0_16px_rgba(14,165,233,0.12)] hover:bg-sky-500/10"
+                            : attentionTone === "payment"
+                              ? "border-[#2563EB]/35 bg-[#2563EB]/8 shadow-[0_0_16px_rgba(37,99,235,0.12)] hover:bg-[#1D4ED8]/10"
+                              : attentionTone === "invoice"
+                                ? "border-violet-400/35 bg-violet-500/8 shadow-[0_0_16px_rgba(124,58,237,0.12)] hover:bg-violet-500/10"
+                              : attentionTone === "shipping"
+                                ? "border-[#77E6E2]/25 bg-zinc-900/75 hover:border-[#77E6E2]/40"
+                                : "border-[#16A34A]/35 bg-[#16A34A]/8 shadow-[0_0_16px_rgba(22,163,74,0.12)] hover:bg-[#15803D]/10"
                         : "border-white/8 bg-zinc-900/75 hover:border-beyonix-blue-light/45 hover:bg-zinc-900"
+                    } ${
+                      isNewOrder
+                        ? "ring-1 ring-emerald-400/65 shadow-[0_0_22px_rgba(52,211,153,0.2)]"
+                        : ""
                     }`}
                   >
                     <div className="2xl:hidden">
@@ -3669,7 +3563,13 @@ export function AdminPedidos({
                             <p className="text-base font-black text-white">
                               {formatPublicOrderId(pedido.id)}
                             </p>
+                            {isNewOrder && (
+                              <span className="rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-1 text-9px font-black uppercase tracking-wide text-emerald-200">
+                                Nuevo pedido
+                              </span>
+                            )}
                             {showInvoiceReminder && <InvoiceReminderBell />}
+                            {showShippingReminder && <ShippingReminderBadge />}
                             <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
                             {hasPendingClaim && <span className="rounded-full border border-red-400/30 bg-red-500/12 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-200">Reclamo pendiente</span>}
                           </div>
@@ -3755,9 +3655,10 @@ export function AdminPedidos({
 
                     <div className="hidden min-w-0 grid-cols-admin-orders-pro items-center gap-3 text-center 2xl:grid">
                   <div className="relative flex min-w-0 items-center justify-center">
-                    {showInvoiceReminder && (
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2">
-                        <InvoiceReminderBell />
+                    {(showInvoiceReminder || showShippingReminder) && (
+                      <span className="absolute left-2 top-1/2 flex -translate-y-1/2 flex-col gap-1">
+                        {showInvoiceReminder && <InvoiceReminderBell />}
+                        {showShippingReminder && <ShippingReminderBadge />}
                       </span>
                     )}
                     <div className="text-center">
@@ -3767,6 +3668,11 @@ export function AdminPedidos({
                       <p className="mt-0.5 text-sm font-black text-white/95">
                         {formatPublicOrderNumber(pedido.id)}
                       </p>
+                      {isNewOrder && (
+                        <span className="mt-1 inline-flex rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-0.5 text-9px font-black uppercase tracking-wide text-emerald-200">
+                          Nuevo
+                        </span>
+                      )}
                       {hasPendingClaim && <span className="mt-1 block text-[9px] font-black uppercase tracking-wide text-red-300">Reclamo pendiente</span>}
                     </div>
                   </div>

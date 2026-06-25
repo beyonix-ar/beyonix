@@ -16,6 +16,7 @@ export const ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
   "en_revision",
   "falta_informacion",
   "aprobado",
+  "reintegro_pendiente",
   "rechazado",
   "cerrado",
 ]
@@ -43,6 +44,7 @@ export const ACTIVE_ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
   "en_revision",
   "falta_informacion",
   "aprobado",
+  "reintegro_pendiente",
 ]
 
 export function getOrderClaimStatusLabel(status?: string | null) {
@@ -51,6 +53,7 @@ export function getOrderClaimStatusLabel(status?: string | null) {
     en_revision: "En revisión",
     falta_informacion: "Esperando respuesta del cliente",
     aprobado: "Solución ofrecida",
+    reintegro_pendiente: "Reintegro pendiente",
     rechazado: "Rechazado",
     cerrado: "Cerrado",
   }

@@ -3,6 +3,7 @@
 import { FolderOpen, Package, Plus, Search } from "lucide-react"
 
 import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
+import { beyonixHoverBorder, cn } from "@/lib/utils"
 
 type StockFilter = "todos" | "sin_stock" | "bajo_stock" | "disponible"
 type ActiveFilter = "todos" | "activos" | "inactivos"
@@ -101,7 +102,10 @@ export function ProductosToolbar({
             title={createLabel}
             aria-label={createLabel}
             onClick={createHandler}
-            className="inline-flex h-12 min-w-160px cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-black text-black transition-all hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-beyonix-slider"
+            className={cn(
+              "inline-flex h-12 min-w-160px cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-black text-black hover:bg-white/90",
+              beyonixHoverBorder
+            )}
           >
             <Plus className="size-4" />
             {createLabel}

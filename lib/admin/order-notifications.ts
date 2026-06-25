@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { getSeenAdminPaymentProofOrderIds } from "@/lib/admin/order-event-views"
+import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 
 export const ORDER_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:order-notifications-changed"
@@ -145,20 +146,12 @@ export function hasOrderAttentionAfter(
 }
 
 function isVisibleAdminOrderNotification(order: {
+  id?: number
   payment_method_id?: string | null
   payment_id?: string | null
   payment_status?: string | null
 }) {
-  if (order.payment_method_id === "transferencia") return true
-
-  const isMercadoPago =
-    order.payment_method_id === "mercadopago" ||
-    Boolean(order.payment_id) ||
-    ["pending_checkout", "pending", "rejected", "cancelled"].includes(
-      order.payment_status ?? ""
-    )
-
-  return !isMercadoPago || order.payment_status === "approved"
+  return typeof order.id === "number" && Number.isFinite(order.id)
 }
 
 export type AdminOrderNotificationTone = "order" | "message" | "issue" | "invoice"
@@ -259,7 +252,7 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
 
     const { data: claims, error: claimsError } = await supabase
       .from("order_claims")
-      .select("id, order_id, last_customer_message_at")
+      .select("id, order_id, first_reviewed_at, last_customer_message_at")
       .eq("admin_needs_action", true)
 
     if (claimsError) {
@@ -272,6 +265,7 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
         if (visibleOrderIds.has(claim.order_id)) {
           issueOrderIds.add(claim.order_id)
           if (
+            claim.first_reviewed_at &&
             isOrderNewerThanLastSeen(
               claim.last_customer_message_at,
               view.last_seen_at,
@@ -369,4 +363,5 @@ export function notifyOrderNotificationsChanged() {
   if (typeof window === "undefined") return
 
   window.dispatchEvent(new Event(ORDER_NOTIFICATIONS_CHANGED_EVENT))
+  notifyAdminNotificationsChanged()
 }

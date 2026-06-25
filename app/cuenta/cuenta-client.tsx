@@ -63,6 +63,7 @@ import {
   validateProfilePayload,
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
+import { beyonixHoverBorder, cn } from "@/lib/utils"
 
 function formatCuentaPrice(price: number) {
   return price.toLocaleString("es-AR", {
@@ -360,21 +361,21 @@ function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
         : "md:grid-cols-5"
 
   return (
-    <div className="mb-3 rounded-xl border border-white/8 bg-black/25 p-2.5">
-      <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/45">
+    <div className="mb-2 rounded-xl border border-white/8 bg-black/25 p-2">
+      <p className="mb-1.5 text-10px font-black uppercase tracking-widest text-white/45">
         Estado del pedido
       </p>
       <div className={"grid gap-1.5 " + gridClassName}>
         {steps.map((step, index) => (
           <div
             key={step.label + "-" + index}
-            className={"relative rounded-lg border p-2.5 " + toneClassNames[step.tone]}
+            className={"relative rounded-lg border px-2 py-2 " + toneClassNames[step.tone]}
           >
-            <span className="mb-1.5 flex size-6 items-center justify-center rounded-full border border-current text-11px font-black">
-              {step.tone === "done" ? <Check className="size-3.5" /> : index + 1}
+            <span className="mb-1 flex size-5 items-center justify-center rounded-full border border-current text-10px font-black">
+              {step.tone === "done" ? <Check className="size-3" /> : index + 1}
             </span>
-            <p className="text-xs font-black text-white">{step.label}</p>
-            <p className="mt-1 text-11px leading-4 text-white/52">
+            <p className="text-11px font-black text-white">{step.label}</p>
+            <p className="mt-0.5 text-10px leading-4 text-white/52">
               {step.detail}
             </p>
           </div>
@@ -449,12 +450,26 @@ function getClaimTitle(claim: SupabaseOrderClaim) {
   return getOrderClaimTypeLabel(claim.claim_type)
 }
 
+function getClaimReasonLabel(claim: SupabaseOrderClaim) {
+  const labels: Record<string, string> = {
+    danado: "Llegó dañado",
+    incorrecto: "Producto incorrecto",
+    falla: "Producto con falla",
+    devolucion: "Solicitud de devolución",
+    no_llego: "Nunca llegó el envío",
+    otro: "Otro problema",
+  }
+
+  return labels[claim.failure_type ?? ""] ?? claim.failure_type ?? getClaimTitle(claim)
+}
+
 function getClaimStatusBadge(status: SupabaseOrderClaim["status"]) {
   const styles: Record<SupabaseOrderClaim["status"], string> = {
     recibido: "border-sky-300/35 bg-[#112A43] text-white",
     en_revision: "border-amber-300/40 bg-amber-400/12 text-white",
     falta_informacion: "border-beyonix-blue-light/45 bg-[#112A43] text-white",
     aprobado: "border-emerald-300/35 bg-emerald-400/12 text-white",
+    reintegro_pendiente: "border-[#77E6E2]/35 bg-[#77E6E2]/10 text-white",
     rechazado: "border-red-300/35 bg-red-500/12 text-white",
     cerrado: "border-emerald-300/35 bg-emerald-500/12 text-white",
   }
@@ -464,6 +479,7 @@ function getClaimStatusBadge(status: SupabaseOrderClaim["status"]) {
 
 function getClaimStatusText(status: SupabaseOrderClaim["status"]) {
   if (status === "falta_informacion") return "Esperando respuesta del cliente"
+  if (status === "reintegro_pendiente") return "Reintegro pendiente"
   if (status === "aprobado" || status === "cerrado") return "Resuelto"
   return getOrderClaimStatusLabel(status)
 }
@@ -495,6 +511,11 @@ function getClaimInitialFiles(claim: SupabaseOrderClaim) {
       new Date(file.created_at).getTime() <=
       new Date(firstCustomerMessage.created_at).getTime() + 60_000,
   )
+}
+
+function getCustomerClaimMessageText(message: string) {
+  const match = message.match(/^Producto afectado:\s*.+?(?:\r?\n){2}([\s\S]*)$/)
+  return match?.[1]?.trim() || message
 }
 
 function getReplyFilesList(files: Record<string, File[]>) {
@@ -614,17 +635,17 @@ function ClaimHeaderCard({
             Centro de reclamos
           </p>
           <h3 className="mt-2 text-2xl font-black text-white">
-            {getClaimTitle(claim)}
+            Seguimiento del reclamo
           </h3>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={`rounded-full border px-3 py-1 text-10px font-black uppercase tracking-wide ${getClaimStatusBadge(claim.status)}`}>
               {getClaimStatusText(claim.status)}
             </span>
-            <span className="rounded-full border border-beyonix-blue-light/25 bg-[#181818] px-3 py-1 text-10px font-black uppercase tracking-wide text-white">
-              Reclamo #{claim.id}
-            </span>
             <span className="rounded-full border border-white/8 bg-[#181818] px-3 py-1 text-10px font-black uppercase tracking-wide text-white">
               Pedido #{formatPublicOrderId(order.id)}
+            </span>
+            <span className="rounded-full border border-beyonix-blue-light/25 bg-[#181818] px-3 py-1 text-10px font-black uppercase tracking-wide text-white">
+              {getClaimReasonLabel(claim)}
             </span>
           </div>
         </div>
@@ -759,7 +780,7 @@ function ClaimMessageBubble({
           </p>
         </div>
         <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-white">
-          {message.message}
+          {getCustomerClaimMessageText(message.message)}
         </p>
       </div>
     </div>
@@ -2008,7 +2029,13 @@ function getPasswordCooldownMessage(lastChangedAt: string) {
   return `La contraseña se puede cambiar una vez cada 15 días. Vas a poder cambiarla nuevamente el ${availableAt.toLocaleDateString("es-AR")}.`
 }
 
-function PaymentProofViewButton({ order }: { order: SupabasePedido }) {
+function PaymentProofViewButton({
+  order,
+  className = "",
+}: {
+  order: SupabasePedido
+  className?: string
+}) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -2050,14 +2077,18 @@ function PaymentProofViewButton({ order }: { order: SupabasePedido }) {
   }
 
   return (
-    <span className="inline-flex flex-col items-stretch gap-1">
+    <span className="flex w-full flex-col items-stretch gap-1">
       <button
         type="button"
         aria-label={`Ver comprobante del pedido ${formatPublicOrderId(order.id)}`}
         title="Ver comprobante"
         disabled={loading}
         onClick={() => void handleOpenProof()}
-        className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-4 text-xs font-black text-white transition-colors hover:border-blue-300/30 hover:bg-[#112A43] disabled:cursor-wait disabled:opacity-60"
+        className={cn(
+          beyonixHoverBorder,
+          "inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-wait disabled:opacity-60",
+          className,
+        )}
       >
         <ExternalLink className="size-4" />
         {loading ? "Abriendo..." : "Ver comprobante"}
@@ -3496,7 +3527,10 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
             aria-label={item.label}
             title={item.label}
             onClick={() => goToView(item.view)}
-            className="w-full flex items-center gap-4 p-4 rounded-xl border border-white/6 bg-white/2 hover:bg-white/4 hover:border-white/10 transition-all group cursor-pointer text-left"
+            className={cn(
+              "w-full flex items-center gap-4 p-4 rounded-xl bg-white/2 hover:bg-white/4 group cursor-pointer text-left",
+              beyonixHoverBorder
+            )}
           >
             <div className="size-9 rounded-lg bg-beyonix-blue/50 border border-beyonix-blue-light/30 flex items-center justify-center shrink-0">
               <item.icon className="size-4 text-beyonix-cyan" />
@@ -3516,7 +3550,10 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
           aria-label="Ir al panel admin"
           title="Ir al panel admin"
           onClick={() => router.push("/admin")}
-          className="w-full flex items-center gap-4 p-4 rounded-xl border border-beyonix-blue-light/25 bg-beyonix-account hover:bg-beyonix-blue hover:border-beyonix-blue-light/50 transition-all group cursor-pointer text-left"
+          className={cn(
+            "w-full flex items-center gap-4 p-4 rounded-xl bg-beyonix-account hover:bg-beyonix-blue group cursor-pointer text-left",
+            beyonixHoverBorder
+          )}
         >
           <div className="size-9 rounded-lg bg-beyonix-blue/60 border border-beyonix-blue-light/40 flex items-center justify-center shrink-0">
             <Shield className="size-4 text-beyonix-cyan" />
@@ -3662,46 +3699,46 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const status = getClientOrderStatusBadge(order)
 
   return (
-    <main className="min-h-screen bg-[#05070A] px-3 pb-12 pt-24 font-heading sm:px-5 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <main className="min-h-screen bg-[#05070A] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
+      <div className="mx-auto max-w-6xl">
         <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a Mis compras</button>
 
-        <header className="mt-4 rounded-3xl border border-[#112A43]/70 bg-[#0D1117] p-4 shadow-[0_0_28px_rgba(17,42,67,0.22)] sm:p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <header className="mt-3 rounded-2xl border border-[#112A43]/70 bg-[#0D1117] p-3.5 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-11px font-black uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
-              <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">Pedido #{formatPublicOrderId(order.id)}</h1>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/58"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
+              <p className="text-10px font-black uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
+              <h1 className="mt-1 text-xl font-black text-white sm:text-2xl">Pedido #{formatPublicOrderId(order.id)}</h1>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/58"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
             </div>
-            <div className="rounded-2xl border border-emerald-400/35 bg-emerald-500/15 px-5 py-3 lg:min-w-56 lg:text-right">
+            <div className="rounded-xl border border-emerald-400/25 bg-emerald-500/12 px-4 py-2.5 lg:min-w-48 lg:text-right">
               <p className="text-10px font-black uppercase tracking-widest text-emerald-200">Total pagado</p>
-              <p className="mt-1 text-2xl font-black text-white">{formatCuentaPrice(Number(order.total))}</p>
+              <p className="mt-0.5 text-xl font-black text-white">{formatCuentaPrice(Number(order.total))}</p>
             </div>
           </div>
         </header>
 
         {error && <p className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">{error}</p>}
 
-        <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.75fr)]">
-          <div className="space-y-4">
-            <section className="rounded-2xl border border-white/9 bg-[#0D1117] p-3 sm:p-4">
+        <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.75fr)]">
+          <div className="space-y-3">
+            <section className="rounded-2xl border border-white/9 bg-[#0D1117] p-2.5 sm:p-3">
               <OrderProgressTimeline order={order} />
               <OrderTrackingPanel order={order} />
             </section>
 
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3 sm:p-4">
-              <h2 className="text-base font-black text-white">Productos comprados</h2>
-              <div className="mt-3 space-y-2">
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3">
+              <h2 className="text-sm font-black text-white">Productos comprados</h2>
+              <div className="mt-2 space-y-1.5">
                 {items.map((item) => {
                   const quantity = Number(item.cantidad ?? 0)
                   const unitPrice = Number(item.precio ?? 0)
                   const name = item.productos?.nombre ?? `Producto #${item.producto_id}`
                   const image = getCuentaItemImage(item)
-                  return <div key={item.id} className="grid gap-3 rounded-xl border border-white/8 bg-[#1B2028] p-3 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
-                    <div className="flex min-w-0 items-center gap-3"><div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">{image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-5 text-black/30" />}</div><div className="min-w-0"><p className="text-sm font-black text-white">{name}</p><p className="mt-1 text-xs text-white/55">{getCuentaItemColor(item)}</p></div></div>
-                    <div><p className="text-10px font-bold uppercase tracking-widest text-white/40">Cantidad</p><p className="mt-1 text-sm font-black text-white">{quantity}</p></div>
-                    <div><p className="text-10px font-bold uppercase tracking-widest text-white/40">Precio unitario</p><p className="mt-1 text-sm font-black text-white">{formatCuentaPrice(unitPrice)}</p></div>
-                    <div><p className="text-10px font-bold uppercase tracking-widest text-white/40">Subtotal</p><p className="mt-1 text-sm font-black text-white">{formatCuentaPrice(unitPrice * quantity)}</p></div>
+                  return <div key={item.id} className="grid gap-2 rounded-xl border border-white/8 bg-[#1B2028] px-2.5 py-2 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
+                    <div className="flex min-w-0 items-center gap-2.5"><div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}</div><div className="min-w-0"><p className="truncate text-sm font-black text-white">{name}</p><p className="mt-0.5 text-xs text-white/55">{getCuentaItemColor(item)}</p></div></div>
+                    <div><p className="text-9px font-bold uppercase tracking-widest text-white/40">Cantidad</p><p className="mt-0.5 text-sm font-black text-white">{quantity}</p></div>
+                    <div><p className="text-9px font-bold uppercase tracking-widest text-white/40">Precio unitario</p><p className="mt-0.5 text-sm font-black text-white">{formatCuentaPrice(unitPrice)}</p></div>
+                    <div><p className="text-9px font-bold uppercase tracking-widest text-white/40">Subtotal</p><p className="mt-0.5 text-sm font-black text-white">{formatCuentaPrice(unitPrice * quantity)}</p></div>
                   </div>
                 })}
               </div>
@@ -3710,27 +3747,27 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             {order.estado === "entregado" && <OrderProductFeedback order={order} />}
           </div>
 
-          <aside className="space-y-4 lg:sticky lg:top-24">
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-4">
-              <h2 className="text-base font-black text-white">Resumen de pago</h2>
-              <dl className="mt-3 space-y-2 text-sm"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-bold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-bold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-bold">− {formatCuentaPrice(discount)}</dd></div>}</dl>
-              <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-3"><span className="text-xs font-black uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-lg text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
+          <aside className="space-y-3 lg:sticky lg:top-24">
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3">
+              <h2 className="text-sm font-black text-white">Resumen de pago</h2>
+              <dl className="mt-2 space-y-1.5 text-xs"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-bold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-bold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-bold">− {formatCuentaPrice(discount)}</dd></div>}</dl>
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/12 px-3 py-2.5"><span className="text-10px font-black uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-base text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
             </section>
 
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-4">
-              <h2 className="text-base font-black text-white">Factura</h2>
-              {invoiceAvailable ? <><p className="mt-2 text-xs font-semibold text-white/60">Factura C {formatCuentaInvoiceNumber(order.invoice_point, order.invoice_number)}</p><button type="button" disabled={downloadingInvoice} onClick={() => void handleDownloadInvoice()} className="mt-3 inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60"><Download className="size-4" />{downloadingInvoice ? "Preparando..." : "Descargar factura"}</button></> : <p className="mt-2 rounded-xl bg-[#1B2028] px-3 py-2.5 text-xs font-semibold text-white/65">Factura pendiente de emisión</p>}
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3">
+              <h2 className="text-sm font-black text-white">Factura</h2>
+              {invoiceAvailable ? <><p className="mt-1.5 text-xs font-semibold text-white/60">Factura C {formatCuentaInvoiceNumber(order.invoice_point, order.invoice_number)}</p><button type="button" disabled={downloadingInvoice} onClick={() => void handleDownloadInvoice()} className={cn(beyonixHoverBorder, "mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")}><Download className="size-4" />{downloadingInvoice ? "Preparando..." : "Descargar factura"}</button></> : <p className="mt-2 rounded-xl bg-[#1B2028] px-3 py-2 text-xs font-semibold text-white/65">Factura pendiente de emisión</p>}
             </section>
 
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-4">
-              <h2 className="text-base font-black text-white">Comprobante</h2>
-              <div className="mt-3">{hasProof ? <PaymentProofViewButton order={order} /> : order.payment_method_id === "transferencia" ? <PaymentProofActionButton orderId={order.id} onUploaded={handleProofUploaded} className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60" /> : <p className="rounded-xl bg-[#1B2028] px-3 py-2.5 text-xs font-semibold text-white/65">Este medio de pago no requiere comprobante.</p>}</div>
+            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3">
+              <h2 className="text-sm font-black text-white">Comprobante</h2>
+              <div className="mt-2.5">{hasProof ? <PaymentProofViewButton order={order} className="h-9 w-full" /> : order.payment_method_id === "transferencia" ? <PaymentProofActionButton orderId={order.id} onUploaded={handleProofUploaded} className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")} /> : <p className="rounded-xl bg-[#1B2028] px-3 py-2 text-xs font-semibold text-white/65">Este medio de pago no requiere comprobante.</p>}</div>
             </section>
 
-            <section className="rounded-2xl border border-blue-300/15 bg-[#141820] p-4">
-              <h2 className="text-base font-black text-white">Ayuda y reclamos</h2>
-              <p className="mt-1 text-xs leading-5 text-white/58">Si tuviste un problema con esta compra, estamos para ayudarte.</p>
-              <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)} className="mt-3 inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-300/20 bg-[#112A43] px-4 text-xs font-black text-white"><MessageCircle className="size-4" />Necesito ayuda con esta compra</button>
+            <section className="rounded-2xl border border-beyonix-blue-light/20 bg-[#141820] p-3">
+              <h2 className="text-sm font-black text-white">Ayuda y reclamos</h2>
+              <p className="mt-1 text-xs leading-5 text-white/62">Si tuviste un problema con esta compra, estamos para ayudarte.</p>
+              <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)} className={cn(beyonixHoverBorder, "mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white")}><MessageCircle className="size-4" />Necesito ayuda con esta compra</button>
             </section>
           </aside>
         </div>

@@ -1,0 +1,37 @@
+
+> my-project@0.1.0 dev
+> node --max-old-space-size=8192 node_modules/next/dist/bin/next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.51.238:3000
+- Environments: .env.local
+✓ Ready in 331ms
+Creating turbopack project { dir: 'F:\\Web', testMode: true }
+
+ GET /cuenta/compras/66/ayuda 200 in 2.1s (next.js: 1786ms, application-code: 323ms)
+ GET /admin/pedidos/66?tab=reclamos 200 in 2.2s (next.js: 1294ms, proxy.ts: 813ms, application-code: 130ms)
+ GET /api/auth/profile 200 in 777ms (next.js: 149ms, application-code: 627ms)
+ GET /api/auth/profile 200 in 830ms (next.js: 195ms, application-code: 635ms)
+ GET /api/auth/profile 200 in 831ms (next.js: 188ms, application-code: 643ms)
+ GET /api/auth/profile 200 in 839ms (next.js: 180ms, application-code: 659ms)
+ GET /api/auth/profile 200 in 818ms (next.js: 148ms, application-code: 670ms)
+ GET /api/admin/facturacion 200 in 271ms (next.js: 57ms, application-code: 214ms)
+ GET /api/admin/pedidos 200 in 472ms (next.js: 65ms, application-code: 407ms)
+ GET /api/admin/pedidos 200 in 334ms (next.js: 1967µs, application-code: 332ms)
+ GET /api/orders/66/claims 200 in 784ms (next.js: 577ms, application-code: 207ms)
+ GET /api/admin/pedidos 200 in 314ms (next.js: 2ms, application-code: 312ms)
+ GET /api/orders/66/claims 200 in 186ms (next.js: 6ms, application-code: 180ms)
+ GET /api/admin/pedidos 200 in 307ms (next.js: 1554µs, application-code: 305ms)
+ GET /api/admin/pedidos 200 in 307ms (next.js: 1916µs, application-code: 305ms)
+ GET /api/admin/pedidos 200 in 300ms (next.js: 1719µs, application-code: 299ms)
+ GET /api/admin/pedidos 200 in 696ms (next.js: 2ms, application-code: 694ms)
+ GET /api/orders/66/claims 200 in 378ms (next.js: 5ms, application-code: 373ms)
+ GET /api/admin/order-claims/10 200 in 742ms (next.js: 537ms, application-code: 205ms)
+ GET /api/orders/66/claims 200 in 175ms (next.js: 6ms, application-code: 169ms)
+ GET /api/admin/order-claims/10 200 in 394ms (next.js: 6ms, application-code: 388ms)
+ GET /api/orders/66/claims 200 in 240ms (next.js: 6ms, application-code: 234ms)
+ GET /api/admin/order-claims/10 200 in 185ms (next.js: 6ms, application-code: 179ms)
+ GET /api/orders/66/claims 200 in 181ms (next.js: 6ms, application-code: 175ms)
+ GET /api/admin/order-claims/10 200 in 191ms (next.js: 6ms, application-code: 185ms)
+ GET /api/orders/66/claims 200 in 204ms (next.js: 5ms, application-code: 199ms)

@@ -22,6 +22,7 @@ import { useAuth } from "@/context/auth-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
+import { beyonixHoverBorder, cn } from "@/lib/utils"
 
 export function SiteHeader() {
   const { cart, total, openCart } = useCart()
@@ -179,6 +180,10 @@ export function SiteHeader() {
                   count={adminNotifications.notificationCount}
                   tone={adminNotifications.notificationTone}
                   groups={adminNotifications.notificationGroups}
+                  notifications={adminNotifications.notifications}
+                  loading={adminNotifications.loading}
+                  error={adminNotifications.error}
+                  onRetry={adminNotifications.reloadNotificationCount}
                 />
               ) : (
                 <CustomerNotificationsBell
@@ -208,7 +213,10 @@ export function SiteHeader() {
                       setNotificationsOpen(false)
                       setCatOpen(false)
                     }}
-                    className="flex h-12 max-w-300px cursor-pointer items-center gap-2.5 rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white transition-all hover:border-beyonix-blue-light hover:bg-beyonix-blue/18"
+                    className={cn(
+                      "flex h-12 max-w-300px cursor-pointer items-center gap-2.5 rounded-full bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white hover:bg-beyonix-blue/18",
+                      beyonixHoverBorder
+                    )}
                   >
                     <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-beyonix-blue-light/45 bg-white text-black shadow-sm shadow-black/40">
                       {user.avatarUrl ? (
@@ -236,7 +244,10 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
+                        className={cn(
+                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
+                          beyonixHoverBorder
+                        )}
                       >
                         <User className="size-3.5 shrink-0" />
                         Mi cuenta
@@ -244,7 +255,10 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=datos"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
+                        className={cn(
+                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
+                          beyonixHoverBorder
+                        )}
                       >
                         <User className="size-3.5 shrink-0" />
                         Mis datos
@@ -252,7 +266,10 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
+                        className={cn(
+                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
+                          beyonixHoverBorder
+                        )}
                       >
                         <Package className="size-3.5 shrink-0" />
                         Mis compras
@@ -260,7 +277,10 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=seguridad"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
+                        className={cn(
+                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
+                          beyonixHoverBorder
+                        )}
                       >
                         <ShieldCheck className="size-3.5 shrink-0" />
                         Seguridad
@@ -269,7 +289,10 @@ export function SiteHeader() {
                         <Link
                           href="/admin"
                           onClick={() => setUserOpen(false)}
-                          className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-beyonix-blue/25 hover:text-white"
+                          className={cn(
+                            "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm font-semibold text-beyonix-cyan hover:bg-beyonix-blue/25 hover:text-white",
+                            beyonixHoverBorder
+                          )}
                         >
                           <ShieldCheck className="size-3.5 shrink-0" />
                           Panel administrador
@@ -294,7 +317,10 @@ export function SiteHeader() {
               ) : (
                 <Link
                   href="/login?redirect=/cuenta"
-                  className="flex h-10 cursor-pointer items-center gap-2 rounded-full border border-beyonix-blue-light/30 px-3.5 text-sm font-medium text-white/72 transition-colors hover:border-beyonix-blue-light hover:text-white"
+                  className={cn(
+                    "flex h-10 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/72 hover:text-white",
+                    beyonixHoverBorder
+                  )}
                 >
                   <User className="size-3.5" />
                   Iniciar sesión
@@ -307,7 +333,10 @@ export function SiteHeader() {
               onClick={openCart}
               aria-label="Abrir carrito"
               title="Abrir carrito"
-              className="relative flex h-10 cursor-pointer items-center gap-2 rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/10 px-3 text-white transition-all hover:border-beyonix-blue-light hover:bg-beyonix-blue/18"
+              className={cn(
+                "relative flex h-10 cursor-pointer items-center gap-2 rounded-full bg-beyonix-blue/10 px-3 text-white hover:bg-beyonix-blue/18",
+                beyonixHoverBorder
+              )}
             >
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white text-black">
                 <ShoppingBag className="size-3.5" />
@@ -384,28 +413,40 @@ export function SiteHeader() {
                   <Link
                     href="/cuenta"
                     onClick={() => setMobileOpen(false)}
-                    className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                    className={cn(
+                      "block rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      beyonixHoverBorder
+                    )}
                   >
                     Mi cuenta ({userLabel.toUpperCase()})
                   </Link>
                   <Link
                     href="/cuenta?tab=datos"
                     onClick={() => setMobileOpen(false)}
-                    className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                    className={cn(
+                      "block rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      beyonixHoverBorder
+                    )}
                   >
                     Mis datos
                   </Link>
                   <Link
                     href="/cuenta?tab=ordenes"
                     onClick={() => setMobileOpen(false)}
-                    className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                    className={cn(
+                      "block rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      beyonixHoverBorder
+                    )}
                   >
                     Mis compras
                   </Link>
                   <Link
                     href="/cuenta?tab=seguridad"
                     onClick={() => setMobileOpen(false)}
-                    className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                    className={cn(
+                      "block rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      beyonixHoverBorder
+                    )}
                   >
                     Seguridad
                   </Link>
@@ -413,7 +454,10 @@ export function SiteHeader() {
                     <Link
                       href="/admin"
                       onClick={() => setMobileOpen(false)}
-                      className="block rounded-lg px-2 py-3 text-15px font-semibold text-beyonix-cyan transition-colors hover:bg-white/4 hover:text-white"
+                      className={cn(
+                        "block rounded-lg px-2 py-3 text-15px font-semibold text-beyonix-cyan hover:bg-white/4 hover:text-white",
+                        beyonixHoverBorder
+                      )}
                     >
                       Panel administrador
                     </Link>

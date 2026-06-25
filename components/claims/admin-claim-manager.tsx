@@ -10,6 +10,7 @@ import {
   RefreshCcw,
   Send,
   Sparkles,
+  Upload,
   WalletCards,
 } from "lucide-react"
 
@@ -43,6 +44,7 @@ const STATUS_OPTIONS: Array<{
 }> = [
   { value: "en_revision", label: "En revisión", tone: "text-amber-200", dot: "bg-amber-400" },
   { value: "aprobado", label: "Solución ofrecida", tone: "text-blue-200", dot: "bg-blue-400" },
+  { value: "reintegro_pendiente", label: "Reintegro pendiente", tone: "text-[#BFFFFD]", dot: "bg-[#77E6E2]" },
   { value: "cerrado", label: "Resuelto", tone: "text-emerald-200", dot: "bg-emerald-400" },
   { value: "rechazado", label: "Rechazado", tone: "text-red-200", dot: "bg-red-400" },
 ]
@@ -100,6 +102,11 @@ function getClaimDescription(claim: SupabaseOrderClaim, order: SupabasePedido) {
   }
 }
 
+function getClaimMessageText(message: string) {
+  const match = message.match(/^Producto afectado:\s*.+?(?:\r?\n){2}([\s\S]*)$/)
+  return match?.[1]?.trim() || message
+}
+
 function getStatusLabel(status: OrderClaimStatus) {
   if (status === "recibido") return OPEN_STATUS.label
   return STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
@@ -123,6 +130,7 @@ export function AdminClaimManager({
   const [solutionOpen, setSolutionOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [refundProofUploading, setRefundProofUploading] = useState(false)
   const [notice, setNotice] = useState("")
   const chatRef = useRef<HTMLDivElement>(null)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
@@ -242,6 +250,56 @@ export function AdminClaimManager({
     }
   }
 
+  const uploadRefundProof = async (file: File | undefined) => {
+    if (!claim || !file) return
+    setRefundProofUploading(true)
+    setNotice("")
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setNotice("La sesión administrativa venció.")
+        return
+      }
+
+      const formData = new FormData()
+      formData.set("action", "upload_refund_proof")
+      formData.set("file", file)
+      const request = await fetch(`/api/admin/order-claims/${claim.id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      })
+      const data = (await request.json()) as {
+        claim?: SupabaseOrderClaim
+        error?: string
+      }
+
+      if (!request.ok || !data.claim) {
+        setNotice(data.error || "No se pudo cargar el comprobante de devolución.")
+        return
+      }
+
+      onClaimChange(data.claim)
+      setNotice("Comprobante de devolución cargado.")
+    } catch {
+      setNotice("No se pudo cargar el comprobante de devolución.")
+    } finally {
+      setRefundProofUploading(false)
+    }
+  }
+
+  const markRefundDone = async () => {
+    if (!claim) return
+    await updateClaim(
+      {
+        action: "mark_refund_done",
+        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "reintegro_total",
+      },
+      "Reintegro marcado como realizado.",
+    )
+  }
+
   useEffect(() => {
     if (!claim || claim.status !== "recibido") return
     if (firstReviewAttemptedRef.current.has(claim.id)) return
@@ -347,23 +405,28 @@ export function AdminClaimManager({
     pedido.cliente_email ||
     "Cliente"
   const details = getClaimDescription(claim, pedido)
+  const chatMessages = messages
   const reason =
     PROBLEM_LABELS[claim.failure_type ?? ""] ||
     claim.failure_type ||
     "Solicitud de ayuda"
   const files = claim.order_claim_files ?? []
+  const refundProof = files.find((file) => file.file_role === "comprobante_devolucion")
+  const evidenceFiles = files.filter((file) => file.file_role !== "comprobante_devolucion")
+  const refundSelected =
+    claim.customer_selected_resolution === "reintegro_total" ||
+    claim.customer_selected_resolution === "reintegro_parcial" ||
+    claim.resolution === "reintegro_total" ||
+    claim.resolution === "reintegro_parcial"
+  const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
   const offeredSolutions = claim.offered_resolutions ?? []
+  const adminChatLocked = claim.status === "cerrado" || claim.status === "rechazado"
   const statusChanged = status !== claim.status
   const solutionState = claim.customer_selected_resolution
     ? "Aceptada por el cliente"
     : claim.status === "rechazado"
       ? "Rechazada"
       : "Pendiente de respuesta"
-  const selectedStatus = status === "recibido"
-    ? OPEN_STATUS
-    : status === "falta_informacion"
-      ? WAITING_CUSTOMER_STATUS
-      : STATUS_OPTIONS.find((option) => option.value === status) ?? STATUS_OPTIONS[0]
   const currentClaimStatus = claim.status === "recibido"
     ? OPEN_STATUS
     : claim.status === "falta_informacion"
@@ -376,7 +439,7 @@ export function AdminClaimManager({
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h3 className="text-lg font-black text-white">Reclamo #{claim.id}</h3>
+              <h3 className="text-lg font-black text-white">Reclamo</h3>
               <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${currentClaimStatus.tone}`}><span className={`size-2 rounded-full ${currentClaimStatus.dot}`} />{currentClaimStatus.label}</span>
               {claims.length > 1 && (
                 <select value={claim.id} onChange={(event) => setClaimId(Number(event.target.value))} className="h-8 rounded-lg border border-white/12 bg-[#15191F] px-2 text-xs font-bold text-white outline-none">
@@ -384,15 +447,12 @@ export function AdminClaimManager({
                 </select>
               )}
             </div>
-            <p className="mt-1 truncate text-xs text-[#C8C8C8]">Motivo: <strong className="text-white">{reason}</strong> · Producto: <strong className="text-white">{details.product}</strong> · Cliente: <strong className="text-white">{customer}</strong></p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <div ref={statusDropdownRef} className="relative z-30">
-              <button type="button" aria-haspopup="listbox" aria-expanded={statusOpen} onClick={() => setStatusOpen((current) => !current)} className="flex h-9 min-w-52 items-center gap-2 rounded-lg border border-white/12 bg-[#15191F] px-2.5 text-left shadow-sm transition-colors hover:border-blue-300/35">
-                <span className="text-10px font-black uppercase tracking-wide text-[#8EA0B5]">Estado</span>
-                <span className={`size-2 rounded-full ${selectedStatus.dot}`} />
-                <span className={`min-w-0 flex-1 text-xs font-black ${selectedStatus.tone}`}>{selectedStatus.label}</span>
+              <button type="button" aria-haspopup="listbox" aria-expanded={statusOpen} onClick={() => setStatusOpen((current) => !current)} className="flex h-9 min-w-40 items-center gap-2 rounded-lg border border-white/12 bg-[#15191F] px-2.5 text-left shadow-sm transition-colors hover:border-blue-300/35">
+                <span className="min-w-0 flex-1 text-xs font-black text-white">Cambiar estado</span>
                 <ChevronDown className={`size-3.5 text-white/50 transition-transform ${statusOpen ? "rotate-180" : ""}`} />
               </button>
               {statusOpen && <div role="listbox" className="absolute right-0 top-11 w-full min-w-56 overflow-hidden rounded-xl border border-white/12 bg-[#0D1117] p-1.5 shadow-2xl shadow-black/70">{STATUS_OPTIONS.map((option) => <button key={option.value} type="button" role="option" aria-selected={status === option.value} onClick={() => { setStatus(option.value); setStatusOpen(false) }} className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors ${status === option.value ? "bg-[#112A43]" : "hover:bg-[#1B2028]"}`}><span className={`size-2 rounded-full ${option.dot}`} /><span className={`text-xs font-black ${option.tone}`}>{option.label}</span>{status === option.value && <Check className="ml-auto size-3.5 text-blue-300" />}</button>)}</div>}
@@ -413,7 +473,7 @@ export function AdminClaimManager({
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               {SOLUTION_OPTIONS.map(({ value: solution, icon: SolutionIcon }) => {
                 const selected = solutions.includes(solution)
-                return <button key={solution} type="button" aria-pressed={selected} onClick={() => setSolutions((current) => selected ? current.filter((item) => item !== solution) : [...current, solution])} className={`group relative flex min-h-12 items-center gap-2.5 rounded-lg border px-2.5 text-left text-xs font-bold text-white transition-all ${selected ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_14px_rgba(17,42,67,0.38)]" : "border-white/9 bg-[#15191F] hover:border-blue-300/35 hover:shadow-[0_0_12px_rgba(17,42,67,0.2)]"}`}><span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${selected ? "bg-blue-300/15 text-blue-200" : "bg-[#1B2028] text-[#8EA0B5] group-hover:text-blue-300"}`}><SolutionIcon className="size-3.5" /></span><span className="min-w-0 flex-1">{getOrderClaimResolutionLabel(solution)}</span><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-blue-300 bg-blue-300 text-[#0D1117]" : "border-white/15 text-transparent"}`}><Check className="size-3" /></span></button>
+                return <button key={solution} type="button" aria-pressed={selected} onClick={() => setSolutions((current) => selected ? current.filter((item) => item !== solution) : [...current, solution])} className={`group relative flex min-h-12 items-center gap-2.5 rounded-lg border px-2.5 text-left text-xs font-bold transition-all ${selected ? "border-[#3b82f6] bg-[#112A43] text-white shadow-[0_0_0_1px_rgba(59,130,246,0.22)]" : "border-white/10 bg-black/30 text-white/80 hover:border-[#1e6fae] hover:bg-[#112A43]/30 hover:shadow-[0_0_0_1px_rgba(30,111,174,0.22)]"}`}><span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${selected ? "bg-blue-300/15 text-blue-200" : "bg-[#1B2028] text-[#8EA0B5] group-hover:text-blue-300"}`}><SolutionIcon className="size-3.5" /></span><span className="min-w-0 flex-1">{getOrderClaimResolutionLabel(solution)}</span><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-blue-300 bg-blue-300 text-[#0D1117]" : "border-white/15 text-transparent"}`}><Check className="size-3" /></span></button>
               })}
             </div>
             {solutions.includes("otro") && <input value={otherSolution} onChange={(event) => setOtherSolution(event.target.value)} placeholder="Describí la otra solución" className="mt-2 h-9 w-full rounded-lg border border-white/12 bg-[#15191F] px-3 text-xs text-white outline-none" />}
@@ -442,28 +502,58 @@ export function AdminClaimManager({
                 ["Estado", getStatusLabel(claim.status)],
               ].map(([label, value]) => <div key={label} className="grid grid-cols-[105px_minmax(0,1fr)] gap-2 py-2"><dt className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">{label}</dt><dd className="text-xs font-bold leading-5 text-white">{value}</dd></div>)}
             </dl>
-            <div className="mt-2 rounded-lg bg-[#1B2028] p-2.5"><p className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">Descripción del cliente</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#C8C8C8]">{details.description}</p></div>
+            <div className="mt-2 rounded-lg bg-[#1B2028] p-2.5"><p className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">Mensaje inicial del cliente</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#C8C8C8]">{details.description}</p></div>
           </section>
 
           <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
             <h4 className="text-sm font-black text-white">Evidencia</h4>
-            {files.length === 0 ? <p className="mt-1.5 text-xs text-[#C8C8C8]">El cliente no adjuntó archivos.</p> : <div className="mt-2 space-y-1.5">{files.map((file) => <a key={file.id} href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#1B2028] p-2 text-xs font-bold text-white hover:border-blue-300/25">{file.mime_type.startsWith("image/") && file.signedUrl ? <img src={file.signedUrl} alt="" className="size-9 rounded-md object-cover" /> : <FileText className="size-4 shrink-0 text-blue-300" />}<span className="min-w-0 flex-1 truncate">{file.file_name}</span><span className="text-10px text-blue-300">Ver</span><Download className="size-3.5" /></a>)}</div>}
+            {evidenceFiles.length === 0 ? <p className="mt-1.5 text-xs text-[#C8C8C8]">El cliente no adjuntó archivos.</p> : <div className="mt-2 space-y-1.5">{evidenceFiles.map((file) => <a key={file.id} href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#1B2028] p-2 text-xs font-bold text-white hover:border-blue-300/25">{file.mime_type.startsWith("image/") && file.signedUrl ? <img src={file.signedUrl} alt="" className="size-9 rounded-md object-cover" /> : <FileText className="size-4 shrink-0 text-blue-300" />}<span className="min-w-0 flex-1 truncate">{file.file_name}</span><span className="text-10px text-blue-300">Ver</span><Download className="size-3.5" /></a>)}</div>}
           </section>
+          {refundSelected && (
+            <section className="rounded-xl border border-[#77E6E2]/15 bg-[#15191F] p-3">
+              <h4 className="text-sm font-black text-white">Datos de reintegro</h4>
+              {refundDetailsSubmitted ? (
+                <dl className="mt-2 divide-y divide-white/7">
+                  {[
+                    ["Titular", claim.refund_account_holder ?? "-"],
+                    ["Alias / CBU / CVU", claim.refund_account_identifier ?? "-"],
+                    ["Banco / billetera", claim.refund_bank ?? "-"],
+                    ["Importe", claim.refund_amount_confirmed ?? "-"],
+                  ].map(([label, value]) => <div key={label} className="grid grid-cols-[105px_minmax(0,1fr)] gap-2 py-2"><dt className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">{label}</dt><dd className="break-words text-xs font-bold leading-5 text-white">{value}</dd></div>)}
+                </dl>
+              ) : (
+                <p className="mt-1.5 rounded-lg border border-[#77E6E2]/15 bg-[#77E6E2]/5 px-2.5 py-2 text-xs font-bold text-[#D7FFFD]">Pendiente de datos del cliente.</p>
+              )}
+            </section>
+          )}
+
+          {refundSelected && refundDetailsSubmitted && (
+            <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
+              <h4 className="text-sm font-black text-white">Comprobante de devolución</h4>
+              {refundProof?.signedUrl ? <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 p-2 text-xs font-bold text-white hover:border-[#77E6E2]/40"><FileText className="size-4 shrink-0 text-[#77E6E2]" /><span className="min-w-0 flex-1 truncate">{refundProof.file_name}</span><span className="text-10px text-[#77E6E2]">Ver</span><Download className="size-3.5" /></a> : <p className="mt-1.5 text-xs text-[#C8C8C8]">Todavía no se cargó comprobante.</p>}
+              <label className="mt-2 flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-300/20 bg-[#112A43]/55 px-3 text-xs font-black text-white transition hover:border-blue-300/45">
+                <Upload className="size-3.5" />
+                {refundProof ? "Cambiar comprobante" : "Cargar comprobante"}
+                <input type="file" accept="image/*,application/pdf" disabled={refundProofUploading || saving} className="sr-only" onChange={(event) => { void uploadRefundProof(event.target.files?.[0]); event.currentTarget.value = "" }} />
+              </label>
+              <button type="button" disabled={saving || refundProofUploading || !refundProof} onClick={() => void markRefundDone()} className="mt-2 h-9 w-full rounded-lg border border-emerald-300/25 bg-emerald-600/20 px-3 text-xs font-black text-emerald-100 transition hover:border-emerald-300/45 disabled:cursor-not-allowed disabled:opacity-45">Marcar reintegro realizado</button>
+            </section>
+          )}
         </aside>
 
         <section className="flex min-h-[30rem] flex-col overflow-hidden rounded-xl border border-blue-300/15 bg-[#15191F] lg:h-[clamp(30rem,58vh,40rem)]">
-          <div className="border-b border-white/8 px-3 py-2.5"><h4 className="text-sm font-black text-white">Chat cliente ↔ BEYONIX</h4><p className="mt-0.5 text-10px text-[#8EA0B5]">{messages.length} mensaje{messages.length === 1 ? "" : "s"}</p></div>
+          <div className="border-b border-white/8 px-3 py-2.5"><h4 className="text-sm font-black text-white">Chat cliente ↔ BEYONIX</h4><p className="mt-0.5 text-10px text-[#8EA0B5]">{chatMessages.length} mensaje{chatMessages.length === 1 ? "" : "s"}</p></div>
           <div ref={chatRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-            {messages.length === 0 && <p className="rounded-lg bg-[#1B2028] px-3 py-2 text-xs text-[#C8C8C8]">Todavía no hay mensajes en esta conversación.</p>}
-            {messages.map((message) => {
+            {chatMessages.length === 0 && <p className="rounded-lg bg-[#1B2028] px-3 py-2 text-xs text-[#C8C8C8]">Todavía no hay mensajes en esta conversación.</p>}
+            {chatMessages.map((message) => {
               const isCustomer = message.author_role === "cliente"
-              return <div key={message.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}><div className={`max-w-[82%] rounded-xl px-3 py-2 ${isCustomer ? "border border-white/9 bg-[#1B2028]" : "bg-[#112A43]"}`}><p className="text-10px font-black text-blue-200">{isCustomer ? "Cliente" : "BEYONIX"}</p><p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-white">{message.message}</p><p className="mt-1 text-[9px] text-white/45">{formatDate(message.created_at)}</p></div></div>
+              return <div key={message.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}><div className={`max-w-[82%] rounded-xl px-3 py-2 ${isCustomer ? "border border-white/9 bg-[#1B2028]" : "bg-[#112A43]"}`}><p className="text-10px font-black text-blue-200">{isCustomer ? "Cliente" : "BEYONIX"}</p><p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-white">{getClaimMessageText(message.message)}</p><p className="mt-1 text-[9px] text-white/45">{formatDate(message.created_at)}</p></div></div>
             })}
           </div>
           <div className="border-t border-white/8 bg-[#11161D] p-2.5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <textarea value={response} onChange={(event) => setResponse(event.target.value)} rows={2} placeholder="Responder al cliente" className="min-h-16 min-w-0 flex-1 resize-none rounded-lg border border-white/12 bg-[#1B2028] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/45" />
-              <button type="button" disabled={saving || response.trim().length < 2} onClick={() => void sendResponse()} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-45"><Send className="size-3.5" />Enviar respuesta</button>
+              <textarea value={response} disabled={adminChatLocked} onChange={(event) => setResponse(event.target.value)} rows={2} placeholder={adminChatLocked ? "Reclamo cerrado" : "Responder al cliente"} className="min-h-16 min-w-0 flex-1 resize-none rounded-lg border border-white/12 bg-[#1B2028] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/45 disabled:cursor-not-allowed disabled:opacity-45" />
+              <button type="button" disabled={saving || adminChatLocked || response.trim().length < 2} onClick={() => void sendResponse()} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-45"><Send className="size-3.5" />Enviar respuesta</button>
             </div>
           </div>
         </section>

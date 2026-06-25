@@ -1016,7 +1016,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             <div className="grid gap-3 md:grid-cols-3">
               <StatCard title="Pagos en revisión" value={stats.pagosEnRevision} helper={`${stats.esperandoComprobante} esperan comprobante`} icon={<CreditCard className="size-5" />} onClick={() => onNavigate("pedidos")} />
               <StatCard title="Pedidos a preparar" value={stats.enviosPendientes} helper={`${stats.pedidosSinTracking} sin tracking o etiqueta`} icon={<ShoppingCart className="size-5" />} onClick={() => onNavigate("pedidos")} />
-              <StatCard title="Facturas pendientes" value={stats.facturasPendientes} helper="Pedidos pagados sin factura emitida" icon={<FileUp className="size-5" />} onClick={() => onNavigate("pedidos")} />
+              <StatCard title="Facturas pendientes" value={stats.facturasPendientes} helper="Pedidos pagados sin factura emitida" icon={<FileUp className="size-5" />} onClick={() => onNavigate("facturacion")} />
             </div>
           </section>
 

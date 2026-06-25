@@ -11,7 +11,7 @@ import { useAuth } from "@/context/auth-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 
-function CheckoutAdminNotifications() {
+function StandaloneAdminNotifications() {
   const { isInternal } = useAuth()
   const notifications = useOrderNotifications(isInternal)
 
@@ -23,6 +23,10 @@ function CheckoutAdminNotifications() {
         count={notifications.notificationCount}
         tone={notifications.notificationTone}
         groups={notifications.notificationGroups}
+        notifications={notifications.notifications}
+        loading={notifications.loading}
+        error={notifications.error}
+        onRetry={notifications.reloadNotificationCount}
       />
     </div>
   )
@@ -90,13 +94,22 @@ export function LayoutShell({
   if (isCheckoutPage) {
     return (
       <>
-        {pathname !== "/checkout" && <CheckoutAdminNotifications />}
+        {pathname !== "/checkout" && <StandaloneAdminNotifications />}
         {children}
       </>
     )
   }
 
-  if (isAdmin || isPasswordReset || isAuthPage) {
+  if (isPasswordReset || isAuthPage) {
+    return (
+      <>
+        <StandaloneAdminNotifications />
+        {children}
+      </>
+    )
+  }
+
+  if (isAdmin) {
     return children
   }
 

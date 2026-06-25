@@ -5,6 +5,7 @@ import { buildArcaQrUrl } from "@/lib/arca/qr"
 import {
   ArcaWsError,
   FACTURA_C_TYPE,
+  feCompConsultar,
   fecaeSolicitar,
   feCompUltimoAutorizado,
 } from "@/lib/arca/wsfe"
@@ -43,6 +44,19 @@ function arcaDateToIso(value: string) {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
 }
 
+function validateIssueDateAfterLastAuthorized(
+  issueDate: string,
+  lastAuthorizedDate?: string | null,
+) {
+  if (!lastAuthorizedDate) return
+
+  if (issueDate < lastAuthorizedDate) {
+    throw new Error(
+      "La fecha del comprobante no puede ser anterior a la última autorizada por ARCA.",
+    )
+  }
+}
+
 function invoiceErrorMessage(error: unknown) {
   if (error instanceof ArcaWsError && error.details.length) {
     const details = error.details
@@ -54,6 +68,34 @@ function invoiceErrorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
     : "No se pudo emitir la Factura C."
+}
+
+function invoiceProcessingErrorResponse(message?: string) {
+  if (message?.includes("INVOICE_PROCESSING_IN_PROGRESS")) {
+    return NextResponse.json(
+      { error: "Ya hay una factura en proceso. Esperá a que termine antes de emitir otra." },
+      { status: 409 },
+    )
+  }
+
+  if (message?.includes("INVOICE_ALREADY_AUTHORIZED")) {
+    return NextResponse.json(
+      { error: "La orden ya está facturada." },
+      { status: 409 },
+    )
+  }
+
+  if (message?.includes("INVOICE_ALREADY_PROCESSING")) {
+    return NextResponse.json(
+      { error: "La factura ya se está procesando." },
+      { status: 409 },
+    )
+  }
+
+  return NextResponse.json(
+    { error: "No se pudo iniciar la facturación." },
+    { status: 500 },
+  )
 }
 
 export async function POST(
@@ -73,7 +115,7 @@ export async function POST(
   const { data: order, error: orderError } = await auth.admin
     .from("ordenes")
     .select(
-      "id, total, estado, payment_status, invoice_number, invoice_point, invoice_cae, invoice_cae_due, invoice_status, invoice_created_at",
+      "id, total, estado, payment_status, invoice_cae, invoice_status, invoice_error",
     )
     .eq("id", orderId)
     .single()
@@ -102,38 +144,45 @@ export async function POST(
   }
 
   const { data: lockedOrder, error: lockError } = await auth.admin
-    .from("ordenes")
-    .update({ invoice_status: "processing" })
-    .eq("id", orderId)
-    .or("invoice_status.is.null,invoice_status.eq.error")
-    .select("id")
+    .rpc("begin_arca_invoice_processing", { p_order_id: orderId })
     .maybeSingle()
 
   if (lockError) {
-    return NextResponse.json(
-      { error: "No se pudo iniciar la facturación." },
-      { status: 500 },
-    )
+    return invoiceProcessingErrorResponse(lockError.message)
   }
 
   if (!lockedOrder) {
-    return NextResponse.json(
-      { error: "La factura ya se está procesando." },
-      { status: 409 },
-    )
+    return invoiceProcessingErrorResponse()
   }
 
   try {
     const pointOfSale = getPointOfSale()
-    const lastVoucher = await feCompUltimoAutorizado(
+    const ultimoAutorizadoARCA = await feCompUltimoAutorizado(
       pointOfSale,
       FACTURA_C_TYPE,
     )
-    const voucherNumber = lastVoucher + 1
+    const lastAuthorizedVoucher = await feCompConsultar(
+      pointOfSale,
+      ultimoAutorizadoARCA,
+      FACTURA_C_TYPE,
+    )
     const issueDate = argentinaDate()
+    validateIssueDateAfterLastAuthorized(
+      issueDate.arca,
+      lastAuthorizedVoucher?.voucherDate,
+    )
+
+    const proximoComprobante = ultimoAutorizadoARCA + 1
+    console.log({
+      ultimoAutorizadoARCA,
+      proximoComprobante,
+      puntoVenta: pointOfSale,
+      tipoComprobante: FACTURA_C_TYPE,
+    })
+
     const authorization = await fecaeSolicitar({
       pointOfSale,
-      voucherNumber,
+      voucherNumber: proximoComprobante,
       voucherDate: issueDate.arca,
       total,
     })
@@ -144,6 +193,7 @@ export async function POST(
       invoice_cae: authorization.cae,
       invoice_cae_due: arcaDateToIso(authorization.caeDueDate),
       invoice_status: "authorized",
+      invoice_error: null,
       invoice_created_at: createdAt,
     }
     const { data: updatedOrder, error: updateError } = await auth.admin
@@ -179,19 +229,24 @@ export async function POST(
       },
     })
   } catch (error) {
+    const message = invoiceErrorMessage(error)
+
     await auth.admin
       .from("ordenes")
-      .update({ invoice_status: "error" })
+      .update({
+        invoice_status: "error",
+        invoice_error: message,
+      })
       .eq("id", orderId)
       .eq("invoice_status", "processing")
 
     console.error("Error al emitir Factura C", {
       orderId,
-      error: invoiceErrorMessage(error),
+      error: message,
     })
 
     return NextResponse.json(
-      { error: invoiceErrorMessage(error) },
+      { error: message },
       { status: error instanceof ArcaWsError ? 502 : 500 },
     )
   }

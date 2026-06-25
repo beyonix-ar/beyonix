@@ -85,6 +85,7 @@ import { supabase } from "@/lib/supabase/client"
 import type { SupabaseProfile } from "@/lib/supabase/types"
 
 import {
+  beyonixHoverBorder,
   cn,
 } from "@/lib/utils"
 import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
@@ -930,6 +931,10 @@ export default function CheckoutPage() {
                   count={adminNotifications.notificationCount}
                   tone={adminNotifications.notificationTone}
                   groups={adminNotifications.notificationGroups}
+                  notifications={adminNotifications.notifications}
+                  loading={adminNotifications.loading}
+                  error={adminNotifications.error}
+                  onRetry={adminNotifications.reloadNotificationCount}
                 />
               )}
               <button
@@ -938,7 +943,10 @@ export default function CheckoutPage() {
                 title="Abrir menú de cuenta"
                 aria-expanded={accountMenuOpen}
                 onClick={() => setAccountMenuOpen((current) => !current)}
-                className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-black py-1.5 pl-1.5 pr-2 transition-colors hover:border-beyonix-blue-light/45 sm:pr-3"
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 rounded-full bg-black py-1.5 pl-1.5 pr-2 sm:pr-3",
+                  beyonixHoverBorder
+                )}
               >
                 <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
                   {user.avatarUrl ? (
@@ -969,7 +977,10 @@ export default function CheckoutPage() {
                     href="/cuenta?tab=datos"
                     aria-label="Ir a Mis datos"
                     title="Ir a Mis datos"
-                    className="block px-4 py-3 text-sm font-medium text-white/78 transition-colors hover:bg-beyonix-blue hover:text-white"
+                    className={cn(
+                      "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
+                      beyonixHoverBorder
+                    )}
                   >
                     Mis datos
                   </Link>
@@ -977,7 +988,10 @@ export default function CheckoutPage() {
                     href="/cuenta?tab=ordenes"
                     aria-label="Ir a Mis compras"
                     title="Ir a Mis compras"
-                    className="block px-4 py-3 text-sm font-medium text-white/78 transition-colors hover:bg-beyonix-blue hover:text-white"
+                    className={cn(
+                      "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
+                      beyonixHoverBorder
+                    )}
                   >
                     Mis compras
                   </Link>
@@ -985,7 +999,10 @@ export default function CheckoutPage() {
                     href="/cuenta?tab=seguridad"
                     aria-label="Ir a Seguridad"
                     title="Ir a Seguridad"
-                    className="block px-4 py-3 text-sm font-medium text-white/78 transition-colors hover:bg-beyonix-blue hover:text-white"
+                    className={cn(
+                      "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
+                      beyonixHoverBorder
+                    )}
                   >
                     Seguridad
                   </Link>

@@ -34,6 +34,13 @@ export interface FecaeResult {
   observations: ArcaMessage[]
 }
 
+export interface AuthorizedVoucher {
+  pointOfSale: number
+  voucherType: number
+  voucherNumber: number
+  voucherDate: string
+}
+
 export class ArcaWsError extends Error {
   constructor(
     message: string,
@@ -178,6 +185,40 @@ export async function feCompUltimoAutorizado(
   }
 
   return voucherNumber
+}
+
+export async function feCompConsultar(
+  pointOfSale: number,
+  voucherNumber: number,
+  voucherType = FACTURA_C_TYPE,
+): Promise<AuthorizedVoucher | null> {
+  if (voucherNumber <= 0) return null
+
+  const result = await callWsfe(
+    "FECompConsultar",
+    `<ar:FeCompConsReq>
+      <ar:CbteTipo>${voucherType}</ar:CbteTipo>
+      <ar:CbteNro>${voucherNumber}</ar:CbteNro>
+      <ar:PtoVta>${pointOfSale}</ar:PtoVta>
+    </ar:FeCompConsReq>`,
+  )
+  const errors = parseMessages(result?.Errors, "Err")
+
+  if (errors.length) {
+    throw new ArcaWsError("ARCA no pudo consultar el comprobante autorizado.", errors)
+  }
+
+  const voucherDate = String(result?.ResultGet?.CbteFch ?? "")
+  if (!/^\d{8}$/.test(voucherDate)) {
+    throw new ArcaWsError("ARCA devolvió una fecha de comprobante inválida.")
+  }
+
+  return {
+    pointOfSale,
+    voucherType,
+    voucherNumber,
+    voucherDate,
+  }
 }
 
 export async function fecaeSolicitar(request: FecaeRequest): Promise<FecaeResult> {
