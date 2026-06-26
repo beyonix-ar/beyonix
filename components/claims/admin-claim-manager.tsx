@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
@@ -20,6 +20,7 @@ import {
   CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS,
   getOrderClaimResolutionLabel,
 } from "@/lib/order-claims"
+import { ReplacementRequestSummary } from "@/components/claims/replacement-request-summary"
 import type {
   OrderClaimResolution,
   OrderClaimStatus,
@@ -33,9 +34,13 @@ const PROBLEM_LABELS: Record<string, string> = {
   falla: "Producto con falla",
   devolucion: "Solicitud de devolución",
   no_llego: "Nunca llegó el envío",
+  cambio_producto: "Me equivoqu? de producto",
+  cambio_color: "Me equivoqu? de color",
+  modificar_envio: "Modificar datos de envío",
+  cancelar_compra: "Cancelar compra",
+  otro_pre_despacho: "Otro problema con mi pedido",
   otro: "Otro problema",
 }
-
 const STATUS_OPTIONS: Array<{
   value: OrderClaimStatus
   label: string
@@ -45,6 +50,9 @@ const STATUS_OPTIONS: Array<{
   { value: "en_revision", label: "En revisión", tone: "text-amber-200", dot: "bg-amber-400" },
   { value: "aprobado", label: "Solución ofrecida", tone: "text-blue-200", dot: "bg-blue-400" },
   { value: "reintegro_pendiente", label: "Reintegro pendiente", tone: "text-[#BFFFFD]", dot: "bg-[#77E6E2]" },
+  { value: "cambio_pendiente", label: "Cambio pendiente", tone: "text-[#BFFFFD]", dot: "bg-[#77E6E2]" },
+  { value: "cupon_pendiente", label: "Cupón pendiente", tone: "text-[#BFFFFD]", dot: "bg-[#77E6E2]" },
+  { value: "reemplazo_enviado", label: "Reemplazo enviado", tone: "text-blue-200", dot: "bg-blue-400" },
   { value: "cerrado", label: "Resuelto", tone: "text-emerald-200", dot: "bg-emerald-400" },
   { value: "rechazado", label: "Rechazado", tone: "text-red-200", dot: "bg-red-400" },
 ]
@@ -81,12 +89,20 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
+function formatPrice(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
 function productName(order: SupabasePedido) {
   const names = (order.orden_items ?? [])
     .map((item) => {
       const name = item.productos?.nombre
       const variant = item.producto_variantes?.nombre
-      return name ? [name, variant].filter(Boolean).join(" · ") : null
+      return name ? [name, variant].filter(Boolean).join(" ? ") : null
     })
     .filter(Boolean)
 
@@ -105,6 +121,13 @@ function getClaimDescription(claim: SupabaseOrderClaim, order: SupabasePedido) {
 function getClaimMessageText(message: string) {
   const match = message.match(/^Producto afectado:\s*.+?(?:\r?\n){2}([\s\S]*)$/)
   return match?.[1]?.trim() || message
+}
+
+function getFileTypeLabel(mimeType: string) {
+  if (mimeType.startsWith("image/")) return "Imagen"
+  if (mimeType.startsWith("video/")) return "Video"
+  if (mimeType === "application/pdf") return "PDF"
+  return "Archivo"
 }
 
 function getStatusLabel(status: OrderClaimStatus) {
@@ -131,6 +154,12 @@ export function AdminClaimManager({
   const [statusOpen, setStatusOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [refundProofUploading, setRefundProofUploading] = useState(false)
+  const [replacementProduct, setReplacementProduct] = useState("")
+  const [replacementExtraCost, setReplacementExtraCost] = useState("")
+  const [replacementPaymentLink, setReplacementPaymentLink] = useState("")
+  const [replacementShippingCompany, setReplacementShippingCompany] = useState("")
+  const [replacementTracking, setReplacementTracking] = useState("")
+  const [couponCode, setCouponCode] = useState("")
   const [notice, setNotice] = useState("")
   const chatRef = useRef<HTMLDivElement>(null)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
@@ -150,6 +179,14 @@ export function AdminClaimManager({
     setResponse("")
     setNotice("")
     setSolutionOpen(false)
+    setReplacementProduct(claim.replacement_product ?? "")
+    setReplacementExtraCost(
+      claim.replacement_extra_cost == null ? "" : String(claim.replacement_extra_cost),
+    )
+    setReplacementPaymentLink(claim.replacement_payment_link ?? "")
+    setReplacementShippingCompany(claim.replacement_shipping_company ?? "")
+    setReplacementTracking(claim.replacement_tracking ?? "")
+    setCouponCode(claim.coupon_code ?? "")
   }, [claim?.id])
 
   useEffect(() => {
@@ -300,6 +337,96 @@ export function AdminClaimManager({
     )
   }
 
+  const saveReplacementDetails = async () => {
+    if (!claim) return
+    if (!replacementProduct.trim()) {
+      setNotice("Indic? el producto de reemplazo.")
+      return
+    }
+
+    await updateClaim(
+      {
+        action: "save_replacement_details",
+        replacement_product: replacementProduct.trim(),
+        replacement_extra_cost: replacementExtraCost.trim()
+          ? Number(replacementExtraCost.replace(",", "."))
+          : 0,
+        replacement_payment_link: replacementPaymentLink.trim(),
+        replacement_shipping_company: replacementShippingCompany.trim(),
+        replacement_tracking: replacementTracking.trim(),
+      },
+      "Datos del cambio guardados.",
+    )
+  }
+
+  const markReplacementSent = async () => {
+    if (!claim) return
+    await updateClaim(
+      {
+        action: "mark_replacement_sent",
+        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cambio_producto",
+      },
+      "Reemplazo marcado como enviado.",
+    )
+  }
+
+  const approveReplacementSelection = async () => {
+    if (!claim) return
+    const proof = claim.order_claim_files?.some((file) => file.file_role === "comprobante_diferencia")
+    if (Number(claim.replacement_price_difference ?? 0) > 0 && !proof) {
+      setNotice("Falta el comprobante de pago de la diferencia.")
+      return
+    }
+
+    await updateClaim(
+      {
+        action: "approve_replacement_selection",
+        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cambio_producto",
+      },
+      "Cambio aprobado. Queda pendiente preparar el reemplazo.",
+    )
+  }
+
+  const rejectReplacementSelection = async () => {
+    if (!claim) return
+    await updateClaim(
+      {
+        action: "reject_replacement_selection",
+        admin_response: response.trim() || "",
+      },
+      "Selección enviada a corrección.",
+    )
+    setResponse("")
+  }
+
+  const markReplacementResolved = async () => {
+    if (!claim) return
+    await updateClaim(
+      {
+        action: "mark_replacement_resolved",
+        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cambio_producto",
+      },
+      "Cambio marcado como resuelto.",
+    )
+  }
+
+  const saveCoupon = async () => {
+    if (!claim) return
+    if (!couponCode.trim()) {
+      setNotice("Ingresá el código de cupón.")
+      return
+    }
+
+    await updateClaim(
+      {
+        action: "save_coupon",
+        coupon_code: couponCode.trim(),
+        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cupon_descuento",
+      },
+      "Cupón generado y reclamo resuelto.",
+    )
+  }
+
   useEffect(() => {
     if (!claim || claim.status !== "recibido") return
     if (firstReviewAttemptedRef.current.has(claim.id)) return
@@ -315,7 +442,7 @@ export function AdminClaimManager({
 
   const sendResponse = async () => {
     if (!claim || response.trim().length < 2) {
-      setNotice("Escribí una respuesta para el cliente.")
+      setNotice("Escrib? una respuesta para el cliente.")
       return
     }
 
@@ -412,12 +539,26 @@ export function AdminClaimManager({
     "Solicitud de ayuda"
   const files = claim.order_claim_files ?? []
   const refundProof = files.find((file) => file.file_role === "comprobante_devolucion")
-  const evidenceFiles = files.filter((file) => file.file_role !== "comprobante_devolucion")
+  const differenceProof = [...files].reverse().find((file) => file.file_role === "comprobante_diferencia")
+  const evidenceFiles = files.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
   const refundSelected =
     claim.customer_selected_resolution === "reintegro_total" ||
     claim.customer_selected_resolution === "reintegro_parcial" ||
     claim.resolution === "reintegro_total" ||
     claim.resolution === "reintegro_parcial"
+  const replacementSelected =
+    claim.customer_selected_resolution === "cambio_producto" ||
+    claim.resolution === "cambio_producto" ||
+    claim.status === "cambio_pendiente" ||
+    claim.status === "reemplazo_enviado"
+  const replacementRequested = Boolean(claim.replacement_requested_product)
+  const replacementDifference = Number(claim.replacement_price_difference ?? 0)
+  const replacementNeedsDifferenceProof = replacementDifference > 0
+  const replacementCanApprove = !replacementNeedsDifferenceProof || Boolean(differenceProof)
+  const couponSelected =
+    claim.customer_selected_resolution === "cupon_descuento" ||
+    claim.resolution === "cupon_descuento" ||
+    claim.status === "cupon_pendiente"
   const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
   const offeredSolutions = claim.offered_resolutions ?? []
   const adminChatLocked = claim.status === "cerrado" || claim.status === "rechazado"
@@ -485,7 +626,7 @@ export function AdminClaimManager({
       {offeredSolutions.length > 0 && !solutionOpen && (
         <div className="mx-3 mt-3 grid gap-2 rounded-xl border border-blue-300/15 bg-[#15191F] px-3 py-2 sm:mx-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div><p className="text-10px font-black uppercase tracking-widest text-blue-300">Soluciones ofrecidas</p><div className="mt-1 flex flex-wrap gap-1.5">{offeredSolutions.map((solution) => <span key={solution} className={`rounded-full border px-2.5 py-1 text-10px font-black text-white ${claim.customer_selected_resolution === solution ? "border-emerald-400/60 bg-emerald-700/70" : "border-white/10 bg-[#1B2028]"}`}>{getOrderClaimResolutionLabel(solution)}</span>)}</div></div>
-          {claim.customer_selected_resolution ? <div className="rounded-lg border border-emerald-400/55 bg-emerald-700/75 px-3 py-2 text-white shadow-[0_0_14px_rgba(22,163,74,0.2)]"><p className="text-9px font-black uppercase tracking-widest text-emerald-100">Solución elegida por el cliente</p><p className="mt-0.5 text-sm font-black">● {getOrderClaimResolutionLabel(claim.customer_selected_resolution)}</p><span className="mt-1 inline-flex rounded-full bg-emerald-950/45 px-2 py-0.5 text-9px font-black uppercase tracking-wide">Aceptada por el cliente</span></div> : <div className="text-right"><p className="text-10px text-[#8EA0B5]">{formatDate(claim.updated_at)}</p><p className="mt-0.5 text-xs font-black text-amber-200">{solutionState}</p></div>}
+          {claim.customer_selected_resolution ? <div className="rounded-lg border border-emerald-400/55 bg-emerald-700/75 px-3 py-2 text-white shadow-[0_0_14px_rgba(22,163,74,0.2)]"><p className="text-9px font-black uppercase tracking-widest text-emerald-100">Solución elegida por el cliente</p><p className="mt-0.5 text-sm font-black">? {getOrderClaimResolutionLabel(claim.customer_selected_resolution)}</p><span className="mt-1 inline-flex rounded-full bg-emerald-950/45 px-2 py-0.5 text-9px font-black uppercase tracking-wide">Aceptada por el cliente</span></div> : <div className="text-right"><p className="text-10px text-[#8EA0B5]">{formatDate(claim.updated_at)}</p><p className="mt-0.5 text-xs font-black text-amber-200">{solutionState}</p></div>}
         </div>
       )}
 
@@ -507,7 +648,7 @@ export function AdminClaimManager({
 
           <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
             <h4 className="text-sm font-black text-white">Evidencia</h4>
-            {evidenceFiles.length === 0 ? <p className="mt-1.5 text-xs text-[#C8C8C8]">El cliente no adjuntó archivos.</p> : <div className="mt-2 space-y-1.5">{evidenceFiles.map((file) => <a key={file.id} href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#1B2028] p-2 text-xs font-bold text-white hover:border-blue-300/25">{file.mime_type.startsWith("image/") && file.signedUrl ? <img src={file.signedUrl} alt="" className="size-9 rounded-md object-cover" /> : <FileText className="size-4 shrink-0 text-blue-300" />}<span className="min-w-0 flex-1 truncate">{file.file_name}</span><span className="text-10px text-blue-300">Ver</span><Download className="size-3.5" /></a>)}</div>}
+            {evidenceFiles.length === 0 ? <p className="mt-1.5 text-xs text-[#C8C8C8]">El cliente no adjunt? archivos.</p> : <div className="mt-2 space-y-1.5">{evidenceFiles.map((file) => <div key={file.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#1B2028] p-2 text-xs font-bold text-white">{file.mime_type.startsWith("image/") && file.signedUrl ? <img src={file.signedUrl} alt={file.file_name} className="size-10 rounded-md object-cover" /> : <FileText className="size-4 shrink-0 text-blue-300" />}<div className="min-w-0 flex-1"><p className="truncate">{file.file_name}</p><p className="mt-0.5 text-10px font-bold text-[#8EA0B5]">{getFileTypeLabel(file.mime_type)}</p></div><a href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="rounded-md border border-blue-300/20 px-2 py-1 text-10px text-blue-300 hover:border-blue-300/45">Ver</a><a href={file.signedUrl ?? undefined} download={file.file_name} className="rounded-md border border-white/10 px-2 py-1 text-10px text-white/70 hover:border-blue-300/35"><Download className="size-3.5" /></a></div>)}</div>}
           </section>
           {refundSelected && (
             <section className="rounded-xl border border-[#77E6E2]/15 bg-[#15191F] p-3">
@@ -530,7 +671,7 @@ export function AdminClaimManager({
           {refundSelected && refundDetailsSubmitted && (
             <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
               <h4 className="text-sm font-black text-white">Comprobante de devolución</h4>
-              {refundProof?.signedUrl ? <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 p-2 text-xs font-bold text-white hover:border-[#77E6E2]/40"><FileText className="size-4 shrink-0 text-[#77E6E2]" /><span className="min-w-0 flex-1 truncate">{refundProof.file_name}</span><span className="text-10px text-[#77E6E2]">Ver</span><Download className="size-3.5" /></a> : <p className="mt-1.5 text-xs text-[#C8C8C8]">Todavía no se cargó comprobante.</p>}
+              {refundProof?.signedUrl ? <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 p-2 text-xs font-bold text-white hover:border-[#77E6E2]/40"><FileText className="size-4 shrink-0 text-[#77E6E2]" /><span className="min-w-0 flex-1 truncate">{refundProof.file_name}</span><span className="text-10px text-[#77E6E2]">Ver</span><Download className="size-3.5" /></a> : <p className="mt-1.5 text-xs text-[#C8C8C8]">Todavía no se carg? comprobante.</p>}
               <label className="mt-2 flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-300/20 bg-[#112A43]/55 px-3 text-xs font-black text-white transition hover:border-blue-300/45">
                 <Upload className="size-3.5" />
                 {refundProof ? "Cambiar comprobante" : "Cargar comprobante"}
@@ -539,10 +680,63 @@ export function AdminClaimManager({
               <button type="button" disabled={saving || refundProofUploading || !refundProof} onClick={() => void markRefundDone()} className="mt-2 h-9 w-full rounded-lg border border-emerald-300/25 bg-emerald-600/20 px-3 text-xs font-black text-emerald-100 transition hover:border-emerald-300/45 disabled:cursor-not-allowed disabled:opacity-45">Marcar reintegro realizado</button>
             </section>
           )}
+
+          {replacementSelected && (
+            <section className="rounded-xl border border-[#77E6E2]/15 bg-[#15191F] p-3">
+              <h4 className="text-sm font-black text-white">Cambio de producto</h4>
+              <p className="mt-1 text-xs leading-5 text-[#C8C8C8]">Completá los datos del reemplazo. El reclamo se resuelve recién cuando BEYONIX confirma el envío o entrega.</p>
+              {replacementRequested && (
+                <div>
+                  <ReplacementRequestSummary
+                    claim={claim}
+                    actions={replacementNeedsDifferenceProof ? (
+                      <div className="rounded-lg border border-amber-300/18 bg-amber-400/5 p-2">
+                        <p className="text-10px font-black uppercase tracking-wide text-amber-100">Comprobante de diferencia</p>
+                        {differenceProof?.signedUrl ? (
+                          <a href={differenceProof.signedUrl} target="_blank" rel="noreferrer" className="mt-1.5 flex items-center gap-2 rounded-lg border border-amber-300/20 bg-black/20 px-2 py-1.5 text-10px font-bold text-white hover:border-amber-300/40">
+                            <FileText className="size-3.5 shrink-0 text-amber-200" />
+                            <span className="min-w-0 flex-1 truncate">{differenceProof.file_name}</span>
+                            <span className="text-amber-100">Ver</span>
+                          </a>
+                        ) : (
+                          <p className="mt-1.5 text-10px leading-4 text-amber-100">Pendiente: el cliente debe subir el comprobante antes de aprobar el cambio.</p>
+                        )}
+                      </div>
+                    ) : null}
+                  />
+                  <div className="mt-2 grid gap-2">
+                    <button type="button" disabled={saving || !replacementCanApprove} onClick={() => void approveReplacementSelection()} className="h-8 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:cursor-not-allowed disabled:opacity-45">Aprobar cambio</button>
+                    <button type="button" disabled={saving} onClick={() => void rejectReplacementSelection()} className="h-8 rounded-lg border border-white/12 bg-[#1B2028] px-3 text-xs font-black text-white transition hover:border-blue-300/35 disabled:opacity-45">Rechazar cambio</button>
+                  </div>
+                </div>
+              )}
+              <div className="mt-2 grid gap-2">
+                <input value={replacementProduct} onChange={(event) => setReplacementProduct(event.target.value)} placeholder="Producto reemplazo" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                <input value={replacementExtraCost} onChange={(event) => setReplacementExtraCost(event.target.value)} placeholder="Costo extra / diferencia" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                <input value={replacementPaymentLink} onChange={(event) => setReplacementPaymentLink(event.target.value)} placeholder="Link de pago si corresponde" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                <input value={replacementShippingCompany} onChange={(event) => setReplacementShippingCompany(event.target.value)} placeholder="Empresa de envío" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                <input value={replacementTracking} onChange={(event) => setReplacementTracking(event.target.value)} placeholder="Seguimiento" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+              </div>
+              <div className="mt-2 grid gap-2">
+                <button type="button" disabled={saving} onClick={() => void saveReplacementDetails()} className="h-9 rounded-lg border border-blue-300/20 bg-[#112A43]/55 px-3 text-xs font-black text-white transition hover:border-blue-300/45 disabled:opacity-45">Guardar cambio</button>
+                <button type="button" disabled={saving || !claim.replacement_product} onClick={() => void markReplacementSent()} className="h-9 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:opacity-45">Marcar reemplazo enviado</button>
+                <button type="button" disabled={saving || claim.status !== "reemplazo_enviado"} onClick={() => void markReplacementResolved()} className="h-9 rounded-lg border border-emerald-300/25 bg-emerald-600/20 px-3 text-xs font-black text-emerald-100 transition hover:border-emerald-300/45 disabled:opacity-45">Marcar cambio resuelto</button>
+              </div>
+            </section>
+          )}
+
+          {couponSelected && (
+            <section className="rounded-xl border border-[#77E6E2]/15 bg-[#15191F] p-3">
+              <h4 className="text-sm font-black text-white">Cupón de descuento</h4>
+              <p className="mt-1 text-xs leading-5 text-[#C8C8C8]">Generá el cupón usable para que el cliente pueda verlo y copiarlo.</p>
+              <input value={couponCode} onChange={(event) => setCouponCode(event.target.value)} placeholder="Código de cupón" className="mt-2 h-9 w-full rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+              <button type="button" disabled={saving} onClick={() => void saveCoupon()} className="mt-2 h-9 w-full rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:opacity-45">Guardar cupón y resolver</button>
+            </section>
+          )}
         </aside>
 
         <section className="flex min-h-[30rem] flex-col overflow-hidden rounded-xl border border-blue-300/15 bg-[#15191F] lg:h-[clamp(30rem,58vh,40rem)]">
-          <div className="border-b border-white/8 px-3 py-2.5"><h4 className="text-sm font-black text-white">Chat cliente ↔ BEYONIX</h4><p className="mt-0.5 text-10px text-[#8EA0B5]">{chatMessages.length} mensaje{chatMessages.length === 1 ? "" : "s"}</p></div>
+          <div className="border-b border-white/8 px-3 py-2.5"><h4 className="text-sm font-black text-white">Chat cliente ? BEYONIX</h4><p className="mt-0.5 text-10px text-[#8EA0B5]">{chatMessages.length} mensaje{chatMessages.length === 1 ? "" : "s"}</p></div>
           <div ref={chatRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
             {chatMessages.length === 0 && <p className="rounded-lg bg-[#1B2028] px-3 py-2 text-xs text-[#C8C8C8]">Todavía no hay mensajes en esta conversación.</p>}
             {chatMessages.map((message) => {

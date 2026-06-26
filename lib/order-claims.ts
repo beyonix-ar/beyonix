@@ -17,6 +17,9 @@ export const ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
   "falta_informacion",
   "aprobado",
   "reintegro_pendiente",
+  "cambio_pendiente",
+  "cupon_pendiente",
+  "reemplazo_enviado",
   "rechazado",
   "cerrado",
 ]
@@ -45,17 +48,23 @@ export const ACTIVE_ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
   "falta_informacion",
   "aprobado",
   "reintegro_pendiente",
+  "cambio_pendiente",
+  "cupon_pendiente",
+  "reemplazo_enviado",
 ]
 
 export function getOrderClaimStatusLabel(status?: string | null) {
   const labels: Record<string, string> = {
-    recibido: "En revisión",
-    en_revision: "En revisión",
+    recibido: "En revisi?n",
+    en_revision: "En revisi?n",
     falta_informacion: "Esperando respuesta del cliente",
-    aprobado: "Solución ofrecida",
+    aprobado: "Soluci?n ofrecida",
     reintegro_pendiente: "Reintegro pendiente",
+    cambio_pendiente: "Cambio pendiente",
+    cupon_pendiente: "Cup?n pendiente",
+    reemplazo_enviado: "Reemplazo enviado",
     rechazado: "Rechazado",
-    cerrado: "Cerrado",
+    cerrado: "Resuelto",
   }
 
   return status ? labels[status] ?? status : "Sin estado"
@@ -64,7 +73,7 @@ export function getOrderClaimStatusLabel(status?: string | null) {
 export function getOrderClaimTypeLabel(type?: string | null) {
   const labels: Record<string, string> = {
     transporte_48hs: "Problema con la entrega",
-    garantia_beyonix: "Garantía BEYONIX",
+    garantia_beyonix: "Garant?a BEYONIX",
   }
 
   return type ? labels[type] ?? type : "Reclamo"
@@ -75,12 +84,12 @@ export function getOrderClaimResolutionLabel(resolution?: string | null) {
     cambio_producto: "Cambio de producto",
     reintegro_total: "Reintegro total",
     reintegro_parcial: "Reintegro parcial",
-    cupon_descuento: "Cupón de descuento",
+    cupon_descuento: "Cup?n de descuento",
     rechazado: "Rechazado",
-    otro: "Otra solución",
+    otro: "Otra soluci?n",
   }
 
-  return resolution ? labels[resolution] ?? resolution : "Sin resolución"
+  return resolution ? labels[resolution] ?? resolution : "Sin resoluci?n"
 }
 
 export function getClaimDeadline(deliveredAt: string, type: OrderClaimType) {

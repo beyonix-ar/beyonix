@@ -30,10 +30,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Estado de pago inválido." }, { status: 400 })
   }
 
-  const updatePayload = {
+  const updatePayload: Record<string, string | null | number> = {
     payment_status: paymentStatus,
     estado: paymentStatus === "confirmado" ? "pagado" : "pendiente",
     paid_at: paymentStatus === "confirmado" ? new Date().toISOString() : null,
+  }
+
+  if (paymentStatus === "confirmado") {
+    updatePayload.order_change_status = "change_approved"
+    updatePayload.order_change_extra_amount = 0
   }
 
   const { data, error } = await auth.admin

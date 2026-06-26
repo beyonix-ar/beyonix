@@ -76,6 +76,7 @@ create table if not exists public.order_claim_files (
       'danio',
       'funcionamiento_foto',
       'video',
+      'evidencia_inicial',
       'evidencia_adicional'
     )
   )

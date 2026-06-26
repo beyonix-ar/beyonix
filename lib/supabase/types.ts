@@ -169,6 +169,9 @@ export interface SupabasePedido {
   andreani_etiqueta_url?: string | null
   andreani_costo?: number | null
   andreani_error?: string | null
+  order_change_used?: boolean | null
+  order_change_status?: "change_requested" | "change_approved" | "extra_payment_pending" | "rejected" | null
+  order_change_extra_amount?: number | null
   invoice_number?: number | null
   invoice_point?: number | null
   invoice_cae?: string | null
@@ -223,6 +226,9 @@ export type OrderClaimStatus =
   | "falta_informacion"
   | "aprobado"
   | "reintegro_pendiente"
+  | "cambio_pendiente"
+  | "cupon_pendiente"
+  | "reemplazo_enviado"
   | "rechazado"
   | "cerrado"
 export type OrderClaimResolution =
@@ -276,6 +282,28 @@ export interface SupabaseOrderClaim {
   refund_details_submitted_at?: string | null
   refund_completed_at?: string | null
   refund_completed_by?: string | null
+  replacement_original_product?: string | null
+  replacement_original_order_item_id?: number | null
+  replacement_original_variant?: string | null
+  replacement_original_price?: number | null
+  replacement_requested_product_id?: number | null
+  replacement_requested_product?: string | null
+  replacement_requested_variant_id?: number | null
+  replacement_requested_variant?: string | null
+  replacement_requested_quantity?: number | null
+  replacement_requested_stock?: number | null
+  replacement_requested_price?: number | null
+  replacement_price_difference?: number | null
+  replacement_change_reason?: string | null
+  replacement_customer_selected_at?: string | null
+  replacement_product?: string | null
+  replacement_extra_cost?: number | null
+  replacement_payment_link?: string | null
+  replacement_shipping_company?: string | null
+  replacement_tracking?: string | null
+  replacement_sent_at?: string | null
+  coupon_code?: string | null
+  coupon_created_at?: string | null
   closed_at?: string | null
   created_at: string
   updated_at: string

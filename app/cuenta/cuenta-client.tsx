@@ -470,6 +470,9 @@ function getClaimStatusBadge(status: SupabaseOrderClaim["status"]) {
     falta_informacion: "border-beyonix-blue-light/45 bg-[#112A43] text-white",
     aprobado: "border-emerald-300/35 bg-emerald-400/12 text-white",
     reintegro_pendiente: "border-[#77E6E2]/35 bg-[#77E6E2]/10 text-white",
+    cambio_pendiente: "border-[#77E6E2]/35 bg-[#77E6E2]/10 text-white",
+    cupon_pendiente: "border-[#77E6E2]/35 bg-[#77E6E2]/10 text-white",
+    reemplazo_enviado: "border-blue-300/35 bg-[#112A43] text-white",
     rechazado: "border-red-300/35 bg-red-500/12 text-white",
     cerrado: "border-emerald-300/35 bg-emerald-500/12 text-white",
   }
@@ -480,7 +483,11 @@ function getClaimStatusBadge(status: SupabaseOrderClaim["status"]) {
 function getClaimStatusText(status: SupabaseOrderClaim["status"]) {
   if (status === "falta_informacion") return "Esperando respuesta del cliente"
   if (status === "reintegro_pendiente") return "Reintegro pendiente"
-  if (status === "aprobado" || status === "cerrado") return "Resuelto"
+  if (status === "cambio_pendiente") return "Cambio pendiente"
+  if (status === "cupon_pendiente") return "Cupón pendiente"
+  if (status === "reemplazo_enviado") return "Reemplazo enviado"
+  if (status === "aprobado") return "Solución ofrecida"
+  if (status === "cerrado") return "Resuelto"
   return getOrderClaimStatusLabel(status)
 }
 
@@ -2506,6 +2513,17 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                 : trackingUrl || order.andreani_tracking || order.tracking_number
                   ? "Andreani · Seguimiento disponible"
                   : "Te avisaremos cuando sea despachado"
+            const orderPaymentConfirmed =
+              order.estado === "pagado" ||
+              order.payment_status === "confirmado" ||
+              order.payment_status === "approved"
+            const orderDispatched =
+              order.estado === "enviado" ||
+              order.estado === "en_camino" ||
+              order.estado === "entregado" ||
+              Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
+              isAndreaniOrderInTransit(order)
+            const canOpenClaim = order.estado === "entregado" || (orderPaymentConfirmed && !orderDispatched)
 
             return (
               <article
@@ -2568,7 +2586,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                       <button type="button" onClick={() => showOrderDetailView(order.id, "detalle")} className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black text-white transition-colors ${activeOrderView === "detalle" ? "border-beyonix-blue-light/45 bg-[#112A43]" : "border-white/12 bg-[#181818] hover:border-blue-300/30"}`}><FileText className="size-4" />Estado y productos</button>
                       {invoiceAvailable && <button type="button" onClick={() => showOrderDetailView(order.id, "factura")} className={`relative inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black text-white transition-colors ${activeOrderView === "factura" ? "border-beyonix-blue-light/45 bg-[#112A43]" : "border-white/12 bg-[#181818] hover:border-blue-300/30"}`}><Download className="size-4" />Ver factura{showInvoiceNotification && <span className="absolute -right-1.5 -top-1.5"><CustomerInvoiceBell /></span>}</button>}
                       {isTransferOrder && (hasProof ? <PaymentProofViewButton order={order} /> : <PaymentProofActionButton orderId={order.id} onUploaded={handlePaymentProofUploaded} className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#181818] px-3 text-xs font-black text-white transition-colors hover:border-blue-300/30 hover:bg-[#112A43] disabled:opacity-60" />)}
-                      {order.estado === "entregado" && <button type="button" aria-expanded={activeOrderView === "reclamo"} onClick={() => showClaimView(order.id)} className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black text-white transition-colors ${activeOrderView === "reclamo" ? "border-beyonix-blue-light/45 bg-[#112A43]" : "border-white/12 bg-[#181818] hover:border-blue-300/30"}`}><MessageCircle className="size-4" />Necesito ayuda</button>}
+                      {canOpenClaim && <button type="button" aria-expanded={activeOrderView === "reclamo"} onClick={() => showClaimView(order.id)} className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black text-white transition-colors ${activeOrderView === "reclamo" ? "border-beyonix-blue-light/45 bg-[#112A43]" : "border-white/12 bg-[#181818] hover:border-blue-300/30"}`}><MessageCircle className="size-4" />Necesito ayuda</button>}
                     </div>
                     {activeOrderView === "factura" && (
                       <div className="mb-3 flex flex-col gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2615,7 +2633,7 @@ function MisOrdenes({ onBack }: { onBack: () => void }) {
                       </div>
                     )}
 
-                    {activeOrderView === "reclamo" && order.estado === "entregado" && (
+                    {activeOrderView === "reclamo" && canOpenClaim && (
                       <CustomerClaimExperience order={order} initialProblem={claimProblemByOrder[order.id]} />
                     )}
 

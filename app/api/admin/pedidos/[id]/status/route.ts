@@ -53,6 +53,35 @@ export async function PATCH(
       ? body.tracking_number.trim() || null
       : null
 
+  if (["enviado", "en_camino", "entregado"].includes(estado)) {
+    const { data: currentOrder, error: currentOrderError } = await auth.admin
+      .from("ordenes")
+      .select("id, order_change_status")
+      .eq("id", orderId)
+      .maybeSingle()
+
+    if (currentOrderError || !currentOrder) {
+      return NextResponse.json(
+        { error: "No encontramos el pedido." },
+        { status: 404 },
+      )
+    }
+
+    if (currentOrder.order_change_status === "change_requested") {
+      return NextResponse.json(
+        { error: "No se puede despachar un pedido con cambio pendiente de aprobación." },
+        { status: 409 },
+      )
+    }
+
+    if (currentOrder.order_change_status === "extra_payment_pending") {
+      return NextResponse.json(
+        { error: "No se puede despachar un pedido con diferencia de cambio pendiente de pago." },
+        { status: 409 },
+      )
+    }
+  }
+
   const { data, error } = await auth.admin
     .from("ordenes")
     .update({

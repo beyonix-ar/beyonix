@@ -171,6 +171,12 @@ export async function PATCH(
     resolution?: unknown
     offered_resolutions?: unknown
     append_message?: unknown
+    replacement_product?: unknown
+    replacement_extra_cost?: unknown
+    replacement_payment_link?: unknown
+    replacement_shipping_company?: unknown
+    replacement_tracking?: unknown
+    coupon_code?: unknown
   }
   const status = String(body.status ?? "")
   const resolution = body.resolution ? String(body.resolution) : null
@@ -185,6 +191,16 @@ export async function PATCH(
     typeof body.rejection_reason === "string"
       ? body.rejection_reason.trim().slice(0, 1200)
       : ""
+
+  const getUpdatedClaim = async (fallback: any) => {
+    const { data: updatedClaim } = await auth.admin
+      .from("order_claims")
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .eq("id", id)
+      .single()
+
+    return attachSignedUrls(auth.admin, updatedClaim ?? fallback)
+  }
 
   if (body.action === "mark_refund_done") {
     const { data: refundProof, error: proofError } = await auth.admin
@@ -231,6 +247,14 @@ export async function PATCH(
       )
     }
 
+    await auth.admin
+      .from("ordenes")
+      .update({
+        order_change_status: "rejected",
+        order_change_extra_amount: 0,
+      })
+      .eq("id", updatedClaim.order_id)
+
     await auth.admin.from("order_claim_messages").insert({
       claim_id: id,
       author_user_id: auth.user.id,
@@ -247,6 +271,284 @@ export async function PATCH(
     return NextResponse.json({
       claim: await attachSignedUrls(auth.admin, finalClaim ?? updatedClaim),
     })
+  }
+
+  if (body.action === "save_replacement_details") {
+    const replacementProduct =
+      typeof body.replacement_product === "string"
+        ? body.replacement_product.trim().slice(0, 240)
+        : ""
+    const replacementExtraCost = Number(body.replacement_extra_cost ?? 0)
+    const replacementPaymentLink =
+      typeof body.replacement_payment_link === "string"
+        ? body.replacement_payment_link.trim().slice(0, 500)
+        : ""
+    const replacementShippingCompany =
+      typeof body.replacement_shipping_company === "string"
+        ? body.replacement_shipping_company.trim().slice(0, 160)
+        : ""
+    const replacementTracking =
+      typeof body.replacement_tracking === "string"
+        ? body.replacement_tracking.trim().slice(0, 180)
+        : ""
+
+    if (!replacementProduct) {
+      return NextResponse.json(
+        { error: "Indicá el producto de reemplazo." },
+        { status: 400 },
+      )
+    }
+
+    const { data: updatedClaim, error: updateError } = await auth.admin
+      .from("order_claims")
+      .update({
+        status: "cambio_pendiente",
+        replacement_product: replacementProduct,
+        replacement_extra_cost: Number.isFinite(replacementExtraCost)
+          ? replacementExtraCost
+          : 0,
+        replacement_payment_link: replacementPaymentLink || null,
+        replacement_shipping_company: replacementShippingCompany || null,
+        replacement_tracking: replacementTracking || null,
+        admin_needs_action: false,
+      })
+      .eq("id", id)
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .single()
+
+    if (updateError || !updatedClaim) {
+      return NextResponse.json(
+        { error: updateError?.message || "No se pudo guardar el cambio." },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
+  }
+
+  if (body.action === "approve_replacement_selection") {
+    const { data: currentClaim, error: currentClaimError } = await auth.admin
+      .from("order_claims")
+      .select("id, replacement_price_difference")
+      .eq("id", id)
+      .single()
+
+    if (currentClaimError || !currentClaim) {
+      return NextResponse.json(
+        { error: currentClaimError?.message || "No encontramos el reclamo." },
+        { status: 404 },
+      )
+    }
+
+    if (Number(currentClaim.replacement_price_difference ?? 0) > 0) {
+      const { data: differenceProof, error: proofError } = await auth.admin
+        .from("order_claim_files")
+        .select("id")
+        .eq("claim_id", id)
+        .eq("file_role", "comprobante_diferencia")
+        .limit(1)
+
+      if (proofError) {
+        return NextResponse.json(
+          { error: proofError.message || "No se pudo validar el comprobante de diferencia." },
+          { status: 500 },
+        )
+      }
+
+      if (!differenceProof?.length) {
+        return NextResponse.json(
+          { error: "Falta el comprobante de pago de la diferencia antes de aprobar el cambio." },
+          { status: 409 },
+        )
+      }
+    }
+
+    const { data: updatedClaim, error: approveError } = await auth.admin
+      .rpc("approve_order_claim_product_change", {
+        p_claim_id: id,
+        p_admin_id: auth.user.id,
+      })
+
+    if (approveError || !updatedClaim) {
+      return NextResponse.json(
+        { error: approveError?.message || "No se pudo aprobar el cambio." },
+        { status: 500 },
+      )
+    }
+
+    const priceDifference = Number((updatedClaim as any).replacement_price_difference ?? 0)
+    await auth.admin
+      .from("ordenes")
+      .update({
+        order_change_status: "rejected",
+        order_change_extra_amount: 0,
+      })
+      .eq("id", updatedClaim.order_id)
+
+    await auth.admin.from("order_claim_messages").insert({
+      claim_id: id,
+      author_user_id: auth.user.id,
+      author_role: auth.profile.rol,
+      message:
+        priceDifference > 0
+          ? "BEYONIX aprobó el cambio. Te vamos a indicar cómo abonar la diferencia antes del despacho."
+          : "BEYONIX aprobó el cambio solicitado. Vamos a preparar el reemplazo.",
+    })
+
+    return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
+  }
+
+  if (body.action === "reject_replacement_selection") {
+    const correctionMessage =
+      adminResponse ||
+      "Necesitamos corregir el producto solicitado para el cambio. Respondé por este chat y te ayudamos."
+
+    const { data: updatedClaim, error: updateError } = await auth.admin
+      .from("order_claims")
+      .update({
+        status: "en_revision",
+        admin_response: correctionMessage,
+        admin_needs_action: false,
+      })
+      .eq("id", id)
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .single()
+
+    if (updateError || !updatedClaim) {
+      return NextResponse.json(
+        { error: updateError?.message || "No se pudo pedir corrección." },
+        { status: 500 },
+      )
+    }
+
+    await auth.admin.from("order_claim_messages").insert({
+      claim_id: id,
+      author_user_id: auth.user.id,
+      author_role: auth.profile.rol,
+      message: correctionMessage,
+    })
+
+    return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
+  }
+
+  if (body.action === "mark_replacement_sent") {
+    const { data: currentClaim } = await auth.admin
+      .from("order_claims")
+      .select("replacement_product, replacement_shipping_company, replacement_tracking")
+      .eq("id", id)
+      .maybeSingle()
+
+    if (!currentClaim?.replacement_product) {
+      return NextResponse.json(
+        { error: "Guardá el producto de reemplazo antes de marcarlo enviado." },
+        { status: 409 },
+      )
+    }
+
+    const now = new Date()
+    const { data: updatedClaim, error: updateError } = await auth.admin
+      .from("order_claims")
+      .update({
+        status: "reemplazo_enviado",
+        replacement_sent_at: now.toISOString(),
+        admin_needs_action: false,
+      })
+      .eq("id", id)
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .single()
+
+    if (updateError || !updatedClaim) {
+      return NextResponse.json(
+        { error: updateError?.message || "No se pudo marcar el reemplazo como enviado." },
+        { status: 500 },
+      )
+    }
+
+    const tracking = currentClaim.replacement_tracking
+      ? ` Seguimiento: ${currentClaim.replacement_tracking}.`
+      : ""
+    await auth.admin.from("order_claim_messages").insert({
+      claim_id: id,
+      author_user_id: auth.user.id,
+      author_role: auth.profile.rol,
+      message: `BEYONIX despachó el reemplazo.${tracking}`,
+    })
+
+    return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
+  }
+
+  if (body.action === "mark_replacement_resolved") {
+    const nowIso = new Date().toISOString()
+    const { data: updatedClaim, error: updateError } = await auth.admin
+      .from("order_claims")
+      .update({
+        status: "cerrado",
+        resolution: resolution || "cambio_producto",
+        closed_at: nowIso,
+        admin_needs_action: false,
+      })
+      .eq("id", id)
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .single()
+
+    if (updateError || !updatedClaim) {
+      return NextResponse.json(
+        { error: updateError?.message || "No se pudo resolver el cambio." },
+        { status: 500 },
+      )
+    }
+
+    await auth.admin.from("order_claim_messages").insert({
+      claim_id: id,
+      author_user_id: auth.user.id,
+      author_role: auth.profile.rol,
+      message: "BEYONIX completó el cambio de producto.",
+    })
+
+    return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
+  }
+
+  if (body.action === "save_coupon") {
+    const couponCode =
+      typeof body.coupon_code === "string" ? body.coupon_code.trim().slice(0, 80) : ""
+
+    if (!couponCode) {
+      return NextResponse.json(
+        { error: "Ingresá el código de cupón." },
+        { status: 400 },
+      )
+    }
+
+    const nowIso = new Date().toISOString()
+    const { data: updatedClaim, error: updateError } = await auth.admin
+      .from("order_claims")
+      .update({
+        status: "cerrado",
+        resolution: resolution || "cupon_descuento",
+        coupon_code: couponCode,
+        coupon_created_at: nowIso,
+        closed_at: nowIso,
+        admin_needs_action: false,
+      })
+      .eq("id", id)
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .single()
+
+    if (updateError || !updatedClaim) {
+      return NextResponse.json(
+        { error: updateError?.message || "No se pudo guardar el cupón." },
+        { status: 500 },
+      )
+    }
+
+    await auth.admin.from("order_claim_messages").insert({
+      claim_id: id,
+      author_user_id: auth.user.id,
+      author_role: auth.profile.rol,
+      message: `BEYONIX generó tu cupón: ${couponCode}`,
+    })
+
+    return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
   }
 
   if (!ORDER_CLAIM_STATUSES.includes(status as any)) {

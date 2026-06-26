@@ -115,7 +115,7 @@ export async function POST(
   const { data: order, error: orderError } = await auth.admin
     .from("ordenes")
     .select(
-      "id, total, estado, payment_status, invoice_cae, invoice_status, invoice_error",
+      "id, total, estado, payment_status, invoice_cae, invoice_status, invoice_error, order_change_status",
     )
     .eq("id", orderId)
     .single()
@@ -149,6 +149,20 @@ export async function POST(
 
   if (lockError) {
     return invoiceProcessingErrorResponse(lockError.message)
+  }
+
+  if (order.order_change_status === "change_requested") {
+    return NextResponse.json(
+      { error: "El pedido tiene un cambio pendiente de aprobación." },
+      { status: 409 },
+    )
+  }
+
+  if (order.order_change_status === "extra_payment_pending") {
+    return NextResponse.json(
+      { error: "El pedido tiene una diferencia de cambio pendiente de pago." },
+      { status: 409 },
+    )
   }
 
   if (!lockedOrder) {
