@@ -7,6 +7,7 @@ import {
   isClaimWindowOpen,
   sanitizeClaimFileName,
 } from "@/lib/order-claims"
+import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { OrderClaimType } from "@/lib/supabase/types"
@@ -32,6 +33,10 @@ const BLOCKED_CHANGE_PROBLEM_TYPES = [
 ]
 
 type OrderState = {
+  id: number
+  usuario_id: string | null
+  cliente_email?: string | null
+  cliente_nombre?: string | null
   estado?: string | null
   tracking_number?: string | null
   andreani_tracking?: string | null
@@ -53,28 +58,6 @@ function isOrderDelivered(order: OrderState) {
     estado === "entregado" ||
     Boolean(order.delivered_at) ||
     andreaniStatus.includes("entregado")
-  )
-}
-
-function isOrderDispatched(order: OrderState) {
-  const estado = (order.estado ?? "").toLowerCase()
-  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
-
-  return (
-    ["enviado", "en_camino", "entregado"].includes(estado) ||
-    Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
-    ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
-      (status) => andreaniStatus.includes(status),
-    )
-  )
-}
-
-function isOrderInvoiced(order: OrderState) {
-  return (
-    order.invoice_status === "authorized" ||
-    order.invoice_status === "processing" ||
-    Boolean(order.invoice_cae) ||
-    Boolean(order.invoice_number && order.invoice_point)
   )
 }
 
@@ -109,6 +92,65 @@ function hasReplacementPayload(formData: FormData) {
 
 function validateFiles(files: File[]) {
   return files.map((file) => getClaimFileValidationError(file)).find(Boolean) ?? ""
+}
+
+function getOrderCode(orderId: number) {
+  return `BX-${1000 + orderId}`
+}
+
+async function createCustomerNotification(
+  admin: ReturnType<typeof createAdminClient>,
+  payload: {
+    userId?: string | null
+    type: string
+    title: string
+    body: string
+    orderId: number
+    sourceKey: string
+  },
+) {
+  if (!payload.userId) return
+
+  const { error } = await admin.from("customer_notifications").insert({
+    user_id: payload.userId,
+    type: payload.type,
+    title: payload.title,
+    body: payload.body,
+    action_url: `/cuenta/compras/${payload.orderId}/ayuda`,
+    order_id: payload.orderId,
+    source_key: payload.sourceKey,
+  })
+
+  if (error && error.code !== "23505") {
+    console.log("No se pudo crear notificación de cliente", error.message)
+  }
+}
+
+async function notifyCustomerCaseCreated(
+  admin: ReturnType<typeof createAdminClient>,
+  order: OrderState,
+  claim: { id: number },
+) {
+  const orderCode = getOrderCode(order.id)
+
+  await createCustomerNotification(admin, {
+    userId: order.usuario_id,
+    type: "claim_started",
+    title: "Reclamo iniciado",
+    body: `Recibimos tu reclamo por el pedido ${orderCode}.`,
+    orderId: order.id,
+    sourceKey: `claim:${claim.id}:created`,
+  })
+
+  await sendOrderStatusEmail({
+    to: order.cliente_email,
+    subject: `Recibimos tu reclamo ${orderCode}`,
+    html: `
+        <h1>Reclamo iniciado</h1>
+        <p>Hola ${order.cliente_nombre ?? ""}, recibimos tu reclamo por el pedido ${orderCode}.</p>
+        <p>BEYONIX revisará el caso y te avisará las novedades en tu cuenta y por email.</p>
+      `,
+  })
 }
 
 async function attachSignedUrls(
@@ -217,7 +259,7 @@ export async function POST(
   const admin = createAdminClient()
   const { data: order, error: orderError } = await admin
     .from("ordenes")
-    .select("id, usuario_id, estado, delivered_at, created_at, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, invoice_status, invoice_cae, invoice_number, invoice_point")
+    .select("id, usuario_id, cliente_email, cliente_nombre, estado, delivered_at, created_at, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, invoice_status, invoice_cae, invoice_number, invoice_point")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -398,8 +440,6 @@ export async function POST(
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isFinite(item) && item > 0)
   const delivered = isOrderDelivered(order)
-  const dispatched = isOrderDispatched(order)
-  const invoiced = isOrderInvoiced(order)
 
   if (!CLAIM_TYPES.includes(claimType)) {
     return NextResponse.json({ error: "Tipo de caso inválido." }, { status: 400 })
@@ -416,6 +456,13 @@ export async function POST(
     return NextResponse.json({ error: "Motivo de reclamo inválido." }, { status: 400 })
   }
 
+  if (problemType === CANCELLATION_PROBLEM_TYPE) {
+    return NextResponse.json(
+      { error: "La cancelación de compra se procesa automáticamente desde el flujo de cancelación." },
+      { status: 410 },
+    )
+  }
+
   const activeClaimResult = await admin
     .from("order_claims")
     .select("id")
@@ -430,62 +477,44 @@ export async function POST(
     )
   }
 
-  if (problemType === CANCELLATION_PROBLEM_TYPE) {
-    if (invoiced) {
-      return NextResponse.json(
-        { error: "Tu pedido ya fue facturado, por eso no es posible cancelarlo desde esta sección." },
-        { status: 409 },
-      )
-    }
+  if (!delivered) {
+    return NextResponse.json(
+      { error: "Todavía no podés iniciar un reclamo porque el pedido no figura como entregado." },
+      { status: 409 },
+    )
+  }
 
-    if (dispatched || delivered) {
-      return NextResponse.json(
-        { error: "Tu pedido ya fue despachado, por eso no es posible cancelarlo." },
-        { status: 409 },
-      )
-    }
-  } else {
-    if (!delivered) {
-      return NextResponse.json(
-        { error: "Todavía no podés iniciar un reclamo porque el pedido no figura como entregado." },
-        { status: 409 },
-      )
-    }
+  if (!isClaimWindowOpen(getDeliveryDate(order), claimType)) {
+    return NextResponse.json(
+      { error: "El plazo para este tipo de reclamo ya finalizó." },
+      { status: 409 },
+    )
+  }
 
-    if (!isClaimWindowOpen(getDeliveryDate(order), claimType)) {
-      return NextResponse.json(
-        { error: "El plazo para este tipo de reclamo ya finalizó." },
-        { status: 409 },
-      )
-    }
+  if (description.length < 10) {
+    return NextResponse.json(
+      { error: "Contanos un poco más para poder ayudarte." },
+      { status: 400 },
+    )
+  }
 
-    if (description.length < 10) {
+  if (affectedItemIds.length > 0) {
+    const { count, error: itemError } = await admin
+      .from("orden_items")
+      .select("id", { count: "exact", head: true })
+      .eq("orden_id", orderId)
+      .in("id", affectedItemIds)
+
+    if (itemError || (count ?? 0) !== affectedItemIds.length) {
       return NextResponse.json(
-        { error: "Contanos un poco más para poder ayudarte." },
+        { error: "El producto seleccionado no pertenece al pedido." },
         { status: 400 },
       )
-    }
-
-    if (affectedItemIds.length > 0) {
-      const { count, error: itemError } = await admin
-        .from("orden_items")
-        .select("id", { count: "exact", head: true })
-        .eq("orden_id", orderId)
-        .in("id", affectedItemIds)
-
-      if (itemError || (count ?? 0) !== affectedItemIds.length) {
-        return NextResponse.json(
-          { error: "El producto seleccionado no pertenece al pedido." },
-          { status: 400 },
-        )
-      }
     }
   }
 
   const now = new Date().toISOString()
-  const safeDescription =
-    description ||
-    "Solicitud de cancelación\n\nMotivo: No especificado"
+  const safeDescription = description
   const { data: claim, error: claimError } = await admin
     .from("order_claims")
     .insert({
@@ -525,6 +554,8 @@ export async function POST(
       { status: 500 },
     )
   }
+
+  await notifyCustomerCaseCreated(admin, order, claim)
 
   return getClaimResponse(admin, claim.id)
 }

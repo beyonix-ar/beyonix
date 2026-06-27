@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   Check,
@@ -96,13 +97,6 @@ const POST_DELIVERY_PROBLEMS: ClaimProblemOption[] = [
   },
 ]
 
-const CANCELLATION_REASONS = [
-  { value: "arrepentimiento", label: "Me arrepentí de la compra" },
-  { value: "error", label: "Compré por error" },
-  { value: "no_necesito", label: "Ya no necesito el producto" },
-  { value: "otro", label: "Otro motivo" },
-]
-
 const PROBLEM_LABELS: Record<string, string> = {
   danado: "Producto dañado",
   incorrecto: "Producto incorrecto",
@@ -144,15 +138,6 @@ function isOrderDispatched(order: SupabasePedido) {
   )
 }
 
-function isOrderInvoiced(order: SupabasePedido) {
-  return (
-    order.invoice_status === "authorized" ||
-    order.invoice_status === "processing" ||
-    Boolean(order.invoice_cae) ||
-    Boolean(order.invoice_number && order.invoice_point)
-  )
-}
-
 function isOrderCancelled(order: SupabasePedido) {
   return (order.estado ?? "").toLowerCase() === "cancelado"
 }
@@ -173,6 +158,10 @@ function formatPrice(value: number) {
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(value)
+}
+
+function getOrderCode(orderId: number) {
+  return `BX-${1000 + orderId}`
 }
 
 function sortUniqueMessages(messages: SupabaseOrderClaim["order_claim_messages"] = []) {
@@ -225,21 +214,14 @@ function getOrderStage(order: SupabasePedido) {
 
   if (isOrderDispatched(order)) {
     return {
-      title: "Pedido despachado",
-      detail: "Tu pedido ya fue despachado. Cuando lo recibas, si hay algún problema con el producto, vas a poder iniciar un reclamo.",
-    }
-  }
-
-  if (isOrderInvoiced(order)) {
-    return {
-      title: "Pedido facturado",
-      detail: "Tu pedido ya fue facturado, por eso no es posible cancelarlo desde esta sección.",
+      title: "Pedido en camino",
+      detail: "Cuando recibas tu compra, si hay algún problema con el producto, vas a poder iniciar un reclamo.",
     }
   }
 
   return {
     title: "Pedido en preparación",
-    detail: "Podés solicitar la cancelación porque tu pedido todavía no fue facturado ni enviado. BEYONIX revisará la solicitud y te confirmará la resolución.",
+    detail: "Estamos preparando tu compra. Te avisaremos cuando haya novedades.",
   }
 }
 
@@ -257,7 +239,7 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
     if (claim.status === "falta_informacion") {
       return { label: "Esperando tu respuesta", dot: "bg-blue-300", style: base }
     }
-    return { label: "Cancelación solicitada", dot: "bg-blue-300", style: base }
+    return { label: "Compra cancelada", dot: "bg-blue-300", style: base }
   }
 
   if (claim.status === "recibido") return { label: "Reclamo recibido", dot: "bg-blue-300", style: base }
@@ -355,31 +337,33 @@ function appendFiles(formData: FormData, files: File[], role: string) {
 function ProductSummary({ order }: { order: SupabasePedido }) {
   const items = order.orden_items ?? []
   const productCount = items.reduce((total, item) => total + Number(item.cantidad ?? 0), 0)
+  const stage = getOrderStage(order)
 
   return (
-    <div className="rounded-xl border border-white/8 bg-[#15191F] p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="rounded-xl border border-blue-300/12 bg-[#111820] p-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-10px font-black uppercase tracking-[0.16em] text-blue-300">Resumen del pedido</p>
-          <p className="mt-1 text-sm font-black text-white">Pedido #BX-{1000 + order.id}</p>
+          <p className="mt-1 text-base font-black text-white">Pedido {getOrderCode(order.id)}</p>
+          <p className="mt-0.5 text-xs font-semibold text-white/55">{stage.title}</p>
         </div>
-        <div className="text-left sm:text-right">
-          <p className="text-10px font-bold uppercase tracking-wide text-white/45">Total</p>
-          <p className="text-base font-black text-white">{formatPrice(Number(order.total ?? 0))}</p>
+        <div className="rounded-lg border border-emerald-300/35 bg-emerald-400/12 px-3 py-2 text-left shadow-[0_0_24px_rgba(52,211,153,0.12)] sm:text-right">
+          <p className="text-10px font-bold uppercase tracking-wide text-emerald-200">Total</p>
+          <p className="text-lg font-black text-emerald-50">{formatPrice(Number(order.total ?? 0))}</p>
         </div>
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <div className="rounded-lg bg-[#1B2028] px-3 py-2">
+        <div className="rounded-lg border border-white/7 bg-[#18202A] px-3 py-2">
           <p className="text-10px font-bold uppercase tracking-wide text-white/45">Estado</p>
-          <p className="mt-0.5 text-xs font-black text-white">{getOrderStage(order).title}</p>
+          <p className="mt-0.5 text-xs font-black text-white">{stage.title}</p>
         </div>
-        <div className="rounded-lg bg-[#1B2028] px-3 py-2">
+        <div className="rounded-lg border border-white/7 bg-[#18202A] px-3 py-2">
           <p className="text-10px font-bold uppercase tracking-wide text-white/45">Productos</p>
           <p className="mt-0.5 text-xs font-black text-white">{productCount} {productCount === 1 ? "producto" : "productos"}</p>
         </div>
-        <div className="rounded-lg bg-[#1B2028] px-3 py-2">
+        <div className="rounded-lg border border-white/7 bg-[#18202A] px-3 py-2">
           <p className="text-10px font-bold uppercase tracking-wide text-white/45">Seguimiento</p>
-          <p className="mt-0.5 truncate text-xs font-black text-white">{order.tracking_number || order.andreani_tracking || "No disponible"}</p>
+          <p className="mt-0.5 truncate text-xs font-black text-white">{order.tracking_number || order.andreani_tracking || "Disponible al despachar"}</p>
         </div>
       </div>
     </div>
@@ -393,12 +377,12 @@ export function CustomerClaimExperience({
   order: SupabasePedido
   initialProblem?: ClaimProblemId
 }) {
+  const router = useRouter()
   const orderItems = order.orden_items ?? []
   const delivered = isOrderDelivered(order)
   const dispatched = isOrderDispatched(order)
-  const invoiced = isOrderInvoiced(order)
   const cancelled = isOrderCancelled(order)
-  const canCancel = !cancelled && !delivered && !dispatched && !invoiced
+  const canCancel = false
   const canCreatePostDeliveryClaim = delivered && !cancelled
   const initialProblemAllowed = POST_DELIVERY_PROBLEMS.some((item) => item.id === initialProblem)
   const defaultAffectedItems = orderItems.length === 1 ? [String(orderItems[0].id)] : []
@@ -410,8 +394,8 @@ export function CustomerClaimExperience({
   )
   const [description, setDescription] = useState("")
   const [files, setFiles] = useState<File[]>([])
-  const [cancellationReason, setCancellationReason] = useState("")
-  const [cancellationMessage, setCancellationMessage] = useState("")
+  const [cancellationSuccess, setCancellationSuccess] = useState(false)
+  const [orderCancelled, setOrderCancelled] = useState(cancelled)
   const [reply, setReply] = useState("")
   const [replyFiles, setReplyFiles] = useState<File[]>([])
   const [refundAccountHolder, setRefundAccountHolder] = useState("")
@@ -422,6 +406,10 @@ export function CustomerClaimExperience({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const chatRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setOrderCancelled(cancelled)
+  }, [cancelled])
 
   const loadClaims = useCallback(async () => {
     const response = await fetch(`/api/orders/${order.id}/claims`)
@@ -439,7 +427,8 @@ export function CustomerClaimExperience({
     }
   }, [loadClaims])
 
-  const activeClaim = claims.find((claim) =>
+  const visibleClaims = claims.filter((claim) => claim.failure_type !== "cancelar_compra")
+  const activeClaim = visibleClaims.find((claim) =>
     [
       "recibido",
       "en_revision",
@@ -451,8 +440,9 @@ export function CustomerClaimExperience({
       "reemplazo_enviado",
     ].includes(claim.status),
   )
-  const claim = activeClaim ?? claims[0]
+  const claim = activeClaim ?? visibleClaims[0]
   const messageCount = claim?.order_claim_messages?.length ?? 0
+  const goToOrders = () => router.push("/cuenta?tab=ordenes")
 
   useLayoutEffect(() => {
     const chat = chatRef.current
@@ -470,50 +460,6 @@ export function CustomerClaimExperience({
         ? current.map((item) => (item.id === updatedClaim.id ? updatedClaim : item))
         : [updatedClaim, ...current]
     })
-  }
-
-  const createCancellationRequest = async () => {
-    if (!canCancel) {
-      setError("No es posible solicitar la cancelación desde esta sección.")
-      return
-    }
-
-    setLoading(true)
-    setError("")
-
-    try {
-      const selectedReason = CANCELLATION_REASONS.find((item) => item.value === cancellationReason)?.label
-      const detail = cancellationMessage.trim()
-      const descriptionParts = [
-        "Solicitud de cancelación",
-        `Motivo: ${selectedReason || "No especificado"}`,
-        detail ? `Mensaje del cliente: ${detail}` : "",
-      ].filter(Boolean)
-      const formData = new FormData()
-      formData.set("claimType", "garantia_beyonix")
-      formData.set("problemType", "cancelar_compra")
-      formData.set("description", descriptionParts.join("\n\n"))
-
-      const response = await fetch(`/api/orders/${order.id}/claims`, {
-        method: "POST",
-        body: formData,
-      })
-      const data = (await response.json()) as { claim?: SupabaseOrderClaim; error?: string }
-
-      if (!response.ok || !data.claim) {
-        setError(data.error || "No se pudo solicitar la cancelación.")
-        return
-      }
-
-      updateClaimInState(data.claim)
-      setJustCreated(data.claim)
-      setCancellationReason("")
-      setCancellationMessage("")
-    } catch {
-      setError("No se pudo solicitar la cancelación. Intentá nuevamente.")
-    } finally {
-      setLoading(false)
-    }
   }
 
   const createClaim = async () => {
@@ -708,10 +654,10 @@ export function CustomerClaimExperience({
         <div className="mx-auto w-full rounded-xl border border-blue-300/15 bg-[#141414] p-4 text-center">
           <CircleCheck className="mx-auto size-9 text-blue-300" />
           <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-blue-300">
-            {cancellation ? "Cancelación solicitada" : "Reclamo creado"}
+            {cancellation ? "Compra cancelada" : "Reclamo creado"}
           </p>
           <h3 className="mt-1 text-xl font-black text-white">
-            {cancellation ? "Recibimos tu solicitud" : "Recibimos tu reclamo"}
+            {cancellation ? "Tu compra fue cancelada correctamente." : "Recibimos tu reclamo"}
           </h3>
           <div className={`mx-auto mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black text-white ${info.style}`}>
             <span className={`size-2 rounded-full ${info.dot}`} />
@@ -719,7 +665,7 @@ export function CustomerClaimExperience({
           </div>
           <p className="mx-auto mt-3 max-w-xl text-sm font-semibold leading-5 text-white/80">
             {cancellation
-              ? "BEYONIX revisará la cancelación y te confirmará la resolución por este medio."
+              ? "Tu compra fue cancelada correctamente."
               : "BEYONIX revisará el caso y te responderá desde este chat."}
           </p>
           <button
@@ -762,7 +708,7 @@ export function CustomerClaimExperience({
               {cancellation ? "Seguimiento de cancelación" : "Seguimiento del reclamo"}
             </h3>
             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/55">
-              <span>Pedido #BX-{1000 + order.id}</span>
+              <span>Pedido {getOrderCode(order.id)}</span>
               <span>Fecha: {formatDate(claim.created_at)}</span>
               <span>Motivo: {PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Solicitud de ayuda"}</span>
               <span>{cancellation ? "Alcance" : "Producto"}: {affectedProductLabel}</span>
@@ -888,7 +834,7 @@ export function CustomerClaimExperience({
         ) : (
           <div className="mt-2.5 space-y-2">
             <p className="rounded-lg border border-blue-300/15 bg-[#112A43]/25 px-3 py-2 text-xs font-bold text-blue-100">
-              {cancellation ? "La solicitud de cancelación ya fue cerrada." : "Caso finalizado. Podés consultar la conversación cuando quieras."}
+            {cancellation ? "La compra figura como cancelada." : "Caso finalizado. Podés consultar la conversación cuando quieras."}
             </p>
             {refundProof?.signedUrl && (
               <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-white hover:border-[#77E6E2]/45">
@@ -905,16 +851,18 @@ export function CustomerClaimExperience({
   const stage = getOrderStage(order)
 
   return (
-    <section className="customer-claim-experience rounded-2xl border border-blue-300/15 bg-[#0D1117] p-3 sm:p-5">
+    <section className="customer-claim-experience rounded-2xl border border-blue-300/15 bg-[#0D1117] p-3 shadow-[0_24px_70px_rgba(0,0,0,0.24)] sm:p-5">
       <div className="flex flex-col gap-3 border-b border-white/8 pb-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="text-11px font-black uppercase tracking-[0.16em] text-blue-300">Ayuda con tu compra</p>
           <h3 className="mt-1 text-xl font-black text-white">{stage.title}</h3>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-white/68">{stage.detail}</p>
+          <div className="mt-2 max-w-2xl rounded-xl border border-blue-300/12 bg-[#112A43]/24 px-3 py-2">
+            <p className="text-sm leading-6 text-white/78">{stage.detail}</p>
+          </div>
         </div>
         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-300/20 bg-[#112A43]/35 px-3 py-1.5 text-xs font-black text-white">
           <span className="size-2 rounded-full bg-blue-300" />
-          Pedido #BX-{1000 + order.id}
+          Pedido {getOrderCode(order.id)}
         </span>
       </div>
 
@@ -922,45 +870,22 @@ export function CustomerClaimExperience({
         <ProductSummary order={order} />
       </div>
 
-      {canCancel && (
-        <div className="mt-3 rounded-xl border border-white/9 bg-[#141820] p-3">
-          <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
-              <X className="size-5 text-blue-300" />
+      {cancellationSuccess && (
+        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-emerald-400/22 bg-emerald-500/10 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-emerald-300/35 bg-emerald-400/15">
+              <CircleCheck className="size-4 text-emerald-300" />
             </span>
-            <div>
-              <h4 className="text-sm font-black text-white">Cancelar compra</h4>
-              <p className="mt-1 text-xs leading-5 text-white/65">
-                BEYONIX revisará la solicitud. La orden no se borra y la cancelación no se confirma automáticamente.
-              </p>
-            </div>
+            <p className="text-sm font-black text-emerald-100">
+              Tu compra fue cancelada correctamente.
+            </p>
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {CANCELLATION_REASONS.map((reason) => (
-              <button
-                key={reason.value}
-                type="button"
-                onClick={() => setCancellationReason(reason.value)}
-                className={`min-h-10 rounded-lg border px-3 text-left text-xs font-black transition ${
-                  cancellationReason === reason.value
-                    ? "border-blue-300/55 bg-[#112A43] text-white"
-                    : "border-white/10 bg-[#1B2028] text-white/78 hover:border-blue-300/35"
-                }`}
-              >
-                {reason.label}
-              </button>
-            ))}
-          </div>
-          <textarea
-            value={cancellationMessage}
-            onChange={(event) => setCancellationMessage(event.target.value)}
-            rows={3}
-            maxLength={CLAIM_DESCRIPTION_MAX_LENGTH}
-            placeholder="Podés agregar un comentario si querés."
-            className="mt-3 w-full resize-none rounded-xl border border-blue-300/15 bg-[#101820] px-3 py-2.5 text-sm leading-6 text-white outline-none placeholder:text-white/40 focus:border-blue-300/50"
-          />
-          <button type="button" disabled={loading} onClick={() => void createCancellationRequest()} className="mt-3 h-10 rounded-lg bg-[#112A43] px-5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
-            {loading ? "Enviando..." : "Solicitar cancelación"}
+          <button
+            type="button"
+            onClick={goToOrders}
+            className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 px-4 text-xs font-black text-emerald-100 transition hover:border-emerald-300/45 hover:bg-emerald-400/15"
+          >
+            Volver a Mis compras
           </button>
         </div>
       )}
@@ -973,12 +898,10 @@ export function CustomerClaimExperience({
             </span>
             <div>
               <h4 className="text-sm font-black text-white">
-                {invoiced && !dispatched ? "Cancelación no disponible" : "Reclamo no disponible todavía"}
+                Reclamo no disponible todavía
               </h4>
               <p className="mt-1 text-xs leading-5 text-white/65">
-                {invoiced && !dispatched
-                  ? "Tu pedido ya fue facturado, por eso no es posible cancelarlo desde esta sección."
-                  : "Todavía no podés iniciar un reclamo porque el pedido no figura como entregado. Si cuando lo recibas hay algún problema, vas a poder reclamar desde esta sección."}
+                Cuando recibas tu compra, si hay algún problema, vas a poder reclamar desde esta sección.
               </p>
               {(order.tracking_number || order.andreani_tracking) && (
                 <p className="mt-2 text-xs font-bold text-white/75">

@@ -270,7 +270,7 @@ export function PaymentProofActionButton({
   }
 
   return (
-    <span className="inline-flex flex-col items-stretch gap-1">
+    <span className="flex w-full flex-col items-stretch gap-1">
       <input
         ref={inputRef}
         id={`payment-proof-action-${orderId}`}

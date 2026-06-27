@@ -11,6 +11,7 @@ export type AdminNotificationType =
   | "payment"
   | "invoice"
   | "shipping"
+  | "cancellation"
   | "claim"
 
 export type AdminNotificationTone = AdminNotificationType
@@ -26,6 +27,7 @@ export interface AdminNotification {
   actionUrl: string
   orderId?: number
   isRead: boolean
+  priority?: "attention"
 }
 
 export type AdminNotificationGroups = Record<AdminNotificationType, number>
@@ -49,6 +51,7 @@ const EMPTY_GROUPS: AdminNotificationGroups = {
   payment: 0,
   invoice: 0,
   shipping: 0,
+  cancellation: 0,
   claim: 0,
 }
 
@@ -182,6 +185,26 @@ function isOrderPaidForInvoice(order: {
   )
 }
 
+function isPaymentReceived(order: {
+  payment_status?: string | null
+  paid_at?: string | null
+}) {
+  return Boolean(order.paid_at) ||
+    ["confirmado", "approved", "confirmed"].includes(
+      order.payment_status ?? "",
+    )
+}
+
+function hasPaymentProofPendingReview(order: {
+  payment_status?: string | null
+  payment_proof_url?: string | null
+}) {
+  return Boolean(order.payment_proof_url) &&
+    ["en_revision", "pendiente_comprobante", "pending"].includes(
+      order.payment_status ?? "",
+    )
+}
+
 function isOrderReadyForShipping(order: {
   estado?: string | null
   invoice_status?: string | null
@@ -299,8 +322,60 @@ function dedupeNotifications(notifications: AdminNotification[]) {
   })
 }
 
+function keepLatestNotificationByOrder(notifications: AdminNotification[]) {
+  const byOrder = new Map<number, AdminNotification>()
+  const withoutOrder: AdminNotification[] = []
+
+  for (const notification of notifications) {
+    if (!notification.orderId) {
+      withoutOrder.push(notification)
+      continue
+    }
+
+    const current = byOrder.get(notification.orderId)
+    if (!current || getTime(notification.eventAt) > getTime(current.eventAt)) {
+      byOrder.set(notification.orderId, notification)
+    }
+  }
+
+  return [...withoutOrder, ...byOrder.values()].sort(sortByEventDate)
+}
+
+function getCancellationNotificationContent(
+  order: {
+    id: number
+    payment_status?: string | null
+    payment_proof_url?: string | null
+    paid_at?: string | null
+  },
+) {
+  const orderCode = formatOrderId(order.id)
+
+  if (isPaymentReceived(order)) {
+    return {
+      title: "Compra cancelada con pago recibido",
+      body: `El pedido ${orderCode} fue cancelado por el cliente y tiene un pago recibido. Revisá la gestión del reintegro o crédito.`,
+      priority: "attention" as const,
+    }
+  }
+
+  if (hasPaymentProofPendingReview(order)) {
+    return {
+      title: "Compra cancelada con comprobante cargado",
+      body: `El pedido ${orderCode} fue cancelado por el cliente y tenía un comprobante pendiente de revisión.`,
+      priority: "attention" as const,
+    }
+  }
+
+  return {
+    title: "Compra cancelada",
+    body: `El pedido ${orderCode} fue cancelado por el cliente.`,
+  }
+}
+
 function getTone(groups: AdminNotificationGroups): AdminNotificationTone {
   if (groups.claim > 0) return "claim"
+  if (groups.cancellation > 0) return "cancellation"
   if (groups.shipping > 0) return "shipping"
   if (groups.message > 0) return "message"
   if (groups.payment > 0) return "payment"
@@ -451,6 +526,32 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           isRead: false,
         })
       }
+
+      if (order.estado === "cancelado") {
+        const cancelledAt =
+          (order as { cancelled_at?: string | null }).cancelled_at
+
+        if (!cancelledAt) continue
+        const cancellationContent = getCancellationNotificationContent({
+          id: orderId,
+          payment_status: order.payment_status,
+          payment_proof_url: order.payment_proof_url,
+          paid_at: order.paid_at,
+        })
+
+        notifications.push({
+          id: `order-cancelled:${orderId}`,
+          type: "cancellation",
+          eventKey: `order-cancelled:${orderId}`,
+          eventAt: String(cancelledAt),
+          title: cancellationContent.title,
+          body: cancellationContent.body,
+          actionUrl: `/admin/pedidos/${orderId}`,
+          orderId,
+          isRead: false,
+          priority: cancellationContent.priority,
+        })
+      }
     }
 
     for (const claim of claims) {
@@ -498,8 +599,9 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
     }
 
     const dedupedNotifications = dedupeNotifications(notifications)
-    const reads = await loadReads(adminId, dedupedNotifications)
-    return buildSummary(applyReads(dedupedNotifications, reads))
+    const latestNotifications = keepLatestNotificationByOrder(dedupedNotifications)
+    const reads = await loadReads(adminId, latestNotifications)
+    return buildSummary(applyReads(latestNotifications, reads))
   } catch (error) {
     console.error(
       "ADMIN_NOTIFICATIONS_UNEXPECTED_ERROR",

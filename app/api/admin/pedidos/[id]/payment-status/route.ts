@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
+import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 
 const ALLOWED_PAYMENT_STATUSES = [
   "pendiente_comprobante",
@@ -8,6 +9,10 @@ const ALLOWED_PAYMENT_STATUSES = [
   "confirmado",
   "rechazado",
 ]
+
+function getOrderCode(orderId: number) {
+  return `BX-${1000 + orderId}`
+}
 
 export async function PATCH(
   request: Request,
@@ -28,6 +33,20 @@ export async function PATCH(
 
   if (!ALLOWED_PAYMENT_STATUSES.includes(paymentStatus)) {
     return NextResponse.json({ error: "Estado de pago inválido." }, { status: 400 })
+  }
+
+  const { data: currentOrder, error: currentOrderError } = await auth.admin
+    .from("ordenes")
+    .select("id, payment_status")
+    .eq("id", pedidoId)
+    .eq("payment_method_id", "transferencia")
+    .maybeSingle()
+
+  if (currentOrderError || !currentOrder) {
+    return NextResponse.json(
+      { error: "Solo los pedidos por transferencia admiten cambios manuales de pago." },
+      { status: 400 },
+    )
   }
 
   const updatePayload: Record<string, string | null | number> = {
@@ -61,6 +80,19 @@ export async function PATCH(
       { error: error?.message || "No se pudo actualizar el estado de pago." },
       { status: 500 },
     )
+  }
+
+  if (currentOrder.payment_status !== paymentStatus && paymentStatus === "confirmado") {
+    const orderCode = getOrderCode(data.id)
+    await sendOrderStatusEmail({
+      to: data.cliente_email,
+      subject: `Comprobante aceptado ${orderCode}`,
+      html: `
+        <h1>Comprobante aceptado</h1>
+        <p>Hola ${data.cliente_nombre ?? ""}, validamos el pago del pedido ${orderCode}.</p>
+        <p>Tu compra ya está en preparación. Te avisaremos cuando sea despachada.</p>
+      `,
+    })
   }
 
   return NextResponse.json({ order: data })

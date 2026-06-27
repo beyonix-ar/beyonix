@@ -64,6 +64,7 @@ type StatusFilter =
   | "en_camino"
   | "entregado"
   | "cancelado"
+  | "rechazado"
 type AndreaniAction = "crear-envio" | "tracking"
 type AdminNotice = { type: "ok" | "error"; message: string } | null
 type ForcedStatusRequest = {
@@ -102,7 +103,7 @@ const PAYMENT_STATUS_OPTIONS: Array<{
   },
   {
     value: "rechazado",
-    label: "Rechazado",
+    label: "Comprobante rechazado",
     tone: "text-white/82",
     dot: "bg-red-300/70",
   },
@@ -303,10 +304,10 @@ function getPaymentStatusLabel(status?: string | null) {
     pendiente_comprobante: "Falta comprobante",
     en_revision: "Falta comprobante",
     confirmado: "Confirmado",
-    rechazado: "Rechazado",
+    rechazado: "Comprobante rechazado",
     approved: "Aprobado",
     pending: "Pendiente",
-    rejected: "Rechazado",
+    rejected: "Comprobante rechazado",
   }
 
   return status ? labels[status] ?? status : "Sin estado"
@@ -355,7 +356,7 @@ function getTransferPaymentStatusBadge(status?: string | null) {
       className: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
     },
     rechazado: {
-      label: "Pago rechazado",
+      label: "Comprobante rechazado",
       className: "border-red-400/25 bg-red-400/10 text-red-300",
     },
   }
@@ -433,16 +434,17 @@ type AdminNotificationTone =
   | "payment"
   | "invoice"
   | "shipping"
+  | "cancellation"
   | "claim"
 
 function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
+  if (pedido.estado === "cancelado") return "cancellation"
   if (needsShippingReminder(pedido)) return "shipping"
 
   const hasIssue =
     orderHasPendingClaimAction(pedido) ||
     Boolean(pedido.return_requested_at && !pedido.return_resolved_at) ||
     isRejectedPayment(pedido.payment_status) ||
-    pedido.estado === "cancelado" ||
     getDispatchAlert(pedido).label === "Urgente"
 
   if (hasIssue) return "claim"
@@ -476,6 +478,10 @@ function orderMatchesNotificationTone(
       orderHasPendingClaimAction(pedido) ||
       isOrderNewerThanLastSeen(pedido.return_requested_at, lastSeenAt)
     )
+  }
+
+  if (tone === "cancellation") {
+    return pedido.estado === "cancelado"
   }
 
   if (tone === "payment") {
@@ -537,7 +543,7 @@ function getDispatchAlert(pedido: SupabasePedido) {
 
   if (dispatched || pedido.estado === "cancelado") {
     return {
-      label: "Despachado",
+      label: "Enviado",
       className: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     }
   }
@@ -571,17 +577,17 @@ function EstadoBadge({ estado }: { estado: string }) {
     enviado: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     en_camino: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     entregado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    cancelado: "border-red-500/20 bg-red-500/10 text-red-300",
+    cancelado: "border-orange-400/25 bg-orange-500/12 text-orange-200",
     rechazado: "border-red-500/20 bg-red-500/10 text-red-300",
   }
   const labels: Record<string, string> = {
     pendiente: "Pendiente",
     pagado: "Pago confirmado",
-    enviado: "Despachado",
+    enviado: "Enviado",
     en_camino: "En camino",
     entregado: "Entregado",
-    cancelado: "Cancelado/Rechazado",
-    rechazado: "Rechazado",
+    cancelado: "Cancelado",
+    rechazado: "Comprobante rechazado",
   }
 
   return (
@@ -661,7 +667,7 @@ function PaymentStatusDropdown({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex h-8 min-w-40 cursor-pointer items-center gap-2 rounded-lg border border-[#263241] bg-[#0D1117] px-2.5 text-left shadow-sm transition-colors hover:bg-[#15191F]"
+        className="flex h-8 min-w-40 cursor-pointer items-center gap-2 rounded-lg border border-[rgba(148,197,255,0.18)] bg-[#0B111A] px-2.5 text-left shadow-sm transition-all duration-200 hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:shadow-[0_0_18px_rgba(96,165,250,0.18)]"
       >
         <span className={`size-1.5 rounded-full ${selected.dot}`} />
         <span className={`min-w-0 flex-1 text-xs font-semibold ${selected.tone}`}>
@@ -676,7 +682,7 @@ function PaymentStatusDropdown({
         <div
           role="listbox"
           aria-label="Estado del pago"
-          className="absolute left-0 top-9 z-50 w-44 overflow-hidden rounded-xl border border-[#263241] bg-[#0D1117] p-1 shadow-2xl shadow-black/70"
+          className="absolute left-0 top-9 z-50 w-44 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] p-1 shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
         >
           {PAYMENT_STATUS_OPTIONS.map((option) => (
             <button
@@ -688,10 +694,10 @@ function PaymentStatusDropdown({
                 onChange(option.value)
                 setOpen(false)
               }}
-              className={`flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left transition-colors ${
+              className={`flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left transition-all duration-200 ${
                 value === option.value
-                  ? "bg-[#15191F]"
-                  : "hover:bg-[#15191F]"
+                  ? "bg-[rgba(17,42,67,0.9)] shadow-[inset_0_0_0_1px_rgba(191,228,255,0.16)]"
+                  : "hover:bg-[rgba(17,42,67,0.75)]"
               }`}
             >
               <span className={`size-1.5 rounded-full ${option.dot}`} />
@@ -722,7 +728,7 @@ function getOrderStatusSelectClassName(status: string) {
     entregado:
       "!border-emerald-300/45 !bg-emerald-500/12 !text-emerald-100 hover:!bg-emerald-500/16",
     cancelado:
-      "!border-red-400/35 !bg-red-400/10 !text-red-200 hover:!bg-red-400/14",
+      "!border-orange-400/35 !bg-orange-500/12 !text-orange-200 hover:!bg-orange-500/16",
   }
 
   return styles[status] ?? ""
@@ -1918,7 +1924,7 @@ function PedidoDetailModal({
               >
                 <option value="pendiente">Pendiente</option>
                 <option value="pagado">Pago confirmado</option>
-                <option value="enviado">Despachado</option>
+                <option value="enviado">Enviado</option>
                 {(isLocalRosarioOrder ||
                   isSuperAdmin ||
                   pedido.estado === "en_camino") && (
@@ -1929,7 +1935,7 @@ function PedidoDetailModal({
                   pedido.estado === "entregado") && (
                   <option value="entregado">Entregado</option>
                 )}
-                <option value="cancelado">Cancelado/Rechazado</option>
+                <option value="cancelado">Cancelado</option>
               </AdminSelect>
             </div>
 
@@ -2775,7 +2781,8 @@ export function AdminPedidos({
         value === "message" ||
         value === "payment" ||
         value === "invoice" ||
-        value === "shipping"
+        value === "shipping" ||
+        value === "cancellation"
         ? value
         : value === "claim" || value === "issue"
           ? "claim"
@@ -2960,9 +2967,7 @@ export function AdminPedidos({
         .includes(normalizedSearch)
       const matchesStatus =
         statusFilter === "todos" ||
-        (statusFilter === "cancelado"
-          ? ["cancelado", "rechazado"].includes(getDisplayedOrderStatus(pedido))
-          : getDisplayedOrderStatus(pedido) === statusFilter)
+        getDisplayedOrderStatus(pedido) === statusFilter
       const matchesAttention =
         attentionFilter === "all" ||
         orderMatchesNotificationTone(
@@ -3391,10 +3396,11 @@ export function AdminPedidos({
               <option value="todos">Todos los estados</option>
               <option value="pendiente">Pendientes</option>
               <option value="pagado">Pagados</option>
-              <option value="enviado">Despachados</option>
+              <option value="enviado">Enviados</option>
               <option value="en_camino">En camino</option>
               <option value="entregado">Entregados</option>
-              <option value="cancelado">Cancelados/Rechazados</option>
+              <option value="cancelado">Cancelados</option>
+              <option value="rechazado">Comprobantes rechazados</option>
             </AdminSelect>
           </div>
         </div>
@@ -3498,7 +3504,8 @@ export function AdminPedidos({
                 const hasPendingAttention =
                   attentionOrderIds.has(pedido.id) ||
                   needsInvoiceReminder(pedido) ||
-                  needsShippingReminder(pedido)
+                  needsShippingReminder(pedido) ||
+                  pedido.estado === "cancelado"
                 const hasPendingClaim = orderHasPendingClaimAction(pedido)
                 const attentionTone = getOrderNotificationTone(pedido)
                 const showInvoiceReminder = needsInvoiceReminder(pedido)
@@ -3513,6 +3520,8 @@ export function AdminPedidos({
                       hasPendingAttention
                         ? attentionTone === "claim"
                           ? "border-[#EF4444]/35 bg-[#EF4444]/8 shadow-[0_0_16px_rgba(239,68,68,0.12)] hover:bg-[#DC2626]/10"
+                          : attentionTone === "cancellation"
+                            ? "border-orange-400/35 bg-orange-500/8 shadow-[0_0_16px_rgba(251,146,60,0.12)] hover:bg-orange-500/10"
                           : attentionTone === "message"
                             ? "border-sky-400/35 bg-sky-500/8 shadow-[0_0_16px_rgba(14,165,233,0.12)] hover:bg-sky-500/10"
                             : attentionTone === "payment"

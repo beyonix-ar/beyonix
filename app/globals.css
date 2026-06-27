@@ -780,12 +780,12 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 }
 
 .admin-control-select option {
-  background-color: #02070d;
-  color: rgba(255, 255, 255, 0.92);
+  background-color: #080d14;
+  color: #f8fafc;
 }
 
 .admin-select-scrollbar {
-  scrollbar-color: #1e4d7b #0a0a0a;
+  scrollbar-color: #2d5f91 #080d14;
   scrollbar-width: thin;
 }
 
@@ -794,17 +794,17 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 }
 
 .admin-select-scrollbar::-webkit-scrollbar-track {
-  background: #0a0a0a;
+  background: #080d14;
   border-radius: 9999px;
 }
 
 .admin-select-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #1e4d7b, #112a43);
+  background: linear-gradient(180deg, #2d5f91, #112a43);
   border-radius: 9999px;
 }
 
 .admin-select-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #4a90b8;
+  background: #6fb6e8;
 }
 
 .admin-order-data-panel {

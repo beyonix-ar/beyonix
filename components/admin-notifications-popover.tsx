@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   ShoppingCart,
   Truck,
+  XCircle,
 } from "lucide-react"
 
 import {
@@ -23,6 +24,7 @@ const TYPE_LABELS: Record<AdminNotificationType, string> = {
   payment: "Comprobante nuevo",
   invoice: "Factura por emitir",
   shipping: "Envío pendiente",
+  cancellation: "Compra cancelada",
   claim: "Reclamo por responder",
 }
 
@@ -32,6 +34,7 @@ const TYPE_STYLES: Record<AdminNotificationType, string> = {
   payment: "border-blue-400/25 bg-blue-400/10 text-blue-200",
   invoice: "border-violet-400/25 bg-violet-400/10 text-violet-200",
   shipping: "border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2]",
+  cancellation: "border-orange-400/30 bg-orange-500/12 text-orange-200",
   claim: "border-red-400/25 bg-red-400/10 text-red-200",
 }
 
@@ -41,6 +44,7 @@ const TYPE_UNREAD_DOT_STYLES: Record<AdminNotificationType, string> = {
   payment: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
   invoice: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
   shipping: "bg-[#77E6E2]",
+  cancellation: "bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.75)]",
   claim: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
 }
 
@@ -50,6 +54,7 @@ function getNotificationIcon(type: AdminNotificationType) {
   if (type === "payment") return CreditCard
   if (type === "invoice") return FileText
   if (type === "shipping") return Truck
+  if (type === "cancellation") return XCircle
   if (type === "claim") return ShieldAlert
   return Bell
 }
@@ -129,18 +134,25 @@ export function AdminNotificationsPopover({
           <div className="space-y-1.5">
             {notifications.map((notification) => {
               const Icon = getNotificationIcon(notification.type)
+              const attention = notification.priority === "attention"
 
               return (
                 <button
                   key={notification.id}
                   type="button"
                   onClick={() => onNotificationClick(notification)}
-                  className="group flex w-full cursor-pointer items-start gap-3 rounded-xl border border-[#303846] bg-[#141820] p-3 text-left transition-all hover:border-[#1e6fae] hover:bg-[#1B2028] hover:shadow-[0_0_0_1px_rgba(30,111,174,0.35)]"
+                  className={cn(
+                    "group flex w-full cursor-pointer items-start gap-3 rounded-xl border bg-[#141820] p-3 text-left transition-all hover:bg-[#1B2028]",
+                    attention
+                      ? "border-orange-300/35 shadow-[0_0_18px_rgba(251,146,60,0.10)] hover:border-orange-300/50 hover:shadow-[0_0_0_1px_rgba(251,146,60,0.20)]"
+                      : "border-[#303846] hover:border-[#1e6fae] hover:shadow-[0_0_0_1px_rgba(30,111,174,0.35)]",
+                  )}
                 >
                   <span
                     className={cn(
                       "flex size-9 shrink-0 items-center justify-center rounded-lg border",
                       TYPE_STYLES[notification.type],
+                      attention && "border-orange-300/40 bg-orange-500/16 text-orange-100",
                     )}
                   >
                     <Icon className="size-4" />

@@ -18,6 +18,7 @@ const EMPTY_GROUPS: AdminNotificationGroups = {
   payment: 0,
   invoice: 0,
   shipping: 0,
+  cancellation: 0,
   claim: 0,
 }
 

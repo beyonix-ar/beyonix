@@ -6,6 +6,7 @@ import {
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotal,
 } from "@/lib/payments/transfer"
+import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createClient } from "@/lib/supabase/server"
 import { getProductDiscount, getShippingCost } from "@/lib/store-config"
@@ -318,6 +319,16 @@ export async function POST(request: Request) {
     }
 
     await insertOrderItems(supabase, order.id, items, productRows)
+
+    await sendOrderStatusEmail({
+      to: order.cliente_email,
+      subject: `Registramos tu pedido BX-${1000 + order.id}`,
+      html: `
+        <h1>Pedido registrado</h1>
+        <p>Hola ${order.cliente_nombre ?? ""}, registramos tu pedido BX-${1000 + order.id}.</p>
+        <p>Cuando subas el comprobante y validemos el pago, comenzaremos a prepararlo.</p>
+      `,
+    })
 
     return NextResponse.json({
       order_id: order.id,

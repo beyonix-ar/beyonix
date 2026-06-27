@@ -144,7 +144,7 @@ export function AdminSelect({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
-        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-white/12 bg-[#141414] font-medium text-white/86 outline-none transition-colors hover:bg-[#181818] focus:border-beyonix-blue-light disabled:cursor-not-allowed disabled:opacity-45 ${triggerClassName} ${
+        className={`admin-control-select relative flex cursor-pointer items-center rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#0B111A] font-medium text-[#F8FAFC] outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF] focus:border-[rgba(191,228,255,0.42)] focus:shadow-[0_0_18px_rgba(96,165,250,0.18)] disabled:cursor-not-allowed disabled:opacity-45 ${triggerClassName} ${
           centered ? "justify-center" : "justify-between"
         } ${
           compact
@@ -170,7 +170,7 @@ export function AdminSelect({
             ref={menuRef}
             role="listbox"
             aria-label={ariaLabel ?? title}
-            className="fixed z-100 max-h-64 overflow-hidden rounded-xl border border-beyonix-blue-light/45 bg-[#141414] p-1 shadow-2xl shadow-black/70"
+          className="fixed z-100 max-h-64 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] p-1 shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
             style={{
               left: menuPosition.left,
               top: menuPosition.top,
@@ -193,8 +193,8 @@ export function AdminSelect({
                     }}
                     className={`flex h-9 w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors ${
                       selected
-                        ? "bg-beyonix-blue text-white"
-                        : "text-white/78 hover:bg-beyonix-blue/70 hover:text-white"
+                        ? "bg-[rgba(17,42,67,0.9)] text-[#D7ECFF] shadow-[inset_0_0_0_1px_rgba(191,228,255,0.16)]"
+                        : "text-[#F8FAFC] hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF]"
                     }`}
                   >
                     <span className="truncate">{option.label}</span>

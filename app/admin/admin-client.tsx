@@ -111,6 +111,8 @@ function SidebarItem({
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black text-white transition-colors ${
               item.notificationTone === "claim"
                 ? "border-red-400/35 bg-red-500/20 text-red-100 group-hover:border-red-300/45 group-hover:bg-red-500/28"
+                : item.notificationTone === "cancellation"
+                  ? "border-orange-400/35 bg-orange-500/20 text-orange-100 group-hover:border-orange-300/45 group-hover:bg-orange-500/28"
                 : item.notificationTone === "message"
                   ? "border-[#2563EB]/50 bg-[#2563EB] shadow-[0_0_14px_rgba(37,99,235,0.35)] group-hover:bg-[#1D4ED8]"
                   : item.notificationTone === "payment"

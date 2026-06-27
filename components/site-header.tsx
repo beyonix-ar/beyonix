@@ -42,6 +42,10 @@ export function SiteHeader() {
   const userLabel =
     user?.username?.trim() ||
     (isLoading ? "" : "Mi cuenta")
+  const navLinkClass =
+    "relative -mx-2.5 inline-flex h-9 items-center justify-center rounded-lg px-2.5 text-15px font-medium leading-none text-[#F8FAFC] transition-all duration-200 after:absolute after:bottom-1 after:left-2.5 after:right-2.5 after:h-px after:origin-center after:scale-x-0 after:bg-[rgba(191,228,255,0.52)] after:opacity-0 after:transition-all after:duration-200 hover:bg-[rgba(17,42,67,0.26)] hover:text-[#D7ECFF] hover:shadow-[0_0_17px_rgba(96,165,250,0.19)] hover:after:scale-x-100 hover:after:opacity-100"
+  const navLinkActiveClass =
+    "bg-[rgba(17,42,67,0.26)] text-[#D7ECFF] shadow-[0_0_17px_rgba(96,165,250,0.19)] after:scale-x-100 after:opacity-100"
 
   useEffect(() => {
     let active = true
@@ -101,14 +105,14 @@ export function SiteHeader() {
           <div className="hidden items-center justify-center gap-7 lg:flex">
             <Link
               href="/"
-              className="text-15px font-medium text-white/78 transition-colors hover:text-white"
+              className={navLinkClass}
             >
               Inicio
             </Link>
 
             <Link
               href="/productos"
-              className="text-15px font-medium text-white/78 transition-colors hover:text-white"
+              className={navLinkClass}
             >
               Productos
             </Link>
@@ -123,7 +127,11 @@ export function SiteHeader() {
                   setNotificationsOpen(false)
                   setUserOpen(false)
                 }}
-                className="flex cursor-pointer items-center gap-1.5 text-15px font-medium text-white/78 transition-colors hover:text-white"
+                className={cn(
+                  navLinkClass,
+                  "cursor-pointer gap-1.5",
+                  catOpen && navLinkActiveClass
+                )}
               >
                 Categorías
                 <ChevronDown
@@ -134,15 +142,15 @@ export function SiteHeader() {
               </button>
 
               {catOpen && (
-                <div className="absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-lg border border-beyonix-blue-light/30 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
+                <div className="absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
                   {categories.map((category, i) => (
                     <Link
                       key={category.id}
                       href={`/categorias/${category.slug}`}
                       onClick={() => setCatOpen(false)}
-                      className={`block px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky ${
+                      className={`block px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)] ${
                         i < categories.length - 1
-                          ? "border-b border-beyonix-blue-light/12"
+                          ? "border-b border-white/8"
                           : ""
                       }`}
                     >
@@ -157,7 +165,7 @@ export function SiteHeader() {
                   <Link
                     href="/categorias"
                     onClick={() => setCatOpen(false)}
-                    className="flex items-center gap-2 border-t border-beyonix-blue-light/12 px-4 py-3 text-sm font-semibold text-beyonix-cyan transition-colors hover:bg-beyonix-blue/25"
+                    className="flex items-center gap-2 border-t border-white/8 px-4 py-3 text-sm font-semibold text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                   >
                     Ver todas →
                   </Link>
@@ -167,7 +175,7 @@ export function SiteHeader() {
 
             <Link
               href="/contacto"
-              className="text-15px font-medium text-white/78 transition-colors hover:text-white"
+              className={navLinkClass}
             >
               Contacto
             </Link>
@@ -240,14 +248,11 @@ export function SiteHeader() {
                   </button>
 
                   {userOpen && (
-                    <div className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-lg border border-beyonix-blue-light/30 bg-beyonix-surface-2 shadow-2xl shadow-black/60">
+                    <div className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
                       <Link
                         href="/cuenta"
                         onClick={() => setUserOpen(false)}
-                        className={cn(
-                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
-                          beyonixHoverBorder
-                        )}
+                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                       >
                         <User className="size-3.5 shrink-0" />
                         Mi cuenta
@@ -255,10 +260,7 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=datos"
                         onClick={() => setUserOpen(false)}
-                        className={cn(
-                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
-                          beyonixHoverBorder
-                        )}
+                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                       >
                         <User className="size-3.5 shrink-0" />
                         Mis datos
@@ -266,10 +268,7 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
-                        className={cn(
-                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
-                          beyonixHoverBorder
-                        )}
+                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                       >
                         <Package className="size-3.5 shrink-0" />
                         Mis compras
@@ -277,10 +276,7 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta?tab=seguridad"
                         onClick={() => setUserOpen(false)}
-                        className={cn(
-                          "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm text-white/75 hover:bg-beyonix-blue/25 hover:text-beyonix-sky",
-                          beyonixHoverBorder
-                        )}
+                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                       >
                         <ShieldCheck className="size-3.5 shrink-0" />
                         Seguridad
@@ -289,10 +285,7 @@ export function SiteHeader() {
                         <Link
                           href="/admin"
                           onClick={() => setUserOpen(false)}
-                          className={cn(
-                            "flex items-center gap-2.5 border-b border-beyonix-blue-light/12 px-4 py-3 text-sm font-semibold text-beyonix-cyan hover:bg-beyonix-blue/25 hover:text-white",
-                            beyonixHoverBorder
-                          )}
+                          className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm font-semibold text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                         >
                           <ShieldCheck className="size-3.5 shrink-0" />
                           Panel administrador
@@ -306,7 +299,7 @@ export function SiteHeader() {
                           logout()
                           setUserOpen(false)
                         }}
-                        className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-white/75 transition-colors hover:bg-beyonix-blue/25 hover:text-beyonix-sky"
+                        className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                       >
                         <LogOut className="size-3.5 shrink-0" />
                         Cerrar sesión
@@ -386,7 +379,7 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileOpen(false)}
-                className="block rounded-lg px-2 py-3 text-15px font-medium text-white/80 transition-colors hover:bg-white/4 hover:text-white"
+                className="block rounded-lg border border-transparent px-2 py-3 text-15px font-medium text-[#F8FAFC] transition-all duration-200 hover:border-[rgba(191,228,255,0.18)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF] hover:shadow-[0_0_16px_rgba(96,165,250,0.14)]"
               >
                 {link.label}
               </Link>
@@ -399,7 +392,7 @@ export function SiteHeader() {
                     key={category.id}
                     href={`/categorias/${category.slug}`}
                     onClick={() => setMobileOpen(false)}
-                    className="block rounded-lg px-2 py-2.5 text-15px font-medium text-white/62 transition-colors hover:bg-white/4 hover:text-white"
+                    className="block rounded-lg border border-transparent px-2 py-2.5 text-15px font-medium text-[#F8FAFC] transition-all duration-200 hover:border-[rgba(191,228,255,0.18)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF] hover:shadow-[0_0_16px_rgba(96,165,250,0.14)]"
                   >
                     {category.nombre}
                   </Link>

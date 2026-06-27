@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
+import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import {
   CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS,
   ORDER_CLAIM_BUCKET,
@@ -53,6 +54,108 @@ function isOrderInvoiced(order: {
     Boolean(order.invoice_cae) ||
     Boolean(order.invoice_number && order.invoice_point)
   )
+}
+
+function getOrderCode(orderId: number) {
+  return `BX-${1000 + orderId}`
+}
+
+async function getClaimOrderRecipient(admin: any, orderId: number) {
+  const { data: order } = await admin
+    .from("ordenes")
+    .select("id, usuario_id, cliente_email, cliente_nombre")
+    .eq("id", orderId)
+    .maybeSingle()
+
+  return order
+}
+
+async function notifyCustomer(
+  admin: any,
+  payload: {
+    userId?: string | null
+    type: string
+    title: string
+    body: string
+    orderId: number
+    sourceKey: string
+  },
+) {
+  if (!payload.userId) return
+
+  const { error } = await admin.from("customer_notifications").insert({
+    user_id: payload.userId,
+    type: payload.type,
+    title: payload.title,
+    body: payload.body,
+    action_url: `/cuenta/compras/${payload.orderId}/ayuda`,
+    order_id: payload.orderId,
+    source_key: payload.sourceKey,
+  })
+
+  if (error && error.code !== "23505") {
+    console.log("No se pudo crear notificación de cliente", error.message)
+  }
+}
+
+async function notifyCancellationResolution(
+  admin: any,
+  payload: {
+    claimId: number
+    orderId: number
+    approved: boolean
+    message: string
+  },
+) {
+  const order = await getClaimOrderRecipient(admin, payload.orderId)
+  if (!order) return
+
+  const orderCode = getOrderCode(payload.orderId)
+  const title = payload.approved ? "Cancelación aprobada" : "Cancelación rechazada"
+  const body = payload.approved
+    ? `La compra ${orderCode} fue cancelada correctamente.`
+    : `Revisamos la solicitud del pedido ${orderCode}.`
+
+  await notifyCustomer(admin, {
+    userId: order.usuario_id,
+    type: payload.approved ? "cancellation_approved" : "cancellation_rejected",
+    title,
+    body,
+    orderId: payload.orderId,
+    sourceKey: `claim:${payload.claimId}:${payload.approved ? "cancellation-approved" : "cancellation-rejected"}`,
+  })
+
+  await sendOrderStatusEmail({
+    to: order.cliente_email,
+    subject: `${title} ${orderCode}`,
+    html: `
+      <h1>${title}</h1>
+      <p>Hola ${order.cliente_nombre ?? ""}, ${body}</p>
+      <p>${payload.message}</p>
+    `,
+  })
+}
+
+async function sendClaimUpdateEmail(
+  admin: any,
+  payload: {
+    orderId: number
+    title: string
+    message: string
+  },
+) {
+  const order = await getClaimOrderRecipient(admin, payload.orderId)
+  if (!order) return
+
+  await sendOrderStatusEmail({
+    to: order.cliente_email,
+    subject: `${payload.title} ${getOrderCode(payload.orderId)}`,
+    html: `
+      <h1>${payload.title}</h1>
+      <p>Hola ${order.cliente_nombre ?? ""}, tenés una novedad sobre tu pedido ${getOrderCode(payload.orderId)}.</p>
+      <p>${payload.message}</p>
+    `,
+  })
 }
 
 async function uploadRefundProof(admin: any, claimId: number, userId: string, file: File) {
@@ -332,6 +435,13 @@ export async function PATCH(
       message,
     })
 
+    await notifyCancellationResolution(auth.admin, {
+      claimId: id,
+      orderId: currentClaim.order_id,
+      approved: true,
+      message,
+    })
+
     return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
   }
 
@@ -395,6 +505,13 @@ export async function PATCH(
       claim_id: id,
       author_user_id: auth.user.id,
       author_role: auth.profile.rol,
+      message: adminResponse,
+    })
+
+    await notifyCancellationResolution(auth.admin, {
+      claimId: id,
+      orderId: updatedClaim.order_id,
+      approved: false,
       message: adminResponse,
     })
 
@@ -900,6 +1017,33 @@ export async function PATCH(
       author_user_id: auth.user.id,
       author_role: auth.profile.rol,
       message: adminResponse,
+    })
+
+    await sendClaimUpdateEmail(auth.admin, {
+      orderId: data.order_id,
+      title: status === "cerrado" ? "Reclamo resuelto" : status === "rechazado" ? "Reclamo rechazado" : "Respuesta de BEYONIX",
+      message: adminResponse,
+    })
+  } else if (finalStatus) {
+    const title = status === "cerrado" ? "Reclamo resuelto" : "Reclamo rechazado"
+    const message =
+      status === "cerrado"
+        ? "El caso fue resuelto. Podés revisar el seguimiento desde tu cuenta."
+        : "El caso fue rechazado. Podés revisar el detalle desde tu cuenta."
+
+    await notifyCustomer(auth.admin, {
+      userId: data.user_id,
+      type: status === "cerrado" ? "claim_resolved" : "claim_rejected",
+      title,
+      body: `${title} para el pedido ${getOrderCode(data.order_id)}.`,
+      orderId: data.order_id,
+      sourceKey: `claim:${id}:status:${status}`,
+    })
+
+    await sendClaimUpdateEmail(auth.admin, {
+      orderId: data.order_id,
+      title,
+      message,
     })
   }
 

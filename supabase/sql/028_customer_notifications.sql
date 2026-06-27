@@ -135,7 +135,7 @@ begin
       ) values (
         new.usuario_id,
         'order_shipped',
-        'Pedido despachado',
+        'Pedido enviado',
         'Tu pedido ya está en camino.',
         '/cuenta?tab=ordenes',
         new.id,

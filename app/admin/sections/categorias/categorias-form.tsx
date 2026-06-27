@@ -224,7 +224,7 @@ export function CategoriaForm({
                       value ? (Number(value) as 1 | 2 | 3) : null
                     )
                   }}
-                  className={`${inputClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-45`}
+                  className={`${inputClass} admin-control-select cursor-pointer appearance-none border-[rgba(148,197,255,0.18)] bg-[#0B111A] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] focus:border-[rgba(191,228,255,0.42)] disabled:cursor-not-allowed disabled:opacity-45`}
                 >
                   <option value="">Sin posición</option>
                   <option value="1">1</option>

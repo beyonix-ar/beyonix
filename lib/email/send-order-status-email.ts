@@ -10,7 +10,11 @@ export async function sendOrderStatusEmail({
   html,
 }: SendOrderStatusEmailPayload) {
   const apiKey = process.env.RESEND_API_KEY
-  const from = process.env.STORE_EMAIL_FROM
+  const from =
+    process.env.STORE_EMAIL_FROM ||
+    process.env.RESEND_FROM_EMAIL ||
+    process.env.RESEND_EMAIL_FROM ||
+    process.env.EMAIL_FROM
 
   if (!apiKey || !from || !to) {
     console.log("Email omitido: Resend no configurado o destinatario faltante")

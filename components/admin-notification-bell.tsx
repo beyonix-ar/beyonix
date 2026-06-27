@@ -19,6 +19,7 @@ const BELL_STYLES: Record<AdminNotificationTone, string> = {
   payment: "border-blue-400/45 bg-blue-600 hover:bg-blue-700",
   invoice: "border-violet-400/45 bg-violet-600 hover:bg-violet-700",
   shipping: "border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2] hover:border-[#77E6E2]/40 hover:bg-[#77E6E2]/10",
+  cancellation: "border-orange-400/35 bg-orange-500/20 text-orange-100 hover:border-orange-300/45 hover:bg-orange-500/28",
   claim: "border-red-400/35 bg-red-500/20 text-red-100 hover:border-red-300/45 hover:bg-red-500/28",
 }
 
@@ -129,6 +130,8 @@ export function AdminNotificationBell({
                 ? "bg-[#77E6E2] text-black"
                 : tone === "claim"
                   ? "bg-red-300 text-black"
+                  : tone === "cancellation"
+                    ? "bg-orange-300 text-black"
                 : "bg-white text-black",
             )}
           >

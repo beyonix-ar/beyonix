@@ -191,6 +191,7 @@ export interface SupabasePedido {
   return_resolved_at?: string | null
   return_admin_note?: string | null
   delivered_at?: string | null
+  cancelled_at?: string | null
   created_at: string
   orden_items?: SupabasePedidoItem[]
   order_claims?: SupabaseOrderClaim[]
