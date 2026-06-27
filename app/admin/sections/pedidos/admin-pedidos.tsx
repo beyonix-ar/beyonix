@@ -28,7 +28,6 @@ import { usePedidos } from "@/hooks/use-pedidos"
 import { AdminClaimManager } from "@/components/claims/admin-claim-manager"
 import { parseDeliveryAddress } from "@/lib/delivery-address"
 import {
-  CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS,
   getOrderClaimResolutionLabel,
   getOrderClaimStatusLabel,
   getOrderClaimTypeLabel,
@@ -2431,9 +2430,6 @@ function AdminClaimsCenterSection({
   const [resolution, setResolution] = useState<OrderClaimResolution | "">(
     claim?.resolution ?? ""
   )
-  const [offeredResolutions, setOfferedResolutions] = useState<
-    OrderClaimResolution[]
-  >(claim?.offered_resolutions ?? [])
   const [closeAfterResolution, setCloseAfterResolution] = useState(
     claim?.status === "cerrado"
   )
@@ -2454,20 +2450,11 @@ function AdminClaimsCenterSection({
     if (!claim) return
     setStatus(claim.status)
     setResolution(claim.resolution ?? "")
-    setOfferedResolutions(claim.offered_resolutions ?? [])
     setCloseAfterResolution(claim.status === "cerrado")
     setAdminResponse(claim.admin_response ?? "")
     setRejectionReason(claim.rejection_reason ?? "")
     setMessage("")
   }, [claim?.id])
-
-  const toggleOfferedResolution = (item: OrderClaimResolution) => {
-    setOfferedResolutions((current) =>
-      current.includes(item)
-        ? current.filter((currentItem) => currentItem !== item)
-        : [...current, item],
-    )
-  }
 
   const saveClaim = async () => {
     if (!claim) return
@@ -2494,7 +2481,7 @@ function AdminClaimsCenterSection({
         body: JSON.stringify({
           status: closeAfterResolution ? "cerrado" : status,
           resolution: resolution || null,
-          offered_resolutions: offeredResolutions,
+          offered_resolutions: [],
           admin_response: adminResponse,
           rejection_reason: rejectionReason,
         }),
@@ -2512,7 +2499,6 @@ function AdminClaimsCenterSection({
       onClaimChange(data.claim)
       setStatus(data.claim.status)
       setResolution(data.claim.resolution ?? "")
-      setOfferedResolutions(data.claim.offered_resolutions ?? [])
       setCloseAfterResolution(data.claim.status === "cerrado")
       setAdminResponse(data.claim.admin_response ?? "")
       setRejectionReason(data.claim.rejection_reason ?? "")
@@ -2631,6 +2617,10 @@ function AdminClaimsCenterSection({
                     En conversación
                   </option>
                   <option value="aprobado">Aprobado</option>
+                  <option value="cambio_pendiente">Solución en proceso</option>
+                  <option value="reemplazo_enviado">Solución en proceso</option>
+                  <option value="reintegro_pendiente">Reintegro pendiente</option>
+                  <option value="cupon_pendiente">Cupón pendiente</option>
                   <option value="rechazado">Rechazado</option>
                   <option value="cerrado">Cerrado</option>
                 </AdminSelect>
@@ -2647,7 +2637,6 @@ function AdminClaimsCenterSection({
                   }
                 >
                   <option value="">Sin resolución</option>
-                  <option value="cambio_producto">Cambio de producto</option>
                   <option value="reintegro_total">Reintegro total</option>
                   <option value="reintegro_parcial">Reintegro parcial</option>
                   <option value="cupon_descuento">Cupón de descuento</option>
@@ -2658,31 +2647,15 @@ function AdminClaimsCenterSection({
             </div>
             <div className="rounded-xl border border-white/8 bg-[#111111] p-3">
               <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                Soluciones para ofrecer al cliente
+                Resolución definida por BEYONIX
               </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS.map((item) => (
-                  <label
-                    key={item}
-                    className="flex min-h-10 items-center gap-2 rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-xs font-bold leading-5 text-white/72"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={offeredResolutions.includes(item)}
-                      onChange={() => toggleOfferedResolution(item)}
-                      className="size-4 accent-[#112A43]"
-                    />
-                    {getOrderClaimResolutionLabel(item)}
-                  </label>
-                ))}
-              </div>
-              <p className="mt-2 text-xs font-semibold leading-5 text-white/48">
-                El cliente podrá elegir solo entre las opciones marcadas.
+              <p className="mt-2 text-xs font-semibold leading-5 text-white/58">
+                El cliente no elige soluciones desde la web. Registrá la resolución y, si hace falta, respondé desde la conversación.
               </p>
             </div>
             {claim.customer_selected_resolution && (
               <div className="rounded-xl border border-emerald-300/20 bg-emerald-400/8 px-3 py-2 text-xs font-semibold leading-5 text-emerald-100">
-                El cliente eligió:{" "}
+                Resolución registrada previamente:{" "}
                 <span className="font-black">
                   {getOrderClaimResolutionLabel(
                     claim.customer_selected_resolution,

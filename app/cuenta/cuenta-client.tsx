@@ -455,8 +455,16 @@ function getClaimReasonLabel(claim: SupabaseOrderClaim) {
     danado: "Llegó dañado",
     incorrecto: "Producto incorrecto",
     falla: "Producto con falla",
-    devolucion: "Solicitud de devolución",
-    no_llego: "Nunca llegó el envío",
+    faltante: "Faltó un producto",
+    cantidad_menor: "Menos cantidad recibida",
+    cancelar_compra: "Cancelar compra",
+    devolucion: "Solicitud anterior",
+    no_llego: "Solicitud anterior",
+    cambio_producto: "Solicitud anterior",
+    cambio_color: "Solicitud anterior",
+    cambio_cantidad: "Solicitud anterior",
+    modificar_envio: "Solicitud anterior",
+    otro_pre_despacho: "Solicitud anterior",
     otro: "Otro problema",
   }
 
@@ -483,10 +491,10 @@ function getClaimStatusBadge(status: SupabaseOrderClaim["status"]) {
 function getClaimStatusText(status: SupabaseOrderClaim["status"]) {
   if (status === "falta_informacion") return "Esperando respuesta del cliente"
   if (status === "reintegro_pendiente") return "Reintegro pendiente"
-  if (status === "cambio_pendiente") return "Cambio pendiente"
+  if (status === "cambio_pendiente") return "Solución en proceso"
   if (status === "cupon_pendiente") return "Cupón pendiente"
-  if (status === "reemplazo_enviado") return "Reemplazo enviado"
-  if (status === "aprobado") return "Solución ofrecida"
+  if (status === "reemplazo_enviado") return "Solución en proceso"
+  if (status === "aprobado") return "Solución en proceso"
   if (status === "cerrado") return "Resuelto"
   return getOrderClaimStatusLabel(status)
 }

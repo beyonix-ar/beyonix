@@ -1,26 +1,19 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   Check,
-  ChevronDown,
   Download,
   FileText,
-  Percent,
-  RefreshCcw,
   Send,
-  Sparkles,
-  Upload,
-  WalletCards,
+  ShieldCheck,
+  X,
 } from "lucide-react"
 
-import { supabase } from "@/lib/supabase/client"
+import { AdminSelect } from "@/app/admin/components/admin-controls"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
-import {
-  CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS,
-  getOrderClaimResolutionLabel,
-} from "@/lib/order-claims"
-import { ReplacementRequestSummary } from "@/components/claims/replacement-request-summary"
+import { getOrderClaimResolutionLabel } from "@/lib/order-claims"
+import { supabase } from "@/lib/supabase/client"
 import type {
   OrderClaimResolution,
   OrderClaimStatus,
@@ -29,59 +22,46 @@ import type {
 } from "@/lib/supabase/types"
 
 const PROBLEM_LABELS: Record<string, string> = {
-  danado: "Llegó dañado",
+  danado: "Producto dañado",
   incorrecto: "Producto incorrecto",
   falla: "Producto con falla",
-  devolucion: "Solicitud de devolución",
-  no_llego: "Nunca llegó el envío",
-  cambio_producto: "Me equivoqu? de producto",
-  cambio_color: "Me equivoqu? de color",
-  modificar_envio: "Modificar datos de envío",
+  faltante: "Faltó un producto",
+  cantidad_menor: "Menos cantidad recibida",
   cancelar_compra: "Cancelar compra",
-  otro_pre_despacho: "Otro problema con mi pedido",
+  devolucion: "Solicitud anterior",
+  no_llego: "Solicitud anterior",
+  cambio_producto: "Solicitud anterior",
+  cambio_color: "Solicitud anterior",
+  cambio_cantidad: "Solicitud anterior",
+  modificar_envio: "Solicitud anterior",
+  otro_pre_despacho: "Solicitud anterior",
   otro: "Otro problema",
 }
-const STATUS_OPTIONS: Array<{
-  value: OrderClaimStatus
-  label: string
-  tone: string
-  dot: string
-}> = [
-  { value: "en_revision", label: "En revisión", tone: "text-amber-200", dot: "bg-amber-400" },
-  { value: "aprobado", label: "Solución ofrecida", tone: "text-blue-200", dot: "bg-blue-400" },
-  { value: "reintegro_pendiente", label: "Reintegro pendiente", tone: "text-[#BFFFFD]", dot: "bg-[#77E6E2]" },
-  { value: "cambio_pendiente", label: "Cambio pendiente", tone: "text-[#BFFFFD]", dot: "bg-[#77E6E2]" },
-  { value: "cupon_pendiente", label: "Cupón pendiente", tone: "text-[#BFFFFD]", dot: "bg-[#77E6E2]" },
-  { value: "reemplazo_enviado", label: "Reemplazo enviado", tone: "text-blue-200", dot: "bg-blue-400" },
-  { value: "cerrado", label: "Resuelto", tone: "text-emerald-200", dot: "bg-emerald-400" },
-  { value: "rechazado", label: "Rechazado", tone: "text-red-200", dot: "bg-red-400" },
+
+const STATUS_OPTIONS: Array<{ value: OrderClaimStatus; label: string }> = [
+  { value: "recibido", label: "Reclamo recibido" },
+  { value: "en_revision", label: "En revisión por BEYONIX" },
+  { value: "falta_informacion", label: "Esperando respuesta del cliente" },
+  { value: "aprobado", label: "Solución en proceso" },
+  { value: "reintegro_pendiente", label: "Reintegro pendiente" },
+  { value: "cambio_pendiente", label: "Solución en proceso" },
+  { value: "cupon_pendiente", label: "Cupón pendiente" },
+  { value: "reemplazo_enviado", label: "Solución en proceso" },
+  { value: "rechazado", label: "Rechazado" },
+  { value: "cerrado", label: "Caso resuelto" },
 ]
 
-const OPEN_STATUS = {
-  value: "recibido" as const,
-  label: "Abierto",
-  tone: "text-blue-200",
-  dot: "bg-blue-400",
-}
+const RESOLUTION_OPTIONS: OrderClaimResolution[] = [
+  "reintegro_total",
+  "reintegro_parcial",
+  "cupon_descuento",
+  "otro",
+  "rechazado",
+]
 
-const WAITING_CUSTOMER_STATUS = {
-  value: "falta_informacion" as const,
-  label: "Esperando cliente",
-  tone: "text-orange-200",
-  dot: "bg-orange-400",
-}
+function formatDate(value?: string | null) {
+  if (!value) return "Sin fecha"
 
-const SOLUTION_OPTIONS = [
-  { value: "cambio_producto" as const, icon: RefreshCcw },
-  { value: "reintegro_total" as const, icon: WalletCards },
-  { value: "reintegro_parcial" as const, icon: WalletCards },
-  { value: "cupon_descuento" as const, icon: Percent },
-  { value: "otro" as const, icon: Sparkles },
-].filter((option) =>
-  CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS.includes(option.value),
-)
-
-function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-AR", {
     dateStyle: "short",
     timeStyle: "short",
@@ -89,12 +69,16 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
-function formatPrice(value: number) {
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  }).format(value)
+function sortUniqueMessages(messages: SupabaseOrderClaim["order_claim_messages"] = []) {
+  const seen = new Set<number>()
+
+  return [...messages]
+    .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at))
+    .filter((message) => {
+      if (seen.has(message.id)) return false
+      seen.add(message.id)
+      return true
+    })
 }
 
 function productName(order: SupabasePedido) {
@@ -102,7 +86,7 @@ function productName(order: SupabasePedido) {
     .map((item) => {
       const name = item.productos?.nombre
       const variant = item.producto_variantes?.nombre
-      return name ? [name, variant].filter(Boolean).join(" ? ") : null
+      return name ? [name, variant].filter(Boolean).join(" · ") : null
     })
     .filter(Boolean)
 
@@ -113,7 +97,9 @@ function getClaimDescription(claim: SupabaseOrderClaim, order: SupabasePedido) {
   const match = claim.description.match(/^Producto afectado:\s*(.+?)(?:\r?\n){2}([\s\S]*)$/)
 
   return {
-    product: match?.[1]?.trim() || productName(order),
+    product: claim.failure_type === "cancelar_compra"
+      ? "Pedido completo"
+      : match?.[1]?.trim() || productName(order),
     description: match?.[2]?.trim() || claim.description,
   }
 }
@@ -130,9 +116,47 @@ function getFileTypeLabel(mimeType: string) {
   return "Archivo"
 }
 
-function getStatusLabel(status: OrderClaimStatus) {
-  if (status === "recibido") return OPEN_STATUS.label
-  return STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
+function isOrderDelivered(order: SupabasePedido) {
+  const estado = (order.estado ?? "").toLowerCase()
+  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
+  return estado === "entregado" || Boolean(order.delivered_at) || andreaniStatus.includes("entregado")
+}
+
+function isOrderDispatched(order: SupabasePedido) {
+  const estado = (order.estado ?? "").toLowerCase()
+  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
+
+  return (
+    ["enviado", "en_camino", "entregado"].includes(estado) ||
+    Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
+    ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
+      (status) => andreaniStatus.includes(status),
+    )
+  )
+}
+
+function isOrderInvoiced(order: SupabasePedido) {
+  return (
+    order.invoice_status === "authorized" ||
+    order.invoice_status === "processing" ||
+    Boolean(order.invoice_cae) ||
+    Boolean(order.invoice_number && order.invoice_point)
+  )
+}
+
+function getStatusLabel(claim: SupabaseOrderClaim) {
+  if (claim.failure_type === "cancelar_compra") {
+    if (claim.status === "rechazado") return "Cancelación rechazada"
+    if (claim.status === "cerrado") return "Cancelación aprobada"
+    if (claim.status === "falta_informacion") return "Esperando cliente"
+    return "Cancelación solicitada"
+  }
+
+  if (["cambio_pendiente", "reemplazo_enviado"].includes(claim.status)) {
+    return "Solución en proceso"
+  }
+
+  return STATUS_OPTIONS.find((option) => option.value === claim.status)?.label ?? claim.status
 }
 
 export function AdminClaimManager({
@@ -146,25 +170,20 @@ export function AdminClaimManager({
   const [claimId, setClaimId] = useState<number | null>(claims[0]?.id ?? null)
   const claim = claims.find((item) => item.id === claimId) ?? claims[0]
   const [status, setStatus] = useState<OrderClaimStatus>(claim?.status ?? "recibido")
+  const [resolution, setResolution] = useState<OrderClaimResolution>(claim?.resolution ?? "otro")
   const [response, setResponse] = useState("")
   const [rejectionReason, setRejectionReason] = useState("")
-  const [solutions, setSolutions] = useState<OrderClaimResolution[]>([])
-  const [otherSolution, setOtherSolution] = useState("")
-  const [solutionOpen, setSolutionOpen] = useState(false)
-  const [statusOpen, setStatusOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [refundProofUploading, setRefundProofUploading] = useState(false)
-  const [replacementProduct, setReplacementProduct] = useState("")
-  const [replacementExtraCost, setReplacementExtraCost] = useState("")
-  const [replacementPaymentLink, setReplacementPaymentLink] = useState("")
-  const [replacementShippingCompany, setReplacementShippingCompany] = useState("")
-  const [replacementTracking, setReplacementTracking] = useState("")
-  const [couponCode, setCouponCode] = useState("")
   const [notice, setNotice] = useState("")
   const chatRef = useRef<HTMLDivElement>(null)
-  const statusDropdownRef = useRef<HTMLDivElement>(null)
   const firstReviewAttemptedRef = useRef<Set<number>>(new Set())
   const messageCount = claim?.order_claim_messages?.length ?? 0
+
+  const cancellation = claim?.failure_type === "cancelar_compra"
+  const invoiced = isOrderInvoiced(pedido)
+  const dispatched = isOrderDispatched(pedido)
+  const delivered = isOrderDelivered(pedido)
+  const cancellationCanBeApproved = cancellation && !invoiced && !dispatched && !delivered
 
   useLayoutEffect(() => {
     const chat = chatRef.current
@@ -174,31 +193,11 @@ export function AdminClaimManager({
   useEffect(() => {
     if (!claim) return
     setStatus(claim.status)
+    setResolution(claim.resolution ?? "otro")
     setRejectionReason(claim.rejection_reason ?? "")
-    setSolutions(claim.offered_resolutions ?? [])
     setResponse("")
     setNotice("")
-    setSolutionOpen(false)
-    setReplacementProduct(claim.replacement_product ?? "")
-    setReplacementExtraCost(
-      claim.replacement_extra_cost == null ? "" : String(claim.replacement_extra_cost),
-    )
-    setReplacementPaymentLink(claim.replacement_payment_link ?? "")
-    setReplacementShippingCompany(claim.replacement_shipping_company ?? "")
-    setReplacementTracking(claim.replacement_tracking ?? "")
-    setCouponCode(claim.coupon_code ?? "")
   }, [claim?.id])
-
-  useEffect(() => {
-    if (!statusOpen) return
-    const closeDropdown = (event: PointerEvent) => {
-      if (!statusDropdownRef.current?.contains(event.target as Node)) {
-        setStatusOpen(false)
-      }
-    }
-    document.addEventListener("pointerdown", closeDropdown)
-    return () => document.removeEventListener("pointerdown", closeDropdown)
-  }, [statusOpen])
 
   useEffect(() => {
     if (!claim) return
@@ -249,7 +248,7 @@ export function AdminClaimManager({
       const payload = {
         status,
         resolution: claim.resolution ?? null,
-        offered_resolutions: claim.offered_resolutions ?? [],
+        offered_resolutions: [],
         admin_response: claim.admin_response ?? "",
         rejection_reason: claim.rejection_reason ?? "",
         ...overrides,
@@ -268,163 +267,23 @@ export function AdminClaimManager({
       }
 
       if (!request.ok || !data.claim) {
-        setNotice(data.error || "No se pudo actualizar el reclamo.")
+        setNotice(data.error || "No se pudo actualizar el caso.")
         return false
       }
 
       onClaimChange(data.claim)
       setStatus(data.claim.status)
-      setSolutions(data.claim.offered_resolutions ?? [])
+      setResolution(data.claim.resolution ?? "otro")
       setRejectionReason(data.claim.rejection_reason ?? "")
       setNotice(successMessage)
       notifyOrderNotificationsChanged()
       return true
     } catch {
-      setNotice("No se pudo actualizar el reclamo.")
+      setNotice("No se pudo actualizar el caso.")
       return false
     } finally {
       setSaving(false)
     }
-  }
-
-  const uploadRefundProof = async (file: File | undefined) => {
-    if (!claim || !file) return
-    setRefundProofUploading(true)
-    setNotice("")
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        setNotice("La sesión administrativa venció.")
-        return
-      }
-
-      const formData = new FormData()
-      formData.set("action", "upload_refund_proof")
-      formData.set("file", file)
-      const request = await fetch(`/api/admin/order-claims/${claim.id}`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: formData,
-      })
-      const data = (await request.json()) as {
-        claim?: SupabaseOrderClaim
-        error?: string
-      }
-
-      if (!request.ok || !data.claim) {
-        setNotice(data.error || "No se pudo cargar el comprobante de devolución.")
-        return
-      }
-
-      onClaimChange(data.claim)
-      setNotice("Comprobante de devolución cargado.")
-    } catch {
-      setNotice("No se pudo cargar el comprobante de devolución.")
-    } finally {
-      setRefundProofUploading(false)
-    }
-  }
-
-  const markRefundDone = async () => {
-    if (!claim) return
-    await updateClaim(
-      {
-        action: "mark_refund_done",
-        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "reintegro_total",
-      },
-      "Reintegro marcado como realizado.",
-    )
-  }
-
-  const saveReplacementDetails = async () => {
-    if (!claim) return
-    if (!replacementProduct.trim()) {
-      setNotice("Indic? el producto de reemplazo.")
-      return
-    }
-
-    await updateClaim(
-      {
-        action: "save_replacement_details",
-        replacement_product: replacementProduct.trim(),
-        replacement_extra_cost: replacementExtraCost.trim()
-          ? Number(replacementExtraCost.replace(",", "."))
-          : 0,
-        replacement_payment_link: replacementPaymentLink.trim(),
-        replacement_shipping_company: replacementShippingCompany.trim(),
-        replacement_tracking: replacementTracking.trim(),
-      },
-      "Datos del cambio guardados.",
-    )
-  }
-
-  const markReplacementSent = async () => {
-    if (!claim) return
-    await updateClaim(
-      {
-        action: "mark_replacement_sent",
-        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cambio_producto",
-      },
-      "Reemplazo marcado como enviado.",
-    )
-  }
-
-  const approveReplacementSelection = async () => {
-    if (!claim) return
-    const proof = claim.order_claim_files?.some((file) => file.file_role === "comprobante_diferencia")
-    if (Number(claim.replacement_price_difference ?? 0) > 0 && !proof) {
-      setNotice("Falta el comprobante de pago de la diferencia.")
-      return
-    }
-
-    await updateClaim(
-      {
-        action: "approve_replacement_selection",
-        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cambio_producto",
-      },
-      "Cambio aprobado. Queda pendiente preparar el reemplazo.",
-    )
-  }
-
-  const rejectReplacementSelection = async () => {
-    if (!claim) return
-    await updateClaim(
-      {
-        action: "reject_replacement_selection",
-        admin_response: response.trim() || "",
-      },
-      "Selección enviada a corrección.",
-    )
-    setResponse("")
-  }
-
-  const markReplacementResolved = async () => {
-    if (!claim) return
-    await updateClaim(
-      {
-        action: "mark_replacement_resolved",
-        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cambio_producto",
-      },
-      "Cambio marcado como resuelto.",
-    )
-  }
-
-  const saveCoupon = async () => {
-    if (!claim) return
-    if (!couponCode.trim()) {
-      setNotice("Ingresá el código de cupón.")
-      return
-    }
-
-    await updateClaim(
-      {
-        action: "save_coupon",
-        coupon_code: couponCode.trim(),
-        resolution: claim.customer_selected_resolution ?? claim.resolution ?? "cupon_descuento",
-      },
-      "Cupón generado y reclamo resuelto.",
-    )
   }
 
   useEffect(() => {
@@ -434,7 +293,9 @@ export function AdminClaimManager({
     firstReviewAttemptedRef.current.add(claim.id)
     void updateClaim(
       { status: "en_revision" },
-      "Reclamo abierto por primera vez. Estado actualizado a En revisión.",
+      cancellation
+        ? "Solicitud abierta. Estado actualizado a En revisión."
+        : "Reclamo abierto. Estado actualizado a En revisión.",
     ).then((updated) => {
       if (!updated) firstReviewAttemptedRef.current.delete(claim.id)
     })
@@ -442,7 +303,7 @@ export function AdminClaimManager({
 
   const sendResponse = async () => {
     if (!claim || response.trim().length < 2) {
-      setNotice("Escrib? una respuesta para el cliente.")
+      setNotice("Escribí una respuesta para el cliente.")
       return
     }
 
@@ -457,180 +318,197 @@ export function AdminClaimManager({
     if (sent) setResponse("")
   }
 
+  const approveCancellation = async () => {
+    const sent = await updateClaim(
+      {
+        action: "approve_cancellation",
+        admin_response: response.trim(),
+      },
+      "Cancelación aprobada y pedido marcado como cancelado.",
+    )
+    if (sent) setResponse("")
+  }
+
+  const rejectCancellation = async () => {
+    const message = response.trim() || rejectionReason.trim()
+    if (message.length < 5) {
+      setNotice("Escribí el motivo del rechazo para que el cliente lo vea claro.")
+      return
+    }
+
+    const sent = await updateClaim(
+      {
+        action: "reject_cancellation",
+        admin_response: message,
+      },
+      "Cancelación rechazada. El cliente verá el motivo.",
+    )
+    if (sent) {
+      setResponse("")
+      setRejectionReason("")
+    }
+  }
+
+  const approveSolution = async () => {
+    if (!claim) return
+    const message = response.trim()
+    const sent = await updateClaim(
+      {
+        status: "aprobado",
+        resolution,
+        admin_response: message || claim.admin_response || "",
+        append_message: Boolean(message),
+      },
+      "Solución aprobada por BEYONIX.",
+    )
+    if (sent) setResponse("")
+  }
+
+  const rejectClaim = async () => {
+    const message = rejectionReason.trim() || response.trim()
+    if (message.length < 5) {
+      setNotice("El motivo del rechazo es obligatorio.")
+      return
+    }
+
+    const sent = await updateClaim(
+      {
+        status: "rechazado",
+        resolution: "rechazado",
+        rejection_reason: message,
+        admin_response: message,
+        append_message: true,
+      },
+      cancellation ? "Cancelación rechazada." : "Reclamo rechazado y cliente notificado.",
+    )
+    if (sent) {
+      setResponse("")
+      setRejectionReason("")
+    }
+  }
+
+  const markResolved = async () => {
+    if (!claim) return
+    const sent = await updateClaim(
+      {
+        status: "cerrado",
+        resolution: resolution === "rechazado" ? "otro" : resolution,
+        admin_response: response.trim() || claim.admin_response || "",
+        append_message: Boolean(response.trim()),
+      },
+      "Caso marcado como resuelto.",
+    )
+    if (sent) setResponse("")
+  }
+
   const changeStatus = async () => {
     if (!claim) return
     if (status === "rechazado") {
-      if (!rejectionReason.trim()) {
-        setNotice("El motivo del rechazo es obligatorio.")
-        return
-      }
-      await updateClaim(
-        {
-          status: "rechazado",
-          resolution: "rechazado",
-          rejection_reason: rejectionReason.trim(),
-          admin_response: rejectionReason.trim(),
-        },
-        "Reclamo rechazado y cliente notificado.",
-      )
+      await rejectClaim()
+      return
+    }
+    if (status === "cerrado") {
+      await markResolved()
       return
     }
 
     await updateClaim(
       {
         status,
-        resolution:
-          status === "cerrado"
-            ? claim.resolution ?? claim.customer_selected_resolution ?? "otro"
-            : claim.resolution ?? null,
+        resolution: status === "aprobado" ? resolution : claim.resolution ?? null,
       },
       "Estado actualizado.",
     )
   }
 
-  const offerSolution = async () => {
-    if (solutions.length === 0) {
-      setNotice("Elegí al menos una solución para ofrecer.")
-      return
-    }
-    if (solutions.includes("otro") && !otherSolution.trim()) {
-      setNotice("Describí la otra solución.")
-      return
-    }
-
-    const labels = solutions.map(getOrderClaimResolutionLabel).join(", ")
-    const message = otherSolution.trim()
-      ? `Te ofrecemos: ${labels}. Detalle: ${otherSolution.trim()}`
-      : `Te ofrecemos: ${labels}.`
-    const sent = await updateClaim(
-      {
-        status: "aprobado",
-        offered_resolutions: solutions,
-        resolution: null,
-        admin_response: message,
-        append_message: true,
-      },
-      "Solución enviada al cliente.",
-    )
-
-    if (sent) {
-      setOtherSolution("")
-      setSolutionOpen(false)
-    }
-  }
-
   if (!claim) {
-    return <section className="admin-claim-manager mt-3 rounded-2xl border border-white/10 bg-[#0D1117] p-4"><h3 className="text-base font-black text-white">Gestión del reclamo</h3><p className="mt-1 text-sm text-[#C8C8C8]">Este pedido todavía no tiene reclamos.</p></section>
+    return (
+      <section className="admin-claim-manager mt-3 rounded-2xl border border-white/10 bg-[#0D1117] p-4">
+        <h3 className="text-base font-black text-white">Gestión de ayuda</h3>
+        <p className="mt-1 text-sm text-[#C8C8C8]">Este pedido todavía no tiene solicitudes ni reclamos.</p>
+      </section>
+    )
   }
 
-  const messages = [...(claim.order_claim_messages ?? [])].sort(
-    (a, b) => +new Date(a.created_at) - +new Date(b.created_at),
-  )
+  const messages = sortUniqueMessages(claim.order_claim_messages)
   const customer =
     pedido.cliente_nombre ||
     pedido.cliente_username ||
     pedido.cliente_email ||
     "Cliente"
   const details = getClaimDescription(claim, pedido)
-  const chatMessages = messages
   const reason =
     PROBLEM_LABELS[claim.failure_type ?? ""] ||
     claim.failure_type ||
     "Solicitud de ayuda"
   const files = claim.order_claim_files ?? []
-  const refundProof = files.find((file) => file.file_role === "comprobante_devolucion")
-  const differenceProof = [...files].reverse().find((file) => file.file_role === "comprobante_diferencia")
   const evidenceFiles = files.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
-  const refundSelected =
-    claim.customer_selected_resolution === "reintegro_total" ||
-    claim.customer_selected_resolution === "reintegro_parcial" ||
-    claim.resolution === "reintegro_total" ||
-    claim.resolution === "reintegro_parcial"
-  const replacementSelected =
-    claim.customer_selected_resolution === "cambio_producto" ||
-    claim.resolution === "cambio_producto" ||
-    claim.status === "cambio_pendiente" ||
-    claim.status === "reemplazo_enviado"
-  const replacementRequested = Boolean(claim.replacement_requested_product)
-  const replacementDifference = Number(claim.replacement_price_difference ?? 0)
-  const replacementNeedsDifferenceProof = replacementDifference > 0
-  const replacementCanApprove = !replacementNeedsDifferenceProof || Boolean(differenceProof)
-  const couponSelected =
-    claim.customer_selected_resolution === "cupon_descuento" ||
-    claim.resolution === "cupon_descuento" ||
-    claim.status === "cupon_pendiente"
-  const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
-  const offeredSolutions = claim.offered_resolutions ?? []
-  const adminChatLocked = claim.status === "cerrado" || claim.status === "rechazado"
   const statusChanged = status !== claim.status
-  const solutionState = claim.customer_selected_resolution
-    ? "Aceptada por el cliente"
-    : claim.status === "rechazado"
-      ? "Rechazada"
-      : "Pendiente de respuesta"
-  const currentClaimStatus = claim.status === "recibido"
-    ? OPEN_STATUS
-    : claim.status === "falta_informacion"
-      ? WAITING_CUSTOMER_STATUS
-      : STATUS_OPTIONS.find((option) => option.value === claim.status) ?? STATUS_OPTIONS[0]
+  const closed = ["cerrado", "rechazado"].includes(claim.status)
 
   return (
-    <section className="admin-claim-manager mt-3 overflow-hidden rounded-2xl border border-blue-300/20 bg-[#0D1117] shadow-[0_0_24px_rgba(17,42,67,0.18)]">
-      <header className="border-b border-white/8 bg-[#11161D] px-3 py-2.5 sm:px-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <section className="admin-claim-manager mt-3 overflow-hidden rounded-2xl border border-white/10 bg-[#0D1117] shadow-[0_22px_55px_rgba(0,0,0,0.28)]">
+      <header className="border-b border-white/8 p-3 sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h3 className="text-lg font-black text-white">Reclamo</h3>
-              <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${currentClaimStatus.tone}`}><span className={`size-2 rounded-full ${currentClaimStatus.dot}`} />{currentClaimStatus.label}</span>
-              {claims.length > 1 && (
-                <select value={claim.id} onChange={(event) => setClaimId(Number(event.target.value))} className="h-8 rounded-lg border border-white/12 bg-[#15191F] px-2 text-xs font-bold text-white outline-none">
-                  {claims.map((item) => <option key={item.id} value={item.id}>Reclamo #{item.id}</option>)}
-                </select>
-              )}
-            </div>
+            <p className="text-10px font-black uppercase tracking-[0.18em] text-blue-300">
+              {cancellation ? "Solicitud de cancelación" : "Reclamo post-entrega"}
+            </p>
+            <h3 className="mt-1 text-lg font-black text-white">
+              Pedido BX-{1000 + pedido.id}
+            </h3>
+            <p className="mt-1 text-xs font-semibold leading-5 text-[#C8C8C8]">
+              {cancellation
+                ? "Revisá si el pedido no fue facturado ni despachado antes de aprobar."
+                : "El cliente reportó un problema con un producto recibido."}
+            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div ref={statusDropdownRef} className="relative z-30">
-              <button type="button" aria-haspopup="listbox" aria-expanded={statusOpen} onClick={() => setStatusOpen((current) => !current)} className="flex h-9 min-w-40 items-center gap-2 rounded-lg border border-white/12 bg-[#15191F] px-2.5 text-left shadow-sm transition-colors hover:border-blue-300/35">
-                <span className="min-w-0 flex-1 text-xs font-black text-white">Cambiar estado</span>
-                <ChevronDown className={`size-3.5 text-white/50 transition-transform ${statusOpen ? "rotate-180" : ""}`} />
-              </button>
-              {statusOpen && <div role="listbox" className="absolute right-0 top-11 w-full min-w-56 overflow-hidden rounded-xl border border-white/12 bg-[#0D1117] p-1.5 shadow-2xl shadow-black/70">{STATUS_OPTIONS.map((option) => <button key={option.value} type="button" role="option" aria-selected={status === option.value} onClick={() => { setStatus(option.value); setStatusOpen(false) }} className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors ${status === option.value ? "bg-[#112A43]" : "hover:bg-[#1B2028]"}`}><span className={`size-2 rounded-full ${option.dot}`} /><span className={`text-xs font-black ${option.tone}`}>{option.label}</span>{status === option.value && <Check className="ml-auto size-3.5 text-blue-300" />}</button>)}</div>}
-            </div>
-            {(statusChanged || status === "rechazado") && <button type="button" disabled={saving} onClick={() => void changeStatus()} className="h-9 rounded-lg border border-white/12 bg-[#1B2028] px-3 text-xs font-black text-white disabled:opacity-45">Guardar</button>}
-            <button type="button" onClick={() => setSolutionOpen((current) => !current)} className="h-9 rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white">{solutionOpen ? "Cerrar soluciones" : "Ofrecer solución"}</button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center xl:justify-end">
+            {claims.length > 1 && (
+              <div className="w-full sm:w-56">
+                <AdminSelect
+                  title="Seleccionar caso"
+                  value={String(claim.id)}
+                  compact
+                  onChange={(value) => setClaimId(Number(value))}
+                >
+                  {claims.map((item) => (
+                    <option key={item.id} value={String(item.id)}>
+                      #{item.id} · {PROBLEM_LABELS[item.failure_type ?? ""] ?? "Ayuda"}
+                    </option>
+                  ))}
+                </AdminSelect>
+              </div>
+            )}
+            <span className="inline-flex h-8 w-fit items-center gap-2 rounded-full border border-blue-300/20 bg-[#112A43]/35 px-3 text-10px font-black uppercase tracking-wide text-white">
+              <span className="size-2 rounded-full bg-blue-300" />
+              {getStatusLabel(claim)}
+            </span>
           </div>
         </div>
 
-        {status === "rechazado" && (
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <input value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} placeholder="Motivo del rechazo (obligatorio)" className="h-9 min-w-0 flex-1 rounded-lg border border-red-300/25 bg-[#15191F] px-3 text-xs text-white outline-none placeholder:text-white/40" />
-          </div>
-        )}
-
-        {solutionOpen && (
-          <div className="mt-2.5 rounded-xl border border-blue-300/15 bg-[#0D1117] p-2.5">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-              {SOLUTION_OPTIONS.map(({ value: solution, icon: SolutionIcon }) => {
-                const selected = solutions.includes(solution)
-                return <button key={solution} type="button" aria-pressed={selected} onClick={() => setSolutions((current) => selected ? current.filter((item) => item !== solution) : [...current, solution])} className={`group relative flex min-h-12 items-center gap-2.5 rounded-lg border px-2.5 text-left text-xs font-bold transition-all ${selected ? "border-[#3b82f6] bg-[#112A43] text-white shadow-[0_0_0_1px_rgba(59,130,246,0.22)]" : "border-white/10 bg-black/30 text-white/80 hover:border-[#1e6fae] hover:bg-[#112A43]/30 hover:shadow-[0_0_0_1px_rgba(30,111,174,0.22)]"}`}><span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${selected ? "bg-blue-300/15 text-blue-200" : "bg-[#1B2028] text-[#8EA0B5] group-hover:text-blue-300"}`}><SolutionIcon className="size-3.5" /></span><span className="min-w-0 flex-1">{getOrderClaimResolutionLabel(solution)}</span><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-blue-300 bg-blue-300 text-[#0D1117]" : "border-white/15 text-transparent"}`}><Check className="size-3" /></span></button>
-              })}
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {[
+            ["Pedido", pedido.estado || "-"],
+            ["Facturación", invoiced ? "Facturado / en proceso" : "Sin factura emitida"],
+            ["Envío", dispatched ? "Despachado" : "No despachado"],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-white/8 bg-[#15191F] px-3 py-2">
+              <p className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">{label}</p>
+              <p className="mt-0.5 text-xs font-black text-white">{value}</p>
             </div>
-            {solutions.includes("otro") && <input value={otherSolution} onChange={(event) => setOtherSolution(event.target.value)} placeholder="Describí la otra solución" className="mt-2 h-9 w-full rounded-lg border border-white/12 bg-[#15191F] px-3 text-xs text-white outline-none" />}
-            <div className="mt-2 flex justify-end"><button type="button" disabled={saving || solutions.length === 0} onClick={() => void offerSolution()} className="h-9 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-45">Enviar solución al cliente</button></div>
-          </div>
+          ))}
+        </div>
+
+        {cancellation && !cancellationCanBeApproved && !closed && (
+          <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
+            Esta orden ya está facturada, despachada o entregada. No se puede aprobar la cancelación desde esta acción.
+          </p>
         )}
       </header>
 
-      {offeredSolutions.length > 0 && !solutionOpen && (
-        <div className="mx-3 mt-3 grid gap-2 rounded-xl border border-blue-300/15 bg-[#15191F] px-3 py-2 sm:mx-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div><p className="text-10px font-black uppercase tracking-widest text-blue-300">Soluciones ofrecidas</p><div className="mt-1 flex flex-wrap gap-1.5">{offeredSolutions.map((solution) => <span key={solution} className={`rounded-full border px-2.5 py-1 text-10px font-black text-white ${claim.customer_selected_resolution === solution ? "border-emerald-400/60 bg-emerald-700/70" : "border-white/10 bg-[#1B2028]"}`}>{getOrderClaimResolutionLabel(solution)}</span>)}</div></div>
-          {claim.customer_selected_resolution ? <div className="rounded-lg border border-emerald-400/55 bg-emerald-700/75 px-3 py-2 text-white shadow-[0_0_14px_rgba(22,163,74,0.2)]"><p className="text-9px font-black uppercase tracking-widest text-emerald-100">Solución elegida por el cliente</p><p className="mt-0.5 text-sm font-black">? {getOrderClaimResolutionLabel(claim.customer_selected_resolution)}</p><span className="mt-1 inline-flex rounded-full bg-emerald-950/45 px-2 py-0.5 text-9px font-black uppercase tracking-wide">Aceptada por el cliente</span></div> : <div className="text-right"><p className="text-10px text-[#8EA0B5]">{formatDate(claim.updated_at)}</p><p className="mt-0.5 text-xs font-black text-amber-200">{solutionState}</p></div>}
-        </div>
-      )}
-
-      <div className="grid gap-3 p-3 lg:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)] sm:px-4 sm:py-3">
+      <div className="grid gap-3 p-3 lg:grid-cols-[minmax(260px,0.75fr)_minmax(0,1.25fr)] sm:px-4 sm:py-3">
         <aside className="space-y-3">
           <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
             <h4 className="text-sm font-black text-white">Información del caso</h4>
@@ -638,116 +516,159 @@ export function AdminClaimManager({
               {[
                 ["Cliente", customer],
                 ["Pedido", `BX-${1000 + pedido.id}`],
-                ["Producto afectado", details.product],
+                [cancellation ? "Alcance" : "Producto afectado", details.product],
                 ["Motivo", reason],
-                ["Estado", getStatusLabel(claim.status)],
-              ].map(([label, value]) => <div key={label} className="grid grid-cols-[105px_minmax(0,1fr)] gap-2 py-2"><dt className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">{label}</dt><dd className="text-xs font-bold leading-5 text-white">{value}</dd></div>)}
+                ["Estado", getStatusLabel(claim)],
+                ["Fecha de creación", formatDate(claim.created_at)],
+              ].map(([label, value]) => (
+                <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-2 py-2">
+                  <dt className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">{label}</dt>
+                  <dd className="text-xs font-bold leading-5 text-white">{value}</dd>
+                </div>
+              ))}
             </dl>
-            <div className="mt-2 rounded-lg bg-[#1B2028] p-2.5"><p className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">Mensaje inicial del cliente</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#C8C8C8]">{details.description}</p></div>
+            <div className="mt-2 rounded-lg bg-[#1B2028] p-2.5">
+              <p className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">
+                {cancellation ? "Mensaje de cancelación" : "Mensaje inicial del cliente"}
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[#C8C8C8]">{details.description}</p>
+            </div>
           </section>
 
           <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
             <h4 className="text-sm font-black text-white">Evidencia</h4>
-            {evidenceFiles.length === 0 ? <p className="mt-1.5 text-xs text-[#C8C8C8]">El cliente no adjunt? archivos.</p> : <div className="mt-2 space-y-1.5">{evidenceFiles.map((file) => <div key={file.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#1B2028] p-2 text-xs font-bold text-white">{file.mime_type.startsWith("image/") && file.signedUrl ? <img src={file.signedUrl} alt={file.file_name} className="size-10 rounded-md object-cover" /> : <FileText className="size-4 shrink-0 text-blue-300" />}<div className="min-w-0 flex-1"><p className="truncate">{file.file_name}</p><p className="mt-0.5 text-10px font-bold text-[#8EA0B5]">{getFileTypeLabel(file.mime_type)}</p></div><a href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="rounded-md border border-blue-300/20 px-2 py-1 text-10px text-blue-300 hover:border-blue-300/45">Ver</a><a href={file.signedUrl ?? undefined} download={file.file_name} className="rounded-md border border-white/10 px-2 py-1 text-10px text-white/70 hover:border-blue-300/35"><Download className="size-3.5" /></a></div>)}</div>}
-          </section>
-          {refundSelected && (
-            <section className="rounded-xl border border-[#77E6E2]/15 bg-[#15191F] p-3">
-              <h4 className="text-sm font-black text-white">Datos de reintegro</h4>
-              {refundDetailsSubmitted ? (
-                <dl className="mt-2 divide-y divide-white/7">
-                  {[
-                    ["Titular", claim.refund_account_holder ?? "-"],
-                    ["Alias / CBU / CVU", claim.refund_account_identifier ?? "-"],
-                    ["Banco / billetera", claim.refund_bank ?? "-"],
-                    ["Importe", claim.refund_amount_confirmed ?? "-"],
-                  ].map(([label, value]) => <div key={label} className="grid grid-cols-[105px_minmax(0,1fr)] gap-2 py-2"><dt className="text-10px font-bold uppercase tracking-wide text-[#8EA0B5]">{label}</dt><dd className="break-words text-xs font-bold leading-5 text-white">{value}</dd></div>)}
-                </dl>
-              ) : (
-                <p className="mt-1.5 rounded-lg border border-[#77E6E2]/15 bg-[#77E6E2]/5 px-2.5 py-2 text-xs font-bold text-[#D7FFFD]">Pendiente de datos del cliente.</p>
-              )}
-            </section>
-          )}
-
-          {refundSelected && refundDetailsSubmitted && (
-            <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
-              <h4 className="text-sm font-black text-white">Comprobante de devolución</h4>
-              {refundProof?.signedUrl ? <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 p-2 text-xs font-bold text-white hover:border-[#77E6E2]/40"><FileText className="size-4 shrink-0 text-[#77E6E2]" /><span className="min-w-0 flex-1 truncate">{refundProof.file_name}</span><span className="text-10px text-[#77E6E2]">Ver</span><Download className="size-3.5" /></a> : <p className="mt-1.5 text-xs text-[#C8C8C8]">Todavía no se carg? comprobante.</p>}
-              <label className="mt-2 flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-300/20 bg-[#112A43]/55 px-3 text-xs font-black text-white transition hover:border-blue-300/45">
-                <Upload className="size-3.5" />
-                {refundProof ? "Cambiar comprobante" : "Cargar comprobante"}
-                <input type="file" accept="image/*,application/pdf" disabled={refundProofUploading || saving} className="sr-only" onChange={(event) => { void uploadRefundProof(event.target.files?.[0]); event.currentTarget.value = "" }} />
-              </label>
-              <button type="button" disabled={saving || refundProofUploading || !refundProof} onClick={() => void markRefundDone()} className="mt-2 h-9 w-full rounded-lg border border-emerald-300/25 bg-emerald-600/20 px-3 text-xs font-black text-emerald-100 transition hover:border-emerald-300/45 disabled:cursor-not-allowed disabled:opacity-45">Marcar reintegro realizado</button>
-            </section>
-          )}
-
-          {replacementSelected && (
-            <section className="rounded-xl border border-[#77E6E2]/15 bg-[#15191F] p-3">
-              <h4 className="text-sm font-black text-white">Cambio de producto</h4>
-              <p className="mt-1 text-xs leading-5 text-[#C8C8C8]">Completá los datos del reemplazo. El reclamo se resuelve recién cuando BEYONIX confirma el envío o entrega.</p>
-              {replacementRequested && (
-                <div>
-                  <ReplacementRequestSummary
-                    claim={claim}
-                    actions={replacementNeedsDifferenceProof ? (
-                      <div className="rounded-lg border border-amber-300/18 bg-amber-400/5 p-2">
-                        <p className="text-10px font-black uppercase tracking-wide text-amber-100">Comprobante de diferencia</p>
-                        {differenceProof?.signedUrl ? (
-                          <a href={differenceProof.signedUrl} target="_blank" rel="noreferrer" className="mt-1.5 flex items-center gap-2 rounded-lg border border-amber-300/20 bg-black/20 px-2 py-1.5 text-10px font-bold text-white hover:border-amber-300/40">
-                            <FileText className="size-3.5 shrink-0 text-amber-200" />
-                            <span className="min-w-0 flex-1 truncate">{differenceProof.file_name}</span>
-                            <span className="text-amber-100">Ver</span>
-                          </a>
-                        ) : (
-                          <p className="mt-1.5 text-10px leading-4 text-amber-100">Pendiente: el cliente debe subir el comprobante antes de aprobar el cambio.</p>
-                        )}
-                      </div>
-                    ) : null}
-                  />
-                  <div className="mt-2 grid gap-2">
-                    <button type="button" disabled={saving || !replacementCanApprove} onClick={() => void approveReplacementSelection()} className="h-8 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:cursor-not-allowed disabled:opacity-45">Aprobar cambio</button>
-                    <button type="button" disabled={saving} onClick={() => void rejectReplacementSelection()} className="h-8 rounded-lg border border-white/12 bg-[#1B2028] px-3 text-xs font-black text-white transition hover:border-blue-300/35 disabled:opacity-45">Rechazar cambio</button>
+            {evidenceFiles.length === 0 ? (
+              <p className="mt-1.5 text-xs text-[#C8C8C8]">El cliente no adjuntó archivos.</p>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {evidenceFiles.map((file) => (
+                  <div key={file.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#1B2028] p-2 text-xs font-bold text-white">
+                    {file.mime_type.startsWith("image/") && file.signedUrl ? (
+                      <img src={file.signedUrl} alt={file.file_name} className="size-10 rounded-md object-cover" />
+                    ) : (
+                      <FileText className="size-4 shrink-0 text-blue-300" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate">{file.file_name}</p>
+                      <p className="mt-0.5 text-10px font-bold text-[#8EA0B5]">{getFileTypeLabel(file.mime_type)}</p>
+                    </div>
+                    <a href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="rounded-md border border-blue-300/20 px-2 py-1 text-10px text-blue-300 hover:border-blue-300/45">Ver</a>
+                    <a href={file.signedUrl ?? undefined} download={file.file_name} className="rounded-md border border-white/10 px-2 py-1 text-10px text-white/70 hover:border-blue-300/35">
+                      <Download className="size-3.5" />
+                    </a>
                   </div>
-                </div>
-              )}
-              <div className="mt-2 grid gap-2">
-                <input value={replacementProduct} onChange={(event) => setReplacementProduct(event.target.value)} placeholder="Producto reemplazo" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                <input value={replacementExtraCost} onChange={(event) => setReplacementExtraCost(event.target.value)} placeholder="Costo extra / diferencia" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                <input value={replacementPaymentLink} onChange={(event) => setReplacementPaymentLink(event.target.value)} placeholder="Link de pago si corresponde" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                <input value={replacementShippingCompany} onChange={(event) => setReplacementShippingCompany(event.target.value)} placeholder="Empresa de envío" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                <input value={replacementTracking} onChange={(event) => setReplacementTracking(event.target.value)} placeholder="Seguimiento" className="h-9 rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                ))}
               </div>
-              <div className="mt-2 grid gap-2">
-                <button type="button" disabled={saving} onClick={() => void saveReplacementDetails()} className="h-9 rounded-lg border border-blue-300/20 bg-[#112A43]/55 px-3 text-xs font-black text-white transition hover:border-blue-300/45 disabled:opacity-45">Guardar cambio</button>
-                <button type="button" disabled={saving || !claim.replacement_product} onClick={() => void markReplacementSent()} className="h-9 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:opacity-45">Marcar reemplazo enviado</button>
-                <button type="button" disabled={saving || claim.status !== "reemplazo_enviado"} onClick={() => void markReplacementResolved()} className="h-9 rounded-lg border border-emerald-300/25 bg-emerald-600/20 px-3 text-xs font-black text-emerald-100 transition hover:border-emerald-300/45 disabled:opacity-45">Marcar cambio resuelto</button>
-              </div>
-            </section>
-          )}
+            )}
+          </section>
 
-          {couponSelected && (
-            <section className="rounded-xl border border-[#77E6E2]/15 bg-[#15191F] p-3">
-              <h4 className="text-sm font-black text-white">Cupón de descuento</h4>
-              <p className="mt-1 text-xs leading-5 text-[#C8C8C8]">Generá el cupón usable para que el cliente pueda verlo y copiarlo.</p>
-              <input value={couponCode} onChange={(event) => setCouponCode(event.target.value)} placeholder="Código de cupón" className="mt-2 h-9 w-full rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-              <button type="button" disabled={saving} onClick={() => void saveCoupon()} className="mt-2 h-9 w-full rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:opacity-45">Guardar cupón y resolver</button>
-            </section>
-          )}
+          <section className="rounded-xl border border-white/9 bg-[#15191F] p-3">
+            <h4 className="text-sm font-black text-white">Acciones</h4>
+
+            {cancellation ? (
+              <div className="mt-2 grid gap-2">
+                <button
+                  type="button"
+                  disabled={saving || closed || !cancellationCanBeApproved}
+                  onClick={() => void approveCancellation()}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <ShieldCheck className="size-3.5" />
+                  Aprobar cancelación
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || closed}
+                  onClick={() => void rejectCancellation()}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-red-300/25 bg-red-500/8 px-3 text-xs font-black text-red-100 transition hover:border-red-300/45 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <X className="size-3.5" />
+                  Rechazar cancelación
+                </button>
+              </div>
+            ) : (
+              <div className="mt-2 space-y-2">
+                <AdminSelect
+                  title="Estado del reclamo"
+                  value={status}
+                  compact
+                  disabled={closed}
+                  onChange={(value) => setStatus(value as OrderClaimStatus)}
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </AdminSelect>
+                <AdminSelect
+                  title="Resolución definida por BEYONIX"
+                  value={resolution}
+                  compact
+                  disabled={closed}
+                  onChange={(value) => setResolution(value as OrderClaimResolution)}
+                >
+                  {RESOLUTION_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{getOrderClaimResolutionLabel(option)}</option>
+                  ))}
+                </AdminSelect>
+                {statusChanged && (
+                  <button type="button" disabled={saving || closed} onClick={() => void changeStatus()} className="h-9 w-full rounded-lg border border-white/12 bg-[#1B2028] px-3 text-xs font-black text-white disabled:opacity-45">
+                    Guardar estado
+                  </button>
+                )}
+                <button type="button" disabled={saving || closed} onClick={() => void approveSolution()} className="h-9 w-full rounded-lg border border-blue-300/20 bg-[#112A43]/55 px-3 text-xs font-black text-white transition hover:border-blue-300/45 disabled:opacity-45">
+                  Aprobar solución
+                </button>
+                <button type="button" disabled={saving || closed} onClick={() => void markResolved()} className="h-9 w-full rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:opacity-45">
+                  Marcar como resuelto
+                </button>
+                <input
+                  value={rejectionReason}
+                  onChange={(event) => setRejectionReason(event.target.value)}
+                  placeholder="Motivo de rechazo"
+                  className="h-9 w-full rounded-lg border border-white/10 bg-[#1B2028] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-red-300/45"
+                />
+                <button type="button" disabled={saving || closed} onClick={() => void rejectClaim()} className="h-9 w-full rounded-lg border border-red-300/25 bg-red-500/8 px-3 text-xs font-black text-red-100 transition hover:border-red-300/45 disabled:opacity-45">
+                  Rechazar reclamo
+                </button>
+              </div>
+            )}
+          </section>
         </aside>
 
         <section className="flex min-h-[30rem] flex-col overflow-hidden rounded-xl border border-blue-300/15 bg-[#15191F] lg:h-[clamp(30rem,58vh,40rem)]">
-          <div className="border-b border-white/8 px-3 py-2.5"><h4 className="text-sm font-black text-white">Chat cliente ? BEYONIX</h4><p className="mt-0.5 text-10px text-[#8EA0B5]">{chatMessages.length} mensaje{chatMessages.length === 1 ? "" : "s"}</p></div>
+          <div className="border-b border-white/8 px-3 py-2.5">
+            <h4 className="text-sm font-black text-white">Chat Cliente / BEYONIX</h4>
+            <p className="mt-0.5 text-10px text-[#8EA0B5]">{messages.length} mensaje{messages.length === 1 ? "" : "s"}</p>
+          </div>
           <div ref={chatRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-            {chatMessages.length === 0 && <p className="rounded-lg bg-[#1B2028] px-3 py-2 text-xs text-[#C8C8C8]">Todavía no hay mensajes en esta conversación.</p>}
-            {chatMessages.map((message) => {
+            {messages.length === 0 && <p className="rounded-lg bg-[#1B2028] px-3 py-2 text-xs text-[#C8C8C8]">Todavía no hay mensajes en esta conversación.</p>}
+            {messages.map((message) => {
               const isCustomer = message.author_role === "cliente"
-              return <div key={message.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}><div className={`max-w-[82%] rounded-xl px-3 py-2 ${isCustomer ? "border border-white/9 bg-[#1B2028]" : "bg-[#112A43]"}`}><p className="text-10px font-black text-blue-200">{isCustomer ? "Cliente" : "BEYONIX"}</p><p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-white">{getClaimMessageText(message.message)}</p><p className="mt-1 text-[9px] text-white/45">{formatDate(message.created_at)}</p></div></div>
+              return (
+                <div key={message.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}>
+                  <div className={`max-w-[82%] rounded-xl px-3 py-2 ${isCustomer ? "border border-white/9 bg-[#1B2028]" : "bg-[#112A43]"}`}>
+                    <p className="text-10px font-black text-blue-200">{isCustomer ? "Cliente" : "BEYONIX"}</p>
+                    <p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-white">{getClaimMessageText(message.message)}</p>
+                    <p className="mt-1 text-[9px] text-white/45">{formatDate(message.created_at)}</p>
+                  </div>
+                </div>
+              )
             })}
           </div>
           <div className="border-t border-white/8 bg-[#11161D] p-2.5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <textarea value={response} disabled={adminChatLocked} onChange={(event) => setResponse(event.target.value)} rows={2} placeholder={adminChatLocked ? "Reclamo cerrado" : "Responder al cliente"} className="min-h-16 min-w-0 flex-1 resize-none rounded-lg border border-white/12 bg-[#1B2028] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/45 disabled:cursor-not-allowed disabled:opacity-45" />
-              <button type="button" disabled={saving || adminChatLocked || response.trim().length < 2} onClick={() => void sendResponse()} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-45"><Send className="size-3.5" />Enviar respuesta</button>
+              <textarea
+                value={response}
+                disabled={closed}
+                onChange={(event) => setResponse(event.target.value)}
+                rows={2}
+                placeholder={closed ? "Caso cerrado" : cancellation ? "Responder o escribir motivo para aprobar/rechazar" : "Responder al cliente"}
+                className="min-h-16 min-w-0 flex-1 resize-none rounded-lg border border-white/12 bg-[#1B2028] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/45 disabled:cursor-not-allowed disabled:opacity-45"
+              />
+              <button type="button" disabled={saving || closed || response.trim().length < 2} onClick={() => void sendResponse()} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-45">
+                <Send className="size-3.5" />
+                Enviar respuesta
+              </button>
             </div>
           </div>
         </section>

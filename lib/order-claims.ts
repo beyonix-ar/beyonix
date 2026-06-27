@@ -34,13 +34,7 @@ export const ORDER_CLAIM_RESOLUTIONS: OrderClaimResolution[] = [
 ]
 
 export const CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS: OrderClaimResolution[] =
-  [
-    "cambio_producto",
-    "reintegro_total",
-    "reintegro_parcial",
-    "cupon_descuento",
-    "otro",
-  ]
+  []
 
 export const ACTIVE_ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
   "recibido",
@@ -55,14 +49,14 @@ export const ACTIVE_ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
 
 export function getOrderClaimStatusLabel(status?: string | null) {
   const labels: Record<string, string> = {
-    recibido: "En revisi?n",
-    en_revision: "En revisi?n",
+    recibido: "En revisión",
+    en_revision: "En revisión",
     falta_informacion: "Esperando respuesta del cliente",
-    aprobado: "Soluci?n ofrecida",
+    aprobado: "Solución en proceso",
     reintegro_pendiente: "Reintegro pendiente",
-    cambio_pendiente: "Cambio pendiente",
-    cupon_pendiente: "Cup?n pendiente",
-    reemplazo_enviado: "Reemplazo enviado",
+    cambio_pendiente: "Solución en proceso",
+    cupon_pendiente: "Cupón pendiente",
+    reemplazo_enviado: "Solución en proceso",
     rechazado: "Rechazado",
     cerrado: "Resuelto",
   }
@@ -73,7 +67,7 @@ export function getOrderClaimStatusLabel(status?: string | null) {
 export function getOrderClaimTypeLabel(type?: string | null) {
   const labels: Record<string, string> = {
     transporte_48hs: "Problema con la entrega",
-    garantia_beyonix: "Garant?a BEYONIX",
+    garantia_beyonix: "Garantía BEYONIX",
   }
 
   return type ? labels[type] ?? type : "Reclamo"
@@ -81,15 +75,15 @@ export function getOrderClaimTypeLabel(type?: string | null) {
 
 export function getOrderClaimResolutionLabel(resolution?: string | null) {
   const labels: Record<string, string> = {
-    cambio_producto: "Cambio de producto",
+    cambio_producto: "Solución operativa",
     reintegro_total: "Reintegro total",
     reintegro_parcial: "Reintegro parcial",
-    cupon_descuento: "Cup?n de descuento",
+    cupon_descuento: "Cupón de descuento",
     rechazado: "Rechazado",
-    otro: "Otra soluci?n",
+    otro: "Otra solución",
   }
 
-  return resolution ? labels[resolution] ?? resolution : "Sin resoluci?n"
+  return resolution ? labels[resolution] ?? resolution : "Sin resolución"
 }
 
 export function getClaimDeadline(deliveredAt: string, type: OrderClaimType) {

@@ -12,6 +12,33 @@ export const supabase = createBrowserClient(
   }
 )
 
+const unsafeGetSession = supabase.auth.getSession.bind(supabase.auth)
+
+supabase.auth.getSession = (async () => {
+  try {
+    const result = await unsafeGetSession()
+
+    if (result.error && isInvalidRefreshTokenError(result.error)) {
+      clearSupabaseBrowserSession()
+    }
+
+    return result
+  } catch (error) {
+    if (isInvalidRefreshTokenError(error)) {
+      clearSupabaseBrowserSession()
+
+      return {
+        data: {
+          session: null,
+        },
+        error,
+      }
+    }
+
+    throw error
+  }
+}) as typeof supabase.auth.getSession
+
 export function createClient() {
   return supabase
 }
