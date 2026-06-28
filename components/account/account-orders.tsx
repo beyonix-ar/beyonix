@@ -341,7 +341,11 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             )
             const trackingUrl = normalizeTrackingUrl(order.tracking_url)
             const shippingLabel =
-              order.estado === "cancelado"
+              order.financial_status === "refunded"
+                ? "Dinero reintegrado"
+                : order.financial_status === "refund_pending"
+                  ? "Reintegro pendiente"
+              : order.estado === "cancelado"
                 ? "Pedido cancelado"
                 : order.payment_status === "rechazado"
                   ? "Comprobante rechazado"
@@ -351,7 +355,11 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   ? "Enviado"
                   : "Preparando envío"
             const shippingDetail =
-              order.estado === "cancelado"
+              order.financial_status === "refunded"
+                ? "Cancelado - dinero reintegrado"
+                : order.financial_status === "refund_pending"
+                  ? "BEYONIX está gestionando la devolución"
+              : order.estado === "cancelado"
                 ? "La compra fue cancelada correctamente"
                 : order.payment_status === "rechazado"
                   ? "Podés subir un nuevo comprobante"

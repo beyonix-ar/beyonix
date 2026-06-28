@@ -28,6 +28,8 @@ const REALTIME_TABLES = [
   "order_claims",
   "order_claim_messages",
   "order_claim_files",
+  "order_refund_proofs",
+  "order_audit_events",
   "admin_order_event_views",
   "admin_notification_reads",
 ] as const

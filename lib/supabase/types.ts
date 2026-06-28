@@ -131,6 +131,15 @@ export interface SupabaseAuditLog {
 // Pedidos
 // ─────────────────────────────────────────────────────────────
 
+export type OrderFinancialStatus =
+  | "pending_payment"
+  | "payment_submitted"
+  | "payment_confirmed"
+  | "cancellation_requested"
+  | "refund_pending"
+  | "refunded"
+  | "cancelled"
+
 export interface SupabasePedido {
   id: number
   usuario_id: string | null
@@ -159,6 +168,30 @@ export interface SupabasePedido {
   payment_proof_url?: string | null
   payment_proof_file_name?: string | null
   payment_proof_uploaded_at?: string | null
+  financial_status?: OrderFinancialStatus | null
+  payment_confirmed_by?: string | null
+  payment_confirmed_at?: string | null
+  payment_confirmed_amount?: number | null
+  payment_confirmation_observation?: string | null
+  cancellation_requested_by?: string | null
+  cancellation_requested_at?: string | null
+  refund_pending_at?: string | null
+  refund_proof_url?: string | null
+  refund_proof_file_name?: string | null
+  refund_proof_mime_type?: string | null
+  refund_proof_file_size?: number | null
+  refund_amount?: number | null
+  refund_method?: string | null
+  refund_observation?: string | null
+  refund_internal_note?: string | null
+  refund_uploaded_by?: string | null
+  refund_uploaded_at?: string | null
+  refunded_at?: string | null
+  refunded_by?: string | null
+  credit_note_required?: boolean | null
+  credit_note_issued?: boolean | null
+  credit_note_number?: string | null
+  credit_note_issued_at?: string | null
   paid_at?: string | null
   tracking_number?: string | null
   tracking_url?: string | null
@@ -195,6 +228,22 @@ export interface SupabasePedido {
   created_at: string
   orden_items?: SupabasePedidoItem[]
   order_claims?: SupabaseOrderClaim[]
+  order_refund_proofs?: SupabaseOrderRefundProof[]
+}
+
+export interface SupabaseOrderRefundProof {
+  id: number
+  order_id: number
+  uploaded_by?: string | null
+  file_name: string
+  file_path: string
+  mime_type: string
+  file_size: number
+  amount: number
+  method?: string | null
+  observation?: string | null
+  signedUrl?: string | null
+  created_at: string
 }
 
 export interface SupabaseCustomerNotification {

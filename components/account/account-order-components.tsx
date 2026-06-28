@@ -38,6 +38,8 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
   const gridClassName =
     steps.length >= 6
       ? "md:grid-cols-6"
+      : steps.length === 4
+        ? "md:grid-cols-4"
       : steps.length === 2
         ? "md:grid-cols-2"
         : "md:grid-cols-5"

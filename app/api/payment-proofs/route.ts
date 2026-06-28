@@ -5,6 +5,7 @@ import {
   getPaymentProofValidationError,
   sanitizePaymentProofFileName,
 } from "@/lib/payments/transfer"
+import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -12,12 +13,6 @@ function normalizeStoredPath(path: string) {
   return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
     ? path
     : `${PAYMENT_PROOF_BUCKET}/${path}`
-}
-
-function stripBucket(path: string) {
-  return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
-    ? path.slice(PAYMENT_PROOF_BUCKET.length + 1)
-    : path
 }
 
 const REPLACEABLE_PAYMENT_STATUSES = [
@@ -61,7 +56,7 @@ export async function POST(request: Request) {
     const { data: order, error: orderError } = await supabase
       .from("ordenes")
       .select(
-        "id, usuario_id, payment_method_id, payment_status, payment_proof_url",
+        "id, usuario_id, estado, payment_method_id, payment_status, payment_proof_url, financial_status",
       )
       .eq("id", orderId)
       .single()
@@ -78,6 +73,18 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Este pedido no corresponde a transferencia bancaria." },
         { status: 400 },
+      )
+    }
+
+    if (
+      order.estado === "cancelado" ||
+      ["cancelled", "refund_pending", "refunded"].includes(
+        String(order.financial_status ?? ""),
+      )
+    ) {
+      return NextResponse.json(
+        { error: "El pedido cancelado no admite nuevos comprobantes de pago." },
+        { status: 409 },
       )
     }
 
@@ -119,6 +126,7 @@ export async function POST(request: Request) {
       .from("ordenes")
       .update({
         payment_status: "en_revision",
+        financial_status: "payment_submitted",
         payment_proof_url: storedPath,
         payment_proof_file_name: file.name,
         payment_proof_uploaded_at: uploadedAt,
@@ -141,22 +149,21 @@ export async function POST(request: Request) {
       )
     }
 
-    if (order.payment_proof_url) {
-      const previousPath = stripBucket(order.payment_proof_url)
-
-      if (previousPath !== path) {
-        const { error: removeError } = await admin.storage
-          .from(PAYMENT_PROOF_BUCKET)
-          .remove([previousPath])
-
-        if (removeError) {
-          console.error("payment proof replacement cleanup error", {
-            orderId,
-            message: removeError.message,
-          })
-        }
-      }
-    }
+    await appendOrderAuditEvent(admin, {
+      orderId,
+      actorType: "customer",
+      actorId: user.id,
+      action: "payment_proof_submitted",
+      previousStatus:
+        order.financial_status ?? order.payment_status ?? "pending_payment",
+      newStatus: "payment_submitted",
+      metadata: {
+        fileName: file.name,
+        proofUrl: storedPath,
+        previousProofUrl: order.payment_proof_url ?? null,
+        uploadedAt,
+      },
+    })
 
     return NextResponse.json({ order: updatedOrder })
   } catch (error) {

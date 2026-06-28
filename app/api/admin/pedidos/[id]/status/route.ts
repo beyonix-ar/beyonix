@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 
 const ALLOWED_ORDER_STATUSES = [
   "pendiente",
@@ -30,6 +31,32 @@ function isMissingColumnError(error: { message?: string; code?: string } | null)
     error?.code === "PGRST204" ||
     error?.message?.includes("schema cache") ||
     error?.message?.includes("cancelled_at")
+  )
+}
+
+function isPaymentConfirmed(order: {
+  payment_status?: string | null
+  paid_at?: string | null
+  estado?: string | null
+}) {
+  return (
+    Boolean(order.paid_at) ||
+    ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "") ||
+    ["pagado", "enviado", "en_camino", "entregado"].includes(order.estado ?? "")
+  )
+}
+
+function isOrderInvoiced(order: {
+  invoice_status?: string | null
+  invoice_cae?: string | null
+  invoice_number?: number | null
+  invoice_point?: number | null
+}) {
+  return (
+    order.invoice_status === "authorized" ||
+    order.invoice_status === "processing" ||
+    Boolean(order.invoice_cae) ||
+    Boolean(order.invoice_number && order.invoice_point)
   )
 }
 
@@ -118,7 +145,7 @@ export async function PATCH(
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
-    .select("id, estado, order_change_status")
+    .select("id, estado, payment_status, paid_at, financial_status, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -130,6 +157,17 @@ export async function PATCH(
   }
 
   if (["enviado", "en_camino", "entregado"].includes(estado)) {
+    if (
+      ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+        String(currentOrder.financial_status ?? ""),
+      )
+    ) {
+      return NextResponse.json(
+        { error: "No se puede despachar un pedido cancelado o con reintegro pendiente." },
+        { status: 409 },
+      )
+    }
+
     if (currentOrder.order_change_status === "change_requested") {
       return NextResponse.json(
         { error: "No se puede despachar un pedido con cambio pendiente de aprobación." },
@@ -145,10 +183,34 @@ export async function PATCH(
     }
   }
 
+  const cancellingPaidOrder =
+    estado === "cancelado" && isPaymentConfirmed(currentOrder)
+  const nextFinancialStatus =
+    estado === "cancelado"
+      ? cancellingPaidOrder
+        ? "refund_pending"
+        : "cancelled"
+      : currentOrder.financial_status
+
   const statusUpdate = {
     estado,
     ...(currentOrder.estado !== estado && estado === "cancelado"
       ? { cancelled_at: new Date().toISOString() }
+      : {}),
+    ...(estado === "cancelado"
+      ? {
+          financial_status: nextFinancialStatus,
+          cancellation_requested_at: new Date().toISOString(),
+          cancellation_requested_by: auth.user.id,
+          ...(cancellingPaidOrder
+            ? {
+                refund_pending_at: new Date().toISOString(),
+                credit_note_required: isOrderInvoiced(currentOrder),
+              }
+            : {
+                credit_note_required: false,
+              }),
+        }
       : {}),
     ...(estado === "entregado"
       ? { delivered_at: new Date().toISOString() }
@@ -189,6 +251,22 @@ export async function PATCH(
   }
 
   if (currentOrder.estado !== estado) {
+    await appendOrderAuditEvent(auth.admin, {
+      orderId,
+      actorType: "admin",
+      actorId: auth.user.id,
+      action:
+        estado === "cancelado" && cancellingPaidOrder
+          ? "order_cancelled_refund_pending"
+          : "order_status_changed",
+      previousStatus: currentOrder.financial_status ?? currentOrder.estado,
+      newStatus: nextFinancialStatus ?? estado,
+      metadata: {
+        previousEstado: currentOrder.estado,
+        newEstado: estado,
+      },
+    })
+
     await sendOrderStateEmail(data)
   }
 

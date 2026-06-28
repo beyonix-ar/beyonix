@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 interface MercadoPagoPayment {
@@ -21,8 +22,10 @@ interface OrderItemRow {
 interface OrderRow {
   id: number
   estado: string
+  total?: number | null
   cliente_email: string | null
   cliente_nombre: string | null
+  financial_status?: string | null
 }
 
 function getPaymentId(url: URL, body: unknown) {
@@ -152,7 +155,7 @@ async function handleWebhook(request: Request) {
 
     const { data: order, error: orderError } = await supabase
       .from("ordenes")
-      .select("id, estado, cliente_email, cliente_nombre")
+      .select("id, estado, total, cliente_email, cliente_nombre, financial_status")
       .eq("id", orderId)
       .single()
 
@@ -202,12 +205,28 @@ async function handleWebhook(request: Request) {
       .update({
         ...paymentPayload,
         estado: "pagado",
+        financial_status: "payment_confirmed",
+        payment_confirmed_at: payment.date_approved ?? new Date().toISOString(),
+        payment_confirmed_amount: Number(orderRow.total ?? 0),
       } as never)
       .eq("id", orderId)
 
     if (updateError) {
       throw updateError
     }
+
+    await appendOrderAuditEvent(supabase, {
+      orderId,
+      actorType: "system",
+      action: "payment_confirmed",
+      previousStatus: orderRow.financial_status ?? "pending_payment",
+      newStatus: "payment_confirmed",
+      metadata: {
+        provider: "mercadopago",
+        paymentId: payment.id,
+        paymentStatus: payment.status,
+      },
+    })
 
     await sendOrderStatusEmail({
       to: orderRow.cliente_email,

@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils"
 const TYPE_LABELS: Record<AdminNotificationType, string> = {
   order: "Pedido nuevo",
   message: "Mensaje nuevo",
-  payment: "Comprobante nuevo",
+  payment: "Pago / reintegro",
   invoice: "Factura por emitir",
   shipping: "Envío pendiente",
   cancellation: "Compra cancelada",
@@ -160,14 +160,21 @@ export function AdminNotificationsPopover({
 
                   <span className="min-w-0 flex-1">
                     <span className="flex items-start gap-2">
-                      <span className="min-w-0 flex-1 text-10px font-black uppercase tracking-wide text-beyonix-cyan">
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 text-10px font-black uppercase tracking-wide",
+                          attention ? "text-orange-200" : "text-beyonix-cyan",
+                        )}
+                      >
                         {TYPE_LABELS[notification.type]}
                       </span>
                       {!notification.isRead && (
                         <span
                           className={cn(
                             "mt-1 size-2 shrink-0 rounded-full",
-                            TYPE_UNREAD_DOT_STYLES[notification.type],
+                            attention
+                              ? TYPE_UNREAD_DOT_STYLES.cancellation
+                              : TYPE_UNREAD_DOT_STYLES[notification.type],
                           )}
                         />
                       )}

@@ -112,6 +112,10 @@ export function getOrderAttentionAt(order: SupabasePedido) {
     order.created_at,
     order.return_requested_at,
     order.payment_proof_uploaded_at,
+    order.cancellation_requested_at,
+    order.refund_pending_at,
+    order.refund_uploaded_at,
+    order.refunded_at,
   ]
 
   for (const claim of order.order_claims ?? []) {
@@ -193,7 +197,7 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
     const { data: orders, error } = await supabase
       .from("ordenes")
       .select(
-        "id, created_at, return_requested_at, estado, total, payment_method_id, payment_id, payment_status, payment_proof_url, payment_proof_uploaded_at, invoice_status"
+        "id, created_at, return_requested_at, cancellation_requested_at, refund_pending_at, refund_uploaded_at, refunded_at, estado, total, payment_method_id, payment_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, invoice_status"
       )
 
     if (error) {
@@ -243,7 +247,9 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
         .filter(isVisibleAdminOrderNotification)
         .filter((order) =>
           isOrderNewerThanLastSeen(
-            order.return_requested_at,
+            order.refund_pending_at ||
+              order.cancellation_requested_at ||
+              order.return_requested_at,
             view.last_seen_at,
           ),
         )
@@ -285,6 +291,10 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
         (order) =>
           isVisibleAdminOrderNotification(order) &&
           Number(order.total ?? 0) > 0 &&
+          order.estado !== "cancelado" &&
+          !["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+            order.financial_status ?? "",
+          ) &&
           !["rechazado", "rejected"].includes(order.payment_status ?? "") &&
           (order.payment_status === "confirmado" ||
             order.payment_status === "approved" ||

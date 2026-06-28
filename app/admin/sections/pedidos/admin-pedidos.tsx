@@ -64,6 +64,8 @@ type StatusFilter =
   | "en_camino"
   | "entregado"
   | "cancelado"
+  | "refund_pending"
+  | "refunded"
   | "rechazado"
 type AndreaniAction = "crear-envio" | "tracking"
 type AdminNotice = { type: "ok" | "error"; message: string } | null
@@ -81,7 +83,11 @@ type AdminOrderDetailView =
   | "envio"
   | "reclamos"
 
-type PaymentStatusValue = "pendiente_comprobante" | "confirmado" | "rechazado"
+type PaymentStatusValue =
+  | "pendiente_comprobante"
+  | "en_revision"
+  | "confirmado"
+  | "rechazado"
 
 const PAYMENT_STATUS_OPTIONS: Array<{
   value: PaymentStatusValue
@@ -94,6 +100,12 @@ const PAYMENT_STATUS_OPTIONS: Array<{
     label: "Pendiente",
     tone: "text-white/82",
     dot: "bg-amber-300/70",
+  },
+  {
+    value: "en_revision",
+    label: "En revisión",
+    tone: "text-white/82",
+    dot: "bg-blue-300/70",
   },
   {
     value: "confirmado",
@@ -247,7 +259,9 @@ function getPaymentMethodLabel(pedido: SupabasePedido) {
     return "Mercado Pago"
   }
 
-  return pedido.payment_method_id || pedido.payment_type_id || "Método no informado"
+  if (pedido.payment_method_id || pedido.payment_type_id) return "Otro"
+
+  return "No informado"
 }
 
 function getCompactPaymentMethodLabel(pedido: SupabasePedido) {
@@ -265,14 +279,32 @@ function isTransferOrder(pedido: SupabasePedido) {
 
 function isOrderPaymentConfirmed(pedido: SupabasePedido) {
   return (
+    Boolean(pedido.paid_at) ||
+    Number(pedido.payment_confirmed_amount ?? 0) > 0 ||
     pedido.payment_status === "confirmado" ||
     pedido.payment_status === "approved" ||
+    pedido.payment_status === "confirmed" ||
     ["pagado", "enviado", "en_camino", "entregado"].includes(pedido.estado)
   )
 }
 
+function isRefundPaymentAttentionOrder(pedido: SupabasePedido) {
+  if (pedido.financial_status === "refunded") return false
+  if (pedido.financial_status === "refund_pending") return true
+
+  if (pedido.financial_status === "cancellation_requested") {
+    return isOrderPaymentConfirmed(pedido)
+  }
+
+  return pedido.estado === "cancelado" && isOrderPaymentConfirmed(pedido)
+}
+
 function needsInvoiceReminder(pedido: SupabasePedido) {
   return (
+    pedido.estado !== "cancelado" &&
+    !["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      pedido.financial_status ?? "",
+    ) &&
     !isRejectedPayment(pedido.payment_status) &&
     isOrderPaymentConfirmed(pedido) &&
     pedido.invoice_status !== "authorized" &&
@@ -281,7 +313,12 @@ function needsInvoiceReminder(pedido: SupabasePedido) {
 }
 
 function needsShippingReminder(pedido: SupabasePedido) {
+  if (isRefundPaymentAttentionOrder(pedido)) return false
+
   return (
+    !["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      pedido.financial_status ?? "",
+    ) &&
     pedido.invoice_status === "authorized" &&
     Boolean(pedido.invoice_cae) &&
     ![
@@ -302,7 +339,7 @@ function isVisibleAdminOrder(pedido: SupabasePedido) {
 function getPaymentStatusLabel(status?: string | null) {
   const labels: Record<string, string> = {
     pendiente_comprobante: "Falta comprobante",
-    en_revision: "Falta comprobante",
+    en_revision: "Comprobante en revisión",
     confirmado: "Confirmado",
     rechazado: "Comprobante rechazado",
     approved: "Aprobado",
@@ -318,6 +355,8 @@ function isRejectedPayment(status?: string | null) {
 }
 
 function getDisplayedOrderStatus(pedido: SupabasePedido) {
+  if (pedido.financial_status === "refund_pending") return "refund_pending"
+  if (pedido.financial_status === "refunded") return "refunded"
   if (!isTransferOrder(pedido)) return pedido.estado
   if (isRejectedPayment(pedido.payment_status)) return "rechazado"
   if (
@@ -330,10 +369,36 @@ function getDisplayedOrderStatus(pedido: SupabasePedido) {
 }
 
 function isApprovedPayment(pedido: SupabasePedido) {
+  if (
+    pedido.estado === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      pedido.financial_status ?? "",
+    )
+  ) {
+    return false
+  }
+
   return (
     pedido.estado === "pagado" ||
     pedido.payment_status === "confirmado" ||
     pedido.payment_status === "approved"
+  )
+}
+
+function isRefundPendingOrder(pedido: SupabasePedido) {
+  return isRefundPaymentAttentionOrder(pedido)
+}
+
+function isRefundedOrder(pedido: SupabasePedido) {
+  return pedido.financial_status === "refunded"
+}
+
+function isOrderInvoicedForCreditNote(pedido: SupabasePedido) {
+  return (
+    pedido.invoice_status === "authorized" ||
+    pedido.invoice_status === "processing" ||
+    Boolean(pedido.invoice_cae) ||
+    Boolean(pedido.invoice_number && pedido.invoice_point)
   )
 }
 
@@ -348,8 +413,8 @@ function getTransferPaymentStatusBadge(status?: string | null) {
       className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
     },
     en_revision: {
-      label: "Falta comprobante",
-      className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
+      label: "En revisión",
+      className: "border-blue-400/25 bg-blue-500/10 text-blue-200",
     },
     confirmado: {
       label: "Pago confirmado",
@@ -438,6 +503,7 @@ type AdminNotificationTone =
   | "claim"
 
 function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
+  if (isRefundPaymentAttentionOrder(pedido)) return "payment"
   if (pedido.estado === "cancelado") return "cancellation"
   if (needsShippingReminder(pedido)) return "shipping"
 
@@ -481,13 +547,20 @@ function orderMatchesNotificationTone(
   }
 
   if (tone === "cancellation") {
-    return pedido.estado === "cancelado"
+    return (
+      (pedido.estado === "cancelado" ||
+        ["cancelled", "cancellation_requested"].includes(
+          pedido.financial_status ?? "",
+        )) &&
+      !isRefundPaymentAttentionOrder(pedido)
+    )
   }
 
   if (tone === "payment") {
     return (
-      Boolean(pedido.payment_proof_url) &&
-      pedido.payment_status === "en_revision"
+      isRefundPaymentAttentionOrder(pedido) ||
+      (Boolean(pedido.payment_proof_url) &&
+        pedido.payment_status === "en_revision")
     )
   }
 
@@ -536,6 +609,20 @@ function handlePrintAndreaniLabel(pedido: SupabasePedido) {
 }
 
 function getDispatchAlert(pedido: SupabasePedido) {
+  if (isRefundPendingOrder(pedido)) {
+    return {
+      label: "Reintegro",
+      className: "border-amber-400/25 bg-amber-500/12 text-amber-200",
+    }
+  }
+
+  if (isRefundedOrder(pedido)) {
+    return {
+      label: "Reintegrado",
+      className: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
+    }
+  }
+
   const dispatched =
     pedido.estado === "enviado" ||
     pedido.estado === "entregado" ||
@@ -578,6 +665,8 @@ function EstadoBadge({ estado }: { estado: string }) {
     en_camino: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     entregado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
     cancelado: "border-orange-400/25 bg-orange-500/12 text-orange-200",
+    refund_pending: "border-amber-400/25 bg-amber-500/12 text-amber-200",
+    refunded: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
     rechazado: "border-red-500/20 bg-red-500/10 text-red-300",
   }
   const labels: Record<string, string> = {
@@ -587,6 +676,8 @@ function EstadoBadge({ estado }: { estado: string }) {
     en_camino: "En camino",
     entregado: "Entregado",
     cancelado: "Cancelado",
+    refund_pending: "Reintegro pendiente",
+    refunded: "Reintegrado",
     rechazado: "Comprobante rechazado",
   }
 
@@ -607,9 +698,16 @@ function PaymentStatusBadge({ status }: { status?: string | null }) {
       ? "confirmado"
       : isRejectedPayment(status)
         ? "rechazado"
-        : "pendiente_comprobante"
+        : status === "en_revision"
+          ? "en_revision"
+          : "pendiente_comprobante"
   const option = PAYMENT_STATUS_OPTIONS.find((item) => item.value === value)!
-  const label = value === "confirmado" ? "Pago confirmado" : option.label
+  const label =
+    value === "confirmado"
+      ? "Pago confirmado"
+      : value === "en_revision"
+        ? "Comprobante en revisión"
+        : option.label
 
   return (
     <span
@@ -618,6 +716,8 @@ function PaymentStatusBadge({ status }: { status?: string | null }) {
           ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
           : value === "rechazado"
             ? "border-red-500/20 bg-red-500/10 text-red-300"
+            : value === "en_revision"
+              ? "border-blue-400/25 bg-blue-500/10 text-blue-200"
             : "border-amber-500/20 bg-amber-500/10 text-amber-300"
       }`}
     >
@@ -712,6 +812,472 @@ function PaymentStatusDropdown({
         </div>
       )}
     </div>
+  )
+}
+
+function formatRefundAmountInput(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0)
+  if (!Number.isFinite(parsed) || parsed <= 0) return ""
+
+  return new Intl.NumberFormat("es-AR", {
+    maximumFractionDigits: 2,
+  }).format(parsed)
+}
+
+function parseRefundAmountInput(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/\./g, "")
+    .replace(",", ".")
+  const parsed = Number(normalized)
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function RefundManagementPanel({
+  pedido,
+  canEditRefundAmount,
+  onRefundUpdated,
+}: {
+  pedido: SupabasePedido
+  canEditRefundAmount: boolean
+  onRefundUpdated: (order: SupabasePedido) => void
+}) {
+  const shouldShow =
+    pedido.estado === "cancelado" &&
+    (isRefundPendingOrder(pedido) || isRefundedOrder(pedido))
+
+  const paidAmount = Number(pedido.payment_confirmed_amount ?? pedido.total ?? 0)
+  const [file, setFile] = useState<File | null>(null)
+  const [amount, setAmount] = useState(formatRefundAmountInput(pedido.refund_amount ?? paidAmount))
+  const [method, setMethod] = useState(pedido.refund_method ?? "")
+  const [observation, setObservation] = useState(pedido.refund_observation ?? "")
+  const [internalNote, setInternalNote] = useState(pedido.refund_internal_note ?? "")
+  const [creditNoteIssued, setCreditNoteIssued] = useState(Boolean(pedido.credit_note_issued))
+  const [creditNoteNumber, setCreditNoteNumber] = useState(pedido.credit_note_number ?? "")
+  const [saving, setSaving] = useState(false)
+  const [creditSaving, setCreditSaving] = useState(false)
+  const [openingRefundProof, setOpeningRefundProof] = useState(false)
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    setAmount(formatRefundAmountInput(pedido.refund_amount ?? paidAmount))
+    setMethod(pedido.refund_method ?? "")
+    setObservation(pedido.refund_observation ?? "")
+    setInternalNote(pedido.refund_internal_note ?? "")
+    setCreditNoteIssued(Boolean(pedido.credit_note_issued))
+    setCreditNoteNumber(pedido.credit_note_number ?? "")
+    setFile(null)
+    setMessage(null)
+  }, [
+    paidAmount,
+    pedido.id,
+    pedido.refund_amount,
+    pedido.refund_internal_note,
+    pedido.refund_method,
+    pedido.refund_observation,
+    pedido.credit_note_issued,
+    pedido.credit_note_number,
+  ])
+
+  if (!shouldShow) return null
+
+  const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
+  const refunded = isRefundedOrder(pedido)
+  const refundStatusLabel = refunded
+    ? "Cancelado - dinero reintegrado"
+    : "Reintegro pendiente"
+  const parsedRefundAmount = parseRefundAmountInput(amount)
+  const maxRefundAmount = Math.max(paidAmount, Number(pedido.total ?? 0))
+  const refundAmountIsValid =
+    parsedRefundAmount !== null &&
+    (maxRefundAmount <= 0 || parsedRefundAmount <= maxRefundAmount)
+  const canUploadRefund =
+    !refunded &&
+    Boolean(file) &&
+    refundAmountIsValid &&
+    method.trim().length > 0 &&
+    !saving
+
+  const openRefundProof = async () => {
+    setOpeningRefundProof(true)
+    setMessage(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setMessage({ ok: false, text: "La sesión administrativa venció." })
+        return
+      }
+
+      const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = (await response.json()) as {
+        signedUrl?: string | null
+        error?: string
+      }
+
+      if (!response.ok || !data.signedUrl) {
+        throw new Error(data.error || "No se pudo abrir el comprobante de reintegro.")
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer")
+    } catch (error) {
+      setMessage({
+        ok: false,
+        text:
+          error instanceof Error
+            ? error.message
+            : "No se pudo abrir el comprobante de reintegro.",
+      })
+    } finally {
+      setOpeningRefundProof(false)
+    }
+  }
+
+  const uploadRefundProof = async () => {
+    if (!file) {
+      setMessage({ ok: false, text: "Subí el comprobante de reintegro." })
+      return
+    }
+
+    setSaving(true)
+    setMessage(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setMessage({ ok: false, text: "La sesión administrativa venció." })
+        return
+      }
+
+      const formData = new FormData()
+      formData.set("file", file)
+      formData.set("amount", String(parsedRefundAmount ?? ""))
+      formData.set("method", method)
+      formData.set("observation", observation)
+      formData.set("internalNote", internalNote)
+
+      const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      })
+      const data = (await response.json()) as {
+        order?: SupabasePedido
+        error?: string
+      }
+
+      if (!response.ok || !data.order) {
+        setMessage({
+          ok: false,
+          text: data.error || "No se pudo registrar el reintegro.",
+        })
+        return
+      }
+
+      onRefundUpdated(data.order)
+      setFile(null)
+      setMessage({ ok: true, text: "Reintegro registrado con comprobante." })
+      notifyOrderNotificationsChanged()
+    } catch {
+      setMessage({ ok: false, text: "No se pudo registrar el reintegro." })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveCreditNote = async () => {
+    setCreditSaving(true)
+    setMessage(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setMessage({ ok: false, text: "La sesión administrativa venció." })
+        return
+      }
+
+      const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "update_credit_note",
+          creditNoteIssued,
+          creditNoteNumber,
+        }),
+      })
+      const data = (await response.json()) as {
+        order?: SupabasePedido
+        error?: string
+      }
+
+      if (!response.ok || !data.order) {
+        setMessage({
+          ok: false,
+          text: data.error || "No se pudo guardar la nota de crédito.",
+        })
+        return
+      }
+
+      onRefundUpdated(data.order)
+      setMessage({ ok: true, text: "Datos contables actualizados." })
+      notifyOrderNotificationsChanged()
+    } catch {
+      setMessage({ ok: false, text: "No se pudo guardar la nota de crédito." })
+    } finally {
+      setCreditSaving(false)
+    }
+  }
+
+  return (
+    <section className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-400/8 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 border-b border-amber-200/15 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-11px font-bold uppercase tracking-widest text-amber-200">
+            Pedido cancelado con pago confirmado
+          </p>
+          <h3 className="mt-1 text-lg font-black text-white">
+            {refunded ? "Dinero reintegrado" : "Reintegro pendiente"}
+          </h3>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-white/66">
+            {refunded
+              ? "El dinero ya fue reintegrado al cliente. El comprobante de reintegro quedó registrado y la devolución se encuentra cerrada."
+              : "El cliente canceló un pedido con dinero recibido. Conservá el comprobante original y cargá el comprobante de reintegro para cerrar la devolución."}
+          </p>
+        </div>
+        <span className="inline-flex w-fit rounded-full border border-amber-300/30 bg-black/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-amber-100">
+          {refundStatusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue label="Pedido" value={`BX-${1000 + pedido.id}`} />
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue label="Cliente" value={pedido.cliente_nombre || "Cliente sin nombre"} />
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue
+            label="Contacto / email"
+            value={pedido.cliente_email || "No informado"}
+          />
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue label="Teléfono" value={pedido.cliente_telefono || "No informado"} />
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue
+            label="Pago confirmado"
+            value={formatOptionalOrderDate(pedido.payment_confirmed_at || pedido.paid_at)}
+          />
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue
+            label="Solicitud de cancelación"
+            value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
+          />
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue
+            label="Estado del reintegro"
+            value={refundStatusLabel}
+          />
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+          <DetailValue label="Medio de pago" value={getPaymentMethodLabel(pedido)} />
+        </div>
+      </div>
+
+      <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)]">
+        <div className="min-w-0 rounded-xl border border-white/8 bg-black/25 p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-amber-100/75">
+            {refunded ? "Reintegro registrado" : "Cargar comprobante de reintegro"}
+          </p>
+          {refunded ? (
+            <p className="mt-3 rounded-lg border border-emerald-300/20 bg-emerald-400/8 px-3 py-2 text-xs font-bold leading-5 text-emerald-100">
+              El reintegro ya fue registrado. La devolución se encuentra cerrada.
+            </p>
+          ) : (
+            <>
+              <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/45">
+                    Archivo del comprobante de reintegro
+                  </p>
+                  <label className="flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-amber-200/30 bg-[#141820] px-3 text-xs font-bold text-white/78 transition hover:border-amber-200/55">
+                    {file ? file.name : "⬇️ Seleccionar archivo"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,application/pdf"
+                      className="sr-only"
+                      onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                </div>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
+                    Monto reintegrado
+                  </span>
+                  <span className="flex h-10 w-full items-center overflow-hidden rounded-lg border border-white/10 bg-[#141820] focus-within:border-amber-200/45">
+                    <span className="flex h-full items-center border-r border-white/10 px-3 text-xs font-black text-white/55">
+                      $
+                    </span>
+                    <input
+                      value={amount}
+                      onChange={(event) => setAmount(event.target.value)}
+                      onBlur={() => {
+                        const parsed = parseRefundAmountInput(amount)
+                        if (parsed !== null) setAmount(formatRefundAmountInput(parsed))
+                      }}
+                      inputMode="decimal"
+                      readOnly={!canEditRefundAmount}
+                      disabled={!canEditRefundAmount}
+                      placeholder="Monto reintegrado"
+                      className="h-full min-w-0 flex-1 bg-transparent px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 disabled:cursor-not-allowed disabled:text-white/55"
+                    />
+                  </span>
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
+                    Método de reintegro
+                  </span>
+                  <input
+                    value={method}
+                    onChange={(event) => setMethod(event.target.value)}
+                    placeholder="Transferencia, Mercado Pago, otro"
+                    className="h-10 w-full rounded-lg border border-white/10 bg-[#141820] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
+                  />
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
+                    Observación visible para el cliente
+                  </span>
+                  <input
+                    value={observation}
+                    onChange={(event) => setObservation(event.target.value)}
+                    placeholder="Opcional"
+                    className="h-10 w-full rounded-lg border border-white/10 bg-[#141820] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
+                  />
+                </label>
+              </div>
+              <label className="mt-2 block min-w-0">
+                <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
+                  Observación interna, solo admin
+                </span>
+                <textarea
+                  value={internalNote}
+                  onChange={(event) => setInternalNote(event.target.value)}
+                  rows={3}
+                  placeholder="Notas internas sobre la devolución"
+                  className="w-full resize-none rounded-lg border border-white/10 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
+                />
+              </label>
+              {!refundAmountIsValid && amount.trim() && (
+                <p className="mt-2 text-xs font-bold text-red-200">
+                  Ingresá un monto válido, mayor a cero y no superior al monto pagado.
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!canUploadRefund}
+                  onClick={() => void uploadRefundProof()}
+                  className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-amber-200/35 bg-amber-400/12 px-3 py-2 text-11px font-black uppercase tracking-wide text-amber-50 transition hover:border-amber-100/55 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                  {saving ? "Guardando..." : "Subir comprobante y marcar como reintegrado"}
+                </button>
+              </div>
+            </>
+          )}
+          {pedido.refund_proof_url && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={openingRefundProof}
+                onClick={() => void openRefundProof()}
+                className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-11px font-black uppercase tracking-wide text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Download className="size-4" />
+                {openingRefundProof ? "Abriendo..." : "Ver reintegro"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 rounded-xl border border-white/8 bg-black/25 p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-amber-100/75">
+            Datos contables internos
+          </p>
+          <div className="mt-3 space-y-2">
+            <p className={`rounded-lg border px-3 py-2 text-xs font-bold ${
+              invoiceIssued
+                ? "border-amber-300/25 bg-amber-400/10 text-amber-100"
+                : "border-emerald-300/20 bg-emerald-400/8 text-emerald-100"
+            }`}>
+              {invoiceIssued
+                ? "Factura emitida: corresponde registrar nota de crédito."
+                : "Sin factura emitida: no corresponde nota de crédito."}
+            </p>
+            {invoiceIssued && (
+              <>
+                <label className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={creditNoteIssued}
+                    onChange={(event) => setCreditNoteIssued(event.target.checked)}
+                    className="size-4 accent-[#112A43]"
+                  />
+                  Nota de crédito emitida
+                </label>
+                <input
+                  value={creditNoteNumber}
+                  onChange={(event) => setCreditNoteNumber(event.target.value)}
+                  placeholder="Número de nota de crédito"
+                  className="h-10 w-full rounded-lg border border-white/10 bg-[#141820] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
+                />
+                <button
+                  type="button"
+                  disabled={creditSaving}
+                  onClick={() => void saveCreditNote()}
+                  className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-white/12 bg-[#1B2028] px-3 text-11px font-black uppercase tracking-wide text-white transition hover:border-amber-200/45 disabled:cursor-wait disabled:opacity-50"
+                >
+                  {creditSaving ? "Guardando..." : "Guardar datos contables"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {message && (
+        <p
+          role="status"
+          className={`mt-3 rounded-lg border px-3 py-2 text-xs font-bold ${
+            message.ok
+              ? "border-emerald-300/20 bg-emerald-400/8 text-emerald-100"
+              : "border-red-300/20 bg-red-500/8 text-red-100"
+          }`}
+        >
+          {message.text}
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -933,6 +1499,7 @@ function PedidoPreviewModal({
                     onChange={(value) => onPaymentStatusChange(pedido.id, value)}
                   >
                     <option value="pendiente_comprobante">Pendiente comprobante</option>
+                    <option value="en_revision">En revisión</option>
                     <option value="confirmado">Confirmado</option>
                     <option value="rechazado">Rechazado</option>
                   </AdminSelect>
@@ -1286,6 +1853,7 @@ function PedidoPreviewModal({
 function PedidoDetailModal({
   pedido,
   isSuperAdmin,
+  canEditRefundAmount,
   onClose,
   onOpenPaymentProof,
   onEstadoChange,
@@ -1294,10 +1862,12 @@ function PedidoDetailModal({
   onIssueInvoice,
   onDownloadInvoice,
   onClaimChange,
+  onRefundUpdated,
   embedded = false,
 }: {
   pedido: SupabasePedido
   isSuperAdmin: boolean
+  canEditRefundAmount: boolean
   onClose: () => void
   onOpenPaymentProof: (pedidoId: number) => Promise<boolean>
   onEstadoChange: (pedido: SupabasePedido, nextEstado: string) => void
@@ -1313,6 +1883,7 @@ function PedidoDetailModal({
     pedidoId: number
   ) => Promise<{ ok: boolean; message: string }>
   onClaimChange: (pedidoId: number, claim: SupabaseOrderClaim) => void
+  onRefundUpdated: (order: SupabasePedido) => void
   embedded?: boolean
 }) {
   const router = useRouter()
@@ -1341,8 +1912,10 @@ function PedidoDetailModal({
     useState<AdminOrderDetailView>(() =>
       getAdminOrderDetailView(searchParams.get("tab")),
     )
+  const showRefundPaymentReminder = isRefundPaymentAttentionOrder(pedido)
   const showInvoiceReminder = needsInvoiceReminder(pedido)
-  const showShippingReminder = needsShippingReminder(pedido)
+  const showShippingReminder =
+    !showRefundPaymentReminder && needsShippingReminder(pedido)
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
     pedido.payment_status === "en_revision" &&
@@ -1359,7 +1932,9 @@ function PedidoDetailModal({
       ? "confirmado"
       : isRejectedPayment(pedido.payment_status)
         ? "rechazado"
-        : "pendiente_comprobante"
+        : pedido.payment_status === "en_revision"
+          ? "en_revision"
+          : "pendiente_comprobante"
 
   useEffect(() => {
     setActiveView(getAdminOrderDetailView(searchParams.get("tab")))
@@ -1505,10 +2080,16 @@ function PedidoDetailModal({
                     <InvoiceReminderBell compact />
                   </span>
                 )}
-                {view === "pago" && showPaymentProofIndicator && (
+                {view === "pago" && !showRefundPaymentReminder && showPaymentProofIndicator && (
                   <span
                     title="Comprobante nuevo pendiente de revisión"
                     className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.55)]"
+                  />
+                )}
+                {view === "pago" && showRefundPaymentReminder && (
+                  <span
+                    title="Pedido cancelado con pago confirmado - reintegro pendiente"
+                    className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.75)]"
                   />
                 )}
                 {view === "envio" && showShippingReminder && (
@@ -1698,6 +2279,13 @@ function PedidoDetailModal({
           )}
 
           {activeView === "pago" && (
+          <>
+          <RefundManagementPanel
+            pedido={pedido}
+            canEditRefundAmount={canEditRefundAmount}
+            onRefundUpdated={onRefundUpdated}
+          />
+
           <section className="admin-order-invoice-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -1802,6 +2390,7 @@ function PedidoDetailModal({
             </p>
           )}
           </section>
+          </>
           )}
 
           {activeView === "reclamos" && (
@@ -2769,7 +3358,7 @@ export function AdminPedidos({
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isSuperAdmin } = useAuth()
+  const { isAdmin, isSuperAdmin } = useAuth()
   const { pedidos, loading, error, deletePedido, updatePedidoEstado, reloadPedidos } =
     usePedidos()
   const [search, setSearch] = useState("")
@@ -2851,7 +3440,8 @@ export function AdminPedidos({
         value === "message" ||
         value === "payment" ||
         value === "invoice" ||
-        value === "shipping"
+        value === "shipping" ||
+        value === "cancellation"
         ? value
         : value === "claim" || value === "issue"
           ? "claim"
@@ -3149,9 +3739,9 @@ export function AdminPedidos({
         currentPedido?.id === pedidoId
           ? {
               ...currentPedido,
-              payment_status: data.order.payment_status,
-              estado: data.order.estado,
-              paid_at: data.order.paid_at,
+              ...data.order,
+              orden_items: currentPedido.orden_items,
+              order_claims: currentPedido.order_claims,
             }
           : currentPedido
       )
@@ -3175,6 +3765,20 @@ export function AdminPedidos({
         : currentPedido
     )
     void reloadPedidos()
+  }
+
+  const handleRefundUpdated = (updatedOrder: SupabasePedido) => {
+    setPreviewPedido((currentPedido) =>
+      currentPedido?.id === updatedOrder.id
+        ? {
+            ...currentPedido,
+            ...updatedOrder,
+            orden_items: currentPedido.orden_items,
+            order_claims: currentPedido.order_claims,
+          }
+        : currentPedido,
+    )
+    void reloadPedidos({ silent: true })
   }
 
 
@@ -3343,6 +3947,7 @@ export function AdminPedidos({
           embedded
           pedido={previewPedido}
           isSuperAdmin={isSuperAdmin}
+          canEditRefundAmount={isAdmin || isSuperAdmin}
           onClose={() => router.push("/admin?section=pedidos")}
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) => void handleEstadoChange(pedido, nextEstado)}
@@ -3353,6 +3958,7 @@ export function AdminPedidos({
           onIssueInvoice={handleIssueInvoice}
           onDownloadInvoice={handleDownloadInvoice}
           onClaimChange={handleClaimChange}
+          onRefundUpdated={handleRefundUpdated}
         />
         <ForcedStatusConfirmModal request={forcedStatusRequest} loading={forcedStatusLoading} onCancel={() => setForcedStatusRequest(null)} onConfirm={() => void confirmForcedStatusChange()} />
         <TrackingStatusModal request={trackingStatusRequest} loading={trackingStatusLoading} onCancel={() => setTrackingStatusRequest(null)} onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)} />
@@ -3400,6 +4006,8 @@ export function AdminPedidos({
               <option value="en_camino">En camino</option>
               <option value="entregado">Entregados</option>
               <option value="cancelado">Cancelados</option>
+              <option value="refund_pending">Reintegro pendiente</option>
+              <option value="refunded">Reintegrados</option>
               <option value="rechazado">Comprobantes rechazados</option>
             </AdminSelect>
           </div>
@@ -3419,6 +4027,8 @@ export function AdminPedidos({
                   ? "Facturas pendientes"
                 : attentionFilter === "shipping"
                   ? "Envíos pendientes"
+                : attentionFilter === "cancellation"
+                  ? "Cancelaciones y reintegros"
                   : "Pedidos nuevos"}
           </span>
           <button
@@ -3505,7 +4115,7 @@ export function AdminPedidos({
                   attentionOrderIds.has(pedido.id) ||
                   needsInvoiceReminder(pedido) ||
                   needsShippingReminder(pedido) ||
-                  pedido.estado === "cancelado"
+                  (pedido.estado === "cancelado" && !isRefundedOrder(pedido))
                 const hasPendingClaim = orderHasPendingClaimAction(pedido)
                 const attentionTone = getOrderNotificationTone(pedido)
                 const showInvoiceReminder = needsInvoiceReminder(pedido)
@@ -3740,6 +4350,7 @@ export function AdminPedidos({
         <PedidoDetailModal
           pedido={previewPedido}
           isSuperAdmin={isSuperAdmin}
+          canEditRefundAmount={isAdmin || isSuperAdmin}
           onClose={() => setPreviewPedido(null)}
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) =>
@@ -3752,6 +4363,7 @@ export function AdminPedidos({
           onIssueInvoice={handleIssueInvoice}
           onDownloadInvoice={handleDownloadInvoice}
           onClaimChange={handleClaimChange}
+          onRefundUpdated={handleRefundUpdated}
         />
       )}
       <ForcedStatusConfirmModal

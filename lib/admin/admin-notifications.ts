@@ -169,9 +169,18 @@ function isOrderVisible(order: { id?: number | null }) {
 function isOrderPaidForInvoice(order: {
   estado?: string | null
   payment_status?: string | null
+  financial_status?: string | null
   total?: number | null
 }) {
   if (Number(order.total ?? 0) <= 0) return false
+  if (
+    order.estado === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      order.financial_status ?? "",
+    )
+  ) {
+    return false
+  }
   if (["rechazado", "rejected"].includes(order.payment_status ?? "")) {
     return false
   }
@@ -205,12 +214,41 @@ function hasPaymentProofPendingReview(order: {
     )
 }
 
+function isRefundPaymentAttentionOrder(order: {
+  estado?: string | null
+  financial_status?: string | null
+  payment_status?: string | null
+  paid_at?: string | null
+  payment_confirmed_amount?: number | string | null
+}) {
+  if (order.financial_status === "refunded") return false
+  if (order.financial_status === "refund_pending") return true
+
+  if (order.financial_status === "cancellation_requested") {
+    return isPaymentReceived(order) || Number(order.payment_confirmed_amount ?? 0) > 0
+  }
+
+  return (
+    order.estado === "cancelado" &&
+    (isPaymentReceived(order) || Number(order.payment_confirmed_amount ?? 0) > 0)
+  )
+}
+
 function isOrderReadyForShipping(order: {
   estado?: string | null
+  financial_status?: string | null
   invoice_status?: string | null
   invoice_cae?: string | null
 }) {
+  if (isRefundPaymentAttentionOrder(order)) return false
   if (order.invoice_status !== "authorized" || !order.invoice_cae) return false
+  if (
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      order.financial_status ?? "",
+    )
+  ) {
+    return false
+  }
 
   return ![
     "preparado",
@@ -322,6 +360,16 @@ function dedupeNotifications(notifications: AdminNotification[]) {
   })
 }
 
+function getOperationalPriority(notification: AdminNotification) {
+  if (notification.type === "claim") return 5
+  if (notification.type === "payment") return 4
+  if (notification.type === "shipping") return 3
+  if (notification.type === "message") return 2
+  if (notification.type === "invoice") return 1
+  if (notification.type === "cancellation") return 1
+  return 0
+}
+
 function keepLatestNotificationByOrder(notifications: AdminNotification[]) {
   const byOrder = new Map<number, AdminNotification>()
   const withoutOrder: AdminNotification[] = []
@@ -333,7 +381,14 @@ function keepLatestNotificationByOrder(notifications: AdminNotification[]) {
     }
 
     const current = byOrder.get(notification.orderId)
-    if (!current || getTime(notification.eventAt) > getTime(current.eventAt)) {
+    const notificationTime = getTime(notification.eventAt)
+    const currentTime = getTime(current?.eventAt)
+    if (
+      !current ||
+      notificationTime > currentTime ||
+      (notificationTime === currentTime &&
+        getOperationalPriority(notification) > getOperationalPriority(current))
+    ) {
       byOrder.set(notification.orderId, notification)
     }
   }
@@ -347,9 +402,35 @@ function getCancellationNotificationContent(
     payment_status?: string | null
     payment_proof_url?: string | null
     paid_at?: string | null
+    payment_confirmed_amount?: number | string | null
+    financial_status?: string | null
   },
 ) {
   const orderCode = formatOrderId(order.id)
+
+  if (order.financial_status === "refund_pending") {
+    return {
+      title: "Pedido cancelado con pago confirmado - reintegro pendiente",
+      body: `${orderCode} requiere reintegro pendiente. Revisá el comprobante de pago y cargá el comprobante de reintegro.`,
+      priority: "attention" as const,
+    }
+  }
+
+  if (order.financial_status === "cancellation_requested") {
+    if (isRefundPaymentAttentionOrder(order)) {
+      return {
+        title: "Pedido cancelado con pago confirmado - reintegro pendiente",
+        body: `${orderCode} requiere reintegro pendiente. Revisá el comprobante de pago y cargá el comprobante de reintegro.`,
+        priority: "attention" as const,
+      }
+    }
+
+    return {
+      title: "Pedido cancelado con comprobante pendiente",
+      body: `${orderCode} fue cancelado con comprobante enviado. Revisá si corresponde confirmar el pago y reintegrar.`,
+      priority: "attention" as const,
+    }
+  }
 
   if (isPaymentReceived(order)) {
     return {
@@ -373,12 +454,18 @@ function getCancellationNotificationContent(
   }
 }
 
-function getTone(groups: AdminNotificationGroups): AdminNotificationTone {
+function getTone(
+  groups: AdminNotificationGroups,
+  notifications: AdminNotification[],
+): AdminNotificationTone {
+  const latestNotification = notifications[0]
+
+  if (latestNotification?.priority === "attention") return "cancellation"
   if (groups.claim > 0) return "claim"
-  if (groups.cancellation > 0) return "cancellation"
+  if (groups.payment > 0) return "payment"
   if (groups.shipping > 0) return "shipping"
   if (groups.message > 0) return "message"
-  if (groups.payment > 0) return "payment"
+  if (groups.cancellation > 0) return "cancellation"
   if (groups.invoice > 0) return "invoice"
   return "order"
 }
@@ -392,7 +479,7 @@ function buildSummary(notifications: AdminNotification[]): AdminNotificationSumm
 
   return {
     count: notifications.length,
-    tone: getTone(groups),
+    tone: getTone(groups, notifications),
     groups,
     notifications,
   }
@@ -510,7 +597,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         })
       }
 
-      if (isOrderReadyForShipping(order)) {
+      if (!isRefundPaymentAttentionOrder(order) && isOrderReadyForShipping(order)) {
         notifications.push({
           id: `shipping:${orderId}`,
           type: "shipping",
@@ -527,8 +614,23 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         })
       }
 
-      if (order.estado === "cancelado") {
+      if (
+        order.estado === "cancelado" ||
+        ["cancelled", "cancellation_requested", "refund_pending"].includes(
+          order.financial_status ?? "",
+        )
+      ) {
         const cancelledAt =
+          (order as {
+            cancelled_at?: string | null
+            cancellation_requested_at?: string | null
+            refund_pending_at?: string | null
+          }).refund_pending_at ||
+          (order as {
+            cancelled_at?: string | null
+            cancellation_requested_at?: string | null
+            refund_pending_at?: string | null
+          }).cancellation_requested_at ||
           (order as { cancelled_at?: string | null }).cancelled_at
 
         if (!cancelledAt) continue
@@ -537,16 +639,25 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           payment_status: order.payment_status,
           payment_proof_url: order.payment_proof_url,
           paid_at: order.paid_at,
+          payment_confirmed_amount: order.payment_confirmed_amount,
+          financial_status: order.financial_status,
         })
+        const notificationType: AdminNotificationType = isRefundPaymentAttentionOrder(order)
+          ? "payment"
+          : "cancellation"
+        const eventKey =
+          notificationType === "payment"
+            ? `payment-refund:${orderId}`
+            : `order-cancelled:${orderId}`
 
         notifications.push({
-          id: `order-cancelled:${orderId}`,
-          type: "cancellation",
-          eventKey: `order-cancelled:${orderId}`,
+          id: eventKey,
+          type: notificationType,
+          eventKey,
           eventAt: String(cancelledAt),
           title: cancellationContent.title,
           body: cancellationContent.body,
-          actionUrl: `/admin/pedidos/${orderId}`,
+          actionUrl: `/admin/pedidos/${orderId}?tab=pago`,
           orderId,
           isRead: false,
           priority: cancellationContent.priority,

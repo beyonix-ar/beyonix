@@ -31,6 +31,28 @@ export function isInvoiceAvailable(order: SupabasePedido) {
 export function getClientOrderStatusBadge(order: SupabasePedido) {
   const status = order.estado.toLowerCase()
   const paymentStatus = order.payment_status ?? ""
+  const financialStatus = order.financial_status ?? ""
+
+  if (financialStatus === "refund_pending") {
+    return {
+      label: "Reintegro pendiente",
+      className: "border-amber-300/35 bg-amber-400/12 text-amber-200",
+    }
+  }
+
+  if (financialStatus === "cancellation_requested") {
+    return {
+      label: "Cancelación en revisión",
+      className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
+    }
+  }
+
+  if (financialStatus === "refunded") {
+    return {
+      label: "Dinero reintegrado",
+      className: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
+    }
+  }
 
   if (status === "cancelado") {
     return {
@@ -110,6 +132,19 @@ export function getCuentaItemImage(item: NonNullable<SupabasePedido["orden_items
 
 export function getPaymentProgressLabel(order: SupabasePedido) {
   const paymentStatus = order.payment_status ?? ""
+  const financialStatus = order.financial_status ?? ""
+
+  if (financialStatus === "refund_pending") {
+    return "Reintegro pendiente"
+  }
+
+  if (financialStatus === "cancellation_requested") {
+    return "Cancelación en revisión"
+  }
+
+  if (financialStatus === "refunded") {
+    return "Dinero reintegrado"
+  }
 
   if ((order.estado ?? "").toLowerCase() === "cancelado") {
     return "Pedido cancelado"
@@ -155,7 +190,10 @@ export function isAndreaniOrderInTransit(order: SupabasePedido) {
 export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[] {
   const estado = order.estado.toLowerCase()
   const paymentStatus = order.payment_status ?? ""
+  const financialStatus = order.financial_status ?? ""
   const isCanceled = estado === "cancelado"
+  const refundPending = financialStatus === "refund_pending"
+  const refunded = financialStatus === "refunded"
   const isRejected = paymentStatus === "rechazado"
   const isPaid =
     estado === "pagado" ||
@@ -171,6 +209,39 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
     Boolean(order.tracking_number || order.andreani_tracking)
   const isDelivered = estado === "entregado"
   const isInTransit = estado === "en_camino" || isDelivered || isAndreaniOrderInTransit(order)
+
+  if (refundPending || refunded) {
+    return [
+      {
+        label: "Pedido registrado",
+        detail: formatCuentaOrderDate(order.created_at),
+        tone: "done",
+      },
+      {
+        label: "Pago confirmado",
+        detail: order.payment_confirmed_at
+          ? formatCuentaOrderDate(order.payment_confirmed_at)
+          : "El pago fue confirmado.",
+        tone: "done",
+      },
+      {
+        label: "Cancelación solicitada",
+        detail: order.cancellation_requested_at
+          ? formatCuentaOrderDate(order.cancellation_requested_at)
+          : "Recibimos tu solicitud.",
+        tone: "done",
+      },
+      {
+        label: refunded ? "Dinero reintegrado" : "Reintegro pendiente",
+        detail: refunded
+          ? order.refunded_at
+            ? formatCuentaOrderDate(order.refunded_at)
+            : "El reintegro fue registrado."
+          : "BEYONIX está gestionando la devolución.",
+        tone: refunded ? "done" : "warning",
+      },
+    ]
+  }
 
   if (isCanceled) {
     return [

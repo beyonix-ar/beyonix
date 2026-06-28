@@ -115,7 +115,7 @@ export async function POST(
   const { data: order, error: orderError } = await auth.admin
     .from("ordenes")
     .select(
-      "id, total, estado, payment_status, invoice_cae, invoice_status, invoice_error, order_change_status",
+      "id, total, estado, payment_status, financial_status, invoice_cae, invoice_status, invoice_error, order_change_status",
     )
     .eq("id", orderId)
     .single()
@@ -126,6 +126,18 @@ export async function POST(
 
   if (order.invoice_status === "authorized" && order.invoice_cae) {
     return NextResponse.json({ error: "La orden ya está facturada." }, { status: 409 })
+  }
+
+  if (
+    order.estado === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      String(order.financial_status ?? ""),
+    )
+  ) {
+    return NextResponse.json(
+      { error: "No se puede emitir factura sobre un pedido cancelado o con reintegro pendiente." },
+      { status: 409 },
+    )
   }
 
   if (!["approved", "confirmado"].includes(order.payment_status ?? "")) {
