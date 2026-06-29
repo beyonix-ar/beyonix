@@ -10,18 +10,17 @@ import {
   type AdminNotificationGroups,
   type AdminNotificationTone,
 } from "@/lib/admin/admin-notifications"
+import {
+  ADMIN_SENSITIVE_DANGER,
+  isAdminSensitiveNotification,
+} from "@/lib/admin/admin-sensitive-visuals"
 import { AdminNotificationsPopover } from "@/components/admin-notifications-popover"
 import { cn } from "@/lib/utils"
 
-const BELL_STYLES: Record<AdminNotificationTone, string> = {
-  order: "border-emerald-400/45 bg-emerald-600 hover:bg-emerald-700",
-  message: "border-sky-400/45 bg-sky-600 hover:bg-sky-700",
-  payment: "border-blue-400/45 bg-blue-600 hover:bg-blue-700",
-  invoice: "border-violet-400/45 bg-violet-600 hover:bg-violet-700",
-  shipping: "border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2] hover:border-[#77E6E2]/40 hover:bg-[#77E6E2]/10",
-  cancellation: "border-orange-400/35 bg-orange-500/20 text-orange-100 hover:border-orange-300/45 hover:bg-orange-500/28",
-  claim: "border-red-400/35 bg-red-500/20 text-red-100 hover:border-red-300/45 hover:bg-red-500/28",
-}
+const ADMIN_NEUTRAL_BELL_STYLE =
+  "border-[#77E6E2]/25 bg-[#102034] text-[#D7FFFD] hover:border-[#77E6E2]/45 hover:bg-[#13283f] hover:text-white"
+const ADMIN_NEUTRAL_BADGE_STYLE =
+  "bg-[#77E6E2] text-black shadow-[0_0_10px_rgba(119,230,226,0.58)]"
 
 interface AdminNotificationBellProps {
   count: number
@@ -101,6 +100,11 @@ export function AdminNotificationBell({
     router.push(notification.actionUrl)
   }
 
+  const sensitiveTone =
+    tone === "cancellation" ||
+    tone === "claim" ||
+    notifications.some(isAdminSensitiveNotification)
+
   return (
     <div
       ref={rootRef}
@@ -117,7 +121,9 @@ export function AdminNotificationBell({
         className={cn(
           "relative flex size-10 cursor-pointer items-center justify-center rounded-full border text-white shadow-lg shadow-black/35 transition-all hover:shadow-[0_0_0_1px_rgba(30,111,174,0.45)]",
           count > 0
-            ? BELL_STYLES[tone]
+            ? sensitiveTone
+              ? ADMIN_SENSITIVE_DANGER.action
+              : ADMIN_NEUTRAL_BELL_STYLE
             : "border-white/12 bg-[#0D1117] hover:border-[#1e6fae] hover:bg-[#15191F]",
         )}
       >
@@ -126,13 +132,9 @@ export function AdminNotificationBell({
           <span
             className={cn(
               "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[7px] font-medium leading-none",
-              tone === "shipping"
-                ? "bg-[#77E6E2] text-black"
-                : tone === "claim"
-                  ? "bg-red-300 text-black"
-                  : tone === "cancellation"
-                    ? "bg-orange-300 text-black"
-                : "bg-white text-black",
+              sensitiveTone
+                ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
+                : ADMIN_NEUTRAL_BADGE_STYLE,
             )}
           >
             {count > 99 ? "99+" : count}

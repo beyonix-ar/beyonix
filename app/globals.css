@@ -40,6 +40,12 @@
   --sidebar-accent-foreground: oklch(0.98 0 0);
   --sidebar-border: oklch(0.22 0 0);
   --sidebar-ring: oklch(0.5 0 0);
+  --beyonix-page-gutter: clamp(1rem, 2.2vw, 2.75rem);
+  --beyonix-content-max: clamp(74rem, 92vw, 98rem);
+  --beyonix-admin-content-max: clamp(76rem, 94vw, 112rem);
+  --beyonix-checkout-content-max: clamp(72rem, 92vw, 96rem);
+  --beyonix-product-card-max: clamp(17.5rem, 14.8vw, 20.5rem);
+  --beyonix-section-y: clamp(3rem, 5vw, 6rem);
 }
 
 .dark {
@@ -285,19 +291,19 @@
 }
 
 @utility grid-cols-products-layout {
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: clamp(240px, 18vw, 288px) 1fr;
 }
 
 @utility grid-cols-product-cards-2 {
-  grid-template-columns: repeat(2, minmax(0, 280px));
+  grid-template-columns: repeat(2, minmax(0, min(100%, var(--beyonix-product-card-max))));
 }
 
 @utility grid-cols-product-cards-3 {
-  grid-template-columns: repeat(3, minmax(0, 260px));
+  grid-template-columns: repeat(3, minmax(0, min(100%, var(--beyonix-product-card-max))));
 }
 
 @utility grid-cols-product-cards-4 {
-  grid-template-columns: repeat(4, minmax(0, 260px));
+  grid-template-columns: repeat(4, minmax(0, min(100%, var(--beyonix-product-card-max))));
 }
 
 @utility grid-cols-category-product-cards-4 {
@@ -472,6 +478,7 @@
 
   html {
     background: #000000;
+    font-size: clamp(15px, calc(14px + 0.14vw), 17.25px);
   }
 
   body {
@@ -515,6 +522,41 @@
     font-family: var(--font-heading);
     letter-spacing: -0.02em;
   }
+}
+
+:where(.container) {
+  margin-inline: auto;
+  max-width: none;
+  padding-inline: 0 !important;
+  width: min(calc(100% - (var(--beyonix-page-gutter) * 2)), var(--beyonix-content-max));
+}
+
+.beyonix-fluid-container {
+  margin-inline: auto;
+  width: min(calc(100% - (var(--beyonix-page-gutter) * 2)), var(--beyonix-content-max));
+}
+
+.beyonix-checkout-container {
+  margin-inline: auto;
+  width: min(calc(100% - (var(--beyonix-page-gutter) * 2)), var(--beyonix-checkout-content-max));
+}
+
+.beyonix-admin-shell {
+  --beyonix-admin-sidebar-width: clamp(16rem, 14vw, 18.25rem);
+}
+
+.beyonix-admin-sidebar {
+  width: min(100vw, var(--beyonix-admin-sidebar-width));
+}
+
+.beyonix-admin-main > :where(div, section) {
+  margin-inline: auto;
+  max-width: var(--beyonix-admin-content-max);
+  width: 100%;
+}
+
+.beyonix-section-spacing {
+  padding-block: var(--beyonix-section-y);
 }
 
 @layer components {

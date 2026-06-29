@@ -28,8 +28,15 @@ import {
 } from "@/lib/validation/account-fields"
 const PASSWORD_RECOVERY_KEY = "beyonix-password-recovery"
 const AUTH_LAST_ACTIVITY_KEY = "beyonix-auth-last-activity"
-const AUTH_INACTIVITY_LIMIT_MS = 30 * 60 * 1000
+const AUTH_SESSION_STARTED_KEY = "beyonix-auth-session-started"
+const AUTH_ADMIN_INACTIVITY_LIMIT_MS = 30 * 60 * 1000
+const AUTH_ADMIN_WARNING_THRESHOLD_MS = 2 * 60 * 1000
+const AUTH_CLIENT_SESSION_LIMIT_MS = 7 * 24 * 60 * 60 * 1000
 const AUTH_ACTIVITY_WRITE_INTERVAL_MS = 15 * 1000
+
+function isAdminSessionRole(role?: string | null) {
+  return role === "admin" || role === "super_admin"
+}
 
 function getLastAuthActivity() {
   if (typeof window === "undefined") return null
@@ -41,13 +48,56 @@ function getLastAuthActivity() {
     : null
 }
 
-function hasAuthSessionExpired() {
+function hasAdminSessionExpired() {
   const lastActivity = getLastAuthActivity()
 
   return (
     lastActivity === null ||
-    Date.now() - lastActivity >= AUTH_INACTIVITY_LIMIT_MS
+    Date.now() - lastActivity >= AUTH_ADMIN_INACTIVITY_LIMIT_MS
   )
+}
+
+function getAdminSessionRemainingMs() {
+  const lastActivity = getLastAuthActivity()
+
+  if (lastActivity === null) return 0
+
+  return AUTH_ADMIN_INACTIVITY_LIMIT_MS - (Date.now() - lastActivity)
+}
+
+function getSessionStartedAt() {
+  if (typeof window === "undefined") return null
+
+  const storedValue = Number(localStorage.getItem(AUTH_SESSION_STARTED_KEY))
+
+  return Number.isFinite(storedValue) && storedValue > 0
+    ? storedValue
+    : null
+}
+
+function ensureSessionStartedAt() {
+  if (typeof window === "undefined") return
+
+  if (!getSessionStartedAt()) {
+    localStorage.setItem(AUTH_SESSION_STARTED_KEY, String(Date.now()))
+  }
+}
+
+function recordSessionStartedAt() {
+  if (typeof window === "undefined") return
+
+  localStorage.setItem(AUTH_SESSION_STARTED_KEY, String(Date.now()))
+}
+
+function hasPersistentSessionExpired() {
+  const startedAt = getSessionStartedAt()
+
+  if (!startedAt) {
+    ensureSessionStartedAt()
+    return false
+  }
+
+  return Date.now() - startedAt >= AUTH_CLIENT_SESSION_LIMIT_MS
 }
 
 function recordAuthActivity() {
@@ -60,6 +110,19 @@ function clearAuthActivity() {
   if (typeof window === "undefined") return
 
   localStorage.removeItem(AUTH_LAST_ACTIVITY_KEY)
+  localStorage.removeItem(AUTH_SESSION_STARTED_KEY)
+}
+
+function redirectToLoginWithCurrentPath() {
+  if (
+    typeof window === "undefined" ||
+    window.location.pathname.startsWith("/login")
+  ) {
+    return
+  }
+
+  const redirect = `${window.location.pathname}${window.location.search}`
+  window.location.href = `/login?redirect=${encodeURIComponent(redirect)}`
 }
 
 function isPasswordRecoveryInProgress() {
@@ -346,6 +409,8 @@ export function AuthProvider({
   const loginInProgress = useRef(false)
   const hasAuthenticatedSession = useRef(false)
   const lastActivityWrite = useRef(0)
+  const currentRoleRef = useRef<BeyonixUser["rol"] | null>(null)
+  const [adminInactivityWarning, setAdminInactivityWarning] = useState(false)
   // Load profile
 
   const loadProfile =
@@ -384,9 +449,26 @@ export function AuthProvider({
         }
 
         if (!profile) {
-          setUser((currentUser) =>
-            authUserToFallbackUser(supabaseUser, currentUser)
-          )
+          setUser((currentUser) => {
+            const fallbackUser = authUserToFallbackUser(
+              supabaseUser,
+              currentUser
+            )
+
+            currentRoleRef.current = fallbackUser.rol
+
+            if (isAdminSessionRole(fallbackUser.rol)) {
+              if (!getLastAuthActivity()) recordAuthActivity()
+              if (hasAdminSessionExpired()) {
+                void supabase.auth.signOut({ scope: "local" })
+                currentRoleRef.current = null
+                redirectToLoginWithCurrentPath()
+                return null
+              }
+            }
+
+            return fallbackUser
+          })
           return
         }
 
@@ -396,13 +478,26 @@ export function AuthProvider({
           return
         }
 
-        setUser(
-          profileToUser(
-            profile,
-            supabaseUser.email ?? "",
-            supabaseUser.user_metadata?.username ?? undefined
-          )
+        const nextUser = profileToUser(
+          profile,
+          supabaseUser.email ?? "",
+          supabaseUser.user_metadata?.username ?? undefined
         )
+
+        currentRoleRef.current = nextUser.rol
+
+        if (isAdminSessionRole(nextUser.rol)) {
+          if (!getLastAuthActivity()) recordAuthActivity()
+          if (hasAdminSessionExpired()) {
+            await supabase.auth.signOut({ scope: "local" })
+            currentRoleRef.current = null
+            setUser(null)
+            redirectToLoginWithCurrentPath()
+            return
+          }
+        }
+
+        setUser(nextUser)
       },
       []
     )
@@ -413,6 +508,8 @@ export function AuthProvider({
 
     function clearAuthenticatedUser() {
       hasAuthenticatedSession.current = false
+      currentRoleRef.current = null
+      setAdminInactivityWarning(false)
       clearAuthActivity()
       setUser(null)
     }
@@ -428,6 +525,8 @@ export function AuthProvider({
       } finally {
         setIsLoading(false)
         inactivityLogoutInProgress = false
+
+        redirectToLoginWithCurrentPath()
       }
     }
 
@@ -435,13 +534,32 @@ export function AuthProvider({
       hasAuthenticatedSession.current = true
     }
 
-    function validateStoredActivity() {
-      if (
-        hasAuthenticatedSession.current &&
-        hasAuthSessionExpired()
-      ) {
+    function validatePersistentSession() {
+      if (!hasAuthenticatedSession.current) return true
+
+      if (hasPersistentSessionExpired()) {
         void logoutExpiredSession()
         return false
+      }
+
+      return true
+    }
+
+    function validateAdminActivity() {
+      if (
+        hasAuthenticatedSession.current &&
+        isAdminSessionRole(currentRoleRef.current)
+      ) {
+        const remainingMs = getAdminSessionRemainingMs()
+
+        if (remainingMs <= 0) {
+          void logoutExpiredSession()
+          return false
+        }
+
+        setAdminInactivityWarning(
+          remainingMs <= AUTH_ADMIN_WARNING_THRESHOLD_MS
+        )
       }
 
       return true
@@ -450,9 +568,9 @@ export function AuthProvider({
     function trackActivity() {
       if (
         !hasAuthenticatedSession.current ||
-        hasAuthSessionExpired()
+        !isAdminSessionRole(currentRoleRef.current)
       ) {
-        validateStoredActivity()
+        validatePersistentSession()
         return
       }
 
@@ -467,12 +585,14 @@ export function AuthProvider({
 
       lastActivityWrite.current = now
       recordAuthActivity()
+      setAdminInactivityWarning(false)
     }
 
     function recordPageClose() {
       if (
         hasAuthenticatedSession.current &&
-        !hasAuthSessionExpired()
+        isAdminSessionRole(currentRoleRef.current) &&
+        !hasAdminSessionExpired()
       ) {
         recordAuthActivity()
       }
@@ -484,10 +604,11 @@ export function AuthProvider({
         return
       }
 
-      validateStoredActivity()
+      if (!validatePersistentSession()) return
+      validateAdminActivity()
     }
 
-    if (!isTemporaryAuthPage() && hasAuthSessionExpired()) {
+    if (!isTemporaryAuthPage() && hasPersistentSessionExpired()) {
       clearSupabaseBrowserSession()
       clearAuthenticatedUser()
       setIsLoading(false)
@@ -503,7 +624,9 @@ export function AuthProvider({
               return
             }
 
-            if (hasAuthSessionExpired()) {
+            ensureSessionStartedAt()
+
+            if (hasPersistentSessionExpired()) {
               void logoutExpiredSession()
               return
             }
@@ -579,6 +702,7 @@ export function AuthProvider({
             // Toda sesión recién emitida inicia su propio período de
             // actividad. Esto incluye confirmaciones abiertas en otra pestaña.
             if (event === "SIGNED_IN") {
+              recordSessionStartedAt()
               recordAuthActivity()
               lastActivityWrite.current = Date.now()
             }
@@ -591,7 +715,7 @@ export function AuthProvider({
 
             if (
               event !== "SIGNED_IN" &&
-              hasAuthSessionExpired()
+              hasPersistentSessionExpired()
             ) {
               void logoutExpiredSession()
               return
@@ -626,12 +750,17 @@ export function AuthProvider({
 
     const activityEvents = [
       "keydown",
+      "click",
+      "mousemove",
       "pointerdown",
       "scroll",
       "touchstart",
     ] as const
     const inactivityCheck = window.setInterval(
-      validateStoredActivity,
+      () => {
+        if (!validatePersistentSession()) return
+        validateAdminActivity()
+      },
       60 * 1000
     )
 
@@ -724,6 +853,7 @@ export function AuthProvider({
         }
 
         loginInProgress.current = true
+        recordSessionStartedAt()
         recordAuthActivity()
 
         const {
@@ -1082,6 +1212,15 @@ export function AuthProvider({
       },
       []
     )
+
+  const keepAdminSessionAlive =
+    useCallback(() => {
+      if (!isAdminSessionRole(currentRoleRef.current)) return
+
+      recordAuthActivity()
+      lastActivityWrite.current = Date.now()
+      setAdminInactivityWarning(false)
+    }, [])
   // Update user
 
   const updateUser =
@@ -1224,6 +1363,24 @@ export function AuthProvider({
       }}
     >
       {children}
+      {adminInactivityWarning && isAdminSessionRole(user?.rol) && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 right-5 z-200 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-beyonix-blue-light/30 bg-[#0B1118]/95 p-4 font-heading text-white shadow-2xl shadow-black/55 backdrop-blur-md"
+        >
+          <p className="text-sm font-semibold">
+            Tu sesión se cerrará pronto por inactividad.
+          </p>
+          <button
+            type="button"
+            onClick={keepAdminSessionAlive}
+            className="mt-3 h-9 cursor-pointer rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue/45 px-3 text-sm font-semibold text-white transition-colors hover:bg-beyonix-blue"
+          >
+            Mantener sesión
+          </button>
+        </div>
+      )}
     </AuthContext.Provider>
   )
 }

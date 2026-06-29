@@ -394,26 +394,34 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       : refundPending
         ? "Reintegro pendiente"
         : "Pedido cancelado"
-    const refundStatusClassName = refunded
-      ? "border-emerald-300/28 bg-emerald-400/10 text-emerald-50"
+    const headerRefundStatusClassName = refunded
+      ? "border-emerald-300/30 bg-[#123329] text-emerald-50"
       : refundPending
-        ? "border-amber-300/26 bg-amber-400/10 text-amber-50"
-        : "border-zinc-300/22 bg-zinc-300/8 text-zinc-100"
+        ? "border-[#3e648f] bg-[#1c3048] text-[#d9e7f7]"
+        : "border-[#3b4656] bg-[#252B33] text-zinc-100"
+    const refundStatusClassName = refunded
+      ? "border-emerald-300/30 bg-[#123329] text-emerald-50"
+      : refundPending
+        ? "border-[#2f6587] bg-[#173043] text-[#d7edf8]"
+        : "border-zinc-300/24 bg-[#252B33] text-zinc-100"
 
     return (
-      <main className="min-h-screen bg-[#070B11] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
-        <div className="mx-auto max-w-4xl">
+      <main className="relative isolate min-h-screen overflow-hidden bg-[#070B11] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
+        <div className="relative z-20 mx-auto max-w-4xl">
           <button
             type="button"
             onClick={() => router.push("/cuenta?tab=ordenes")}
-            className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#111822] px-4 text-sm font-bold text-white/82 transition-colors hover:border-blue-300/35 hover:text-white"
+            className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-[#2a4b6c] bg-[#132033] px-4 text-sm font-bold text-white/84 shadow-sm shadow-black/20 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white"
           >
             <ChevronLeft className="size-4" />
             Volver a Mis compras
           </button>
 
-          <section className="mt-4 rounded-2xl border border-white/10 bg-[#101720] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.2)] sm:p-6">
-            <div className="flex flex-col gap-4 border-b border-white/9 pb-5 sm:flex-row sm:items-start sm:justify-between">
+          <section
+            className="relative isolate z-30 mt-4 overflow-hidden rounded-3xl border border-[#223249] !bg-[#101114] bg-none p-4 shadow-[0_24px_60px_#000000] sm:p-6"
+            style={{ backgroundColor: "#101114", backgroundImage: "none" }}
+          >
+            <div className="relative z-20 flex flex-col gap-4 rounded-2xl border border-[#2a4c72] bg-[#132238] px-4 py-4 shadow-[0_16px_42px_rgba(0,0,0,0.32)] sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-10px font-black uppercase tracking-[0.18em] text-blue-300">
                   Detalle de compra
@@ -421,34 +429,34 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                 <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">
                   Pedido #{formatPublicOrderId(order.id)}
                 </h1>
-                <p className="mt-1.5 text-sm font-semibold text-white/58">
+                <p className="mt-1.5 text-sm font-semibold text-white/68">
                   {formatOrderCardDate(order.created_at)}
                 </p>
               </div>
-              <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-xs font-black ${refundStatusClassName}`}>
+              <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-xs font-black ${headerRefundStatusClassName}`}>
                 {refundStatusLabel}
               </span>
             </div>
 
-            <section className={`mt-5 rounded-2xl border px-4 py-4 sm:px-5 sm:py-5 ${
+            <section className={`relative z-20 mt-5 rounded-2xl border px-4 py-4 shadow-[0_18px_48px_rgba(0,0,0,0.20)] sm:px-5 sm:py-5 ${
               refunded
-                ? "border-emerald-300/22 bg-[#12211D]"
+                ? "border-emerald-300/30 bg-[#102A22]"
                 : refundPending
-                  ? "border-amber-300/22 bg-[#201C13]"
-                  : "border-zinc-300/18 bg-[#151A21]"
+                  ? "border-[#6a3340] bg-[#181216]"
+                  : "border-zinc-300/26 bg-[#191C22]"
             }`}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                 <span className={`flex size-12 shrink-0 items-center justify-center rounded-full border ${
                   refunded
-                    ? "border-emerald-200/35 bg-emerald-400/12"
+                    ? "border-emerald-200/35 bg-[#123329]"
                     : refundPending
-                      ? "border-amber-200/35 bg-amber-400/12"
-                      : "border-zinc-200/22 bg-white/6"
+                      ? "border-[#8a4a58] bg-[#2a171d]"
+                      : "border-zinc-200/22 bg-[#252B33]"
                 }`}>
                   {refunded ? (
                     <CheckCircle2 className="size-7 text-emerald-200" />
                   ) : (
-                    <X className={`size-6 ${refundPending ? "text-amber-100" : "text-zinc-100"}`} />
+                    <X className={`size-6 ${refundPending ? "text-[#f0a8b7]" : "text-zinc-100"}`} />
                   )}
                 </span>
                 <div className="min-w-0">
@@ -459,7 +467,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                         ? "Lamentamos que hayas cancelado tu compra."
                         : "Tu compra fue cancelada correctamente."}
                   </h2>
-                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/74">
+                  <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-white/84">
                     {refunded
                       ? "El dinero de tu compra ya fue reintegrado. Esperamos verte pronto para una nueva compra."
                       : refundPending
@@ -471,7 +479,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                       type="button"
                       disabled={refundProofOpening}
                       onClick={() => void handleOpenRefundProof()}
-                      className={cn(beyonixHoverBorder, "mt-4 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/30 bg-[#112A43] px-4 text-xs font-black text-white transition disabled:cursor-wait disabled:opacity-60")}
+                      className={cn(beyonixHoverBorder, "mt-4 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/30 bg-[#112A43] px-4 text-xs font-black text-white transition disabled:cursor-wait disabled:border-[#2B3C50] disabled:bg-[#0F1A29] disabled:text-white/55")}
                     >
                       <Download className="size-4" />
                       {refundProofOpening ? "Abriendo..." : "Ver comprobante de reintegro"}
@@ -486,25 +494,25 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </div>
             </section>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-white/9 bg-[#16202B] px-4 py-3">
-                <p className="text-10px font-black uppercase tracking-widest text-white/45">
+            <div className="relative z-20 mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
+                <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
                   Pedido
                 </p>
                 <p className="mt-1.5 text-base font-black text-white">
                   #{formatPublicOrderId(order.id)}
                 </p>
               </div>
-              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-white/9 bg-[#16202B] px-4 py-3">
-                <p className="text-10px font-black uppercase tracking-widest text-white/45">
+              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
+                <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
                   Fecha
                 </p>
                 <p className="mt-1.5 text-base font-black text-white">
                   {formatOrderCardDate(order.created_at)}
                 </p>
               </div>
-              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-white/9 bg-[#16202B] px-4 py-3">
-                <p className="text-10px font-black uppercase tracking-widest text-white/45">
+              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
+                <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
                   Total
                 </p>
                 <p className="mt-1.5 text-base font-black text-white">
@@ -514,10 +522,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             </div>
 
             {refundFlow && (
-              <section className="mt-5 rounded-2xl border border-white/10 bg-[#111922] p-4 sm:p-5">
+              <section className="relative z-20 mt-5 rounded-2xl border border-[#28435e] bg-[#0f1824] p-4 shadow-[0_20px_54px_rgba(0,0,0,0.38)] sm:p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-10px font-black uppercase tracking-[0.18em] text-blue-300">
+                    <p className="text-10px font-black uppercase tracking-[0.18em] text-[#9fd8ff]">
                       Reintegro
                     </p>
                     <h2 className="mt-1 text-base font-black text-white">
@@ -530,24 +538,24 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-white/8 bg-[#17212C] px-4 py-3">
-                    <p className="text-10px font-black uppercase tracking-widest text-white/46">
+                  <div className="rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
+                    <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
                       Estado actual
                     </p>
                     <p className="mt-1.5 text-sm font-black text-white">
                       {refundStatusLabel}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-white/8 bg-[#17212C] px-4 py-3">
-                    <p className="text-10px font-black uppercase tracking-widest text-white/46">
+                  <div className="rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
+                    <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
                       Monto abonado
                     </p>
                     <p className="mt-1.5 text-sm font-black text-white">
                       {formatCuentaPrice(Number(order.payment_confirmed_amount ?? order.total ?? 0))}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-white/8 bg-[#17212C] px-4 py-3">
-                    <p className="text-10px font-black uppercase tracking-widest text-white/46">
+                  <div className="rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
+                    <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
                       Fecha de solicitud
                     </p>
                     <p className="mt-1.5 text-sm font-black text-white">
@@ -557,7 +565,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                 </div>
 
                 {refunded ? (
-                  <div className="mt-4 rounded-xl border border-emerald-300/22 bg-emerald-400/8 px-4 py-3">
+                  <div className="mt-4 rounded-xl border border-emerald-300/28 bg-[#102F25] px-4 py-3">
                     <div className="flex gap-3">
                       <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-200" />
                       <div>
@@ -573,23 +581,23 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                     </div>
                   </div>
                 ) : (
-                  <p className="mt-4 rounded-xl border border-amber-300/18 bg-amber-400/8 px-4 py-3 text-sm font-semibold leading-6 text-amber-50/86">
+                  <p className="mt-4 rounded-xl border border-[#2c536f] bg-[#162534] px-4 py-3 text-sm font-medium leading-6 text-[#d7edf8]">
                     Te avisaremos por este medio cuando el reintegro quede registrado.
                   </p>
                 )}
               </section>
             )}
 
-            <section className="mt-5 rounded-2xl border border-white/10 bg-[#111922] p-4 sm:p-5">
+            <section className="relative z-20 mt-5 rounded-2xl border border-[#28435e] bg-[#0f1824] p-4 shadow-[0_20px_54px_rgba(0,0,0,0.38)] sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base font-black text-white">
                   Productos comprados
                 </h2>
-                <span className="text-xs font-bold text-white/52">
+                <span className="text-xs font-bold text-[#9fb3c9]">
                   {productCount} {productCount === 1 ? "producto" : "productos"}
                 </span>
               </div>
-              <div className="mt-3 space-y-2.5">
+              <div className="mt-3 space-y-3">
                 {items.map((item) => {
                   const quantity = Number(item.cantidad ?? 0)
                   const unitPrice = Number(item.precio ?? 0)
@@ -597,19 +605,19 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   const image = getCuentaItemImage(item)
 
                   return (
-                    <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-white/8 bg-[#17212C] p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-[#31506f] bg-[#162438] p-3 transition-all hover:border-[#4b78a4] hover:bg-[#1b2c44] sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+                        <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white">
                           {image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}
                         </div>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-black text-white">{name}</p>
-                          <p className="mt-1 text-xs font-semibold text-white/55">
+                          <p className="mt-1 text-xs font-medium text-[#b7c6d6]">
                             {getCuentaItemColor(item)} · Cantidad: {quantity}
                           </p>
                         </div>
                       </div>
-                      <p className="shrink-0 text-sm font-black text-white sm:text-right">
+                      <p className="shrink-0 text-base font-black text-white sm:text-right">
                         {formatCuentaPrice(unitPrice * quantity)}
                       </p>
                     </div>
@@ -621,7 +629,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             <button
               type="button"
               onClick={() => router.push("/")}
-              className="mt-5 inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-lg border border-white/12 bg-[#151D27] px-4 text-xs font-black text-white/86 transition hover:border-[#77E6E2]/35 hover:text-white sm:w-auto"
+              className="mt-5 inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-lg border border-[#2a4b6c] bg-[#132033] px-4 text-xs font-black text-white/86 transition hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white sm:w-auto"
             >
               Ir a Inicio
             </button>

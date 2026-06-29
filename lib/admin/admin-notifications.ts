@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/supabase/client"
 import { getSeenAdminPaymentProofOrderIds } from "@/lib/admin/order-event-views"
+import {
+  isAdminCancellationSensitiveNotification,
+  isAdminClaimSensitiveNotification,
+  isAdminSensitiveNotification,
+} from "@/lib/admin/admin-sensitive-visuals"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
 
 export const ADMIN_NOTIFICATIONS_CHANGED_EVENT =
@@ -460,12 +465,25 @@ function getTone(
 ): AdminNotificationTone {
   const latestNotification = notifications[0]
 
-  if (latestNotification?.priority === "attention") return "cancellation"
-  if (groups.claim > 0) return "claim"
+  if (
+    latestNotification?.priority === "attention" ||
+    isAdminCancellationSensitiveNotification(latestNotification)
+  ) {
+    return "cancellation"
+  }
+  if (groups.claim > 0 || notifications.some(isAdminClaimSensitiveNotification)) {
+    return "claim"
+  }
+  if (
+    groups.cancellation > 0 ||
+    notifications.some(isAdminCancellationSensitiveNotification) ||
+    notifications.some(isAdminSensitiveNotification)
+  ) {
+    return "cancellation"
+  }
   if (groups.payment > 0) return "payment"
   if (groups.shipping > 0) return "shipping"
   if (groups.message > 0) return "message"
-  if (groups.cancellation > 0) return "cancellation"
   if (groups.invoice > 0) return "invoice"
   return "order"
 }

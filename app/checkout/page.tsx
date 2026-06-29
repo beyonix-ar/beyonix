@@ -57,6 +57,13 @@ import {
 import {
   reserveCartStock,
 } from "@/lib/cart/stock-reservations"
+import {
+  STOCK_CHANGED_MESSAGE,
+  getProductStock,
+  getStockStatus,
+  getStockStatusLabel,
+  type StockStatus,
+} from "@/lib/cart/stock-status"
 
 import {
   calculateCartTotals,
@@ -107,6 +114,25 @@ function formatPrice(
       minimumFractionDigits: 0,
     }
   ).format(safePrice)
+}
+
+function getStockIndicatorClassName(status: StockStatus) {
+  if (status === "low") {
+    return "text-amber-200/75"
+  }
+
+  if (status === "out") {
+    return "text-red-200/70"
+  }
+
+  return "text-emerald-300/70"
+}
+
+function getStockIndicatorSymbol(status: StockStatus) {
+  if (status === "available") return "✔️"
+  if (status === "low") return "🔥"
+
+  return ""
 }
 
 const paymentMethods = [
@@ -250,7 +276,7 @@ export default function CheckoutPage() {
   const [
     selectedPayment,
     setSelectedPayment,
-  ] = useState("mercadopago")
+  ] = useState("")
 
   const [
     isProcessing,
@@ -424,7 +450,7 @@ export default function CheckoutPage() {
         if (!result.success) {
           setStockError(
             result.message ||
-              "No hay stock suficiente para reservar este carrito.",
+              STOCK_CHANGED_MESSAGE,
           )
         }
       })
@@ -432,7 +458,7 @@ export default function CheckoutPage() {
         if (cancelled) return
 
         setStockError(
-          "No pudimos validar el stock del carrito. Probá nuevamente.",
+          STOCK_CHANGED_MESSAGE,
         )
       })
 
@@ -778,7 +804,7 @@ export default function CheckoutPage() {
   ) => {
     e.preventDefault()
 
-    if (!isFormValid || !selectedShippingOption) return
+    if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid) return
 
     if (hasBlockedWords(formData.direccion)) {
       setCheckoutError("La dirección contiene texto no permitido.")
@@ -835,7 +861,7 @@ export default function CheckoutPage() {
         if (!response.ok || !data.order_id || !data.redirect_url) {
           setCheckoutError(
             data.error ||
-              "No pudimos registrar el pedido por transferencia. Intentá nuevamente.",
+              STOCK_CHANGED_MESSAGE,
           )
           return
         }
@@ -848,7 +874,7 @@ export default function CheckoutPage() {
       if (!response.ok || !data.init_point) {
         setCheckoutError(
           data.error ||
-            "No pudimos completar la compra. Revisá el stock e intentá nuevamente.",
+            STOCK_CHANGED_MESSAGE,
         )
         return
       }
@@ -856,7 +882,7 @@ export default function CheckoutPage() {
       window.location.href = data.init_point
     } catch {
       setCheckoutError(
-        "No pudimos completar la compra. Revisá el stock e intentá nuevamente.",
+        STOCK_CHANGED_MESSAGE,
       )
     } finally {
       setIsProcessing(false)
@@ -907,9 +933,9 @@ export default function CheckoutPage() {
               onClick={() =>
                 router.push("/")
               }
-              className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-muted-foreground transition-colors hover:bg-[#112A43] hover:text-white"
+              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-beyonix-blue-light/25 bg-[#111820] px-3 text-sm font-semibold text-white/78 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43] hover:text-white"
             >
-              <ArrowLeft className="size-5" />
+              <ArrowLeft className="size-4" />
 
               <span className="text-sm font-medium">
                 Volver
@@ -1025,8 +1051,8 @@ export default function CheckoutPage() {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-5 lg:px-8 lg:py-7">
-        <div className="mx-auto max-w-7xl">
+      <div className="beyonix-checkout-container py-5 lg:py-7">
+        <div className="mx-auto max-w-none">
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.2em] text-beyonix-cyan/75">
@@ -1054,19 +1080,21 @@ export default function CheckoutPage() {
                   key={step.id}
                   className={cn(
                     "flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
-                    active
-                      ? "border-beyonix-blue-light bg-beyonix-blue/45 text-white"
-                      : complete
-                        ? "border-beyonix-blue-light/25 bg-[#15191d] text-white/80"
+                    complete
+                      ? "border-emerald-500/35 bg-emerald-950/20 text-white/88"
+                      : active
+                        ? "border-beyonix-blue-light bg-beyonix-blue/45 text-white"
                         : "border-white/8 bg-[#121212] text-white/40"
                   )}
                 >
                   <span
                     className={cn(
                       "flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
-                      active || complete
-                        ? "border-beyonix-sky/35 bg-beyonix-blue text-beyonix-sky"
-                        : "border-white/10 bg-black/35"
+                      complete
+                        ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-300"
+                        : active
+                          ? "border-beyonix-sky/35 bg-beyonix-blue text-beyonix-sky"
+                          : "border-white/10 bg-black/35 text-white/45"
                     )}
                   >
                     {complete ? (
@@ -1086,9 +1114,9 @@ export default function CheckoutPage() {
           <form
             id="checkout-form"
             onSubmit={handleSubmit}
-            className="grid items-stretch gap-5 lg:grid-cols-3 lg:gap-3"
+            className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(22rem,0.85fr)] lg:gap-4 2xl:gap-5"
           >
-            <section className="checkout-panel flex min-h-[480px] flex-col rounded-2xl border px-4 pb-3 pt-4 shadow-xl shadow-black/25 sm:px-5 sm:pb-4 sm:pt-5 lg:col-span-2">
+            <section className="checkout-panel flex min-h-[clamp(440px,52vh,560px)] flex-col rounded-2xl border px-4 pb-3 pt-4 shadow-xl shadow-black/25 sm:px-5 sm:pb-4 sm:pt-5">
               {currentStep === 1 && (
                 <div className="animate-in fade-in slide-in-from-right-2 space-y-4 rounded-2xl border border-[#30363D]/80 bg-[#15191F] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] duration-300 sm:px-5 sm:py-4 [&_label]:text-[13px]">
                   <h2 className="border-l-4 border-beyonix-blue py-0.5 pl-3 text-xl font-bold text-foreground">
@@ -1228,33 +1256,41 @@ export default function CheckoutPage() {
                             setShippingSelectionMissing(false)
                           }}
                           className={cn(
-                            "checkout-option flex w-full cursor-pointer items-center gap-4 rounded-xl border p-4 text-left transition-all hover:border-beyonix-blue-light/55",
-                            selected &&
-                              "checkout-option-selected"
+                            "checkout-option flex w-full cursor-pointer items-center gap-4 rounded-xl border px-4 py-3.5 text-left transition-all hover:border-beyonix-blue-light/55",
+                            selected
+                              ? "checkout-option-selected border-beyonix-blue-light/70 bg-[#112033]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                              : "border-[#30363D] bg-[#15191F]/80"
                           )}
                         >
                           <span className={cn(
-                            "flex size-11 shrink-0 items-center justify-center rounded-xl border",
+                            "flex size-10 shrink-0 items-center justify-center rounded-xl border",
                             selected
-                              ? "border-beyonix-sky/25 bg-beyonix-blue text-beyonix-sky"
+                              ? "border-beyonix-sky/35 bg-beyonix-blue/55 text-beyonix-sky"
                               : "border-white/8 bg-black/30 text-white/55"
                           )}>
-                            <Truck className="size-5" />
+                            <Truck className="size-4" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block font-semibold text-white">
+                            <span className="block text-sm font-semibold text-white">
                               {option.label}
                             </span>
-                            <span className="mt-1 block text-sm text-white/45">
+                            <span className="mt-0.5 block text-xs text-white/42">
                               {option.provider === "manual"
                                 ? "Entrega local BEYONIX"
                                 : "Cotización Andreani"}
                             </span>
                           </span>
-                          <span className={freeShippingApplied ? "font-semibold text-emerald-400" : "font-semibold text-white"}>
-                            {freeShippingApplied
-                              ? "GRATIS"
-                              : formatPrice(option.price)}
+                          <span className="flex shrink-0 items-center gap-2 text-right">
+                            {selected && (
+                              <span className="flex size-5 items-center justify-center rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue/50 text-beyonix-sky">
+                                <Check className="size-3" />
+                              </span>
+                            )}
+                            <span className={freeShippingApplied ? "text-sm font-semibold text-emerald-400" : "text-sm font-semibold text-white"}>
+                              {freeShippingApplied
+                                ? "GRATIS"
+                                : formatPrice(option.price)}
+                            </span>
                           </span>
                         </button>
                       )
@@ -1391,22 +1427,28 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <div className="mt-auto flex items-center justify-between gap-3 border-t border-white/8 pt-3">
-                <button
-                  type="button"
-                  disabled={currentStep === 1}
-                  onClick={() =>
-                    setCurrentStep(
-                      Math.max(
-                        currentStep - 1,
-                        1
-                      ) as CheckoutStep
-                    )
-                  }
-                  className="h-10 min-w-110px cursor-pointer rounded-xl border border-white/10 bg-[#181818] px-4 text-sm font-semibold text-white/70 transition-colors hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/45 hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
-                >
-                  Anterior
-                </button>
+              <div
+                className={cn(
+                  "mt-auto flex items-center gap-3 border-t border-white/8 pt-3",
+                  currentStep === 1 ? "justify-end" : "justify-between",
+                )}
+              >
+                {currentStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCurrentStep(
+                        Math.max(
+                          currentStep - 1,
+                          1
+                        ) as CheckoutStep
+                      )
+                    }
+                    className="h-10 min-w-110px cursor-pointer rounded-xl border border-beyonix-blue-light/35 bg-[#112033] px-4 text-sm font-semibold text-white/82 transition-colors hover:border-beyonix-blue-light/65 hover:bg-[#14304A] hover:text-white"
+                  >
+                    Anterior
+                  </button>
+                )}
 
                 {currentStep < 3 ? (
                   <button
@@ -1416,7 +1458,7 @@ export default function CheckoutPage() {
                       "h-10 min-w-140px cursor-pointer rounded-xl px-5 text-sm font-semibold text-white transition-colors",
                       isCurrentStepValid
                         ? "bg-[#16A34A] hover:bg-[#15803D]"
-                        : "bg-beyonix-blue hover:bg-beyonix-blue-hover"
+                        : "bg-neutral-700/80 text-white/45 hover:bg-neutral-700/80"
                     )}
                   >
                     Continuar
@@ -1428,23 +1470,21 @@ export default function CheckoutPage() {
                       "h-10 min-w-180px",
                       isFormValid &&
                       !isProcessing &&
-                      !stockError
-                        ? isTransferPayment && isSelectedPaymentValid
-                          ? "bg-[#16A34A] text-white hover:bg-[#15803D]"
-                          : "bg-beyonix-blue text-white hover:bg-beyonix-blue-hover"
+                      !stockError &&
+                      isSelectedPaymentValid
+                        ? "bg-[#16A34A] text-white hover:bg-[#15803D]"
                         : "cursor-not-allowed bg-neutral-700 text-white/55 hover:bg-neutral-700"
                     )}
                     disabled={
                       !isFormValid ||
                       isProcessing ||
-                      Boolean(stockError)
+                      Boolean(stockError) ||
+                      !isSelectedPaymentValid
                     }
                   >
                     {isProcessing
                       ? "Procesando..."
-                      : isTransferPayment
-                        ? "Registrar pedido"
-                        : "Pagar ahora"}
+                      : "Pagar"}
                   </Button>
                 )}
               </div>
@@ -1465,12 +1505,20 @@ export default function CheckoutPage() {
                 <FreeShippingBar subtotal={baseTotals.productsTotal} />
               </div>
 
-              <div className="custom-scrollbar max-h-[320px] space-y-1.5 overflow-y-auto pr-1">
-                {items.map((item) => (
-                  <div
-                    key={`${item.product.id}-${item.variantId ?? item.color}`}
-                    className="checkout-order-item group grid min-h-104px grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#30363D] bg-[#15191F] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
-                  >
+              <div className="custom-scrollbar max-h-[clamp(330px,42vh,430px)] space-y-1.5 overflow-y-auto pr-1">
+                {items.map((item) => {
+                  const maxQuantity = getProductStock(item.product, item.color)
+                  const isMaxQuantity =
+                    maxQuantity > 0 && item.quantity >= maxQuantity
+                  const stockStatus = getStockStatus(item.product, item.color)
+                  const showStockIndicator = stockStatus !== "out"
+                  const stockSymbol = getStockIndicatorSymbol(stockStatus)
+
+                  return (
+                    <div
+                      key={`${item.product.id}-${item.variantId ?? item.color}`}
+                      className="checkout-order-item group grid min-h-104px grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#30363D] bg-[#15191F] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
+                    >
                     <div className="h-full min-h-92px overflow-hidden rounded-lg border border-white/8 bg-beyonix-surface-3">
                       <TransparencyAwareImage
                         src={item.image}
@@ -1485,21 +1533,49 @@ export default function CheckoutPage() {
                           <p className="line-clamp-2 text-sm font-bold text-foreground">
                             {item.product.nombre}
                           </p>
-                          {(item.variantName || item.colorHex) && (
-                            <div className="mt-1 inline-flex max-w-full items-center gap-1.5">
-                              {item.colorHex && (
-                                <span
-                                  className="size-2.5 shrink-0 rounded-full border border-white/35 shadow-sm shadow-black"
-                                  style={{
-                                    backgroundColor: item.colorHex,
-                                  }}
-                                />
-                              )}
-                              <span className="truncate text-xs capitalize text-white/60">
-                                {item.variantName || item.color}
+                          <div className="mt-1 flex min-w-0 flex-col items-start gap-0.5">
+                            {(item.variantName || item.colorHex) && (
+                              <div className="flex max-w-full items-center gap-1.5">
+                                {item.colorHex && (
+                                  <span
+                                    className="size-2.5 shrink-0 rounded-full border border-white/35 shadow-sm shadow-black"
+                                    style={{
+                                      backgroundColor: item.colorHex,
+                                    }}
+                                  />
+                                )}
+                                <span className="truncate text-xs capitalize text-white/60">
+                                  {item.variantName || item.color}
+                                </span>
+                              </div>
+                            )}
+                            {showStockIndicator && (
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  marginTop: "2px",
+                                  marginBottom: "2px",
+                                  fontSize: "12px",
+                                  fontWeight: 400,
+                                  lineHeight: 1.1,
+                                  letterSpacing: "normal",
+                                }}
+                                className={cn(
+                                  "truncate text-[12px] font-normal leading-[1.1] tracking-normal",
+                                  getStockIndicatorClassName(stockStatus),
+                                )}
+                              >
+                                <span aria-hidden="true" className="shrink-0">
+                                  {stockSymbol}
+                                </span>
+                                <span className="truncate">
+                                  {getStockStatusLabel(stockStatus)}
+                                </span>
                               </span>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                         <span className="shrink-0 text-sm font-semibold text-white">
                           {formatPrice(item.product.precio * item.quantity)}
@@ -1532,7 +1608,8 @@ export default function CheckoutPage() {
                               onClick={() =>
                                 increaseQuantity(item.product.id, item.color)
                               }
-                              className="flex h-full w-7 cursor-pointer items-center justify-center border-l border-white/10 text-white/65 transition-colors hover:bg-beyonix-blue/45 hover:text-white"
+                              disabled={isMaxQuantity}
+                              className="flex h-full w-7 items-center justify-center border-l border-white/10 text-white/65 transition-colors enabled:cursor-pointer enabled:hover:bg-beyonix-blue/45 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                             >
                               <Plus className="size-3" />
                             </button>
@@ -1552,8 +1629,9 @@ export default function CheckoutPage() {
                         </button>
                       </div>
                     </div>
-                  </div>
-                ))}
+                    </div>
+                  )
+                })}
               </div>
 
               <Separator className="my-2 bg-[#242424]" />

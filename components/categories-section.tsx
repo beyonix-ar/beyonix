@@ -46,16 +46,16 @@ export function CategoriesSection() {
   return (
     <section
       id="categorias"
-      className="scroll-mt-24 py-16 lg:py-24"
+      className="scroll-mt-24 beyonix-section-spacing"
     >
       <div className="container mx-auto px-4 lg:px-8">
-        <div className="mb-10 flex flex-col gap-4 lg:mb-14 lg:flex-row lg:items-end lg:justify-between">
+        <div className="mb-[clamp(2.5rem,4vw,3.5rem)] flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
               Categorias
             </p>
 
-            <h2 className="max-w-2xl text-3xl font-bold tracking-tight text-white lg:text-5xl">
+            <h2 className="max-w-2xl text-[clamp(1.9rem,3.2vw,3.25rem)] font-bold tracking-tight text-white">
               Exploración rápida por categoría
             </h2>
 

@@ -62,16 +62,16 @@ export function ProductsSection({
   return (
     <section
       id="productos"
-      className="scroll-mt-20 py-16 lg:py-24"
+      className="scroll-mt-20 beyonix-section-spacing"
     >
       <div className="container mx-auto px-4 lg:px-8">
-        <div className="mb-12 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="mb-[clamp(2rem,3.6vw,3rem)] flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
               Destacados
             </p>
 
-            <h2 className="text-3xl font-bold tracking-tight text-white lg:text-4xl">
+            <h2 className="text-[clamp(1.85rem,2.6vw,2.65rem)] font-bold tracking-tight text-white">
               Productos populares
             </h2>
           </div>
@@ -87,7 +87,7 @@ export function ProductsSection({
           </Link>
         </div>
 
-        <div className="mx-auto grid grid-cols-1 items-stretch justify-center gap-4 sm:grid-cols-product-cards-2 xl:grid-cols-product-cards-4">
+        <div className="mx-auto grid grid-cols-1 items-stretch justify-center gap-[clamp(1rem,1.4vw,1.35rem)] sm:grid-cols-product-cards-2 xl:grid-cols-product-cards-4">
           {products.map(
             (product) => {
               const discount =
@@ -116,9 +116,9 @@ export function ProductsSection({
                   key={
                     product.id
                   }
-                  className="group flex h-full w-full max-w-280px flex-col overflow-hidden rounded-2xl border border-white/6 bg-beyonix-surface transition-all duration-300 hover:border-white/12 hover:shadow-xl hover:shadow-black/50"
+                  className="group flex h-full w-full max-w-[var(--beyonix-product-card-max)] flex-col overflow-hidden rounded-2xl border border-white/6 bg-beyonix-surface transition-all duration-300 hover:border-white/12 hover:shadow-xl hover:shadow-black/50"
                 >
-                  <div className="relative h-220px shrink-0 overflow-hidden bg-white p-2 sm:h-240px">
+                  <div className="relative h-[clamp(220px,14vw,300px)] shrink-0 overflow-hidden bg-white p-2">
                     <Image
                       fill
                       src={image}

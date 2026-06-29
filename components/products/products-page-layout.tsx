@@ -418,7 +418,7 @@ export function ProductsPageLayout() {
       </div>
 
       <section className="container relative z-20 mx-auto px-4 lg:px-8">
-        <div className="mx-auto grid max-w-[1432px] grid-cols-1 gap-4 pb-14 lg:grid-cols-products-layout lg:gap-5 lg:pb-16">
+        <div className="mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] pb-14 lg:grid-cols-products-layout lg:pb-16">
           <div className="w-full lg:w-260px">
             <ProductsFiltersSidebar
               categories={categories}

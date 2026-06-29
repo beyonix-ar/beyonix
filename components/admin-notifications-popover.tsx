@@ -16,6 +16,10 @@ import {
   type AdminNotification,
   type AdminNotificationType,
 } from "@/lib/admin/admin-notifications"
+import {
+  ADMIN_SENSITIVE_DANGER,
+  isAdminSensitiveNotification,
+} from "@/lib/admin/admin-sensitive-visuals"
 import { cn } from "@/lib/utils"
 
 const TYPE_LABELS: Record<AdminNotificationType, string> = {
@@ -28,25 +32,12 @@ const TYPE_LABELS: Record<AdminNotificationType, string> = {
   claim: "Reclamo por responder",
 }
 
-const TYPE_STYLES: Record<AdminNotificationType, string> = {
-  order: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200",
-  message: "border-sky-400/25 bg-sky-400/10 text-sky-200",
-  payment: "border-blue-400/25 bg-blue-400/10 text-blue-200",
-  invoice: "border-violet-400/25 bg-violet-400/10 text-violet-200",
-  shipping: "border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2]",
-  cancellation: "border-orange-400/30 bg-orange-500/12 text-orange-200",
-  claim: "border-red-400/25 bg-red-400/10 text-red-200",
-}
-
-const TYPE_UNREAD_DOT_STYLES: Record<AdminNotificationType, string> = {
-  order: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
-  message: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
-  payment: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
-  invoice: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
-  shipping: "bg-[#77E6E2]",
-  cancellation: "bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.75)]",
-  claim: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.75)]",
-}
+const ADMIN_NEUTRAL_CARD_STYLE =
+  "border-[#303846] bg-[#141820] hover:border-beyonix-blue-light/35 hover:bg-[#1B2028]"
+const ADMIN_NEUTRAL_ICON_STYLE =
+  "border-white/10 bg-[#0D1117] text-white/58 group-hover:border-beyonix-blue-light/30 group-hover:text-beyonix-sky"
+const ADMIN_NEUTRAL_DOT_STYLE =
+  "bg-[#77E6E2] shadow-[0_0_8px_rgba(119,230,226,0.55)]"
 
 function getNotificationIcon(type: AdminNotificationType) {
   if (type === "order") return ShoppingCart
@@ -134,36 +125,36 @@ export function AdminNotificationsPopover({
           <div className="space-y-1.5">
             {notifications.map((notification) => {
               const Icon = getNotificationIcon(notification.type)
-              const attention = notification.priority === "attention"
-
+              const sensitive = isAdminSensitiveNotification(notification)
               return (
                 <button
                   key={notification.id}
                   type="button"
                   onClick={() => onNotificationClick(notification)}
                   className={cn(
-                    "group flex w-full cursor-pointer items-start gap-3 rounded-xl border bg-[#141820] p-3 text-left transition-all hover:bg-[#1B2028]",
-                    attention
-                      ? "border-orange-300/35 shadow-[0_0_18px_rgba(251,146,60,0.10)] hover:border-orange-300/50 hover:shadow-[0_0_0_1px_rgba(251,146,60,0.20)]"
-                      : "border-[#303846] hover:border-[#1e6fae] hover:shadow-[0_0_0_1px_rgba(30,111,174,0.35)]",
+                    "group flex w-full cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all",
+                    sensitive
+                      ? ADMIN_SENSITIVE_DANGER.card
+                      : ADMIN_NEUTRAL_CARD_STYLE,
                   )}
                 >
                   <span
                     className={cn(
-                      "flex size-9 shrink-0 items-center justify-center rounded-lg border",
-                      TYPE_STYLES[notification.type],
-                      attention && "border-orange-300/40 bg-orange-500/16 text-orange-100",
+                      "flex size-8 shrink-0 items-center justify-center rounded-lg border",
+                      sensitive
+                        ? ADMIN_SENSITIVE_DANGER.icon
+                        : ADMIN_NEUTRAL_ICON_STYLE,
                     )}
                   >
-                    <Icon className="size-4" />
+                    <Icon className="size-3.5" />
                   </span>
 
                   <span className="min-w-0 flex-1">
                     <span className="flex items-start gap-2">
                       <span
                         className={cn(
-                          "min-w-0 flex-1 text-10px font-black uppercase tracking-wide",
-                          attention ? "text-orange-200" : "text-beyonix-cyan",
+                          "min-w-0 flex-1 text-[13px] font-bold uppercase tracking-normal leading-4",
+                          sensitive ? ADMIN_SENSITIVE_DANGER.label : "text-white/64",
                         )}
                       >
                         {TYPE_LABELS[notification.type]}
@@ -171,24 +162,31 @@ export function AdminNotificationsPopover({
                       {!notification.isRead && (
                         <span
                           className={cn(
-                            "mt-1 size-2 shrink-0 rounded-full",
-                            attention
-                              ? TYPE_UNREAD_DOT_STYLES.cancellation
-                              : TYPE_UNREAD_DOT_STYLES[notification.type],
+                            "mt-1 size-1.5 shrink-0 rounded-full",
+                            sensitive
+                              ? ADMIN_SENSITIVE_DANGER.dot
+                              : ADMIN_NEUTRAL_DOT_STYLE,
                           )}
                         />
                       )}
                     </span>
-                    <span className="mt-1 block text-sm font-semibold leading-5 text-white">
+                    <span className="mt-0.5 block text-[13px] font-semibold leading-4 text-white">
                       {notification.title}
                     </span>
-                    <span className="mt-0.5 line-clamp-2 block text-xs leading-5 text-white/65">
+                    <span className="mt-0.5 line-clamp-2 block text-[11px] leading-4 text-white/65">
                       {notification.body}
                     </span>
-                    <span className="mt-1.5 flex flex-wrap items-center gap-2 text-10px text-white/42">
+                    <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] leading-none text-white/42">
                       <span>{formatNotificationDate(notification.eventAt)}</span>
                       {notification.actionLabel && (
-                        <span className="font-black text-beyonix-sky group-hover:text-white">
+                        <span
+                          className={cn(
+                            "font-black group-hover:text-white",
+                            sensitive
+                              ? ADMIN_SENSITIVE_DANGER.label
+                              : "text-beyonix-sky",
+                          )}
+                        >
                           {notification.actionLabel}
                         </span>
                       )}

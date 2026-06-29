@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
+import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 
 interface CreateOrderItem {
   productId: number
@@ -68,8 +69,16 @@ function getFriendlyOrderError(error: unknown) {
       ? error.message
       : "No pudimos completar la compra."
 
-  if (message.toLowerCase().includes("stock insuficiente")) {
-    return message
+  const normalizedMessage = message.toLowerCase()
+
+  if (
+    (normalizedMessage.includes("stock") &&
+      normalizedMessage.includes("insuficiente")) ||
+    normalizedMessage.includes("no hay stock") ||
+    normalizedMessage.includes("no está disponible") ||
+    normalizedMessage.includes("no esta disponible")
+  ) {
+    return STOCK_CHANGED_MESSAGE
   }
 
   if (
@@ -112,7 +121,7 @@ async function reserveOrderStock(
 
     throw new Error(
       error.message ||
-        "No hay stock suficiente para completar esta compra",
+        STOCK_CHANGED_MESSAGE,
     )
   }
 
@@ -275,20 +284,18 @@ function assertStock(
 ) {
   if (variant) {
     if (!variant.activo) {
-      throw new Error(`La variante ${variant.nombre} no está disponible`)
+      throw new Error(STOCK_CHANGED_MESSAGE)
     }
 
     if ((variant.stock ?? 0) < item.quantity) {
-      throw new Error(
-        `Stock insuficiente para ${product.nombre} (${variant.nombre})`,
-      )
+      throw new Error(STOCK_CHANGED_MESSAGE)
     }
 
     return
   }
 
   if (product.stock < item.quantity) {
-    throw new Error(`Stock insuficiente para ${product.nombre}`)
+    throw new Error(STOCK_CHANGED_MESSAGE)
   }
 }
 

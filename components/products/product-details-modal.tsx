@@ -157,6 +157,7 @@ export function ProductDetailsModal({
           onViewCart={onViewCart}
           isInCart={isInCart}
           cartQuantity={cartQuantity}
+          selectedStock={selectedStock}
         />
       </div>
     </div>

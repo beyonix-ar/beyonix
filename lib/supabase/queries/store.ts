@@ -4,6 +4,7 @@ import type {
   SupabaseCategoria,
   SupabaseProducto,
 } from "@/lib/supabase/types"
+import { hasPurchasableStock } from "@/lib/cart/stock-status"
 
 const PRODUCT_SELECT = `
   *,
@@ -27,8 +28,7 @@ export async function getStoreProductos() {
     throw error
   }
 
-  return (data ||
-    []) as SupabaseProducto[]
+  return ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
 }
 
 export async function getFeaturedProductos() {
@@ -47,8 +47,7 @@ export async function getFeaturedProductos() {
     throw error
   }
 
-  return (data ||
-    []) as SupabaseProducto[]
+  return ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
 }
 
 export async function getProductoBySlug(
@@ -60,13 +59,21 @@ export async function getProductoBySlug(
       .select(PRODUCT_SELECT)
       .eq("slug", slug)
       .eq("activo", true)
-      .single()
+      .maybeSingle()
 
   if (error) {
     throw error
   }
 
-  return data as SupabaseProducto
+  if (!data) return null
+
+  const product = data as SupabaseProducto
+
+  if (!hasPurchasableStock(product)) {
+    return null
+  }
+
+  return product
 }
 
 export async function getProductosByCategoria(
@@ -112,8 +119,7 @@ export async function getProductosByCategoriaId(
     throw error
   }
 
-  return (data ||
-    []) as SupabaseProducto[]
+  return ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
 }
 
 export async function searchProductos(
@@ -136,8 +142,7 @@ export async function searchProductos(
     throw error
   }
 
-  return (data ||
-    []) as SupabaseProducto[]
+  return ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
 }
 
 export async function getStoreCategorias() {
@@ -188,6 +193,5 @@ export async function getRelatedProductos(
     throw error
   }
 
-  return (data ||
-    []) as SupabaseProducto[]
+  return ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
 }

@@ -88,8 +88,10 @@ export function CustomerNotificationsBell({
   onOpenChange,
 }: CustomerNotificationsBellProps) {
   const router = useRouter()
+  const rootRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [notifications, setNotifications] = useState<SupabaseCustomerNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -111,6 +113,26 @@ export function CustomerNotificationsBell({
       setLoading(false)
     }
   }, [userId])
+
+  const clearCloseTimer = useCallback(() => {
+    if (!closeTimerRef.current) return
+
+    clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+  }, [])
+
+  const openPopover = useCallback(() => {
+    clearCloseTimer()
+    onOpenChange(true)
+  }, [clearCloseTimer, onOpenChange])
+
+  const scheduleClosePopover = useCallback(() => {
+    clearCloseTimer()
+    closeTimerRef.current = setTimeout(() => {
+      onOpenChange(false)
+      closeTimerRef.current = null
+    }, 500)
+  }, [clearCloseTimer, onOpenChange])
 
   useEffect(() => {
     setLoading(true)
@@ -149,7 +171,7 @@ export function CustomerNotificationsBell({
 
     const handleOutside = (event: MouseEvent) => {
       const target = event.target as Node
-      if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      if (rootRef.current?.contains(target)) return
       onOpenChange(false)
     }
     const handleEscape = (event: KeyboardEvent) => {
@@ -164,6 +186,12 @@ export function CustomerNotificationsBell({
       document.removeEventListener("keydown", handleEscape)
     }
   }, [onOpenChange, open])
+
+  useEffect(() => {
+    return () => {
+      clearCloseTimer()
+    }
+  }, [clearCloseTimer])
 
   const handleNotificationClick = async (
     notification: SupabaseCustomerNotification,
@@ -183,6 +211,7 @@ export function CustomerNotificationsBell({
       }
     }
 
+    clearCloseTimer()
     onOpenChange(false)
 
     const actionUrl = getNotificationActionUrl(notification)
@@ -214,7 +243,12 @@ export function CustomerNotificationsBell({
   }, [handleMarkAllRead, loading, open, unreadCount])
 
   return (
-    <div className="relative shrink-0">
+    <div
+      ref={rootRef}
+      className="relative shrink-0"
+      onMouseEnter={openPopover}
+      onMouseLeave={scheduleClosePopover}
+    >
       <button
         ref={buttonRef}
         type="button"
@@ -222,6 +256,7 @@ export function CustomerNotificationsBell({
         title="Notificaciones"
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
+        onFocus={openPopover}
         className="relative flex size-10 cursor-pointer items-center justify-center rounded-full border border-[#303846] bg-[#0D1117] text-white/80 transition-all hover:border-beyonix-blue-light hover:bg-[#141820] hover:text-white hover:shadow-[0_0_18px_rgba(17,42,67,0.55)]"
       >
         <Bell className="size-4.5" />
@@ -234,7 +269,12 @@ export function CustomerNotificationsBell({
       </button>
 
       {open && (
-        <div ref={panelRef} className="absolute right-0 top-12 z-60 w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#303846] bg-[#0D1117] font-heading shadow-2xl shadow-black/70">
+        <div
+          className="absolute right-0 top-12 z-100 w-80 max-w-[calc(100vw-2rem)] sm:w-96"
+          onMouseEnter={openPopover}
+          onMouseLeave={scheduleClosePopover}
+        >
+        <div ref={panelRef} className="w-full overflow-hidden rounded-2xl border border-[#303846] bg-[#0D1117] font-heading shadow-2xl shadow-black/75">
           <div className="flex items-center justify-between gap-3 border-b border-[#303846] px-4 py-3">
             <div>
               <h2 className="text-sm font-bold text-white">Notificaciones</h2>
@@ -332,6 +372,7 @@ export function CustomerNotificationsBell({
               </div>
             )}
           </div>
+        </div>
         </div>
       )}
     </div>

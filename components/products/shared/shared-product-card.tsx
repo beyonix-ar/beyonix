@@ -42,6 +42,8 @@ export default function SharedProductCard({
   const defaultVariant =
     getDefaultVariantOption(product)
 
+  if (!defaultVariant) return null
+
   const image =
     defaultVariant.images[0]
 
@@ -120,6 +122,10 @@ export default function SharedProductCard({
               installmentsLabel
             }
             quantity={quantity}
+            maxReached={
+              defaultVariant.stock < 1 ||
+              quantity >= defaultVariant.stock
+            }
             onAddToCart={
               handleAddToCart
             }

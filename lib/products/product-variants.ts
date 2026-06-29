@@ -88,7 +88,9 @@ export function getProductVariantOptions(
 }
 
 export function getDefaultVariantOption(product: SupabaseProducto) {
-  return getProductVariantOptions(product)[0]
+  const options = getProductVariantOptions(product)
+
+  return options.find((option) => option.stock > 0) ?? options[0]
 }
 
 export function getDefaultVariantValue(product: SupabaseProducto) {

@@ -10,6 +10,7 @@ interface ProductPurchaseBoxProps {
   installmentsLabel?: string | null
   isInCart?: boolean
   cartQuantity?: number
+  maxReached?: boolean
   onAddToCart: (quantity?: number) => void
   onDecreaseCart: () => void
   onRemoveFromCart: () => void
@@ -30,6 +31,7 @@ export function ProductPurchaseBox({
   installmentsLabel,
   isInCart = false,
   cartQuantity = 0,
+  maxReached = false,
   onAddToCart,
   onDecreaseCart,
   onRemoveFromCart,
@@ -47,6 +49,8 @@ export function ProductPurchaseBox({
   }
 
   const handleIncrease = () => {
+    if (maxReached) return
+
     setQuantity((current) => current + 1)
     onAddToCart(1)
   }
@@ -101,6 +105,7 @@ export function ProductPurchaseBox({
         <div className="flex-1">
           <ProductCartToggleButton
             quantity={quantity}
+            maxReached={maxReached}
             onAdd={handleAdd}
             onIncrease={handleIncrease}
             onDecrease={handleDecrease}

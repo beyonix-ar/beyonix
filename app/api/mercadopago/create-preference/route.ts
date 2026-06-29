@@ -6,6 +6,7 @@ import {
   getProductDiscount,
 } from "@/lib/store-config"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
+import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import { getShippingCost } from "@/lib/store-config"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 
@@ -144,23 +145,23 @@ function getUnitPrice(product: ProductRow) {
 
 function assertStock(item: NormalizedItem, product: ProductRow, variant?: VariantRow) {
   if (!product.activo) {
-    throw new Error(`${product.nombre} no está disponible.`)
+    throw new Error(STOCK_CHANGED_MESSAGE)
   }
 
   if (variant) {
     if (!variant.activo) {
-      throw new Error(`La variante ${variant.nombre} no está disponible.`)
+      throw new Error(STOCK_CHANGED_MESSAGE)
     }
 
     if ((variant.stock ?? 0) < item.quantity) {
-      throw new Error(`Stock insuficiente para ${product.nombre} (${variant.nombre}).`)
+      throw new Error(STOCK_CHANGED_MESSAGE)
     }
 
     return
   }
 
   if (product.stock < item.quantity) {
-    throw new Error(`Stock insuficiente para ${product.nombre}.`)
+    throw new Error(STOCK_CHANGED_MESSAGE)
   }
 }
 

@@ -24,6 +24,7 @@ import {
   markAdminOrderNewNotificationRead,
   type AdminNotificationTone,
 } from "@/lib/admin/admin-notifications"
+import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
@@ -73,6 +74,10 @@ function SidebarItem({
   active: boolean
   onClick: () => void
 }) {
+  const sensitiveNotificationTone =
+    item.notificationTone === "claim" ||
+    item.notificationTone === "cancellation"
+
   return (
     <button
       type="button"
@@ -108,20 +113,10 @@ function SidebarItem({
         {item.notificationCount ? (
           <span
             title={`${item.notificationCount} notificaciones requieren atención`}
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black text-white transition-colors ${
-              item.notificationTone === "claim"
-                ? "border-red-400/35 bg-red-500/20 text-red-100 group-hover:border-red-300/45 group-hover:bg-red-500/28"
-                : item.notificationTone === "cancellation"
-                  ? "border-orange-400/35 bg-orange-500/20 text-orange-100 group-hover:border-orange-300/45 group-hover:bg-orange-500/28"
-                : item.notificationTone === "message"
-                  ? "border-[#2563EB]/50 bg-[#2563EB] shadow-[0_0_14px_rgba(37,99,235,0.35)] group-hover:bg-[#1D4ED8]"
-                  : item.notificationTone === "payment"
-                    ? "border-[#2563EB]/50 bg-[#2563EB] shadow-[0_0_14px_rgba(37,99,235,0.35)] group-hover:bg-[#1D4ED8]"
-                    : item.notificationTone === "invoice"
-                      ? "border-violet-400/50 bg-violet-600 shadow-[0_0_14px_rgba(124,58,237,0.35)] group-hover:bg-violet-700"
-                    : item.notificationTone === "shipping"
-                      ? "border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2] group-hover:border-[#77E6E2]/40"
-                      : "border-[#16A34A]/50 bg-[#16A34A] shadow-[0_0_14px_rgba(22,163,74,0.35)] group-hover:bg-[#15803D]"
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black transition-colors group-hover:text-white ${
+              sensitiveNotificationTone
+                ? `${ADMIN_SENSITIVE_DANGER.badge} shadow-[0_0_14px_rgba(159,53,70,0.14)] group-hover:border-[#bf4a5b] group-hover:bg-[#35151d]`
+                : "border-[#77E6E2]/25 bg-[#102034] text-[#D7FFFD] shadow-[0_0_12px_rgba(119,230,226,0.12)] group-hover:border-[#77E6E2]/45 group-hover:bg-[#13283f]"
             }`}
           >
             {item.notificationCount}
@@ -402,7 +397,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   }
 
   const sidebar = (
-    <aside className="flex h-full w-280px flex-col border-r border-white/7 bg-black">
+    <aside className="beyonix-admin-sidebar flex h-full flex-col border-r border-white/7 bg-black">
       <div className="flex items-start justify-between gap-3 border-b border-white/7 px-5 py-5">
         <button
           type="button"
@@ -472,7 +467,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   )
 
   return (
-    <div className="min-h-screen bg-black text-white lg:flex">
+    <div className="beyonix-admin-shell min-h-screen bg-black text-white lg:flex">
       <div className="hidden lg:block">{sidebar}</div>
 
       <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/7 bg-black px-4 lg:hidden">
@@ -515,7 +510,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       )}
 
       <main
-        className={`min-w-0 flex-1 bg-beyonix-page ${
+        className={`beyonix-admin-main min-w-0 flex-1 bg-beyonix-page ${
           section === "dashboard" ? "" : "admin-solid-surface"
         }`}
       >

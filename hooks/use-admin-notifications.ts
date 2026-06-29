@@ -24,6 +24,7 @@ const EMPTY_GROUPS: AdminNotificationGroups = {
 
 const REALTIME_TABLES = [
   "ordenes",
+  "orden_items",
   "admin_events",
   "order_claims",
   "order_claim_messages",
@@ -140,13 +141,11 @@ export function useAdminNotifications(enabled = true) {
     const refreshIfVisible = () => {
       if (document.visibilityState === "visible") void loadNotifications()
     }
-    const intervalId = window.setInterval(refreshIfVisible, 10000)
 
     window.addEventListener("focus", refreshIfVisible)
     document.addEventListener("visibilitychange", refreshIfVisible)
 
     return () => {
-      window.clearInterval(intervalId)
       window.removeEventListener("focus", refreshIfVisible)
       document.removeEventListener("visibilitychange", refreshIfVisible)
     }

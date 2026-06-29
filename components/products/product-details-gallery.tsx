@@ -7,7 +7,7 @@ import Image from "next/image"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { ProductPreviewThumbnails } from "./product-preview-thumbnails"
-import { SITE_SETTINGS } from "@/config/site-settings"
+import { LOW_STOCK_THRESHOLD } from "@/lib/cart/stock-status"
 import {
   SILVER_IMAGE_BACKGROUND,
   useImageTransparency,
@@ -21,14 +21,7 @@ export function getStockBadge(stock: number) {
     }
   }
 
-  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) {
-    return {
-      text: "Últimas unidades",
-      className: "border-red-400/25 bg-red-500/12 text-red-100",
-    }
-  }
-
-  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) {
+  if (stock <= LOW_STOCK_THRESHOLD) {
     return {
       text: "Últimas unidades",
       className: "border-amber-300/25 bg-amber-400/12 text-amber-100",

@@ -9,6 +9,7 @@ interface ProductCardPricingProps {
   installmentsLabel?: string | null
 
   quantity: number
+  maxReached?: boolean
 
   onAddToCart?: () => void
   onIncrease?: () => void
@@ -29,6 +30,7 @@ export function ProductCardPricing({
   installmentsLabel,
 
   quantity,
+  maxReached = false,
 
   onAddToCart,
   onIncrease,
@@ -90,6 +92,7 @@ export function ProductCardPricing({
       <div className="mt-auto">
         <ProductCartToggleButton
           quantity={quantity}
+          maxReached={maxReached}
           onAdd={
             onAddToCart ||
             (() => {})

@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 
 export interface StockReservationItem {
   productId: number
@@ -46,7 +47,7 @@ export async function reserveCartStock({
     return {
       success: false,
       configured: true,
-      message: "No se pudo reservar el stock del carrito.",
+      message: STOCK_CHANGED_MESSAGE,
       expiresAt: null,
     }
   }
@@ -71,9 +72,7 @@ export async function reserveCartStock({
     return {
       success: false,
       configured: true,
-      message:
-        error.message ||
-        "No hay stock suficiente para reservar este carrito.",
+      message: STOCK_CHANGED_MESSAGE,
       expiresAt: null,
     }
   }

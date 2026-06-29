@@ -25,20 +25,20 @@ const trustItems = [
 
 export function HeroSection() {
   return (
-    <section className="relative min-h-80vh overflow-hidden pt-18 lg:pt-20">
-      <div className="container relative mx-auto flex min-h-80vh items-center px-4 py-12 sm:px-6 lg:px-10 lg:py-14">
-        <div className="grid w-full gap-9 lg:gap-10">
+    <section className="relative min-h-[clamp(560px,80vh,860px)] overflow-hidden pt-18 lg:pt-20">
+      <div className="container relative mx-auto flex min-h-[clamp(560px,80vh,860px)] items-center py-[clamp(3rem,5vw,4.5rem)]">
+        <div className="grid w-full gap-[clamp(2.25rem,3vw,3.5rem)]">
           <div className="max-w-3xl">
             <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/4 px-3.5 py-2 text-11px font-semibold uppercase tracking-widest text-white/72 lg:mb-6">
               <span className="inline-block size-1.5 rounded-full bg-beyonix-cyan" />
               Conexión y comodidad
             </span>
 
-            <h1 className="mb-5 max-w-3xl text-4xl font-bold leading-1-1 tracking-tight text-white sm:text-5xl lg:text-6xl">
+            <h1 className="mb-5 max-w-3xl text-[clamp(2.35rem,4.25vw,4.5rem)] font-bold leading-1-1 tracking-tight text-white">
               Conectados con tu comodidad
             </h1>
 
-            <p className="mb-8 max-w-xl text-base leading-1-8 text-white/68 lg:text-lg">
+            <p className="mb-8 max-w-xl text-[clamp(1rem,1vw,1.15rem)] leading-1-8 text-white/68">
               Tecnología premium, práctica y confiable para acompañar tu día a día con estilo.
             </p>
 

@@ -7,6 +7,7 @@ interface ProductCartToggleButtonProps {
   onAdd: () => void
   onIncrease: () => void
   onDecrease: () => void
+  maxReached?: boolean
 }
 
 export function ProductCartToggleButton({
@@ -14,6 +15,7 @@ export function ProductCartToggleButton({
   onAdd,
   onIncrease,
   onDecrease,
+  maxReached = false,
 }: ProductCartToggleButtonProps) {
   if (quantity === 0) {
     return (
@@ -22,7 +24,8 @@ export function ProductCartToggleButton({
         aria-label={"A\u00f1adir producto al carrito"}
         title={"A\u00f1adir producto al carrito"}
         onClick={onAdd}
-        className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-white/12 bg-black/45 px-4 text-13px font-medium text-white/85 transition-all duration-150 hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white active:scale-95 sm:h-11 sm:px-5"
+        disabled={maxReached}
+        className="flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-white/12 bg-black/45 px-4 text-13px font-medium text-white/85 transition-all duration-150 enabled:cursor-pointer enabled:hover:border-beyonix-blue-light/45 enabled:hover:bg-white/7 enabled:hover:text-white enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 sm:h-11 sm:px-5"
       >
         <ShoppingBag className="size-3.5 shrink-0" />
         A&ntilde;adir al carrito
@@ -51,7 +54,8 @@ export function ProductCartToggleButton({
         aria-label="Aumentar cantidad"
         title="Aumentar cantidad"
         onClick={onIncrease}
-        className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/12 bg-black/45 text-white/80 transition-colors hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white active:scale-95 sm:h-11 sm:w-11"
+        disabled={maxReached}
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/12 bg-black/45 text-white/80 transition-colors enabled:cursor-pointer enabled:hover:border-beyonix-blue-light/45 enabled:hover:bg-white/7 enabled:hover:text-white enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 sm:h-11 sm:w-11"
       >
         <PlusIcon className="size-3.5 stroke-2" />
       </button>

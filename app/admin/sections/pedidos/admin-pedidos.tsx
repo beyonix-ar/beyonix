@@ -49,6 +49,10 @@ import {
   markAdminPaymentProofSeen,
 } from "@/lib/admin/order-event-views"
 import { markAdminClaimNotificationsRead } from "@/lib/admin/admin-notifications"
+import {
+  ADMIN_SENSITIVE_DANGER,
+  isAdminSensitiveStatus,
+} from "@/lib/admin/admin-sensitive-visuals"
 import type {
   OrderClaimResolution,
   OrderClaimStatus,
@@ -505,8 +509,7 @@ function getAdminOrderTabState(
             kind: "badge",
             label: "Falta NC",
             title: "Falta registrar nota de crédito",
-            className:
-              "border-amber-300/30 bg-amber-400/10 text-amber-100",
+            className: ADMIN_SENSITIVE_DANGER.badge,
           }
         : pedido.invoice_status === "authorized" && !creditNotePending
           ? {
@@ -530,8 +533,7 @@ function getAdminOrderTabState(
             kind: "badge",
             label: "Reclamo",
             title: "Reclamo pendiente de gestión",
-            className:
-              "border-red-300/30 bg-red-400/10 text-red-100",
+            className: ADMIN_SENSITIVE_DANGER.badge,
           }
         : null,
       cancelacion: refundPending
@@ -539,8 +541,7 @@ function getAdminOrderTabState(
             kind: "badge",
             label: "Pendiente",
             title: "Reintegro pendiente",
-            className:
-              "border-orange-300/30 bg-orange-400/10 text-orange-100",
+            className: ADMIN_SENSITIVE_DANGER.badge,
           }
         : refunded
           ? {
@@ -555,8 +556,7 @@ function getAdminOrderTabState(
                 kind: "badge",
                 label: "En curso",
                 title: "Cancelación en curso",
-                className:
-                  "border-cyan-300/30 bg-cyan-400/10 text-cyan-100",
+                className: ADMIN_SENSITIVE_DANGER.badge,
               }
             : null,
     } satisfies Record<Exclude<AdminOrderDetailView, "resumen">, AdminOrderTabBadgeState>,
@@ -638,6 +638,9 @@ function getExecutiveOrderStatus(pedido: SupabasePedido) {
 }
 
 function getSummaryBadgeClass(value: string) {
+  if (isAdminSensitiveStatus(value) || ["Cancelado", "Solicitada", "Cancelación cerrada"].includes(value)) {
+    return ADMIN_SENSITIVE_DANGER.badge
+  }
   if (
     [
       "Confirmado",
@@ -651,11 +654,11 @@ function getSummaryBadgeClass(value: string) {
   ) {
     return "border-emerald-300/18 bg-emerald-400/7 text-emerald-100"
   }
-  if (["Rechazado", "Reclamo abierto"].includes(value)) {
-    return "border-red-300/20 bg-red-400/8 text-red-100"
+  if (["Rechazado"].includes(value)) {
+    return ADMIN_SENSITIVE_DANGER.badge
   }
   if (
-    ["Pendiente", "No despachado", "Falta factura", "Falta nota de crédito", "Reintegro pendiente", "Solicitada"].includes(value)
+    ["Pendiente", "No despachado", "Falta factura", "Falta nota de crédito"].includes(value)
   ) {
     return "border-amber-300/18 bg-amber-400/7 text-amber-100"
   }
@@ -702,7 +705,7 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
       description: "El pedido está cancelado y falta cerrar la devolución al cliente.",
       target: "cancelacion",
       buttonLabel: "Ir a Cancelación",
-      tone: "warning",
+      tone: "urgent",
     }
   }
 
@@ -726,7 +729,7 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
       description: "El pedido cancelado tenía factura emitida y falta registrar la nota de crédito.",
       target: "facturacion",
       buttonLabel: "Ir a Facturación",
-      tone: "warning",
+      tone: "urgent",
     }
   }
 
@@ -921,7 +924,7 @@ type AdminNotificationTone =
   | "claim"
 
 function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
-  if (isRefundPaymentAttentionOrder(pedido)) return "payment"
+  if (isRefundPaymentAttentionOrder(pedido)) return "cancellation"
   if (pedido.estado === "cancelado") return "cancellation"
   if (needsShippingReminder(pedido)) return "shipping"
 
@@ -947,7 +950,7 @@ function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone
       !claim.admin_needs_action,
   )
 
-  if (hasCustomerMessage) return "message"
+  if (hasCustomerMessage) return "claim"
 
   return "order"
 }
@@ -1083,10 +1086,10 @@ function EstadoBadge({ estado }: { estado: string }) {
     enviado: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     en_camino: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     entregado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    cancelado: "border-orange-400/25 bg-orange-500/12 text-orange-200",
-    cancelado_refund_pending: "border-amber-400/25 bg-amber-500/12 text-amber-200",
+    cancelado: ADMIN_SENSITIVE_DANGER.badge,
+    cancelado_refund_pending: ADMIN_SENSITIVE_DANGER.badge,
     cancelado_refunded: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
-    refund_pending: "border-amber-400/25 bg-amber-500/12 text-amber-200",
+    refund_pending: ADMIN_SENSITIVE_DANGER.badge,
     refunded: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
     rechazado: "border-red-500/20 bg-red-500/10 text-red-300",
   }
@@ -1561,7 +1564,7 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       description: hasPhysicalReturn
         ? "Falta cerrar la revisión antes de reintegrar el dinero."
         : "Falta cargar el comprobante de reintegro.",
-      type: "pending",
+      type: "danger",
     })
   }
   addEvent({
@@ -1585,6 +1588,49 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     description: "La documentación contable quedó registrada.",
     type: "success",
   })
+
+  for (const claim of pedido.order_claims ?? []) {
+    const claimIsCancellation = claim.failure_type === "cancelar_compra"
+    addEvent({
+      key: `claim-opened-${claim.id}`,
+      title: claimIsCancellation ? "Solicitud de cancelación registrada" : "Reclamo iniciado",
+      at: claim.created_at,
+      description: claimIsCancellation
+        ? "El cliente inició una solicitud sensible de cancelación."
+        : "El cliente inició un reclamo que requiere seguimiento administrativo.",
+      type: "danger",
+    })
+
+    if (claim.last_customer_message_at) {
+      addEvent({
+        key: `claim-customer-message-${claim.id}`,
+        title: claimIsCancellation ? "Mensaje en cancelación" : "Mensaje en reclamo",
+        at: claim.last_customer_message_at,
+        description: "Hay actividad del cliente dentro del caso.",
+        type: "danger",
+      })
+    }
+
+    if (claim.status === "rechazado") {
+      addEvent({
+        key: `claim-rejected-${claim.id}`,
+        title: claimIsCancellation ? "Cancelación rechazada" : "Reclamo rechazado",
+        at: claim.updated_at,
+        description: "El caso fue rechazado administrativamente.",
+        type: "danger",
+      })
+    }
+
+    if (claim.status === "cerrado") {
+      addEvent({
+        key: `claim-closed-${claim.id}`,
+        title: claimIsCancellation ? "Cancelación cerrada" : "Reclamo cerrado",
+        at: claim.closed_at || claim.updated_at,
+        description: "El caso quedó cerrado.",
+        type: "success",
+      })
+    }
+  }
 
   const closedAt =
     creditNoteAt ||
@@ -1626,8 +1672,8 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
     },
     danger: {
       Icon: X,
-      dotClass: "border-red-300/26 bg-red-400/8 text-red-100",
-      connectorClass: "bg-red-300/12",
+      dotClass: ADMIN_SENSITIVE_DANGER.icon,
+      connectorClass: "bg-[#9f3546]/28",
     },
     info: {
       Icon: Info,
@@ -1863,22 +1909,22 @@ function RefundManagementPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-white/8 bg-[#0B1017] p-4 sm:p-5">
-      <div className="border-b border-white/8 pb-4">
-        <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+    <section className={`rounded-2xl border p-4 sm:p-5 ${ADMIN_SENSITIVE_DANGER.panel}`}>
+      <div className="border-b border-[#7f2d3a]/45 pb-4">
+        <p className={`text-11px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
           Gestión de cancelación
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <h3 className="text-lg font-black text-white">{cancellationTitle}</h3>
         </div>
-        <p className="mt-1 max-w-2xl text-sm leading-6 text-white/62">
+        <p className={`mt-1 max-w-2xl text-sm leading-6 ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
           {cancellationCopy}
         </p>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
-        <section className="rounded-xl border border-white/8 bg-black/20 p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-white/42">
+        <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
             Información
           </p>
           <div className="mt-3 space-y-2">
@@ -1890,8 +1936,8 @@ function RefundManagementPanel({
             />
           </div>
         </section>
-        <section className="rounded-xl border border-white/8 bg-black/20 p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-white/42">
+        <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
             Fechas
           </p>
           <div className="mt-3 space-y-2">
@@ -1905,8 +1951,8 @@ function RefundManagementPanel({
             />
           </div>
         </section>
-        <section className="rounded-xl border border-white/8 bg-black/20 p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-white/42">
+        <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
             Reintegro
           </p>
           <div className="mt-3 space-y-2">
@@ -1918,8 +1964,8 @@ function RefundManagementPanel({
       </div>
 
       <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)]">
-        <div className="min-w-0 rounded-xl border border-white/8 bg-black/25 p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-amber-100/75">
+        <div className={`min-w-0 rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
             {refunded ? "Reintegro registrado" : "Cargar comprobante de reintegro"}
           </p>
           {!refundPending ? (
@@ -1935,7 +1981,7 @@ function RefundManagementPanel({
                   <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/45">
                     Archivo del comprobante de reintegro
                   </p>
-                  <label className="flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-amber-200/30 bg-[#141820] px-3 text-xs font-bold text-white/78 transition hover:border-amber-200/55">
+                  <label className="flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[#9f3546] bg-[#241217] px-3 text-xs font-bold text-white/78 transition hover:border-[#bf4a5b]">
                     {file ? file.name : "⬇️ Seleccionar archivo"}
                     <input
                       type="file"
@@ -1949,7 +1995,7 @@ function RefundManagementPanel({
                   <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
                     Monto reintegrado
                   </span>
-                  <span className="flex h-10 w-full items-center overflow-hidden rounded-lg border border-white/10 bg-[#141820] focus-within:border-amber-200/45">
+                  <span className="flex h-10 w-full items-center overflow-hidden rounded-lg border border-[#7f2d3a]/55 bg-[#241217] focus-within:border-[#bf4a5b]">
                     <span className="flex h-full items-center border-r border-white/10 px-3 text-xs font-black text-white/55">
                       $
                     </span>
@@ -1976,7 +2022,7 @@ function RefundManagementPanel({
                     value={method}
                     onChange={(event) => setMethod(event.target.value)}
                     placeholder="Transferencia, Mercado Pago, otro"
-                    className="h-10 w-full rounded-lg border border-white/10 bg-[#141820] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
+                    className="h-10 w-full rounded-lg border border-[#7f2d3a]/55 bg-[#241217] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-[#bf4a5b]"
                   />
                 </label>
                 <label className="min-w-0">
@@ -1987,7 +2033,7 @@ function RefundManagementPanel({
                     value={observation}
                     onChange={(event) => setObservation(event.target.value)}
                     placeholder="Opcional"
-                    className="h-10 w-full rounded-lg border border-white/10 bg-[#141820] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
+                    className="h-10 w-full rounded-lg border border-[#7f2d3a]/55 bg-[#241217] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-[#bf4a5b]"
                   />
                 </label>
               </div>
@@ -2000,7 +2046,7 @@ function RefundManagementPanel({
                   onChange={(event) => setInternalNote(event.target.value)}
                   rows={3}
                   placeholder="Notas internas sobre la devolución"
-                  className="w-full resize-none rounded-lg border border-white/10 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
+                  className="w-full resize-none rounded-lg border border-[#7f2d3a]/55 bg-[#241217] px-3 py-2 text-xs font-bold leading-5 text-white outline-none placeholder:text-white/38 focus:border-[#bf4a5b]"
                 />
               </label>
               {!refundAmountIsValid && amount.trim() && (
@@ -2013,7 +2059,7 @@ function RefundManagementPanel({
                   type="button"
                   disabled={!canUploadRefund}
                   onClick={() => void uploadRefundProof()}
-                  className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-amber-200/35 bg-amber-400/12 px-3 py-2 text-11px font-black uppercase tracking-wide text-amber-50 transition hover:border-amber-100/55 disabled:cursor-not-allowed disabled:opacity-45"
+                  className={`inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-45 ${ADMIN_SENSITIVE_DANGER.action}`}
                 >
                   {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                   {saving ? "Guardando..." : "Subir comprobante y marcar como reintegrado"}
@@ -2027,7 +2073,7 @@ function RefundManagementPanel({
                 type="button"
                 disabled={openingRefundProof}
                 onClick={() => void openRefundProof()}
-                className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-11px font-black uppercase tracking-wide text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:cursor-wait disabled:opacity-60"
+                className={`inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-wait disabled:opacity-60 ${ADMIN_SENSITIVE_DANGER.action}`}
               >
                 <Download className="size-4" />
                 {openingRefundProof ? "Abriendo..." : "Ver comprobante"}
@@ -2036,8 +2082,8 @@ function RefundManagementPanel({
           )}
         </div>
 
-        <div className="min-w-0 rounded-xl border border-white/8 bg-black/25 p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-amber-100/75">
+        <div className={`min-w-0 rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
             Comprobante de reintegro
           </p>
           {pedido.refund_proof_url ? (
@@ -2231,11 +2277,11 @@ function BillingManagementPanel({
       </div>
 
       {creditNoteNeeded && (
-        <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2">
-          <p className="text-xs font-black uppercase tracking-wide text-amber-100">
+        <div className={`mt-4 rounded-xl border px-3 py-2 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className={`text-xs font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.label}`}>
             Nota de crédito requerida
           </p>
-          <p className="mt-0.5 text-xs font-medium text-amber-100/75">
+          <p className={`mt-0.5 text-xs font-medium ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
             La Factura C ya fue emitida y el pedido tiene una cancelación o devolución activa.
           </p>
         </div>
@@ -2278,8 +2324,8 @@ function BillingManagementPanel({
       ) : null}
 
       {invoiceIssued && isCancellationFlowOrder(pedido) && (
-        <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-beyonix-cyan/80">
+        <div className={`mt-4 rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
             Nota de crédito
           </p>
           {creditNoteIssued ? (
@@ -2316,7 +2362,7 @@ function BillingManagementPanel({
               <button
                 type="button"
                 onClick={() => void onDownloadCreditNote()}
-                className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition hover:border-beyonix-cyan"
+                className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition ${ADMIN_SENSITIVE_DANGER.action}`}
               >
                 <Download className="size-4" />
                 Descargar Nota de Crédito
@@ -2354,7 +2400,7 @@ function BillingManagementPanel({
                 type="button"
                 disabled={creditNoteProcessing || creditNoteAmount <= 0}
                 onClick={() => void issueCreditNote()}
-                className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition hover:border-beyonix-cyan disabled:cursor-not-allowed disabled:opacity-50"
+                className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50 ${ADMIN_SENSITIVE_DANGER.action}`}
               >
                 {creditNoteProcessing ? (
                   <LoaderCircle className="size-4 animate-spin" />
@@ -2446,11 +2492,15 @@ function AdminOrderSummaryDashboard({
               ? X
               : CheckCircle2
   const actionToneClass = {
-    urgent: "border-red-300/22 bg-red-400/7",
+    urgent: ADMIN_SENSITIVE_DANGER.panel,
     warning: "border-amber-300/20 bg-amber-400/7",
     info: "border-beyonix-blue-light/20 bg-beyonix-blue/14",
     success: "border-emerald-300/18 bg-emerald-400/7",
   }[action.tone]
+  const sensitiveAction =
+    action.target === "reclamos" ||
+    action.target === "cancelacion" ||
+    isAdminSensitiveStatus(action.title)
 
   return (
     <div className="space-y-3">
@@ -2464,7 +2514,11 @@ function AdminOrderSummaryDashboard({
               <h3 className="text-xl font-black text-white">
                 Pedido #{formatPublicOrderId(pedido.id)}
               </h3>
-              <span className="rounded-full border border-white/10 bg-black/24 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/82">
+              <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${
+                isAdminSensitiveStatus(mainStatus)
+                  ? ADMIN_SENSITIVE_DANGER.badge
+                  : "border-white/10 bg-black/24 text-white/82"
+              }`}>
                 {mainStatus}
               </span>
             </div>
@@ -2478,7 +2532,11 @@ function AdminOrderSummaryDashboard({
 
           <div className="rounded-xl border border-white/10 bg-black/18 p-3">
             <div className="flex items-start gap-2.5">
-              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/18 bg-beyonix-blue/18 text-beyonix-sky">
+              <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg border ${
+                sensitiveAction
+                  ? ADMIN_SENSITIVE_DANGER.icon
+                  : "border-beyonix-blue-light/18 bg-beyonix-blue/18 text-beyonix-sky"
+              }`}>
                 <ActionIcon className="size-4" />
               </span>
               <div className="min-w-0">
@@ -2491,7 +2549,11 @@ function AdminOrderSummaryDashboard({
             <button
               type="button"
               onClick={() => onGoToView(action.target)}
-              className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-beyonix-blue-light/30 bg-beyonix-blue/50 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition hover:border-beyonix-blue-light hover:bg-beyonix-blue"
+              className={`mt-3 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition ${
+                sensitiveAction
+                  ? ADMIN_SENSITIVE_DANGER.action
+                  : "border-beyonix-blue-light/30 bg-beyonix-blue/50 text-beyonix-sky hover:border-beyonix-blue-light hover:bg-beyonix-blue"
+              }`}
             >
               {action.buttonLabel}
             </button>
@@ -2611,7 +2673,7 @@ function getOrderStatusSelectClassName(status: string) {
     entregado:
       "!border-emerald-300/45 !bg-emerald-500/12 !text-emerald-100 hover:!bg-emerald-500/16",
     cancelado:
-      "!border-orange-400/35 !bg-orange-500/12 !text-orange-200 hover:!bg-orange-500/16",
+      "!border-[#9f3546] !bg-[#2a1117] !text-[#ffc2c8] hover:!bg-[#35151d]",
   }
 
   return styles[status] ?? ""
@@ -3410,22 +3472,30 @@ function PedidoDetailModal({
             aria-label="Secciones del pedido"
             className="custom-scrollbar flex gap-1.5 overflow-x-auto border-t border-white/8 px-3 py-2"
           >
-            {detailTabs.map(({ view, label, icon: ViewIcon, badge }) => (
-              <button
-                key={view}
-                type="button"
-                onClick={() => showDetailView(view)}
-                className={`relative inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border px-3 text-10px font-black uppercase tracking-wide transition-colors ${
-                  activeView === view
-                    ? "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky shadow-[0_0_14px_rgba(17,42,67,0.32)]"
-                    : "border-white/8 bg-[#15191F] text-white/68 hover:border-beyonix-blue-light/45 hover:bg-[#1B2028] hover:text-beyonix-sky"
-                }`}
-              >
-                <ViewIcon className="mr-1.5 size-3.5" />
-                {label}
-                <AdminOrderTabBadge state={badge} />
-              </button>
-            ))}
+            {detailTabs.map(({ view, label, icon: ViewIcon, badge }) => {
+              const sensitiveTab = view === "reclamos" || view === "cancelacion"
+
+              return (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => showDetailView(view)}
+                  className={`relative inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border px-3 text-10px font-black uppercase tracking-wide transition-colors ${
+                    activeView === view
+                      ? sensitiveTab
+                        ? `${ADMIN_SENSITIVE_DANGER.action} shadow-[0_0_14px_rgba(159,53,70,0.28)]`
+                        : "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky shadow-[0_0_14px_rgba(17,42,67,0.32)]"
+                      : sensitiveTab
+                        ? "border-[#7f2d3a]/45 bg-[#15191F] text-[#ffc2c8] hover:border-[#9f3546] hover:bg-[#241217]"
+                        : "border-white/8 bg-[#15191F] text-white/68 hover:border-beyonix-blue-light/45 hover:bg-[#1B2028] hover:text-beyonix-sky"
+                  }`}
+                >
+                  <ViewIcon className="mr-1.5 size-3.5" />
+                  {label}
+                  <AdminOrderTabBadge state={badge} />
+                </button>
+              )
+            })}
           </nav>
         </header>
 
@@ -4267,10 +4337,10 @@ function AdminClaimsCenterSection({
   }
 
   return (
-    <section className="admin-order-invoice-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
+    <section className={`admin-order-invoice-panel mt-4 rounded-2xl border p-4 sm:p-5 ${ADMIN_SENSITIVE_DANGER.panel}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+          <p className={`text-11px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
             Centro de reclamos
           </p>
           <h3 className="mt-2 text-lg font-black text-white">
@@ -4300,19 +4370,19 @@ function AdminClaimsCenterSection({
       </div>
 
       {!claim ? (
-        <p className="mt-4 rounded-xl border border-white/8 bg-[#111111] px-3 py-2 text-xs font-medium text-white/55">
+        <p className={`mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${ADMIN_SENSITIVE_DANGER.panelSoft} ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
           Este pedido todavía no tiene reclamos cargados.
         </p>
       ) : (
-        <div className="mt-4 grid gap-4 border-t border-white/8 pt-4 lg:grid-cols-2">
+        <div className="mt-4 grid gap-4 border-t border-[#7f2d3a]/45 pt-4 lg:grid-cols-2">
           <div className="space-y-3">
-            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
               <DetailValue
                 label="Tipo de reclamo"
                 value={getOrderClaimTypeLabel(claim.claim_type)}
               />
             </div>
-            <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
               <DetailValue
                 label="Descripción"
                 value={claim.description || "Sin descripción"}
@@ -4320,17 +4390,17 @@ function AdminClaimsCenterSection({
               />
             </div>
             {claim.failure_type && (
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
                 <DetailValue label="Tipo de falla" value={claim.failure_type} />
               </div>
             )}
             {claim.started_at && (
-              <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+              <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
                 <DetailValue label="Inicio de falla" value={claim.started_at} />
               </div>
             )}
-            <div className="rounded-xl border border-white/8 bg-[#111111] p-3">
-              <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+            <div className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+              <p className={`text-10px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
                 Evidencia
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -4341,7 +4411,7 @@ function AdminClaimsCenterSection({
                       href={file.signedUrl ?? undefined}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex h-9 items-center gap-2 rounded-xl border border-beyonix-blue-light/30 px-3 text-10px font-black uppercase tracking-wide text-beyonix-sky"
+                      className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-10px font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.action}`}
                     >
                       <Download className="size-3.5" />
                       {file.file_name}
@@ -4401,8 +4471,8 @@ function AdminClaimsCenterSection({
                 </AdminSelect>
               </div>
             </div>
-            <div className="rounded-xl border border-white/8 bg-[#111111] p-3">
-              <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+            <div className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+              <p className={`text-10px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
                 Resolución definida por BEYONIX
               </p>
               <p className="mt-2 text-xs font-semibold leading-5 text-white/58">
@@ -4421,8 +4491,8 @@ function AdminClaimsCenterSection({
               </div>
             )}
             {(claim.order_claim_messages ?? []).length > 0 && (
-              <div className="rounded-xl border border-white/8 bg-[#111111] p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+              <div className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+                <p className={`text-10px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
                   Conversación con el cliente
                 </p>
                 <div className="mt-3 space-y-2">
@@ -4440,8 +4510,8 @@ function AdminClaimsCenterSection({
                           key={message.id}
                           className={`rounded-xl border px-3 py-2 ${
                             isCustomer
-                              ? "border-beyonix-blue-light/20 bg-beyonix-blue/15"
-                              : "border-white/8 bg-black/35"
+                              ? "border-[#7f2d3a]/55 bg-[#241217]"
+                              : "border-[#7f2d3a]/35 bg-[#2a1117]"
                           }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4466,23 +4536,23 @@ function AdminClaimsCenterSection({
               onChange={(event) => setAdminResponse(event.target.value)}
               rows={4}
               placeholder="Respuesta visible para el cliente. El reclamo seguirá abierto hasta que lo marques como Cerrado."
-              className="w-full resize-none rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+              className="w-full resize-none rounded-xl border border-[#7f2d3a]/55 bg-[#241217] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-[#bf4a5b]"
             />
             <textarea
               value={rejectionReason}
               onChange={(event) => setRejectionReason(event.target.value)}
               rows={3}
               placeholder="Motivo de rechazo obligatorio si el estado es Rechazado."
-              className="w-full resize-none rounded-xl border border-white/10 bg-[#111111] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+              className="w-full resize-none rounded-xl border border-[#7f2d3a]/55 bg-[#241217] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-[#bf4a5b]"
             />
-            <label className="flex items-start gap-2 rounded-xl border border-white/8 bg-[#111111] px-3 py-2 text-xs font-semibold leading-5 text-white/62">
+            <label className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold leading-5 ${ADMIN_SENSITIVE_DANGER.panelSoft} ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
               <input
                 type="checkbox"
                 checked={closeAfterResolution}
                 onChange={(event) =>
                   setCloseAfterResolution(event.target.checked)
                 }
-                className="mt-0.5 size-4 accent-[#112A43]"
+                className="mt-0.5 size-4 accent-[#9f3546]"
               />
               Dar por finalizada la conversación con el cliente al guardar. Se
               requiere una resolución final.
@@ -4500,7 +4570,7 @@ function AdminClaimsCenterSection({
                 type="button"
                 onClick={() => void saveClaim()}
                 disabled={saving}
-                className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+                className={`inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border px-4 text-11px font-black uppercase tracking-wide disabled:cursor-wait disabled:opacity-50 ${ADMIN_SENSITIVE_DANGER.actionSolid}`}
               >
                 {saving ? "Guardando..." : "Guardar reclamo"}
               </button>
@@ -5437,9 +5507,9 @@ export function AdminPedidos({
                     className={`min-w-0 overflow-hidden rounded-2xl border p-4 transition sm:p-5 2xl:px-4 2xl:py-4 ${
                       hasPendingAttention
                         ? attentionTone === "claim"
-                          ? "border-[#EF4444]/35 bg-[#EF4444]/8 shadow-[0_0_16px_rgba(239,68,68,0.12)] hover:bg-[#DC2626]/10"
+                          ? ADMIN_SENSITIVE_DANGER.card
                           : attentionTone === "cancellation"
-                            ? "border-orange-400/35 bg-orange-500/8 shadow-[0_0_16px_rgba(251,146,60,0.12)] hover:bg-orange-500/10"
+                            ? ADMIN_SENSITIVE_DANGER.card
                           : attentionTone === "message"
                             ? "border-sky-400/35 bg-sky-500/8 shadow-[0_0_16px_rgba(14,165,233,0.12)] hover:bg-sky-500/10"
                             : attentionTone === "payment"
@@ -5471,7 +5541,7 @@ export function AdminPedidos({
                             {showInvoiceReminder && <InvoiceReminderBell />}
                             {showShippingReminder && <ShippingReminderBadge />}
                             <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
-                            {hasPendingClaim && <span className="rounded-full border border-red-400/30 bg-red-500/12 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-200">Reclamo pendiente</span>}
+                            {hasPendingClaim && <span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.badge}`}>Reclamo pendiente</span>}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -5573,7 +5643,7 @@ export function AdminPedidos({
                           Nuevo
                         </span>
                       )}
-                      {hasPendingClaim && <span className="mt-1 block text-[9px] font-black uppercase tracking-wide text-red-300">Reclamo pendiente</span>}
+                      {hasPendingClaim && <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.badge}`}>Reclamo pendiente</span>}
                     </div>
                   </div>
 

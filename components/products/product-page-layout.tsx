@@ -81,6 +81,7 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
         onViewCart={openCart}
         isInCart={isInCart(producto.id, selectedColor)}
         cartQuantity={cartQuantity}
+        selectedStock={selectedStock}
         />
       </div>
       <ProductReviews productId={producto.id} />

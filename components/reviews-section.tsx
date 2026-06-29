@@ -247,13 +247,13 @@ export function ReviewsSection() {
   )
 
   return (
-    <section className="py-16 lg:py-24">
+    <section className="beyonix-section-spacing">
       <div className="container mx-auto px-4 lg:px-8">
-        <div className="mb-12 text-center lg:mb-16">
+        <div className="mb-[clamp(2.5rem,4vw,4rem)] text-center">
           <p className="mb-3 text-sm font-medium uppercase tracking-widest text-beyonix-cyan">
             Reseñas
           </p>
-          <h2 className="mb-4 text-3xl font-bold text-white lg:text-5xl">
+          <h2 className="mb-4 text-[clamp(1.9rem,3.2vw,3.25rem)] font-bold text-white">
             Opiniones verificadas
           </h2>
           {reviews.length > 0 && (

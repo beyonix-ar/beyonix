@@ -51,6 +51,7 @@ interface ProductDetailsPanelProps {
 
   isInCart?: boolean
   cartQuantity?: number
+  selectedStock: number
 }
 
 const productFeatures = [
@@ -108,6 +109,7 @@ export function ProductDetailsPanel({
   onViewCart,
   isInCart = false,
   cartQuantity = 0,
+  selectedStock,
 }: ProductDetailsPanelProps) {
   const colors = getProductVariantOptions(product)
   const installmentsLabel =
@@ -238,6 +240,7 @@ export function ProductDetailsPanel({
           installmentsLabel={installmentsLabel}
           isInCart={isInCart}
           cartQuantity={cartQuantity}
+          maxReached={selectedStock < 1 || cartQuantity >= selectedStock}
           onAddToCart={onAddToCart}
           onDecreaseCart={onDecreaseCart}
           onRemoveFromCart={onRemoveFromCart}

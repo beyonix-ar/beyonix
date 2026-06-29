@@ -1,7 +1,13 @@
 import Image from "next/image"
-import { Minus, Plus, Trash2 } from "lucide-react"
+import { CheckCircle2, CircleSlash2, Flame, Minus, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { CartItem } from "@/context/cart-context"
+import {
+  getProductStock,
+  getStockStatus,
+  getStockStatusLabel,
+  type StockStatus,
+} from "@/lib/cart/stock-status"
 
 interface Props {
   item: CartItem
@@ -16,11 +22,34 @@ const formatPrice = (price: number) =>
     minimumFractionDigits: 0,
   }).format(price)
 
+function getStockBadgeClassName(status: StockStatus) {
+  if (status === "low") {
+    return "border-amber-300/20 bg-amber-400/10 text-amber-100"
+  }
+
+  if (status === "out") {
+    return "border-red-400/20 bg-red-500/10 text-red-100"
+  }
+
+  return "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+}
+
+function getStockIcon(status: StockStatus) {
+  if (status === "low") return Flame
+  if (status === "out") return CircleSlash2
+
+  return CheckCircle2
+}
+
 export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const { product, color, image, quantity, variantName, colorHex } = item
   const price = product.precio
   const colorName = variantName || (color !== "default" ? color : null)
   const hasColor = Boolean(colorHex)
+  const maxQuantity = getProductStock(product, color)
+  const isMaxQuantity = maxQuantity > 0 && quantity >= maxQuantity
+  const stockStatus = getStockStatus(product, color)
+  const StockIcon = getStockIcon(stockStatus)
 
   return (
     <div className="relative flex gap-3 rounded-xl border border-white/10 bg-beyonix-surface-3 p-2 shadow-sm shadow-black/30">
@@ -53,6 +82,13 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
               <span className="text-xs capitalize text-white/65">{colorName}</span>
             </div>
           )}
+
+          <span
+            className={`mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-10px font-semibold uppercase tracking-wide ${getStockBadgeClassName(stockStatus)}`}
+          >
+            <StockIcon className="size-3" />
+            {getStockStatusLabel(stockStatus)}
+          </span>
         </div>
 
         <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -85,10 +121,11 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-full w-7 rounded-none border-0 border-l border-white/10 bg-transparent text-white hover:bg-beyonix-blue/60"
+                className="h-full w-7 rounded-none border-0 border-l border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
                 aria-label="Aumentar cantidad"
                 title="Aumentar cantidad"
                 onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
+                disabled={isMaxQuantity}
               >
                 <Plus className="size-3" />
               </Button>
