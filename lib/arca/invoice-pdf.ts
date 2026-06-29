@@ -35,6 +35,17 @@ export interface InvoicePdfOrder {
   invoice_cae: string
   invoice_cae_due: string
   invoice_created_at: string
+  voucher_type?: number
+  document_title?: string
+  detail_title?: string
+  filename_prefix?: string
+  original_invoice_total?: number | null
+  original_invoice_created_at?: string | null
+  original_invoice_cae?: string | null
+  credit_note_for_invoice?: {
+    point: number
+    number: number
+  }
   orden_items?: InvoicePdfItem[]
 }
 
@@ -167,6 +178,31 @@ function getShippingCents(order: InvoicePdfOrder) {
 }
 
 export function buildInvoiceDetailLines(order: InvoicePdfOrder) {
+  const creditNoteTotalCents = toCents(order.total)
+  const originalInvoiceTotalCents = toCents(order.original_invoice_total)
+  const isPartialCreditNote =
+    order.voucher_type === 13 &&
+    originalInvoiceTotalCents > 0 &&
+    creditNoteTotalCents !== originalInvoiceTotalCents
+
+  if (isPartialCreditNote) {
+    return [
+      {
+        label: "Crédito parcial sobre Factura C",
+        detail: order.credit_note_for_invoice
+          ? `Factura asociada: ${formatInvoiceNumber(
+              order.credit_note_for_invoice.point,
+              order.credit_note_for_invoice.number,
+            )}`
+          : "Comprobante asociado a devolución/cancelación",
+        quantity: 1,
+        unitAmountCents: toCents(order.total),
+        subtotalCents: toCents(order.total),
+        kind: "adjustment" as const,
+      },
+    ]
+  }
+
   const lines: InvoiceDetailLine[] = (order.orden_items ?? []).map((item) => {
     const quantity = Math.max(0, Number(item.cantidad) || 0)
     const unitAmountCents = toCents(item.precio)
@@ -316,6 +352,10 @@ function wrapText(
 
 export async function generateInvoicePdf(order: InvoicePdfOrder) {
   const cuit = requiredCuit()
+  const voucherType = order.voucher_type ?? 11
+  const documentTitle = order.document_title ?? "FACTURA"
+  const detailTitle = order.detail_title ?? "DETALLE DE FACTURA"
+  const totalLabel = voucherType === 13 ? "TOTAL ACREDITADO" : "TOTAL"
   const pdf = await PDFDocument.create()
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
@@ -323,7 +363,7 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     issueDate: issueDate(order.invoice_created_at),
     cuit,
     pointOfSale: order.invoice_point,
-    voucherType: 11,
+    voucherType,
     voucherNumber: order.invoice_number,
     total: Number(order.total),
     cae: order.invoice_cae,
@@ -341,7 +381,13 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
   const contentWidth = PAGE_WIDTH - MARGIN * 2
   const detailLines = buildInvoiceDetailLines(order)
   const productLines = detailLines.filter((line) => line.kind === "product")
+  const tableLines = detailLines.filter(
+    (line) =>
+      line.kind === "product" ||
+      (voucherType === 13 && line.kind === "adjustment"),
+  )
   const breakdown = getInvoiceBreakdown(detailLines)
+  const pageBottom = 44
 
   const drawText = (
     text: string,
@@ -423,7 +469,7 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     if (continuation) {
       drawText("BEYONIX", MARGIN, y - 3, 14, true, BLUE)
       drawRightText(
-        `FACTURA C ${formatInvoiceNumber(order.invoice_point, order.invoice_number)}`,
+        `${documentTitle} ${formatInvoiceNumber(order.invoice_point, order.invoice_number)}`,
         PAGE_WIDTH - MARGIN,
         y - 3,
         10,
@@ -442,7 +488,14 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
       height: 29,
       color: BLUE,
     })
-    drawText("Producto", MARGIN + 12, y - 19, 9.5, true, WHITE)
+    drawText(
+      voucherType === 13 ? "Producto / concepto" : "Producto",
+      MARGIN + 12,
+      y - 19,
+      9.5,
+      true,
+      WHITE,
+    )
     drawRightText("Cant.", 382, y - 19, 9.5, true, WHITE)
     drawRightText("P. unitario", 472, y - 19, 9.5, true, WHITE)
     drawRightText("Subtotal", PAGE_WIDTH - MARGIN - 10, y - 19, 9.5, true, WHITE)
@@ -494,9 +547,9 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     borderWidth: 1,
   })
   drawText("C", PAGE_WIDTH / 2 - 7, y - 31, 23, true, BLACK)
-  drawText("CÓD. 011", PAGE_WIDTH / 2 - 18, y - 55, 7, true, WHITE)
+  drawText(`CÓD. ${String(voucherType).padStart(3, "0")}`, PAGE_WIDTH / 2 - 18, y - 55, 7, true, WHITE)
 
-  drawText("FACTURA C", PAGE_WIDTH / 2 + 38, y - 31, 18, true, WHITE)
+  drawText(documentTitle, PAGE_WIDTH / 2 + 38, y - 31, 18, true, WHITE)
   drawText(
     formatInvoiceNumber(order.invoice_point, order.invoice_number),
     PAGE_WIDTH / 2 + 38,
@@ -596,11 +649,11 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
   })
 
   y -= clientHeight + 18
-  drawText("DETALLE DE FACTURA", MARGIN, y, 10, true, BLUE)
+  drawText(detailTitle, MARGIN, y, 10, true, BLUE)
   y -= 13
   drawTableHeader()
 
-  for (const line of productLines) {
+  for (const line of tableLines) {
     const productNameLines = wrapText(line.label, 278, 10, bold)
     const variantLines = line.detail
       ? wrapText(line.detail, 278, 9, regular)
@@ -610,7 +663,7 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
       17 + productNameLines.length * 13 + variantLines.length * 12,
     )
 
-    if (y - rowHeight < 170) {
+    if (y - rowHeight < pageBottom) {
       newPage(true)
       drawTableHeader()
     }
@@ -667,17 +720,18 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     y -= rowHeight
   }
 
-  if (y < 278) newPage(true)
-
-  y -= 14
   const summaryWidth = 260
   const summaryX = PAGE_WIDTH - MARGIN - summaryWidth
   const summaryRows = [
-    {
-      label: "Subtotal productos",
-      value: breakdown.productsSubtotalCents,
-      color: DARK,
-    },
+    ...(productLines.length > 0
+      ? [
+          {
+            label: "Subtotal productos",
+            value: breakdown.productsSubtotalCents,
+            color: DARK,
+          },
+        ]
+      : []),
     ...breakdown.summaryLines.map((line) => ({
       label: line.kind === "shipping" ? "Envío" : line.label,
       value: line.subtotalCents,
@@ -685,6 +739,19 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     })),
   ]
   const summaryHeight = summaryRows.length * 18 + 12
+  const associatedHeight =
+    voucherType === 13 && order.credit_note_for_invoice ? 74 : 0
+  const authorizationHeight = 92
+  const postTableGap = 10
+  const totalBlockHeight = 45
+  const totalToAssociatedGap = associatedHeight > 0 ? 10 : 0
+  const associatedToAuthorizationGap = associatedHeight > 0 ? 10 : 0
+  const requiredSummaryHeight =
+    postTableGap + summaryHeight + 6 + totalBlockHeight
+
+  if (y - requiredSummaryHeight < pageBottom) newPage(true)
+
+  y -= postTableGap
 
   page.drawRectangle({
     x: summaryX,
@@ -708,7 +775,7 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     )
   })
 
-  y -= summaryHeight + 8
+  y -= summaryHeight + 6
   page.drawRectangle({
     x: summaryX,
     y: y - 45,
@@ -719,7 +786,7 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     borderWidth: 0.6,
   })
   drawText(
-    "TOTAL",
+    totalLabel,
     summaryX + 14,
     y - 28,
     12,
@@ -735,10 +802,55 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     WHITE,
   )
 
-  y -= 62
-  if (y < 132) newPage(true)
+  y -= totalBlockHeight + totalToAssociatedGap
 
-  const authorizationHeight = 92
+  const requiredAuthorizationGroupHeight =
+    associatedHeight + associatedToAuthorizationGap + authorizationHeight
+  if (y - requiredAuthorizationGroupHeight < pageBottom) newPage(true)
+
+  if (voucherType === 13 && order.credit_note_for_invoice) {
+    page.drawRectangle({
+      x: MARGIN,
+      y: y - associatedHeight,
+      width: contentWidth,
+      height: associatedHeight,
+      color: PANEL,
+      borderColor: BORDER,
+      borderWidth: 0.7,
+    })
+    drawText("COMPROBANTE ASOCIADO", MARGIN + 14, y - 20, 9.5, true, BLUE)
+    drawText(
+      `Factura C ${formatInvoiceNumber(
+        order.credit_note_for_invoice.point,
+        order.credit_note_for_invoice.number,
+      )}`,
+      MARGIN + 14,
+      y - 42,
+      11,
+      true,
+      DARK,
+    )
+    drawText(
+      `CAE: ${order.original_invoice_cae || "-"}`,
+      MARGIN + 14,
+      y - 60,
+      9.5,
+      false,
+      DARK,
+    )
+    if (order.original_invoice_created_at) {
+      drawRightText(
+        `Fecha factura: ${formatDate(order.original_invoice_created_at)}`,
+        PAGE_WIDTH - MARGIN - 14,
+        y - 60,
+        9.5,
+        false,
+        DARK,
+      )
+    }
+    y -= associatedHeight + associatedToAuthorizationGap
+  }
+
   page.drawRectangle({
     x: MARGIN,
     y: y - authorizationHeight,
@@ -778,7 +890,11 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
   return pdf.save()
 }
 
-export function invoicePdfFilename(order: Pick<InvoicePdfOrder, "invoice_point" | "invoice_number">) {
-  void order
-  return "Factura-BEYONIX.pdf"
+export function invoicePdfFilename(
+  order: Pick<InvoicePdfOrder, "invoice_point" | "invoice_number" | "filename_prefix">,
+) {
+  return `${order.filename_prefix ?? "Factura"}-BEYONIX-${formatInvoiceNumber(
+    order.invoice_point,
+    order.invoice_number,
+  )}.pdf`
 }

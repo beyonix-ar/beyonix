@@ -24,6 +24,9 @@ export async function GET(
 
   const { id } = await params
   const orderId = Number(id)
+  const url = new URL(request.url)
+  const documentType =
+    url.searchParams.get("type") === "credit_note" ? "credit_note" : "invoice"
 
   if (!Number.isInteger(orderId) || orderId <= 0) {
     return NextResponse.json({ error: "Orden inválida." }, { status: 400 })
@@ -64,6 +67,22 @@ export async function GET(
   ) {
     return NextResponse.json(
       { error: "La factura autorizada tiene datos incompletos." },
+      { status: 409 },
+    )
+  }
+
+  if (
+    documentType === "credit_note" &&
+    (order.credit_note_status !== "authorized" ||
+      order.credit_note_number == null ||
+      order.credit_note_point == null ||
+      !order.credit_note_cae ||
+      !order.credit_note_cae_due ||
+      !order.credit_note_created_at ||
+      Number(order.credit_note_amount ?? 0) <= 0)
+  ) {
+    return NextResponse.json(
+      { error: "La nota de crédito autorizada tiene datos incompletos." },
       { status: 409 },
     )
   }
@@ -160,9 +179,12 @@ export async function GET(
     .filter(Boolean)
     .join(" ")
   const orderRecord = order as Record<string, unknown>
+  const isCreditNote = documentType === "credit_note"
   const invoiceOrder = {
     ...order,
-    total: Number(order.total ?? 0),
+    total: isCreditNote
+      ? Number(order.credit_note_amount ?? 0)
+      : Number(order.total ?? 0),
     cliente_nombre:
       optionalText(order.cliente_nombre) ??
       optionalText(profile?.nombre) ??
@@ -196,6 +218,38 @@ export async function GET(
     payment_method_id: orderRecord.payment_method_id ?? null,
     transfer_discount_amount:
       orderRecord.transfer_discount_amount ?? 0,
+    invoice_number: isCreditNote
+      ? Number(order.credit_note_number)
+      : Number(order.invoice_number),
+    invoice_point: isCreditNote
+      ? Number(order.credit_note_point)
+      : Number(order.invoice_point),
+    invoice_cae: isCreditNote
+      ? String(order.credit_note_cae)
+      : String(order.invoice_cae),
+    invoice_cae_due: isCreditNote
+      ? String(order.credit_note_cae_due)
+      : String(order.invoice_cae_due),
+    invoice_created_at: isCreditNote
+      ? String(order.credit_note_created_at)
+      : String(order.invoice_created_at),
+    voucher_type: isCreditNote ? 13 : 11,
+    document_title: isCreditNote ? "NOTA DE CRÉDITO" : "FACTURA",
+    detail_title: isCreditNote
+      ? "DETALLE DE NOTA DE CRÉDITO"
+      : "DETALLE DE FACTURA",
+    filename_prefix: isCreditNote ? "Nota-Credito" : "Factura",
+    original_invoice_total: isCreditNote ? Number(order.total ?? 0) : null,
+    original_invoice_created_at: isCreditNote
+      ? String(order.invoice_created_at)
+      : null,
+    original_invoice_cae: isCreditNote ? String(order.invoice_cae) : null,
+    credit_note_for_invoice: isCreditNote
+      ? {
+          point: Number(order.invoice_point),
+          number: Number(order.invoice_number),
+        }
+      : undefined,
     orden_items: items.map((item) => ({
       cantidad: Number(item.cantidad ?? 0),
       precio: Number(item.precio ?? item.precio_unitario ?? 0),

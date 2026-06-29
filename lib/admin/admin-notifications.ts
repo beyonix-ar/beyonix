@@ -559,7 +559,8 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         order.payment_proof_url &&
         order.payment_status === "en_revision" &&
         order.payment_proof_uploaded_at &&
-        !seenPaymentProofOrderIds.has(orderId)
+        !seenPaymentProofOrderIds.has(orderId) &&
+        !isRefundPaymentAttentionOrder(order)
       ) {
         notifications.push({
           id: `payment:${orderId}`,
@@ -591,7 +592,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           eventAt: String(order.paid_at || order.created_at),
           title: "Factura por emitir",
           body: `El pedido ${formatOrderId(orderId)} está listo para facturar.`,
-          actionUrl: `/admin/pedidos/${orderId}?tab=pago`,
+          actionUrl: `/admin/pedidos/${orderId}?tab=facturacion`,
           orderId,
           isRead: false,
         })
@@ -642,12 +643,11 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           payment_confirmed_amount: order.payment_confirmed_amount,
           financial_status: order.financial_status,
         })
-        const notificationType: AdminNotificationType = isRefundPaymentAttentionOrder(order)
-          ? "payment"
-          : "cancellation"
+        const refundAttention = isRefundPaymentAttentionOrder(order)
+        const notificationType: AdminNotificationType = "cancellation"
         const eventKey =
-          notificationType === "payment"
-            ? `payment-refund:${orderId}`
+          refundAttention
+            ? `cancellation-refund:${orderId}`
             : `order-cancelled:${orderId}`
 
         notifications.push({
@@ -657,7 +657,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           eventAt: String(cancelledAt),
           title: cancellationContent.title,
           body: cancellationContent.body,
-          actionUrl: `/admin/pedidos/${orderId}?tab=pago`,
+          actionUrl: `/admin/pedidos/${orderId}?tab=cancelacion`,
           orderId,
           isRead: false,
           priority: cancellationContent.priority,

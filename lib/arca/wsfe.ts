@@ -6,6 +6,7 @@ const WSFE_HOMOLOGATION_URL =
 const WSFE_NAMESPACE = "http://ar.gov.afip.dif.FEV1/"
 
 export const FACTURA_C_TYPE = 11
+export const NOTA_CREDITO_C_TYPE = 13
 export const CONSUMIDOR_FINAL_DOC_TYPE = 99
 export const CONSUMIDOR_FINAL_VAT_CONDITION = 5
 
@@ -23,6 +24,12 @@ export interface FecaeRequest {
   documentType?: number
   documentNumber?: number
   receiverVatCondition?: number
+  associatedVoucher?: {
+    voucherType: number
+    pointOfSale: number
+    voucherNumber: number
+    voucherDate?: string | null
+  }
 }
 
 export interface FecaeResult {
@@ -69,10 +76,29 @@ function parseMessages(container: any, key: "Err" | "Evt" | "Obs") {
 
 function formatAmount(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("El importe de la factura debe ser mayor que cero.")
+    throw new Error("El importe del comprobante debe ser mayor que cero.")
   }
 
   return value.toFixed(2)
+}
+
+function buildAssociatedVoucherXml(request: FecaeRequest) {
+  if (!request.associatedVoucher) return ""
+
+  const voucherDate = request.associatedVoucher.voucherDate
+
+  return `<ar:CbtesAsoc>
+            <ar:CbteAsoc>
+              <ar:Tipo>${request.associatedVoucher.voucherType}</ar:Tipo>
+              <ar:PtoVta>${request.associatedVoucher.pointOfSale}</ar:PtoVta>
+              <ar:Nro>${request.associatedVoucher.voucherNumber}</ar:Nro>
+              ${
+                voucherDate
+                  ? `<ar:CbteFch>${escapeXml(voucherDate)}</ar:CbteFch>`
+                  : ""
+              }
+            </ar:CbteAsoc>
+          </ar:CbtesAsoc>`
 }
 
 async function callWsfe(operation: string, body: string) {
@@ -228,6 +254,7 @@ export async function fecaeSolicitar(request: FecaeRequest): Promise<FecaeResult
   const receiverVatCondition =
     request.receiverVatCondition ?? CONSUMIDOR_FINAL_VAT_CONDITION
   const total = formatAmount(request.total)
+  const associatedVoucherXml = buildAssociatedVoucherXml(request)
 
   const result = await callWsfe(
     "FECAESolicitar",
@@ -254,6 +281,7 @@ export async function fecaeSolicitar(request: FecaeRequest): Promise<FecaeResult
           <ar:MonId>PES</ar:MonId>
           <ar:MonCotiz>1</ar:MonCotiz>
           <ar:CondicionIVAReceptorId>${receiverVatCondition}</ar:CondicionIVAReceptorId>
+          ${associatedVoucherXml}
         </ar:FECAEDetRequest>
       </ar:FeDetReq>
     </ar:FeCAEReq>`,
@@ -274,7 +302,7 @@ export async function fecaeSolicitar(request: FecaeRequest): Promise<FecaeResult
   const resultCode = String(detail.Resultado ?? result?.FeCabResp?.Resultado ?? "")
 
   if (resultCode !== "A" || !cae) {
-    throw new ArcaWsError("ARCA no autorizó la Factura C.", [
+    throw new ArcaWsError("ARCA no autorizó el comprobante.", [
       ...observations,
       ...events,
     ])

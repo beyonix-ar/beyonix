@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
+  const pathname = request.nextUrl.pathname
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +23,10 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!request.nextUrl.pathname.startsWith("/admin")) {
+  const isAdminRoute = pathname.startsWith("/admin")
+  const isAccountRoute = pathname.startsWith("/cuenta")
+
+  if (!isAdminRoute && !isAccountRoute) {
     return response
   }
 
@@ -30,9 +34,13 @@ export async function proxy(request: NextRequest) {
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set(
       "redirect",
-      `${request.nextUrl.pathname}${request.nextUrl.search}`
+      `${pathname}${request.nextUrl.search}`
     )
     return NextResponse.redirect(loginUrl)
+  }
+
+  if (!isAdminRoute) {
+    return response
   }
 
   const { data: profile } = await supabase
@@ -45,5 +53,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/cuenta/:path*"],
 }

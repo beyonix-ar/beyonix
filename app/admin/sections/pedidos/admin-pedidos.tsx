@@ -1,6 +1,7 @@
 ﻿"use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
@@ -13,6 +14,7 @@ import {
   Download,
   Eye,
   FileText,
+  Info,
   LoaderCircle,
   Printer,
   RefreshCw,
@@ -81,7 +83,9 @@ type AdminOrderDetailView =
   | "resumen"
   | "pago"
   | "envio"
+  | "facturacion"
   | "reclamos"
+  | "cancelacion"
 
 type PaymentStatusValue =
   | "pendiente_comprobante"
@@ -125,7 +129,9 @@ const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "resumen",
   "pago",
   "envio",
+  "facturacion",
   "reclamos",
+  "cancelacion",
 ]
 
 function getAdminOrderDetailView(value: string | null): AdminOrderDetailView {
@@ -368,6 +374,20 @@ function getDisplayedOrderStatus(pedido: SupabasePedido) {
   return "pendiente"
 }
 
+function getCurrentOrderStatusForHeader(pedido: SupabasePedido) {
+  if (pedido.estado === "cancelado" && pedido.financial_status === "refunded") {
+    return "cancelado_refunded"
+  }
+  if (
+    pedido.estado === "cancelado" &&
+    ["refund_pending", "cancellation_requested"].includes(pedido.financial_status ?? "")
+  ) {
+    return "cancelado_refund_pending"
+  }
+
+  return getDisplayedOrderStatus(pedido)
+}
+
 function isApprovedPayment(pedido: SupabasePedido) {
   if (
     pedido.estado === "cancelado" ||
@@ -402,8 +422,406 @@ function isOrderInvoicedForCreditNote(pedido: SupabasePedido) {
   )
 }
 
+function isCancellationFlowOrder(pedido: SupabasePedido) {
+  return (
+    pedido.estado === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      pedido.financial_status ?? "",
+    ) ||
+    Boolean(pedido.return_status)
+  )
+}
+
+function needsCreditNoteReminder(pedido: SupabasePedido) {
+  return (
+    isCancellationFlowOrder(pedido) &&
+    isOrderInvoicedForCreditNote(pedido) &&
+    pedido.credit_note_status !== "authorized" &&
+    !pedido.credit_note_cae &&
+    !pedido.credit_note_issued
+  )
+}
+
+function shouldShowClaimsTab(pedido: SupabasePedido) {
+  return (
+    (pedido.order_claims ?? []).length > 0 ||
+    Boolean(pedido.return_status && pedido.return_status !== "resuelta")
+  )
+}
+
+type AdminOrderTabBadgeState =
+  | { kind: "badge"; label: string; title: string; className: string }
+  | { kind: "check"; label: string; title: string; className: string }
+  | null
+
+function getAdminOrderTabState(
+  pedido: SupabasePedido,
+  {
+    paymentProofPending,
+    pendingClaim,
+  }: {
+    paymentProofPending: boolean
+    pendingClaim: boolean
+  },
+) {
+  const refundPending = isRefundPaymentAttentionOrder(pedido)
+  const refunded = isRefundedOrder(pedido)
+  const creditNotePending = needsCreditNoteReminder(pedido)
+
+  return {
+    visible: {
+      reclamos: shouldShowClaimsTab(pedido),
+      cancelacion: isCancellationFlowOrder(pedido),
+    },
+    badges: {
+      pago: paymentProofPending
+        ? {
+            kind: "badge",
+            label: "Revisión",
+            title: "Comprobante nuevo pendiente de revisión",
+            className:
+              "border-blue-300/30 bg-blue-400/10 text-blue-100",
+          }
+        : isOrderPaymentConfirmed(pedido)
+          ? {
+              kind: "check",
+              label: "OK",
+              title: "Pago confirmado",
+              className:
+                "border-emerald-300/35 bg-emerald-400/12 text-emerald-100",
+            }
+          : null,
+      envio: needsShippingReminder(pedido)
+        ? {
+            kind: "badge",
+            label: "Pendiente",
+            title: "Envío pendiente",
+            className:
+              "border-[#77E6E2]/30 bg-[#77E6E2]/8 text-[#D7FFFD]",
+          }
+        : null,
+      facturacion: creditNotePending
+        ? {
+            kind: "badge",
+            label: "Falta NC",
+            title: "Falta registrar nota de crédito",
+            className:
+              "border-amber-300/30 bg-amber-400/10 text-amber-100",
+          }
+        : pedido.invoice_status === "authorized" && !creditNotePending
+          ? {
+              kind: "check",
+              label: "OK",
+              title: "Facturación al día",
+              className:
+                "border-emerald-300/35 bg-emerald-400/12 text-emerald-100",
+            }
+          : needsInvoiceReminder(pedido)
+            ? {
+                kind: "badge",
+                label: "Pendiente",
+                title: "Factura pendiente",
+                className:
+                  "border-cyan-300/30 bg-cyan-400/10 text-cyan-100",
+              }
+            : null,
+      reclamos: pendingClaim
+        ? {
+            kind: "badge",
+            label: "Reclamo",
+            title: "Reclamo pendiente de gestión",
+            className:
+              "border-red-300/30 bg-red-400/10 text-red-100",
+          }
+        : null,
+      cancelacion: refundPending
+        ? {
+            kind: "badge",
+            label: "Pendiente",
+            title: "Reintegro pendiente",
+            className:
+              "border-orange-300/30 bg-orange-400/10 text-orange-100",
+          }
+        : refunded
+          ? {
+              kind: "badge",
+              label: "Reintegrado",
+              title: "Reintegro completado",
+              className:
+                "border-emerald-300/35 bg-emerald-400/12 text-emerald-100",
+            }
+          : isCancellationFlowOrder(pedido)
+            ? {
+                kind: "badge",
+                label: "En curso",
+                title: "Cancelación en curso",
+                className:
+                  "border-cyan-300/30 bg-cyan-400/10 text-cyan-100",
+              }
+            : null,
+    } satisfies Record<Exclude<AdminOrderDetailView, "resumen">, AdminOrderTabBadgeState>,
+  }
+}
+
+type SummaryBadge = {
+  label: string
+  value: string
+  className: string
+}
+
+type RecommendedAction = {
+  title: string
+  description: string
+  target: AdminOrderDetailView
+  buttonLabel: string
+  tone: "urgent" | "warning" | "info" | "success"
+}
+
+function getShippingSummary(pedido: SupabasePedido) {
+  if (isCancellationFlowOrder(pedido)) return "Cancelado"
+  if (pedido.estado === "entregado" || pedido.delivered_at) return "Entregado"
+  if (
+    pedido.estado === "enviado" ||
+    pedido.estado === "en_camino" ||
+    Boolean(pedido.tracking_number || pedido.tracking_url || pedido.andreani_tracking)
+  ) {
+    return "Despachado"
+  }
+
+  return "No despachado"
+}
+
+function getInvoiceSummary(pedido: SupabasePedido) {
+  if (needsCreditNoteReminder(pedido)) return "Falta nota de crédito"
+  if (pedido.invoice_status === "authorized" || pedido.invoice_cae) return "Factura emitida"
+  return "Falta factura"
+}
+
+function getClaimSummary(pedido: SupabasePedido) {
+  const claims = pedido.order_claims ?? []
+  if (!claims.length) return "Sin reclamos"
+  if (claims.some((claim) => claim.admin_needs_action)) return "Reclamo abierto"
+  if (claims.some((claim) => !["cerrado", "rechazado"].includes(claim.status ?? ""))) {
+    return "Reclamo abierto"
+  }
+  return "Reclamo cerrado"
+}
+
+function getCancellationSummary(pedido: SupabasePedido) {
+  if (!isCancellationFlowOrder(pedido)) return "No aplica"
+  if (isRefundedOrder(pedido)) return "Reintegro completado"
+  if (isRefundPaymentAttentionOrder(pedido)) return "Reintegro pendiente"
+  if (pedido.financial_status === "cancellation_requested") return "Solicitada"
+  return "Cancelación cerrada"
+}
+
+function getPaymentSummary(pedido: SupabasePedido) {
+  if (isRejectedPayment(pedido.payment_status)) return "Rechazado"
+  if (isOrderPaymentConfirmed(pedido)) return "Confirmado"
+  return "Pendiente"
+}
+
+function getExecutiveOrderStatus(pedido: SupabasePedido) {
+  if (pedido.estado === "cancelado" && isRefundedOrder(pedido)) return "Cancelado · Reintegrado"
+  if (pedido.estado === "cancelado" && isRefundPaymentAttentionOrder(pedido)) {
+    return "Cancelado · Reintegro pendiente"
+  }
+  if (isRefundedOrder(pedido)) return "Reintegrado"
+  if (isRefundPaymentAttentionOrder(pedido)) return "Reintegro pendiente"
+  if (pedido.financial_status === "cancellation_requested") return "Cancelación solicitada"
+  if ((pedido.order_claims ?? []).some((claim) => claim.admin_needs_action)) return "Reclamo abierto"
+  if (isRejectedPayment(pedido.payment_status)) return "Pago rechazado"
+  if (needsCreditNoteReminder(pedido)) return "Falta nota de crédito"
+  if (needsInvoiceReminder(pedido)) return "Factura pendiente"
+  if (needsShippingReminder(pedido)) return "Envío pendiente"
+  return getDisplayedOrderStatus(pedido) === "pagado" ? "Pago confirmado" : getDisplayedOrderStatus(pedido)
+}
+
+function getSummaryBadgeClass(value: string) {
+  if (
+    [
+      "Confirmado",
+      "Despachado",
+      "Entregado",
+      "Factura emitida",
+      "Sin reclamos",
+      "Reintegrado",
+      "Reintegro completado",
+    ].includes(value)
+  ) {
+    return "border-emerald-300/18 bg-emerald-400/7 text-emerald-100"
+  }
+  if (["Rechazado", "Reclamo abierto"].includes(value)) {
+    return "border-red-300/20 bg-red-400/8 text-red-100"
+  }
+  if (
+    ["Pendiente", "No despachado", "Falta factura", "Falta nota de crédito", "Reintegro pendiente", "Solicitada"].includes(value)
+  ) {
+    return "border-amber-300/18 bg-amber-400/7 text-amber-100"
+  }
+  return "border-white/10 bg-white/5 text-white/72"
+}
+
+function getOrderSummaryBadges(pedido: SupabasePedido): SummaryBadge[] {
+  const badges = [
+    { label: "Pago", value: getPaymentSummary(pedido) },
+    { label: "Envío", value: getShippingSummary(pedido) },
+    { label: "Facturación", value: getInvoiceSummary(pedido) },
+    { label: "Reclamos", value: getClaimSummary(pedido) },
+    ...(isCancellationFlowOrder(pedido)
+      ? [{ label: "Devolución", value: isRefundedOrder(pedido) ? "Reintegrado" : getCancellationSummary(pedido) }]
+      : []),
+  ]
+
+  return badges.map((badge) => ({
+    ...badge,
+    className: getSummaryBadgeClass(badge.value),
+  }))
+}
+
+function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
+  const openClaim = (pedido.order_claims ?? []).some(
+    (claim) =>
+      claim.admin_needs_action ||
+      !["cerrado", "rechazado"].includes(claim.status ?? ""),
+  )
+
+  if (openClaim) {
+    return {
+      title: "Resolver reclamo abierto",
+      description: "Hay una gestión de reclamo que requiere revisión administrativa.",
+      target: "reclamos",
+      buttonLabel: "Ir a Reclamos",
+      tone: "urgent",
+    }
+  }
+
+  if (isRefundPaymentAttentionOrder(pedido)) {
+    return {
+      title: "Cargar comprobante de reintegro",
+      description: "El pedido está cancelado y falta cerrar la devolución al cliente.",
+      target: "cancelacion",
+      buttonLabel: "Ir a Cancelación",
+      tone: "warning",
+    }
+  }
+
+  if (
+    isTransferOrder(pedido) &&
+    pedido.payment_status === "en_revision" &&
+    Boolean(pedido.payment_proof_url)
+  ) {
+    return {
+      title: "Revisar comprobante de pago",
+      description: "El cliente subió un comprobante y falta confirmar o rechazar el pago.",
+      target: "pago",
+      buttonLabel: "Ir a Pago",
+      tone: "warning",
+    }
+  }
+
+  if (needsCreditNoteReminder(pedido)) {
+    return {
+      title: "Registrar nota de crédito",
+      description: "El pedido cancelado tenía factura emitida y falta registrar la nota de crédito.",
+      target: "facturacion",
+      buttonLabel: "Ir a Facturación",
+      tone: "warning",
+    }
+  }
+
+  if (needsInvoiceReminder(pedido)) {
+    return {
+      title: "Emitir factura",
+      description: "El pago está confirmado y la factura electrónica todavía no fue emitida.",
+      target: "facturacion",
+      buttonLabel: "Ir a Facturación",
+      tone: "info",
+    }
+  }
+
+  if (needsShippingReminder(pedido)) {
+    return {
+      title: "Preparar despacho",
+      description: "El pedido está facturado y listo para generar o actualizar el envío.",
+      target: "envio",
+      buttonLabel: "Ir a Envío",
+      tone: "info",
+    }
+  }
+
+  return {
+    title: "Pedido cerrado, sin acciones pendientes",
+    description: "No hay tareas críticas pendientes para este pedido.",
+    target: "resumen",
+    buttonLabel: "Ver resumen",
+    tone: "success",
+  }
+}
+
+function getOrderLatestActivity(pedido: SupabasePedido) {
+  const latestClaim = (pedido.order_claims ?? [])[0]
+  const candidates = [
+    {
+      at: latestClaim?.updated_at || latestClaim?.created_at,
+      label:
+        latestClaim?.status === "cerrado"
+          ? "Reclamo cerrado."
+          : latestClaim
+            ? "Reclamo abierto por el cliente."
+            : "",
+    },
+    {
+      at: pedido.credit_note_issued_at,
+      label: "Nota de crédito registrada.",
+    },
+    {
+      at: pedido.refund_uploaded_at || pedido.refunded_at,
+      label: "Se cargó comprobante de reintegro.",
+    },
+    {
+      at: pedido.invoice_created_at,
+      label: "Factura emitida.",
+    },
+    {
+      at: pedido.cancellation_requested_at || pedido.cancelled_at,
+      label: "El cliente canceló el pedido.",
+    },
+    {
+      at: pedido.payment_confirmed_at || pedido.paid_at,
+      label: "Pago confirmado por el administrador.",
+    },
+    {
+      at: pedido.payment_proof_uploaded_at,
+      label: "El cliente subió comprobante de pago.",
+    },
+    {
+      at: pedido.created_at,
+      label: "El cliente creó el pedido.",
+    },
+  ]
+    .filter((item): item is { at: string; label: string } => Boolean(item.at && item.label))
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+
+  return candidates[0] ?? { at: pedido.created_at, label: "El cliente creó el pedido." }
+}
+
 function needsPaymentProof(status?: string | null) {
   return status === "pendiente_comprobante"
+}
+
+function AdminOrderTabBadge({ state }: { state: AdminOrderTabBadgeState }) {
+  if (!state) return null
+
+  return (
+    <span
+      title={state.title}
+      className={`ml-2 inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-9px font-black uppercase tracking-wide ${state.className}`}
+    >
+      {state.kind === "check" && <Check className="size-2.5" strokeWidth={3} />}
+      {state.label}
+    </span>
+  )
 }
 
 function getTransferPaymentStatusBadge(status?: string | null) {
@@ -548,6 +966,7 @@ function orderMatchesNotificationTone(
 
   if (tone === "cancellation") {
     return (
+      isRefundPaymentAttentionOrder(pedido) ||
       (pedido.estado === "cancelado" ||
         ["cancelled", "cancellation_requested"].includes(
           pedido.financial_status ?? "",
@@ -558,9 +977,9 @@ function orderMatchesNotificationTone(
 
   if (tone === "payment") {
     return (
-      isRefundPaymentAttentionOrder(pedido) ||
       (Boolean(pedido.payment_proof_url) &&
-        pedido.payment_status === "en_revision")
+        pedido.payment_status === "en_revision" &&
+        !isRefundPaymentAttentionOrder(pedido))
     )
   }
 
@@ -665,6 +1084,8 @@ function EstadoBadge({ estado }: { estado: string }) {
     en_camino: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
     entregado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
     cancelado: "border-orange-400/25 bg-orange-500/12 text-orange-200",
+    cancelado_refund_pending: "border-amber-400/25 bg-amber-500/12 text-amber-200",
+    cancelado_refunded: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
     refund_pending: "border-amber-400/25 bg-amber-500/12 text-amber-200",
     refunded: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
     rechazado: "border-red-500/20 bg-red-500/10 text-red-300",
@@ -676,6 +1097,8 @@ function EstadoBadge({ estado }: { estado: string }) {
     en_camino: "En camino",
     entregado: "Entregado",
     cancelado: "Cancelado",
+    cancelado_refund_pending: "Cancelado · Reintegro pendiente",
+    cancelado_refunded: "Cancelado · Reintegrado",
     refund_pending: "Reintegro pendiente",
     refunded: "Reintegrado",
     rechazado: "Comprobante rechazado",
@@ -735,16 +1158,33 @@ function PaymentStatusDropdown({
   onChange: (value: PaymentStatusValue) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({
+    left: 0,
+    top: 0,
+    width: 176,
+  })
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const selected =
     PAYMENT_STATUS_OPTIONS.find((option) => option.value === value) ??
     PAYMENT_STATUS_OPTIONS[0]
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
     if (!open) return
 
     const handleOutside = (event: MouseEvent) => {
-      if (!dropdownRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (
+        !dropdownRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        setOpen(false)
+      }
     }
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false)
@@ -755,6 +1195,41 @@ function PaymentStatusDropdown({
     return () => {
       document.removeEventListener("mousedown", handleOutside)
       document.removeEventListener("keydown", handleEscape)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+
+    function updateMenuPosition() {
+      const rect = dropdownRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      const menuHeight = Math.min(PAYMENT_STATUS_OPTIONS.length * 34 + 8, 220)
+      const width = Math.max(176, rect.width)
+      const spaceBelow = window.innerHeight - rect.bottom
+      const openAbove = spaceBelow < menuHeight && rect.top > menuHeight
+      const left = Math.min(
+        Math.max(8, rect.left),
+        Math.max(8, window.innerWidth - width - 8),
+      )
+
+      setMenuPosition({
+        left,
+        top: openAbove
+          ? Math.max(8, rect.top - menuHeight - 4)
+          : Math.min(window.innerHeight - menuHeight - 8, rect.bottom + 4),
+        width,
+      })
+    }
+
+    updateMenuPosition()
+    window.addEventListener("resize", updateMenuPosition)
+    window.addEventListener("scroll", updateMenuPosition, true)
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition)
+      window.removeEventListener("scroll", updateMenuPosition, true)
     }
   }, [open])
 
@@ -778,11 +1253,17 @@ function PaymentStatusDropdown({
         />
       </button>
 
-      {open && (
+      {mounted && open && createPortal(
         <div
+          ref={menuRef}
           role="listbox"
           aria-label="Estado del pago"
-          className="absolute left-0 top-9 z-50 w-44 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] p-1 shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
+          className="fixed z-100 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] p-1 shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
+          style={{
+            left: menuPosition.left,
+            top: menuPosition.top,
+            width: menuPosition.width,
+          }}
         >
           {PAYMENT_STATUS_OPTIONS.map((option) => (
             <button
@@ -809,7 +1290,8 @@ function PaymentStatusDropdown({
               )}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -834,6 +1316,382 @@ function parseRefundAmountInput(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
+function getAdminDisplayName(value?: string | null) {
+  const candidate = value?.trim()
+  if (!candidate) return "Administrador"
+
+  const looksLikeUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      candidate,
+    )
+  const looksLikeTechnicalId =
+    !candidate.includes("@") &&
+    /^[a-z0-9_-]{20,}$/i.test(candidate)
+
+  return looksLikeUuid || looksLikeTechnicalId ? "Administrador" : candidate
+}
+
+type OrderTimelineType = "success" | "pending" | "danger" | "info"
+
+type OrderTimelineEvent = {
+  key: string
+  title: string
+  at: string
+  description?: string
+  type: OrderTimelineType
+}
+
+type OrderAuditTimelineEvent = {
+  action: string
+  previous_status?: string | null
+  new_status?: string | null
+  metadata?: Record<string, unknown> | null
+  created_at: string
+}
+
+type OrderWithTimelineSources = SupabasePedido & {
+  order_audit_events?: OrderAuditTimelineEvent[] | null
+}
+
+function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
+  const pedido = order as OrderWithTimelineSources
+  const auditEvents = pedido.order_audit_events ?? []
+  const events: OrderTimelineEvent[] = []
+  const addEvent = (event: OrderTimelineEvent | null) => {
+    if (!event?.at) return
+    if (Number.isNaN(new Date(event.at).getTime())) return
+    events.push(event)
+  }
+  const findAuditEvent = (
+    predicate: (event: OrderAuditTimelineEvent) => boolean,
+  ) => auditEvents.find((event) => event.created_at && predicate(event))
+  const statusAuditDate = (statuses: string[]) =>
+    findAuditEvent((event) =>
+      statuses.includes(event.new_status ?? "") ||
+      statuses.includes(String(event.metadata?.newEstado ?? "")),
+    )?.created_at
+
+  const dispatchedAt = statusAuditDate(["enviado", "en_camino", "shipped", "in_transit"])
+  const deliveredAt =
+    pedido.delivered_at || statusAuditDate(["entregado", "delivered"])
+  const cancellationAuditEvent = findAuditEvent((event) =>
+    [
+      "cancellation_requested",
+      "cancellation_requested_refund_pending",
+      "order_cancelled_refund_pending",
+      "order_status_changed",
+    ].includes(event.action) &&
+    (
+      event.new_status === "cancelled" ||
+      event.new_status === "refund_pending" ||
+      event.new_status === "cancelado" ||
+      event.metadata?.newEstado === "cancelado"
+    ),
+  )
+  const cancelledAt =
+    pedido.cancellation_requested_at ||
+    pedido.cancelled_at ||
+    cancellationAuditEvent?.created_at
+  const refundProofAt =
+    pedido.refund_uploaded_at ||
+    pedido.order_refund_proofs?.[0]?.created_at ||
+    findAuditEvent((event) => event.action === "refund_proof_uploaded")?.created_at
+  const refundedAt =
+    pedido.refunded_at ||
+    findAuditEvent((event) => event.action === "order_refunded")?.created_at
+  const creditNoteAt =
+    pedido.credit_note_created_at ||
+    pedido.credit_note_issued_at ||
+    findAuditEvent((event) =>
+      ["credit_note_registered", "credit_note_authorized"].includes(event.action),
+    )?.created_at
+  const productReturnedAt = findAuditEvent((event) =>
+    ["product_return_received", "return_product_received", "returned_product_received"].includes(
+      event.action,
+    ),
+  )?.created_at
+  const productReviewAt = findAuditEvent((event) =>
+    ["product_review_started", "return_product_review_started", "product_condition_reviewed"].includes(
+      event.action,
+    ),
+  )?.created_at
+  const refundApprovedAt = findAuditEvent((event) =>
+    ["refund_approved", "return_refund_approved"].includes(event.action),
+  )?.created_at
+  const refundRejectedAt = findAuditEvent((event) =>
+    ["refund_rejected", "return_refund_rejected"].includes(event.action),
+  )?.created_at
+  const hasPhysicalReturn =
+    Boolean(pedido.return_status || pedido.return_requested_at) &&
+    Boolean(deliveredAt || dispatchedAt || pedido.tracking_number || pedido.andreani_tracking)
+  const returnStatus = pedido.return_status ?? null
+  const refundCanBeCompleted =
+    !hasPhysicalReturn || returnStatus === "aprobada" || returnStatus === "resuelta"
+  const cancellationOrigin =
+    cancellationAuditEvent?.actor_type === "customer" ||
+    cancellationAuditEvent?.action.startsWith("cancellation_requested")
+      ? "cliente"
+      : cancellationAuditEvent?.actor_type === "admin" ||
+          cancellationAuditEvent?.action === "order_cancelled_refund_pending"
+        ? "administrador"
+        : cancellationAuditEvent?.actor_type === "system"
+          ? "automático"
+          : pedido.cancellation_requested_by
+            ? "cliente"
+          : null
+  const cancellationTitle =
+    cancellationOrigin === "cliente"
+      ? "Pedido cancelado por el cliente"
+      : cancellationOrigin === "administrador"
+        ? "Pedido cancelado por el administrador"
+        : cancellationOrigin === "automático"
+          ? "Pedido cancelado automáticamente"
+          : "Pedido cancelado"
+  const cancellationDescription =
+    cancellationOrigin === "cliente"
+      ? "El cliente solicitó la cancelación del pedido."
+      : cancellationOrigin === "administrador"
+        ? "Un administrador canceló el pedido."
+        : cancellationOrigin === "automático"
+          ? "El sistema interrumpió el flujo del pedido."
+          : "La compra fue cancelada."
+
+  addEvent({
+    key: "order-created",
+    title: "Pedido registrado",
+    at: pedido.created_at,
+    description: "La compra ingresó al sistema.",
+    type: "success",
+  })
+  addEvent({
+    key: "payment-confirmed",
+    title: "Pago confirmado",
+    at: pedido.payment_confirmed_at || pedido.paid_at || "",
+    description: "El pago quedó validado.",
+    type: "success",
+  })
+  addEvent({
+    key: "invoice-issued",
+    title: "Factura emitida",
+    at: pedido.invoice_created_at || "",
+    description: "El comprobante fiscal fue generado.",
+    type: "success",
+  })
+  addEvent({
+    key: "shipping-dispatched",
+    title: "Envío despachado",
+    at: dispatchedAt || "",
+    description: "El pedido salió a distribución.",
+    type: "success",
+  })
+  addEvent({
+    key: "shipping-delivered",
+    title: "Envío entregado",
+    at: deliveredAt || "",
+    description: "El cliente recibió el pedido.",
+    type: "success",
+  })
+  addEvent({
+    key: "order-cancelled",
+    title: cancellationTitle,
+    at: cancelledAt || pedido.return_requested_at || "",
+    description: hasPhysicalReturn
+      ? `${cancellationDescription} Se inició el flujo de devolución del producto.`
+      : cancellationDescription,
+    type: "danger",
+  })
+
+  if (
+    hasPhysicalReturn &&
+    pedido.return_requested_at &&
+    (!returnStatus || returnStatus === "solicitada")
+  ) {
+    addEvent({
+      key: "return-waiting-product",
+      title: "A la espera de devolución del producto por parte del cliente",
+      at: pedido.return_requested_at,
+      description: "El reintegro depende de recibir y revisar el producto.",
+      type: "pending",
+    })
+  }
+
+  addEvent({
+    key: "return-product-received",
+    title: "Producto devuelto por el cliente",
+    at: productReturnedAt || "",
+    description: "BEYONIX recibió el producto devuelto.",
+    type: "success",
+  })
+
+  if (hasPhysicalReturn && (productReviewAt || (pedido.return_requested_at && returnStatus === "en_revision"))) {
+    addEvent({
+      key: "return-product-review",
+      title: "Producto en revisión",
+      at: productReviewAt || pedido.return_requested_at || "",
+      description: "El estado del producto está siendo evaluado.",
+      type: "pending",
+    })
+  }
+
+  if (returnStatus === "aprobada" || refundApprovedAt) {
+    addEvent({
+      key: "refund-approved",
+      title: "Reintegro aprobado",
+      at: refundApprovedAt || pedido.return_resolved_at || pedido.return_requested_at || "",
+      description: "La devolución fue aprobada administrativamente.",
+      type: "success",
+    })
+  }
+
+  if (returnStatus === "rechazada" || refundRejectedAt) {
+    addEvent({
+      key: "refund-rejected",
+      title: "Reintegro rechazado",
+      at: refundRejectedAt || pedido.return_resolved_at || pedido.return_requested_at || "",
+      description: "La devolución no fue aprobada por el estado del producto.",
+      type: "danger",
+    })
+  }
+
+  if (!refundedAt && (pedido.financial_status === "refund_pending" || pedido.refund_pending_at)) {
+    addEvent({
+      key: "refund-pending",
+      title: hasPhysicalReturn ? "Reintegro pendiente de aprobación" : "Reintegro pendiente",
+      at: pedido.refund_pending_at || cancelledAt || "",
+      description: hasPhysicalReturn
+        ? "Falta cerrar la revisión antes de reintegrar el dinero."
+        : "Falta cargar el comprobante de reintegro.",
+      type: "pending",
+    })
+  }
+  addEvent({
+    key: "refund-proof-uploaded",
+    title: "Comprobante de reintegro cargado",
+    at: refundProofAt || "",
+    description: "El comprobante quedó asociado al pedido.",
+    type: "success",
+  })
+  addEvent({
+    key: "refund-completed",
+    title: "Reintegro completado",
+    at: refundCanBeCompleted ? refundedAt || "" : "",
+    description: "La devolución de dinero quedó finalizada.",
+    type: "success",
+  })
+  addEvent({
+    key: "credit-note-issued",
+    title: "Nota de crédito emitida",
+    at: creditNoteAt || "",
+    description: "La documentación contable quedó registrada.",
+    type: "success",
+  })
+
+  const closedAt =
+    creditNoteAt ||
+    (refundCanBeCompleted ? refundedAt : null) ||
+    (returnStatus === "resuelta" ? pedido.return_resolved_at : null) ||
+    (pedido.financial_status === "cancelled" ? cancelledAt : null)
+
+  addEvent({
+    key: "order-closed",
+    title: "Pedido cerrado",
+    at: closedAt || "",
+    description: "No quedan acciones pendientes en este flujo.",
+    type: "success",
+  })
+
+  const uniqueEvents = new Map<string, OrderTimelineEvent>()
+  for (const event of events) {
+    const dedupeKey = `${event.key}:${event.at}`
+    if (!uniqueEvents.has(dedupeKey)) uniqueEvents.set(dedupeKey, event)
+  }
+
+  return [...uniqueEvents.values()].sort(
+    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+  )
+}
+
+function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
+  const timeline = buildOrderTimeline(pedido)
+  const typeStyles = {
+    success: {
+      Icon: Check,
+      dotClass: "border-emerald-300/28 bg-emerald-400/8 text-emerald-100",
+      connectorClass: "bg-emerald-300/12",
+    },
+    pending: {
+      Icon: Clock3,
+      dotClass: "border-amber-300/24 bg-amber-400/8 text-amber-100",
+      connectorClass: "bg-amber-300/12",
+    },
+    danger: {
+      Icon: X,
+      dotClass: "border-red-300/26 bg-red-400/8 text-red-100",
+      connectorClass: "bg-red-300/12",
+    },
+    info: {
+      Icon: Info,
+      dotClass: "border-sky-300/20 bg-sky-400/7 text-sky-100",
+      connectorClass: "bg-sky-300/10",
+    },
+  } satisfies Record<
+    OrderTimelineType,
+    {
+      Icon: typeof Check
+      dotClass: string
+      connectorClass: string
+    }
+  >
+
+  const getConnectorClass = (type: OrderTimelineType, nextType?: OrderTimelineType) => {
+    if (type === nextType) return typeStyles[type].connectorClass
+    return "bg-white/8"
+  }
+
+  return (
+    <section className="mt-4 rounded-xl border border-white/8 bg-black/18 p-3">
+      <p className="text-10px font-black uppercase tracking-widest text-white/42">
+        Historial del pedido
+      </p>
+      <div className="mt-3 space-y-3">
+        {timeline.map((item, index) => {
+          const visual = typeStyles[item.type]
+          const Icon = visual.Icon
+          const nextType = timeline[index + 1]?.type
+
+          return (
+            <div key={`${item.key}-${item.at}`} className="relative flex gap-3">
+              {index < timeline.length - 1 && (
+                <span
+                  className={`absolute left-2 top-5 h-[calc(100%+0.25rem)] w-px ${getConnectorClass(item.type, nextType)}`}
+                />
+              )}
+              <span
+                className={`relative mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full border ${visual.dotClass}`}
+              >
+                <Icon className="size-2.5" strokeWidth={3} />
+              </span>
+              <div className="min-w-0 pb-1">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <p className="text-sm font-black text-white/86">{item.title}</p>
+                  <p className="text-10px font-bold uppercase tracking-wide text-white/40">
+                    {formatOptionalOrderDate(item.at)}
+                  </p>
+                </div>
+                {item.description && (
+                  <p className="mt-0.5 text-xs leading-5 text-white/50">
+                    {item.description}
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function RefundManagementPanel({
   pedido,
   canEditRefundAmount,
@@ -844,8 +1702,7 @@ function RefundManagementPanel({
   onRefundUpdated: (order: SupabasePedido) => void
 }) {
   const shouldShow =
-    pedido.estado === "cancelado" &&
-    (isRefundPendingOrder(pedido) || isRefundedOrder(pedido))
+    isCancellationFlowOrder(pedido)
 
   const paidAmount = Number(pedido.payment_confirmed_amount ?? pedido.total ?? 0)
   const [file, setFile] = useState<File | null>(null)
@@ -853,10 +1710,7 @@ function RefundManagementPanel({
   const [method, setMethod] = useState(pedido.refund_method ?? "")
   const [observation, setObservation] = useState(pedido.refund_observation ?? "")
   const [internalNote, setInternalNote] = useState(pedido.refund_internal_note ?? "")
-  const [creditNoteIssued, setCreditNoteIssued] = useState(Boolean(pedido.credit_note_issued))
-  const [creditNoteNumber, setCreditNoteNumber] = useState(pedido.credit_note_number ?? "")
   const [saving, setSaving] = useState(false)
-  const [creditSaving, setCreditSaving] = useState(false)
   const [openingRefundProof, setOpeningRefundProof] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -865,8 +1719,6 @@ function RefundManagementPanel({
     setMethod(pedido.refund_method ?? "")
     setObservation(pedido.refund_observation ?? "")
     setInternalNote(pedido.refund_internal_note ?? "")
-    setCreditNoteIssued(Boolean(pedido.credit_note_issued))
-    setCreditNoteNumber(pedido.credit_note_number ?? "")
     setFile(null)
     setMessage(null)
   }, [
@@ -876,17 +1728,30 @@ function RefundManagementPanel({
     pedido.refund_internal_note,
     pedido.refund_method,
     pedido.refund_observation,
-    pedido.credit_note_issued,
-    pedido.credit_note_number,
   ])
 
   if (!shouldShow) return null
 
-  const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
   const refunded = isRefundedOrder(pedido)
+  const refundPending = isRefundPendingOrder(pedido)
   const refundStatusLabel = refunded
-    ? "Cancelado - dinero reintegrado"
-    : "Reintegro pendiente"
+    ? "Reintegro completado"
+    : refundPending
+      ? "Reintegro pendiente"
+      : "Cancelación cerrada"
+  const refundCompactStatus = refunded ? "Finalizado" : refundStatusLabel
+  const cancellationTitle = refunded
+    ? "Reintegro completado"
+    : refundPending
+      ? "Reintegro pendiente"
+      : pedido.financial_status === "cancellation_requested"
+        ? "Cancelación pendiente"
+        : "Cancelación cerrada"
+  const cancellationCopy = refunded
+    ? "El comprobante fue registrado correctamente y la devolución quedó finalizada."
+    : refundPending
+      ? "El pedido fue cancelado con dinero recibido. Cargá el comprobante de reintegro para cerrar la devolución."
+      : "El pedido está cancelado y no tiene un reintegro pendiente registrado."
   const parsedRefundAmount = parseRefundAmountInput(amount)
   const maxRefundAmount = Math.max(paidAmount, Number(pedido.total ?? 0))
   const refundAmountIsValid =
@@ -894,10 +1759,13 @@ function RefundManagementPanel({
     (maxRefundAmount <= 0 || parsedRefundAmount <= maxRefundAmount)
   const canUploadRefund =
     !refunded &&
+    refundPending &&
     Boolean(file) &&
     refundAmountIsValid &&
     method.trim().length > 0 &&
     !saving
+  const refundDisplayAmount = formatPrice(Number(pedido.refund_amount ?? paidAmount ?? 0))
+  const refundRegisteredBy = getAdminDisplayName(pedido.refund_uploaded_by || pedido.refunded_by)
 
   const openRefundProof = async () => {
     setOpeningRefundProof(true)
@@ -994,113 +1862,59 @@ function RefundManagementPanel({
     }
   }
 
-  const saveCreditNote = async () => {
-    setCreditSaving(true)
-    setMessage(null)
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!session?.access_token) {
-        setMessage({ ok: false, text: "La sesión administrativa venció." })
-        return
-      }
-
-      const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "update_credit_note",
-          creditNoteIssued,
-          creditNoteNumber,
-        }),
-      })
-      const data = (await response.json()) as {
-        order?: SupabasePedido
-        error?: string
-      }
-
-      if (!response.ok || !data.order) {
-        setMessage({
-          ok: false,
-          text: data.error || "No se pudo guardar la nota de crédito.",
-        })
-        return
-      }
-
-      onRefundUpdated(data.order)
-      setMessage({ ok: true, text: "Datos contables actualizados." })
-      notifyOrderNotificationsChanged()
-    } catch {
-      setMessage({ ok: false, text: "No se pudo guardar la nota de crédito." })
-    } finally {
-      setCreditSaving(false)
-    }
-  }
-
   return (
-    <section className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-400/8 p-4 sm:p-5">
-      <div className="flex flex-col gap-3 border-b border-amber-200/15 pb-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-11px font-bold uppercase tracking-widest text-amber-200">
-            Pedido cancelado con pago confirmado
-          </p>
-          <h3 className="mt-1 text-lg font-black text-white">
-            {refunded ? "Dinero reintegrado" : "Reintegro pendiente"}
-          </h3>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-white/66">
-            {refunded
-              ? "El dinero ya fue reintegrado al cliente. El comprobante de reintegro quedó registrado y la devolución se encuentra cerrada."
-              : "El cliente canceló un pedido con dinero recibido. Conservá el comprobante original y cargá el comprobante de reintegro para cerrar la devolución."}
-          </p>
+    <section className="rounded-2xl border border-white/8 bg-[#0B1017] p-4 sm:p-5">
+      <div className="border-b border-white/8 pb-4">
+        <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+          Gestión de cancelación
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h3 className="text-lg font-black text-white">{cancellationTitle}</h3>
         </div>
-        <span className="inline-flex w-fit rounded-full border border-amber-300/30 bg-black/30 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-amber-100">
-          {refundStatusLabel}
-        </span>
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-white/62">
+          {cancellationCopy}
+        </p>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue label="Pedido" value={`BX-${1000 + pedido.id}`} />
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue label="Cliente" value={pedido.cliente_nombre || "Cliente sin nombre"} />
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue
-            label="Contacto / email"
-            value={pedido.cliente_email || "No informado"}
-          />
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue label="Teléfono" value={pedido.cliente_telefono || "No informado"} />
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue
-            label="Pago confirmado"
-            value={formatOptionalOrderDate(pedido.payment_confirmed_at || pedido.paid_at)}
-          />
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue
-            label="Solicitud de cancelación"
-            value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
-          />
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue
-            label="Estado del reintegro"
-            value={refundStatusLabel}
-          />
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-          <DetailValue label="Medio de pago" value={getPaymentMethodLabel(pedido)} />
-        </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <section className="rounded-xl border border-white/8 bg-black/20 p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-white/42">
+            Información
+          </p>
+          <div className="mt-3 space-y-2">
+            <DetailValue label="Pedido" value={`#${formatPublicOrderId(pedido.id)}`} />
+            <DetailValue label="Cliente" value={pedido.cliente_nombre || "Cliente sin nombre"} />
+            <DetailValue
+              label="Contacto"
+              value={[pedido.cliente_email, pedido.cliente_telefono].filter(Boolean).join(" · ") || "No informado"}
+            />
+          </div>
+        </section>
+        <section className="rounded-xl border border-white/8 bg-black/20 p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-white/42">
+            Fechas
+          </p>
+          <div className="mt-3 space-y-2">
+            <DetailValue
+              label="Pago confirmado"
+              value={formatOptionalOrderDate(pedido.payment_confirmed_at || pedido.paid_at)}
+            />
+            <DetailValue
+              label="Cancelación solicitada"
+              value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
+            />
+          </div>
+        </section>
+        <section className="rounded-xl border border-white/8 bg-black/20 p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-white/42">
+            Reintegro
+          </p>
+          <div className="mt-3 space-y-2">
+            <DetailValue label="Monto" value={refundDisplayAmount} />
+            <DetailValue label="Método" value={pedido.refund_method || "Pendiente"} />
+            <DetailValue label="Estado" value={refundCompactStatus} />
+          </div>
+        </section>
       </div>
 
       <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)]">
@@ -1108,9 +1922,11 @@ function RefundManagementPanel({
           <p className="text-10px font-black uppercase tracking-widest text-amber-100/75">
             {refunded ? "Reintegro registrado" : "Cargar comprobante de reintegro"}
           </p>
-          {refunded ? (
-            <p className="mt-3 rounded-lg border border-emerald-300/20 bg-emerald-400/8 px-3 py-2 text-xs font-bold leading-5 text-emerald-100">
-              El reintegro ya fue registrado. La devolución se encuentra cerrada.
+          {!refundPending ? (
+            <p className="mt-3 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
+              {refunded
+                ? "No hay acciones pendientes para esta devolución."
+                : "No hay una acción de reintegro pendiente para este pedido."}
             </p>
           ) : (
             <>
@@ -1214,7 +2030,7 @@ function RefundManagementPanel({
                 className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-11px font-black uppercase tracking-wide text-[#D7FFFD] transition hover:border-[#77E6E2]/45 disabled:cursor-wait disabled:opacity-60"
               >
                 <Download className="size-4" />
-                {openingRefundProof ? "Abriendo..." : "Ver reintegro"}
+                {openingRefundProof ? "Abriendo..." : "Ver comprobante"}
               </button>
             </div>
           )}
@@ -1222,48 +2038,37 @@ function RefundManagementPanel({
 
         <div className="min-w-0 rounded-xl border border-white/8 bg-black/25 p-3">
           <p className="text-10px font-black uppercase tracking-widest text-amber-100/75">
-            Datos contables internos
+            Comprobante de reintegro
           </p>
-          <div className="mt-3 space-y-2">
-            <p className={`rounded-lg border px-3 py-2 text-xs font-bold ${
-              invoiceIssued
-                ? "border-amber-300/25 bg-amber-400/10 text-amber-100"
-                : "border-emerald-300/20 bg-emerald-400/8 text-emerald-100"
-            }`}>
-              {invoiceIssued
-                ? "Factura emitida: corresponde registrar nota de crédito."
-                : "Sin factura emitida: no corresponde nota de crédito."}
+          {pedido.refund_proof_url ? (
+            <div className="mt-3 space-y-2">
+              <DetailValue label="Estado" value={refundCompactStatus} />
+              <DetailValue
+                label="Archivo cargado"
+                value={pedido.refund_proof_file_name || "Comprobante registrado"}
+              />
+              <DetailValue
+                label="Fecha de carga"
+                value={formatOptionalOrderDate(pedido.refund_uploaded_at)}
+              />
+              <DetailValue
+                label="Registrado por"
+                value={refundRegisteredBy}
+              />
+              <DetailValue
+                label="Monto reintegrado"
+                value={refundDisplayAmount}
+              />
+            </div>
+          ) : (
+            <p className="mt-3 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
+              Todavía no hay comprobante de reintegro cargado.
             </p>
-            {invoiceIssued && (
-              <>
-                <label className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold text-white/75">
-                  <input
-                    type="checkbox"
-                    checked={creditNoteIssued}
-                    onChange={(event) => setCreditNoteIssued(event.target.checked)}
-                    className="size-4 accent-[#112A43]"
-                  />
-                  Nota de crédito emitida
-                </label>
-                <input
-                  value={creditNoteNumber}
-                  onChange={(event) => setCreditNoteNumber(event.target.value)}
-                  placeholder="Número de nota de crédito"
-                  className="h-10 w-full rounded-lg border border-white/10 bg-[#141820] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-amber-200/45"
-                />
-                <button
-                  type="button"
-                  disabled={creditSaving}
-                  onClick={() => void saveCreditNote()}
-                  className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-white/12 bg-[#1B2028] px-3 text-11px font-black uppercase tracking-wide text-white transition hover:border-amber-200/45 disabled:cursor-wait disabled:opacity-50"
-                >
-                  {creditSaving ? "Guardando..." : "Guardar datos contables"}
-                </button>
-              </>
-            )}
-          </div>
+          )}
         </div>
       </div>
+
+      <OrderTimeline pedido={pedido} />
 
       {message && (
         <p
@@ -1278,6 +2083,518 @@ function RefundManagementPanel({
         </p>
       )}
     </section>
+  )
+}
+
+function BillingManagementPanel({
+  pedido,
+  invoiceLoading,
+  invoiceDownloading,
+  invoiceNotice,
+  onIssueInvoice,
+  onDownloadInvoice,
+  onDownloadCreditNote,
+  onBillingUpdated,
+}: {
+  pedido: SupabasePedido
+  invoiceLoading: boolean
+  invoiceDownloading: boolean
+  invoiceNotice: { ok: boolean; message: string } | null
+  onIssueInvoice: () => void
+  onDownloadInvoice: () => void
+  onDownloadCreditNote: () => void
+  onBillingUpdated: (order: SupabasePedido) => void
+}) {
+  const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
+  const creditNoteNeeded = needsCreditNoteReminder(pedido)
+  const [creditSaving, setCreditSaving] = useState(false)
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const creditNoteIssued =
+    pedido.credit_note_status === "authorized" ||
+    Boolean(pedido.credit_note_cae || pedido.credit_note_issued)
+  const creditNoteAmount = Number(
+    pedido.credit_note_amount ??
+      pedido.refund_amount ??
+      pedido.payment_confirmed_amount ??
+      pedido.total ??
+      0,
+  )
+  const creditNoteProcessing = pedido.credit_note_status === "processing" || creditSaving
+  const creditNoteNumberLabel =
+    pedido.credit_note_point && pedido.credit_note_number
+      ? `NC C ${formatInvoiceNumber(pedido.credit_note_point, Number(pedido.credit_note_number))}`
+      : pedido.credit_note_number || "Emitida"
+  const creditNoteStatusLabel = creditNoteIssued
+    ? creditNoteNumberLabel
+    : pedido.credit_note_status === "processing"
+      ? "Procesando"
+      : pedido.credit_note_status === "error"
+        ? "Error"
+        : creditNoteNeeded
+          ? "Pendiente"
+          : "No requerida"
+
+  useEffect(() => {
+    setMessage(null)
+  }, [pedido.id])
+
+  const issueCreditNote = async () => {
+    setCreditSaving(true)
+    setMessage(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setMessage({ ok: false, text: "La sesión administrativa venció." })
+        return
+      }
+
+      const response = await fetch(`/api/admin/orders/${pedido.id}/credit-note`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      })
+      const data = (await response.json()) as {
+        order?: SupabasePedido
+        error?: string
+      }
+
+      if (!response.ok || !data.order) {
+        setMessage({
+          ok: false,
+          text: data.error || "No se pudo emitir la nota de crédito.",
+        })
+        return
+      }
+
+      onBillingUpdated(data.order)
+      setMessage({ ok: true, text: "Nota de crédito emitida por ARCA." })
+      notifyOrderNotificationsChanged()
+    } catch {
+      setMessage({ ok: false, text: "No se pudo emitir la nota de crédito." })
+    } finally {
+      setCreditSaving(false)
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-beyonix-blue-light/20 bg-[#0B1118] p-4 sm:p-5">
+      <div className="flex flex-col gap-4 border-b border-white/8 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+            Facturación
+          </p>
+          <h3 className="mt-2 flex items-center gap-2 text-lg font-black text-white">
+            <FileText className={`size-5 ${invoiceIssued ? "text-emerald-300" : "text-beyonix-sky"}`} />
+            {invoiceIssued ? "Factura electrónica emitida" : "Emitir comprobante fiscal"}
+          </h3>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-white/55">
+            {invoiceIssued
+              ? "Factura, CAE y datos contables asociados a este pedido."
+              : "La Factura C se solicitará a ARCA y quedará asociada a este pedido."}
+          </p>
+        </div>
+
+        {pedido.invoice_status === "authorized" ? (
+          <button
+            type="button"
+            onClick={() => void onDownloadInvoice()}
+            disabled={invoiceDownloading}
+            className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light disabled:cursor-wait disabled:opacity-60"
+          >
+            {invoiceDownloading ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            {invoiceDownloading ? "Preparando..." : "Descargar factura"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void onIssueInvoice()}
+            disabled={invoiceLoading || !isApprovedPayment(pedido)}
+            className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-cyan hover:bg-beyonix-blue-hover disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {invoiceLoading ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <FileText className="size-4" />
+            )}
+            {invoiceLoading ? "Emitiendo factura..." : "Emitir Factura C"}
+          </button>
+        )}
+      </div>
+
+      {creditNoteNeeded && (
+        <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2">
+          <p className="text-xs font-black uppercase tracking-wide text-amber-100">
+            Nota de crédito requerida
+          </p>
+          <p className="mt-0.5 text-xs font-medium text-amber-100/75">
+            La Factura C ya fue emitida y el pedido tiene una cancelación o devolución activa.
+          </p>
+        </div>
+      )}
+
+      {invoiceIssued ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <DetailValue
+              label="Tipo y número"
+              value={`Factura C ${formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}`}
+            />
+          </div>
+          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <DetailValue label="CAE" value={pedido.invoice_cae || "No informado"} />
+          </div>
+          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <DetailValue
+              label="Vencimiento CAE"
+              value={formatInvoiceDate(pedido.invoice_cae_due)}
+            />
+          </div>
+          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <DetailValue
+              label="Fecha de emisión"
+              value={formatOptionalOrderDate(pedido.invoice_created_at)}
+            />
+          </div>
+          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+            <DetailValue
+              label="Nota de crédito"
+              value={creditNoteStatusLabel}
+            />
+          </div>
+        </div>
+      ) : !isApprovedPayment(pedido) ? (
+        <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs font-medium text-amber-200">
+          Confirmá el pago antes de emitir la factura.
+        </p>
+      ) : null}
+
+      {invoiceIssued && isCancellationFlowOrder(pedido) && (
+        <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-beyonix-cyan/80">
+            Nota de crédito
+          </p>
+          {creditNoteIssued ? (
+            <div className="mt-3 space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Tipo y número"
+                    value={creditNoteNumberLabel}
+                  />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue label="CAE" value={pedido.credit_note_cae || "No informado"} />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Vencimiento CAE"
+                    value={formatInvoiceDate(pedido.credit_note_cae_due)}
+                  />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Fecha emisión"
+                    value={formatOptionalOrderDate(pedido.credit_note_created_at || pedido.credit_note_issued_at)}
+                  />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Monto acreditado"
+                    value={formatPrice(creditNoteAmount)}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void onDownloadCreditNote()}
+                className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition hover:border-beyonix-cyan"
+              >
+                <Download className="size-4" />
+                Descargar Nota de Crédito
+              </button>
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Factura origen"
+                    value={`Factura C ${formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}`}
+                  />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Monto a acreditar"
+                    value={formatPrice(creditNoteAmount)}
+                  />
+                </div>
+                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
+                  <DetailValue
+                    label="Estado"
+                    value={
+                      pedido.credit_note_status === "error"
+                        ? "Error de ARCA"
+                        : creditNoteProcessing
+                          ? "Procesando"
+                          : "Pendiente"
+                    }
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={creditNoteProcessing || creditNoteAmount <= 0}
+                onClick={() => void issueCreditNote()}
+                className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition hover:border-beyonix-cyan disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creditNoteProcessing ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <FileText className="size-4" />
+                )}
+                {creditNoteProcessing ? "Emitiendo..." : "Emitir Nota de Crédito"}
+              </button>
+            </div>
+          )}
+          {pedido.credit_note_error && !creditNoteIssued && (
+            <p className="mt-3 rounded-lg border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
+              {pedido.credit_note_error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {(invoiceNotice || message) && (
+        <p
+          role="status"
+          className={`mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${
+            (message?.ok ?? invoiceNotice?.ok)
+              ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-200"
+              : "border-red-400/20 bg-red-400/8 text-red-200"
+          }`}
+        >
+          {message?.text ?? invoiceNotice?.message}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function AdminOrderSummaryDashboard({
+  pedido,
+  financialBreakdown,
+  onGoToView,
+}: {
+  pedido: SupabasePedido
+  financialBreakdown: ReturnType<typeof getOrderFinancialBreakdown>
+  onGoToView: (view: AdminOrderDetailView) => void
+}) {
+  const statusCards = getOrderSummaryBadges(pedido)
+  const action = getOrderRecommendedAction(pedido)
+  const latestActivity = getOrderLatestActivity(pedido)
+  const mainStatus = getExecutiveOrderStatus(pedido)
+  const refundAmount = Number(pedido.refund_amount ?? 0)
+  const confirmedAmount = Number(pedido.payment_confirmed_amount ?? 0)
+  const orderTotal = Number(pedido.total ?? 0)
+  const pendingBalance =
+    isOrderPaymentConfirmed(pedido)
+      ? 0
+      : Math.max(0, orderTotal - (Number.isFinite(confirmedAmount) ? confirmedAmount : 0))
+  const refundedOrder = isRefundedOrder(pedido) && refundAmount > 0
+  const paymentStateText = refundedOrder
+    ? "Devolución finalizada"
+    : isOrderPaymentConfirmed(pedido)
+    ? "Pago confirmado"
+    : getPaymentStatusLabel(pedido.payment_status)
+  const paymentContext = refundedOrder
+    ? paymentStateText
+    : `${paymentStateText} · ${getPaymentMethodLabel(pedido)}`
+  const totalLabel = refundedOrder
+    ? "Monto reintegrado"
+    : isOrderPaymentConfirmed(pedido)
+    ? "Total cobrado"
+    : confirmedAmount > 0
+      ? "Saldo pendiente"
+      : "Total a cobrar"
+  const totalValue = refundedOrder
+    ? refundAmount
+    : isOrderPaymentConfirmed(pedido)
+    ? orderTotal
+    : confirmedAmount > 0
+      ? pendingBalance
+      : orderTotal
+  const finalBalance = Math.max(0, orderTotal - refundAmount)
+  const ActionIcon =
+    action.target === "pago"
+      ? CreditCard
+      : action.target === "envio"
+        ? Truck
+        : action.target === "facturacion"
+          ? FileText
+          : action.target === "reclamos"
+            ? AlertTriangle
+            : action.target === "cancelacion"
+              ? X
+              : CheckCircle2
+  const actionToneClass = {
+    urgent: "border-red-300/22 bg-red-400/7",
+    warning: "border-amber-300/20 bg-amber-400/7",
+    info: "border-beyonix-blue-light/20 bg-beyonix-blue/14",
+    success: "border-emerald-300/18 bg-emerald-400/7",
+  }[action.tone]
+
+  return (
+    <div className="space-y-3">
+      <section className={`rounded-2xl border bg-[#0B1118] p-4 sm:p-5 ${actionToneClass}`}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.42fr)] lg:items-center">
+          <div className="min-w-0 space-y-3">
+            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+              Resumen ejecutivo
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-xl font-black text-white">
+                Pedido #{formatPublicOrderId(pedido.id)}
+              </h3>
+              <span className="rounded-full border border-white/10 bg-black/24 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/82">
+                {mainStatus}
+              </span>
+            </div>
+            <div className="grid gap-1 text-sm sm:grid-cols-[auto_minmax(0,1fr)] sm:items-baseline">
+              <span className="text-white/42">Última actividad</span>
+              <span className="font-bold text-white/82">{latestActivity.label}</span>
+              <span className="text-white/42">Fecha</span>
+              <span className="font-medium text-white/58">{formatOptionalOrderDate(latestActivity.at)}</span>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/18 p-3">
+            <div className="flex items-start gap-2.5">
+              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/18 bg-beyonix-blue/18 text-beyonix-sky">
+                <ActionIcon className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-10px font-bold uppercase tracking-widest text-white/46">
+                  Acción recomendada
+                </p>
+                <p className="mt-1 text-base font-black text-white">{action.title}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onGoToView(action.target)}
+              className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-beyonix-blue-light/30 bg-beyonix-blue/50 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition hover:border-beyonix-blue-light hover:bg-beyonix-blue"
+            >
+              {action.buttonLabel}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {statusCards.map((card) => (
+          <div
+            key={card.label}
+            className={`rounded-xl border px-3 py-2.5 ${card.className}`}
+          >
+            <p className="text-10px font-black uppercase tracking-widest text-white/42">
+              {card.label}
+            </p>
+            <p className="mt-1 text-sm font-black text-white/88">{card.value}</p>
+          </div>
+        ))}
+      </section>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.42fr)_minmax(0,0.58fr)]">
+        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+              Resumen económico
+            </p>
+            <span className="rounded-full border border-white/8 bg-black/24 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/48">
+              Ticket
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-white/54">Subtotal productos</span>
+              <span className="font-bold text-white/82">{formatPrice(financialBreakdown.productsSubtotal)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-white/54">Descuento transferencia</span>
+              <span className="font-bold text-white/72">
+                {financialBreakdown.transferDiscount > 0
+                  ? `-${formatPrice(financialBreakdown.transferDiscount)}`
+                  : formatPrice(0)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-white/54">Envío</span>
+              <span className="font-bold text-white/82">
+                {financialBreakdown.shipping > 0 ? formatPrice(financialBreakdown.shipping) : "Gratis"}
+              </span>
+            </div>
+          </div>
+
+          <div className="my-4 border-t border-dashed border-white/12" />
+
+          <div className="rounded-xl border border-emerald-300/22 bg-emerald-400/6 p-3 shadow-[0_0_22px_rgba(16,185,129,0.08)]">
+            <p className="text-10px font-black uppercase tracking-widest text-emerald-100/78">
+              {totalLabel}
+            </p>
+            <p className="mt-1 text-2xl font-black text-white sm:text-3xl">
+              {formatPrice(totalValue)}
+            </p>
+            <p className="mt-1 text-xs font-medium text-white/48">
+              {paymentContext}
+            </p>
+          </div>
+
+          {(isCancellationFlowOrder(pedido) || refundAmount > 0) && (
+            <div className="mt-3 space-y-2 border-t border-white/8 pt-3 text-sm">
+              {!refundedOrder && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <span className="text-white/54">Monto reintegrado</span>
+                  <span className="font-black text-white/84">
+                    {refundAmount > 0 ? `-${formatPrice(refundAmount)}` : "Pendiente"}
+                  </span>
+                </div>
+              )}
+              {(refundAmount > 0 || refundedOrder) && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <span className="text-white/54">Saldo final</span>
+                  <span className="font-black text-white">{formatPrice(finalBalance)}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3 sm:p-4">
+          <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+            Cliente y dirección
+          </p>
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DetailValue label="Nombre" value={pedido.cliente_nombre || "Cliente sin nombre"} />
+              <DetailValue label="Usuario" value={(pedido.cliente_username || "Sin usuario").toUpperCase()} />
+              <DetailValue label="Email" value={pedido.cliente_email || "No informado"} />
+              <DetailValue label="Teléfono" value={pedido.cliente_telefono || "No informado"} />
+            </div>
+            <CustomerAddressDetails pedido={pedido} />
+          </div>
+        </section>
+      </div>
+    </div>
   )
 }
 
@@ -1861,6 +3178,7 @@ function PedidoDetailModal({
   onAndreaniAction,
   onIssueInvoice,
   onDownloadInvoice,
+  onDownloadCreditNote,
   onClaimChange,
   onRefundUpdated,
   embedded = false,
@@ -1880,6 +3198,9 @@ function PedidoDetailModal({
     pedidoId: number
   ) => Promise<{ ok: boolean; message: string }>
   onDownloadInvoice: (
+    pedidoId: number
+  ) => Promise<{ ok: boolean; message: string }>
+  onDownloadCreditNote: (
     pedidoId: number
   ) => Promise<{ ok: boolean; message: string }>
   onClaimChange: (pedidoId: number, claim: SupabaseOrderClaim) => void
@@ -1912,10 +3233,6 @@ function PedidoDetailModal({
     useState<AdminOrderDetailView>(() =>
       getAdminOrderDetailView(searchParams.get("tab")),
     )
-  const showRefundPaymentReminder = isRefundPaymentAttentionOrder(pedido)
-  const showInvoiceReminder = needsInvoiceReminder(pedido)
-  const showShippingReminder =
-    !showRefundPaymentReminder && needsShippingReminder(pedido)
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
     pedido.payment_status === "en_revision" &&
@@ -1927,6 +3244,27 @@ function PedidoDetailModal({
   const pendingClaim = (pedido.order_claims ?? []).find(
     (claim) => claim.admin_needs_action,
   )
+  const tabState = useMemo(
+    () =>
+      getAdminOrderTabState(pedido, {
+        paymentProofPending: showPaymentProofIndicator,
+        pendingClaim: Boolean(pendingClaim),
+      }),
+    [pedido, pendingClaim, showPaymentProofIndicator],
+  )
+  const detailTabs = useMemo(
+    () => [
+      { view: "resumen" as const, label: "Resumen", icon: FileText, badge: null },
+      { view: "pago" as const, label: "Pago", icon: CreditCard, badge: tabState.badges.pago },
+      { view: "facturacion" as const, label: "Facturación", icon: FileText, badge: tabState.badges.facturacion },
+      { view: "envio" as const, label: "Envío", icon: Truck, badge: tabState.badges.envio },
+      { view: "reclamos" as const, label: "Reclamos", icon: AlertTriangle, badge: tabState.badges.reclamos },
+      ...(tabState.visible.cancelacion
+        ? [{ view: "cancelacion" as const, label: "Cancelación", icon: X, badge: tabState.badges.cancelacion }]
+        : []),
+    ],
+    [tabState],
+  )
   const paymentStatusValue =
     pedido.payment_status === "confirmado" || pedido.payment_status === "approved"
       ? "confirmado"
@@ -1937,8 +3275,13 @@ function PedidoDetailModal({
           : "pendiente_comprobante"
 
   useEffect(() => {
-    setActiveView(getAdminOrderDetailView(searchParams.get("tab")))
-  }, [pedido.id, searchParams])
+    const requestedView = getAdminOrderDetailView(searchParams.get("tab"))
+    const nextView = detailTabs.some((tab) => tab.view === requestedView)
+      ? requestedView
+      : "resumen"
+
+    setActiveView(nextView)
+  }, [detailTabs, pedido.id, searchParams])
 
   useEffect(() => {
     let active = true
@@ -2013,6 +3356,14 @@ function PedidoDetailModal({
     setInvoiceDownloading(false)
   }
 
+  const handleDownloadCreditNote = async () => {
+    setInvoiceDownloading(true)
+    setInvoiceNotice(null)
+    const result = await onDownloadCreditNote(pedido.id)
+    setInvoiceNotice(result.ok ? null : result)
+    setInvoiceDownloading(false)
+  }
+
   const handleViewPaymentProof = async () => {
     const opened = await onOpenPaymentProof(pedido.id)
     if (opened) setPaymentProofSeen(true)
@@ -2029,7 +3380,9 @@ function PedidoDetailModal({
                 <h2 className="text-xl font-black text-white">
                   Pedido #{formatPublicOrderId(pedido.id)}
                 </h2>
-                {isTransferOrder(pedido) ? (
+                {isCancellationFlowOrder(pedido) ? (
+                  <EstadoBadge estado={getCurrentOrderStatusForHeader(pedido)} />
+                ) : isTransferOrder(pedido) ? (
                   <PaymentStatusBadge status={pedido.payment_status} />
                 ) : (
                   <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
@@ -2057,16 +3410,11 @@ function PedidoDetailModal({
             aria-label="Secciones del pedido"
             className="custom-scrollbar flex gap-1.5 overflow-x-auto border-t border-white/8 px-3 py-2"
           >
-            {[
-              { view: "resumen", label: "Resumen", icon: FileText },
-              { view: "pago", label: "Pago", icon: CreditCard },
-              { view: "envio", label: "Envío", icon: Truck },
-              { view: "reclamos", label: "Reclamos", icon: AlertTriangle },
-            ].map(({ view, label, icon: ViewIcon }) => (
+            {detailTabs.map(({ view, label, icon: ViewIcon, badge }) => (
               <button
                 key={view}
                 type="button"
-                onClick={() => showDetailView(view as AdminOrderDetailView)}
+                onClick={() => showDetailView(view)}
                 className={`relative inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border px-3 text-10px font-black uppercase tracking-wide transition-colors ${
                   activeView === view
                     ? "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky shadow-[0_0_14px_rgba(17,42,67,0.32)]"
@@ -2075,77 +3423,24 @@ function PedidoDetailModal({
               >
                 <ViewIcon className="mr-1.5 size-3.5" />
                 {label}
-                {view === "pago" && showInvoiceReminder && (
-                  <span className="absolute -right-1.5 -top-1.5">
-                    <InvoiceReminderBell compact />
-                  </span>
-                )}
-                {view === "pago" && !showRefundPaymentReminder && showPaymentProofIndicator && (
-                  <span
-                    title="Comprobante nuevo pendiente de revisión"
-                    className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.55)]"
-                  />
-                )}
-                {view === "pago" && showRefundPaymentReminder && (
-                  <span
-                    title="Pedido cancelado con pago confirmado - reintegro pendiente"
-                    className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.75)]"
-                  />
-                )}
-                {view === "envio" && showShippingReminder && (
-                  <span
-                    title="Envío pendiente"
-                    className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-[#77E6E2] shadow-[0_0_8px_rgba(119,230,226,0.45)]"
-                  />
-                )}
-                {view === "reclamos" && pendingClaim && (
-                  <span className="absolute -right-1 -top-1 size-2.5 rounded-full border border-black bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.45)]" />
-                )}
+                <AdminOrderTabBadge state={badge} />
               </button>
             ))}
           </nav>
         </header>
 
         <div className={`custom-scrollbar bg-[#05070A] p-2.5 sm:p-3 ${embedded ? "" : "overflow-y-auto"}`}>
-          {(activeView === "resumen" || activeView === "pago") && (
+          {activeView === "resumen" && (
+            <AdminOrderSummaryDashboard
+              pedido={pedido}
+              financialBreakdown={financialBreakdown}
+              onGoToView={showDetailView}
+            />
+          )}
+
+          {activeView === "pago" && (
             <>
           <div className="grid gap-3 lg:grid-cols-2">
-            {activeView === "resumen" && (
-            <section className="admin-order-data-panel admin-order-client-panel rounded-xl border border-white/8 p-3 lg:col-span-2">
-              <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                    Cliente
-                  </p>
-                  <h3 className="mt-1 text-base font-black text-white">
-                    {pedido.cliente_nombre || "Cliente sin nombre"}
-                  </h3>
-                  <DetailValue
-                    label="Email"
-                    value={pedido.cliente_email || "No informado"}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                    Usuario
-                  </p>
-                  <p className="mt-1 text-sm font-black uppercase text-white">
-                    {pedido.cliente_username || "Sin usuario"}
-                  </p>
-                  <DetailValue
-                    label="Teléfono"
-                    value={pedido.cliente_telefono || "No informado"}
-                  />
-                </div>
-              </div>
-              <div className="mt-2 grid gap-1.5 text-sm sm:grid-cols-2">
-                <CustomerAddressDetails pedido={pedido} />
-              </div>
-            </section>
-            )}
-
-            {activeView === "pago" && (
             <section className="admin-order-data-panel admin-order-payment-panel rounded-xl border border-white/8 p-3 lg:col-span-2">
               <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                 Método de pago
@@ -2234,163 +3529,29 @@ function PedidoDetailModal({
                 </div>
               )}
             </section>
-            )}
           </div>
-
-          {activeView === "resumen" && (
-          <section className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="admin-order-info-card min-h-12 rounded-lg border border-white/8 px-2.5 py-2">
-              <DetailValue
-                label="Subtotal productos"
-                value={formatPrice(financialBreakdown.productsSubtotal)}
-              />
-            </div>
-            <div className="admin-order-info-card min-h-12 rounded-lg border border-white/8 px-2.5 py-2">
-              <DetailValue
-                label="Descuento transferencia"
-                value={
-                  financialBreakdown.transferDiscount > 0
-                    ? `-${formatPrice(financialBreakdown.transferDiscount)}`
-                    : formatPrice(0)
-                }
-              />
-            </div>
-            <div className="admin-order-info-card min-h-12 rounded-lg border border-white/8 px-2.5 py-2">
-              <DetailValue
-                label="Envío"
-                value={
-                  financialBreakdown.shipping > 0
-                    ? formatPrice(financialBreakdown.shipping)
-                    : "Gratis"
-                }
-              />
-            </div>
-            <div className="admin-order-total-card min-h-12 rounded-lg border border-[#16A34A] px-3 py-2.5 shadow-[0_0_18px_rgba(22,163,74,0.25)]">
-              <p className="text-10px font-bold uppercase tracking-widest text-white/85">
-                Total cobrado
-              </p>
-              <p className="mt-1 text-xl font-black text-white">
-                {formatPrice(pedido.total)}
-              </p>
-            </div>
-          </section>
-          )}
             </>
           )}
 
-          {activeView === "pago" && (
-          <>
-          <RefundManagementPanel
-            pedido={pedido}
-            canEditRefundAmount={canEditRefundAmount}
-            onRefundUpdated={onRefundUpdated}
-          />
-
-          <section className="admin-order-invoice-panel mt-4 rounded-2xl border border-beyonix-blue-light/20 p-4 sm:p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                  Factura electrónica
-                </p>
-                {pedido.invoice_status === "authorized" ? (
-                  <>
-                    <h3 className="mt-2 flex items-center gap-2 text-lg font-black text-white">
-                      <FileText className="size-5 text-emerald-300" />
-                      Factura C emitida
-                    </h3>
-                    <p className="mt-1 text-sm font-bold text-beyonix-sky">
-                      Factura C{" "}
-                      {formatInvoiceNumber(
-                        pedido.invoice_point,
-                        pedido.invoice_number,
-                      )}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <h3 className="mt-2 text-lg font-black text-white">
-                      Emitir comprobante fiscal
-                    </h3>
-                    <p className="mt-1 max-w-xl text-sm leading-6 text-white/55">
-                      La Factura C se solicitará a ARCA y quedará asociada a
-                      este pedido.
-                    </p>
-                  </>
-                )}
-              </div>
-
-              {pedido.invoice_status === "authorized" ? (
-                <button
-                  type="button"
-                  onClick={() => void handleDownloadInvoice()}
-                  disabled={invoiceDownloading}
-                  className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light disabled:cursor-wait disabled:opacity-60"
-                >
-                  {invoiceDownloading ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <Download className="size-4" />
-                  )}
-                  {invoiceDownloading ? "Preparando..." : "Descargar factura"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleIssueInvoice()}
-                  disabled={invoiceLoading || !isApprovedPayment(pedido)}
-                  className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-cyan hover:bg-beyonix-blue-hover disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {invoiceLoading ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <FileText className="size-4" />
-                  )}
-                  {invoiceLoading ? "Emitiendo factura..." : "Emitir Factura C"}
-                </button>
-              )}
-            </div>
-
-            {pedido.invoice_status === "authorized" ? (
-              <div className="mt-4 grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-3">
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
-                    label="CAE"
-                    value={pedido.invoice_cae || "No informado"}
-                  />
-                </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
-                    label="Vencimiento CAE"
-                    value={formatInvoiceDate(pedido.invoice_cae_due)}
-                  />
-                </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
-                    label="Fecha de emisión"
-                    value={formatOptionalOrderDate(pedido.invoice_created_at)}
-                  />
-                </div>
-              </div>
-            ) : !isApprovedPayment(pedido) ? (
-              <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs font-medium text-amber-200">
-                Confirmá el pago antes de emitir la factura.
-              </p>
-            ) : null}
-
-            {invoiceNotice && (
-              <p
-                role="status"
-                className={`mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${
-                  invoiceNotice.ok
-                    ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-200"
-                    : "border-red-400/20 bg-red-400/8 text-red-200"
-                }`}
-              >
-              {invoiceNotice.message}
-            </p>
+          {activeView === "facturacion" && (
+            <BillingManagementPanel
+              pedido={pedido}
+              invoiceLoading={invoiceLoading}
+              invoiceDownloading={invoiceDownloading}
+              invoiceNotice={invoiceNotice}
+              onIssueInvoice={handleIssueInvoice}
+              onDownloadInvoice={handleDownloadInvoice}
+              onDownloadCreditNote={handleDownloadCreditNote}
+              onBillingUpdated={onRefundUpdated}
+            />
           )}
-          </section>
-          </>
+
+          {activeView === "cancelacion" && (
+            <RefundManagementPanel
+              pedido={pedido}
+              canEditRefundAmount={canEditRefundAmount}
+              onRefundUpdated={onRefundUpdated}
+            />
           )}
 
           {activeView === "reclamos" && (
@@ -3467,6 +4628,113 @@ export function AdminPedidos({
   }, [pedidos])
 
   useEffect(() => {
+    if (!previewPedido) return
+
+    const orderId = previewPedido.id
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
+    const scheduleDetailReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null
+        void reloadPedidos({ silent: true })
+        notifyOrderNotificationsChanged()
+      }, 140)
+    }
+
+    const handleOrderChange = (payload: { new?: Partial<SupabasePedido> }) => {
+      if (!payload.new) return
+
+      setPreviewPedido((currentPedido) =>
+        currentPedido?.id === orderId
+          ? {
+              ...currentPedido,
+              ...payload.new,
+              orden_items: currentPedido.orden_items,
+              order_claims: currentPedido.order_claims,
+              order_refund_proofs: currentPedido.order_refund_proofs,
+              order_audit_events: currentPedido.order_audit_events,
+            }
+          : currentPedido,
+      )
+      scheduleDetailReload()
+    }
+
+    const handleRelatedChange = () => {
+      scheduleDetailReload()
+    }
+
+    const channel = supabase
+      .channel(`admin-pedido-detail-${orderId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ordenes",
+          filter: `id=eq.${orderId}`,
+        },
+        handleOrderChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orden_items",
+          filter: `orden_id=eq.${orderId}`,
+        },
+        handleRelatedChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_claims",
+          filter: `order_id=eq.${orderId}`,
+        },
+        handleRelatedChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_refund_proofs",
+          filter: `order_id=eq.${orderId}`,
+        },
+        handleRelatedChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_audit_events",
+          filter: `order_id=eq.${orderId}`,
+        },
+        handleRelatedChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "customer_notifications",
+          filter: `order_id=eq.${orderId}`,
+        },
+        handleRelatedChange,
+      )
+
+    channel.subscribe()
+
+    return () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      void supabase.removeChannel(channel)
+    }
+  }, [previewPedido?.id, reloadPedidos])
+
+  useEffect(() => {
     if (!initialOrderId || loading) return
     const pedido = pedidos.find((item) => item.id === initialOrderId) ?? null
     setPreviewPedido(pedido)
@@ -3901,6 +5169,45 @@ export function AdminPedidos({
     }
   }
 
+  const handleDownloadCreditNote = async (pedidoId: number) => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        return {
+          ok: false,
+          message: "La sesión administrativa venció.",
+        }
+      }
+
+      const response = await fetch(`/api/admin/orders/${pedidoId}/invoice/pdf?type=credit_note`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        return {
+          ok: false,
+          message: data.error || "No se pudo descargar la nota de crédito.",
+        }
+      }
+
+      const blob = await response.blob()
+      downloadBlob(blob, "Nota-Credito-BEYONIX.pdf")
+      return { ok: true, message: "Nota de crédito descargada." }
+    } catch (error) {
+      console.error("ADMIN_CREDIT_NOTE_DOWNLOAD_ERROR", error)
+      return {
+        ok: false,
+        message: "No se pudo descargar la nota de crédito.",
+      }
+    }
+  }
+
   const handleAndreaniAction = async (
     action: AndreaniAction,
     pedidoId: number
@@ -3957,6 +5264,7 @@ export function AdminPedidos({
           onAndreaniAction={handleAndreaniAction}
           onIssueInvoice={handleIssueInvoice}
           onDownloadInvoice={handleDownloadInvoice}
+          onDownloadCreditNote={handleDownloadCreditNote}
           onClaimChange={handleClaimChange}
           onRefundUpdated={handleRefundUpdated}
         />
@@ -4362,6 +5670,7 @@ export function AdminPedidos({
           onAndreaniAction={handleAndreaniAction}
           onIssueInvoice={handleIssueInvoice}
           onDownloadInvoice={handleDownloadInvoice}
+          onDownloadCreditNote={handleDownloadCreditNote}
           onClaimChange={handleClaimChange}
           onRefundUpdated={handleRefundUpdated}
         />

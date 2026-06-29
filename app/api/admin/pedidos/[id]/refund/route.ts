@@ -404,7 +404,11 @@ export async function PATCH(
   }
 
   if (body.action === "update_credit_note") {
-    if (!["refund_pending", "refunded"].includes(order.financial_status ?? "")) {
+    if (
+      !["cancellation_requested", "refund_pending", "refunded", "cancelled"].includes(
+        order.financial_status ?? "",
+      )
+    ) {
       return NextResponse.json(
         { error: "Sólo se pueden guardar datos contables en pedidos con reintegro pendiente o registrado." },
         { status: 409 },

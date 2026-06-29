@@ -3,6 +3,8 @@ import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
+  SupabaseOrderAuditEvent,
+  SupabaseOrderRefundProof,
   SupabaseProducto,
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
@@ -57,7 +59,14 @@ export async function GET(request: Request) {
         .filter((id): id is number => typeof id === "number")
     ),
   ]
-  const [productsResult, variantsResult, profilesResult, claimsResult] = await Promise.all([
+  const [
+    productsResult,
+    variantsResult,
+    profilesResult,
+    claimsResult,
+    refundProofsResult,
+    auditEventsResult,
+  ] = await Promise.all([
     productIds.length
       ? auth.admin.from("productos").select("*").in("id", productIds)
       : Promise.resolve({ data: [], error: null }),
@@ -75,13 +84,31 @@ export async function GET(request: Request) {
         pedidos.map((pedido) => pedido.id)
       )
       .order("created_at", { ascending: false }),
+    auth.admin
+      .from("order_refund_proofs")
+      .select("*")
+      .in(
+        "order_id",
+        pedidos.map((pedido) => pedido.id)
+      )
+      .order("created_at", { ascending: false }),
+    auth.admin
+      .from("order_audit_events")
+      .select("*")
+      .in(
+        "order_id",
+        pedidos.map((pedido) => pedido.id)
+      )
+      .order("created_at", { ascending: true }),
   ])
 
   if (
     productsResult.error ||
     variantsResult.error ||
     profilesResult.error ||
-    claimsResult.error
+    claimsResult.error ||
+    refundProofsResult.error ||
+    auditEventsResult.error
   ) {
     return Response.json(
       {
@@ -89,6 +116,8 @@ export async function GET(request: Request) {
           productsResult.error?.message ||
           variantsResult.error?.message ||
           claimsResult.error?.message ||
+          refundProofsResult.error?.message ||
+          auditEventsResult.error?.message ||
           profilesResult.error?.message ||
           "No se pudo cargar el detalle de los productos.",
       },
@@ -116,6 +145,8 @@ export async function GET(request: Request) {
   )
   const itemsByOrder = new Map<number, SupabasePedidoItem[]>()
   const claimsByOrder = new Map<number, any[]>()
+  const refundProofsByOrder = new Map<number, SupabaseOrderRefundProof[]>()
+  const auditEventsByOrder = new Map<number, SupabaseOrderAuditEvent[]>()
 
   for (const item of items) {
     const currentItems = itemsByOrder.get(item.orden_id) ?? []
@@ -151,6 +182,18 @@ export async function GET(request: Request) {
     claimsByOrder.set(claim.order_id, currentClaims)
   }
 
+  for (const proof of (refundProofsResult.data ?? []) as SupabaseOrderRefundProof[]) {
+    const currentProofs = refundProofsByOrder.get(proof.order_id) ?? []
+    currentProofs.push(proof)
+    refundProofsByOrder.set(proof.order_id, currentProofs)
+  }
+
+  for (const event of (auditEventsResult.data ?? []) as SupabaseOrderAuditEvent[]) {
+    const currentEvents = auditEventsByOrder.get(event.order_id) ?? []
+    currentEvents.push(event)
+    auditEventsByOrder.set(event.order_id, currentEvents)
+  }
+
   return Response.json({
     pedidos: pedidos.map((pedido) => ({
       ...pedido,
@@ -171,6 +214,8 @@ export async function GET(request: Request) {
         precio: auth.profile.rol === "operador" ? 0 : item.precio,
       })),
       order_claims: claimsByOrder.get(pedido.id) ?? [],
+      order_refund_proofs: refundProofsByOrder.get(pedido.id) ?? [],
+      order_audit_events: auditEventsByOrder.get(pedido.id) ?? [],
     })),
   })
 }

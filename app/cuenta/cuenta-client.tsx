@@ -910,7 +910,8 @@ export function CuentaClient() {
   useEffect(() => {
     if (isLoading || user) return
 
-    window.location.replace("/login?redirect=/cuenta")
+    const redirect = `${window.location.pathname}${window.location.search}`
+    window.location.replace(`/login?redirect=${encodeURIComponent(redirect)}`)
   }, [isLoading, user])
 
   if (isLoading) {

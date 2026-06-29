@@ -192,6 +192,13 @@ export interface SupabasePedido {
   credit_note_issued?: boolean | null
   credit_note_number?: string | null
   credit_note_issued_at?: string | null
+  credit_note_status?: "pending" | "processing" | "authorized" | "error" | null
+  credit_note_point?: number | null
+  credit_note_cae?: string | null
+  credit_note_cae_due?: string | null
+  credit_note_created_at?: string | null
+  credit_note_amount?: number | null
+  credit_note_error?: string | null
   paid_at?: string | null
   tracking_number?: string | null
   tracking_url?: string | null
@@ -229,6 +236,7 @@ export interface SupabasePedido {
   orden_items?: SupabasePedidoItem[]
   order_claims?: SupabaseOrderClaim[]
   order_refund_proofs?: SupabaseOrderRefundProof[]
+  order_audit_events?: SupabaseOrderAuditEvent[]
 }
 
 export interface SupabaseOrderRefundProof {
@@ -243,6 +251,18 @@ export interface SupabaseOrderRefundProof {
   method?: string | null
   observation?: string | null
   signedUrl?: string | null
+  created_at: string
+}
+
+export interface SupabaseOrderAuditEvent {
+  id: number
+  order_id: number
+  actor_type: "customer" | "admin" | "system"
+  actor_id?: string | null
+  action: string
+  previous_status?: string | null
+  new_status?: string | null
+  metadata?: Record<string, unknown> | null
   created_at: string
 }
 
