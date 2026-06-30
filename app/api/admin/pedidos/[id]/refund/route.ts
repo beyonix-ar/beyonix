@@ -9,6 +9,23 @@ import {
   sanitizePaymentProofFileName,
 } from "@/lib/payments/transfer"
 
+const REFUND_PROOF_MIME_TYPES = new Set(["image/jpeg", "application/pdf"])
+
+function getRefundProofValidationError(file: File) {
+  const generalError = getPaymentProofValidationError(file)
+  if (generalError) return generalError
+
+  const extension = file.name.split(".").pop()?.trim().toLowerCase()
+  if (
+    !REFUND_PROOF_MIME_TYPES.has(file.type) ||
+    !["jpg", "jpeg", "pdf"].includes(extension ?? "")
+  ) {
+    return "El comprobante de reintegro debe ser JPG, JPEG o PDF."
+  }
+
+  return null
+}
+
 function stripBucket(path: string) {
   return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
     ? path.slice(PAYMENT_PROOF_BUCKET.length + 1)
@@ -207,7 +224,7 @@ export async function POST(
     )
   }
 
-  const validationError = getPaymentProofValidationError(file)
+  const validationError = getRefundProofValidationError(file)
   if (validationError) {
     return NextResponse.json({ error: validationError }, { status: 400 })
   }

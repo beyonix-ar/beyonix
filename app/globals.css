@@ -850,56 +850,139 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 }
 
 .admin-order-data-panel {
-  background-color: #0D1117 !important;
+  background-color: #151515 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
+.admin-order-detail-scope,
+.admin-order-detail-scope :is(section, article, div, label, input, textarea, select, p)[class*="border"] {
+  border-color: rgba(74, 144, 184, 0.42) !important;
+}
+
+.admin-order-detail-scope :is(input, textarea, select):focus,
+.admin-order-detail-scope :is(input, textarea, select):focus-visible,
+.admin-order-detail-scope :focus-within:is(label, div)[class*="border"] {
+  border-color: rgba(119, 230, 226, 0.62) !important;
+}
+
 .admin-order-client-panel {
-  background:
-    linear-gradient(145deg, rgba(13, 17, 23, 0.98), rgba(21, 25, 31, 0.92))
-    !important;
+  background: #151515 !important;
 }
 
 .admin-order-payment-panel {
-  background:
-    linear-gradient(145deg, rgba(17, 42, 67, 0.26), rgba(13, 17, 23, 0.98) 54%, rgba(21, 25, 31, 0.94))
-    !important;
+  background: #151515 !important;
 }
 
 .admin-order-products-panel {
-  background:
-    linear-gradient(145deg, rgba(17, 42, 67, 0.2), rgba(13, 17, 23, 0.98) 46%, rgba(21, 25, 31, 0.96))
-    !important;
+  background: #151515 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .admin-order-shipping-panel {
-  background:
-    linear-gradient(145deg, rgba(17, 42, 67, 0.4), rgba(13, 17, 23, 0.98) 58%, rgba(21, 25, 31, 0.96))
-    !important;
+  background: #151515 !important;
 }
 
 .admin-order-invoice-panel {
-  background:
-    linear-gradient(145deg, rgba(12, 35, 55, 0.72), rgba(13, 17, 23, 0.98) 56%, rgba(21, 25, 31, 0.96))
-    !important;
+  background: #151515 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .admin-order-info-card {
-  background-color: #15191F;
+  background-color: #202020;
 }
 
 .admin-order-proof-card,
 .admin-order-item-card {
-  background-color: #1B2028;
+  background-color: #202020;
+}
+
+.admin-order-proof-card {
+  background-color: #202020;
 }
 
 .admin-order-total-card {
-  background: #16A34A !important;
+  background: #202020 !important;
+  border-color: rgba(110, 231, 183, 0.38) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 18px rgba(22, 163, 74, 0.2) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 14px rgba(16, 185, 129, 0.1) !important;
+}
+
+.admin-order-detail-scope :is(section, article, div, label, input, textarea, select, p)[class*="bg-"] {
+  background: #151515 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope :is(input, textarea, select) {
+  background: #1A1A1A !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.admin-order-detail-scope :is(.admin-order-data-panel, .admin-order-client-panel, .admin-order-payment-panel, .admin-order-products-panel, .admin-order-shipping-panel, .admin-order-invoice-panel) {
+  background: #151515 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope :is(.admin-order-info-card, .admin-order-proof-card, .admin-order-item-card, .admin-order-total-card) {
+  background: #202020 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope .admin-order-detail-content :is(article, div, label, p)[class*="rounded"][class*="border"] {
+  background: #202020 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-main-panel {
+  background: #112A43 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-layout-bg {
+  background: #010f19 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > div > section,
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > div > div > section,
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > section.admin-order-products-panel {
+  background: #111111 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content :is(article, div, label, p)[class*="rounded"][class*="border"],
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content :is(.admin-order-info-card, .admin-order-proof-card, .admin-order-item-card, .admin-order-total-card) {
+  background: #202020 !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope :is(section, article, div)[class*="rounded"][class*="border"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.admin-order-detail-scope :is(.text-beyonix-cyan, .text-beyonix-sky) {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.admin-order-detail-scope p[class*="text-[#ffb4bd]"],
+.admin-order-detail-scope p[class*="text-[#ffc2c8]"] {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.admin-order-detail-scope :is(button, a)[class*="bg-[#7f2d3a]"],
+.admin-order-detail-scope :is(button, a)[class*="bg-[#2a1117]"],
+.admin-order-detail-scope :is(button, a)[class*="bg-[#9f3546]"] {
+  background: #202020 !important;
+  border-color: rgba(74, 144, 184, 0.5) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.admin-order-detail-scope :is(button, a)[class*="bg-[#7f2d3a]"]:hover,
+.admin-order-detail-scope :is(button, a)[class*="bg-[#2a1117]"]:hover,
+.admin-order-detail-scope :is(button, a)[class*="bg-[#9f3546]"]:hover {
+  background: #1A1A1A !important;
+  border-color: rgba(119, 230, 226, 0.72) !important;
+  color: #fff !important;
 }
 
 @keyframes beyonix-shooting-star-flight {

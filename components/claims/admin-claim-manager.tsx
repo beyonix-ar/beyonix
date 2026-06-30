@@ -495,7 +495,7 @@ export function AdminClaimManager({
             ["Facturación", invoiced ? "Facturado / en proceso" : "Sin factura emitida"],
             ["Envío", dispatched ? "Despachado" : "No despachado"],
           ].map(([label, value]) => (
-            <div key={label} className={`rounded-xl border px-3 py-2 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+            <div key={label} className="rounded-xl border border-[#2c4058] bg-[#111827] px-3 py-2">
               <p className={`text-10px font-bold uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.label}`}>{label}</p>
               <p className="mt-0.5 text-xs font-black text-white">{value}</p>
             </div>
@@ -528,7 +528,7 @@ export function AdminClaimManager({
                 </div>
               ))}
             </dl>
-            <div className="mt-2 rounded-lg bg-[#241217] p-2.5">
+            <div className="mt-2 rounded-lg border border-[#2c4058] bg-[#111827] p-2.5">
               <p className={`text-10px font-bold uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.label}`}>
                 {cancellation ? "Mensaje de cancelación" : "Mensaje inicial del cliente"}
               </p>
@@ -543,7 +543,7 @@ export function AdminClaimManager({
             ) : (
               <div className="mt-2 space-y-1.5">
                 {evidenceFiles.map((file) => (
-                  <div key={file.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#1B2028] p-2 text-xs font-bold text-white">
+                  <div key={file.id} className="flex items-center gap-2 rounded-lg border border-white/8 bg-[#111827] p-2 text-xs font-bold text-white">
                     {file.mime_type.startsWith("image/") && file.signedUrl ? (
                       <img src={file.signedUrl} alt={file.file_name} className="size-10 rounded-md object-cover" />
                     ) : (
@@ -647,7 +647,7 @@ export function AdminClaimManager({
               const isCustomer = message.author_role === "cliente"
               return (
                 <div key={message.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}>
-                  <div className={`max-w-[82%] rounded-xl px-3 py-2 ${isCustomer ? "border border-[#7f2d3a]/55 bg-[#241217]" : "bg-[#2a1117]"}`}>
+                  <div className={`max-w-[82%] rounded-xl px-3 py-2 ${isCustomer ? "border border-[#7f2d3a]/45 bg-[#111827]" : "border border-[#2c4058] bg-[#111827]"}`}>
                     <p className={`text-10px font-black ${ADMIN_SENSITIVE_DANGER.label}`}>{isCustomer ? "Cliente" : "BEYONIX"}</p>
                     <p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-white">{getClaimMessageText(message.message)}</p>
                     <p className="mt-1 text-[9px] text-white/45">{formatDate(message.created_at)}</p>
@@ -664,7 +664,7 @@ export function AdminClaimManager({
                 onChange={(event) => setResponse(event.target.value)}
                 rows={2}
                 placeholder={closed ? "Caso cerrado" : cancellation ? "Responder o escribir motivo para aprobar/rechazar" : "Responder al cliente"}
-                className="min-h-16 min-w-0 flex-1 resize-none rounded-lg border border-[#7f2d3a]/55 bg-[#241217] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/40 focus:border-[#bf4a5b] disabled:cursor-not-allowed disabled:opacity-45"
+                className="min-h-16 min-w-0 flex-1 resize-none rounded-lg border border-[#2c4058] bg-[#111827] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/40 focus:border-beyonix-blue-light disabled:cursor-not-allowed disabled:opacity-45"
               />
               <button type="button" disabled={saving || closed || response.trim().length < 2} onClick={() => void sendResponse()} className={`inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-4 text-xs font-black disabled:opacity-45 ${ADMIN_SENSITIVE_DANGER.actionSolid}`}>
                 <Send className="size-3.5" />

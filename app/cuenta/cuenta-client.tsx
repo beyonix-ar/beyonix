@@ -5,15 +5,23 @@ import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  CreditCard,
   Download,
+  DollarSign,
+  Eye,
+  FileText,
   Loader2,
   Lock,
   LogOut,
+  Mail,
   Shield,
   ShoppingBag,
+  Truck,
+  RefreshCcw,
   User,
   X,
 } from "lucide-react"
@@ -193,6 +201,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [downloadingInvoice, setDownloadingInvoice] = useState(false)
+  const [downloadingCreditNote, setDownloadingCreditNote] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
   const [cancellingOrder, setCancellingOrder] = useState(false)
   const [cancelError, setCancelError] = useState("")
@@ -261,29 +270,44 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     setOrder((current) => current ? { ...current, ...updatedOrder, orden_items: current.orden_items } : current)
   }
 
-  const handleDownloadInvoice = async () => {
+  const handleDownloadInvoice = async (documentType: "invoice" | "credit_note" = "invoice") => {
     if (!order) return
-    setDownloadingInvoice(true)
+    const isCreditNote = documentType === "credit_note"
+    if (isCreditNote) {
+      setDownloadingCreditNote(true)
+    } else {
+      setDownloadingInvoice(true)
+    }
     setError("")
     try {
-      const response = await fetch(`/api/orders/${order.id}/invoice`)
+      const response = await fetch(
+        `/api/orders/${order.id}/invoice${isCreditNote ? "?type=credit_note" : ""}`,
+      )
       if (!response.ok) {
         const data = (await response.json()) as { error?: string }
-        throw new Error(data.error || "No se pudo descargar la factura.")
+        throw new Error(data.error || `No se pudo descargar ${isCreditNote ? "la nota de crédito" : "la factura"}.`)
       }
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement("a")
       anchor.href = url
-      anchor.download = "Factura-BEYONIX.pdf"
+      anchor.download = isCreditNote ? "Nota-Credito-BEYONIX.pdf" : "Factura-BEYONIX.pdf"
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
       URL.revokeObjectURL(url)
     } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : "No se pudo descargar la factura.")
+      setError(
+        downloadError instanceof Error
+          ? downloadError.message
+          : `No se pudo descargar ${isCreditNote ? "la nota de crédito" : "la factura"}.`,
+      )
     } finally {
-      setDownloadingInvoice(false)
+      if (isCreditNote) {
+        setDownloadingCreditNote(false)
+      } else {
+        setDownloadingInvoice(false)
+      }
     }
   }
 
@@ -389,6 +413,17 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const refunded = order.financial_status === "refunded"
     const refundFlow = refundPending || refunded
     const cancellationDate = order.cancellation_requested_at || order.cancelled_at
+    const paidAmount = Number(order.payment_confirmed_amount ?? order.refund_amount ?? order.total ?? 0)
+    const invoiceIssued = isOrderDetailInvoiced(order)
+    const orderDispatched = isOrderDetailDispatched(order)
+    const creditNoteAvailable =
+      invoiceIssued &&
+      order.credit_note_status === "authorized" &&
+      Boolean(order.credit_note_number && order.credit_note_point && order.credit_note_cae)
+    const refundProofAvailable = Boolean(order.refund_proof_url)
+    const shippingChargeDetail = orderDispatched
+      ? "El pedido ya fue despachado. Podés cancelar la compra, pero el costo del envío queda a tu cargo."
+      : "El envío no figura despachado para esta cancelación."
     const refundStatusLabel = refunded
       ? "Cancelado · dinero reintegrado"
       : refundPending
@@ -397,242 +432,293 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const headerRefundStatusClassName = refunded
       ? "border-emerald-300/30 bg-[#123329] text-emerald-50"
       : refundPending
-        ? "border-[#3e648f] bg-[#1c3048] text-[#d9e7f7]"
+        ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
         : "border-[#3b4656] bg-[#252B33] text-zinc-100"
-    const refundStatusClassName = refunded
-      ? "border-emerald-300/30 bg-[#123329] text-emerald-50"
-      : refundPending
-        ? "border-[#2f6587] bg-[#173043] text-[#d7edf8]"
-        : "border-zinc-300/24 bg-[#252B33] text-zinc-100"
-
     return (
-      <main className="relative isolate min-h-screen overflow-hidden bg-[#070B11] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
-        <div className="relative z-20 mx-auto max-w-4xl">
+      <main className="relative isolate min-h-screen overflow-hidden bg-[#070B11] px-3 pb-8 pt-24 font-heading sm:px-5 lg:px-8">
+        <div className="relative z-20 mx-auto max-w-[1320px]">
           <button
             type="button"
             onClick={() => router.push("/cuenta?tab=ordenes")}
-            className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-[#2a4b6c] bg-[#132033] px-4 text-sm font-bold text-white/84 shadow-sm shadow-black/20 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white"
+            className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#2a4b6c] bg-[#132033] px-3.5 text-xs font-medium text-white/84 shadow-sm shadow-black/20 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white"
           >
             <ChevronLeft className="size-4" />
             Volver a Mis compras
           </button>
 
           <section
-            className="relative isolate z-30 mt-4 overflow-hidden rounded-3xl border border-[#223249] !bg-[#101114] bg-none p-4 shadow-[0_24px_60px_#000000] sm:p-6"
+            className="relative isolate z-30 mt-3 overflow-hidden rounded-2xl border border-[#223249] !bg-[#101114] bg-none p-3 shadow-[0_18px_44px_#000000] sm:p-4"
             style={{ backgroundColor: "#101114", backgroundImage: "none" }}
           >
-            <div className="relative z-20 flex flex-col gap-4 rounded-2xl border border-[#2a4c72] bg-[#132238] px-4 py-4 shadow-[0_16px_42px_rgba(0,0,0,0.32)] sm:flex-row sm:items-start sm:justify-between">
+            <div className="relative z-20 flex flex-col gap-3 rounded-xl border border-[#2a4c72] bg-[#132238] px-3.5 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.28)] sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-10px font-black uppercase tracking-[0.18em] text-blue-300">
+                <p className="text-10px font-medium uppercase tracking-[0.18em] text-blue-300">
                   Detalle de compra
                 </p>
-                <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">
+                <h1 className="mt-0.5 text-lg font-bold text-white sm:text-xl">
                   Pedido #{formatPublicOrderId(order.id)}
                 </h1>
-                <p className="mt-1.5 text-sm font-semibold text-white/68">
+                <p className="mt-1 text-xs font-normal text-white/62">
                   {formatOrderCardDate(order.created_at)}
                 </p>
               </div>
-              <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-xs font-black ${headerRefundStatusClassName}`}>
+              <span className={`inline-flex w-fit items-center rounded-full border px-3 py-0.5 text-xs font-medium ${headerRefundStatusClassName}`}>
                 {refundStatusLabel}
               </span>
             </div>
 
-            <section className={`relative z-20 mt-5 rounded-2xl border px-4 py-4 shadow-[0_18px_48px_rgba(0,0,0,0.20)] sm:px-5 sm:py-5 ${
-              refunded
-                ? "border-emerald-300/30 bg-[#102A22]"
-                : refundPending
-                  ? "border-[#6a3340] bg-[#181216]"
-                  : "border-zinc-300/26 bg-[#191C22]"
-            }`}>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <span className={`flex size-12 shrink-0 items-center justify-center rounded-full border ${
+            <div className="relative z-20 mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,0.72fr)_minmax(260px,0.28fr)]">
+              <div className="space-y-3">
+                <section className={`rounded-xl border px-3.5 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.18)] sm:px-4 ${
                   refunded
-                    ? "border-emerald-200/35 bg-[#123329]"
+                    ? "border-emerald-300/30 bg-[#102A22]"
                     : refundPending
-                      ? "border-[#8a4a58] bg-[#2a171d]"
-                      : "border-zinc-200/22 bg-[#252B33]"
+                      ? "border-[#6a3340] bg-[#181216]"
+                      : "border-zinc-300/26 bg-[#191C22]"
                 }`}>
-                  {refunded ? (
-                    <CheckCircle2 className="size-7 text-emerald-200" />
-                  ) : (
-                    <X className={`size-6 ${refundPending ? "text-[#f0a8b7]" : "text-zinc-100"}`} />
-                  )}
-                </span>
-                <div className="min-w-0">
-                  <h2 className="text-lg font-black leading-tight text-white sm:text-xl">
-                    {refunded
-                      ? "¡Reintegro realizado con éxito!"
-                      : refundPending
-                        ? "Lamentamos que hayas cancelado tu compra."
-                        : "Tu compra fue cancelada correctamente."}
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-white/84">
-                    {refunded
-                      ? "El dinero de tu compra ya fue reintegrado. Esperamos verte pronto para una nueva compra."
-                      : refundPending
-                        ? "Ya recibimos tu solicitud de arrepentimiento. Revisaremos el pago recibido y nos pondremos en contacto a la brevedad para coordinar el reintegro correspondiente."
-                        : "El pedido quedó cancelado y no requiere acciones adicionales."}
-                  </p>
-                  {refunded && order.refund_proof_url && (
-                    <button
-                      type="button"
-                      disabled={refundProofOpening}
-                      onClick={() => void handleOpenRefundProof()}
-                      className={cn(beyonixHoverBorder, "mt-4 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/30 bg-[#112A43] px-4 text-xs font-black text-white transition disabled:cursor-wait disabled:border-[#2B3C50] disabled:bg-[#0F1A29] disabled:text-white/55")}
-                    >
-                      <Download className="size-4" />
-                      {refundProofOpening ? "Abriendo..." : "Ver comprobante de reintegro"}
-                    </button>
-                  )}
-                  {refundProofError && (
-                    <p className="mt-2 text-xs font-bold text-red-200">
-                      {refundProofError}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <div className="relative z-20 mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
-                <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
-                  Pedido
-                </p>
-                <p className="mt-1.5 text-base font-black text-white">
-                  #{formatPublicOrderId(order.id)}
-                </p>
-              </div>
-              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
-                <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
-                  Fecha
-                </p>
-                <p className="mt-1.5 text-base font-black text-white">
-                  {formatOrderCardDate(order.created_at)}
-                </p>
-              </div>
-              <div className="flex min-h-[82px] flex-col justify-center rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
-                <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
-                  Total
-                </p>
-                <p className="mt-1.5 text-base font-black text-white">
-                  {formatCuentaPrice(Number(order.total ?? 0))}
-                </p>
-              </div>
-            </div>
-
-            {refundFlow && (
-              <section className="relative z-20 mt-5 rounded-2xl border border-[#28435e] bg-[#0f1824] p-4 shadow-[0_20px_54px_rgba(0,0,0,0.38)] sm:p-5">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-10px font-black uppercase tracking-[0.18em] text-[#9fd8ff]">
-                      Reintegro
-                    </p>
-                    <h2 className="mt-1 text-base font-black text-white">
-                      Estado del dinero
-                    </h2>
-                  </div>
-                  <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-black ${refundStatusClassName}`}>
-                    {refundStatusLabel}
-                  </span>
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
-                    <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
-                      Estado actual
-                    </p>
-                    <p className="mt-1.5 text-sm font-black text-white">
-                      {refundStatusLabel}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
-                    <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
-                      Monto abonado
-                    </p>
-                    <p className="mt-1.5 text-sm font-black text-white">
-                      {formatCuentaPrice(Number(order.payment_confirmed_amount ?? order.total ?? 0))}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-[#335274] bg-[#162235] px-4 py-3 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2b42]">
-                    <p className="text-10px font-black uppercase tracking-widest text-[#9fb3c9]">
-                      Fecha de solicitud
-                    </p>
-                    <p className="mt-1.5 text-sm font-black text-white">
-                      {cancellationDate ? formatOrderCardDate(cancellationDate) : "Recibida"}
-                    </p>
-                  </div>
-                </div>
-
-                {refunded ? (
-                  <div className="mt-4 rounded-xl border border-emerald-300/28 bg-[#102F25] px-4 py-3">
-                    <div className="flex gap-3">
-                      <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-200" />
-                      <div>
-                        <p className="text-sm font-black leading-5 text-emerald-50">
-                          El reintegro ya fue registrado por BEYONIX.
-                        </p>
-                        {order.refund_observation && (
-                          <p className="mt-1 text-sm font-semibold leading-6 text-emerald-50/82">
-                            {order.refund_observation}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="mt-4 rounded-xl border border-[#2c536f] bg-[#162534] px-4 py-3 text-sm font-medium leading-6 text-[#d7edf8]">
-                    Te avisaremos por este medio cuando el reintegro quede registrado.
-                  </p>
-                )}
-              </section>
-            )}
-
-            <section className="relative z-20 mt-5 rounded-2xl border border-[#28435e] bg-[#0f1824] p-4 shadow-[0_20px_54px_rgba(0,0,0,0.38)] sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-black text-white">
-                  Productos comprados
-                </h2>
-                <span className="text-xs font-bold text-[#9fb3c9]">
-                  {productCount} {productCount === 1 ? "producto" : "productos"}
-                </span>
-              </div>
-              <div className="mt-3 space-y-3">
-                {items.map((item) => {
-                  const quantity = Number(item.cantidad ?? 0)
-                  const unitPrice = Number(item.precio ?? 0)
-                  const name = item.productos?.nombre ?? `Producto #${item.producto_id}`
-                  const image = getCuentaItemImage(item)
-
-                  return (
-                    <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-[#31506f] bg-[#162438] p-3 transition-all hover:border-[#4b78a4] hover:bg-[#1b2c44] sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white">
-                          {image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-black text-white">{name}</p>
-                          <p className="mt-1 text-xs font-medium text-[#b7c6d6]">
-                            {getCuentaItemColor(item)} · Cantidad: {quantity}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="shrink-0 text-base font-black text-white sm:text-right">
-                        {formatCuentaPrice(unitPrice * quantity)}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    <span className={`flex size-10 shrink-0 items-center justify-center rounded-full border ${
+                      refunded
+                        ? "border-emerald-200/35 bg-[#123329]"
+                        : refundPending
+                          ? "border-[#8a4a58] bg-[#2a171d]"
+                          : "border-zinc-200/22 bg-[#252B33]"
+                    }`}>
+                      {refunded ? (
+                        <CheckCircle2 className="size-5 text-emerald-200" />
+                      ) : (
+                        <X className={`size-5 ${refundPending ? "text-[#f0a8b7]" : "text-zinc-100"}`} />
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-bold leading-tight text-white sm:text-lg">
+                        {refunded
+                          ? "¡Reintegro realizado con éxito!"
+                          : refundPending
+                            ? "Lamentamos que hayas cancelado tu compra."
+                            : "Tu compra fue cancelada correctamente."}
+                      </h2>
+                      <p className="mt-1.5 max-w-3xl text-sm font-normal leading-5 text-white/78">
+                        {refunded
+                          ? "El dinero de tu compra ya fue reintegrado. Esperamos verte pronto para una nueva compra."
+                          : refundPending
+                            ? "Estamos revisando tu situación. Te devolveremos tu dinero una vez validado todo el proceso."
+                            : "El pedido quedó cancelado y no requiere acciones adicionales."}
                       </p>
                     </div>
-                  )
-                })}
-              </div>
-            </section>
+                  </div>
+                </section>
 
-            <button
-              type="button"
-              onClick={() => router.push("/")}
-              className="mt-5 inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-lg border border-[#2a4b6c] bg-[#132033] px-4 text-xs font-black text-white/86 transition hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white sm:w-auto"
-            >
-              Ir a Inicio
-            </button>
+                {refundFlow && (
+                  <section className="rounded-xl border border-[#28435e] bg-[#0f1824] p-3.5 shadow-[0_14px_36px_rgba(0,0,0,0.34)] sm:p-4">
+                    <div>
+                      <p className="text-10px font-medium uppercase tracking-[0.18em] text-[#9fd8ff]">
+                        Reintegro
+                      </p>
+                      <h2 className="mt-0.5 text-base font-bold text-white">
+                        Estado del reintegro
+                      </h2>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="flex items-center gap-2.5 rounded-lg border border-[#335274] bg-[#162235] px-3 py-2.5">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#6f4b55]/70 bg-[#24171d]">
+                          <RefreshCcw className="size-3.5 text-[#e9b8c1]" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-10px font-medium uppercase tracking-widest text-[#9fb3c9]">
+                            Estado actual
+                          </p>
+                          <p className="mt-0.5 truncate text-sm font-medium text-white">
+                            {refundStatusLabel}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 rounded-lg border border-emerald-300/22 bg-[#122A24] px-3 py-2.5">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-emerald-300/24 bg-emerald-400/10">
+                          <DollarSign className="size-3.5 text-emerald-200" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-10px font-medium uppercase tracking-widest text-emerald-100">
+                            Monto abonado
+                          </p>
+                          <p className="mt-0.5 truncate text-sm font-medium text-white">
+                            {formatCuentaPrice(paidAmount)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 rounded-lg border border-[#335274] bg-[#162235] px-3 py-2.5">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#3d5875] bg-[#13263a]">
+                          <CalendarDays className="size-3.5 text-[#b8d7f4]" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-10px font-medium uppercase tracking-widest text-[#9fb3c9]">
+                            Fecha de solicitud
+                          </p>
+                          <p className="mt-0.5 truncate text-sm font-normal text-white">
+                            {cancellationDate ? formatOrderCardDate(cancellationDate) : "Recibida"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 rounded-lg border border-[#335274] bg-[#142232] px-3 py-2.5">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#3d5875] bg-[#13263a]">
+                          <FileText className="size-3.5 text-[#b8d7f4]" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-10px font-medium uppercase tracking-widest text-[#9fb3c9]">
+                            Documentación
+                          </p>
+                          <div className="mt-0.5 flex min-h-8 items-center gap-2">
+                            {!refundProofAvailable && !creditNoteAvailable && (
+                              <span className="text-sm font-normal text-[#9fb3c9]">Pendiente</span>
+                            )}
+                            {refundProofAvailable && (
+                              <button
+                                type="button"
+                                title="Ver comprobante de reintegro"
+                                aria-label="Ver comprobante de reintegro"
+                                disabled={refundProofOpening}
+                                onClick={() => void handleOpenRefundProof()}
+                                className={cn(beyonixHoverBorder, "inline-flex size-8 cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-light/25 bg-[#112A43] text-white transition disabled:cursor-wait disabled:opacity-60")}
+                              >
+                                <Eye className="size-3.5" />
+                              </button>
+                            )}
+                            {creditNoteAvailable && (
+                              <button
+                                type="button"
+                                title="Descargar nota de crédito"
+                                aria-label="Descargar nota de crédito"
+                                disabled={downloadingCreditNote}
+                                onClick={() => void handleDownloadInvoice("credit_note")}
+                                className={cn(beyonixHoverBorder, "inline-flex size-8 cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-light/25 bg-[#112A43] text-white transition disabled:cursor-wait disabled:opacity-60")}
+                              >
+                                <Download className="size-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          {refundProofError && (
+                            <p className="mt-1.5 text-xs font-normal text-red-200">
+                              {refundProofError}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 rounded-lg border border-[#2a4b6c] bg-[#111b28] px-3 py-2.5">
+                      <h3 className="text-10px font-bold uppercase tracking-[0.16em] text-[#9fd8ff]">
+                        ¿Cómo es el proceso de reintegro?
+                      </h3>
+                      <div className="mt-2.5 space-y-2">
+                        <div className="flex gap-2.5">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[#3d658c] bg-[#132843]">
+                            <CreditCard className="size-4 text-blue-200" />
+                          </span>
+                          <div className="min-w-0 border-b border-white/7 pb-2">
+                            <p className="text-sm font-medium leading-5 text-white">
+                              Si la factura aún no fue emitida
+                            </p>
+                            <p className="mt-0.5 text-xs font-normal leading-5 text-white/66">
+                              Se realizará la devolución del dinero al mismo medio de pago.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2.5">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[#3d658c] bg-[#132843]">
+                            <FileText className="size-4 text-blue-200" />
+                          </span>
+                          <div className="min-w-0 border-b border-white/7 pb-2">
+                            <p className="text-sm font-medium leading-5 text-white">
+                              Si la factura ya fue emitida
+                            </p>
+                            <p className="mt-0.5 text-xs font-normal leading-5 text-white/66">
+                              Se emitirá la nota de crédito correspondiente y quedará disponible para visualizar o descargar desde la sección Documentación.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2.5">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[#5f3c48] bg-[#24171d]">
+                            <Truck className="size-4 text-[#e9b8c1]" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium leading-5 text-white">
+                              Si el envío ya fue despachado
+                            </p>
+                            <p className="mt-0.5 text-xs font-normal leading-5 text-white/66">
+                              Podrás cancelar la compra, pero el costo del envío quedará a tu cargo.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-cyan-300/35 bg-cyan-400/10 px-3 py-2">
+                        <Mail className="size-4 shrink-0 text-cyan-200" />
+                        <p className="text-xs font-normal leading-5 text-cyan-50/88">
+                          Te notificaremos por email y desde tu cuenta sobre cualquier actualización del reintegro.
+                        </p>
+                      </div>
+                    </div>
+
+                    {order.refund_observation && (
+                      <p className="mt-3 rounded-lg border border-emerald-300/18 bg-[#102A22] px-3 py-2 text-xs font-normal leading-5 text-emerald-50/82">
+                        {order.refund_observation}
+                      </p>
+                    )}
+
+                    {orderDispatched && (
+                      <div className="mt-3 rounded-lg border border-[#6f4b55]/70 bg-[#21171c] px-3 py-2.5">
+                        <div className="flex gap-2.5">
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#e9b8c1]" />
+                          <p className="text-sm font-normal leading-5 text-[#efd8dd]">
+                            {shippingChargeDetail}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+              </div>
+
+              <section className="rounded-xl border border-[#28435e] bg-[#0f1824] p-3.5 shadow-[0_14px_36px_rgba(0,0,0,0.34)] sm:p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-base font-bold text-white">
+                    Productos comprados
+                  </h2>
+                  <span className="text-xs font-medium text-[#9fb3c9]">
+                    {productCount} {productCount === 1 ? "producto" : "productos"}
+                  </span>
+                </div>
+                <div className="mt-2.5 space-y-2">
+                  {items.map((item) => {
+                    const quantity = Number(item.cantidad ?? 0)
+                    const unitPrice = Number(item.precio ?? 0)
+                    const name = item.productos?.nombre ?? `Producto #${item.producto_id}`
+                    const image = getCuentaItemImage(item)
+                    const color = getCuentaItemColor(item)
+
+                    return (
+                      <div key={item.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[#31506f] bg-[#162438] px-2.5 py-2 transition-all hover:border-[#4b78a4] hover:bg-[#1b2c44]">
+                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                          <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white">
+                            {image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-white">{name}</p>
+                            <p className="mt-0.5 truncate text-xs font-normal text-[#b7c6d6]">
+                              {color ? `${color} · ` : ""}Cantidad: {quantity}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="self-center shrink-0 text-right text-sm font-medium text-white">
+                          {formatCuentaPrice(unitPrice * quantity)}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            </div>
           </section>
         </div>
       </main>

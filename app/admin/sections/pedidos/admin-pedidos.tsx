@@ -5,7 +5,6 @@ import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -90,6 +89,7 @@ type AdminOrderDetailView =
   | "facturacion"
   | "reclamos"
   | "cancelacion"
+  | "historial"
 
 type PaymentStatusValue =
   | "pendiente_comprobante"
@@ -136,6 +136,7 @@ const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "facturacion",
   "reclamos",
   "cancelacion",
+  "historial",
 ]
 
 function getAdminOrderDetailView(value: string | null): AdminOrderDetailView {
@@ -559,7 +560,7 @@ function getAdminOrderTabState(
                 className: ADMIN_SENSITIVE_DANGER.badge,
               }
             : null,
-    } satisfies Record<Exclude<AdminOrderDetailView, "resumen">, AdminOrderTabBadgeState>,
+    } satisfies Record<Exclude<AdminOrderDetailView, "resumen" | "historial">, AdminOrderTabBadgeState>,
   }
 }
 
@@ -639,7 +640,7 @@ function getExecutiveOrderStatus(pedido: SupabasePedido) {
 
 function getSummaryBadgeClass(value: string) {
   if (isAdminSensitiveStatus(value) || ["Cancelado", "Solicitada", "Cancelación cerrada"].includes(value)) {
-    return ADMIN_SENSITIVE_DANGER.badge
+    return "border-[#7f2d3a]/55 bg-[#111827] text-[#ffc2c8]"
   }
   if (
     [
@@ -652,17 +653,17 @@ function getSummaryBadgeClass(value: string) {
       "Reintegro completado",
     ].includes(value)
   ) {
-    return "border-emerald-300/18 bg-emerald-400/7 text-emerald-100"
+    return "border-emerald-300/24 bg-[#111827] text-emerald-100"
   }
   if (["Rechazado"].includes(value)) {
-    return ADMIN_SENSITIVE_DANGER.badge
+    return "border-[#7f2d3a]/55 bg-[#111827] text-[#ffc2c8]"
   }
   if (
     ["Pendiente", "No despachado", "Falta factura", "Falta nota de crédito"].includes(value)
   ) {
-    return "border-amber-300/18 bg-amber-400/7 text-amber-100"
+    return "border-amber-300/24 bg-[#111827] text-amber-100"
   }
-  return "border-white/10 bg-white/5 text-white/72"
+  return "border-white/10 bg-[#111827] text-white/72"
 }
 
 function getOrderSummaryBadges(pedido: SupabasePedido): SummaryBadge[] {
@@ -825,6 +826,30 @@ function AdminOrderTabBadge({ state }: { state: AdminOrderTabBadgeState }) {
       {state.label}
     </span>
   )
+}
+
+function getAdminOrderMenuStateClass(state: AdminOrderTabBadgeState) {
+  if (!state) {
+    return "border-beyonix-blue-light/24 bg-[#15191F] text-white hover:border-beyonix-blue-light/45 hover:bg-[#1B2028]"
+  }
+
+  if (
+    state.kind === "check" ||
+    state.label === "OK" ||
+    state.label === "Reintegrado"
+  ) {
+    return "border-emerald-300/42 bg-[#111827] text-white shadow-[inset_3px_0_0_rgba(110,231,183,0.42)] hover:border-emerald-300/62 hover:bg-emerald-400/8"
+  }
+
+  if (
+    state.className.includes("#7f2d3a") ||
+    state.className.includes("#9f3546") ||
+    ["Falta NC", "Reclamo", "En curso"].includes(state.label)
+  ) {
+    return "border-[#9f3546]/58 bg-[#111827] text-white shadow-[inset_3px_0_0_rgba(159,53,70,0.52)] hover:border-[#bf4a5b]/78 hover:bg-[#1B1519]"
+  }
+
+  return "border-beyonix-blue-light/34 bg-[#111827] text-white shadow-[inset_3px_0_0_rgba(74,144,184,0.36)] hover:border-beyonix-blue-light/55 hover:bg-[#172234]"
 }
 
 function getTransferPaymentStatusBadge(status?: string | null) {
@@ -1695,7 +1720,7 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
   }
 
   return (
-    <section className="mt-4 rounded-xl border border-white/8 bg-black/18 p-3">
+    <section className="rounded-xl border border-white/8 bg-black/18 p-3">
       <p className="text-10px font-black uppercase tracking-widest text-white/42">
         Historial del pedido
       </p>
@@ -1794,10 +1819,10 @@ function RefundManagementPanel({
         ? "Cancelación pendiente"
         : "Cancelación cerrada"
   const cancellationCopy = refunded
-    ? "El comprobante fue registrado correctamente y la devolución quedó finalizada."
+    ? "El comprobante fue registrado y la devolución quedó finalizada."
     : refundPending
-      ? "El pedido fue cancelado con dinero recibido. Cargá el comprobante de reintegro para cerrar la devolución."
-      : "El pedido está cancelado y no tiene un reintegro pendiente registrado."
+      ? "El pedido fue cancelado con pago recibido. Cargá el comprobante para cerrar la devolución."
+      : "El pedido está cancelado y no tiene un reintegro pendiente."
   const parsedRefundAmount = parseRefundAmountInput(amount)
   const maxRefundAmount = Math.max(paidAmount, Number(pedido.total ?? 0))
   const refundAmountIsValid =
@@ -1909,38 +1934,41 @@ function RefundManagementPanel({
   }
 
   return (
-    <section className={`rounded-2xl border p-4 sm:p-5 ${ADMIN_SENSITIVE_DANGER.panel}`}>
-      <div className="border-b border-[#7f2d3a]/45 pb-4">
-        <p className={`text-11px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+    <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panel}`}>
+      <div className="border-b border-[#7f2d3a]/45 pb-2.5">
+        <p className="text-11px font-bold uppercase tracking-widest text-white/80">
           Gestión de cancelación
         </p>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-black text-white">{cancellationTitle}</h3>
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-black text-white">
+            {refundPending ? "Reintegro pendiente" : cancellationTitle}
+          </h3>
         </div>
-        <p className={`mt-1 max-w-2xl text-sm leading-6 ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
+        <p className={`mt-0.5 truncate text-sm ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
           {cancellationCopy}
         </p>
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
-        <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+      <div className="mt-3 grid gap-2.5 lg:grid-cols-3">
+        <section className={`rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className="text-10px font-black uppercase tracking-widest text-white/80">
             Información
           </p>
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <DetailValue label="Pedido" value={`#${formatPublicOrderId(pedido.id)}`} />
             <DetailValue label="Cliente" value={pedido.cliente_nombre || "Cliente sin nombre"} />
             <DetailValue
               label="Contacto"
               value={[pedido.cliente_email, pedido.cliente_telefono].filter(Boolean).join(" · ") || "No informado"}
             />
+            <DetailValue label="Usuario" value={pedido.cliente_username || "Sin usuario"} />
           </div>
         </section>
-        <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+        <section className={`rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className="text-10px font-black uppercase tracking-widest text-white/80">
             Fechas
           </p>
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
             <DetailValue
               label="Pago confirmado"
               value={formatOptionalOrderDate(pedido.payment_confirmed_at || pedido.paid_at)}
@@ -1951,41 +1979,45 @@ function RefundManagementPanel({
             />
           </div>
         </section>
-        <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+        <section className={`rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className="text-10px font-black uppercase tracking-widest text-white/80">
             Reintegro
           </p>
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <DetailValue label="Monto" value={refundDisplayAmount} />
             <DetailValue label="Método" value={pedido.refund_method || "Pendiente"} />
             <DetailValue label="Estado" value={refundCompactStatus} />
+            <DetailValue
+              label="Documentación"
+              value={pedido.refund_proof_url ? "Comprobante cargado" : "Pendiente"}
+            />
           </div>
         </section>
       </div>
 
-      <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)]">
-        <div className={`min-w-0 rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+      <div className="mt-3 grid min-w-0 gap-2.5 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.58fr)]">
+        <div className="min-w-0 rounded-xl border bg-[#111827] p-2.5">
+          <p className="text-10px font-black uppercase tracking-widest text-white/80">
             {refunded ? "Reintegro registrado" : "Cargar comprobante de reintegro"}
           </p>
           {!refundPending ? (
-            <p className="mt-3 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
+            <p className="mt-2 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
               {refunded
                 ? "No hay acciones pendientes para esta devolución."
                 : "No hay una acción de reintegro pendiente para este pedido."}
             </p>
           ) : (
             <>
-              <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
+              <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
                 <div className="min-w-0">
                   <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/45">
                     Archivo del comprobante de reintegro
                   </p>
-                  <label className="flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[#9f3546] bg-[#241217] px-3 text-xs font-bold text-white/78 transition hover:border-[#bf4a5b]">
+                  <label className="flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[#2c4058] bg-[#111827] px-3 text-xs font-bold text-white/78 transition hover:border-[#4b78a4]">
                     {file ? file.name : "⬇️ Seleccionar archivo"}
                     <input
                       type="file"
-                      accept="image/jpeg,image/png,application/pdf"
+                      accept="image/jpeg,application/pdf,.jpg,.jpeg,.pdf"
                       className="sr-only"
                       onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                     />
@@ -1995,7 +2027,7 @@ function RefundManagementPanel({
                   <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
                     Monto reintegrado
                   </span>
-                  <span className="flex h-10 w-full items-center overflow-hidden rounded-lg border border-[#7f2d3a]/55 bg-[#241217] focus-within:border-[#bf4a5b]">
+                  <span className="flex h-10 w-full items-center overflow-hidden rounded-lg border border-[#2c4058] bg-[#111827] focus-within:border-beyonix-blue-light">
                     <span className="flex h-full items-center border-r border-white/10 px-3 text-xs font-black text-white/55">
                       $
                     </span>
@@ -2022,7 +2054,7 @@ function RefundManagementPanel({
                     value={method}
                     onChange={(event) => setMethod(event.target.value)}
                     placeholder="Transferencia, Mercado Pago, otro"
-                    className="h-10 w-full rounded-lg border border-[#7f2d3a]/55 bg-[#241217] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-[#bf4a5b]"
+                    className="h-10 w-full rounded-lg border border-[#2c4058] bg-[#111827] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-beyonix-blue-light"
                   />
                 </label>
                 <label className="min-w-0">
@@ -2033,7 +2065,7 @@ function RefundManagementPanel({
                     value={observation}
                     onChange={(event) => setObservation(event.target.value)}
                     placeholder="Opcional"
-                    className="h-10 w-full rounded-lg border border-[#7f2d3a]/55 bg-[#241217] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-[#bf4a5b]"
+                    className="h-10 w-full rounded-lg border border-[#2c4058] bg-[#111827] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-beyonix-blue-light"
                   />
                 </label>
               </div>
@@ -2044,9 +2076,9 @@ function RefundManagementPanel({
                 <textarea
                   value={internalNote}
                   onChange={(event) => setInternalNote(event.target.value)}
-                  rows={3}
+                  rows={2}
                   placeholder="Notas internas sobre la devolución"
-                  className="w-full resize-none rounded-lg border border-[#7f2d3a]/55 bg-[#241217] px-3 py-2 text-xs font-bold leading-5 text-white outline-none placeholder:text-white/38 focus:border-[#bf4a5b]"
+                  className="min-h-16 w-full resize-none rounded-lg border border-[#2c4058] bg-[#111827] px-3 py-2 text-xs font-bold leading-5 text-white outline-none placeholder:text-white/38 focus:border-beyonix-blue-light"
                 />
               </label>
               {!refundAmountIsValid && amount.trim() && (
@@ -2054,12 +2086,12 @@ function RefundManagementPanel({
                   Ingresá un monto válido, mayor a cero y no superior al monto pagado.
                 </p>
               )}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   disabled={!canUploadRefund}
                   onClick={() => void uploadRefundProof()}
-                  className={`inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-45 ${ADMIN_SENSITIVE_DANGER.action}`}
+                  className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/45 bg-beyonix-blue px-3 py-2 text-11px font-black uppercase tracking-wide text-white transition hover:border-beyonix-cyan hover:bg-beyonix-blue-hover disabled:cursor-not-allowed disabled:border-[#2c4058] disabled:bg-[#111827] disabled:text-white/42 disabled:opacity-60"
                 >
                   {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                   {saving ? "Guardando..." : "Subir comprobante y marcar como reintegrado"}
@@ -2082,12 +2114,12 @@ function RefundManagementPanel({
           )}
         </div>
 
-        <div className={`min-w-0 rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+        <div className={`min-w-0 rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+          <p className="text-10px font-black uppercase tracking-widest text-white/80">
             Comprobante de reintegro
           </p>
           {pedido.refund_proof_url ? (
-            <div className="mt-3 space-y-2">
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
               <DetailValue label="Estado" value={refundCompactStatus} />
               <DetailValue
                 label="Archivo cargado"
@@ -2107,14 +2139,12 @@ function RefundManagementPanel({
               />
             </div>
           ) : (
-            <p className="mt-3 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
+            <p className="mt-2 inline-flex rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
               Todavía no hay comprobante de reintegro cargado.
             </p>
           )}
         </div>
       </div>
-
-      <OrderTimeline pedido={pedido} />
 
       {message && (
         <p
@@ -2400,12 +2430,12 @@ function BillingManagementPanel({
                 type="button"
                 disabled={creditNoteProcessing || creditNoteAmount <= 0}
                 onClick={() => void issueCreditNote()}
-                className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50 ${ADMIN_SENSITIVE_DANGER.action}`}
+                className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#9f3546]/58 bg-[#111827] px-3 text-11px font-black uppercase tracking-wide text-white transition hover:border-[#bf4a5b]/78 hover:bg-[#1B1519] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creditNoteProcessing ? (
-                  <LoaderCircle className="size-4 animate-spin" />
+                  <LoaderCircle className="size-4 animate-spin text-[#ffb4bd]" />
                 ) : (
-                  <FileText className="size-4" />
+                  <FileText className="size-4 text-[#ffb4bd]" />
                 )}
                 {creditNoteProcessing ? "Emitiendo..." : "Emitir Nota de Crédito"}
               </button>
@@ -2444,7 +2474,6 @@ function AdminOrderSummaryDashboard({
   financialBreakdown: ReturnType<typeof getOrderFinancialBreakdown>
   onGoToView: (view: AdminOrderDetailView) => void
 }) {
-  const statusCards = getOrderSummaryBadges(pedido)
   const action = getOrderRecommendedAction(pedido)
   const latestActivity = getOrderLatestActivity(pedido)
   const mainStatus = getExecutiveOrderStatus(pedido)
@@ -2471,6 +2500,7 @@ function AdminOrderSummaryDashboard({
     : confirmedAmount > 0
       ? "Saldo pendiente"
       : "Total a cobrar"
+  const isCollectedTotal = totalLabel === "Total cobrado"
   const totalValue = refundedOrder
     ? refundAmount
     : isOrderPaymentConfirmed(pedido)
@@ -2479,81 +2509,45 @@ function AdminOrderSummaryDashboard({
       ? pendingBalance
       : orderTotal
   const finalBalance = Math.max(0, orderTotal - refundAmount)
-  const ActionIcon =
-    action.target === "pago"
-      ? CreditCard
-      : action.target === "envio"
-        ? Truck
-        : action.target === "facturacion"
-          ? FileText
-          : action.target === "reclamos"
-            ? AlertTriangle
-            : action.target === "cancelacion"
-              ? X
-              : CheckCircle2
   const actionToneClass = {
-    urgent: ADMIN_SENSITIVE_DANGER.panel,
-    warning: "border-amber-300/20 bg-amber-400/7",
-    info: "border-beyonix-blue-light/20 bg-beyonix-blue/14",
-    success: "border-emerald-300/18 bg-emerald-400/7",
+    urgent: "border-[#7f2d3a]/65 bg-[#0B1118]",
+    warning: "border-amber-300/24 bg-[#0B1118]",
+    info: "border-beyonix-blue-light/22 bg-[#0B1118]",
+    success: "border-emerald-300/22 bg-[#0B1118]",
   }[action.tone]
-  const sensitiveAction =
-    action.target === "reclamos" ||
-    action.target === "cancelacion" ||
-    isAdminSensitiveStatus(action.title)
-
   return (
-    <div className="space-y-3">
-      <section className={`rounded-2xl border bg-[#0B1118] p-4 sm:p-5 ${actionToneClass}`}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.42fr)] lg:items-center">
-          <div className="min-w-0 space-y-3">
-            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-              Resumen ejecutivo
-            </p>
+    <div className="space-y-2.5">
+      <section className={`admin-order-summary-main-panel rounded-xl border bg-[#0B1118] px-3 py-2.5 ${actionToneClass}`}>
+        <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xl font-black text-white">
+              <h3 className="text-base font-black text-white">
                 Pedido #{formatPublicOrderId(pedido.id)}
               </h3>
-              <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${
+              <span className={`rounded-full border px-2.5 py-0.5 text-10px font-black uppercase tracking-wide ${
                 isAdminSensitiveStatus(mainStatus)
-                  ? ADMIN_SENSITIVE_DANGER.badge
+                  ? "border-[#9f3546]/65 bg-[#2a1117] text-[#ffc2c8]"
                   : "border-white/10 bg-black/24 text-white/82"
               }`}>
                 {mainStatus}
               </span>
             </div>
-            <div className="grid gap-1 text-sm sm:grid-cols-[auto_minmax(0,1fr)] sm:items-baseline">
+            <div className="grid gap-1 text-xs sm:grid-cols-[auto_minmax(0,1fr)] sm:items-baseline">
               <span className="text-white/42">Última actividad</span>
-              <span className="font-bold text-white/82">{latestActivity.label}</span>
+              <span className="font-semibold text-white/82">{latestActivity.label}</span>
               <span className="text-white/42">Fecha</span>
               <span className="font-medium text-white/58">{formatOptionalOrderDate(latestActivity.at)}</span>
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-black/18 p-3">
-            <div className="flex items-start gap-2.5">
-              <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg border ${
-                sensitiveAction
-                  ? ADMIN_SENSITIVE_DANGER.icon
-                  : "border-beyonix-blue-light/18 bg-beyonix-blue/18 text-beyonix-sky"
-              }`}>
-                <ActionIcon className="size-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/46">
-                  Acción recomendada
-                </p>
-                <p className="mt-1 text-base font-black text-white">{action.title}</p>
-              </div>
+          <div className="rounded-lg border border-white/10 bg-[#111827] px-2.5 py-2 lg:min-w-52">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-white">{action.title}</p>
             </div>
             <button
               type="button"
               onClick={() => onGoToView(action.target)}
-              className={`mt-3 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition ${
-                sensitiveAction
-                  ? ADMIN_SENSITIVE_DANGER.action
-                  : "border-beyonix-blue-light/30 bg-beyonix-blue/50 text-beyonix-sky hover:border-beyonix-blue-light hover:bg-beyonix-blue"
-              }`}
+              className="mt-2 inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-10px font-black uppercase tracking-wide text-white transition hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B]"
             >
               {action.buttonLabel}
             </button>
@@ -2561,39 +2555,22 @@ function AdminOrderSummaryDashboard({
         </div>
       </section>
 
-      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-        {statusCards.map((card) => (
-          <div
-            key={card.label}
-            className={`rounded-xl border px-3 py-2.5 ${card.className}`}
-          >
-            <p className="text-10px font-black uppercase tracking-widest text-white/42">
-              {card.label}
-            </p>
-            <p className="mt-1 text-sm font-black text-white/88">{card.value}</p>
-          </div>
-        ))}
-      </section>
-
-      <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.42fr)_minmax(0,0.58fr)]">
-        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3 sm:p-4">
+      <div className="grid gap-2.5 xl:grid-cols-[minmax(300px,0.4fr)_minmax(0,0.6fr)]">
+        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
               Resumen económico
             </p>
-            <span className="rounded-full border border-white/8 bg-black/24 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/48">
-              Ticket
-            </span>
           </div>
 
-          <div className="mt-4 space-y-2 text-sm">
+          <div className="mt-2.5 space-y-1.5 text-sm">
             <div className="flex items-baseline justify-between gap-4">
               <span className="text-white/54">Subtotal productos</span>
               <span className="font-bold text-white/82">{formatPrice(financialBreakdown.productsSubtotal)}</span>
             </div>
             <div className="flex items-baseline justify-between gap-4">
               <span className="text-white/54">Descuento transferencia</span>
-              <span className="font-bold text-white/72">
+              <span className="font-bold text-emerald-200">
                 {financialBreakdown.transferDiscount > 0
                   ? `-${formatPrice(financialBreakdown.transferDiscount)}`
                   : formatPrice(0)}
@@ -2607,22 +2584,33 @@ function AdminOrderSummaryDashboard({
             </div>
           </div>
 
-          <div className="my-4 border-t border-dashed border-white/12" />
+          <div className="my-3 border-t border-dashed border-white/12" />
 
-          <div className="rounded-xl border border-emerald-300/22 bg-emerald-400/6 p-3 shadow-[0_0_22px_rgba(16,185,129,0.08)]">
-            <p className="text-10px font-black uppercase tracking-widest text-emerald-100/78">
+          <div
+            className="admin-order-total-card rounded-lg border px-3 py-2"
+            style={
+              isCollectedTotal
+                ? {
+                    background: "#12382B",
+                    backgroundImage: "none",
+                    borderColor: "rgba(110, 231, 183, 0.45)",
+                  }
+                : undefined
+            }
+          >
+            <p className="text-10px font-black uppercase tracking-widest text-white">
               {totalLabel}
             </p>
-            <p className="mt-1 text-2xl font-black text-white sm:text-3xl">
+            <p className="mt-0.5 text-lg font-black text-white sm:text-xl">
               {formatPrice(totalValue)}
             </p>
-            <p className="mt-1 text-xs font-medium text-white/48">
+            <p className="mt-0.5 text-[11px] font-medium text-white">
               {paymentContext}
             </p>
           </div>
 
           {(isCancellationFlowOrder(pedido) || refundAmount > 0) && (
-            <div className="mt-3 space-y-2 border-t border-white/8 pt-3 text-sm">
+            <div className="mt-2 space-y-1.5 border-t border-white/8 pt-2 text-sm">
               {!refundedOrder && (
                 <div className="flex items-baseline justify-between gap-4">
                   <span className="text-white/54">Monto reintegrado</span>
@@ -2641,12 +2629,12 @@ function AdminOrderSummaryDashboard({
           )}
         </section>
 
-        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3 sm:p-4">
+        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3">
           <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
             Cliente y dirección
           </p>
-          <div className="mt-3 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+          <div className="mt-2.5 space-y-2.5">
+            <div className="grid gap-2 sm:grid-cols-2">
               <DetailValue label="Nombre" value={pedido.cliente_nombre || "Cliente sin nombre"} />
               <DetailValue label="Usuario" value={(pedido.cliente_username || "Sin usuario").toUpperCase()} />
               <DetailValue label="Email" value={pedido.cliente_email || "No informado"} />
@@ -2663,17 +2651,17 @@ function AdminOrderSummaryDashboard({
 function getOrderStatusSelectClassName(status: string) {
   const styles: Record<string, string> = {
     pendiente:
-      "!border-amber-400/35 !bg-amber-400/10 !text-amber-200 hover:!bg-amber-400/14",
+      "!border-amber-400/35 !bg-[#111827] !text-amber-200 hover:!bg-[#15191F]",
     pagado:
-      "!border-emerald-400/35 !bg-emerald-400/10 !text-emerald-200 hover:!bg-emerald-400/14",
+      "!border-emerald-400/35 !bg-[#111827] !text-emerald-200 hover:!bg-[#15191F]",
     enviado:
       "!border-beyonix-blue-light/45 !bg-beyonix-blue/35 !text-beyonix-sky hover:!bg-beyonix-blue/45",
     en_camino:
-      "!border-sky-300/35 !bg-sky-400/10 !text-sky-200 hover:!bg-sky-400/14",
+      "!border-sky-300/35 !bg-[#111827] !text-sky-200 hover:!bg-[#15191F]",
     entregado:
-      "!border-emerald-300/45 !bg-emerald-500/12 !text-emerald-100 hover:!bg-emerald-500/16",
+      "!border-emerald-300/45 !bg-[#111827] !text-emerald-100 hover:!bg-[#15191F]",
     cancelado:
-      "!border-[#9f3546] !bg-[#2a1117] !text-[#ffc2c8] hover:!bg-[#35151d]",
+      "!border-[#9f3546]/70 !bg-[#111827] !text-[#ffc2c8] hover:!bg-[#15191F]",
   }
 
   return styles[status] ?? ""
@@ -2923,7 +2911,7 @@ function PedidoPreviewModal({
                 </div>
               </div>
 
-              <div className="mt-4 rounded-xl border border-white/7 bg-white/3 p-3">
+              <div className="mt-4 rounded-xl border border-[#263242] bg-[#0B0F14] p-3">
                 <p className="text-10px font-bold uppercase tracking-widest text-white/38">
                   Comprobante
                 </p>
@@ -2933,7 +2921,7 @@ function PedidoPreviewModal({
                     aria-label={`Ver comprobante del pedido ${pedido.id}`}
                     title="Ver o descargar comprobante"
                     onClick={() => onOpenPaymentProof(pedido.id)}
-                    className="mt-3 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:bg-beyonix-blue"
+                    className="mt-3 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B]"
                   >
                     <Download className="size-4" />
                     Ver comprobante
@@ -3295,6 +3283,7 @@ function PedidoDetailModal({
     useState<AdminOrderDetailView>(() =>
       getAdminOrderDetailView(searchParams.get("tab")),
     )
+  const [detailMenuCollapsed, setDetailMenuCollapsed] = useState(false)
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
     pedido.payment_status === "en_revision" &&
@@ -3324,6 +3313,7 @@ function PedidoDetailModal({
       ...(tabState.visible.cancelacion
         ? [{ view: "cancelacion" as const, label: "Cancelación", icon: X, badge: tabState.badges.cancelacion }]
         : []),
+      { view: "historial" as const, label: "Historial", icon: Clock3, badge: null },
     ],
     [tabState],
   )
@@ -3433,73 +3423,57 @@ function PedidoDetailModal({
 
   return (
     <div className={embedded ? "min-w-0 px-2 pb-2 pt-4 sm:px-3 sm:pb-3 sm:pt-5" : "fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 pb-6 pt-9 backdrop-blur-sm"}>
-      <div className={embedded ? "mx-auto flex w-full max-w-[1320px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#05070A]" : "flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#05070A] shadow-2xl shadow-black/80"}>
-        <header className="border-b border-white/8 bg-[#0D1117]">
-          <div className="flex min-h-16 items-center justify-between gap-3 px-3 py-2">
-            <div className="min-w-0">
-              <p className="sr-only">Detalle del pedido</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-black text-white">
-                  Pedido #{formatPublicOrderId(pedido.id)}
-                </h2>
-                {isCancellationFlowOrder(pedido) ? (
-                  <EstadoBadge estado={getCurrentOrderStatusForHeader(pedido)} />
-                ) : isTransferOrder(pedido) ? (
-                  <PaymentStatusBadge status={pedido.payment_status} />
-                ) : (
-                  <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
-                )}
-              </div>
-              <p className="mt-1 text-xs text-white/60">
-                {formatOrderDate(pedido.created_at)} · {getPaymentMethodLabel(pedido)}
-              </p>
-            </div>
-
-            <div className="flex shrink-0 items-center">
+      <div className={embedded ? "admin-order-detail-scope mx-auto flex w-full max-w-[1420px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#05070A]" : "admin-order-detail-scope flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#05070A] shadow-2xl shadow-black/80"}>
+        <div className={`custom-scrollbar bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
+          <div
+            className={`flex min-w-0 flex-col gap-3 p-2.5 sm:p-3 lg:flex-row ${
+              activeView === "resumen" || activeView === "pago" ? "admin-order-summary-layout-bg" : ""
+            }`}
+          >
+            <aside
+              className={`shrink-0 rounded-xl border border-white/8 bg-[#0D1117] p-2 transition-[width] ${
+                detailMenuCollapsed ? "lg:w-[52px]" : "lg:w-52"
+              }`}
+              aria-label="Secciones del pedido"
+            >
               <button
                 type="button"
-                title="Cerrar detalle del pedido"
-                aria-label="Cerrar detalle del pedido"
-                onClick={onClose}
-                className={`cursor-pointer items-center justify-center rounded-xl border border-white/10 text-white/62 transition-colors hover:border-white/22 hover:text-white ${embedded ? "inline-flex h-9 gap-2 px-3 text-xs font-bold" : "flex size-9"}`}
+                onClick={() => setDetailMenuCollapsed((current) => !current)}
+                className={`mb-2 hidden h-9 cursor-pointer items-center justify-center rounded-lg border border-[#2c4058] bg-[#111827] text-xs font-black text-white/62 transition-colors hover:border-beyonix-blue-light/45 hover:bg-[#1B2028] hover:text-beyonix-sky lg:inline-flex ${
+                  detailMenuCollapsed ? "w-9" : "w-full"
+                }`}
+                title={detailMenuCollapsed ? "Expandir menú" : "Colapsar menú"}
+                aria-label={detailMenuCollapsed ? "Expandir menú" : "Colapsar menú"}
               >
-                {embedded ? <><ArrowLeft className="size-4" />Volver</> : <X className="size-5" />}
+                {detailMenuCollapsed ? "▶" : "◀"}
               </button>
-            </div>
-          </div>
+              <nav className="custom-scrollbar flex gap-1.5 overflow-x-auto lg:flex-col lg:overflow-visible">
+                {detailTabs.map(({ view, label, icon: ViewIcon, badge }) => {
+                  const active = activeView === view
 
-          <nav
-            aria-label="Secciones del pedido"
-            className="custom-scrollbar flex gap-1.5 overflow-x-auto border-t border-white/8 px-3 py-2"
-          >
-            {detailTabs.map(({ view, label, icon: ViewIcon, badge }) => {
-              const sensitiveTab = view === "reclamos" || view === "cancelacion"
+                  return (
+                    <button
+                      key={view}
+                      type="button"
+                      title={badge?.title ?? label}
+                      onClick={() => showDetailView(view)}
+                      className={`relative inline-flex h-[37px] shrink-0 cursor-pointer items-center rounded-lg border px-2.5 text-10px font-black uppercase tracking-wide transition-colors ${
+                        detailMenuCollapsed ? "justify-center lg:w-9 lg:px-0" : "justify-start lg:w-full"
+                      } ${
+                        active
+                          ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-[0_0_14px_rgba(17,42,67,0.32)]"
+                          : getAdminOrderMenuStateClass(badge)
+                      }`}
+                    >
+                      <ViewIcon className={`size-3.5 shrink-0 ${detailMenuCollapsed ? "" : "mr-2"}`} />
+                      {!detailMenuCollapsed && <span className="truncate">{label}</span>}
+                    </button>
+                  )
+                })}
+              </nav>
+            </aside>
 
-              return (
-                <button
-                  key={view}
-                  type="button"
-                  onClick={() => showDetailView(view)}
-                  className={`relative inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border px-3 text-10px font-black uppercase tracking-wide transition-colors ${
-                    activeView === view
-                      ? sensitiveTab
-                        ? `${ADMIN_SENSITIVE_DANGER.action} shadow-[0_0_14px_rgba(159,53,70,0.28)]`
-                        : "border-beyonix-blue-light bg-beyonix-blue text-beyonix-sky shadow-[0_0_14px_rgba(17,42,67,0.32)]"
-                      : sensitiveTab
-                        ? "border-[#7f2d3a]/45 bg-[#15191F] text-[#ffc2c8] hover:border-[#9f3546] hover:bg-[#241217]"
-                        : "border-white/8 bg-[#15191F] text-white/68 hover:border-beyonix-blue-light/45 hover:bg-[#1B2028] hover:text-beyonix-sky"
-                  }`}
-                >
-                  <ViewIcon className="mr-1.5 size-3.5" />
-                  {label}
-                  <AdminOrderTabBadge state={badge} />
-                </button>
-              )
-            })}
-          </nav>
-        </header>
-
-        <div className={`custom-scrollbar bg-[#05070A] p-2.5 sm:p-3 ${embedded ? "" : "overflow-y-auto"}`}>
+            <div className="admin-order-detail-content min-w-0 flex-1">
           {activeView === "resumen" && (
             <AdminOrderSummaryDashboard
               pedido={pedido}
@@ -3547,16 +3521,16 @@ function PedidoDetailModal({
                         onChange={(value) => onPaymentStatusChange(pedido.id, value)}
                       />
                     </div>
-                    <div className="rounded-lg bg-[#16A34A] px-3 py-2">
-                      <p className="text-10px font-bold uppercase tracking-widest text-white/80">
+                    <div className="admin-order-total-card rounded-lg border px-3 py-2">
+                      <p className="text-10px font-bold uppercase tracking-widest text-emerald-100/78">
                         Total recibido
                       </p>
-                      <p className="mt-0.5 text-lg font-black text-white">
+                      <p className="mt-0.5 text-lg font-black text-emerald-100">
                         {formatPrice(pedido.total)}
                       </p>
                     </div>
                   </div>
-                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/8 p-2">
+                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#263242] p-2">
                     <DetailValue
                       label="Comprobante actual"
                       value={pedido.payment_proof_file_name || "Sin comprobante"}
@@ -3567,7 +3541,7 @@ function PedidoDetailModal({
                         title="Ver comprobante"
                         aria-label={`Ver comprobante del pedido ${pedido.id}`}
                         onClick={() => void handleViewPaymentProof()}
-                        className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:bg-beyonix-blue"
+                        className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B]"
                       >
                         <Download className="size-4" />
                         Ver comprobante
@@ -3588,11 +3562,11 @@ function PedidoDetailModal({
                     label="Fecha de acreditación"
                     value={formatOptionalOrderDate(pedido.paid_at)}
                   />
-                  <div className="rounded-lg bg-[#16A34A] px-3 py-2">
-                    <p className="text-10px font-bold uppercase tracking-widest text-white/80">
+                  <div className="admin-order-total-card rounded-lg border px-3 py-2">
+                    <p className="text-10px font-bold uppercase tracking-widest text-emerald-100/78">
                       Total recibido
                     </p>
-                    <p className="mt-0.5 text-lg font-black text-white">
+                    <p className="mt-0.5 text-lg font-black text-emerald-100">
                       {formatPrice(pedido.total)}
                     </p>
                   </div>
@@ -3631,10 +3605,14 @@ function PedidoDetailModal({
           />
           )}
 
+          {activeView === "historial" && (
+            <OrderTimeline pedido={pedido} />
+          )}
+
           {(activeView === "resumen" || activeView === "envio") && (
             <>
            {activeView === "resumen" && (
-           <section className="admin-order-products-panel mt-3 rounded-xl border border-white/8 p-3">
+           <section className="admin-order-products-panel mt-2.5 rounded-xl border border-white/8 p-3">
             <div className="flex flex-wrap items-center gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -3646,7 +3624,7 @@ function PedidoDetailModal({
               </div>
             </div>
 
-            <div className="mt-2 space-y-1.5">
+            <div className="mt-2 space-y-1">
               {items.length ? (
                 items.map((item) => {
                   const image = getItemImage(item)
@@ -3658,10 +3636,10 @@ function PedidoDetailModal({
                   return (
                     <article
                       key={item.id}
-                      className="admin-order-item-card grid min-h-16 gap-2 rounded-lg border border-white/8 p-2 sm:grid-cols-admin-order-modal-item sm:items-center"
+                      className="admin-order-item-card grid gap-2 rounded-lg border border-white/8 px-2 py-1.5 sm:grid-cols-[minmax(220px,1.45fr)_0.62fr_0.52fr_0.72fr_0.72fr] sm:items-center"
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/8 bg-white">
+                        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/8 bg-white">
                           {image ? (
                             <img
                               src={image}
@@ -3673,7 +3651,7 @@ function PedidoDetailModal({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-black text-white">{productName}</p>
+                          <p className="truncate text-sm font-black text-white">{productName}</p>
                           <p className="mt-0.5 text-[10px] text-white/48">
                             Producto #{item.producto_id}
                           </p>
@@ -3907,6 +3885,8 @@ function PedidoDetailModal({
           )}
             </>
           )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3936,7 +3916,7 @@ function InvoiceReminderBell({ compact = false }: { compact?: boolean }) {
   return (
     <span
       title="Factura pendiente"
-      className={`inline-flex items-center justify-center rounded-full border border-violet-400/45 bg-violet-600 text-white shadow-[0_0_12px_rgba(124,58,237,0.35)] transition-colors hover:bg-violet-700 ${
+      className={`inline-flex items-center justify-center rounded-full border border-amber-300/35 bg-amber-400/10 text-amber-100 shadow-[0_0_12px_rgba(245,158,11,0.12)] transition-colors hover:border-amber-300/55 ${
         compact ? "size-4" : "size-7"
       }`}
     >
@@ -3999,43 +3979,49 @@ function CustomerAddressDetails({ pedido }: { pedido: SupabasePedido }) {
   const locality = pedido.localidad || parsedAddress.locality
   const postalCode = pedido.cp_destino || getPostalCodeFromAddress(cleanAddress)
   const reference = getAddressReference(pedido.cliente_direccion)
+  const localityLine = [locality, pedido.provincia].filter(Boolean).join(", ")
 
   return (
-    <div className="sm:col-span-2 rounded-lg border border-white/8 bg-[#111111] p-2">
-      <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-        Dirección
-      </p>
-      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-        <DetailValue
-          label="Calle y número"
-          value={streetLine || cleanAddress || "No informada"}
-        />
-        <DetailValue
-          label="Piso / departamento"
-          value={unitLine || "Sin datos"}
-        />
-        <DetailValue label="Localidad" value={locality || "No informada"} />
-        <DetailValue
-          label="Provincia"
-          value={pedido.provincia || "No informada"}
-        />
-        <DetailValue label="Código postal" value={postalCode || "No informado"} />
-        <DetailValue
-          label="Referencias"
-          value={reference || "Sin referencias"}
-        />
+    <div className="sm:col-span-2 rounded-lg border border-white/8 bg-[#111827] p-2.5">
+      <div className="grid gap-2 text-sm sm:grid-cols-2">
+        <CompactAddressValue label="Dirección" value={streetLine || cleanAddress || "No informada"} />
+        <CompactAddressValue label="Piso / Depto" value={unitLine || "Sin piso/departamento"} />
+        <CompactAddressValue label="Localidad / Provincia" value={localityLine || "Localidad no informada"} />
+        <CompactAddressValue label="Código postal" value={postalCode || "No informado"} />
+        <CompactAddressValue label="Referencias" value={reference || "Sin referencias"} wide />
       </div>
+    </div>
+  )
+}
+
+function CompactAddressValue({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string
+  value: string
+  wide?: boolean
+}) {
+  return (
+    <div className={wide ? "sm:col-span-2" : undefined}>
+      <p className="text-9px font-bold uppercase tracking-widest text-white/36">
+        {label}
+      </p>
+      <p className="mt-0.5 truncate text-sm font-semibold text-white/82">
+        {value}
+      </p>
     </div>
   )
 }
 
 function ItemValue({ label, value }: { label: string; value: string }) {
   return (
-    <div className="text-center">
-      <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+    <div className="min-w-0 text-left sm:text-center">
+      <p className="text-9px font-bold uppercase tracking-widest text-white/38">
         {label}
       </p>
-      <p className="mt-1 text-sm font-black text-white">{value}</p>
+      <p className="mt-0.5 truncate text-xs font-black text-white sm:text-sm">{value}</p>
     </div>
   )
 }
@@ -4337,10 +4323,14 @@ function AdminClaimsCenterSection({
   }
 
   return (
-    <section className={`admin-order-invoice-panel mt-4 rounded-2xl border p-4 sm:p-5 ${ADMIN_SENSITIVE_DANGER.panel}`}>
+    <section className={`admin-order-invoice-panel mt-4 rounded-2xl border p-4 sm:p-5 ${
+      claims.length ? ADMIN_SENSITIVE_DANGER.panel : "border-beyonix-blue-light/20 bg-[#0B1118]"
+    }`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className={`text-11px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+          <p className={`text-11px font-bold uppercase tracking-widest ${
+            claims.length ? ADMIN_SENSITIVE_DANGER.label : "text-beyonix-cyan"
+          }`}>
             Centro de reclamos
           </p>
           <h3 className="mt-2 text-lg font-black text-white">
@@ -4370,7 +4360,7 @@ function AdminClaimsCenterSection({
       </div>
 
       {!claim ? (
-        <p className={`mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${ADMIN_SENSITIVE_DANGER.panelSoft} ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
+        <p className="mt-4 rounded-xl border border-white/8 bg-[#111827] px-3 py-2 text-xs font-medium text-white/58">
           Este pedido todavía no tiene reclamos cargados.
         </p>
       ) : (
@@ -4510,8 +4500,8 @@ function AdminClaimsCenterSection({
                           key={message.id}
                           className={`rounded-xl border px-3 py-2 ${
                             isCustomer
-                              ? "border-[#7f2d3a]/55 bg-[#241217]"
-                              : "border-[#7f2d3a]/35 bg-[#2a1117]"
+                              ? "border-[#7f2d3a]/45 bg-[#111827]"
+                              : "border-[#2c4058] bg-[#111827]"
                           }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4536,14 +4526,14 @@ function AdminClaimsCenterSection({
               onChange={(event) => setAdminResponse(event.target.value)}
               rows={4}
               placeholder="Respuesta visible para el cliente. El reclamo seguirá abierto hasta que lo marques como Cerrado."
-              className="w-full resize-none rounded-xl border border-[#7f2d3a]/55 bg-[#241217] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-[#bf4a5b]"
+              className="w-full resize-none rounded-xl border border-[#2c4058] bg-[#111827] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
             />
             <textarea
               value={rejectionReason}
               onChange={(event) => setRejectionReason(event.target.value)}
               rows={3}
               placeholder="Motivo de rechazo obligatorio si el estado es Rechazado."
-              className="w-full resize-none rounded-xl border border-[#7f2d3a]/55 bg-[#241217] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-[#bf4a5b]"
+              className="w-full resize-none rounded-xl border border-[#2c4058] bg-[#111827] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
             />
             <label className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold leading-5 ${ADMIN_SENSITIVE_DANGER.panelSoft} ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
               <input
