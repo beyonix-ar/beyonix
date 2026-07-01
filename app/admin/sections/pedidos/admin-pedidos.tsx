@@ -1270,7 +1270,7 @@ function PaymentStatusDropdown({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex h-8 min-w-40 cursor-pointer items-center gap-2 rounded-lg border border-[rgba(148,197,255,0.18)] bg-[#0B111A] px-2.5 text-left shadow-sm transition-all duration-200 hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:shadow-[0_0_18px_rgba(96,165,250,0.18)]"
+        className="flex h-8 min-w-40 cursor-pointer items-center gap-2 rounded-lg border border-[rgba(148,197,255,0.18)] bg-[#0B111A] px-2.5 text-left transition-all duration-200 hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)]"
       >
         <span className={`size-1.5 rounded-full ${selected.dot}`} />
         <span className={`min-w-0 flex-1 text-xs font-semibold ${selected.tone}`}>
