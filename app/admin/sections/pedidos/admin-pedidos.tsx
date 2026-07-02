@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
@@ -25,7 +25,9 @@ import {
   ShoppingCart,
   Truck,
   Trash2,
+  Upload,
   X,
+  type LucideIcon,
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
@@ -56,6 +58,10 @@ import {
   ADMIN_SENSITIVE_DANGER,
   isAdminSensitiveStatus,
 } from "@/lib/admin/admin-sensitive-visuals"
+import {
+  getStoreBenefitTypeFromRefundMethod,
+  parseStoreBenefitPercent,
+} from "@/lib/customer-store-benefits"
 import type {
   OrderClaimResolution,
   OrderClaimStatus,
@@ -86,6 +92,15 @@ type TrackingStatusRequest = {
   pedido: SupabasePedido
   nextEstado: string
 } | null
+type ShippingModalityOption = "andreani" | "rosario" | "otro"
+const DEFAULT_REFUND_METHOD = "Transferencia"
+const REFUND_METHOD_OPTIONS = [
+  DEFAULT_REFUND_METHOD,
+  "Gift card",
+  "Descuento",
+  "Efectivo",
+  "Otro",
+] as const
 type AdminOrderDetailView =
   | "resumen"
   | "pago"
@@ -902,6 +917,47 @@ function formatInvoiceNumber(point?: number | null, number?: number | null) {
   return `${String(point ?? 0).padStart(4, "0")}-${String(number ?? 0).padStart(8, "0")}`
 }
 
+function formatBillingDash(value?: string | number | null) {
+  if (value === null || value === undefined) return "-"
+  if (typeof value === "string" && value.trim() === "") return "-"
+  return String(value)
+}
+
+function formatInvoiceNumberOrDash(
+  point?: string | number | null,
+  number?: string | number | null,
+) {
+  const pointNumber = Number(point)
+  const invoiceNumber = Number(number)
+
+  if (
+    point === null ||
+    point === undefined ||
+    point === "" ||
+    number === null ||
+    number === undefined ||
+    number === "" ||
+    !Number.isFinite(pointNumber) ||
+    !Number.isFinite(invoiceNumber) ||
+    pointNumber <= 0 ||
+    invoiceNumber <= 0
+  ) {
+    return "-"
+  }
+
+  return formatInvoiceNumber(pointNumber, invoiceNumber)
+}
+
+function formatInvoiceDateOrDash(value?: string | null) {
+  if (!value) return "-"
+  return formatInvoiceDate(value)
+}
+
+function formatOptionalOrderDateOrDash(value?: string | null) {
+  if (!value) return "-"
+  return formatOrderDate(value)
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
@@ -1363,7 +1419,7 @@ function getAdminDisplayName(value?: string | null) {
   return looksLikeUuid || looksLikeTechnicalId ? "Administrador" : candidate
 }
 
-type OrderTimelineType = "success" | "pending" | "danger" | "info"
+type OrderTimelineType = "success" | "pending" | "neutral" | "danger" | "info"
 
 type OrderTimelineEvent = {
   key: string
@@ -1459,6 +1515,18 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
   const returnStatus = pedido.return_status ?? null
   const refundCanBeCompleted =
     !hasPhysicalReturn || returnStatus === "aprobada" || returnStatus === "resuelta"
+  const hasConfirmedPaymentForRefund = Boolean(
+    pedido.payment_confirmed_at ||
+      pedido.paid_at ||
+      pedido.payment_confirmed_amount ||
+      pedido.payment_status === "confirmado" ||
+      pedido.payment_status === "approved",
+  )
+  const refundFlowPending =
+    pedido.financial_status === "refund_pending" ||
+    pedido.financial_status === "cancellation_requested" ||
+    Boolean(pedido.refund_pending_at) ||
+    (hasConfirmedPaymentForRefund && isCancellationFlowOrder(pedido) && !refundedAt)
   const cancellationOrigin =
     cancellationAuditEvent?.actor_type === "customer" ||
     cancellationAuditEvent?.action.startsWith("cancellation_requested")
@@ -1593,7 +1661,7 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       description: hasPhysicalReturn
         ? "Falta cerrar la revisión antes de reintegrar el dinero."
         : "Falta cargar el comprobante de reintegro.",
-      type: "danger",
+      type: "neutral",
     })
   }
   addEvent({
@@ -1661,11 +1729,12 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     }
   }
 
-  const closedAt =
-    creditNoteAt ||
-    (refundCanBeCompleted ? refundedAt : null) ||
-    (returnStatus === "resuelta" ? pedido.return_resolved_at : null) ||
-    (pedido.financial_status === "cancelled" ? cancelledAt : null)
+  const closedAt = refundFlowPending
+    ? null
+    : creditNoteAt ||
+      (refundCanBeCompleted ? refundedAt : null) ||
+      (returnStatus === "resuelta" ? pedido.return_resolved_at : null) ||
+      (pedido.financial_status === "cancelled" ? cancelledAt : null)
 
   addEvent({
     key: "order-closed",
@@ -1681,9 +1750,16 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     if (!uniqueEvents.has(dedupeKey)) uniqueEvents.set(dedupeKey, event)
   }
 
-  return [...uniqueEvents.values()].sort(
+  const timeline = [...uniqueEvents.values()].sort(
     (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
   )
+  const openPendingEvents = timeline.filter((event) => event.type === "neutral")
+  if (!openPendingEvents.length) return timeline
+
+  return [
+    ...timeline.filter((event) => event.type !== "neutral"),
+    ...openPendingEvents,
+  ]
 }
 
 function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
@@ -1698,6 +1774,11 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
       Icon: Clock3,
       dotClass: "border-amber-300/24 bg-amber-400/8 text-amber-100",
       connectorClass: "bg-amber-300/12",
+    },
+    neutral: {
+      Icon: Clock3,
+      dotClass: "border-white/18 bg-white/5 text-white/58",
+      connectorClass: "bg-white/10",
     },
     danger: {
       Icon: X,
@@ -1782,16 +1863,19 @@ function RefundManagementPanel({
   const paidAmount = Number(pedido.payment_confirmed_amount ?? pedido.total ?? 0)
   const [file, setFile] = useState<File | null>(null)
   const [amount, setAmount] = useState(formatRefundAmountInput(pedido.refund_amount ?? paidAmount))
-  const [method, setMethod] = useState(pedido.refund_method ?? "")
+  const [method, setMethod] = useState(pedido.refund_method || DEFAULT_REFUND_METHOD)
+  const [customRefundMethod, setCustomRefundMethod] = useState("")
+  const [storeBenefitPercent, setStoreBenefitPercent] = useState("")
   const [observation, setObservation] = useState(pedido.refund_observation ?? "")
   const [internalNote, setInternalNote] = useState(pedido.refund_internal_note ?? "")
   const [saving, setSaving] = useState(false)
-  const [openingRefundProof, setOpeningRefundProof] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     setAmount(formatRefundAmountInput(pedido.refund_amount ?? paidAmount))
-    setMethod(pedido.refund_method ?? "")
+    setMethod(pedido.refund_method || DEFAULT_REFUND_METHOD)
+    setCustomRefundMethod("")
+    setStoreBenefitPercent("")
     setObservation(pedido.refund_observation ?? "")
     setInternalNote(pedido.refund_internal_note ?? "")
     setFile(null)
@@ -1809,12 +1893,11 @@ function RefundManagementPanel({
 
   const refunded = isRefundedOrder(pedido)
   const refundPending = isRefundPendingOrder(pedido)
-  const refundStatusLabel = refunded
-    ? "Reintegro completado"
+  const refundCompactStatus = refunded
+    ? "Finalizado"
     : refundPending
-      ? "Reintegro pendiente"
-      : "Cancelación cerrada"
-  const refundCompactStatus = refunded ? "Finalizado" : refundStatusLabel
+      ? "Pendiente"
+      : "Cerrado"
   const cancellationTitle = refunded
     ? "Reintegro completado"
     : refundPending
@@ -1832,55 +1915,37 @@ function RefundManagementPanel({
   const refundAmountIsValid =
     parsedRefundAmount !== null &&
     (maxRefundAmount <= 0 || parsedRefundAmount <= maxRefundAmount)
+  const effectiveRefundMethod =
+    method === "Otro" ? customRefundMethod.trim() : method.trim()
+  const storeBenefitType = getStoreBenefitTypeFromRefundMethod(method)
+  const parsedStoreBenefitPercent = storeBenefitType
+    ? parseStoreBenefitPercent(storeBenefitPercent)
+    : null
+  const storeBenefitPercentIsValid =
+    !storeBenefitType || parsedStoreBenefitPercent !== null
   const canUploadRefund =
     !refunded &&
     refundPending &&
     Boolean(file) &&
     refundAmountIsValid &&
-    method.trim().length > 0 &&
+    effectiveRefundMethod.length > 0 &&
+    storeBenefitPercentIsValid &&
     !saving
   const refundDisplayAmount = formatPrice(Number(pedido.refund_amount ?? paidAmount ?? 0))
-  const refundRegisteredBy = getAdminDisplayName(pedido.refund_uploaded_by || pedido.refunded_by)
-
-  const openRefundProof = async () => {
-    setOpeningRefundProof(true)
-    setMessage(null)
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!session?.access_token) {
-        setMessage({ ok: false, text: "La sesión administrativa venció." })
-        return
-      }
-
-      const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      const data = (await response.json()) as {
-        signedUrl?: string | null
-        error?: string
-      }
-
-      if (!response.ok || !data.signedUrl) {
-        throw new Error(data.error || "No se pudo abrir el comprobante de reintegro.")
-      }
-
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer")
-    } catch (error) {
-      setMessage({
-        ok: false,
-        text:
-          error instanceof Error
-            ? error.message
-            : "No se pudo abrir el comprobante de reintegro.",
-      })
-    } finally {
-      setOpeningRefundProof(false)
-    }
-  }
+  const refundMethodDisplay = effectiveRefundMethod || pedido.refund_method || DEFAULT_REFUND_METHOD
+  const uploadDisabledReason = refunded
+    ? "La devolución ya fue cerrada."
+    : !refundPending
+      ? "No hay una acción de reintegro pendiente."
+      : !file
+        ? "Seleccioná el comprobante para habilitar la acción."
+        : !refundAmountIsValid
+          ? "Revisá el monto reintegrado."
+          : effectiveRefundMethod.length === 0
+            ? "Indicá el método de reintegro."
+            : !storeBenefitPercentIsValid
+              ? "Indicá el porcentaje del beneficio."
+              : null
 
   const uploadRefundProof = async () => {
     if (!file) {
@@ -1904,7 +1969,10 @@ function RefundManagementPanel({
       const formData = new FormData()
       formData.set("file", file)
       formData.set("amount", String(parsedRefundAmount ?? ""))
-      formData.set("method", method)
+      formData.set("method", effectiveRefundMethod)
+      if (storeBenefitType && parsedStoreBenefitPercent !== null) {
+        formData.set("storeBenefitPercent", String(parsedStoreBenefitPercent))
+      }
       formData.set("observation", observation)
       formData.set("internalNote", internalNote)
 
@@ -1938,87 +2006,102 @@ function RefundManagementPanel({
   }
 
   return (
-    <section className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panel}`}>
-      <div className="border-b border-[#7f2d3a]/45 pb-2.5">
-        <p className="text-11px font-bold uppercase tracking-widest text-white/80">
-          Gestión de cancelación
-        </p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-black text-white">
-            {refundPending ? "Reintegro pendiente" : cancellationTitle}
-          </h3>
+    <section className="admin-order-cancellation-panel rounded-xl border p-3">
+      <div className="admin-order-cancellation-header border-b pb-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="admin-order-cancellation-main-icon">
+            {refunded ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
+          </span>
+          <div className="min-w-0">
+            <p className="text-11px font-bold uppercase tracking-widest text-white/78">
+              Cancelación / reintegro
+            </p>
+            <h3 className="mt-1 text-base font-black text-white">
+              {refundPending ? "Reintegro pendiente" : cancellationTitle}
+            </h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#f4b8c0]/76">
+              {cancellationCopy}
+            </p>
+          </div>
         </div>
-        <p className={`mt-0.5 truncate text-sm ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
-          {cancellationCopy}
-        </p>
       </div>
 
-      <div className="mt-3 grid gap-2.5 lg:grid-cols-3">
-        <section className={`rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className="text-10px font-black uppercase tracking-widest text-white/80">
-            Información
-          </p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <DetailValue label="Pedido" value={`#${formatPublicOrderId(pedido.id)}`} />
-            <DetailValue label="Cliente" value={pedido.cliente_nombre || "Cliente sin nombre"} />
-            <DetailValue
-              label="Contacto"
-              value={[pedido.cliente_email, pedido.cliente_telefono].filter(Boolean).join(" · ") || "No informado"}
-            />
-            <DetailValue label="Usuario" value={pedido.cliente_username || "Sin usuario"} />
+      <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <p className="text-10px font-black uppercase tracking-widest text-[#ffb4bd]">
+              Acción pendiente
+            </p>
+            <p className="mt-1 text-sm font-black text-white">
+              {refunded
+                ? "La devolución ya fue cerrada."
+                : refundPending
+                  ? "Cargar comprobante de reintegro y marcar la devolución como completada."
+                  : "No hay acciones pendientes de reintegro para este pedido."}
+            </p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-white/62">
+              Método de reintegro: <span className="text-white/86">{refundMethodDisplay}</span>
+            </p>
           </div>
-        </section>
-        <section className={`rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className="text-10px font-black uppercase tracking-widest text-white/80">
-            Fechas
-          </p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-            <DetailValue
-              label="Pago confirmado"
-              value={formatOptionalOrderDate(pedido.payment_confirmed_at || pedido.paid_at)}
-            />
-            <DetailValue
-              label="Cancelación solicitada"
-              value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
-            />
+          <div className="admin-order-cancellation-amount-card rounded-xl border px-4 py-3">
+            <p className="admin-order-cancellation-amount-label text-10px font-black uppercase tracking-widest">
+              Monto a reintegrar
+            </p>
+            <p className="admin-order-cancellation-amount-value mt-1 text-xl font-black text-white">
+              {refundDisplayAmount}
+            </p>
           </div>
-        </section>
-        <section className={`rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className="text-10px font-black uppercase tracking-widest text-white/80">
-            Reintegro
-          </p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <DetailValue label="Monto" value={refundDisplayAmount} />
-            <DetailValue label="Método" value={pedido.refund_method || "Pendiente"} />
-            <DetailValue label="Estado" value={refundCompactStatus} />
-            <DetailValue
-              label="Documentación"
-              value={pedido.refund_proof_url ? "Comprobante cargado" : "Pendiente"}
-            />
-          </div>
-        </section>
+        </div>
+      </section>
+
+      <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+        <CancellationMiniCard label="Pedido" value={`#${formatPublicOrderId(pedido.id)}`} />
+        <CancellationMiniCard label="Cliente" value={pedido.cliente_nombre || "Cliente sin nombre"} />
+        <CancellationMiniCard
+          label="Contacto"
+          value={[pedido.cliente_email, pedido.cliente_telefono].filter(Boolean).join(" · ") || "No informado"}
+        />
+        <CancellationMiniCard
+          label="Pago confirmado"
+          value={formatOptionalOrderDate(pedido.payment_confirmed_at || pedido.paid_at)}
+        />
+        <CancellationMiniCard
+          label="Cancelación solicitada"
+          value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
+        />
+        <CancellationMiniCard label="Estado del reintegro" value={refundCompactStatus} valueClassName={refunded ? "text-emerald-100" : "text-amber-100"} />
       </div>
 
-      <div className="mt-3 grid min-w-0 gap-2.5 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.58fr)]">
-        <div className="min-w-0 rounded-xl border bg-[#111827] p-2.5">
-          <p className="text-10px font-black uppercase tracking-widest text-white/80">
+      <div className="mt-3 grid min-w-0 gap-3">
+        <div className="admin-order-cancellation-form-panel min-w-0 rounded-xl border p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-white/84">
             {refunded ? "Reintegro registrado" : "Cargar comprobante de reintegro"}
           </p>
           {!refundPending ? (
-            <p className="mt-2 rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
+            <p className="admin-order-cancellation-empty mt-3 rounded-lg border px-3 py-2 text-xs font-bold leading-5">
               {refunded
                 ? "No hay acciones pendientes para esta devolución."
                 : "No hay una acción de reintegro pendiente para este pedido."}
             </p>
           ) : (
             <>
-              <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
-                <div className="min-w-0">
-                  <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/45">
-                    Archivo del comprobante de reintegro
+              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
+                <div className="min-w-0 sm:col-span-2">
+                  <p className="mb-1.5 text-10px font-bold uppercase tracking-widest text-white/68">
+                    Archivo del comprobante
                   </p>
-                  <label className="flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[#2c4058] bg-[#111827] px-3 text-xs font-bold text-white/78 transition hover:border-[#4b78a4]">
-                    {file ? file.name : "⬇️ Seleccionar archivo"}
+                  <label className="admin-order-cancellation-file-zone flex min-h-10 w-full max-w-[26rem] cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2 transition">
+                    <span className="admin-order-cancellation-file-icon">
+                      <Upload className="size-3.5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-black text-white/90">
+                        {file ? file.name : "Cargar archivo"}
+                      </span>
+                      <span className="mt-0.5 block text-11px font-semibold text-white/54">
+                        Comprobante JPG, JPEG o PDF para cerrar el reintegro.
+                      </span>
+                    </span>
                     <input
                       type="file"
                       accept="image/jpeg,application/pdf,.jpg,.jpeg,.pdf"
@@ -2028,11 +2111,11 @@ function RefundManagementPanel({
                   </label>
                 </div>
                 <label className="min-w-0">
-                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
+                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/68">
                     Monto reintegrado
                   </span>
-                  <span className="flex h-10 w-full items-center overflow-hidden rounded-lg border border-[#2c4058] bg-[#111827] focus-within:border-beyonix-blue-light">
-                    <span className="flex h-full items-center border-r border-white/10 px-3 text-xs font-black text-white/55">
+                  <span className="admin-order-cancellation-field admin-order-cancellation-money-field flex h-10 w-full items-center overflow-hidden rounded-lg border focus-within:border-beyonix-blue-light">
+                    <span className="flex h-full items-center border-r border-white/10 px-3 text-xs font-black text-white/58">
                       $
                     </span>
                     <input
@@ -2046,106 +2129,88 @@ function RefundManagementPanel({
                       readOnly={!canEditRefundAmount}
                       disabled={!canEditRefundAmount}
                       placeholder="Monto reintegrado"
-                      className="h-full min-w-0 flex-1 bg-transparent px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 disabled:cursor-not-allowed disabled:text-white/55"
+                      className="admin-order-cancellation-money-input h-full min-w-0 flex-1 bg-transparent px-3 text-xs font-bold text-[#5CFFB0] outline-none placeholder:text-white/38 disabled:cursor-not-allowed disabled:text-white/55"
                     />
                   </span>
                 </label>
                 <label className="min-w-0">
-                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
+                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/68">
                     Método de reintegro
                   </span>
-                  <input
+                  <AdminSelect
+                    title="Método de reintegro"
                     value={method}
-                    onChange={(event) => setMethod(event.target.value)}
-                    placeholder="Transferencia, Mercado Pago, otro"
-                    className="h-10 w-full rounded-lg border border-[#2c4058] bg-[#111827] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-beyonix-blue-light"
-                  />
-                </label>
-                <label className="min-w-0">
-                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
-                    Observación visible para el cliente
-                  </span>
-                  <input
-                    value={observation}
-                    onChange={(event) => setObservation(event.target.value)}
-                    placeholder="Opcional"
-                    className="h-10 w-full rounded-lg border border-[#2c4058] bg-[#111827] px-3 text-xs font-bold text-white outline-none placeholder:text-white/38 focus:border-beyonix-blue-light"
-                  />
+                    triggerClassName="admin-order-cancellation-method-select"
+                    onChange={(value) => {
+                      setMethod(value)
+                      if (value !== "Otro") setCustomRefundMethod("")
+                      if (!getStoreBenefitTypeFromRefundMethod(value)) {
+                        setStoreBenefitPercent("")
+                      }
+                    }}
+                  >
+                    {REFUND_METHOD_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </AdminSelect>
+                  {method === "Otro" && (
+                    <input
+                      value={customRefundMethod}
+                      onChange={(event) => setCustomRefundMethod(event.target.value)}
+                      placeholder="Indicar método"
+                      className="admin-order-cancellation-custom-method mt-2 h-10 w-full rounded-xl border px-3 text-sm font-bold text-white outline-none placeholder:text-white/38"
+                    />
+                  )}
+                  {storeBenefitType && (
+                    <div className="mt-2">
+                      <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/68">
+                        Porcentaje del beneficio
+                      </span>
+                      <span className="admin-order-cancellation-field flex h-10 w-full items-center overflow-hidden rounded-lg border focus-within:border-beyonix-blue-light">
+                        <input
+                          value={storeBenefitPercent}
+                          onChange={(event) => setStoreBenefitPercent(event.target.value)}
+                          inputMode="numeric"
+                          placeholder="Ej: 15"
+                          className="h-full min-w-0 flex-1 bg-transparent px-3 text-xs font-bold text-white outline-none placeholder:text-white/38"
+                        />
+                        <span className="flex h-full items-center border-l border-white/10 px-3 text-xs font-black text-white/70">
+                          %
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </label>
               </div>
-              <label className="mt-2 block min-w-0">
-                <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/45">
-                  Observación interna, solo admin
-                </span>
-                <textarea
-                  value={internalNote}
-                  onChange={(event) => setInternalNote(event.target.value)}
-                  rows={2}
-                  placeholder="Notas internas sobre la devolución"
-                  className="min-h-16 w-full resize-none rounded-lg border border-[#2c4058] bg-[#111827] px-3 py-2 text-xs font-bold leading-5 text-white outline-none placeholder:text-white/38 focus:border-beyonix-blue-light"
-                />
-              </label>
               {!refundAmountIsValid && amount.trim() && (
                 <p className="mt-2 text-xs font-bold text-red-200">
                   Ingresá un monto válido, mayor a cero y no superior al monto pagado.
                 </p>
               )}
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              {!storeBenefitPercentIsValid && (
+                <p className="mt-2 text-xs font-bold text-red-200">
+                  Ingresá un porcentaje entre 1 y 100 para el beneficio.
+                </p>
+              )}
+              {uploadDisabledReason && (
+                <p className="mt-2 text-xs font-semibold text-white/52">
+                  {uploadDisabledReason}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   disabled={!canUploadRefund}
                   onClick={() => void uploadRefundProof()}
-                  className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/45 bg-beyonix-blue px-3 py-2 text-11px font-black uppercase tracking-wide text-white transition hover:border-beyonix-cyan hover:bg-beyonix-blue-hover disabled:cursor-not-allowed disabled:border-[#2c4058] disabled:bg-[#111827] disabled:text-white/42 disabled:opacity-60"
+                  className="admin-order-cancellation-primary-action inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                   {saving ? "Guardando..." : "Subir comprobante y marcar como reintegrado"}
                 </button>
               </div>
             </>
-          )}
-          {pedido.refund_proof_url && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={openingRefundProof}
-                onClick={() => void openRefundProof()}
-                className={`inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-wait disabled:opacity-60 ${ADMIN_SENSITIVE_DANGER.action}`}
-              >
-                <Download className="size-4" />
-                {openingRefundProof ? "Abriendo..." : "Ver comprobante"}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className={`min-w-0 rounded-xl border p-2.5 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className="text-10px font-black uppercase tracking-widest text-white/80">
-            Comprobante de reintegro
-          </p>
-          {pedido.refund_proof_url ? (
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              <DetailValue label="Estado" value={refundCompactStatus} />
-              <DetailValue
-                label="Archivo cargado"
-                value={pedido.refund_proof_file_name || "Comprobante registrado"}
-              />
-              <DetailValue
-                label="Fecha de carga"
-                value={formatOptionalOrderDate(pedido.refund_uploaded_at)}
-              />
-              <DetailValue
-                label="Registrado por"
-                value={refundRegisteredBy}
-              />
-              <DetailValue
-                label="Monto reintegrado"
-                value={refundDisplayAmount}
-              />
-            </div>
-          ) : (
-            <p className="mt-2 inline-flex rounded-lg border border-white/8 bg-[#141820] px-3 py-2 text-xs font-bold leading-5 text-white/62">
-              Todavía no hay comprobante de reintegro cargado.
-            </p>
           )}
         </div>
       </div>
@@ -2200,10 +2265,28 @@ function BillingManagementPanel({
       0,
   )
   const creditNoteProcessing = pedido.credit_note_status === "processing" || creditSaving
+  const creditNoteFormattedNumber = formatInvoiceNumberOrDash(
+    pedido.credit_note_point,
+    pedido.credit_note_number,
+  )
   const creditNoteNumberLabel =
-    pedido.credit_note_point && pedido.credit_note_number
-      ? `NC C ${formatInvoiceNumber(pedido.credit_note_point, Number(pedido.credit_note_number))}`
-      : pedido.credit_note_number || "Emitida"
+    creditNoteFormattedNumber === "-"
+      ? "-"
+      : `Nota de Crédito C ${creditNoteFormattedNumber}`
+  const creditNoteCaeLabel = formatBillingDash(pedido.credit_note_cae)
+  const creditNoteCaeDueLabel = formatInvoiceDateOrDash(pedido.credit_note_cae_due)
+  const creditNoteIssuedAtLabel = formatOptionalOrderDateOrDash(
+    pedido.credit_note_created_at || pedido.credit_note_issued_at,
+  )
+  const associatedInvoiceFormattedNumber = formatInvoiceNumberOrDash(
+    pedido.invoice_point,
+    pedido.invoice_number,
+  )
+  const associatedInvoiceLabel =
+    associatedInvoiceFormattedNumber === "-"
+      ? "-"
+      : `Factura C ${associatedInvoiceFormattedNumber}`
+  const creditNoteAmountLabel = creditNoteAmount > 0 ? formatPrice(creditNoteAmount) : "-"
   useEffect(() => {
     setMessage(null)
   }, [pedido.id])
@@ -2252,9 +2335,9 @@ function BillingManagementPanel({
   }
 
   return (
-    <section className="admin-order-data-panel admin-order-invoice-panel rounded-xl border border-white/8 p-3">
-      <div className="flex flex-col gap-3 border-b border-white/8 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
+    <section className="admin-order-data-panel admin-order-invoice-panel admin-order-billing-section rounded-xl border border-white/8 p-3">
+      <div className="admin-order-billing-header flex flex-col gap-3 border-b border-white/8 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="admin-order-billing-header-copy flex min-w-0 items-center gap-3">
           <span className={`admin-order-billing-main-icon ${invoiceIssued ? "admin-order-billing-main-icon--issued" : "admin-order-billing-main-icon--pending"}`}>
             <FileText className="size-7" />
           </span>
@@ -2278,7 +2361,7 @@ function BillingManagementPanel({
             type="button"
             onClick={() => void onDownloadInvoice()}
             disabled={invoiceDownloading}
-            className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B] disabled:cursor-wait disabled:opacity-60"
+            className="admin-order-billing-header-action inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B] disabled:cursor-wait disabled:opacity-60"
           >
             {invoiceDownloading ? (
               <LoaderCircle className="size-4 animate-spin" />
@@ -2292,7 +2375,7 @@ function BillingManagementPanel({
             type="button"
             onClick={() => void onIssueInvoice()}
             disabled={invoiceLoading || !isApprovedPayment(pedido)}
-            className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B] disabled:cursor-not-allowed disabled:opacity-45"
+            className="admin-order-billing-header-action inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B] disabled:cursor-not-allowed disabled:opacity-45"
           >
             {invoiceLoading ? (
               <LoaderCircle className="size-4 animate-spin" />
@@ -2321,27 +2404,95 @@ function BillingManagementPanel({
       )}
 
       {invoiceIssued ? (
-        <div className="mt-3 grid gap-3 sm:max-w-[620px] sm:grid-cols-2">
-          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-            <BillingDetailValue
-              label="Tipo y número"
-              value={`Factura C ${formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}`}
-            />
+        <div className="admin-order-billing-main-grid mt-3 grid gap-3 xl:items-stretch">
+          <div className="admin-order-billing-panel admin-order-billing-primary-panel rounded-lg border p-3">
+            <p className="text-10px font-black uppercase tracking-widest text-white/92">
+              Datos de la factura
+            </p>
+            <div className="admin-order-billing-data-grid mt-3 grid gap-3 sm:grid-cols-2">
+              <InvoiceDataCard
+                Icon={FileText}
+                label="Tipo y número"
+                value={`Factura C ${formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}`}
+              />
+              <InvoiceDataCard
+                Icon={ShieldCheck}
+                label="CAE"
+                value={pedido.invoice_cae || "No informado"}
+              />
+              <InvoiceDataCard
+                Icon={Clock3}
+                label="Vencimiento CAE"
+                value={formatInvoiceDate(pedido.invoice_cae_due)}
+              />
+              <InvoiceDataCard
+                Icon={CalendarDays}
+                label="Fecha de emisión"
+                value={formatOptionalOrderDate(pedido.invoice_created_at)}
+              />
+            </div>
           </div>
-          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-            <BillingDetailValue label="CAE" value={pedido.invoice_cae || "No informado"} />
-          </div>
-          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-            <BillingDetailValue
-              label="Vencimiento CAE"
-              value={formatInvoiceDate(pedido.invoice_cae_due)}
-            />
-          </div>
-          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-            <BillingDetailValue
-              label="Fecha de emisión"
-              value={formatOptionalOrderDate(pedido.invoice_created_at)}
-            />
+
+          <div className="admin-order-billing-panel admin-order-billing-side-panel rounded-lg border p-3">
+            <p className="text-10px font-black uppercase tracking-widest text-white/92">
+              Estado contable
+            </p>
+            <div className="admin-order-billing-status-list mt-3 space-y-2">
+              <AccountingStatusRow
+                Icon={CheckCircle2}
+                title="Factura emitida"
+                badge="Completado"
+                tone="green"
+              />
+              <AccountingStatusRow
+                Icon={
+                  creditNoteIssued
+                    ? CheckCircle2
+                    : pedido.credit_note_status === "error"
+                      ? AlertTriangle
+                      : Clock3
+                }
+                title={
+                  creditNoteIssued
+                    ? "Nota de crédito emitida"
+                    : creditNoteProcessing
+                      ? "Nota de crédito en proceso"
+                      : pedido.credit_note_status === "error"
+                        ? "Nota de crédito con error"
+                        : creditNoteNeeded
+                          ? "Nota de crédito pendiente"
+                          : "Nota de crédito no requerida"
+                }
+                badge={
+                  creditNoteIssued
+                    ? "Completado"
+                    : creditNoteProcessing
+                      ? "Procesando"
+                      : pedido.credit_note_status === "error"
+                        ? "Error"
+                        : creditNoteNeeded
+                          ? "Pendiente"
+                          : "No requerida"
+                }
+                tone={
+                  creditNoteIssued
+                    ? "green"
+                    : creditNoteProcessing
+                      ? "blue"
+                      : pedido.credit_note_status === "error"
+                        ? "red"
+                        : creditNoteNeeded
+                          ? "amber"
+                          : "gray"
+                }
+              />
+              <AccountingStatusRow
+                Icon={Download}
+                title="Descarga disponible"
+                badge="Disponible"
+                tone="blue"
+              />
+            </div>
           </div>
         </div>
       ) : !isApprovedPayment(pedido) ? (
@@ -2351,42 +2502,36 @@ function BillingManagementPanel({
       ) : null}
 
       {invoiceIssued && isCancellationFlowOrder(pedido) && (
-        <div className="admin-order-billing-credit-panel mt-3 rounded-lg border p-3">
+        <div className="admin-order-billing-panel admin-order-billing-credit-section mt-3 rounded-lg border p-3">
           <p className="text-10px font-black uppercase tracking-widest text-white/92">
             Nota de crédito
           </p>
-          {creditNoteIssued ? (
-            <div className="mt-3 space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-                  <BillingDetailValue
-                    label="Tipo y número"
-                    value={creditNoteNumberLabel}
-                  />
-                </div>
-                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-                  <BillingDetailValue label="CAE" value={pedido.credit_note_cae || "No informado"} />
-                </div>
-                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-                  <BillingDetailValue
-                    label="Vencimiento CAE"
-                    value={formatInvoiceDate(pedido.credit_note_cae_due)}
-                  />
-                </div>
-                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-                  <BillingDetailValue
-                    label="Fecha emisión"
-                    value={formatOptionalOrderDate(pedido.credit_note_created_at || pedido.credit_note_issued_at)}
-                  />
-                </div>
-                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
-                  <BillingDetailValue
-                    label="Monto acreditado"
-                    value={formatPrice(creditNoteAmount)}
-                    valueClassName="text-emerald-100"
-                  />
-                </div>
-              </div>
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <CreditNoteDataCard
+                label="Tipo y número"
+                value={creditNoteNumberLabel}
+              />
+              <CreditNoteDataCard label="CAE" value={creditNoteCaeLabel} />
+              <CreditNoteDataCard
+                label="Vencimiento CAE"
+                value={creditNoteCaeDueLabel}
+              />
+              <CreditNoteDataCard
+                label="Fecha de emisión"
+                value={creditNoteIssuedAtLabel}
+              />
+              <CreditNoteDataCard
+                label="Factura asociada"
+                value={associatedInvoiceLabel}
+              />
+              <CreditNoteDataCard
+                label="Monto a acreditar"
+                value={creditNoteAmountLabel}
+                valueClassName={creditNoteAmountLabel === "-" ? "text-white/92" : "text-emerald-100"}
+              />
+            </div>
+            {creditNoteIssued ? (
               <button
                 type="button"
                 onClick={() => void onDownloadCreditNote()}
@@ -2395,24 +2540,12 @@ function BillingManagementPanel({
                 <Download className="size-4" />
                 Descargar Nota de Crédito
               </button>
-            </div>
-          ) : (
-            <div className="mt-3 space-y-3">
-              <div className="grid gap-3 sm:max-w-[620px] sm:grid-cols-[minmax(0,280px)_minmax(0,1fr)] sm:items-center">
-                <CreditNoteInnerCard
-                  label="Monto a acreditar"
-                  value={formatPrice(creditNoteAmount)}
-                  valueClassName="text-emerald-100"
-                />
-                <p className="text-xs font-semibold leading-relaxed text-white/72">
-                  Debe emitirse una nota de crédito por la cancelación del pedido.
-                </p>
-              </div>
+            ) : (
               <button
                 type="button"
                 disabled={creditNoteProcessing || creditNoteAmount <= 0}
                 onClick={() => void issueCreditNote()}
-                className="admin-order-billing-danger-button inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50"
+                className="admin-order-billing-danger-button admin-order-billing-credit-action inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creditNoteProcessing ? (
                   <LoaderCircle className="size-4 animate-spin text-[#ffb4bd]" />
@@ -2421,8 +2554,8 @@ function BillingManagementPanel({
                 )}
                 {creditNoteProcessing ? "Emitiendo..." : "Emitir Nota de Crédito"}
               </button>
-            </div>
-          )}
+            )}
+          </div>
           {pedido.credit_note_error && !creditNoteIssued && (
             <p className="mt-3 rounded-lg border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
               {pedido.credit_note_error}
@@ -2470,7 +2603,99 @@ function BillingDetailValue({
   )
 }
 
-function CreditNoteInnerCard({
+function InvoiceDataCard({
+  Icon,
+  label,
+  value,
+}: {
+  Icon: LucideIcon
+  label: string
+  value: string
+}) {
+  return (
+    <div className="admin-order-invoice-data-card relative isolate overflow-hidden rounded-lg border px-3 py-3">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          background:
+            "linear-gradient(135deg, #171717 0%, #101010 100%)",
+        }}
+      />
+      <div className="admin-order-invoice-data-card-body relative z-10 flex min-w-0 items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[rgba(110,168,255,0.34)] bg-[#071527] text-[#6EA8FF]">
+          <Icon className="size-3.5" />
+        </span>
+        <BillingDetailValue label={label} value={value} />
+      </div>
+    </div>
+  )
+}
+
+type AccountingStatusTone = "green" | "amber" | "blue" | "red" | "gray"
+
+function getAccountingStatusToneClass(tone: AccountingStatusTone) {
+  return {
+    green: {
+      icon: "border-emerald-300/34 bg-[#06251b] text-[rgb(92,255,176)]",
+      badge: "border-emerald-300/32 bg-emerald-400/10 text-emerald-100",
+    },
+    amber: {
+      icon: "border-amber-300/34 bg-[#2a210b] text-amber-200",
+      badge: "border-amber-300/32 bg-amber-400/10 text-amber-100",
+    },
+    blue: {
+      icon: "border-[rgba(110,168,255,0.34)] bg-[#071527] text-[#6EA8FF]",
+      badge: "border-[rgba(110,168,255,0.34)] bg-[#071527] text-[#BBD7FF]",
+    },
+    red: {
+      icon: "border-red-300/34 bg-[#2a1117] text-red-100",
+      badge: "border-red-300/32 bg-red-400/10 text-red-100",
+    },
+    gray: {
+      icon: "border-white/18 bg-[#1b1f24] text-white/78",
+      badge: "border-white/18 bg-white/5 text-white/72",
+    },
+  }[tone]
+}
+
+function AccountingStatusRow({
+  Icon,
+  title,
+  badge,
+  tone,
+}: {
+  Icon: LucideIcon
+  title: string
+  badge: string
+  tone: AccountingStatusTone
+}) {
+  const toneClass = getAccountingStatusToneClass(tone)
+
+  return (
+    <div className="admin-order-accounting-status-card relative isolate flex items-center justify-between gap-3 overflow-hidden rounded-lg border px-3 py-2.5">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          background:
+            "linear-gradient(135deg, #171717 0%, #101010 100%)",
+        }}
+      />
+      <div className="admin-order-accounting-status-copy relative z-10 flex min-w-0 items-center gap-2.5">
+        <span className={`flex size-8 shrink-0 items-center justify-center rounded-full border ${toneClass.icon}`}>
+          <Icon className="size-3.5" />
+        </span>
+        <p className="text-sm font-bold leading-snug text-white/88">{title}</p>
+      </div>
+      <span className={`relative z-10 shrink-0 rounded-full border px-2 py-1 text-10px font-black uppercase tracking-wide ${toneClass.badge}`}>
+        {badge}
+      </span>
+    </div>
+  )
+}
+
+function CreditNoteDataCard({
   label,
   value,
   valueClassName = "text-white/92",
@@ -2480,13 +2705,22 @@ function CreditNoteInnerCard({
   valueClassName?: string
 }) {
   return (
-    <div className="credit-note-inner-card rounded-lg border px-3 py-3">
-      <p className="text-10px font-bold uppercase tracking-widest text-white/82">
-        {label}
-      </p>
-      <p className={`mt-1 wrap-break-word text-sm font-black ${valueClassName}`}>
-        {value}
-      </p>
+    <div className="admin-order-credit-note-data-card relative isolate overflow-hidden rounded-lg border px-3 py-3">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          background:
+            "linear-gradient(135deg, #171717 0%, #101010 100%)",
+        }}
+      />
+      <div className="relative z-10 min-w-0">
+        <BillingDetailValue
+          label={label}
+          value={value}
+          valueClassName={valueClassName}
+        />
+      </div>
     </div>
   )
 }
@@ -3308,6 +3542,9 @@ function PedidoDetailModal({
   const dispatch = getDispatchAlert(pedido)
   const tracking = pedido.andreani_tracking || pedido.tracking_number
   const isLocalRosarioOrder = isLocalRosarioDeliveryOrder(pedido)
+  const [shippingModality, setShippingModality] =
+    useState<ShippingModalityOption>("andreani")
+  const [customShippingModality, setCustomShippingModality] = useState("")
   const [andreaniLoading, setAndreaniLoading] = useState<AndreaniAction | null>(
     null
   )
@@ -3332,9 +3569,6 @@ function PedidoDetailModal({
     pedido.payment_status === "en_revision" &&
     Boolean(pedido.payment_proof_url) &&
     !paymentProofSeen
-  const destination =
-    [pedido.localidad, pedido.provincia].filter(Boolean).join(", ") ||
-    "No informado"
   const pendingClaim = (pedido.order_claims ?? []).find(
     (claim) => claim.admin_needs_action,
   )
@@ -3368,6 +3602,11 @@ function PedidoDetailModal({
         : pedido.payment_status === "en_revision"
           ? "en_revision"
           : "pendiente_comprobante"
+
+  useEffect(() => {
+    setShippingModality("andreani")
+    setCustomShippingModality("")
+  }, [pedido.id])
 
   useEffect(() => {
     const requestedView = getAdminOrderDetailView(searchParams.get("tab"))
@@ -3768,108 +4007,124 @@ function PedidoDetailModal({
           )}
 
           {activeView === "envio" && (
-          <section className="admin-order-shipping-panel mt-3 rounded-xl border border-beyonix-blue-light/20 p-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                  Envío
-                </p>
-                <h3 className="mt-1 flex items-center gap-2 text-sm font-black text-white">
-                  <Truck className="size-4 text-beyonix-sky" />
-                  {isLocalRosarioOrder
-                    ? "Envío sin costo"
-                    : pedido.shipping_type === "sucursal"
-                      ? "Retiro en sucursal"
-                      : "Envío a domicilio"}
-                </h3>
-                {isLocalRosarioOrder && (
-                  <p className="mt-0.5 text-xs font-medium text-beyonix-sky/88">
-                    Entrega local dentro de Rosario.
+          <section className="admin-order-shipping-panel admin-order-shipping-section mt-3 rounded-xl border p-3">
+            <div className="admin-order-shipping-header flex flex-col gap-3 border-b border-white/8 pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="admin-order-shipping-main-icon">
+                  <Truck className="size-6" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-11px font-bold uppercase tracking-widest text-white/78">
+                    Envío
                   </p>
-                )}
+                  <h3 className="mt-1 text-base font-black text-white">
+                    {isLocalRosarioOrder
+                      ? "Envío sin costo"
+                      : pedido.shipping_type === "sucursal"
+                        ? "Retiro en sucursal"
+                        : "Envío a domicilio"}
+                  </h3>
+                  {isLocalRosarioOrder && (
+                    <p className="mt-1 text-sm leading-5 text-white/68">
+                      Entrega local dentro de Rosario.
+                    </p>
+                  )}
+                </div>
               </div>
               <span
                 title={dispatch.label}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${dispatch.className}`}
+                className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${dispatch.className}`}
               >
                 <AlertTriangle className="size-3.5" />
                 {dispatch.label}
               </span>
             </div>
 
-            <div className="mt-3 grid gap-2 border-t border-white/8 pt-3 sm:grid-cols-2">
-              <CustomerAddressDetails pedido={pedido} />
-            </div>
-
-            <div className="mt-2 w-full max-w-xs rounded-xl border border-white/8 bg-[#1B2028] p-3">
-              <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/55">
-                Estado operativo
+            <div className="admin-order-shipping-address-panel mt-3 rounded-lg border p-3">
+              <p className="text-10px font-black uppercase tracking-widest text-white/92">
+                Dirección de entrega
               </p>
-              <AdminSelect
-                title="Estado operativo del pedido"
-                value={pedido.estado}
-                triggerClassName={getOrderStatusSelectClassName(pedido.estado)}
-                onChange={(value) => onEstadoChange(pedido, value)}
-              >
-                <option value="pendiente">Pendiente</option>
-                <option value="pagado">Pago confirmado</option>
-                <option value="enviado">Enviado</option>
-                {(isLocalRosarioOrder ||
-                  isSuperAdmin ||
-                  pedido.estado === "en_camino") && (
-                  <option value="en_camino">En camino</option>
-                )}
-                {(isLocalRosarioOrder ||
-                  isSuperAdmin ||
-                  pedido.estado === "entregado") && (
-                  <option value="entregado">Entregado</option>
-                )}
-                <option value="cancelado">Cancelado</option>
-              </AdminSelect>
+              <div className="mt-2">
+                <ShippingAddressDetails pedido={pedido} />
+              </div>
             </div>
 
-            <div className="mt-2 grid gap-2 border-t border-white/8 pt-2 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/45">
-                  Proveedor
-                </p>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <span className="flex size-7 items-center justify-center rounded-lg border border-beyonix-blue-light/25 bg-beyonix-blue/25 text-beyonix-sky">
-                    <Truck className="size-3.5" />
-                  </span>
-                  <p className="text-sm font-black text-white">
-                    {isLocalRosarioOrder
-                      ? "Envío local Rosario"
-                      : getShippingProvider(pedido)}
+            <div className="admin-order-shipping-ops-panel mt-3 rounded-lg border p-3">
+              <p className="text-10px font-black uppercase tracking-widest text-white/92">
+                Resumen logístico
+              </p>
+              <div className="admin-order-shipping-ops-grid mt-2 grid gap-2 sm:grid-cols-2">
+                <div className="admin-order-shipping-mini-card admin-order-shipping-status-card rounded-lg border px-3 py-2">
+                  <p className="text-10px font-bold uppercase tracking-widest text-white/62">
+                    Estado operativo
                   </p>
+                  <div className="mt-2">
+                    <AdminSelect
+                      title="Estado operativo del pedido"
+                      value={pedido.estado}
+                      triggerClassName={`admin-order-shipping-status-select ${getOrderStatusSelectClassName(pedido.estado)}`}
+                      onChange={(value) => onEstadoChange(pedido, value)}
+                    >
+                      <option value="pendiente">Pendiente</option>
+                      <option value="pagado">Pago confirmado</option>
+                      <option value="enviado">Enviado</option>
+                      {(isLocalRosarioOrder ||
+                        isSuperAdmin ||
+                        pedido.estado === "en_camino") && (
+                        <option value="en_camino">En camino</option>
+                      )}
+                      {(isLocalRosarioOrder ||
+                        isSuperAdmin ||
+                        pedido.estado === "entregado") && (
+                        <option value="entregado">Entregado</option>
+                      )}
+                      <option value="cancelado">Cancelado</option>
+                    </AdminSelect>
+                  </div>
                 </div>
-              </div>
-              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                <DetailValue label="Estado" value={getAndreaniStatus(pedido)} />
-              </div>
-              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                <DetailValue label="Seguimiento" value={tracking || "Pendiente"} />
-              </div>
-              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                <DetailValue
-                  label="Envío ID"
-                  value={pedido.andreani_envio_id || "Pendiente"}
-                />
-              </div>
-              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                <DetailValue
-                  label="Costo"
-                  value={
-                    isLocalRosarioOrder
-                      ? "Sin costo"
-                      : typeof pedido.andreani_costo === "number"
-                        ? formatPrice(pedido.andreani_costo)
-                      : "Pendiente"
-                  }
-                />
-              </div>
-              <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                <DetailValue label="Destino" value={destination} />
+
+                <div className="admin-order-shipping-mini-card admin-order-shipping-modality-card rounded-lg border px-3 py-2">
+                  <p className="text-10px font-bold uppercase tracking-widest text-white/62">
+                    Modalidad
+                  </p>
+                  <div className="mt-2">
+                    <AdminSelect
+                      title="Modalidad logística"
+                      value={shippingModality}
+                      triggerClassName="admin-order-shipping-modality-select"
+                      onChange={(value) => setShippingModality(value as ShippingModalityOption)}
+                    >
+                      <option value="andreani">ANDREANI</option>
+                      <option value="rosario">ROSARIO</option>
+                      <option value="otro">OTRO</option>
+                    </AdminSelect>
+                  </div>
+                  {shippingModality === "otro" && (
+                    <input
+                      value={customShippingModality}
+                      onChange={(event) => setCustomShippingModality(event.target.value)}
+                      placeholder="Indicar modalidad"
+                      className="admin-order-shipping-other-modality mt-2 h-10 w-full rounded-xl border px-3 text-sm font-bold text-white outline-none placeholder:text-white/38"
+                    />
+                  )}
+                </div>
+                <ShippingMiniCard label="Estado del envío" value={getAndreaniStatus(pedido)} />
+                {(isLocalRosarioOrder || typeof pedido.andreani_costo === "number") && (
+                  <ShippingMiniCard
+                    label="Costo"
+                    value={
+                      isLocalRosarioOrder
+                        ? "Sin costo"
+                        : formatPrice(pedido.andreani_costo ?? 0)
+                    }
+                  />
+                )}
+                {tracking && (
+                  <ShippingMiniCard label="Seguimiento" value={tracking} />
+                )}
+                {pedido.andreani_envio_id && (
+                  <ShippingMiniCard label="Envío ID" value={pedido.andreani_envio_id} />
+                )}
               </div>
             </div>
 
@@ -3892,18 +4147,18 @@ function PedidoDetailModal({
               </p>
             )}
 
-            <div className="mt-2 rounded-lg border border-white/8 bg-black/35 p-2">
-              <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+            <div className="admin-order-shipping-actions-panel mt-3 rounded-lg border p-3">
+              <p className="text-10px font-black uppercase tracking-widest text-white/92">
                 Acciones de Andreani
               </p>
-              <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                 <button
                   type="button"
                   title="Generar envío en Andreani"
                   aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
                   disabled={andreaniLoading !== null}
                   onClick={() => void handleModalAndreaniAction("crear-envio")}
-                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+                  className="admin-order-shipping-action admin-order-shipping-action--primary inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait disabled:opacity-50"
                 >
                   <Truck className="size-4" />
                   Generar envío
@@ -3914,7 +4169,7 @@ function PedidoDetailModal({
                   aria-label={`Consultar envío Andreani del pedido ${pedido.id}`}
                   disabled={andreaniLoading !== null}
                   onClick={() => void handleModalAndreaniAction("tracking")}
-                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-11px font-black uppercase tracking-wide text-white/72 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+                  className="admin-order-shipping-action inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait disabled:opacity-50"
                 >
                   <RefreshCw className="size-4" />
                   Consultar
@@ -3931,7 +4186,7 @@ function PedidoDetailModal({
                     disabled
                     title="El seguimiento todavía no está disponible"
                     aria-label="Seguimiento no disponible"
-                    className="inline-flex h-10 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-white/7 px-3 text-11px font-black uppercase tracking-wide text-white/28"
+                    className="admin-order-shipping-action inline-flex h-9 cursor-not-allowed items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide disabled:opacity-50"
                   >
                     <Eye className="size-4" />
                     Ver envío
@@ -3949,7 +4204,7 @@ function PedidoDetailModal({
                     disabled
                     title="La etiqueta todavía no está disponible"
                     aria-label="Etiqueta no disponible"
-                    className="inline-flex h-10 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-white/7 px-3 text-11px font-black uppercase tracking-wide text-white/28"
+                    className="admin-order-shipping-action inline-flex h-9 cursor-not-allowed items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide disabled:opacity-50"
                   >
                     <Download className="size-4" />
                     Ver etiqueta
@@ -3965,7 +4220,7 @@ function PedidoDetailModal({
                   }
                   aria-label={`Imprimir etiqueta Andreani del pedido ${pedido.id}`}
                   onClick={() => handlePrintAndreaniLabel(pedido)}
-                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-11px font-black uppercase tracking-wide text-white/72 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky disabled:cursor-not-allowed disabled:border-white/7 disabled:text-white/28"
+                  className="admin-order-shipping-action inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Printer className="size-4" />
                   Imprimir
@@ -3999,6 +4254,55 @@ function DetailValue({
         {label}
       </p>
       <p className="mt-1 wrap-break-word text-sm font-bold text-white/82">{value}</p>
+    </div>
+  )
+}
+
+function CancellationMiniCard({
+  label,
+  value,
+  valueClassName = "text-white/88",
+}: {
+  label: string
+  value: string
+  valueClassName?: string
+}) {
+  return (
+    <div className="admin-order-cancellation-mini-card rounded-lg border px-3 py-2.5">
+      <p className="text-10px font-bold uppercase tracking-widest text-white/64">
+        {label}
+      </p>
+      <p className={`mt-1 wrap-break-word text-sm font-black ${valueClassName}`}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function ShippingMiniCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string
+  value: string
+  icon?: ReactNode
+}) {
+  return (
+    <div className="admin-order-shipping-mini-card rounded-lg border px-3 py-2">
+      <p className="text-10px font-bold uppercase tracking-widest text-white/62">
+        {label}
+      </p>
+      <div className="mt-1 flex min-w-0 items-center gap-2">
+        {icon && (
+          <span className="admin-order-shipping-mini-icon">
+            {icon}
+          </span>
+        )}
+        <p className="wrap-break-word text-sm font-black text-white/92">
+          {value}
+        </p>
+      </div>
     </div>
   )
 }
@@ -4080,6 +4384,51 @@ function CustomerAddressDetails({ pedido }: { pedido: SupabasePedido }) {
         <CompactAddressValue label="Localidad / Provincia" value={localityLine || "Localidad no informada"} />
         <CompactAddressValue label="Código postal" value={postalCode || "No informado"} />
         <CompactAddressValue label="Referencias" value={reference || "Sin referencias"} wide />
+      </div>
+    </div>
+  )
+}
+
+function ShippingAddressDetails({ pedido }: { pedido: SupabasePedido }) {
+  const cleanAddress = cleanAddressValue(pedido.cliente_direccion)
+  const parsedAddress = parseDeliveryAddress(
+    cleanAddress,
+    pedido.provincia ?? undefined,
+    pedido.cp_destino ?? undefined
+  )
+  const streetLine = [parsedAddress.street, parsedAddress.streetNumber]
+    .filter(Boolean)
+    .join(" ")
+  const unitLine = [
+    parsedAddress.floor ? `Piso ${parsedAddress.floor}` : "",
+    parsedAddress.apartment ? `Depto ${parsedAddress.apartment}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const locality = pedido.localidad || parsedAddress.locality
+  const postalCode = pedido.cp_destino || getPostalCodeFromAddress(cleanAddress)
+  const reference = getAddressReference(pedido.cliente_direccion)
+  const localityLine = [locality, pedido.provincia].filter(Boolean).join(", ")
+
+  return (
+    <div className="admin-order-shipping-address-card rounded-lg border p-2.5">
+      <div className="grid gap-2 text-sm sm:grid-cols-2">
+        <CompactAddressValue
+          label="Dirección"
+          value={streetLine || cleanAddress || "No informada"}
+        />
+        {unitLine && (
+          <CompactAddressValue label="Piso / Depto" value={unitLine} />
+        )}
+        {localityLine && (
+          <CompactAddressValue label="Localidad / Provincia" value={localityLine} />
+        )}
+        {postalCode && (
+          <CompactAddressValue label="Código postal" value={postalCode} />
+        )}
+        {reference && (
+          <CompactAddressValue label="Referencias" value={reference} wide />
+        )}
       </div>
     </div>
   )

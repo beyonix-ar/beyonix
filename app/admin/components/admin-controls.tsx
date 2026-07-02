@@ -177,7 +177,7 @@ export function AdminSelect({
               width: menuPosition.width,
             }}
           >
-            <div className="admin-select-scrollbar max-h-60 overflow-y-auto py-1 pr-1">
+            <div className={`admin-select-scrollbar overflow-y-auto py-1 pr-1 ${compact ? "max-h-48" : "max-h-60"}`}>
               {options.map((option) => {
                 const selected = option.value === value
 
@@ -191,7 +191,9 @@ export function AdminSelect({
                       onChange(option.value)
                       setOpen(false)
                     }}
-                    className={`flex h-9 w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 text-left text-sm font-medium transition-colors ${
+                    className={`flex w-full cursor-pointer items-center justify-between rounded-xl text-left font-medium transition-colors ${
+                      compact ? "h-8 gap-2 px-2.5 text-xs" : "h-9 gap-3 px-3 text-sm"
+                    } ${
                       selected
                         ? "bg-[rgba(17,42,67,0.9)] text-[#D7ECFF] shadow-[inset_0_0_0_1px_rgba(191,228,255,0.16)]"
                         : "text-[#F8FAFC] hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF]"

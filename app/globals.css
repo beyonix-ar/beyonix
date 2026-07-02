@@ -1104,6 +1104,479 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
     0 0 16px rgba(16, 185, 129, 0.07) !important;
 }
 
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]) {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #fff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(110, 168, 255, 0.12) !important;
+}
+
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]):hover {
+  background: #1E4D7B !important;
+  background-color: #1E4D7B !important;
+  background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
+  border-color: rgba(110, 168, 255, 0.74) !important;
+}
+
+button[aria-label^="Ver pedido"]:not(:disabled) {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #fff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 12px rgba(110, 168, 255, 0.1) !important;
+}
+
+button[aria-label^="Ver pedido"]:not(:disabled):hover {
+  background: #1E4D7B !important;
+  background-color: #1E4D7B !important;
+  background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
+  border-color: rgba(110, 168, 255, 0.74) !important;
+}
+
+.admin-order-detail-scope section.admin-order-cancellation-panel {
+  --order-cancellation-section-bg: #111111;
+  --order-cancellation-panel-bg: #1b1b1b;
+  --order-cancellation-action-bg: #202020;
+  --order-cancellation-inner-card-bg: #282828;
+  --order-cancellation-field-bg: #101010;
+  background: var(--order-cancellation-section-bg) !important;
+  background-color: var(--order-cancellation-section-bg) !important;
+  background-image: none !important;
+  border-color: rgba(110, 168, 255, 0.42) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 0 24px rgba(110, 168, 255, 0.07) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-header {
+  border-color: rgba(110, 168, 255, 0.34) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel h3,
+.admin-order-detail-scope .admin-order-cancellation-panel p[class*="tracking-widest"] {
+  color: #fff !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-main-icon {
+  align-items: center;
+  background: #2a1117;
+  border: 1px solid rgba(110, 168, 255, 0.42);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 18px rgba(159, 53, 70, 0.16);
+  color: #ffc2c8;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 52px;
+  justify-content: center;
+  width: 52px;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel :is(.admin-order-cancellation-action-panel, .admin-order-cancellation-form-panel, .admin-order-cancellation-proof-panel) {
+  background: var(--order-cancellation-panel-bg) !important;
+  background-color: var(--order-cancellation-panel-bg) !important;
+  background-image: none !important;
+  border-color: rgba(110, 168, 255, 0.38) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-action-panel {
+  background: var(--order-cancellation-action-bg) !important;
+  background-color: var(--order-cancellation-action-bg) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-mini-card,
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-amount-card {
+  background: var(--order-cancellation-inner-card-bg) !important;
+  background-color: var(--order-cancellation-inner-card-bg) !important;
+  background-image: linear-gradient(135deg, #282828, #232323) !important;
+  border-color: rgba(110, 168, 255, 0.36) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 12px rgba(110, 168, 255, 0.055) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border {
+  background: #047857 !important;
+  background-color: #047857 !important;
+  background-image: linear-gradient(135deg, #047857, #065F46) !important;
+  border-color: rgba(255, 255, 255, 0.42) !important;
+  color: #fff !important;
+  min-width: min(100%, 14rem);
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border p,
+.admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border .admin-order-cancellation-amount-label,
+.admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border .admin-order-cancellation-amount-value {
+  color: #fff !important;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-file-zone,
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-field {
+  background: var(--order-cancellation-field-bg) !important;
+  background-color: var(--order-cancellation-field-bg) !important;
+  background-image: none !important;
+  border-color: rgba(110, 168, 255, 0.34) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel label.admin-order-cancellation-file-zone.rounded-xl.border {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(110, 168, 255, 0.12) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel label.admin-order-cancellation-file-zone.rounded-xl.border:hover {
+  background: #1E4D7B !important;
+  background-color: #1E4D7B !important;
+  background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
+  border-color: rgba(110, 168, 255, 0.74) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-money-field {
+  background: #101010 !important;
+  background-color: #101010 !important;
+  background-image: linear-gradient(135deg, #151515, #101010) !important;
+  border-color: rgba(110, 168, 255, 0.42) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 10px rgba(110, 168, 255, 0.045) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-method-field {
+  background:
+    linear-gradient(135deg, rgba(7, 21, 39, 0.96), rgba(10, 18, 30, 0.98)) !important;
+  background-color: #071527 !important;
+  border-color: rgba(110, 168, 255, 0.42) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-method-select {
+  height: 2.5rem;
+  width: 100% !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  color: #fff !important;
+  font-size: 0.875rem !important;
+  font-weight: 800 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(110, 168, 255, 0.12) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-method-select span,
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-method-select svg {
+  color: #fff !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-custom-method {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(110, 168, 255, 0.12) !important;
+}
+
+body > div[role="listbox"][aria-label="Método de reintegro"] {
+  min-width: 15.5rem !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  background: #080D14 !important;
+  color: #fff !important;
+}
+
+body > div[role="listbox"][aria-label="Método de reintegro"] button {
+  color: #fff !important;
+  font-size: 0.875rem !important;
+  font-weight: 800 !important;
+  min-height: 2.5rem;
+}
+
+body > div[role="listbox"][aria-label="Método de reintegro"] button[aria-selected="true"] {
+  color: #fff !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-note-field {
+  background:
+    linear-gradient(135deg, rgba(38, 38, 38, 0.98), rgba(22, 22, 22, 0.98)) !important;
+  background-color: #262626 !important;
+  border-color: rgba(110, 168, 255, 0.34) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-internal-field {
+  background:
+    linear-gradient(135deg, rgba(31, 31, 31, 0.98), rgba(14, 14, 14, 0.98)) !important;
+  background-color: #1f1f1f !important;
+  border-color: rgba(110, 168, 255, 0.28) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel input.admin-order-cancellation-money-input {
+  color: #5CFFB0 !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-file-icon {
+  align-items: center;
+  background: #071527;
+  border: 1px solid rgba(110, 168, 255, 0.58);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 12px rgba(110, 168, 255, 0.12);
+  color: #6EA8FF;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-primary-action {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #fff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(110, 168, 255, 0.12) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-primary-action:hover {
+  background: #1E4D7B !important;
+  border-color: rgba(110, 168, 255, 0.74) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-primary-action:disabled {
+  background: #202020 !important;
+  border-color: rgba(110, 168, 255, 0.32) !important;
+  color: rgba(255, 255, 255, 0.54) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 10px rgba(110, 168, 255, 0.035) !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-secondary-action {
+  background: #2a1117 !important;
+  background-color: #2a1117 !important;
+  border-color: rgba(110, 168, 255, 0.46) !important;
+  color: #ffc2c8 !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-secondary-action:hover {
+  background: #35151d !important;
+  border-color: rgba(110, 168, 255, 0.7) !important;
+  color: #fff !important;
+}
+
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-empty {
+  background: #202020 !important;
+  background-color: #202020 !important;
+  background-image: none !important;
+  border-color: rgba(110, 168, 255, 0.28) !important;
+  color: rgba(255, 255, 255, 0.64) !important;
+}
+
+.admin-order-detail-scope section.admin-order-shipping-panel.admin-order-shipping-section {
+  --order-shipping-section-bg: #101010;
+  --order-shipping-panel-bg: #1b1b1b;
+  --order-shipping-inner-card-bg: #0d0d0d;
+  --order-shipping-field-bg: #111827;
+  background: var(--order-shipping-section-bg) !important;
+  background-color: var(--order-shipping-section-bg) !important;
+  background-image: none !important;
+  border-color: rgba(110, 168, 255, 0.48) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 0 24px rgba(110, 168, 255, 0.06) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-header {
+  align-items: center;
+  border-color: rgba(110, 168, 255, 0.34) !important;
+  padding-bottom: 0.875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-main-icon {
+  align-items: center;
+  background: #071527;
+  border: 1px solid rgba(110, 168, 255, 0.34);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 18px rgba(110, 168, 255, 0.1);
+  color: #fff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 52px;
+  justify-content: center;
+  width: 52px;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel :is(.admin-order-shipping-address-panel, .admin-order-shipping-ops-panel, .admin-order-shipping-actions-panel) {
+  background: var(--order-shipping-panel-bg) !important;
+  background-color: var(--order-shipping-panel-bg) !important;
+  background-image: linear-gradient(135deg, #1d1d1d, #181818) !important;
+  border-color: rgba(110, 168, 255, 0.44) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 16px rgba(110, 168, 255, 0.04) !important;
+  padding: 0.875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-card,
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-card {
+  background: var(--order-shipping-inner-card-bg) !important;
+  background-color: var(--order-shipping-inner-card-bg) !important;
+  background-image: linear-gradient(135deg, #101010, #090909) !important;
+  border-color: rgba(110, 168, 255, 0.38) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(110, 168, 255, 0.045) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-card {
+  padding: 0.875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-card {
+  min-height: 66px;
+  padding: 0.625rem 0.75rem !important;
+}
+
+.admin-order-detail-scope section.admin-order-shipping-panel.admin-order-shipping-section .admin-order-shipping-ops-panel .admin-order-shipping-ops-grid > div.admin-order-shipping-mini-card.rounded-lg.border {
+  background: #141414 !important;
+  background-color: #141414 !important;
+  background-image: linear-gradient(135deg, #151515, #121212) !important;
+  border-color: rgba(110, 168, 255, 0.42) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-icon {
+  align-items: center;
+  background: #071527;
+  border: 1px solid rgba(110, 168, 255, 0.34);
+  border-radius: 9999px;
+  color: #6EA8FF;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-control-select {
+  height: 2.5rem;
+  max-width: none;
+  min-width: 15.5rem;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  background: var(--order-shipping-field-bg) !important;
+  background-color: var(--order-shipping-field-bg) !important;
+  background-image: linear-gradient(135deg, #111827, #071527) !important;
+  color: #fff !important;
+  font-size: 0.875rem !important;
+  font-weight: 800 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 12px rgba(110, 168, 255, 0.07) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-control-select span,
+.admin-order-detail-scope .admin-order-shipping-panel .admin-control-select svg {
+  color: #fff !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select {
+  min-width: 0;
+  width: 100% !important;
+  max-width: none;
+}
+
+body > div[role="listbox"][aria-label="Estado operativo del pedido"],
+body > div[role="listbox"][aria-label="Modalidad logística"] {
+  min-width: 15.5rem !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  background: #080D14 !important;
+  color: #fff !important;
+}
+
+body > div[role="listbox"][aria-label="Estado operativo del pedido"] button,
+body > div[role="listbox"][aria-label="Modalidad logística"] button {
+  color: #fff !important;
+  font-size: 0.875rem !important;
+  font-weight: 800 !important;
+  min-height: 2.5rem;
+}
+
+body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria-selected="true"],
+body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-selected="true"] {
+  color: #fff !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select {
+  width: 100% !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-other-modality {
+  background: #111827 !important;
+  background-color: #111827 !important;
+  background-image: linear-gradient(135deg, #111827, #071527) !important;
+  border-color: rgba(110, 168, 255, 0.52) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 12px rgba(110, 168, 255, 0.07) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-grid {
+  align-items: stretch;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-grid {
+  gap: 0.625rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action,
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel a {
+  background: #171717 !important;
+  background-color: #171717 !important;
+  border-color: rgba(110, 168, 255, 0.34) !important;
+  color: rgba(255, 255, 255, 0.82) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action:hover,
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel a:hover {
+  background: #112A43 !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #D7ECFF !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action--primary {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #D7ECFF !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action:disabled {
+  background: #151515 !important;
+  border-color: rgba(110, 168, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.32) !important;
+}
+
 .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon {
   align-items: center;
   border: 1px solid rgba(110, 168, 255, 0.34);
@@ -1128,15 +1601,104 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   background: #071527;
 }
 
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel {
+  --order-billing-section-bg: #111111;
+  --order-billing-panel-bg: #202020;
+  --order-billing-inner-card-bg: #262626;
+  --order-billing-credit-note-card-bg: #171717;
+  --order-billing-credit-note-card-bg-strong: #101010;
+  background: var(--order-billing-section-bg) !important;
+  background-color: var(--order-billing-section-bg) !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-copy {
+  min-width: 0;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-action {
+  justify-self: end;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-alert {
+  align-items: center;
+  min-height: 64px;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-grid {
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.95fr);
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-panel {
+  min-width: 0;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-primary-panel,
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-side-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-data-grid {
+  align-content: stretch;
+  gap: 0.5rem !important;
+  margin-top: 0.5rem !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.375rem !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-status-list > * + * {
+  margin-top: 0 !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-section {
+  width: 100%;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-content {
+  align-items: end;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(260px, 340px) max-content;
+  width: fit-content;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-content > * + * {
+  margin-top: 0 !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-card-slot {
+  max-width: none !important;
+  min-width: 260px;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-action {
+  align-self: end;
+}
+
 .admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-card {
   background: #202020 !important;
+  background-color: #202020 !important;
   background-image: none !important;
   border-color: rgba(74, 144, 184, 0.42) !important;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-alert {
-  background: #202020 !important;
-  background-image: linear-gradient(135deg, rgba(65, 18, 28, 0.34), rgba(32, 32, 32, 0.98)) !important;
+  background: #232323 !important;
+  background-color: #232323 !important;
+  background-image: linear-gradient(135deg, rgba(65, 18, 28, 0.22), rgba(35, 35, 35, 0.98)) !important;
   border-color: rgba(255, 143, 160, 0.36) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.045),
@@ -1156,11 +1718,22 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   width: 34px;
 }
 
-.admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-credit-panel {
-  background: #202020 !important;
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel {
+  background: var(--order-billing-panel-bg) !important;
+  background-color: var(--order-billing-panel-bg) !important;
   background-image: none !important;
   border-color: rgba(74, 144, 184, 0.42) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-primary-panel,
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-side-panel {
+  padding: 0.625rem !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-side-panel {
+  align-self: start;
+  padding: 0.5rem !important;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-danger-button {
@@ -1417,21 +1990,92 @@ body.product-modal-open .category-hero {
   cursor: not-allowed;
 }
 
-.credit-note-inner-card {
-  background: #2A2A2A !important;
-  background-color: #2A2A2A !important;
-  background-image: none !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel div.credit-note-inner-card {
-  background: #2A2A2A !important;
-  background-color: #2A2A2A !important;
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-invoice-mini-card {
+  background: var(--order-billing-inner-card-bg) !important;
+  background-color: var(--order-billing-inner-card-bg) !important;
   background-image: none !important;
   border-color: rgba(74, 144, 184, 0.42) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-invoice-panel div.credit-note-inner-card.rounded-lg.border {
-  background: #2A2A2A !important;
-  background-color: #2A2A2A !important;
-  background-image: none !important;
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-amount-card,
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-invoice-data-card,
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-data-card,
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card {
+  background: var(--order-billing-credit-note-card-bg) !important;
+  background-color: var(--order-billing-credit-note-card-bg) !important;
+  background-image: linear-gradient(
+    135deg,
+    var(--order-billing-credit-note-card-bg),
+    var(--order-billing-credit-note-card-bg-strong)
+  ) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(255, 255, 255, 0.035) !important;
+}
+
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-invoice-data-card {
+  min-height: 46px;
+  padding: 0.5rem 0.625rem !important;
+}
+
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-amount-card,
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-data-card {
+  min-height: 52px;
+  padding: 0.625rem !important;
+}
+
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-invoice-data-card-body {
+  height: 100%;
+  width: 100%;
+}
+
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card {
+  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  min-height: 38px;
+  padding: 0.25rem 0.5rem !important;
+}
+
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-copy {
+  min-width: 0;
+}
+
+.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-copy p {
+  overflow: visible;
+}
+
+@media (max-width: 1279px) {
+  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select {
+    width: 100% !important;
+  }
+
+  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-content {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-card-slot,
+  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 639px) {
+  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-action {
+    justify-self: stretch;
+    width: 100%;
+  }
 }

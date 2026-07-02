@@ -69,6 +69,11 @@ import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
 import {
+  calculateStoreBenefitDiscount,
+  getStoreBenefitLabel,
+  type StoreBenefitType,
+} from "@/lib/customer-store-benefits"
+import {
   calculateCartShippingPackage,
 } from "@/lib/cart/shipping-package"
 import {
@@ -178,6 +183,13 @@ interface ShippingOption {
   label: string
   price: number
   provider: "andreani" | "manual"
+}
+
+interface CheckoutStoreBenefit {
+  id: string
+  benefit_type: StoreBenefitType
+  code: string
+  percent: number
 }
 
 type CheckoutStep = 1 | 2 | 3
@@ -306,6 +318,10 @@ export default function CheckoutPage() {
     useState<RequiredCheckoutField | null>(null)
   const [shippingSelectionMissing, setShippingSelectionMissing] =
     useState(false)
+  const [storeBenefits, setStoreBenefits] =
+    useState<CheckoutStoreBenefit[]>([])
+  const [selectedStoreBenefitId, setSelectedStoreBenefitId] =
+    useState("")
   const hasEditedCheckoutFormRef = useRef(false)
   const validationTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -421,6 +437,46 @@ export default function CheckoutPage() {
   }, [user])
 
   useEffect(() => {
+    if (!user) {
+      setStoreBenefits([])
+      setSelectedStoreBenefitId("")
+      return
+    }
+
+    let cancelled = false
+
+    async function loadStoreBenefits() {
+      try {
+        const response = await fetch("/api/account/store-benefits")
+        const data = (await response.json()) as {
+          benefits?: CheckoutStoreBenefit[]
+        }
+
+        if (cancelled) return
+
+        const benefits = data.benefits ?? []
+        setStoreBenefits(benefits)
+        setSelectedStoreBenefitId((current) =>
+          benefits.some((benefit) => benefit.id === current)
+            ? current
+            : benefits[0]?.id ?? "",
+        )
+      } catch {
+        if (!cancelled) {
+          setStoreBenefits([])
+          setSelectedStoreBenefitId("")
+        }
+      }
+    }
+
+    void loadStoreBenefits()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  useEffect(() => {
     if (
       !mounted ||
       isLoading ||
@@ -497,12 +553,25 @@ export default function CheckoutPage() {
   const totals = calculateCartTotals(items, {
     shippingCost: shippingCostCharged,
   })
+  const selectedStoreBenefit =
+    storeBenefits.find((benefit) => benefit.id === selectedStoreBenefitId) ??
+    null
+  const storeBenefitDiscountAmount = selectedStoreBenefit
+    ? calculateStoreBenefitDiscount(
+        totals.productsTotal,
+        selectedStoreBenefit.percent,
+      )
+    : 0
+  const productsTotalAfterStoreBenefit = Math.max(
+    totals.productsTotal - storeBenefitDiscountAmount,
+    0,
+  )
   const isTransferPayment = selectedPayment === "transferencia"
   const isSelectedPaymentValid = paymentMethods.some(
     (method) => method.id === selectedPayment,
   )
   const transferPaymentTotals = calculateTransferPaymentTotal(
-    totals.productsTotal,
+    productsTotalAfterStoreBenefit,
     totals.shipping,
   )
   const transferDiscountAmount = isTransferPayment
@@ -510,7 +579,7 @@ export default function CheckoutPage() {
     : 0
   const finalTotal = isTransferPayment
     ? transferPaymentTotals.total
-    : totals.total
+    : productsTotalAfterStoreBenefit + totals.shipping
 
   useEffect(() => {
     const cpDestino = formData.cpDestino.trim()
@@ -846,6 +915,7 @@ export default function CheckoutPage() {
             costCharged: shippingCostCharged,
             freeShippingApplied,
           },
+          storeBenefitId: selectedStoreBenefit?.id ?? null,
           items: items.map((item) => ({
             productId: item.product.id,
             quantity: item.quantity,
@@ -1634,6 +1704,35 @@ export default function CheckoutPage() {
                 })}
               </div>
 
+              {storeBenefits.length > 0 && (
+                <div className="mt-2 rounded-xl border border-beyonix-blue-light/25 bg-[#0B1624] px-3 py-2.5">
+                  <label
+                    htmlFor="store-benefit"
+                    className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/62"
+                  >
+                    Beneficio disponible
+                  </label>
+                  <select
+                    id="store-benefit"
+                    value={selectedStoreBenefitId}
+                    onChange={(event) =>
+                      setSelectedStoreBenefitId(event.target.value)
+                    }
+                    className="h-9 w-full rounded-lg border border-beyonix-blue-light/30 bg-[#07111E] px-3 text-xs font-bold text-white outline-none focus:border-beyonix-blue-light"
+                  >
+                    {storeBenefits.map((benefit) => (
+                      <option key={benefit.id} value={benefit.id}>
+                        {getStoreBenefitLabel(benefit.benefit_type)}{" "}
+                        {benefit.percent}% · {benefit.code}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-11px font-semibold leading-5 text-white/56">
+                    Se aplica una sola vez y queda consumido al confirmar la compra.
+                  </p>
+                </div>
+              )}
+
               <Separator className="my-2 bg-[#242424]" />
 
               <div className="space-y-1 rounded-xl border border-[#242a31] bg-[#090C10] px-3 py-2.5 text-sm shadow-inner shadow-black/20">
@@ -1646,6 +1745,17 @@ export default function CheckoutPage() {
                     <span className="text-muted-foreground">Descuento</span>
                     <span className="font-semibold text-emerald-400">
                       -{formatPrice(totals.discount)}
+                    </span>
+                  </div>
+                )}
+                {selectedStoreBenefit && storeBenefitDiscountAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      {getStoreBenefitLabel(selectedStoreBenefit.benefit_type)}{" "}
+                      {selectedStoreBenefit.percent}%
+                    </span>
+                    <span className="font-semibold text-emerald-400">
+                      -{formatPrice(storeBenefitDiscountAmount)}
                     </span>
                   </div>
                 )}

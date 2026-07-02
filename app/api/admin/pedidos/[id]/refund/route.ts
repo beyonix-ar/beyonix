@@ -8,6 +8,12 @@ import {
   getPaymentProofValidationError,
   sanitizePaymentProofFileName,
 } from "@/lib/payments/transfer"
+import {
+  buildStoreBenefitCode,
+  getStoreBenefitLabel,
+  getStoreBenefitTypeFromRefundMethod,
+  parseStoreBenefitPercent,
+} from "@/lib/customer-store-benefits"
 
 const REFUND_PROOF_MIME_TYPES = new Set(["image/jpeg", "application/pdf"])
 
@@ -268,6 +274,25 @@ export async function POST(
     )
   }
 
+  const storeBenefitType = getStoreBenefitTypeFromRefundMethod(method)
+  const storeBenefitPercent = storeBenefitType
+    ? parseStoreBenefitPercent(formData.get("storeBenefitPercent"))
+    : null
+
+  if (storeBenefitType && storeBenefitPercent === null) {
+    return NextResponse.json(
+      { error: "Indicá un porcentaje de beneficio entre 1 y 100." },
+      { status: 400 },
+    )
+  }
+
+  if (storeBenefitType && !order.usuario_id) {
+    return NextResponse.json(
+      { error: "El pedido no tiene un usuario asociado para asignar el beneficio." },
+      { status: 400 },
+    )
+  }
+
   const observation =
     String(formData.get("observation") ?? "").trim().slice(0, 1000) || null
   const internalNote =
@@ -345,6 +370,70 @@ export async function POST(
     )
   }
 
+  let storeBenefitId: string | null = null
+
+  if (storeBenefitType && storeBenefitPercent !== null && order.usuario_id) {
+    const benefitLabel = getStoreBenefitLabel(storeBenefitType)
+    const { data: existingBenefit } = await auth.admin
+      .from("customer_store_benefits")
+      .select("id, code")
+      .eq("source_order_id", orderId)
+      .eq("benefit_type", storeBenefitType)
+      .maybeSingle()
+
+    const benefitPayload = {
+      user_id: order.usuario_id,
+      source_order_id: orderId,
+      benefit_type: storeBenefitType,
+      code:
+        existingBenefit?.code ??
+        buildStoreBenefitCode({ orderId, type: storeBenefitType }),
+      percent: storeBenefitPercent,
+      status: "active",
+      created_by: auth.user.id,
+      metadata: {
+        refundProofId: proof.id,
+        refundAmount: amount,
+      },
+    }
+
+    const benefitResult = existingBenefit
+      ? await auth.admin
+          .from("customer_store_benefits")
+          .update(benefitPayload)
+          .eq("id", existingBenefit.id)
+          .select("id, code")
+          .single()
+      : await auth.admin
+          .from("customer_store_benefits")
+          .insert(benefitPayload)
+          .select("id, code")
+          .single()
+
+    if (benefitResult.error || !benefitResult.data) {
+      return NextResponse.json(
+        {
+          error:
+            benefitResult.error?.message ||
+            "No se pudo crear el beneficio para el cliente.",
+        },
+        { status: 500 },
+      )
+    }
+
+    storeBenefitId = benefitResult.data.id
+
+    await auth.admin.from("customer_notifications").upsert({
+      user_id: order.usuario_id,
+      type: "store_benefit_available",
+      title: `${benefitLabel} disponible`,
+      body: `Tenés un ${storeBenefitPercent}% disponible para usar en tu próxima compra.`,
+      action_url: "/checkout",
+      order_id: orderId,
+      source_key: `order:${orderId}:store-benefit:${storeBenefitType}`,
+    }, { onConflict: "source_key" })
+  }
+
   await appendOrderAuditEvent(auth.admin, {
     orderId,
     actorType: "admin",
@@ -373,6 +462,9 @@ export async function POST(
     metadata: {
       amount,
       method,
+      storeBenefitId,
+      storeBenefitType,
+      storeBenefitPercent,
       proofId: proof.id,
     },
   })

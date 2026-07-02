@@ -9,6 +9,12 @@ import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import { getShippingCost } from "@/lib/store-config"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
+import { createAdminClient } from "@/lib/supabase/admin"
+import {
+  calculateStoreBenefitDiscount,
+  findActiveStoreBenefit,
+  markStoreBenefitAsUsed,
+} from "@/lib/customer-store-benefits"
 
 interface CheckoutItemPayload {
   productId?: number
@@ -20,6 +26,7 @@ interface CheckoutItemPayload {
 interface CheckoutPayload {
   items?: CheckoutItemPayload[]
   reservationSessionId?: string | null
+  storeBenefitId?: string | null
   customer?: {
     nombre?: string
     email?: string
@@ -143,6 +150,13 @@ function getUnitPrice(product: ProductRow) {
   return Math.round(product.precio * (1 - getProductDiscount(product.id)))
 }
 
+function getUnitPriceWithStoreBenefit(product: ProductRow, percent?: number | null) {
+  const unitPrice = getUnitPrice(product)
+  if (!percent) return unitPrice
+
+  return Math.max(Math.round(unitPrice * (1 - percent / 100)), 1)
+}
+
 function assertStock(item: NormalizedItem, product: ProductRow, variant?: VariantRow) {
   if (!product.activo) {
     throw new Error(STOCK_CHANGED_MESSAGE)
@@ -215,6 +229,7 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
+    const admin = createAdminClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -311,14 +326,31 @@ export async function POST(request: Request) {
         shippingCost: shipping.shipping_cost_charged,
       },
     )
+    const storeBenefit = await findActiveStoreBenefit(
+      admin,
+      user.id,
+      payload.storeBenefitId,
+    )
+    const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
+      totals.productsTotal,
+      storeBenefit?.percent,
+    )
+    const totalAfterStoreBenefit =
+      Math.max(totals.productsTotal - storeBenefitDiscountAmount, 0) +
+      totals.shipping
 
     const orderPayload = {
       usuario_id: user.id,
-      total: totals.total,
+      total: totalAfterStoreBenefit,
       estado: "pendiente",
       payment_method_id: "mercadopago",
       payment_status: "pending_checkout",
       envio_proveedor: shipping.shipping_provider,
+      store_benefit_id: storeBenefit?.id ?? null,
+      store_benefit_code: storeBenefit?.code ?? null,
+      store_benefit_type: storeBenefit?.benefit_type ?? null,
+      store_benefit_percent: storeBenefit?.percent ?? null,
+      store_benefit_discount_amount: storeBenefitDiscountAmount || null,
       ...shipping,
       ...normalizeCustomer(payload.customer),
     }
@@ -334,7 +366,7 @@ export async function POST(request: Request) {
 
       const legacyPayload = {
         usuario_id: user.id,
-        total: totals.total,
+        total: totalAfterStoreBenefit,
         estado: "pendiente",
         payment_method_id: "mercadopago",
         payment_status: "pending_checkout",
@@ -377,7 +409,10 @@ export async function POST(request: Request) {
               id: String(product.id),
               title: product.nombre,
               quantity: item.quantity,
-              unit_price: getUnitPrice(product),
+              unit_price: getUnitPriceWithStoreBenefit(
+                product,
+                storeBenefit?.percent,
+              ),
               currency_id: "ARS",
             }
           }),
@@ -411,6 +446,13 @@ export async function POST(request: Request) {
 
     if (!result.init_point) {
       throw new Error("Mercado Pago no devolvió init_point.")
+    }
+
+    if (storeBenefit) {
+      await markStoreBenefitAsUsed(admin, {
+        benefitId: storeBenefit.id,
+        orderId: order.id,
+      })
     }
 
     return NextResponse.json({

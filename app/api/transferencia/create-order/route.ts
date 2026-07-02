@@ -9,8 +9,14 @@ import {
 } from "@/lib/payments/transfer"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getProductDiscount, getShippingCost } from "@/lib/store-config"
+import {
+  calculateStoreBenefitDiscount,
+  findActiveStoreBenefit,
+  markStoreBenefitAsUsed,
+} from "@/lib/customer-store-benefits"
 
 interface CheckoutItemPayload {
   productId?: number
@@ -22,6 +28,7 @@ interface CheckoutItemPayload {
 interface CheckoutPayload {
   items?: CheckoutItemPayload[]
   reservationSessionId?: string | null
+  storeBenefitId?: string | null
   customer?: {
     nombre?: string
     email?: string
@@ -195,6 +202,7 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
+    const admin = createAdminClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -280,8 +288,21 @@ export async function POST(request: Request) {
     const totals = calculateCartTotals(cartRows, {
       shippingCost: shipping.costCharged,
     })
-    const transferPaymentTotals = calculateTransferPaymentTotal(
+    const storeBenefit = await findActiveStoreBenefit(
+      admin,
+      user.id,
+      payload.storeBenefitId,
+    )
+    const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
       totals.productsTotal,
+      storeBenefit?.percent,
+    )
+    const productsTotalAfterStoreBenefit = Math.max(
+      totals.productsTotal - storeBenefitDiscountAmount,
+      0,
+    )
+    const transferPaymentTotals = calculateTransferPaymentTotal(
+      productsTotalAfterStoreBenefit,
       totals.shipping,
     )
     const transferDiscountAmount = transferPaymentTotals.discount
@@ -299,6 +320,11 @@ export async function POST(request: Request) {
       transfer_alias: TRANSFER_ALIAS,
       transfer_discount_percent: TRANSFER_DISCOUNT_PERCENT,
       transfer_discount_amount: transferDiscountAmount,
+      store_benefit_id: storeBenefit?.id ?? null,
+      store_benefit_code: storeBenefit?.code ?? null,
+      store_benefit_type: storeBenefit?.benefit_type ?? null,
+      store_benefit_percent: storeBenefit?.percent ?? null,
+      store_benefit_discount_amount: storeBenefitDiscountAmount || null,
       ...normalizeCustomer(payload.customer),
     }
 
@@ -320,6 +346,13 @@ export async function POST(request: Request) {
     }
 
     await insertOrderItems(supabase, order.id, items, productRows)
+
+    if (storeBenefit) {
+      await markStoreBenefitAsUsed(admin, {
+        benefitId: storeBenefit.id,
+        orderId: order.id,
+      })
+    }
 
     await sendOrderStatusEmail({
       to: order.cliente_email,
