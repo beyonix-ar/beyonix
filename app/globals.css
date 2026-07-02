@@ -950,6 +950,11 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   background-image: none !important;
 }
 
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > section.admin-order-invoice-panel {
+  background: #111111 !important;
+  background-image: none !important;
+}
+
 .admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content :is(article, div, label, p)[class*="rounded"][class*="border"],
 .admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content :is(.admin-order-info-card, .admin-order-proof-card, .admin-order-item-card, .admin-order-total-card) {
   background: #202020 !important;
@@ -962,6 +967,226 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 
 .admin-order-detail-scope :is(.text-beyonix-cyan, .text-beyonix-sky) {
   color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="tracking-widest"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="tracking-widest"] {
+  color: rgba(255, 255, 255, 0.74) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-view :is(h3, p[class*="text-beyonix-cyan"], p[class*="text-beyonix-sky"]),
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p[class*="text-beyonix-cyan"], p[class*="text-beyonix-sky"]) {
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/82"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/84"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/88"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/82"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/84"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/88"] {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/42"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/48"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/54"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/55"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/58"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/62"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/72"],
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/76"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/42"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/48"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/54"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/55"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/58"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/62"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/72"],
+.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/76"] {
+  color: rgba(255, 255, 255, 0.76) !important;
+}
+
+.admin-order-detail-scope .admin-order-payment-method-icon {
+  align-items: center;
+  background: #071527;
+  border: 1px solid rgba(110, 168, 255, 0.34);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 22px rgba(110, 168, 255, 0.12);
+  color: #fff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 58px;
+  justify-content: center;
+  width: 58px;
+}
+
+.admin-order-detail-scope .admin-order-payment-icon {
+  align-items: center;
+  border: 1px solid currentColor;
+  border-radius: 9999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.admin-order-detail-scope .admin-order-payment-icon > svg {
+  height: 16px !important;
+  width: 16px !important;
+}
+
+.admin-order-detail-scope .admin-order-payment-icon--blue {
+  background: #071527;
+  border-color: rgba(110, 168, 255, 0.34);
+  color: #6ea8ff;
+}
+
+.admin-order-detail-scope .admin-order-payment-icon--green {
+  background: #06251b;
+  border-color: rgba(92, 255, 176, 0.34);
+  color: rgb(92, 255, 176);
+}
+
+.admin-order-detail-scope .admin-order-payment-icon--gray {
+  background: #1b1f24;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.admin-order-detail-scope .admin-order-detail-content .admin-order-payment-panel div.admin-order-received-card,
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content div.admin-order-received-card.rounded-lg.border {
+  background-color: rgb(5, 64, 45) !important;
+  background-image: linear-gradient(135deg, rgb(5, 64, 45), rgb(7, 84, 59)) !important;
+  border-color: rgb(92, 255, 176) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 20px rgba(16, 185, 129, 0.18) !important;
+}
+
+.admin-order-detail-scope .admin-order-payment-panel :is(.admin-order-info-card, .admin-order-proof-card, .admin-order-payment-status-card, .admin-order-received-card) p[class*="tracking-widest"] {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.admin-order-detail-scope .admin-order-received-card .admin-order-total-received-amount {
+  color: rgb(92, 255, 176) !important;
+  text-shadow: 0 0 14px rgba(16, 185, 129, 0.22);
+}
+
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-payment-panel p[class*="tracking-widest"] {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-payment-panel div.admin-order-received-card {
+  background-color: rgb(5, 64, 45) !important;
+  background-image: linear-gradient(135deg, rgb(5, 64, 45), rgb(7, 84, 59)) !important;
+  border-color: rgb(92, 255, 176) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    0 0 20px rgba(16, 185, 129, 0.18) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-payment-panel .admin-order-received-card .admin-order-total-received-amount {
+  color: rgb(92, 255, 176) !important;
+  text-shadow: 0 0 14px rgba(16, 185, 129, 0.24);
+}
+
+.admin-order-detail-scope .admin-order-payment-note {
+  background:
+    linear-gradient(135deg, rgba(7, 48, 35, 0.42), rgba(13, 25, 35, 0.96)) !important;
+  border-color: rgba(92, 255, 176, 0.26) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 16px rgba(16, 185, 129, 0.07) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon {
+  align-items: center;
+  border: 1px solid rgba(110, 168, 255, 0.34);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 22px rgba(110, 168, 255, 0.12);
+  color: #fff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 58px;
+  justify-content: center;
+  width: 58px;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon--issued {
+  background: #06251b;
+  border-color: rgba(92, 255, 176, 0.34);
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon--pending {
+  background: #071527;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-card {
+  background: #202020 !important;
+  background-image: none !important;
+  border-color: rgba(74, 144, 184, 0.42) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-alert {
+  background: #202020 !important;
+  background-image: linear-gradient(135deg, rgba(65, 18, 28, 0.34), rgba(32, 32, 32, 0.98)) !important;
+  border-color: rgba(255, 143, 160, 0.36) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 16px rgba(159, 53, 70, 0.08) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-alert-icon {
+  align-items: center;
+  background: #2a1117;
+  border: 1px solid rgba(255, 143, 160, 0.34);
+  border-radius: 9999px;
+  color: #ffc2c8;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-credit-panel {
+  background: #202020 !important;
+  background-image: none !important;
+  border-color: rgba(74, 144, 184, 0.42) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-danger-button {
+  background: #2a1117 !important;
+  border-color: rgba(191, 74, 91, 0.62) !important;
+  color: #fff !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-danger-button:hover {
+  background: #3a151d !important;
+  border-color: rgba(255, 143, 160, 0.7) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel p.admin-order-billing-pending-note {
+  background: rgba(245, 158, 11, 0.08) !important;
+  border-color: rgba(251, 191, 36, 0.24) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel p.admin-order-billing-status-note.text-emerald-200 {
+  background: rgba(16, 185, 129, 0.08) !important;
+  border-color: rgba(110, 231, 183, 0.24) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel p.admin-order-billing-status-note.text-red-200 {
+  background: rgba(239, 68, 68, 0.08) !important;
+  border-color: rgba(248, 113, 113, 0.24) !important;
 }
 
 .admin-order-detail-scope p[class*="text-[#ffb4bd]"],
@@ -1190,4 +1415,23 @@ body.product-modal-open .category-hero {
 .admin-claim-manager select:disabled,
 .admin-claim-manager label:has(input:disabled) {
   cursor: not-allowed;
+}
+
+.credit-note-inner-card {
+  background: #2A2A2A !important;
+  background-color: #2A2A2A !important;
+  background-image: none !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel div.credit-note-inner-card {
+  background: #2A2A2A !important;
+  background-color: #2A2A2A !important;
+  background-image: none !important;
+  border-color: rgba(74, 144, 184, 0.42) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-invoice-panel div.credit-note-inner-card.rounded-lg.border {
+  background: #2A2A2A !important;
+  background-color: #2A2A2A !important;
+  background-image: none !important;
 }

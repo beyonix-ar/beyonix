@@ -5,6 +5,8 @@ import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
+  BadgePercent,
+  CalendarDays,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -14,10 +16,12 @@ import {
   Eye,
   FileText,
   Info,
+  Landmark,
   LoaderCircle,
   Printer,
   RefreshCw,
   Search,
+  ShieldCheck,
   ShoppingCart,
   Truck,
   Trash2,
@@ -2200,16 +2204,6 @@ function BillingManagementPanel({
     pedido.credit_note_point && pedido.credit_note_number
       ? `NC C ${formatInvoiceNumber(pedido.credit_note_point, Number(pedido.credit_note_number))}`
       : pedido.credit_note_number || "Emitida"
-  const creditNoteStatusLabel = creditNoteIssued
-    ? creditNoteNumberLabel
-    : pedido.credit_note_status === "processing"
-      ? "Procesando"
-      : pedido.credit_note_status === "error"
-        ? "Error"
-        : creditNoteNeeded
-          ? "Pendiente"
-          : "No requerida"
-
   useEffect(() => {
     setMessage(null)
   }, [pedido.id])
@@ -2258,21 +2252,25 @@ function BillingManagementPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-beyonix-blue-light/20 bg-[#0B1118] p-4 sm:p-5">
-      <div className="flex flex-col gap-4 border-b border-white/8 pb-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-            Facturación
-          </p>
-          <h3 className="mt-2 flex items-center gap-2 text-lg font-black text-white">
-            <FileText className={`size-5 ${invoiceIssued ? "text-emerald-300" : "text-beyonix-sky"}`} />
-            {invoiceIssued ? "Factura electrónica emitida" : "Emitir comprobante fiscal"}
-          </h3>
-          <p className="mt-1 max-w-xl text-sm leading-6 text-white/55">
-            {invoiceIssued
-              ? "Factura, CAE y datos contables asociados a este pedido."
-              : "La Factura C se solicitará a ARCA y quedará asociada a este pedido."}
-          </p>
+    <section className="admin-order-data-panel admin-order-invoice-panel rounded-xl border border-white/8 p-3">
+      <div className="flex flex-col gap-3 border-b border-white/8 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={`admin-order-billing-main-icon ${invoiceIssued ? "admin-order-billing-main-icon--issued" : "admin-order-billing-main-icon--pending"}`}>
+            <FileText className="size-7" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-11px font-bold uppercase tracking-widest text-white/78">
+              Facturación
+            </p>
+            <h3 className="mt-1 text-base font-black text-white">
+              {invoiceIssued ? "Factura electrónica emitida" : "Emitir comprobante fiscal"}
+            </h3>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-white/72">
+              {invoiceIssued
+                ? "Factura, CAE y datos contables asociados a este pedido."
+                : "La Factura C se solicitará a ARCA y quedará asociada a este pedido."}
+            </p>
+          </div>
         </div>
 
         {pedido.invoice_status === "authorized" ? (
@@ -2280,7 +2278,7 @@ function BillingManagementPanel({
             type="button"
             onClick={() => void onDownloadInvoice()}
             disabled={invoiceDownloading}
-            className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light disabled:cursor-wait disabled:opacity-60"
+            className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B] disabled:cursor-wait disabled:opacity-60"
           >
             {invoiceDownloading ? (
               <LoaderCircle className="size-4 animate-spin" />
@@ -2294,7 +2292,7 @@ function BillingManagementPanel({
             type="button"
             onClick={() => void onIssueInvoice()}
             disabled={invoiceLoading || !isApprovedPayment(pedido)}
-            className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-beyonix-cyan hover:bg-beyonix-blue-hover disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B] disabled:cursor-not-allowed disabled:opacity-45"
           >
             {invoiceLoading ? (
               <LoaderCircle className="size-4 animate-spin" />
@@ -2307,130 +2305,114 @@ function BillingManagementPanel({
       </div>
 
       {creditNoteNeeded && (
-        <div className={`mt-4 rounded-xl border px-3 py-2 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className={`text-xs font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.label}`}>
-            Nota de crédito requerida
-          </p>
-          <p className={`mt-0.5 text-xs font-medium ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
-            La Factura C ya fue emitida y el pedido tiene una cancelación o devolución activa.
-          </p>
+        <div className="admin-order-billing-alert mt-3 flex items-start gap-2.5 rounded-lg border px-3 py-3">
+          <span className="admin-order-billing-alert-icon">
+            <AlertTriangle className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-wide text-white/92">
+              Nota de crédito requerida
+            </p>
+            <p className="mt-0.5 text-xs font-medium leading-relaxed text-red-100">
+              La Factura C ya fue emitida y el pedido tiene una cancelación o devolución activa.
+            </p>
+          </div>
         </div>
       )}
 
       {invoiceIssued ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-            <DetailValue
+        <div className="mt-3 grid gap-3 sm:max-w-[620px] sm:grid-cols-2">
+          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+            <BillingDetailValue
               label="Tipo y número"
               value={`Factura C ${formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}`}
             />
           </div>
-          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-            <DetailValue label="CAE" value={pedido.invoice_cae || "No informado"} />
+          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+            <BillingDetailValue label="CAE" value={pedido.invoice_cae || "No informado"} />
           </div>
-          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-            <DetailValue
+          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+            <BillingDetailValue
               label="Vencimiento CAE"
               value={formatInvoiceDate(pedido.invoice_cae_due)}
             />
           </div>
-          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-            <DetailValue
+          <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+            <BillingDetailValue
               label="Fecha de emisión"
               value={formatOptionalOrderDate(pedido.invoice_created_at)}
             />
           </div>
-          <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-            <DetailValue
-              label="Nota de crédito"
-              value={creditNoteStatusLabel}
-            />
-          </div>
         </div>
       ) : !isApprovedPayment(pedido) ? (
-        <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs font-medium text-amber-200">
+        <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
           Confirmá el pago antes de emitir la factura.
         </p>
       ) : null}
 
       {invoiceIssued && isCancellationFlowOrder(pedido) && (
-        <div className={`mt-4 rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-          <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
+        <div className="admin-order-billing-credit-panel mt-3 rounded-lg border p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-white/92">
             Nota de crédito
           </p>
           {creditNoteIssued ? (
             <div className="mt-3 space-y-3">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
+                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+                  <BillingDetailValue
                     label="Tipo y número"
                     value={creditNoteNumberLabel}
                   />
                 </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue label="CAE" value={pedido.credit_note_cae || "No informado"} />
+                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+                  <BillingDetailValue label="CAE" value={pedido.credit_note_cae || "No informado"} />
                 </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
+                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+                  <BillingDetailValue
                     label="Vencimiento CAE"
                     value={formatInvoiceDate(pedido.credit_note_cae_due)}
                   />
                 </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
+                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+                  <BillingDetailValue
                     label="Fecha emisión"
                     value={formatOptionalOrderDate(pedido.credit_note_created_at || pedido.credit_note_issued_at)}
                   />
                 </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
+                <div className="admin-order-info-card admin-order-billing-card rounded-lg border border-white/8 px-3 py-3">
+                  <BillingDetailValue
                     label="Monto acreditado"
                     value={formatPrice(creditNoteAmount)}
+                    valueClassName="text-emerald-100"
                   />
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => void onDownloadCreditNote()}
-                className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition ${ADMIN_SENSITIVE_DANGER.action}`}
+                className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B]"
               >
                 <Download className="size-4" />
                 Descargar Nota de Crédito
               </button>
             </div>
           ) : (
-            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
-                    label="Factura origen"
-                    value={`Factura C ${formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}`}
-                  />
-                </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
-                    label="Monto a acreditar"
-                    value={formatPrice(creditNoteAmount)}
-                  />
-                </div>
-                <div className="admin-order-info-card rounded-xl border border-white/8 p-3">
-                  <DetailValue
-                    label="Estado"
-                    value={
-                      pedido.credit_note_status === "error"
-                        ? "Error de ARCA"
-                        : creditNoteProcessing
-                          ? "Procesando"
-                          : "Pendiente"
-                    }
-                  />
-                </div>
+            <div className="mt-3 space-y-3">
+              <div className="grid gap-3 sm:max-w-[620px] sm:grid-cols-[minmax(0,280px)_minmax(0,1fr)] sm:items-center">
+                <CreditNoteInnerCard
+                  label="Monto a acreditar"
+                  value={formatPrice(creditNoteAmount)}
+                  valueClassName="text-emerald-100"
+                />
+                <p className="text-xs font-semibold leading-relaxed text-white/72">
+                  Debe emitirse una nota de crédito por la cancelación del pedido.
+                </p>
               </div>
               <button
                 type="button"
                 disabled={creditNoteProcessing || creditNoteAmount <= 0}
                 onClick={() => void issueCreditNote()}
-                className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#9f3546]/58 bg-[#111827] px-3 text-11px font-black uppercase tracking-wide text-white transition hover:border-[#bf4a5b]/78 hover:bg-[#1B1519] disabled:cursor-not-allowed disabled:opacity-50"
+                className="admin-order-billing-danger-button inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creditNoteProcessing ? (
                   <LoaderCircle className="size-4 animate-spin text-[#ffb4bd]" />
@@ -2452,7 +2434,7 @@ function BillingManagementPanel({
       {(invoiceNotice || message) && (
         <p
           role="status"
-          className={`mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${
+          className={`admin-order-billing-status-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${
             (message?.ok ?? invoiceNotice?.ok)
               ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-200"
               : "border-red-400/20 bg-red-400/8 text-red-200"
@@ -2462,6 +2444,50 @@ function BillingManagementPanel({
         </p>
       )}
     </section>
+  )
+}
+
+function BillingDetailValue({
+  label,
+  value,
+  labelClassName = "text-white/72",
+  valueClassName = "text-white/92",
+}: {
+  label: string
+  value: string
+  labelClassName?: string
+  valueClassName?: string
+}) {
+  return (
+    <div>
+      <p className={`text-10px font-bold uppercase tracking-widest ${labelClassName}`}>
+        {label}
+      </p>
+      <p className={`mt-1 wrap-break-word text-sm font-black ${valueClassName}`}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function CreditNoteInnerCard({
+  label,
+  value,
+  valueClassName = "text-white/92",
+}: {
+  label: string
+  value: string
+  valueClassName?: string
+}) {
+  return (
+    <div className="credit-note-inner-card rounded-lg border px-3 py-3">
+      <p className="text-10px font-bold uppercase tracking-widest text-white/82">
+        {label}
+      </p>
+      <p className={`mt-1 wrap-break-word text-sm font-black ${valueClassName}`}>
+        {value}
+      </p>
+    </div>
   )
 }
 
@@ -2516,7 +2542,7 @@ function AdminOrderSummaryDashboard({
     success: "border-emerald-300/22 bg-[#0B1118]",
   }[action.tone]
   return (
-    <div className="space-y-2.5">
+    <div className="admin-order-summary-view space-y-2.5">
       <section className={`admin-order-summary-main-panel rounded-xl border bg-[#0B1118] px-3 py-2.5 ${actionToneClass}`}>
         <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0 space-y-1.5">
@@ -2587,24 +2613,37 @@ function AdminOrderSummaryDashboard({
           <div className="my-3 border-t border-dashed border-white/12" />
 
           <div
-            className="admin-order-total-card rounded-lg border px-3 py-2"
-            style={
+            className={
               isCollectedTotal
-                ? {
-                    background: "#12382B",
-                    backgroundImage: "none",
-                    borderColor: "rgba(110, 231, 183, 0.45)",
-                  }
-                : undefined
+                ? "admin-order-received-card rounded-lg border px-3 py-3"
+                : "admin-order-total-card rounded-lg border px-3 py-2"
             }
           >
-            <p className="text-10px font-black uppercase tracking-widest text-white">
+            <p
+              className={
+                isCollectedTotal
+                  ? "text-10px font-bold uppercase tracking-widest text-white/68"
+                  : "text-10px font-black uppercase tracking-widest text-white"
+              }
+            >
               {totalLabel}
             </p>
-            <p className="mt-0.5 text-lg font-black text-white sm:text-xl">
+            <p
+              className={
+                isCollectedTotal
+                  ? "admin-order-total-received-amount mt-0.5 text-lg font-black text-emerald-100"
+                  : "mt-0.5 text-lg font-black text-white sm:text-xl"
+              }
+            >
               {formatPrice(totalValue)}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-white">
+            <p
+              className={
+                isCollectedTotal
+                  ? "mt-0.5 text-[11px] font-medium text-white/76"
+                  : "mt-0.5 text-[11px] font-medium text-white"
+              }
+            >
               {paymentContext}
             </p>
           </div>
@@ -2614,7 +2653,11 @@ function AdminOrderSummaryDashboard({
               {!refundedOrder && (
                 <div className="flex items-baseline justify-between gap-4">
                   <span className="text-white/54">Monto reintegrado</span>
-                  <span className="font-black text-white/84">
+                  <span
+                    className={`font-black ${
+                      refundAmount > 0 ? "text-emerald-200" : "text-amber-200"
+                    }`}
+                  >
                     {refundAmount > 0 ? `-${formatPrice(refundAmount)}` : "Pendiente"}
                   </span>
                 </div>
@@ -3427,7 +3470,7 @@ function PedidoDetailModal({
         <div className={`custom-scrollbar bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
           <div
             className={`flex min-w-0 flex-col gap-3 p-2.5 sm:p-3 lg:flex-row ${
-              activeView === "resumen" || activeView === "pago" ? "admin-order-summary-layout-bg" : ""
+              activeView === "resumen" || activeView === "pago" || activeView === "facturacion" ? "admin-order-summary-layout-bg" : ""
             }`}
           >
             <aside
@@ -3486,55 +3529,95 @@ function PedidoDetailModal({
             <>
           <div className="grid gap-3 lg:grid-cols-2">
             <section className="admin-order-data-panel admin-order-payment-panel rounded-xl border border-white/8 p-3 lg:col-span-2">
-              <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                Método de pago
-              </p>
-              <h3 className="mt-1 text-base font-black text-white">
-                {getPaymentMethodLabel(pedido)}
-              </h3>
+              <div className="flex items-center gap-3">
+                {isTransferOrder(pedido) && (
+                  <span className="admin-order-payment-method-icon">
+                    <Landmark className="size-7" />
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                    Método de pago
+                  </p>
+                  <h3 className="mt-1 text-base font-black text-white">
+                    {getPaymentMethodLabel(pedido)}
+                  </h3>
+                </div>
+              </div>
 
               {isTransferOrder(pedido) ? (
-                <div className="mt-2 space-y-2 border-t border-white/8 pt-2">
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                      <DetailValue
-                        label="Descuento aplicado"
-                        value={
-                          Number(pedido.transfer_discount_amount ?? 0) > 0
-                            ? `-${formatPrice(Number(pedido.transfer_discount_amount))}`
-                            : formatPrice(0)
-                        }
-                      />
+                <div className="mt-3 space-y-3 border-t border-white/8 pt-3">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="admin-order-info-card rounded-lg border border-white/8 px-3 py-3">
+                      <div className="flex h-full items-center gap-2.5">
+                        <span className="admin-order-payment-icon admin-order-payment-icon--green">
+                          <BadgePercent className="size-3.5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+                            Descuento aplicado
+                          </p>
+                          <p className="mt-1 wrap-break-word text-sm font-bold text-white/82">
+                            {Number(pedido.transfer_discount_amount ?? 0) > 0
+                              ? `-${formatPrice(Number(pedido.transfer_discount_amount))}`
+                              : formatPrice(0)}
+                          </p>
+                          {Number(pedido.transfer_discount_percent ?? 0) > 0 && (
+                            <p className="mt-0.5 text-[11px] font-semibold text-emerald-200/78">
+                              {Number(pedido.transfer_discount_percent).toLocaleString("es-AR", {
+                                maximumFractionDigits: 2,
+                              })}% de descuento
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
-                      <DetailValue
-                        label="Fecha de pago"
-                        value={formatOptionalOrderDate(pedido.paid_at)}
-                      />
+                    <div className="admin-order-info-card rounded-lg border border-white/8 px-3 py-3">
+                      <div className="flex h-full items-center gap-2.5">
+                        <span className="admin-order-payment-icon admin-order-payment-icon--blue">
+                          <CalendarDays className="size-3.5" />
+                        </span>
+                        <DetailValue
+                          label="Fecha de pago"
+                          value={formatOptionalOrderDate(pedido.paid_at)}
+                        />
+                      </div>
                     </div>
-                    <div className="w-fit rounded-lg border border-white/8 bg-[#1B2028] p-2">
-                      <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/55">
-                        Estado del pago
-                      </p>
-                      <PaymentStatusDropdown
-                        value={paymentStatusValue}
-                        onChange={(value) => onPaymentStatusChange(pedido.id, value)}
-                      />
+                    <div className="admin-order-payment-status-card rounded-lg border border-white/8 bg-[#1B2028] px-3 py-3">
+                      <div className="flex h-full items-center gap-2.5">
+                        <span className="admin-order-payment-icon admin-order-payment-icon--green">
+                          <ShieldCheck className="size-3.5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/55">
+                            Estado del pago
+                          </p>
+                          <PaymentStatusDropdown
+                            value={paymentStatusValue}
+                            onChange={(value) => onPaymentStatusChange(pedido.id, value)}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="admin-order-total-card rounded-lg border px-3 py-2">
-                      <p className="text-10px font-bold uppercase tracking-widest text-emerald-100/78">
+                    <div className="admin-order-received-card rounded-lg border px-3 py-3">
+                      <p className="text-10px font-bold uppercase tracking-widest text-white/68">
                         Total recibido
                       </p>
-                      <p className="mt-0.5 text-lg font-black text-emerald-100">
+                      <p className="admin-order-total-received-amount mt-0.5 text-lg font-black text-emerald-100">
                         {formatPrice(pedido.total)}
                       </p>
                     </div>
                   </div>
-                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#263242] p-2">
-                    <DetailValue
-                      label="Comprobante actual"
-                      value={pedido.payment_proof_file_name || "Sin comprobante"}
-                    />
+                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#263242] px-3 py-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="admin-order-payment-icon admin-order-payment-icon--gray">
+                        <FileText className="size-3.5" />
+                      </span>
+                      <DetailValue
+                        label="Comprobante actual"
+                        value={pedido.payment_proof_file_name || "Sin comprobante"}
+                      />
+                    </div>
                     {pedido.payment_proof_url && (
                       <button
                         type="button"
@@ -3547,6 +3630,14 @@ function PedidoDetailModal({
                         Ver comprobante
                       </button>
                     )}
+                  </div>
+                  <div className="admin-order-payment-note flex items-center gap-3 rounded-lg border px-3 py-3.5">
+                    <span className="admin-order-payment-icon admin-order-payment-icon--green">
+                      <ShieldCheck className="size-3.5" />
+                    </span>
+                    <p className="pt-0.5 text-sm font-semibold leading-relaxed text-white/76">
+                      La transferencia fue verificada y el pago se encuentra confirmado.
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -3612,7 +3703,7 @@ function PedidoDetailModal({
           {(activeView === "resumen" || activeView === "envio") && (
             <>
            {activeView === "resumen" && (
-           <section className="admin-order-products-panel mt-2.5 rounded-xl border border-white/8 p-3">
+           <section className="admin-order-products-panel admin-order-summary-products-panel mt-2.5 rounded-xl border border-white/8 p-3">
             <div className="flex flex-wrap items-center gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
