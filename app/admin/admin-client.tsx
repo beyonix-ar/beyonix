@@ -397,8 +397,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   }
 
   const sidebar = (
-    <aside className="beyonix-admin-sidebar flex h-full flex-col border-r border-white/7 bg-black">
-      <div className="flex items-start justify-between gap-3 border-b border-white/7 px-5 py-5">
+    <aside className="beyonix-admin-sidebar flex h-full flex-col border-r border-beyonix-blue-light/20 bg-black">
+      <div className="flex items-start justify-between gap-3 border-b border-beyonix-blue-light/20 px-5 py-5">
         <button
           type="button"
           title="Ir al inicio"
@@ -425,8 +425,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         />
       </div>
 
-      <div className="border-b border-white/7 p-4">
-        <div className="rounded-3xl border border-white/8 bg-beyonix-surface p-4">
+      <div className="border-b border-beyonix-blue-light/18 p-4">
+        <div className="rounded-3xl border border-beyonix-blue-light/20 bg-beyonix-surface p-4">
           <p className="truncate text-sm font-bold uppercase text-white">
             {user.username || user.name}
           </p>
@@ -451,13 +451,13 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         ))}
       </nav>
 
-      <div className="border-t border-white/7 p-4">
+      <div className="border-t border-beyonix-blue-light/18 p-4">
         <button
           type="button"
           title="Cerrar sesión"
           aria-label="Cerrar sesión"
           onClick={handleLogout}
-          className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/8 px-6 text-sm font-bold text-white/62 transition-all hover:border-red-500/30 hover:text-red-300"
+          className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-beyonix-blue-light/20 px-6 text-sm font-bold text-white/62 transition-all hover:border-red-500/30 hover:text-red-300"
         >
           <LogOut className="size-4" />
           Cerrar sesión
@@ -470,7 +470,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     <div className="beyonix-admin-shell min-h-screen bg-black text-white lg:flex">
       <div className="hidden lg:block">{sidebar}</div>
 
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/7 bg-black px-4 lg:hidden">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-beyonix-blue-light/20 bg-black px-4 lg:hidden">
         <button
           type="button"
           title="Abrir navegación"

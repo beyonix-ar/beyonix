@@ -156,7 +156,7 @@ const paymentMethods = [
 ]
 
 const checkoutInputClassName =
-  "beyonix-checkout-input h-9 rounded-xl border-[#30363D] bg-[#1F242B] font-heading uppercase text-white placeholder:normal-case placeholder:text-white/40 hover:border-[#46505c] focus-visible:border-[#112A43] focus-visible:ring-1 focus-visible:ring-[#112A43]/70"
+  "beyonix-checkout-input h-8 rounded-xl border-[#30363D] bg-[#1F242B] font-heading uppercase text-white placeholder:normal-case placeholder:text-white/40 hover:border-[#46505c] focus-visible:border-[#112A43] focus-visible:ring-1 focus-visible:ring-[#112A43]/70"
 
 const CHECKOUT_EMAIL = "beyonix.ar@gmail.com"
 const CHECKOUT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CHECKOUT_EMAIL)}&su=${encodeURIComponent("Consulta sobre mi compra en BEYONIX")}`
@@ -1188,13 +1188,13 @@ export default function CheckoutPage() {
           >
             <section className="checkout-panel flex min-h-[clamp(440px,52vh,560px)] flex-col rounded-2xl border px-4 pb-3 pt-4 shadow-xl shadow-black/25 sm:px-5 sm:pb-4 sm:pt-5">
               {currentStep === 1 && (
-                <div className="animate-in fade-in slide-in-from-right-2 space-y-4 rounded-2xl border border-[#30363D]/80 bg-[#15191F] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] duration-300 sm:px-5 sm:py-4 [&_label]:text-[13px]">
+                <div className="animate-in fade-in slide-in-from-right-2 space-y-3 rounded-2xl border border-[#30363D]/80 bg-[#15191F] px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] duration-300 sm:px-5 sm:py-3.5 [&_label]:text-[13px]">
                   <h2 className="border-l-4 border-beyonix-blue py-0.5 pl-3 text-xl font-bold text-foreground">
                     Datos de quien recibe
                   </h2>
 
-                  <div className="space-y-4">
-                    <div className="space-y-2.5">
+                  <div className="space-y-3">
+                    <div className="space-y-2">
                       <div className="flex items-center gap-3">
                         <p className="shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/45">
                           Datos personales
@@ -1202,22 +1202,22 @@ export default function CheckoutPage() {
                         <span className="h-px flex-1 bg-[#30363D]" />
                       </div>
 
-                      <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2">
-                        <div className="space-y-1">
+                      <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
+                        <div className="space-y-0.5">
                           <Label htmlFor="nombre" className="text-white/75">
                             <UserRound aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Nombre completo *
                           </Label>
                           <Input id="nombre" name="nombre" className={getCheckoutInputClassName("nombre")} value={formData.nombre} onChange={handleInputChange} required />
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <Label htmlFor="email" className="text-white/75">
                             <Mail aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Email *
                           </Label>
                           <Input id="email" name="email" type="email" className={getCheckoutInputClassName("email")} value={formData.email} onChange={handleInputChange} required />
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <Label htmlFor="telefono" className="text-white/75">
                             <Smartphone aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Teléfono *
@@ -1227,7 +1227,7 @@ export default function CheckoutPage() {
                       </div>
                     </div>
 
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                       <div className="flex items-center gap-3">
                         <p className="shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/45">
                           Dirección de entrega
@@ -1235,15 +1235,15 @@ export default function CheckoutPage() {
                         <span className="h-px flex-1 bg-[#30363D]" />
                       </div>
 
-                      <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2">
-                        <div className="space-y-1">
+                      <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
+                        <div className="space-y-0.5">
                           <Label htmlFor="calle" className="text-white/75">
                             <Home aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Calle *
                           </Label>
                           <Input id="calle" name="calle" className={getCheckoutInputClassName("calle")} value={formData.calle} onChange={handleInputChange} required />
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <Label htmlFor="numero" className="text-white/75">
                             <Home aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Número *
@@ -1251,16 +1251,16 @@ export default function CheckoutPage() {
                           <Input id="numero" name="numero" inputMode="numeric" className={getCheckoutInputClassName("numero")} value={formData.numero} onChange={handleInputChange} required />
                         </div>
                         <div className="grid grid-cols-2 gap-3 sm:col-span-2">
-                          <div className="space-y-1">
+                          <div className="space-y-0.5">
                             <Label htmlFor="piso" className="text-white/75">Piso opcional</Label>
                             <Input id="piso" name="piso" className={checkoutInputClassName} value={formData.piso} onChange={handleInputChange} />
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-0.5">
                             <Label htmlFor="departamento" className="text-white/75">Departamento opcional</Label>
                             <Input id="departamento" name="departamento" className={checkoutInputClassName} value={formData.departamento} onChange={handleInputChange} />
                           </div>
                         </div>
-                        <div className="space-y-1 sm:col-span-2">
+                        <div className="space-y-0.5 sm:col-span-2">
                           <Label htmlFor="provincia" className="text-white/75">
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Provincia *
@@ -1276,21 +1276,21 @@ export default function CheckoutPage() {
                             </p>
                           )}
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <Label htmlFor="localidad" className="text-white/75">
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Localidad *
                           </Label>
                           <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} required />
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <Label htmlFor="cpDestino" className="text-white/75">
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Código postal *
                           </Label>
                           <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} required />
                         </div>
-                        <div className="space-y-1 sm:col-span-2">
+                        <div className="space-y-0.5 sm:col-span-2">
                           <Label htmlFor="referencias" className="text-white/75">Referencias opcionales</Label>
                           <Input id="referencias" name="referencias" className={checkoutInputClassName} value={formData.referencias} onChange={handleInputChange} />
                         </div>
@@ -1575,7 +1575,7 @@ export default function CheckoutPage() {
                 <FreeShippingBar subtotal={baseTotals.productsTotal} />
               </div>
 
-              <div className="custom-scrollbar max-h-[clamp(330px,42vh,430px)] space-y-1.5 overflow-y-auto pr-1">
+              <div className="custom-scrollbar max-h-[clamp(300px,38vh,390px)] space-y-1.5 overflow-y-auto pr-1">
                 {items.map((item) => {
                   const maxQuantity = getProductStock(item.product, item.color)
                   const isMaxQuantity =
@@ -1587,9 +1587,9 @@ export default function CheckoutPage() {
                   return (
                     <div
                       key={`${item.product.id}-${item.variantId ?? item.color}`}
-                      className="checkout-order-item group grid min-h-104px grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-hidden rounded-xl border border-[#30363D] bg-[#15191F] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
+                      className="checkout-order-item group grid min-h-[92px] grid-cols-[78px_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-xl border border-[#30363D] bg-[#15191F] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
                     >
-                    <div className="h-full min-h-92px overflow-hidden rounded-lg border border-white/8 bg-beyonix-surface-3">
+                    <div className="h-full min-h-[80px] overflow-hidden rounded-lg border border-white/8 bg-beyonix-surface-3">
                       <TransparencyAwareImage
                         src={item.image}
                         alt={`${item.product.nombre} en carrito`}

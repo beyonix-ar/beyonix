@@ -30,6 +30,15 @@ const formatPrice = (price: number) =>
     minimumFractionDigits: 0,
   }).format(Number.isFinite(price) ? price : 0)
 
+const primaryBlue =
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:border-beyonix-blue-light/15 disabled:bg-[#111820] disabled:text-white/45 disabled:shadow-none"
+
+const successGreen =
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-300/35 bg-[#0F4F3A] font-black text-white shadow-[0_0_14px_rgba(16,185,129,0.14)] transition-all duration-200 hover:border-emerald-300/55 hover:bg-[#137354] hover:shadow-[0_0_18px_rgba(16,185,129,0.2)] disabled:cursor-not-allowed disabled:opacity-50"
+
+const neutralDanger =
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#151A20] font-black text-white transition-all duration-200 hover:border-red-300/45 hover:bg-[#4B1720] hover:shadow-[0_0_16px_rgba(239,68,68,0.16)] disabled:cursor-not-allowed disabled:opacity-50"
+
 function CheckoutSuccessContent() {
   const { clearCart } = useCart()
   const hasClearedCartRef = useRef(false)
@@ -172,8 +181,8 @@ function CheckoutSuccessContent() {
       <main className="min-h-screen bg-[#05070A] px-4 py-[21px] font-heading text-white sm:py-[25px]">
         <div className="mx-auto w-full max-w-[1075px] rounded-3xl border border-[#303846] bg-[#0D1117] px-4 py-[17px] shadow-2xl shadow-black/50 sm:px-5 sm:py-[21px]">
           <div className="flex flex-col items-center border-b border-[#303846] pb-4 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-400/10">
-              <CheckCircle2 className="size-7 text-emerald-400" />
+            <div className="flex size-12 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-400/10 shadow-[0_0_18px_rgba(16,185,129,0.14)]">
+              <CheckCircle2 className="size-7 text-white" />
             </div>
 
             <p className="mt-3 text-10px font-semibold uppercase tracking-widest text-beyonix-cyan">
@@ -192,15 +201,16 @@ function CheckoutSuccessContent() {
           </div>
 
           {isTransfer ? (
-            <div className="grid items-stretch gap-4 py-4 lg:grid-cols-2">
-              <section className="rounded-2xl border border-[#303846] bg-[#141820] p-3.5 sm:p-4">
+            <>
+              <div className="grid items-start gap-4 py-4 lg:grid-cols-2">
+                <section className="rounded-2xl border border-[#303846] bg-[#141820] p-3.5 sm:p-4 lg:-mt-2">
                 <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold">
                   Finalizá tu pago
                 </h2>
 
                 <div className="mt-3 rounded-xl border border-[#303846] bg-[#1B2028] p-3.5 shadow-inner shadow-black/20">
                   <div className="flex items-center gap-2.5 border-b border-[#303846] pb-2.5">
-                    <span className="flex size-8 items-center justify-center rounded-lg bg-beyonix-blue text-beyonix-sky">
+                    <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white">
                       <CreditCard className="size-4" />
                     </span>
                     <p className="text-sm font-bold text-white">
@@ -224,10 +234,10 @@ function CheckoutSuccessContent() {
                           aria-label="Copiar alias de transferencia"
                           title="Copiar alias"
                           onClick={() => void handleCopyAlias()}
-                          className={`inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          className={`h-9 shrink-0 px-3 text-xs ${
                             aliasCopied
-                              ? "bg-[#16A34A] hover:bg-[#15803D]"
-                              : "bg-[#112A43] hover:bg-[#183B5E]"
+                              ? successGreen
+                              : primaryBlue
                           }`}
                         >
                           {aliasCopied ? (
@@ -260,10 +270,10 @@ function CheckoutSuccessContent() {
                         </p>
                         <p className="mt-0.5 text-xl font-bold tracking-tight text-white">
                           {orderLoading
-                            ? "Cargando…"
+                            ? "Cargando..."
                             : order
                               ? formatPrice(Number(order.total))
-                              : "—"}
+                              : "-"}
                         </p>
                       </div>
                     </div>
@@ -271,23 +281,9 @@ function CheckoutSuccessContent() {
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-xl border border-[#303846] bg-[#1B2028]">
-                  <div className="flex min-w-0 items-center justify-center gap-1.5 border-r border-[#303846] px-2 py-2.5 text-center text-10px font-semibold text-[#C8C8C8] sm:text-xs">
-                    <CheckCircle2 className="size-3.5 shrink-0 text-emerald-400" />
-                    <span>Pedido creado</span>
-                  </div>
-                  <div className="flex min-w-0 items-center justify-center gap-1.5 border-r border-[#303846] px-2 py-2.5 text-center text-10px font-semibold text-[#C8C8C8] sm:text-xs">
-                    <Clock3 className="size-3.5 shrink-0 text-amber-300" />
-                    <span>Pago pendiente</span>
-                  </div>
-                  <div className="flex min-w-0 items-center justify-center gap-1.5 px-2 py-2.5 text-center text-10px font-semibold text-[#9CA3AF] sm:text-xs">
-                    <span className="size-3.5 shrink-0 rounded-full border border-[#9CA3AF]" />
-                    <span>Preparación</span>
-                  </div>
-                </div>
-              </section>
+                </section>
 
-              <section id="comprobante-pago" className="rounded-2xl border border-[#303846] bg-[#141820] p-3.5 sm:p-4">
+                <section id="comprobante-pago" className="rounded-2xl border border-[#303846] bg-[#141820] p-3.5 sm:p-4">
                 <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold">
                   Comprobante
                 </h2>
@@ -308,7 +304,7 @@ function CheckoutSuccessContent() {
                       </p>
                       <Link
                         href={loginHref}
-                        className="mt-4 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 bg-[#112A43] px-5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(17,42,67,0.3)] transition-colors hover:bg-[#183B5E]"
+                        className={`mt-4 h-9 px-4 text-xs ${primaryBlue}`}
                       >
                         <LogIn className="size-4" />
                         Iniciar sesión y continuar
@@ -332,8 +328,16 @@ function CheckoutSuccessContent() {
                     </div>
                   )}
                 </div>
-              </section>
-            </div>
+                </section>
+              </div>
+
+              <div className="-mt-1 mb-4 flex items-start gap-2.5 rounded-xl border border-amber-300/22 bg-amber-300/[0.045] px-3.5 py-2.5 text-sm leading-5 text-white/82">
+                <Clock3 className="mt-0.5 size-4 shrink-0 text-amber-300" />
+                <p>
+                  Tenés hasta 48 hs para realizar el pago y enviar el comprobante correspondiente. Caso contrario, el pedido se cancelará automáticamente por falta de pago.
+                </p>
+              </div>
+            </>
           ) : (
             <p className="mx-auto max-w-md py-8 text-center text-sm leading-relaxed text-white/70">
               Pago recibido. Estamos preparando tu pedido.
@@ -346,11 +350,7 @@ function CheckoutSuccessContent() {
               type="button"
               aria-label="Ir a productos"
               title="Ir a productos"
-              className={`h-10 w-full cursor-pointer text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
-                isProofPending
-                  ? "border border-[#303846] bg-[#141820] hover:border-beyonix-blue-light/45 hover:bg-[#1B2028]"
-                  : "bg-beyonix-blue hover:bg-beyonix-blue-hover"
-              }`}
+              className={`h-9 w-full text-xs ${primaryBlue}`}
             >
               <Link
                 href="/productos"
@@ -370,7 +370,7 @@ function CheckoutSuccessContent() {
               aria-label="Ir al inicio"
               title="Ir al inicio"
               variant="outline"
-              className="h-10 w-full cursor-pointer border-[#303846] bg-transparent text-sm text-[#C8C8C8] hover:border-beyonix-blue-light/55 hover:bg-[#112A43] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className={`h-9 w-full text-xs ${primaryBlue}`}
             >
               <Link
                 href="/"
@@ -396,7 +396,7 @@ function CheckoutSuccessContent() {
               className="w-full max-w-md rounded-2xl border border-[#303846] bg-[#0D1117] p-5 shadow-2xl shadow-black/70"
             >
               <div className="flex items-start gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-amber-300/15 bg-amber-300/[0.06] text-amber-100">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/[0.06] text-amber-300">
                   <Clock3 className="size-4" />
                 </span>
                 <div>
@@ -413,7 +413,7 @@ function CheckoutSuccessContent() {
                 <button
                   type="button"
                   autoFocus
-                  className="h-10 cursor-pointer rounded-xl bg-[#16A34A] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#15803D]"
+                  className={`h-9 px-4 text-xs ${successGreen}`}
                   onClick={() => {
                     setPendingNavigationHref("")
                     document.getElementById("comprobante-pago")?.scrollIntoView({
@@ -422,11 +422,11 @@ function CheckoutSuccessContent() {
                     })
                   }}
                 >
-                  Subir comprobante ahora
+                  Volver al comprobante
                 </button>
                 <button
                   type="button"
-                  className="h-10 cursor-pointer rounded-xl border border-[#303846] bg-[#141820] px-4 text-sm font-medium text-[#C8C8C8] transition-colors hover:bg-[#1B2028] hover:text-white"
+                  className={`h-9 px-4 text-xs ${neutralDanger}`}
                   onClick={() => {
                     allowNavigationRef.current = true
                     window.location.href = pendingNavigationHref

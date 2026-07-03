@@ -1,6 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
-import { getSeenAdminPaymentProofOrderIds } from "@/lib/admin/order-event-views"
 import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 
 export const ORDER_NOTIFICATIONS_CHANGED_EVENT =
@@ -137,6 +136,36 @@ export function orderHasPendingClaimAction(order: SupabasePedido) {
   return (order.order_claims ?? []).some((claim) => claim.admin_needs_action === true)
 }
 
+function isPaymentReceived(order: {
+  payment_status?: string | null
+  paid_at?: string | null
+  payment_confirmed_amount?: number | string | null
+}) {
+  return (
+    Boolean(order.paid_at) ||
+    Number(order.payment_confirmed_amount ?? 0) > 0 ||
+    ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "")
+  )
+}
+
+function hasRefundAttentionPending(order: {
+  estado?: string | null
+  financial_status?: string | null
+  payment_status?: string | null
+  paid_at?: string | null
+  payment_confirmed_amount?: number | string | null
+}) {
+  if (order.financial_status === "refunded" || order.financial_status === "cancelled") {
+    return false
+  }
+  if (order.financial_status === "refund_pending") return true
+  if (order.financial_status === "cancellation_requested") {
+    return isPaymentReceived(order)
+  }
+
+  return order.estado === "cancelado" && isPaymentReceived(order)
+}
+
 export function hasOrderAttentionAfter(
   order: SupabasePedido,
   lastSeenAt: string | null
@@ -197,7 +226,7 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
     const { data: orders, error } = await supabase
       .from("ordenes")
       .select(
-        "id, created_at, return_requested_at, cancellation_requested_at, refund_pending_at, refund_uploaded_at, refunded_at, estado, total, payment_method_id, payment_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, invoice_status"
+        "id, created_at, return_requested_at, cancellation_requested_at, refund_pending_at, refund_uploaded_at, refunded_at, estado, total, payment_method_id, payment_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_confirmed_amount, paid_at, financial_status, invoice_status"
       )
 
     if (error) {
@@ -233,25 +262,16 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
         id: order.id,
         eventAt: order.payment_proof_uploaded_at,
       }))
-    const seenProofOrderIds = await getSeenAdminPaymentProofOrderIds(
-      adminId,
-      proofEvents,
-    )
     const messageOrderIds = new Set<number>(
       proofEvents
-        .filter((event) => !seenProofOrderIds.has(event.id))
         .map((event) => event.id),
     )
     const issueOrderIds = new Set<number>(
       (orders ?? [])
         .filter(isVisibleAdminOrderNotification)
         .filter((order) =>
-          isOrderNewerThanLastSeen(
-            order.refund_pending_at ||
-              order.cancellation_requested_at ||
-              order.return_requested_at,
-            view.last_seen_at,
-          ),
+          hasRefundAttentionPending(order) ||
+          isOrderNewerThanLastSeen(order.return_requested_at, view.last_seen_at),
         )
         .map((order) => order.id),
     )

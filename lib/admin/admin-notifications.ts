@@ -1,5 +1,4 @@
 import { supabase } from "@/lib/supabase/client"
-import { getSeenAdminPaymentProofOrderIds } from "@/lib/admin/order-event-views"
 import {
   isAdminCancellationSensitiveNotification,
   isAdminClaimSensitiveNotification,
@@ -328,10 +327,7 @@ function applyReads(
 ) {
   return notifications
     .map((notification) => {
-      if (
-        notification.type === "payment" ||
-        notification.type === "shipping"
-      ) {
+      if (isPendingAdminTask(notification)) {
         return {
           ...notification,
           isRead: false,
@@ -363,6 +359,16 @@ function dedupeNotifications(notifications: AdminNotification[]) {
     seen.add(key)
     return true
   })
+}
+
+function isPendingAdminTask(notification: AdminNotification) {
+  return (
+    notification.type === "payment" ||
+    notification.type === "shipping" ||
+    notification.type === "invoice" ||
+    notification.type === "cancellation" ||
+    notification.type === "claim"
+  )
 }
 
 function getOperationalPriority(notification: AdminNotification) {
@@ -518,21 +524,6 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
 
     const orders = pedidos.filter(isOrderVisible)
     const orderIds = new Set(orders.map((order) => Number(order.id)))
-    const paymentProofEvents = orders
-      .filter(
-        (order) =>
-          order.payment_proof_url &&
-          order.payment_status === "en_revision" &&
-          order.payment_proof_uploaded_at,
-      )
-      .map((order) => ({
-        id: Number(order.id),
-        eventAt: String(order.payment_proof_uploaded_at),
-      }))
-    const seenPaymentProofOrderIds = await getSeenAdminPaymentProofOrderIds(
-      adminId,
-      paymentProofEvents,
-    )
     const rawClaims = orders.flatMap((order) =>
       (order.order_claims ?? []).map((claim) => ({
         ...claim,
@@ -577,7 +568,6 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         order.payment_proof_url &&
         order.payment_status === "en_revision" &&
         order.payment_proof_uploaded_at &&
-        !seenPaymentProofOrderIds.has(orderId) &&
         !isRefundPaymentAttentionOrder(order)
       ) {
         notifications.push({
@@ -634,10 +624,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       }
 
       if (
-        order.estado === "cancelado" ||
-        ["cancelled", "cancellation_requested", "refund_pending"].includes(
-          order.financial_status ?? "",
-        )
+        isRefundPaymentAttentionOrder(order)
       ) {
         const cancelledAt =
           (order as {
@@ -705,7 +692,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
     for (const message of customerMessages) {
       const claim = claimsById.get(Number(message.claim_id))
       if (!claim?.first_reviewed_at) continue
-      if (claimNeedsAdminAttention(claim)) continue
+      if (!claimNeedsAdminAttention(claim)) continue
       if (!orderIds.has(Number(claim.order_id))) continue
 
       const orderId = Number(claim.order_id)
@@ -730,7 +717,13 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
     const dedupedNotifications = dedupeNotifications(notifications)
     const latestNotifications = keepLatestNotificationByOrder(dedupedNotifications)
     const reads = await loadReads(adminId, latestNotifications)
-    return buildSummary(applyReads(latestNotifications, reads))
+    const unreadNotifications = applyReads(latestNotifications, reads)
+    return buildSummary(
+      unreadNotifications.filter(
+        (notification) =>
+          isPendingAdminTask(notification) || notification.type === "order",
+      ),
+    )
   } catch (error) {
     console.error(
       "ADMIN_NOTIFICATIONS_UNEXPECTED_ERROR",

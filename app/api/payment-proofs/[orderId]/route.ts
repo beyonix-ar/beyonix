@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { PAYMENT_PROOF_BUCKET } from "@/lib/payments/transfer"
+import { expireTransferOrderIfNeeded } from "@/lib/orders/transfer-expiration"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import type { SupabasePedido } from "@/lib/supabase/types"
 
 function stripBucket(path: string) {
   return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
@@ -42,20 +44,25 @@ export async function GET(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (order.payment_method_id !== "transferencia") {
+  const currentOrder = await expireTransferOrderIfNeeded(
+    admin,
+    order as SupabasePedido,
+  )
+
+  if (currentOrder.payment_method_id !== "transferencia") {
     return NextResponse.json(
       { error: "Este pedido no corresponde a transferencia bancaria." },
       { status: 400 },
     )
   }
 
-  if (!order.payment_proof_url) {
-    return NextResponse.json({ order, signedUrl: null })
+  if (!currentOrder.payment_proof_url) {
+    return NextResponse.json({ order: currentOrder, signedUrl: null })
   }
 
   const { data, error } = await admin.storage
     .from(PAYMENT_PROOF_BUCKET)
-    .createSignedUrl(stripBucket(order.payment_proof_url), 300)
+    .createSignedUrl(stripBucket(currentOrder.payment_proof_url), 300)
 
   if (error || !data?.signedUrl) {
     console.error("customer payment proof signed URL error", {
@@ -70,8 +77,8 @@ export async function GET(
   }
 
   return NextResponse.json({
-    order,
+    order: currentOrder,
     signedUrl: data.signedUrl,
-    fileName: order.payment_proof_file_name,
+    fileName: currentOrder.payment_proof_file_name,
   })
 }

@@ -6,8 +6,10 @@ import {
   sanitizePaymentProofFileName,
 } from "@/lib/payments/transfer"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import { expireTransferOrderIfNeeded } from "@/lib/orders/transfer-expiration"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import type { SupabasePedido } from "@/lib/supabase/types"
 
 function normalizeStoredPath(path: string) {
   return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
@@ -56,7 +58,7 @@ export async function POST(request: Request) {
     const { data: order, error: orderError } = await supabase
       .from("ordenes")
       .select(
-        "id, usuario_id, estado, payment_method_id, payment_status, payment_proof_url, financial_status",
+        "id, usuario_id, estado, created_at, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status",
       )
       .eq("id", orderId)
       .single()
@@ -69,7 +71,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No autorizado." }, { status: 403 })
     }
 
-    if (order.payment_method_id !== "transferencia") {
+    const admin = createAdminClient()
+    const currentOrder = await expireTransferOrderIfNeeded(
+      admin,
+      order as SupabasePedido,
+    )
+
+    if (currentOrder.payment_method_id !== "transferencia") {
       return NextResponse.json(
         { error: "Este pedido no corresponde a transferencia bancaria." },
         { status: 400 },
@@ -77,9 +85,9 @@ export async function POST(request: Request) {
     }
 
     if (
-      order.estado === "cancelado" ||
+      currentOrder.estado === "cancelado" ||
       ["cancelled", "refund_pending", "refunded"].includes(
-        String(order.financial_status ?? ""),
+        String(currentOrder.financial_status ?? ""),
       )
     ) {
       return NextResponse.json(
@@ -88,7 +96,7 @@ export async function POST(request: Request) {
       )
     }
 
-    if (order.payment_status === "confirmado") {
+    if (currentOrder.payment_status === "confirmado") {
       return NextResponse.json(
         { error: "El pago ya fue confirmado y no admite otro comprobante." },
         { status: 409 },
@@ -97,7 +105,7 @@ export async function POST(request: Request) {
 
     if (
       !REPLACEABLE_PAYMENT_STATUSES.includes(
-        order.payment_status || "pendiente_comprobante",
+        currentOrder.payment_status || "pendiente_comprobante",
       )
     ) {
       return NextResponse.json(
@@ -106,7 +114,6 @@ export async function POST(request: Request) {
       )
     }
 
-    const admin = createAdminClient()
     const safeName = sanitizePaymentProofFileName(file.name)
     const path = `${orderId}/${Date.now()}-${safeName}`
     const { error: uploadError } = await admin.storage
@@ -132,7 +139,9 @@ export async function POST(request: Request) {
         payment_proof_uploaded_at: uploadedAt,
       })
       .eq("id", orderId)
+      .eq("payment_method_id", "transferencia")
       .in("payment_status", REPLACEABLE_PAYMENT_STATUSES)
+      .neq("estado", "cancelado")
       .select()
       .maybeSingle()
 
@@ -160,7 +169,7 @@ export async function POST(request: Request) {
       metadata: {
         fileName: file.name,
         proofUrl: storedPath,
-        previousProofUrl: order.payment_proof_url ?? null,
+        previousProofUrl: currentOrder.payment_proof_url ?? null,
         uploadedAt,
       },
     })

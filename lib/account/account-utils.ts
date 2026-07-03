@@ -54,6 +54,13 @@ export function getClientOrderStatusBadge(order: SupabasePedido) {
     }
   }
 
+  if (paymentStatus === "vencido_falta_comprobante") {
+    return {
+      label: "Cancelado por falta de pago",
+      className: "border-red-400/35 bg-red-400/12 text-red-200",
+    }
+  }
+
   if (status === "cancelado") {
     return {
       label: "✕ Cancelado",
@@ -144,6 +151,10 @@ export function getPaymentProgressLabel(order: SupabasePedido) {
 
   if (financialStatus === "refunded") {
     return "Dinero reintegrado"
+  }
+
+  if (paymentStatus === "vencido_falta_comprobante") {
+    return "Cancelado por falta de pago"
   }
 
   if ((order.estado ?? "").toLowerCase() === "cancelado") {

@@ -7,7 +7,6 @@ import {
   Upload,
 } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import {
   getPaymentProofValidationError,
 } from "@/lib/payments/transfer"
@@ -38,33 +37,19 @@ export function PaymentProofUploader({
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
   const [isDragging, setIsDragging] = useState(false)
+  const [uploadedFileName, setUploadedFileName] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
-  const actionLabel = initialUploaded
-    ? "Reemplazar comprobante"
-    : "Subir comprobante"
+  const actionLabel = initialUploaded ? "Reemplazar comprobante" : "Comprobante de pago"
+  const hasUploadedFeedback = Boolean(uploadedFileName)
 
-  const selectFile = (nextFile: File | null) => {
+  const uploadFile = async (nextFile: File | null) => {
     const validationError = getPaymentProofValidationError(nextFile)
 
     setFile(nextFile)
+    setUploadedFileName("")
     setError(validationError)
-  }
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    selectFile(event.target.files?.[0] ?? null)
-  }
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setIsDragging(false)
-    selectFile(event.dataTransfer.files?.[0] ?? null)
-  }
-
-  const handleUpload = async () => {
-    const validationError = getPaymentProofValidationError(file)
-
-    if (validationError || !file) {
-      setError(validationError)
+    if (validationError || !nextFile) {
       return
     }
 
@@ -74,7 +59,7 @@ export function PaymentProofUploader({
     try {
       const formData = new FormData()
       formData.set("orderId", String(orderId))
-      formData.set("file", file)
+      formData.set("file", nextFile)
 
       const response = await fetch("/api/payment-proofs", {
         method: "POST",
@@ -87,6 +72,7 @@ export function PaymentProofUploader({
         return
       }
 
+      setUploadedFileName(nextFile.name)
       setFile(null)
       if (inputRef.current) inputRef.current.value = ""
       onUploaded?.(data.order as SupabasePedido)
@@ -97,9 +83,20 @@ export function PaymentProofUploader({
     }
   }
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    void uploadFile(event.target.files?.[0] ?? null)
+  }
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if (uploading) return
+    setIsDragging(false)
+    void uploadFile(event.dataTransfer.files?.[0] ?? null)
+  }
+
   return (
-    <div className={`border ${compact ? "rounded-xl border-[#303846] bg-[#1B2028] p-3 shadow-[0_0_24px_rgba(17,42,67,0.16)]" : "rounded-2xl border-[#112A43] bg-[#0B0B0B] p-4 sm:p-5"}`}>
-      <div className={compact ? "space-y-2.5" : "space-y-4"}>
+    <div className={`border ${compact ? "rounded-xl border-[#303846] bg-[#1B2028] p-2.5 shadow-[0_0_24px_rgba(17,42,67,0.16)]" : "rounded-2xl border-[#112A43] bg-[#0B0B0B] p-4 sm:p-5"}`}>
+      <div className={compact ? "space-y-2" : "space-y-4"}>
         <div>
           <p className="text-11px font-black uppercase tracking-widest text-white/70">
             {actionLabel}
@@ -117,19 +114,24 @@ export function PaymentProofUploader({
             role="button"
             tabIndex={0}
             aria-label="Seleccionar o arrastrar un comprobante"
-            onClick={() => inputRef.current?.click()}
+            aria-disabled={uploading}
+            onClick={() => {
+              if (!uploading) inputRef.current?.click()
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault()
-                inputRef.current?.click()
+                if (!uploading) inputRef.current?.click()
               }
             }}
             onDragEnter={(event) => {
               event.preventDefault()
+              if (uploading) return
               setIsDragging(true)
             }}
             onDragOver={(event) => {
               event.preventDefault()
+              if (uploading) return
               setIsDragging(true)
             }}
             onDragLeave={(event) => {
@@ -139,31 +141,53 @@ export function PaymentProofUploader({
               }
             }}
             onDrop={handleDrop}
-            className={`${compact ? "mt-2 min-h-32 px-4 py-3" : "mt-3 min-h-44 px-5 py-6"} flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-beyonix-focus ${
-              isDragging
-                ? "border-beyonix-sky bg-[#112A43] shadow-[0_0_0_3px_rgba(79,131,173,0.12)]"
-                : file
-                  ? "border-emerald-400/35 bg-emerald-400/5"
-                : compact
-                  ? "border-[#303846] bg-[#222832] hover:border-[#112A43] hover:bg-[#252c37]"
-                  : "border-white/20 bg-[#141414] hover:border-[#112A43] hover:bg-[#181818]"
+            className={`${compact ? "mt-1.5 min-h-24 px-3 py-2" : "mt-3 min-h-40 px-4 py-5"} flex flex-col items-center justify-center rounded-xl border border-dashed text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-beyonix-focus ${
+              uploading
+                ? "cursor-wait border-beyonix-blue-light/45 bg-[#112A43]/35"
+                : isDragging
+                  ? "border-beyonix-sky bg-[#112A43] shadow-[0_0_0_3px_rgba(79,131,173,0.12)]"
+                  : file || hasUploadedFeedback
+                    ? "border-emerald-400/35 bg-emerald-400/5"
+                    : compact
+                      ? "cursor-pointer border-beyonix-blue-light/28 bg-[#0B1624] hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/65"
+                      : "cursor-pointer border-beyonix-blue-light/28 bg-[#0B111A] hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/55"
             }`}
           >
-            <span className={`flex items-center justify-center rounded-xl border ${compact ? "size-10" : "size-12"} ${
-              file
+            <span className={`flex items-center justify-center rounded-xl border ${compact ? "size-9" : "size-12"} ${
+              file || hasUploadedFeedback
                 ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
-                : "border-[#112A43] bg-[#112A43]/40 text-white"
+                : "border-beyonix-blue-light/35 bg-[#112A43]/55 text-white"
             }`}>
-              {file ? (
+              {file || hasUploadedFeedback ? (
                 <FileCheck2 className={compact ? "size-5" : "size-6"} />
               ) : (
                 <ImageUp className={compact ? "size-5" : "size-6"} />
               )}
             </span>
 
-            {file ? (
+            {uploading ? (
               <>
-                <p className={`${compact ? "mt-2" : "mt-3"} max-w-full truncate text-sm font-semibold text-white`}>
+                <p className={`${compact ? "mt-1.5" : "mt-3"} max-w-full truncate text-sm font-semibold text-white`}>
+                  Subiendo comprobante...
+                </p>
+                {file && (
+                  <p className={`mt-1 max-w-full truncate text-xs ${compact ? "text-[#9CA3AF]" : "text-white/50"}`}>
+                    {file.name}
+                  </p>
+                )}
+              </>
+            ) : hasUploadedFeedback ? (
+              <>
+                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-emerald-200`}>
+                  Comprobante subido correctamente
+                </p>
+                <p className={`mt-1 max-w-full truncate text-xs ${compact ? "text-[#9CA3AF]" : "text-white/50"}`}>
+                  {uploadedFileName} · Toca para reemplazar
+                </p>
+              </>
+            ) : file ? (
+              <>
+                <p className={`${compact ? "mt-1.5" : "mt-3"} max-w-full truncate text-sm font-semibold text-white`}>
                   {file.name}
                 </p>
                 <p className={`mt-1 text-xs ${compact ? "text-[#9CA3AF]" : "text-white/50"}`}>
@@ -172,8 +196,8 @@ export function PaymentProofUploader({
               </>
             ) : (
               <>
-                <p className={`${compact ? "mt-2" : "mt-3"} text-sm font-semibold text-white`}>
-                  Arrastra el comprobante aquí
+                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-white`}>
+                  Arrastrá el comprobante aquí
                 </p>
                 <p className={`mt-1 text-xs ${compact ? "text-[#C8C8C8]" : "text-white/55"}`}>
                   o toca para elegirlo desde tu dispositivo
@@ -181,8 +205,8 @@ export function PaymentProofUploader({
               </>
             )}
 
-            <span className={`${compact ? "mt-2.5 px-3 py-1.5" : "mt-4 px-4 py-2"} rounded-lg bg-[#112A43] text-xs font-semibold text-white transition-colors hover:bg-[#183B5E]`}>
-              Seleccionar archivo
+            <span className={`${compact ? "mt-1.5 h-8 px-3" : "mt-3 h-9 px-4"} inline-flex items-center justify-center rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)]`}>
+              {uploading ? "Subiendo..." : "Seleccionar archivo"}
             </span>
           </div>
 
@@ -196,22 +220,6 @@ export function PaymentProofUploader({
             {error}
           </div>
         )}
-
-        <Button
-          type="button"
-          aria-label={`${actionLabel} del pedido ${orderId}`}
-          title={actionLabel}
-          onClick={handleUpload}
-          disabled={uploading || Boolean(error) || !file}
-          className={`w-full cursor-pointer text-white ${
-            file && !error
-              ? "bg-[#16A34A] hover:bg-[#15803D]"
-              : "bg-[#112A43] hover:bg-[#183B5E]"
-          } disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-white/55`}
-        >
-          <Upload className="mr-2 size-4" />
-          {uploading ? "Subiendo..." : actionLabel}
-        </Button>
       </div>
     </div>
   )

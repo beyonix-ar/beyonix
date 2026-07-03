@@ -20,13 +20,13 @@ const PAYMENT_STATUS_CONTENT = {
     title: "Comprobante pendiente",
     description: "Subí el comprobante para validar tu pago.",
     icon: Clock3,
-    className: "border-amber-300/15 bg-amber-300/[0.06] text-amber-100",
+    className: "border-amber-300/18 bg-amber-300/[0.06] text-amber-300",
   },
   en_revision: {
     title: "Pago en revisión",
     description: "Recibimos tu comprobante correctamente.",
     icon: Clock3,
-    className: "border-amber-300/15 bg-amber-300/[0.06] text-amber-100",
+    className: "border-amber-300/18 bg-amber-300/[0.06] text-amber-300",
   },
   confirmado: {
     title: "Pago confirmado",
@@ -37,7 +37,13 @@ const PAYMENT_STATUS_CONTENT = {
   rechazado: {
     title: "Comprobante rechazado",
     description:
-      "El comprobante no pudo validarse. Puedes subir uno nuevo.",
+      "El comprobante no pudo validarse. Podés subir uno nuevo.",
+    icon: AlertCircle,
+    className: "border-red-400/20 bg-red-400/8 text-red-200",
+  },
+  vencido_falta_comprobante: {
+    title: "Pedido cancelado por falta de pago",
+    description: "No se recibió el comprobante dentro del plazo de 48 hs.",
     icon: AlertCircle,
     className: "border-red-400/20 bg-red-400/8 text-red-200",
   },
@@ -63,12 +69,13 @@ export function CustomerPaymentProof({
   const StatusIcon = status.icon
   const hasProof = Boolean(order.payment_proof_url)
   const isConfirmed = paymentStatus === "confirmado"
+  const isCanceled = (order.estado ?? "").toLowerCase() === "cancelado"
   const showProof = hasProof && !(hideProofWhenConfirmed && isConfirmed)
   const canReplace = [
     "pendiente_comprobante",
     "en_revision",
     "rechazado",
-  ].includes(paymentStatus)
+  ].includes(paymentStatus) && !isCanceled
   const fileName = order.payment_proof_file_name || "Comprobante de pago"
   const isImage = /\.(jpe?g|png|webp)$/i.test(fileName)
   const [signedUrl, setSignedUrl] = useState("")
@@ -125,13 +132,13 @@ export function CustomerPaymentProof({
       )}
 
       <div
-        className={`${showHeading ? "mt-3" : ""} rounded-xl border ${compactLayout ? "px-3 py-2.5" : "px-4 py-3"} ${status.className}`}
+        className={`${showHeading ? "mt-3" : ""} rounded-xl border ${compactLayout ? "px-3 py-2" : "px-4 py-3"} ${status.className}`}
       >
-        <div className={`flex items-start ${compactLayout ? "gap-2.5" : "gap-3"}`}>
+        <div className={`flex items-start ${compactLayout ? "gap-2" : "gap-3"}`}>
           <StatusIcon className={`mt-0.5 shrink-0 ${compactLayout ? "size-4" : "size-5"}`} />
           <div>
             <p className="text-sm font-black">{status.title}</p>
-            <p className={`${compactLayout ? "mt-0.5 text-xs text-[#C8C8C8]" : "mt-1 text-sm text-white/65"} leading-5`}>
+            <p className={`${compactLayout ? "text-xs text-[#C8C8C8]" : "mt-1 text-sm text-white/65"} leading-5`}>
               {status.description}
             </p>
           </div>
@@ -169,7 +176,7 @@ export function CustomerPaymentProof({
               href={signedUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#112A43] bg-[#112A43] px-4 text-xs font-black text-white transition-colors hover:bg-[#183B5E]"
+              className="inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E]"
             >
               <ExternalLink className="size-4" />
               Ver comprobante
@@ -188,13 +195,13 @@ export function CustomerPaymentProof({
             initialUploaded
             label="Cambiar comprobante"
             onUploaded={onUploaded}
-            className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-beyonix-sky transition-colors hover:text-white"
+            className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E]"
           />
         </div>
       )}
 
       {canReplace && !hasProof && (
-        <div className={compactLayout ? "mt-2.5" : "mt-3"}>
+        <div className={compactLayout ? "mt-2" : "mt-3"}>
           <PaymentProofUploader
             orderId={order.id}
             compact

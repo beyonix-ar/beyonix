@@ -42,7 +42,6 @@ import {
 import {
   getAdminOrderLastSeenAt,
   getSupabaseErrorDetails,
-  hasOrderAttentionAfter,
   isOrderNewerThanLastSeen,
   orderHasPendingClaimAction,
   markOrdersSeenAndGetPreviousLastSeen,
@@ -319,7 +318,9 @@ function isOrderPaymentConfirmed(pedido: SupabasePedido) {
 }
 
 function isRefundPaymentAttentionOrder(pedido: SupabasePedido) {
-  if (pedido.financial_status === "refunded") return false
+  if (pedido.financial_status === "refunded" || pedido.financial_status === "cancelled") {
+    return false
+  }
   if (pedido.financial_status === "refund_pending") return true
 
   if (pedido.financial_status === "cancellation_requested") {
@@ -372,6 +373,7 @@ function getPaymentStatusLabel(status?: string | null) {
     en_revision: "Comprobante en revisión",
     confirmado: "Confirmado",
     rechazado: "Comprobante rechazado",
+    vencido_falta_comprobante: "Cancelado por falta de pago",
     approved: "Aprobado",
     pending: "Pendiente",
     rejected: "Comprobante rechazado",
@@ -889,6 +891,10 @@ function getTransferPaymentStatusBadge(status?: string | null) {
       label: "Comprobante rechazado",
       className: "border-red-400/25 bg-red-400/10 text-red-300",
     },
+    vencido_falta_comprobante: {
+      label: "Vencido sin comprobante",
+      className: "border-red-400/25 bg-red-400/10 text-red-300",
+    },
   }
 
   return (
@@ -1010,7 +1016,6 @@ type AdminNotificationTone =
 
 function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
   if (isRefundPaymentAttentionOrder(pedido)) return "cancellation"
-  if (pedido.estado === "cancelado") return "cancellation"
   if (needsShippingReminder(pedido)) return "shipping"
 
   const hasIssue =
@@ -1029,14 +1034,6 @@ function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone
 
   if (needsInvoiceReminder(pedido)) return "invoice"
 
-  const hasCustomerMessage = (pedido.order_claims ?? []).some(
-    (claim) =>
-      Boolean(claim.last_customer_message_at) &&
-      !claim.admin_needs_action,
-  )
-
-  if (hasCustomerMessage) return "claim"
-
   return "order"
 }
 
@@ -1053,14 +1050,7 @@ function orderMatchesNotificationTone(
   }
 
   if (tone === "cancellation") {
-    return (
-      isRefundPaymentAttentionOrder(pedido) ||
-      (pedido.estado === "cancelado" ||
-        ["cancelled", "cancellation_requested"].includes(
-          pedido.financial_status ?? "",
-        )) &&
-      !isRefundPaymentAttentionOrder(pedido)
-    )
+    return isRefundPaymentAttentionOrder(pedido)
   }
 
   if (tone === "payment") {
@@ -1074,6 +1064,7 @@ function orderMatchesNotificationTone(
   if (tone === "message") {
     return (pedido.order_claims ?? []).some(
       (claim) =>
+        claim.admin_needs_action &&
         Boolean(claim.first_reviewed_at) &&
         isOrderNewerThanLastSeen(claim.last_customer_message_at, lastSeenAt),
     )
@@ -1204,6 +1195,15 @@ function EstadoBadge({ estado }: { estado: string }) {
 }
 
 function PaymentStatusBadge({ status }: { status?: string | null }) {
+  if (status === "vencido_falta_comprobante") {
+    return (
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-11px font-black uppercase tracking-wide text-red-300">
+        <span className="size-2 rounded-full bg-red-300/70" />
+        Cancelado por falta de pago
+      </span>
+    )
+  }
+
   const value: PaymentStatusValue =
     status === "confirmado" || status === "approved"
       ? "confirmado"
@@ -5266,8 +5266,13 @@ export function AdminPedidos({
               .filter(
                 (pedido) =>
                   isVisibleAdminOrder(pedido) &&
-                  (orderHasPendingClaimAction(pedido) ||
-                    hasOrderAttentionAfter(pedido, lastSeenAt))
+                  (isOrderNewerThanLastSeen(pedido.created_at, lastSeenAt) ||
+                    orderMatchesNotificationTone(pedido, "payment", lastSeenAt) ||
+                    orderMatchesNotificationTone(pedido, "invoice", lastSeenAt) ||
+                    orderMatchesNotificationTone(pedido, "shipping", lastSeenAt) ||
+                    orderMatchesNotificationTone(pedido, "cancellation", lastSeenAt) ||
+                    orderMatchesNotificationTone(pedido, "claim", lastSeenAt) ||
+                    orderMatchesNotificationTone(pedido, "message", lastSeenAt))
               )
               .map((pedido) => pedido.id)
           )
@@ -5305,12 +5310,24 @@ export function AdminPedidos({
 
   const pedidosFiltrados = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
+    const compactSearch = normalizedSearch.replace(/[#\s-]/g, "")
 
     return pedidos.filter((pedido) => {
       if (!isVisibleAdminOrder(pedido)) return false
 
-      const matchesSearch = [
+      const publicOrderId = formatPublicOrderId(pedido.id)
+      const publicOrderNumber = formatPublicOrderNumber(pedido.id)
+      const searchableOrderIds = [
         String(pedido.id),
+        publicOrderId,
+        publicOrderNumber,
+        publicOrderId.replace("#", ""),
+        publicOrderId.replace("#", "").replace("-", ""),
+        `BX${publicOrderNumber}`,
+      ]
+      const searchableText = [
+        ...searchableOrderIds,
+        ...searchableOrderIds.map((value) => value.replace(/[#\s-]/g, "")),
         pedido.cliente_username ?? "",
         pedido.cliente_nombre ?? "",
         pedido.cliente_email ?? "",
@@ -5322,7 +5339,10 @@ export function AdminPedidos({
       ]
         .join(" ")
         .toLowerCase()
-        .includes(normalizedSearch)
+      const matchesSearch = [
+        searchableText.includes(normalizedSearch),
+        compactSearch.length > 0 && searchableText.replace(/[#\s-]/g, "").includes(compactSearch),
+      ].some(Boolean)
       const matchesStatus =
         statusFilter === "todos" ||
         getDisplayedOrderStatus(pedido) === statusFilter
@@ -5776,7 +5796,7 @@ export function AdminPedidos({
 
   return (
     <div className="min-w-0 space-y-5 p-3 sm:p-5 lg:p-6 2xl:p-8">
-      <div className="rounded-3xl border border-white/8 bg-black/80 p-4 sm:p-5">
+      <div className="admin-orders-header-panel rounded-3xl border bg-black/80 p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0">
             <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -5792,32 +5812,36 @@ export function AdminPedidos({
             </p>
           </div>
 
-          <div className="grid w-full gap-3 sm:grid-cols-admin-order-filters xl:max-w-xl">
-            <AdminTextInput
-              title="Buscar pedido"
-              ariaLabel="Buscar pedido"
-              placeholder="Buscar pedido, cliente o producto"
-              value={search}
-              icon={<Search className="size-4" />}
-              onChange={setSearch}
-            />
+          <div className="admin-orders-filter-shell grid w-full gap-3 rounded-2xl border p-2 sm:grid-cols-admin-order-filters xl:max-w-2xl">
+            <div className="admin-orders-search-field min-w-0">
+              <AdminTextInput
+                title="Buscar pedido"
+                ariaLabel="Buscar pedido"
+                placeholder="Buscar pedido, cliente o producto"
+                value={search}
+                icon={<Search className="size-4" />}
+                onChange={setSearch}
+              />
+            </div>
 
-            <AdminSelect
-              title="Filtrar estado"
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
-            >
-              <option value="todos">Todos los estados</option>
-              <option value="pendiente">Pendientes</option>
-              <option value="pagado">Pagados</option>
-              <option value="enviado">Enviados</option>
-              <option value="en_camino">En camino</option>
-              <option value="entregado">Entregados</option>
-              <option value="cancelado">Cancelados</option>
-              <option value="refund_pending">Reintegro pendiente</option>
-              <option value="refunded">Reintegrados</option>
-              <option value="rechazado">Comprobantes rechazados</option>
-            </AdminSelect>
+            <div className="admin-orders-status-filter min-w-0">
+              <AdminSelect
+                title="Filtrar estado"
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as StatusFilter)}
+              >
+                <option value="todos">Todos los estados</option>
+                <option value="pendiente">Pendientes</option>
+                <option value="pagado">Pagados</option>
+                <option value="enviado">Enviados</option>
+                <option value="en_camino">En camino</option>
+                <option value="entregado">Entregados</option>
+                <option value="cancelado">Cancelados</option>
+                <option value="refund_pending">Reintegro pendiente</option>
+                <option value="refunded">Reintegrados</option>
+                <option value="rechazado">Comprobantes rechazados</option>
+              </AdminSelect>
+            </div>
           </div>
         </div>
       </div>
@@ -5896,7 +5920,7 @@ export function AdminPedidos({
         </div>
       ) : (
         <div className="w-full min-w-0 space-y-3">
-            <div className="hidden grid-cols-admin-orders-pro gap-3 rounded-2xl border border-white/8 bg-black/90 px-4 py-3 2xl:grid">
+            <div className="admin-orders-table-header hidden grid-cols-admin-orders-pro gap-3 rounded-2xl border bg-black/90 px-4 py-3 2xl:grid">
                 {[
                   "Pedido",
                   "Fecha",
@@ -5910,7 +5934,7 @@ export function AdminPedidos({
                   <span
                     key={label}
                     title={label}
-                    className="text-center text-11px font-bold uppercase tracking-wide text-white/55"
+                    className="text-center text-11px font-bold uppercase tracking-wide text-white/88"
                   >
                     {label}
                   </span>
@@ -5934,7 +5958,7 @@ export function AdminPedidos({
                 return (
                   <article
                     key={pedido.id}
-                    className={`min-w-0 overflow-hidden rounded-2xl border p-4 transition sm:p-5 2xl:px-4 2xl:py-4 ${
+                    className={`admin-orders-list-row min-w-0 overflow-hidden rounded-2xl border p-4 transition sm:p-5 2xl:px-4 2xl:py-4 ${
                       hasPendingAttention
                         ? attentionTone === "claim"
                           ? ADMIN_SENSITIVE_DANGER.card
@@ -6035,7 +6059,7 @@ export function AdminPedidos({
                             aria-label={`Ver pedido ${pedido.id}`}
                             title="Ver pedido"
                             onClick={() => handleOpenPedido(pedido)}
-                            className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 px-3 text-xs font-bold text-beyonix-sky transition-colors hover:bg-beyonix-blue"
+                            className="admin-orders-action-button flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors"
                           >
                             <Eye className="size-3.5" />
                             Ver
@@ -6045,7 +6069,7 @@ export function AdminPedidos({
                             aria-label={`Eliminar pedido ${pedido.id}`}
                             title="Eliminar pedido"
                             onClick={() => handleDelete(pedido.id)}
-                            className="flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/62 transition-colors hover:border-red-500/30 hover:text-red-300"
+                            className="admin-orders-action-button admin-orders-action-button-danger flex size-9 cursor-pointer items-center justify-center rounded-xl border text-white/62 transition-colors hover:border-red-500/30 hover:text-red-300"
                           >
                             <Trash2 className="size-4" />
                           </button>
@@ -6134,7 +6158,7 @@ export function AdminPedidos({
                       aria-label={`Ver pedido ${pedido.id}`}
                       title="Ver pedido"
                       onClick={() => handleOpenPedido(pedido)}
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky"
+                      className="admin-orders-action-button flex size-8 cursor-pointer items-center justify-center rounded-lg border text-white/68 transition-colors hover:text-beyonix-sky"
                     >
                       <Eye className="size-3.5" />
                     </button>
@@ -6143,7 +6167,7 @@ export function AdminPedidos({
                       aria-label={`Eliminar pedido ${pedido.id}`}
                       title="Eliminar pedido"
                       onClick={() => handleDelete(pedido.id)}
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/62 transition-colors hover:border-red-500/30 hover:text-red-300"
+                      className="admin-orders-action-button admin-orders-action-button-danger flex size-8 cursor-pointer items-center justify-center rounded-lg border text-white/62 transition-colors hover:border-red-500/30 hover:text-red-300"
                     >
                       <Trash2 className="size-4" />
                     </button>

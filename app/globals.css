@@ -546,7 +546,16 @@
 }
 
 .beyonix-admin-sidebar {
+  border-color: rgba(110, 168, 255, 0.2);
   width: min(100vw, var(--beyonix-admin-sidebar-width));
+}
+
+.beyonix-admin-sidebar :where(.border-b, .border-t) {
+  border-color: rgba(110, 168, 255, 0.18);
+}
+
+.beyonix-admin-sidebar :where(.border) {
+  border-color: rgba(110, 168, 255, 0.18);
 }
 
 .beyonix-admin-main > :where(div, section) {
@@ -797,6 +806,31 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+.beyonix-checkout-input {
+  min-height: 2rem;
+  padding-block: 0.25rem;
+  padding-inline: 0.75rem;
+}
+
+.checkout-panel label {
+  gap: 0.35rem;
+  line-height: 1.15;
+}
+
+.checkout-panel button[aria-label="Seleccionar provincia"] {
+  height: 2rem;
+  border-radius: 0.5rem;
+  padding-inline: 0.75rem;
+}
+
+.checkout-panel .checkout-order-item {
+  min-height: 92px;
+}
+
+.checkout-panel .checkout-order-item img {
+  max-height: 80px;
 }
 
 .checkout-subpanel,
@@ -2077,5 +2111,160 @@ body.product-modal-open .category-hero {
   .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-action {
     justify-self: stretch;
     width: 100%;
+  }
+}
+
+.admin-orders-header-panel,
+.admin-orders-table-header,
+.admin-orders-list-row {
+  border-color: rgba(110, 168, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.admin-orders-header-panel {
+  background:
+    linear-gradient(135deg, rgba(7, 12, 20, 0.94), rgba(4, 7, 12, 0.94)),
+    #05070a;
+}
+
+.admin-orders-table-header {
+  border-color: rgba(110, 168, 255, 0.2);
+  background:
+    linear-gradient(135deg, rgba(9, 15, 24, 0.92), rgba(5, 8, 13, 0.94)),
+    #070b12;
+}
+
+.admin-orders-list-row {
+  border-color: rgba(110, 168, 255, 0.2);
+}
+
+.admin-orders-list-row:hover {
+  border-color: rgba(110, 168, 255, 0.4);
+}
+
+.admin-orders-action-button {
+  border-color: rgba(110, 168, 255, 0.24);
+  background: rgba(8, 17, 30, 0.58);
+  color: rgba(215, 236, 255, 0.78);
+}
+
+.admin-orders-action-button:hover {
+  border-color: rgba(110, 168, 255, 0.4);
+  background: rgba(17, 42, 67, 0.42);
+  color: rgba(215, 236, 255, 0.95);
+}
+
+.admin-orders-action-button-danger:hover {
+  border-color: rgba(248, 113, 113, 0.36);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.admin-orders-filter-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(7, 12, 20, 0.78), rgba(5, 8, 13, 0.82)),
+    #060a10;
+  border-color: rgba(110, 168, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 18px rgba(0, 0, 0, 0.14);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.admin-orders-filter-shell::before {
+  display: none;
+}
+
+.admin-orders-filter-shell:hover {
+  border-color: rgba(110, 168, 255, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 8px 18px rgba(0, 0, 0, 0.16);
+}
+
+.admin-orders-filter-shell:focus-within {
+  border-color: rgba(110, 168, 255, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(110, 168, 255, 0.08),
+    0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.admin-orders-search-field label {
+  height: 100%;
+}
+
+.admin-orders-search-field label > span {
+  left: 0.875rem;
+  color: rgba(110, 168, 255, 0.78);
+  filter: none;
+}
+
+.admin-orders-search-field input {
+  height: 2.75rem;
+  border-radius: 0.875rem;
+  border-color: rgba(110, 168, 255, 0.22);
+  background:
+    linear-gradient(135deg, rgba(7, 13, 22, 0.96), rgba(5, 9, 15, 0.96)),
+    #070b12;
+  padding-left: 2.75rem;
+  padding-right: 1rem;
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.admin-orders-search-field input::placeholder {
+  color: rgba(215, 236, 255, 0.46);
+}
+
+.admin-orders-search-field input:hover {
+  border-color: rgba(110, 168, 255, 0.35);
+  background:
+    linear-gradient(135deg, rgba(8, 17, 29, 0.96), rgba(6, 10, 17, 0.96)),
+    #080f18;
+}
+
+.admin-orders-search-field input:focus {
+  border-color: rgba(110, 168, 255, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 0 1px rgba(110, 168, 255, 0.1);
+}
+
+.admin-orders-status-filter .admin-control-select {
+  height: 2.75rem;
+  border-radius: 0.875rem;
+  border-color: rgba(110, 168, 255, 0.22);
+  background:
+    linear-gradient(135deg, rgba(8, 15, 24, 0.94), rgba(5, 9, 15, 0.94)),
+    #080f18;
+  color: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.admin-orders-status-filter .admin-control-select:hover {
+  border-color: rgba(110, 168, 255, 0.35);
+  background:
+    linear-gradient(135deg, rgba(10, 22, 36, 0.94), rgba(6, 11, 18, 0.94)),
+    #09111c;
+}
+
+.admin-orders-status-filter .admin-control-select:focus {
+  border-color: rgba(110, 168, 255, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 0 1px rgba(110, 168, 255, 0.1);
+}
+
+@media (max-width: 639px) {
+  .admin-orders-filter-shell {
+    border-radius: 1rem;
   }
 }

@@ -1,5 +1,6 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
+import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -18,6 +19,8 @@ function stripClaimBucket(path: string) {
 export async function GET(request: Request) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
+
+  await expireOverdueTransferOrders(auth.admin)
 
   const { data: orderRows, error: ordersError } = await auth.admin
     .from("ordenes")

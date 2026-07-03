@@ -43,6 +43,10 @@ import {
   type CustomerOrderDetailView,
 } from "@/lib/account/account-utils"
 import type { SupabasePedido } from "@/lib/supabase/types"
+
+const beyonixAccountButton =
+  "inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-4 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
+
 export function MisOrdenes({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const router = useRouter()
@@ -82,6 +86,10 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
 
       if (!silent) setLoading(true)
       setError("")
+
+      await fetch("/api/orders/transfer-expirations", {
+        method: "POST",
+      }).catch(() => null)
 
       const { data, error: ordersError } = await supabase
         .from("ordenes")
@@ -284,6 +292,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
       title="Historial de compras"
       maxWidth="max-w-6xl"
       hideHeading
+      backButtonClassName={beyonixAccountButton}
     >
       <div>
         <h1 className="text-2xl font-black tracking-tight text-white">Mis compras</h1>
@@ -409,29 +418,29 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                         </span>
                       </div>
                     </div>
-                    <div className="shrink-0 sm:text-right">
-                      <p className="text-xs font-bold uppercase tracking-widest text-[#A0A0A0]">Total</p>
-                      <p className="mt-1 text-2xl font-black text-white">{formatCuentaPrice(Number(order.total ?? 0))}</p>
+                    <div className="shrink-0 rounded-xl border border-emerald-300/32 bg-[#0F4F3A] px-3.5 py-2.5 shadow-[0_0_14px_rgba(16,185,129,0.12)] sm:text-right">
+                      <p className="text-10px font-black uppercase tracking-widest text-white">TOTAL PAGADO</p>
+                      <p className="mt-1 text-2xl font-black leading-none text-white">{formatCuentaPrice(Number(order.total ?? 0))}</p>
                     </div>
                   </div>
 
                   <div className="mt-4 grid rounded-2xl border border-white/8 bg-[#090D12]/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] sm:grid-cols-3 sm:divide-x sm:divide-white/12">
                     <div className="flex items-center gap-3 py-2 sm:px-3 sm:py-0 sm:first:pl-0">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><CreditCard className="size-5 text-blue-300" /></span>
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><CreditCard className="size-5 text-white" /></span>
                       <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Pago</p><p className="mt-1 text-sm font-bold text-white">{isTransferOrder ? "Transferencia bancaria" : "Mercado Pago"}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{getPaymentProgressLabel(order)}</p></div>
                     </div>
                     <div className="flex items-center gap-3 border-t border-white/8 py-3 sm:border-0 sm:px-3 sm:py-0">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Truck className="size-5 text-blue-300" /></span>
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Truck className="size-5 text-white" /></span>
                       <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Envío</p><p className="mt-1 text-sm font-bold text-white">{shippingLabel}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{shippingDetail}</p></div>
                     </div>
                     <div className="flex items-center gap-3 border-t border-white/8 pt-3 sm:border-0 sm:px-3 sm:py-0 sm:last:pr-0">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Package className="size-5 text-blue-300" /></span>
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Package className="size-5 text-white" /></span>
                       <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Productos</p><p className="mt-1 text-sm font-bold text-white">{productCount} {productCount === 1 ? "producto" : "productos"}</p></div>
                     </div>
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}`)} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#112A43] bg-[#112A43] px-4 text-xs font-black text-white transition-colors hover:border-blue-300/35 hover:bg-[#173652]"><FileText className="size-4" />Ver compra</button>
+                    <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}`)} className={beyonixAccountButton}><FileText className="size-4" />Ver compra</button>
                   </div>
                 </div>
 
