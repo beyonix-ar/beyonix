@@ -43,17 +43,17 @@ export function ProductsToolbar({
   }, [])
 
   return (
-    <div className="mb-4 flex flex-col gap-2 rounded-xl border border-white/7 bg-beyonix-surface px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-4 flex flex-col gap-3 rounded-xl border border-beyonix-blue-light/18 bg-[#071018]/82 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] sm:flex-row sm:items-center sm:justify-between">
 
       {/* Contador */}
       <div className="flex items-baseline gap-1.5">
-        <span className="text-sm font-medium text-white/50">
+        <span className="text-sm font-medium text-white/56">
           Mostrando
         </span>
-        <span className="text-lg font-bold tracking-tight text-white tabular-nums">
+        <span className="text-lg font-bold tracking-tight text-beyonix-sky tabular-nums">
           {total}
         </span>
-        <span className="text-sm font-medium text-white/50">
+        <span className="text-sm font-medium text-white/56">
           {total === 1 ? "resultado" : "resultados"}
         </span>
       </div>

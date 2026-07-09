@@ -1,6 +1,7 @@
 "use client"
 
 import type { SupabaseCategoria } from "@/lib/supabase/types"
+import { ChevronRight, Cpu } from "lucide-react"
 
 interface CategoryFilterProps {
   selectedCategories: string[]
@@ -26,7 +27,7 @@ export function CategoryFilter({
 
   return (
     <div>
-      <p className="mb-4 text-11px font-semibold uppercase tracking-widest text-white/50">
+      <p className="mb-4 text-11px font-bold uppercase tracking-widest text-beyonix-sky/82">
         Categorías
       </p>
 
@@ -42,14 +43,14 @@ export function CategoryFilter({
           return (
             <label
               key={slug}
-              className="group flex cursor-pointer items-center gap-3"
+              className="group flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 transition-colors hover:bg-beyonix-blue/12"
             >
               {/* Checkbox personalizado */}
               <span
                 className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
                   isChecked
-                    ? "border-beyonix-blue-light bg-beyonix-blue"
-                    : "border-white/20 bg-transparent group-hover:border-white/40"
+                    ? "border-beyonix-sky bg-beyonix-blue shadow-[0_0_10px_rgba(56,189,248,0.28)]"
+                    : "border-beyonix-blue-light/35 bg-black/20 group-hover:border-beyonix-sky/60"
                 }`}
               >
                 {isChecked && (
@@ -75,13 +76,17 @@ export function CategoryFilter({
                 />
               </span>
 
+              <Cpu className="size-3.5 shrink-0 text-beyonix-cyan/65" />
+
               <span
                 className={`text-sm transition-colors duration-150 ${
-                  isChecked ? "text-white" : "text-white/70 group-hover:text-white/80"
+                  isChecked ? "text-white" : "text-white/66 group-hover:text-white/84"
                 }`}
               >
                 {nombre}
               </span>
+
+              <ChevronRight className="ml-auto size-3.5 text-beyonix-cyan/45" />
             </label>
           )
         })}

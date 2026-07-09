@@ -2,6 +2,18 @@ import { supabase } from "@/lib/supabase/client"
 
 import type { SupabasePedido } from "@/lib/supabase/types"
 
+class DashboardDataError extends Error {
+  status: number
+  body: unknown
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message)
+    this.name = "DashboardDataError"
+    this.status = status
+    this.body = body
+  }
+}
+
 export interface LowStockItem {
   id: string
   nombre: string
@@ -86,10 +98,27 @@ export async function getDashboardData() {
     },
     cache: "no-store",
   })
-  const data = await response.json()
+  const text = await response.text()
+  let data: unknown = null
+
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = { raw: text }
+    }
+  }
 
   if (!response.ok) {
-    throw new Error(data.error ?? "No se pudo cargar el dashboard.")
+    const message =
+      data &&
+      typeof data === "object" &&
+      "error" in data &&
+      typeof data.error === "string"
+        ? data.error
+        : `No se pudo cargar el dashboard. HTTP ${response.status}`
+
+    throw new DashboardDataError(message, response.status, data)
   }
 
   return data as {

@@ -410,6 +410,89 @@
     );
 }
 
+@utility beyonix-store-page-bg {
+  background:
+    radial-gradient(
+      72% 38% at 50% 0%,
+      rgba(30, 140, 255, 0.18) 0%,
+      rgba(17, 42, 67, 0.22) 36%,
+      rgba(2, 4, 7, 0) 76%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(56, 189, 248, 0.08) 0 1px,
+      transparent 1px 18%
+    ),
+    linear-gradient(180deg, #020407 0%, #03070d 45%, #020407 100%);
+}
+
+@utility beyonix-store-hero {
+  background:
+    linear-gradient(135deg, rgba(7, 16, 24, 0.88), rgba(2, 4, 7, 0.72)),
+    radial-gradient(circle at 50% 42%, rgba(30, 140, 255, 0.16), transparent 42%);
+  border: 1px solid rgba(30, 77, 123, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 42px rgba(30, 140, 255, 0.1),
+    0 26px 70px rgba(0, 0, 0, 0.42);
+  position: relative;
+}
+
+@utility beyonix-products-shell {
+  background:
+    linear-gradient(135deg, rgba(7, 16, 24, 0.78), rgba(4, 8, 13, 0.86)),
+    rgba(7, 16, 24, 0.74);
+  border: 1px solid rgba(30, 77, 123, 0.3);
+  border-radius: 1rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 38px rgba(30, 140, 255, 0.08),
+    0 20px 52px rgba(0, 0, 0, 0.34);
+}
+
+@utility beyonix-filters-panel {
+  background:
+    linear-gradient(180deg, rgba(11, 17, 24, 0.96), rgba(7, 16, 24, 0.96)),
+    #071018;
+  border: 1px solid rgba(30, 77, 123, 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 28px rgba(30, 140, 255, 0.08);
+}
+
+@utility beyonix-product-card {
+  background:
+    linear-gradient(180deg, rgba(16, 24, 32, 0.98), rgba(7, 16, 24, 0.98)),
+    #071018;
+  border: 1px solid rgba(30, 77, 123, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 16px 34px rgba(0, 0, 0, 0.24);
+  transition:
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    transform 220ms ease;
+}
+
+@utility beyonix-benefit-item {
+  background: rgba(7, 16, 24, 0.62);
+  border: 1px solid rgba(30, 77, 123, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 20px rgba(30, 140, 255, 0.06);
+  backdrop-filter: blur(12px);
+}
+
+@utility beyonix-metal-title {
+  background:
+    linear-gradient(180deg, #ffffff 0%, #dcecff 36%, #7b8795 76%, #ffffff 100%);
+  color: transparent;
+  filter: drop-shadow(0 0 24px rgba(56, 189, 248, 0.24));
+  letter-spacing: 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
 @utility beyonix-home-bg {
   background:
     radial-gradient(
@@ -566,6 +649,15 @@
 
 .beyonix-section-spacing {
   padding-block: var(--beyonix-section-y);
+}
+
+.beyonix-product-card:hover {
+  border-color: rgba(56, 189, 248, 0.46);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 30px rgba(30, 140, 255, 0.18),
+    0 22px 48px rgba(0, 0, 0, 0.36);
+  transform: translateY(-2px);
 }
 
 @layer components {

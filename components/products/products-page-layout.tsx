@@ -1,11 +1,18 @@
 "use client"
 
-import Image from "next/image"
 import {
   useEffect,
   useMemo,
   useState,
 } from "react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  Headphones,
+  ShieldCheck,
+  Truck,
+} from "lucide-react"
 
 import { useSearchParams } from "next/navigation"
 
@@ -67,6 +74,20 @@ const baseColorKeywords: Record<string, string[]> = {
   beige: ["beige", "crema", "arena"],
 }
 
+const storeBenefits = [
+  { label: "Envíos a todo el país", icon: Truck },
+  { label: "Hasta 12 cuotas", icon: CreditCard },
+  { label: "Garantía oficial", icon: ShieldCheck },
+  { label: "Atención personalizada", icon: Headphones },
+]
+
+interface StoreBanner {
+  id: string
+  image_url: string | null
+  alt_text: string | null
+  sort_order?: number | null
+}
+
 function normalizeColorText(value: string) {
   return value
     .normalize("NFD")
@@ -108,6 +129,14 @@ export function ProductsPageLayout() {
 
   const [search, setSearch] =
     useState("")
+
+  const [productsBanners, setProductsBanners] =
+    useState<StoreBanner[]>([])
+
+  const [
+    activeBannerIndex,
+    setActiveBannerIndex,
+  ] = useState(0)
 
   const [sortBy, setSortBy] =
     useState("relevance")
@@ -212,6 +241,52 @@ export function ProductsPageLayout() {
 
     loadProducts()
   }, [searchParams])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadProductsBanner() {
+      try {
+        const response = await fetch("/api/store/banners?key=products_hero")
+        const data = (await response.json()) as {
+          banners?: StoreBanner[]
+          banner?: StoreBanner | null
+        }
+
+        if (active) {
+          setProductsBanners(
+            (data.banners ?? (data.banner ? [data.banner] : [])).filter(
+              (banner) => Boolean(banner.image_url)
+            )
+          )
+        }
+      } catch {
+        if (active) {
+          setProductsBanners([])
+        }
+      }
+    }
+
+    void loadProductsBanner()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    setActiveBannerIndex(0)
+  }, [productsBanners.length])
+
+  useEffect(() => {
+    if (productsBanners.length < 2) return
+
+    const timer = window.setInterval(() => {
+      setActiveBannerIndex((current) => (current + 1) % productsBanners.length)
+    }, 6500)
+
+    return () => window.clearInterval(timer)
+  }, [productsBanners.length])
 
   useEffect(() => {
     const activeSlugs = new Set(
@@ -373,52 +448,118 @@ export function ProductsPageLayout() {
         )
       : false
 
+  const hasCarousel =
+    productsBanners.length > 1
+
+  const goToPreviousBanner = () => {
+    setActiveBannerIndex((current) =>
+      current === 0 ? productsBanners.length - 1 : current - 1
+    )
+  }
+
+  const goToNextBanner = () => {
+    setActiveBannerIndex((current) => (current + 1) % productsBanners.length)
+  }
+
   // ─────────────────────────────────────
   // Render
   // ─────────────────────────────────────
 
   return (
     <main className="relative min-h-screen overflow-visible bg-black text-white">
-      <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-category-page-bg" />
+      <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
-      <div className="category-hero relative z-20 w-full pb-6 pt-16 lg:pb-8 lg:pt-18">
-        <div className="w-full">
-          <div className="relative min-h-[380px] overflow-hidden rounded-xl beyonix-category-banner-glass sm:min-h-[460px] lg:min-h-[560px]">
-            <div className="global-search-wrapper absolute left-0 right-0 top-18 z-30 flex justify-center px-4">
+      <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
+        <div className="relative mx-auto flex min-h-420px w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] sm:min-h-[520px] lg:min-h-[600px]">
+          {productsBanners.map((banner, index) =>
+            banner.image_url ? (
+              <img
+                key={banner.id}
+                src={banner.image_url}
+                alt={banner.alt_text || "Banner de productos BEYONIX"}
+                className={`absolute inset-0 z-0 size-full object-cover object-center transition-opacity duration-700 ease-out ${
+                  index === activeBannerIndex ? "opacity-100" : "opacity-0"
+                }`}
+              />
+            ) : null
+          )}
+
+          {hasCarousel ? (
+            <>
+              <button
+                type="button"
+                title="Banner anterior"
+                aria-label="Banner anterior"
+                onClick={goToPreviousBanner}
+                className="absolute left-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <button
+                type="button"
+                title="Banner siguiente"
+                aria-label="Banner siguiente"
+                onClick={goToNextBanner}
+                className="absolute right-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+              <div className="absolute bottom-5 left-0 right-0 z-20 flex justify-center gap-2">
+                {productsBanners.map((banner, index) => (
+                  <button
+                    key={banner.id}
+                    type="button"
+                    title={`Ver banner ${index + 1}`}
+                    aria-label={`Ver banner ${index + 1}`}
+                    onClick={() => setActiveBannerIndex(index)}
+                    className={`h-1.5 cursor-pointer rounded-full transition-all ${
+                      index === activeBannerIndex
+                        ? "w-8 bg-beyonix-sky"
+                        : "w-3 bg-white/24 hover:bg-white/45"
+                    }`}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-8 sm:pb-10 lg:pb-12">
+            <div className="global-search-wrapper flex w-full justify-center">
               <GlobalSearchBar
                 search={search}
-                className="max-w-3xl lg:max-w-4xl [&>div:first-child]:border-white/15 [&>div:first-child]:bg-[#171717] [&>div:first-child]:shadow-xl [&>div:first-child]:shadow-black/35 [&>div:first-child:hover]:border-[#112A43] [&>div:first-child>button:hover]:shadow-[inset_0_0_0_1px_#112A43]"
-                onSearchChange={
-                  setSearch
-                }
-                products={products.map(
-                  (product) => ({
-                    id: String(
-                      product.id
-                    ),
-                    nombre:
-                      product.nombre,
-                  })
-                )}
+                className="max-w-3xl lg:max-w-4xl"
+                surfaceClassName="!border-beyonix-blue-light/38 !bg-[#0A1420]/88 !shadow-[0_0_18px_rgba(30,140,255,0.08),inset_0_1px_0_rgba(255,255,255,0.07)] hover:!border-beyonix-sky/46 focus-within:!border-beyonix-sky/58 focus-within:!shadow-[0_0_18px_rgba(30,140,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                inputClassName="placeholder:text-white/58"
+                buttonClassName="border-beyonix-blue-light/28 text-beyonix-sky/86 hover:bg-beyonix-blue/16 hover:text-white"
+                onSearchChange={setSearch}
+                products={products.map((product) => ({
+                  id: String(product.id),
+                  nombre: product.nombre,
+                }))}
               />
             </div>
 
-            <Image
-              fill
-              src="/images/beyonix-products-banner.png"
-              alt="Tecnología BEYONIX"
-              sizes="(min-width: 1536px) 1400px, 100vw"
-              className="object-cover object-[center_45%] beyonix-category-banner-image-fade"
-              priority
-            />
-
-            <div className="pointer-events-none absolute inset-0 beyonix-category-banner-fade" />
+            <div className="mt-6 grid w-full max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {storeBenefits.map(({ label, icon: Icon }) => (
+                <div
+                  key={label}
+                  className="beyonix-benefit-item flex items-center gap-3 rounded-lg px-3 py-3 text-left"
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/24 bg-beyonix-blue/34 text-beyonix-sky/86 shadow-[0_0_8px_rgba(30,140,255,0.08)]">
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="text-13px font-semibold text-white/86">
+                    {label}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
       <section className="container relative z-20 mx-auto px-4 lg:px-8">
-        <div className="mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] pb-14 lg:grid-cols-products-layout lg:pb-16">
+        <div className="beyonix-products-shell mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] p-3 pb-10 sm:p-4 lg:grid-cols-products-layout lg:p-5 lg:pb-12">
           <div className="w-full lg:w-260px">
             <ProductsFiltersSidebar
               categories={categories}

@@ -23,7 +23,7 @@ export function PriceFilter({
 }: PriceFilterProps) {
   return (
     <div>
-      <p className="mb-4 text-11px font-semibold uppercase tracking-widest text-white/50">
+      <p className="mb-4 text-11px font-bold uppercase tracking-widest text-beyonix-sky/82">
         Rango de precio
       </p>
 
@@ -41,10 +41,10 @@ export function PriceFilter({
       />
 
       <div className="mt-3.5 flex justify-between">
-        <span className="rounded-md bg-white/6 px-2.5 py-1 text-xs font-medium text-white/80">
+        <span className="rounded-md border border-beyonix-blue-light/18 bg-black/24 px-2.5 py-1 text-xs font-medium text-white/80">
           ${minPrice.toLocaleString("es-AR")}
         </span>
-        <span className="rounded-md bg-white/6 px-2.5 py-1 text-xs font-medium text-white/80">
+        <span className="rounded-md border border-beyonix-blue-light/18 bg-black/24 px-2.5 py-1 text-xs font-medium text-white/80">
           ${maxPrice.toLocaleString("es-AR")}
         </span>
       </div>

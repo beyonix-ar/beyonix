@@ -61,7 +61,7 @@ export function CommerceFilter({
 
   return (
     <div>
-      <p className="mb-4 text-11px font-semibold uppercase tracking-widest text-white/50">
+      <p className="mb-4 text-11px font-bold uppercase tracking-widest text-beyonix-sky/82">
         Estado comercial
       </p>
 
@@ -72,13 +72,13 @@ export function CommerceFilter({
           return (
             <label
               key={key}
-              className="group flex cursor-pointer items-center gap-3"
+              className="group flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 transition-colors hover:bg-beyonix-blue/12"
             >
               <span
                 className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
                   isChecked
-                    ? "border-beyonix-blue-light bg-beyonix-blue"
-                    : "border-white/20 bg-transparent group-hover:border-white/40"
+                    ? "border-beyonix-sky bg-beyonix-blue shadow-[0_0_10px_rgba(56,189,248,0.28)]"
+                    : "border-beyonix-blue-light/35 bg-black/20 group-hover:border-beyonix-sky/60"
                 }`}
               >
                 {isChecked && (
@@ -111,7 +111,7 @@ export function CommerceFilter({
                 className={`text-sm transition-colors duration-150 ${
                   isChecked
                     ? "text-white"
-                    : "text-white/70 group-hover:text-white/80"
+                    : "text-white/66 group-hover:text-white/84"
                 }`}
               >
                 {label}

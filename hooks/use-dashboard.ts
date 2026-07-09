@@ -24,6 +24,41 @@ interface DashboardState {
   searchIndex: DashboardSearchItem[]
 }
 
+function getDashboardErrorDetails(err: unknown) {
+  if (!err || typeof err !== "object") {
+    return {
+      message: String(err),
+      details: null,
+      hint: null,
+      code: null,
+      status: null,
+    }
+  }
+
+  const candidate = err as {
+    message?: unknown
+    details?: unknown
+    hint?: unknown
+    code?: unknown
+    status?: unknown
+    body?: unknown
+    name?: unknown
+  }
+
+  return {
+    message:
+      typeof candidate.message === "string"
+        ? candidate.message
+        : JSON.stringify(err),
+    details: candidate.details ?? null,
+    hint: candidate.hint ?? null,
+    code: candidate.code ?? null,
+    status: candidate.status ?? null,
+    body: candidate.body ?? null,
+    name: candidate.name ?? null,
+  }
+}
+
 export function useDashboard() {
   const [data, setData] = useState<DashboardState>({
     role: null,
@@ -44,13 +79,7 @@ export function useDashboard() {
       setError(null)
       setData(await getDashboardData())
     } catch (err) {
-      console.error("DASHBOARD_LOAD_ERROR", {
-        message: err && typeof err === "object" && "message" in err ? err.message : undefined,
-        details: err && typeof err === "object" && "details" in err ? err.details : undefined,
-        hint: err && typeof err === "object" && "hint" in err ? err.hint : undefined,
-        code: err && typeof err === "object" && "code" in err ? err.code : undefined,
-        error: err,
-      })
+      console.warn("DASHBOARD_LOAD_WARNING", getDashboardErrorDetails(err))
       setError("No se pudo cargar el dashboard.")
     } finally {
       setLoading(false)

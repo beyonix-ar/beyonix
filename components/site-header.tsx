@@ -2,15 +2,19 @@
 
 import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import {
   ChevronDown,
+  CircleUserRound,
+  Heart,
+  IdCard,
+  LayoutDashboard,
   LogOut,
   Menu,
-  Package,
   ShieldCheck,
   ShoppingBag,
   User,
-  CircleUserRound,
+  UserRound,
   X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +29,7 @@ import type { SupabaseCategoria } from "@/lib/supabase/types"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
 export function SiteHeader() {
+  const pathname = usePathname()
   const { cart, total, openCart } = useCart()
   const { user, isLoading, isInternal, logout } = useAuth()
   const adminNotifications = useOrderNotifications(isInternal)
@@ -43,9 +48,13 @@ export function SiteHeader() {
     user?.username?.trim() ||
     (isLoading ? "" : "Mi cuenta")
   const navLinkClass =
-    "relative -mx-2.5 inline-flex h-9 items-center justify-center rounded-lg px-2.5 text-15px font-medium leading-none text-[#F8FAFC] transition-all duration-200 after:absolute after:bottom-1 after:left-2.5 after:right-2.5 after:h-px after:origin-center after:scale-x-0 after:bg-[rgba(191,228,255,0.52)] after:opacity-0 after:transition-all after:duration-200 hover:bg-[rgba(17,42,67,0.26)] hover:text-[#D7ECFF] hover:shadow-[0_0_17px_rgba(96,165,250,0.19)] hover:after:scale-x-100 hover:after:opacity-100"
+    "relative -mx-2.5 inline-flex h-9 items-center justify-center px-2.5 text-15px font-medium leading-none text-[#F8FAFC]/88 transition-colors duration-200 after:absolute after:bottom-1 after:left-1/2 after:h-px after:w-[calc(100%-1.25rem)] after:-translate-x-1/2 after:origin-center after:scale-x-0 after:bg-[rgba(125,204,255,0.72)] after:opacity-0 after:transition-all after:duration-300 after:ease-out hover:text-white hover:after:scale-x-100 hover:after:opacity-100"
   const navLinkActiveClass =
-    "bg-[rgba(17,42,67,0.26)] text-[#D7ECFF] shadow-[0_0_17px_rgba(96,165,250,0.19)] after:scale-x-100 after:opacity-100"
+    "text-white after:scale-x-100 after:opacity-100"
+  const accountMenuItemClass =
+    "group flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+  const accountMenuIconClass =
+    "size-4 shrink-0 text-white/84 transition-colors duration-200 group-hover:text-beyonix-sky"
 
   useEffect(() => {
     let active = true
@@ -97,7 +106,7 @@ export function SiteHeader() {
   }, [user])
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-beyonix-blue-light/18 bg-black/78 shadow-[0_8px_30px_rgba(0,0,0,0.38)] backdrop-blur-xl">
       <nav className="container mx-auto px-4 lg:px-8">
         <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto] items-center lg:h-18 lg:grid-cols-site-header">
           <BeyonixLogoLink />
@@ -105,14 +114,20 @@ export function SiteHeader() {
           <div className="hidden items-center justify-center gap-7 lg:flex">
             <Link
               href="/"
-              className={navLinkClass}
+              className={cn(
+                navLinkClass,
+                pathname === "/" && navLinkActiveClass
+              )}
             >
               Inicio
             </Link>
 
             <Link
               href="/productos"
-              className={navLinkClass}
+              className={cn(
+                navLinkClass,
+                pathname.startsWith("/productos") && navLinkActiveClass
+              )}
             >
               Productos
             </Link>
@@ -130,7 +145,8 @@ export function SiteHeader() {
                 className={cn(
                   navLinkClass,
                   "cursor-pointer gap-1.5",
-                  catOpen && navLinkActiveClass
+                  (catOpen || pathname.startsWith("/categorias")) &&
+                    navLinkActiveClass
                 )}
               >
                 Categorías
@@ -175,7 +191,10 @@ export function SiteHeader() {
 
             <Link
               href="/contacto"
-              className={navLinkClass}
+              className={cn(
+                navLinkClass,
+                pathname === "/contacto" && navLinkActiveClass
+              )}
             >
               Contacto
             </Link>
@@ -252,42 +271,50 @@ export function SiteHeader() {
                       <Link
                         href="/cuenta"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+                        className={accountMenuItemClass}
                       >
-                        <User className="size-3.5 shrink-0" />
+                        <UserRound className={accountMenuIconClass} strokeWidth={1.8} />
                         Mi cuenta
                       </Link>
                       <Link
                         href="/cuenta?tab=datos"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+                        className={accountMenuItemClass}
                       >
-                        <User className="size-3.5 shrink-0" />
+                        <IdCard className={accountMenuIconClass} strokeWidth={1.8} />
                         Mis datos
                       </Link>
                       <Link
                         href="/cuenta?tab=ordenes"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+                        className={accountMenuItemClass}
                       >
-                        <Package className="size-3.5 shrink-0" />
+                        <ShoppingBag className={accountMenuIconClass} strokeWidth={1.8} />
                         Mis compras
+                      </Link>
+                      <Link
+                        href="/cuenta/favoritos"
+                        onClick={() => setUserOpen(false)}
+                        className={accountMenuItemClass}
+                      >
+                        <Heart className={accountMenuIconClass} strokeWidth={1.8} />
+                        Favoritos
                       </Link>
                       <Link
                         href="/cuenta?tab=seguridad"
                         onClick={() => setUserOpen(false)}
-                        className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+                        className={accountMenuItemClass}
                       >
-                        <ShieldCheck className="size-3.5 shrink-0" />
+                        <ShieldCheck className={accountMenuIconClass} strokeWidth={1.8} />
                         Seguridad
                       </Link>
                       {isInternal && (
                         <Link
                           href="/admin"
                           onClick={() => setUserOpen(false)}
-                          className="flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm font-semibold text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+                          className={`${accountMenuItemClass} font-semibold`}
                         >
-                          <ShieldCheck className="size-3.5 shrink-0" />
+                          <LayoutDashboard className={accountMenuIconClass} strokeWidth={1.8} />
                           Panel administrador
                         </Link>
                       )}
@@ -299,9 +326,9 @@ export function SiteHeader() {
                           logout()
                           setUserOpen(false)
                         }}
-                        className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+                        className="group flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                       >
-                        <LogOut className="size-3.5 shrink-0" />
+                        <LogOut className={accountMenuIconClass} strokeWidth={1.8} />
                         Cerrar sesión
                       </button>
                     </div>
@@ -379,7 +406,13 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileOpen(false)}
-                className="block rounded-lg border border-transparent px-2 py-3 text-15px font-medium text-[#F8FAFC] transition-all duration-200 hover:border-[rgba(191,228,255,0.18)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF] hover:shadow-[0_0_16px_rgba(96,165,250,0.14)]"
+                className={cn(
+                  "relative block px-2 py-3 text-15px font-medium text-[#F8FAFC]/88 transition-colors duration-200 after:absolute after:bottom-1.5 after:left-2 after:h-px after:w-10 after:origin-left after:scale-x-0 after:bg-[rgba(125,204,255,0.72)] after:opacity-0 after:transition-all after:duration-300 after:ease-out hover:text-white hover:after:scale-x-100 hover:after:opacity-100",
+                  (link.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(link.href)) &&
+                    "text-white after:scale-x-100 after:opacity-100"
+                )}
               >
                 {link.label}
               </Link>
@@ -392,7 +425,7 @@ export function SiteHeader() {
                     key={category.id}
                     href={`/categorias/${category.slug}`}
                     onClick={() => setMobileOpen(false)}
-                    className="block rounded-lg border border-transparent px-2 py-2.5 text-15px font-medium text-[#F8FAFC] transition-all duration-200 hover:border-[rgba(191,228,255,0.18)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF] hover:shadow-[0_0_16px_rgba(96,165,250,0.14)]"
+                    className="block rounded-lg border border-transparent px-2 py-2.5 text-15px font-medium text-[#F8FAFC] transition-all duration-200 hover:border-[rgba(140,200,242,0.12)] hover:bg-[rgba(17,42,67,0.18)] hover:text-white hover:shadow-[0_0_8px_rgba(96,165,250,0.08)]"
                   >
                     {category.nombre}
                   </Link>
@@ -432,6 +465,16 @@ export function SiteHeader() {
                     )}
                   >
                     Mis compras
+                  </Link>
+                  <Link
+                    href="/cuenta/favoritos"
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "block rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      beyonixHoverBorder
+                    )}
+                  >
+                    Favoritos
                   </Link>
                   <Link
                     href="/cuenta?tab=seguridad"

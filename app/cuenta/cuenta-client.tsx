@@ -14,6 +14,7 @@ import {
   DollarSign,
   Eye,
   FileText,
+  Heart,
   Loader2,
   Lock,
   LogOut,
@@ -109,8 +110,15 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   if (view === "datos") return <MisDatos onBack={() => goToView("home")} />
   if (view === "seguridad") return <Seguridad onBack={() => goToView("home")} />
 
-  const menuItems = [
+  const menuItems: Array<{
+    icon: typeof ShoppingBag
+    label: string
+    sub: string
+    view?: ProfileView
+    href?: string
+  }> = [
     { icon: ShoppingBag, label: "Mis compras", sub: "Historial de compras", view: "ordenes" as ProfileView },
+    { icon: Heart, label: "Favoritos", sub: "Productos guardados", href: "/cuenta/favoritos" },
     { icon: User, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
     { icon: Lock, label: "Seguridad", sub: "Contraseña y acceso", view: "seguridad" as ProfileView },
   ]
@@ -139,7 +147,16 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
             type="button"
             aria-label={item.label}
             title={item.label}
-            onClick={() => goToView(item.view)}
+            onClick={() => {
+              if (item.href) {
+                router.push(item.href)
+                return
+              }
+
+              if (item.view) {
+                goToView(item.view)
+              }
+            }}
             className={cn(
               "w-full flex items-center gap-4 p-4 rounded-xl bg-white/2 hover:bg-white/4 group cursor-pointer text-left",
               beyonixHoverBorder

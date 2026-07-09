@@ -46,19 +46,9 @@ export function ProductCardPricing({
       <div className="mb-3 flex min-h-84px items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-20px font-semibold tracking-tight text-white tabular-nums sm:text-21px">
+            <p className="text-20px font-bold tracking-tight text-white tabular-nums sm:text-21px">
               {formatPrice(price)}
             </p>
-
-            {!!discountPercentage && (
-              <span className="rounded border border-green-500/20 bg-green-500/10 px-1.5 py-0.5 text-11px font-bold text-green-400">
-                -
-                {
-                  discountPercentage
-                }
-                %
-              </span>
-            )}
           </div>
 
           {!!originalPrice &&
@@ -77,15 +67,25 @@ export function ProductCardPricing({
             <div className="mt-1 min-h-18px" />
           )}
 
-          {installmentsLabel && (
-            <p className="mt-1.5 inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2 py-0.5 text-10px font-medium text-beyonix-cyan">
-              {installmentsLabel}
-            </p>
-          )}
+          <div className="mt-2 flex min-h-22px flex-wrap gap-1.5">
+            {!!discountPercentage && (
+              <span className="inline-flex rounded-full border border-green-500/25 bg-green-500/12 px-2 py-0.5 text-10px font-semibold text-green-400">
+                En oferta
+              </span>
+            )}
 
-          {!installmentsLabel && (
-            <div className="mt-1.5 min-h-22px" />
-          )}
+            {installmentsLabel && (
+              <span className="inline-flex rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-2 py-0.5 text-10px font-medium text-beyonix-sky">
+                {installmentsLabel}
+              </span>
+            )}
+
+            {!discountPercentage && !installmentsLabel && (
+              <span className="inline-flex rounded-full border border-beyonix-blue-light/16 bg-white/4 px-2 py-0.5 text-10px font-medium text-white/54">
+                Stock disponible
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

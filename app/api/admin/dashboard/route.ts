@@ -118,7 +118,7 @@ async function getMercadoPagoStatus(): Promise<SystemStatusItem> {
     const response = await fetch("https://api.mercadopago.com/users/me", {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(2500),
     })
 
     if (!response.ok) {
@@ -145,6 +145,177 @@ async function getMercadoPagoStatus(): Promise<SystemStatusItem> {
     }
   }
 }
+
+async function withFallback<T>(
+  promise: PromiseLike<T>,
+  fallback: T,
+  label: string
+) {
+  try {
+    return await promise
+  } catch (error) {
+    console.warn(`DASHBOARD_${label}_FALLBACK`, getErrorLogDetails(error))
+    return fallback
+  }
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  fallback: T,
+  ms: number,
+  label: string
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms)
+      }),
+    ])
+  } catch (error) {
+    console.warn(`DASHBOARD_${label}_TIMEOUT_FALLBACK`, getErrorLogDetails(error))
+    return fallback
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+function getErrorLogDetails(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return {
+      message: String(error),
+      details: null,
+      hint: null,
+      code: null,
+    }
+  }
+
+  const candidate = error as {
+    message?: unknown
+    details?: unknown
+    hint?: unknown
+    code?: unknown
+    status?: unknown
+    statusText?: unknown
+  }
+
+  return {
+    message:
+      typeof candidate.message === "string"
+        ? candidate.message
+        : JSON.stringify(error),
+    details: candidate.details ?? null,
+    hint: candidate.hint ?? null,
+    code: candidate.code ?? null,
+    status: candidate.status ?? null,
+    statusText: candidate.statusText ?? null,
+  }
+}
+
+interface SafeDashboardQueryResult {
+  data: unknown
+  error: unknown
+  count: number | null
+  status: number
+  statusText: string
+}
+
+async function safeDashboardQuery(
+  name: string,
+  query: PromiseLike<SafeDashboardQueryResult>,
+  fallback: SafeDashboardQueryResult
+) {
+  try {
+    const result = await query
+
+    if (result.error) {
+      console.warn(`DASHBOARD_QUERY_FALLBACK:${name}`, {
+        query: name,
+        ...getErrorLogDetails(result.error),
+      })
+
+      return fallback
+    }
+
+    return result
+  } catch (error) {
+    console.warn(`DASHBOARD_QUERY_THROWN:${name}`, {
+      query: name,
+      ...getErrorLogDetails(error),
+    })
+
+    return fallback
+  }
+}
+
+function getCount(result: { count: number | null } | null | undefined) {
+  return result?.count ?? 0
+}
+
+const EMPTY_ROWS_RESULT = {
+  data: [],
+  error: null,
+  count: 0,
+  status: 200,
+  statusText: "OK",
+}
+
+const EMPTY_COUNT_RESULT = {
+  data: null,
+  error: null,
+  count: 0,
+  status: 200,
+  statusText: "OK",
+}
+
+const ORDER_SELECT = `
+  id,
+  estado,
+  total,
+  cliente_nombre,
+  cliente_email,
+  cliente_username,
+  payment_id,
+  payment_status,
+  payment_method_id,
+  payment_type_id,
+  payment_proof_url,
+  payment_proof_file_name,
+  payment_proof_uploaded_at,
+  paid_at,
+  tracking_number,
+  tracking_url,
+  andreani_tracking,
+  andreani_etiqueta_url,
+  shipping_cost_real,
+  shipping_cost_charged,
+  transfer_discount_amount,
+  invoice_status,
+  created_at
+`
+
+const PRODUCT_SEARCH_SELECT = `
+  id,
+  nombre,
+  slug,
+  activo,
+  stock,
+  categorias(nombre),
+  producto_variantes(id, nombre, stock, activo, color_hex)
+`
+
+const ORDER_ITEM_SELECT = `
+  id,
+  orden_id,
+  producto_id,
+  variante_id,
+  cantidad,
+  precio,
+  productos(id, nombre, categorias(nombre)),
+  producto_variantes(nombre)
+`
 
 function getAndreaniStatus(): SystemStatusItem {
   const config = getAndreaniConfig()
@@ -197,97 +368,251 @@ export async function GET(request: Request) {
   const auth = await requireInternalUser(request)
   if ("error" in auth) return auth.error
 
+  const sensitive = canViewSensitiveNumbers(auth.profile.rol)
+  const paidOrderFilter =
+    "estado.in.(pagado,enviado,entregado,approved),payment_status.eq.approved"
+
   const [
-    productsResult,
-    ordersResult,
-    itemsResult,
+    productsCountResult,
+    activeProductsCountResult,
+    inactiveProductsCountResult,
+    totalOrdersCountResult,
+    recentOrdersResult,
+    pendingOrdersCountResult,
+    paymentReviewCountResult,
+    waitingProofCountResult,
+    paidOrdersCountResult,
+    cancelledOrdersCountResult,
+    pendingDispatchResult,
+    pendingInvoiceResult,
+    lowStockProductsResult,
+    lowStockVariantsResult,
+    searchProductsResult,
     mercadoLibreResult,
     mercadoPagoStatus,
     arcaStatus,
   ] = await Promise.all([
-    auth.admin
-      .from("productos")
-      .select("*, categorias(nombre), producto_variantes(*)")
-      .order("id", { ascending: false }),
-    auth.admin.from("ordenes").select("*").order("created_at", {
-      ascending: false,
-    }),
-    auth.admin
-      .from("orden_items")
-      .select("*, productos(id, nombre, categorias(nombre)), producto_variantes(nombre)"),
-    auth.admin
-      .from("mercadolibre_sales")
-      .select("*")
-      .order("sale_date", { ascending: false })
-      .limit(1000),
-    getMercadoPagoStatus(),
-    getArcaStatus(),
+    safeDashboardQuery(
+      "productos_total_count",
+      auth.admin.from("productos").select("id", { count: "exact", head: true }),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "productos_activos_count",
+      auth.admin
+        .from("productos")
+        .select("id", { count: "exact", head: true })
+        .eq("activo", true),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "productos_inactivos_count",
+      auth.admin
+        .from("productos")
+        .select("id", { count: "exact", head: true })
+        .eq("activo", false),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "ordenes_total_count",
+      auth.admin.from("ordenes").select("id", { count: "exact", head: true }),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "ordenes_recientes",
+      auth.admin
+        .from("ordenes")
+        .select(ORDER_SELECT)
+        .order("created_at", { ascending: false })
+        .limit(8),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "ordenes_pendientes_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("estado", "pendiente"),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "pagos_en_revision_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .in("payment_status", [...PAYMENT_REVIEW_STATES]),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "esperando_comprobante_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("payment_method_id", "transferencia")
+        .is("payment_proof_url", null)
+        .not("payment_status", "in", "(confirmado,approved,rechazado)"),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "ordenes_pagadas_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .or(paidOrderFilter),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "ordenes_canceladas_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("estado", "cancelado"),
+      EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "pedidos_a_preparar",
+      auth.admin
+        .from("ordenes")
+        .select(ORDER_SELECT)
+        .or(paidOrderFilter)
+        .not("estado", "in", "(enviado,entregado,cancelado)")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "facturas_pendientes",
+      auth.admin
+        .from("ordenes")
+        .select(ORDER_SELECT)
+        .or(paidOrderFilter)
+        .or("invoice_status.is.null,invoice_status.neq.authorized")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "productos_bajo_stock",
+      auth.admin
+        .from("productos")
+        .select("id, nombre, stock, activo")
+        .eq("activo", true)
+        .lte("stock", SITE_SETTINGS.stock.lowStockThreshold)
+        .order("stock", { ascending: true })
+        .limit(10),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "variantes_bajo_stock",
+      auth.admin
+        .from("producto_variantes")
+        .select("id, nombre, stock, activo, color_hex, productos(nombre)")
+        .eq("activo", true)
+        .lte("stock", SITE_SETTINGS.stock.lowStockThreshold)
+        .order("stock", { ascending: true })
+        .limit(10),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "productos_busqueda",
+      auth.admin
+        .from("productos")
+        .select(PRODUCT_SEARCH_SELECT)
+        .order("id", { ascending: false })
+        .limit(80),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "mercadolibre_sales_recientes",
+      auth.admin
+        .from("mercadolibre_sales")
+        .select("id, sale_date, imported_at, order_id, product_name, sku, quantity, gross_amount, fee_amount, shipping_amount, net_amount")
+        .order("sale_date", { ascending: false })
+        .limit(sensitive ? 250 : 25),
+      EMPTY_ROWS_RESULT
+    ),
+    withTimeout(
+      getMercadoPagoStatus(),
+      {
+        id: "mercadopago",
+        label: "Mercado Pago",
+        status: "unknown",
+        detail: "Sin datos en este momento",
+      },
+      3000,
+      "MERCADOPAGO"
+    ),
+    withTimeout(
+      getArcaStatus(),
+      {
+        id: "arca",
+        label: "ARCA / Facturación electrónica",
+        status: "unknown",
+        detail: "Sin datos en este momento",
+      },
+      3000,
+      "ARCA"
+    ),
   ])
 
-  const error = productsResult.error || ordersResult.error || itemsResult.error
+  const recentOrders = (recentOrdersResult.data ?? []) as SupabasePedido[]
+  const pendingDispatchOrders = (pendingDispatchResult.data ?? []) as SupabasePedido[]
+  const pendingInvoiceOrders = (pendingInvoiceResult.data ?? []) as SupabasePedido[]
+  const products = (searchProductsResult.data ?? []) as unknown as SupabaseProducto[]
+  const mlRows = (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>
 
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
-  }
-
-  const products = (productsResult.data ?? []) as SupabaseProducto[]
-  const orders = (ordersResult.data ?? []) as SupabasePedido[]
-  const items = (itemsResult.data ?? []) as SupabasePedidoItem[]
-  const mlRows = mercadoLibreResult.error
-    ? []
-    : ((mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>)
+  const paidCandidateOrders = [
+    ...recentOrders.filter(isPaidOrder),
+    ...pendingDispatchOrders,
+    ...pendingInvoiceOrders,
+  ]
+  const orderIdsForItems = [...new Set(paidCandidateOrders.map((order) => order.id))]
+  const itemsResult = orderIdsForItems.length
+    ? await safeDashboardQuery(
+        "orden_items_recientes",
+        auth.admin
+          .from("orden_items")
+          .select(ORDER_ITEM_SELECT)
+          .in("orden_id", orderIdsForItems)
+          .limit(300),
+        EMPTY_ROWS_RESULT
+      )
+    : EMPTY_ROWS_RESULT
+  const items = (itemsResult.data ?? []) as unknown as SupabasePedidoItem[]
   const itemsByOrderId = groupItemsByOrder(items)
-  const lowStock = products.flatMap<DashboardLowStockItem>((product) => {
-    const variants = product.producto_variantes ?? []
-    if (variants.length) {
-      return variants
-        .filter(
-          (variant) =>
-            variant.activo &&
-            (variant.stock ?? 0) <= SITE_SETTINGS.stock.lowStockThreshold,
-        )
-        .map((variant) => ({
-          id: `variante-${variant.id}`,
-          nombre: variant.nombre,
-          producto_nombre: product.nombre,
-          stock: variant.stock ?? 0,
-          threshold: SITE_SETTINGS.stock.lowStockThreshold,
-          tipo: "variante" as const,
-          color_hex: variant.color_hex,
-        }))
-    }
-
-    return product.activo &&
-      (product.stock ?? 0) <= SITE_SETTINGS.stock.lowStockThreshold
-      ? [
-          {
-            id: `producto-${product.id}`,
-            nombre: product.nombre,
-            stock: product.stock ?? 0,
-            threshold: SITE_SETTINGS.stock.lowStockThreshold,
-            tipo: "producto" as const,
-          },
-        ]
-      : []
-  })
+  const lowStockProducts = ((lowStockProductsResult.data ?? []) as Array<{
+        id: number
+        nombre: string
+        stock: number | null
+      }>).map((product) => ({
+        id: `producto-${product.id}`,
+        nombre: product.nombre,
+        stock: product.stock ?? 0,
+        threshold: SITE_SETTINGS.stock.lowStockThreshold,
+        tipo: "producto" as const,
+      }))
+  const lowStockVariants = ((lowStockVariantsResult.data ?? []) as Array<{
+        id: number
+        nombre: string
+        stock: number | null
+        color_hex?: string | null
+        productos?: { nombre?: string | null } | null
+      }>).map((variant) => ({
+        id: `variante-${variant.id}`,
+        nombre: variant.nombre,
+        producto_nombre: variant.productos?.nombre ?? "Producto",
+        stock: variant.stock ?? 0,
+        threshold: SITE_SETTINGS.stock.lowStockThreshold,
+        tipo: "variante" as const,
+        color_hex: variant.color_hex ?? undefined,
+      }))
+  const lowStock = [...lowStockProducts, ...lowStockVariants]
   const sortedLowStock = [...lowStock].sort((a, b) => a.stock - b.stock)
-  const paidOrders = orders.filter(isPaidOrder)
-  const sensitive = canViewSensitiveNumbers(auth.profile.rol)
-  const paymentReviewOrders = orders.filter((order) =>
-    PAYMENT_REVIEW_STATES.has(order.payment_status ?? ""),
-  )
-  const pendingDispatchOrders = orders.filter(isReadyToPrepare)
-  const pendingInvoiceOrders = paidOrders.filter(
-    (order) => order.invoice_status !== "authorized",
-  )
   const commercialSales: CommercialSale[] = sensitive
     ? [
         ...items
-          .filter((item) =>
-            paidOrders.some((order) => order.id === item.orden_id),
-          )
           .map((item) => {
-            const order = paidOrders.find((row) => row.id === item.orden_id)
+            const order = paidCandidateOrders.find((row) => row.id === item.orden_id)
             const product = item.productos as
               | (SupabaseProducto & { categorias?: { nombre?: string | null } })
               | null
@@ -345,7 +670,7 @@ export async function GET(request: Request) {
         }),
       ]
     : []
-  const recentWebSales: RecentActivity[] = paidOrders.map((order) => {
+  const recentWebSales: RecentActivity[] = recentOrders.filter(isPaidOrder).map((order) => {
     const orderItems = itemsByOrderId.get(order.id) ?? []
     const firstItem = orderItems[0]
     const additionalItems = Math.max(0, orderItems.length - 1)
@@ -375,7 +700,7 @@ export async function GET(request: Request) {
         row.sale_date ?? row.imported_at ?? new Date().toISOString(),
       ),
     }))
-  const paymentConfirmedActivity: RecentActivity[] = paidOrders
+  const paymentConfirmedActivity: RecentActivity[] = recentOrders.filter(isPaidOrder)
     .slice(0, 8)
     .map((order) => ({
       id: `pago-confirmado-${order.id}`,
@@ -397,7 +722,7 @@ export async function GET(request: Request) {
       meta: getOrderCustomerLabel(order),
       created_at: order.paid_at || order.created_at,
     })),
-    ...orders
+    ...recentOrders
       .filter((order) => !isPaidOrder(order))
       .slice(0, 5)
       .map((order) => ({
@@ -408,7 +733,7 @@ export async function GET(request: Request) {
         meta: `${getOrderCustomerLabel(order)} · ${order.estado}`,
         created_at: order.created_at,
       })),
-    ...paymentReviewOrders.slice(0, 5).map((order) => ({
+    ...recentOrders.filter((order) => PAYMENT_REVIEW_STATES.has(order.payment_status ?? "")).slice(0, 5).map((order) => ({
       id: `pago-${order.id}`,
       type: "pago" as const,
       title: "Pago en revisión",
@@ -431,12 +756,12 @@ export async function GET(request: Request) {
       status: "ok",
       detail: "Base de datos accesible",
     },
-    mercadoPagoStatus,
+    mercadoPagoStatus as SystemStatusItem,
     getAndreaniStatus(),
-    arcaStatus,
+    arcaStatus as SystemStatusItem,
   ]
   const searchIndex = [
-    ...orders.slice(0, 50).map((order) => {
+    ...recentOrders.map((order) => {
       const orderItems = itemsByOrderId.get(order.id) ?? []
 
       return {
@@ -475,23 +800,15 @@ export async function GET(request: Request) {
   return Response.json({
     role: auth.profile.rol,
     stats: {
-      totalProductos: products.length,
-      productosActivos: products.filter((product) => product.activo).length,
-      productosInactivos: products.filter((product) => !product.activo).length,
+      totalProductos: getCount(productsCountResult),
+      productosActivos: getCount(activeProductsCountResult),
+      productosInactivos: getCount(inactiveProductsCountResult),
       productosBajoStock: lowStock.length,
       totalClientes: null,
-      totalOrdenes: orders.length,
-      pedidosPendientes: orders.filter((order) => order.estado === "pendiente")
-        .length,
-      esperandoComprobante: orders.filter(
-        (order) =>
-          order.payment_method_id === "transferencia" &&
-          !order.payment_proof_url &&
-          !["confirmado", "approved", "rechazado"].includes(
-            order.payment_status ?? "",
-          ),
-      ).length,
-      pagosEnRevision: paymentReviewOrders.length,
+      totalOrdenes: getCount(totalOrdersCountResult),
+      pedidosPendientes: getCount(pendingOrdersCountResult),
+      esperandoComprobante: getCount(waitingProofCountResult),
+      pagosEnRevision: getCount(paymentReviewCountResult),
       enviosPendientes: pendingDispatchOrders.length,
       pedidosSinTracking: pendingDispatchOrders.filter(
         (order) =>
@@ -501,12 +818,11 @@ export async function GET(request: Request) {
           !order.andreani_etiqueta_url,
       ).length,
       facturasPendientes: pendingInvoiceOrders.length,
-      pedidosPagados: paidOrders.length,
-      pedidosCancelados: orders.filter((order) => order.estado === "cancelado")
-        .length,
+      pedidosPagados: getCount(paidOrdersCountResult),
+      pedidosCancelados: getCount(cancelledOrdersCountResult),
     },
     lowStock: sortedLowStock.slice(0, 10),
-    recentOrders: orders.slice(0, 8).map((order) => ({
+    recentOrders: recentOrders.map((order) => ({
       ...order,
       total: sensitive ? order.total : 0,
       shipping_cost_real: sensitive ? order.shipping_cost_real : null,

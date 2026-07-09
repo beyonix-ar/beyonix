@@ -19,6 +19,9 @@ interface GlobalSearchBarProps {
 
   products: SearchProduct[]
   className?: string
+  surfaceClassName?: string
+  inputClassName?: string
+  buttonClassName?: string
 
   onSearchChange: (
     value: string
@@ -29,6 +32,9 @@ export function GlobalSearchBar({
   search,
   products,
   className = "",
+  surfaceClassName = "",
+  inputClassName = "",
+  buttonClassName = "",
   onSearchChange,
 }: GlobalSearchBarProps) {
   const router = useRouter()
@@ -71,11 +77,11 @@ export function GlobalSearchBar({
   return (
     <div className={`relative w-full ${className}`}>
       <div
-        className={`flex overflow-hidden rounded-xl border bg-beyonix-surface transition-all duration-200 ${
+        className={`flex overflow-hidden rounded-xl border bg-[#071018]/78 shadow-[0_0_30px_rgba(30,140,255,0.10),inset_0_1px_0_rgba(255,255,255,0.055)] backdrop-blur-md transition-all duration-200 ${
           isFocused
-            ? "border-beyonix-blue-light shadow-lg"
-            : "border-white/8 hover:border-white/15"
-        }`}
+            ? "border-beyonix-sky/55 shadow-[0_0_32px_rgba(30,140,255,0.24)]"
+            : "border-beyonix-blue-light/24 hover:border-beyonix-sky/36"
+        } ${surfaceClassName}`}
       >
         <input
           type="text"
@@ -150,7 +156,7 @@ export function GlobalSearchBar({
               )
             }
           }}
-          className="w-full bg-transparent px-5 py-3.5 text-sm text-white outline-none placeholder:text-white/45"
+          className={`w-full bg-transparent px-5 py-3.5 text-sm text-white outline-none placeholder:text-white/45 ${inputClassName}`}
         />
 
         <button
@@ -162,7 +168,7 @@ export function GlobalSearchBar({
               search
             )
           }
-          className="cursor-pointer border-l border-white/8 px-5 text-white/50 transition-colors hover:text-white/80"
+          className={`cursor-pointer border-l border-beyonix-blue-light/20 px-5 text-beyonix-sky/70 transition-colors hover:bg-beyonix-blue/20 hover:text-white ${buttonClassName}`}
         >
           <Search className="size-4" />
         </button>
@@ -171,7 +177,7 @@ export function GlobalSearchBar({
       {isFocused &&
         suggestions.length >
           0 && (
-          <div className="absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface-2 shadow-2xl shadow-black/70">
+          <div className="absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-beyonix-blue-light/24 bg-[#071018] shadow-2xl shadow-black/70">
             {suggestions.map(
               (
                 product,

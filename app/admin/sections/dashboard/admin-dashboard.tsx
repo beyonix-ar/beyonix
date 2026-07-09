@@ -258,20 +258,20 @@ function StatCard({
     <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-11px font-bold uppercase tracking-widest text-white/45">
+          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan/85">
             {title}
           </p>
-          <p className={`mt-2 wrap-break-word font-black text-white ${valueClass}`}>
+          <p className={`mt-3 wrap-break-word font-black text-white ${valueClass}`}>
             {value}
           </p>
-          {helper && <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-white/50">{helper}</p>}
+          {helper && <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-white/58">{helper}</p>}
         </div>
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/8 bg-black/25 text-beyonix-sky">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-beyonix-blue-light/26 bg-beyonix-blue/35 text-beyonix-sky shadow-[0_0_18px_rgba(96,165,250,0.08)]">
           {icon}
         </span>
       </div>
       {onClick && (
-        <span className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-beyonix-sky">
+        <span className="mt-4 inline-flex h-8 items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/18 px-3 text-xs font-black text-white/72 transition group-hover:border-beyonix-sky/38 group-hover:text-white">
           Abrir <ArrowRight className="size-3.5" />
         </span>
       )}
@@ -285,7 +285,7 @@ function StatCard({
         title={`Abrir ${title}`}
         aria-label={`Abrir ${title}`}
         onClick={onClick}
-        className="min-h-120px cursor-pointer rounded-2xl border border-white/8 bg-black/85 p-4 text-left transition hover:-translate-y-0.5 hover:border-beyonix-sky/50"
+        className="group min-h-136px cursor-pointer rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.96),rgba(3,7,13,0.92))] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_42px_rgba(0,0,0,0.22)] transition duration-200 hover:-translate-y-0.5 hover:border-beyonix-sky/38 hover:shadow-[0_0_22px_rgba(96,165,250,0.08),0_18px_42px_rgba(0,0,0,0.28)]"
       >
         {content}
       </button>
@@ -293,8 +293,30 @@ function StatCard({
   }
 
   return (
-    <div className="min-h-120px rounded-2xl border border-white/8 bg-black/85 p-4">
+    <div className="min-h-136px rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.96),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_42px_rgba(0,0,0,0.22)]">
       {content}
+    </div>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+}) {
+  return (
+    <div className="rounded-3xl border border-beyonix-blue-light/14 bg-[linear-gradient(145deg,rgba(7,16,24,0.86),rgba(3,7,13,0.94))] px-5 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+      <span className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl border border-beyonix-blue-light/22 bg-beyonix-blue/24 text-white/78">
+        {icon}
+      </span>
+      <p className="text-sm font-black text-white">{title}</p>
+      <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-white/48">
+        {description}
+      </p>
     </div>
   )
 }
@@ -320,7 +342,7 @@ function ActivityItem({ item }: { item: DashboardRecentActivity }) {
           : "border-white/10 bg-[#181818] text-white/70"
 
   return (
-    <div className="rounded-2xl border border-white/7 bg-black px-4 py-3">
+    <div className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
       <div className="flex min-w-0 items-start gap-3">
         <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border ${tone}`}>
           <ActivityIcon type={item.type} />
@@ -340,12 +362,12 @@ function ActivityItem({ item }: { item: DashboardRecentActivity }) {
           {(item.meta || item.secondary) && (
             <div className="mt-3 flex flex-wrap gap-2">
               {item.meta && (
-                <span className="rounded-full border border-white/8 bg-[#181818] px-2.5 py-1 text-11px font-bold text-white/58">
+                <span className="rounded-full border border-beyonix-blue-light/14 bg-beyonix-blue/12 px-2.5 py-1 text-11px font-bold text-white/58">
                   {item.meta}
                 </span>
               )}
               {item.secondary && (
-                <span className="rounded-full border border-white/8 bg-[#181818] px-2.5 py-1 text-11px font-bold text-white/45">
+                <span className="rounded-full border border-white/8 bg-black/24 px-2.5 py-1 text-11px font-bold text-white/45">
                   {item.secondary}
                 </span>
               )}
@@ -387,7 +409,7 @@ function GlobalAdminSearch({
 
   return (
     <div className="relative w-full max-w-2xl">
-      <div className="flex h-11 items-center gap-3 rounded-2xl border border-white/10 bg-black/45 px-4 text-white shadow-inner shadow-black/30">
+      <div className="flex h-12 items-center gap-3 rounded-2xl border border-beyonix-blue-light/22 bg-[rgba(3,7,13,0.72)] px-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition focus-within:border-beyonix-sky/40 focus-within:shadow-[0_0_18px_rgba(96,165,250,0.08)]">
         <Search className="size-4 shrink-0 text-beyonix-sky" />
         <input
           value={query}
@@ -397,7 +419,7 @@ function GlobalAdminSearch({
         />
       </div>
       {query.trim().length >= 2 && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50">
+        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-beyonix-blue-light/20 bg-[#071018] shadow-2xl shadow-black/50">
           {results.length ? (
             results.map((row) => (
               <button
@@ -407,7 +429,7 @@ function GlobalAdminSearch({
                   setQuery("")
                   onNavigate(row.section)
                 }}
-                className="flex w-full cursor-pointer items-center justify-between gap-3 border-b border-white/6 px-4 py-3 text-left last:border-b-0 hover:bg-white/5"
+                className="flex w-full cursor-pointer items-center justify-between gap-3 border-b border-white/6 px-4 py-3 text-left transition last:border-b-0 hover:bg-beyonix-blue/24"
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-black text-white">
@@ -441,7 +463,7 @@ function SystemStatusPill({ item }: { item: DashboardSystemStatus }) {
         ? "border-red-400/25 bg-red-400/10 text-red-200"
         : item.status === "warning"
           ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
-          : "border-white/10 bg-black text-white/52"
+          : "border-white/10 bg-white/5 text-white/52"
   const label =
     item.status === "ok"
       ? "OK"
@@ -452,11 +474,11 @@ function SystemStatusPill({ item }: { item: DashboardSystemStatus }) {
           : "Sin datos"
 
   return (
-    <div className="rounded-xl border border-white/7 bg-black/60 px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
+    <div className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-xs font-black text-white">{item.label}</p>
-          <p className="mt-0.5 truncate text-11px text-white/45">
+          <p className="truncate text-sm font-black text-white">{item.label}</p>
+          <p className="mt-1 line-clamp-2 text-11px leading-4 text-white/45">
             {item.detail}
           </p>
         </div>
@@ -956,7 +978,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="rounded-3xl border border-white/8 bg-beyonix-blue p-6">
+      <div className="rounded-3xl border border-beyonix-blue-light/22 bg-[radial-gradient(circle_at_18%_0%,rgba(140,200,242,0.12),transparent_34%),linear-gradient(145deg,rgba(7,16,24,0.98),rgba(3,7,13,0.94))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_64px_rgba(0,0,0,0.28)]">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="mb-2 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
@@ -970,7 +992,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-xl border border-beyonix-blue-light/25 bg-black/35 p-0.5 shadow-inner shadow-black/40">
+            <div className="inline-flex rounded-2xl border border-beyonix-blue-light/24 bg-black/30 p-1 shadow-inner shadow-black/40">
               {[
                 ["operativo", "Centro operativo"],
                 ["comercial", "Análisis comercial"],
@@ -983,8 +1005,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   onClick={() => setTab(key as DashboardTab)}
                   className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
                     tab === key
-                      ? "border-beyonix-sky/45 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
-                      : "border-transparent text-white/62 hover:border-white/10 hover:bg-white/7 hover:text-white"
+                      ? "border-beyonix-sky/36 bg-beyonix-blue/70 text-white shadow-[0_0_10px_rgba(96,165,250,0.10)]"
+                      : "border-transparent text-white/62 hover:border-beyonix-blue-light/20 hover:bg-beyonix-blue/18 hover:text-white"
                   }`}
                 >
                   {key === "operativo" ? (
@@ -1008,7 +1030,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       {tab === "operativo" ? (
         <>
-          <section className="rounded-3xl border border-white/8 bg-[#141414] p-4 sm:p-5">
+          <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.82),rgba(3,7,13,0.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_18px_48px_rgba(0,0,0,0.18)] sm:p-5">
             <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <SectionHeader eyebrow="Centro operativo" title="Prioridades de hoy" />
               <GlobalAdminSearch rows={searchIndex} onNavigate={onNavigate} />
@@ -1020,7 +1042,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-white/8 bg-[#141414] p-4">
+          <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -1030,7 +1052,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   Estado del sistema
                 </h2>
               </div>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/8 bg-black/35 text-beyonix-sky">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-beyonix-blue-light/22 bg-beyonix-blue/28 text-beyonix-sky">
                 <CheckCircle2 className="size-4" />
               </span>
             </div>
@@ -1042,40 +1064,40 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </section>
 
           <div className="grid gap-5 xl:grid-cols-2">
-            <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+            <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
               <SectionHeader eyebrow="Operación" title="Últimos pedidos" />
               <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
                 {recentOrders.length ? recentOrders.map((order) => (
-                  <button type="button" title={`Abrir pedido ${order.id}`} aria-label={`Abrir pedido ${order.id}`} key={order.id} onClick={() => onNavigate("pedidos")} className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-2xl border border-white/7 bg-black px-4 py-3 text-left transition hover:border-beyonix-blue-light hover:bg-beyonix-blue/20">
+                  <button type="button" title={`Abrir pedido ${order.id}`} aria-label={`Abrir pedido ${order.id}`} key={order.id} onClick={() => onNavigate("pedidos")} className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 text-left transition hover:border-beyonix-sky/35 hover:bg-beyonix-blue/20">
                     <span className="min-w-0"><span className="block text-sm font-bold text-white">Pedido #{order.id}</span><span className="mt-1 block truncate text-xs text-white/45">{order.cliente_nombre || order.cliente_email || "Cliente"}</span></span>
                     <span className="text-right"><span className="block text-sm font-black text-white">{order.estado}</span><span className="mt-1 block text-11px uppercase text-white/42">{formatRelativeTime(order.created_at)}</span></span>
                   </button>
-                )) : <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55">No hay pedidos todavía.</p>}
+                )) : <EmptyState icon={<ShoppingCart className="size-5" />} title="No hay pedidos todavía" description="Cuando ingresen compras, van a aparecer acá." />}
               </div>
             </section>
-            <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+            <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
               <SectionHeader eyebrow="Actividad" title="Actividad reciente" />
               <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
-                {recentActivity.length ? recentActivity.map((item) => <ActivityItem key={item.id} item={item} />) : <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55">No hay actividad reciente.</p>}
+                {recentActivity.length ? recentActivity.map((item) => <ActivityItem key={item.id} item={item} />) : <EmptyState icon={<Clock className="size-5" />} title="No hay actividad reciente" description="Los movimientos operativos se mostrarán en este panel." />}
               </div>
             </section>
           </div>
 
-          <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
-            <SectionHeader eyebrow="Stock" title="Productos sin stock o bajo stock" action={<button type="button" title="Ver productos" aria-label="Ver productos" onClick={() => onNavigate("productos")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl border border-white/10 px-4 text-sm font-black text-white/70 transition hover:border-beyonix-sky/45 hover:text-white">Ver productos <ArrowRight className="size-4" /></button>} />
+          <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+            <SectionHeader eyebrow="Stock" title="Productos sin stock o bajo stock" action={<button type="button" title="Ver productos" aria-label="Ver productos" onClick={() => onNavigate("productos")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-4 text-sm font-black text-white/78 transition hover:border-beyonix-sky/42 hover:bg-beyonix-blue/32 hover:text-white">Ver productos <ArrowRight className="size-4" /></button>} />
             <div className="custom-scrollbar grid max-h-420px gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
               {lowStock.length ? lowStock.map((item) => (
-                <div key={item.id} className="rounded-2xl border border-white/7 bg-black px-4 py-3">
+                <div key={item.id} className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
                   <div className="flex items-start justify-between gap-3">
                     <span className="min-w-0"><span className="block truncate text-sm font-bold text-white">{item.producto_nombre || item.nombre}</span><span className="mt-1 flex items-center gap-2 truncate text-xs text-white/45">{item.color_hex && <span className="size-3 rounded-full border border-white/20" style={{ backgroundColor: item.color_hex }} />}{item.tipo === "variante" ? item.nombre : "Producto"}</span><span className="mt-2 block text-11px font-bold uppercase tracking-widest text-white/35">Umbral mínimo: {item.threshold}</span></span>
                     <span className={`rounded-full border px-3 py-1 text-xs font-black ${item.stock <= SITE_SETTINGS.stock.criticalStockThreshold ? "border-red-400/25 bg-red-400/10 text-red-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>Stock {item.stock}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-white/10 px-3 text-xs font-black text-white/70 hover:border-beyonix-sky/45 hover:text-white">Editar producto</button>
-                    <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-white/10 px-3 text-xs font-black text-beyonix-sky hover:border-beyonix-sky/45">Reponer stock</button>
+                    <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-beyonix-blue-light/18 bg-beyonix-blue/12 px-3 text-xs font-black text-white/70 transition hover:border-beyonix-sky/38 hover:text-white">Editar producto</button>
+                    <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-beyonix-sky/24 bg-beyonix-blue/20 px-3 text-xs font-black text-beyonix-sky transition hover:border-beyonix-sky/45 hover:bg-beyonix-blue/32">Reponer stock</button>
                   </div>
                 </div>
-              )) : <p className="rounded-2xl border border-white/7 bg-black px-4 py-5 text-sm text-white/55 md:col-span-2 xl:col-span-3">No hay productos con stock bajo.</p>}
+              )) : <div className="md:col-span-2 xl:col-span-3"><EmptyState icon={<Package className="size-5" />} title="Stock saludable" description="No hay productos sin stock o bajo el umbral configurado." /></div>}
             </div>
           </section>
         </>

@@ -6,6 +6,7 @@ import {
   BarChart3,
   FileText,
   History,
+  ImageIcon,
   LogOut,
   Menu,
   Package,
@@ -28,6 +29,7 @@ import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
+import { AdminBanners } from "./sections/banners/admin-banners"
 import { AdminClientes } from "./sections/clientes/admin-clientes"
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
 import { AdminFacturacion } from "./sections/facturacion/admin-facturacion"
@@ -37,6 +39,7 @@ import { AdminUsuarios } from "./sections/usuarios/admin-usuarios"
 
 export type AdminSection =
   | "dashboard"
+  | "banners"
   | "productos"
   | "clientes"
   | "facturacion"
@@ -46,6 +49,7 @@ export type AdminSection =
 
 const ADMIN_SECTIONS: AdminSection[] = [
   "dashboard",
+  "banners",
   "productos",
   "clientes",
   "facturacion",
@@ -253,6 +257,12 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     return [
       ...operational,
       {
+        key: "banners",
+        label: "Banners",
+        description: "Promociones y eventos",
+        icon: <ImageIcon className="size-4" />,
+      },
+      {
         key: "facturacion",
         label: "Facturación",
         description: "Facturas C pendientes",
@@ -388,6 +398,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
 
   const sections: Record<AdminSection, ReactNode> = {
     dashboard: <AdminDashboard onNavigate={goToSection} />,
+    banners: !isOperator ? <AdminBanners /> : null,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
     facturacion: !isOperator ? <AdminFacturacion /> : null,

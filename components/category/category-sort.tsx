@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { ChevronDown } from "lucide-react"
 
 interface CategorySortProps {
   sortBy: string
@@ -46,8 +47,8 @@ export function CategorySort({
       ref={wrapperRef}
       className="relative flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3"
     >
-      <span className="text-sm font-medium tracking-wide text-white/70">
-        Filtrar por:
+      <span className="text-sm font-medium tracking-wide text-white/60">
+        Ordenar por:
       </span>
 
       <div className="relative w-full sm:w-auto">
@@ -59,7 +60,11 @@ export function CategorySort({
           className="flex min-h-44px w-full cursor-pointer items-center justify-between rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#0B111A]/90 px-4 py-2 text-sm font-medium text-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md transition-all duration-200 hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF] hover:shadow-[0_0_18px_rgba(96,165,250,0.18)] sm:min-w-180px"
         >
           <span>{selected.label}</span>
-          <span className="ml-4 text-white/80">▼</span>
+          <ChevronDown
+            className={`ml-4 size-3.5 text-white/80 transition-transform duration-200 ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          />
         </button>
 
         {isOpen && (

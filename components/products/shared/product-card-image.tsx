@@ -31,10 +31,10 @@ export function ProductCardImage({
   return (
     <div
       onClick={onOpenPreview}
-      className="relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden border-b border-white/7 bg-beyonix-surface-3 p-2 sm:p-2.5"
+      className="relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden border-b border-beyonix-blue-light/12 bg-[#0B1118] p-3 sm:p-3.5"
     >
       <div
-        className="h-full w-full overflow-hidden rounded-lg border border-white/6 bg-beyonix-surface-2"
+        className="h-full w-full overflow-hidden rounded-lg border border-white/70 bg-[#F5F7FA]"
         style={{
           background:
             hasTransparentBackground
@@ -49,12 +49,12 @@ export function ProductCardImage({
           onLoad={
             detectTransparency
           }
-          className="h-full w-full object-contain p-1 transition-transform duration-500 group-hover:scale-[1.025]"
+          className="h-full w-full object-contain p-2 transition-transform duration-500 group-hover:scale-[1.035]"
         />
       </div>
 
       {/* Overlay sutil al hover para indicar que es clickeable */}
-      <div className="pointer-events-none absolute inset-2 rounded-lg bg-black/0 transition-colors duration-200 group-hover:bg-black/5 sm:inset-2.5" />
+      <div className="pointer-events-none absolute inset-3 rounded-lg bg-black/0 transition-colors duration-200 group-hover:bg-black/5 sm:inset-3.5" />
 
       {canNavigate && (
         <>
