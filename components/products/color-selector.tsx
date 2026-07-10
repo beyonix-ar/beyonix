@@ -20,6 +20,24 @@ interface ColorSelectorProps {
   showLabels?: boolean
 }
 
+function formatColorName(value: string) {
+  return value
+    .trim()
+    .split(/([\s-]+)/)
+    .map((part) => {
+      if (!part || /^[\s-]+$/.test(part)) {
+        return part
+      }
+
+      const [firstLetter, ...rest] = Array.from(
+        part.toLocaleLowerCase("es-AR")
+      )
+
+      return `${firstLetter.toLocaleUpperCase("es-AR")}${rest.join("")}`
+    })
+    .join("")
+}
+
 export function ColorSelector({
   colors,
   selectedColor,
@@ -31,7 +49,7 @@ export function ColorSelector({
   }
 
   return (
-    <div className="custom-scrollbar flex h-full flex-wrap items-start gap-2 overflow-y-auto pr-1">
+    <div className="custom-scrollbar flex h-full flex-wrap items-start gap-2.5 overflow-y-auto pr-1">
       {colors.map((color) => {
         const value = color.value || color.name
         const isSelected =
@@ -56,10 +74,10 @@ export function ColorSelector({
             }
             className={
               showLabels
-                ? `relative flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2 text-11px font-medium transition-all duration-200 ${
+                ? `relative flex h-10 cursor-pointer items-center gap-2 rounded-xl border px-3 text-13px font-semibold transition-all duration-200 ${
                     isSelected
-                      ? "border-beyonix-sky bg-beyonix-blue text-white shadow-beyonix-color-selected"
-                      : "border-white/10 bg-white/4 text-white/70 hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white"
+                      ? "border-beyonix-blue-light/70 bg-[#102033] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                      : "border-white/12 bg-[#101418] text-white/78 hover:border-beyonix-blue-light/58 hover:bg-[#162337] hover:text-white"
                   }`
                 : `relative flex size-7 cursor-pointer items-center justify-center rounded-full transition-all duration-200 ${
                     isSelected
@@ -76,9 +94,9 @@ export function ColorSelector({
                 boxShadow:
                   "inset 0 0 0 1.5px rgba(255,255,255,0.2)",
               }}
-              className={`block size-3.5 shrink-0 rounded-full ${colorClass}`}
+              className={`block size-4 shrink-0 rounded-full ${colorClass}`}
             />
-            {showLabels && <span>{color.name}</span>}
+            {showLabels && <span>{formatColorName(color.name)}</span>}
           </button>
         )
       })}

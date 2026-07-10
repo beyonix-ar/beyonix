@@ -9,6 +9,10 @@ import {
   getDefaultVariantValue,
   getProductImagesByVariant,
 } from "@/lib/products/product-variants"
+import {
+  getImageUrlFromMediaIndex,
+  isPlayableProductVideo,
+} from "@/lib/products/product-video"
 
 interface AdminProductPreviewModalProps {
   product: SupabaseProducto
@@ -39,7 +43,14 @@ export function AdminProductPreviewModal({
       : product.imagen_principal
         ? [product.imagen_principal]
         : []
-  const currentImage = safeImages[selectedImage] || product.imagen_principal
+  const currentImage =
+    getImageUrlFromMediaIndex(
+      safeImages,
+      selectedImage,
+      product.video_url
+    ) || product.imagen_principal
+  const mediaCount =
+    safeImages.length + (isPlayableProductVideo(product.video_url) ? 1 : 0)
   const cartQuantity = getQuantity(product.id, selectedColor)
 
   const handleColorChange = (value: string) => {
@@ -49,14 +60,14 @@ export function AdminProductPreviewModal({
 
   const handleNext = () => {
     setSelectedImage((current) =>
-      safeImages.length > 0 ? (current + 1) % safeImages.length : 0
+      mediaCount > 0 ? (current + 1) % mediaCount : 0
     )
   }
 
   const handlePrev = () => {
     setSelectedImage((current) =>
-      safeImages.length > 0
-        ? (current - 1 + safeImages.length) % safeImages.length
+      mediaCount > 0
+        ? (current - 1 + mediaCount) % mediaCount
         : 0
     )
   }

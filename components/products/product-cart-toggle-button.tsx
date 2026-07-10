@@ -22,40 +22,37 @@ export function ProductCartToggleButton({
       <button
         type="button"
         aria-label={"A\u00f1adir producto al carrito"}
-        title={"A\u00f1adir producto al carrito"}
         onClick={onAdd}
         disabled={maxReached}
-        className="flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-beyonix-blue-light/18 bg-black/34 px-4 text-13px font-medium text-white/82 transition-all duration-150 enabled:cursor-pointer enabled:hover:border-beyonix-sky/42 enabled:hover:bg-beyonix-blue/24 enabled:hover:text-white enabled:hover:shadow-[0_0_16px_rgba(30,140,255,0.12)] enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 sm:h-11 sm:px-5"
+        className="flex h-12 w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl border border-beyonix-blue-light/45 bg-[#112A43] px-5 text-14px font-bold text-white transition-all duration-200 enabled:cursor-pointer enabled:hover:border-emerald-300/55 enabled:hover:bg-[#153A2B] enabled:hover:text-emerald-50 enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
       >
-        <ShoppingBag className="size-3.5 shrink-0" />
+        <ShoppingBag className="size-4 shrink-0" />
         A&ntilde;adir al carrito
       </button>
     )
   }
 
   return (
-    <div className="flex h-10 w-full items-center gap-1.5 sm:h-11">
+    <div className="grid h-12 w-full grid-cols-[48px_minmax(72px,1fr)_48px] overflow-hidden rounded-xl border border-beyonix-blue-light/24 bg-[#121820] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
       <button
         type="button"
         aria-label="Disminuir cantidad"
-        title="Disminuir cantidad"
         onClick={onDecrease}
-        className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-beyonix-blue-light/18 bg-black/34 text-white/80 transition-colors hover:border-beyonix-sky/42 hover:bg-beyonix-blue/24 hover:text-white active:scale-95 sm:h-11 sm:w-11"
+        className="flex h-full cursor-pointer items-center justify-center border-r border-beyonix-blue-light/18 bg-[#112A43]/72 text-white/82 transition-colors hover:bg-[#183B5E] hover:text-white active:bg-[#1E4D7B]"
       >
         <MinusIcon className="size-3.5 stroke-2" />
       </button>
 
-      <div className="flex h-10 flex-1 items-center justify-center rounded-lg border border-beyonix-sky/38 bg-beyonix-blue/38 px-3 text-13px font-medium tabular-nums text-white shadow-[0_0_14px_rgba(30,140,255,0.12)] sm:h-11 sm:px-4">
+      <div className="flex h-full items-center justify-center bg-[#191B1F] px-4 text-14px font-bold tabular-nums text-white">
         {quantity}
       </div>
 
       <button
         type="button"
         aria-label="Aumentar cantidad"
-        title="Aumentar cantidad"
         onClick={onIncrease}
         disabled={maxReached}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/18 bg-black/34 text-white/80 transition-colors enabled:cursor-pointer enabled:hover:border-beyonix-sky/42 enabled:hover:bg-beyonix-blue/24 enabled:hover:text-white enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 sm:h-11 sm:w-11"
+        className="flex h-full items-center justify-center border-l border-beyonix-blue-light/18 bg-[#112A43]/72 text-white/82 transition-colors enabled:cursor-pointer enabled:hover:bg-[#183B5E] enabled:hover:text-white enabled:active:bg-[#1E4D7B] disabled:cursor-not-allowed disabled:opacity-35"
       >
         <PlusIcon className="size-3.5 stroke-2" />
       </button>

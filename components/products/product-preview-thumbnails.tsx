@@ -64,7 +64,6 @@ function ProductPreviewThumbnail({
   return (
     <button
       type="button"
-      title={`Ver imagen ${index + 1}`}
       aria-label={`Ver imagen ${index + 1}`}
       onClick={() => onSelectImage(index)}
       className={`group relative h-12 w-12 cursor-pointer overflow-hidden rounded-lg border transition-all duration-200 ${

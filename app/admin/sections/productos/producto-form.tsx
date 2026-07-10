@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowLeft, Loader2, ToggleLeft, ToggleRight } from "lucide-react"
+import { ArrowLeft, Loader2, Play, ToggleLeft, ToggleRight } from "lucide-react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -13,6 +13,7 @@ import { ProductSpecificationsEditor } from "./product-specifications-editor"
 import { ProductVariantsEditor } from "./product-variants-editor"
 import { useProductoForm } from "./use-producto-form"
 import { AdminSelect } from "../../components/admin-controls"
+import { getProductVideoSource } from "@/lib/products/product-video"
 
 interface ProductoFormProps {
   producto?: SupabaseProducto | null
@@ -49,6 +50,9 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
   })
 
   const currentProductoId = producto?.id || savedId
+  const videoSource = getProductVideoSource(form.video_url)
+  const canPreviewVideo =
+    videoSource && videoSource.kind !== "unsupported"
 
   return (
     <div className="min-h-screen px-4 py-5 sm:px-6 lg:px-7 lg:py-6">
@@ -96,6 +100,54 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   Información general
                 </p>
               </div>
+              <div>
+                <label htmlFor="video_url" className={labelCls}>
+                  Video del producto
+                </label>
+                <input
+                  id="video_url"
+                  type="url"
+                  title="Video del producto"
+                  value={form.video_url}
+                  placeholder="https://..."
+                  onChange={(event) => setField("video_url", event.target.value)}
+                  className={inputCls}
+                />
+                <p className="mt-2 text-xs leading-5 text-white/45">
+                  Opcional. Pegá un enlace externo al video.
+                </p>
+
+                {canPreviewVideo ? (
+                  <div className="mt-3 overflow-hidden rounded-xl border border-white/8 bg-black">
+                    <div className="relative aspect-video w-full">
+                      {videoSource.kind === "direct" ? (
+                        <video
+                          controls
+                          preload="metadata"
+                          src={videoSource.videoUrl}
+                          className="size-full bg-black object-contain"
+                        />
+                      ) : (
+                        <iframe
+                          title="Previsualización del video del producto"
+                          src={videoSource.embedUrl}
+                          loading="lazy"
+                          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          className="size-full"
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : form.video_url.trim() ? (
+                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/8 bg-[#181818] px-3 py-2 text-xs text-white/55">
+                    <Play className="size-3.5 text-beyonix-cyan" />
+                    La URL es HTTPS, pero no corresponde a un proveedor o archivo compatible.
+                  </div>
+                ) : null}
+              </div>
+
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label htmlFor="nombre" className={labelCls}>

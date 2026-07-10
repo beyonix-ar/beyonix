@@ -19,6 +19,7 @@ import { useProductDetails } from "../use-product-details"
 import { CategoryProductsGrid } from "./category-products-grid"
 import { ProductsFiltersSidebar } from "@/components/products/products-filters-sidebar"
 import { SITE_SETTINGS } from "@/config/site-settings"
+import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 
 interface CategoryPageLayoutProps {
   title: string
@@ -86,7 +87,15 @@ export function CategoryPageLayout({
   const handleAddToCart = () => {
     if (!product) return
 
-    addToCart(product, selectedColor, images[selectedImage])
+    addToCart(
+      product,
+      selectedColor,
+      getImageUrlFromMediaIndex(
+        images,
+        selectedImage,
+        product.video_url
+      )
+    )
   }
 
   const handleProductCardAdd = (

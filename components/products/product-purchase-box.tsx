@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { CreditCard } from "lucide-react"
 
 import { ProductCartToggleButton } from "./product-cart-toggle-button"
 
@@ -72,21 +73,20 @@ export function ProductPurchaseBox({
       : null
 
   return (
-    <div className="bg-black/18 px-5 pb-5 pt-4 lg:px-8 lg:pb-6 lg:pt-5">
-      {/* Price row */}
-      <div className="mb-4 flex flex-wrap items-baseline gap-2.5 lg:mb-5 lg:gap-3">
-        <span className="text-2xl font-bold leading-none tracking-tight text-white lg:text-26px">
+    <div className="bg-[#070A0E] px-5 pb-5 pt-5 lg:px-8 lg:pb-6 lg:pt-6">
+      <div className="mb-4 flex flex-wrap items-end gap-3 lg:mb-5">
+        <span className="text-3xl font-black leading-none tracking-tight text-white lg:text-[34px]">
           {formatPrice(price)}
         </span>
 
         {discount && (
-          <span className="rounded border border-emerald-500/25 bg-emerald-500/12 px-2 py-0.5 text-13px font-semibold leading-none text-emerald-400">
+          <span className="rounded-lg border border-emerald-300/30 bg-emerald-400/16 px-2.5 py-1 text-13px font-bold leading-none text-emerald-200">
             -{discount}%
           </span>
         )}
 
         {originalPrice && originalPrice > price && (
-          <span className="text-14px leading-none text-white/45 line-through">
+          <span className="pb-0.5 text-15px leading-none text-white/48 line-through">
             {formatPrice(originalPrice)}
           </span>
         )}
@@ -94,13 +94,13 @@ export function ProductPurchaseBox({
 
       {installmentsLabel && (
         <div className="mb-4 lg:mb-5">
-          <span className="inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-3 py-1.5 text-12px font-medium text-beyonix-cyan">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-2 text-13px font-semibold text-white/70">
+            <CreditCard className="size-3.5" />
             {installmentsLabel}
           </span>
         </div>
       )}
 
-      {/* Buttons row */}
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex-1">
           <ProductCartToggleButton
@@ -115,9 +115,8 @@ export function ProductPurchaseBox({
         <button
           type="button"
           aria-label="Ver carrito"
-          title="Ver carrito"
           onClick={onViewCart}
-          className="flex h-11 w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-lg border border-white/12 bg-black/45 px-5 text-13px font-medium text-white/85 transition-colors hover:border-beyonix-blue-light/45 hover:bg-white/7 hover:text-white active:scale-95 sm:w-auto lg:px-6"
+          className="flex h-12 w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-xl border border-beyonix-blue-light/45 bg-[#112A43] px-5 text-14px font-bold text-white transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:text-white active:scale-95 sm:w-auto lg:px-6"
         >
           Ver carrito
         </button>

@@ -9,6 +9,10 @@ import {
   getProductImagesByVariant,
   getVariantOptionByValue,
 } from "@/lib/products/product-variants"
+import {
+  getImageUrlFromMediaIndex,
+  isPlayableProductVideo,
+} from "@/lib/products/product-video"
 
 import { ProductDetailsGallery } from "./product-details-gallery"
 import { ProductDetailsPanel } from "./product-details-panel"
@@ -33,6 +37,8 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
   } = useCart()
 
   const images = getProductImagesByVariant(producto, selectedColor)
+  const mediaCount =
+    images.length + (isPlayableProductVideo(producto.video_url) ? 1 : 0)
   const selectedVariant = getVariantOptionByValue(producto, selectedColor)
   const selectedStock = selectedVariant?.stock ?? producto.stock
   const cartQuantity = getQuantity(producto.id, selectedColor)
@@ -43,12 +49,12 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
   }
 
   const nextImage = () => {
-    setSelectedImage((current) => (current + 1) % images.length)
+    setSelectedImage((current) => (current + 1) % Math.max(mediaCount, 1))
   }
 
   const prevImage = () => {
     setSelectedImage((current) =>
-      current === 0 ? images.length - 1 : current - 1,
+      current === 0 ? Math.max(mediaCount, 1) - 1 : current - 1,
     )
   }
 
@@ -56,32 +62,41 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
     <main className="min-h-screen bg-black pt-24 text-white">
       <div className="grid lg:grid-cols-2">
         <ProductDetailsGallery
-        images={images}
-        selectedImage={selectedImage}
-        productName={producto.nombre}
-        selectedStock={selectedStock}
-        onNext={nextImage}
-        onPrev={prevImage}
-        onSelectImage={setSelectedImage}
-      />
+          images={images}
+          selectedImage={selectedImage}
+          productName={producto.nombre}
+          selectedStock={selectedStock}
+          videoUrl={producto.video_url}
+          onNext={nextImage}
+          onPrev={prevImage}
+          onSelectImage={setSelectedImage}
+        />
 
         <ProductDetailsPanel
-        product={producto}
-        selectedColor={selectedColor}
-        onColorChange={handleColorChange}
-        onAddToCart={() => {
-          addToCart(producto, selectedColor, images[selectedImage])
-        }}
-        onDecreaseCart={() => {
-          decreaseQuantity(producto.id, selectedColor)
-        }}
-        onRemoveFromCart={() => {
-          removeFromCart(producto.id, selectedColor)
-        }}
-        onViewCart={openCart}
-        isInCart={isInCart(producto.id, selectedColor)}
-        cartQuantity={cartQuantity}
-        selectedStock={selectedStock}
+          product={producto}
+          selectedColor={selectedColor}
+          onColorChange={handleColorChange}
+          onAddToCart={() => {
+            addToCart(
+              producto,
+              selectedColor,
+              getImageUrlFromMediaIndex(
+                images,
+                selectedImage,
+                producto.video_url
+              )
+            )
+          }}
+          onDecreaseCart={() => {
+            decreaseQuantity(producto.id, selectedColor)
+          }}
+          onRemoveFromCart={() => {
+            removeFromCart(producto.id, selectedColor)
+          }}
+          onViewCart={openCart}
+          isInCart={isInCart(producto.id, selectedColor)}
+          cartQuantity={cartQuantity}
+          selectedStock={selectedStock}
         />
       </div>
       <ProductReviews productId={producto.id} />

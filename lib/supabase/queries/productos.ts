@@ -20,6 +20,7 @@ export interface ProductoPayload {
   destacado?: boolean
   activo?: boolean
   imagen_principal?: string | null
+  video_url?: string | null
 }
 
 interface ProductoCompletoImagenPayload {

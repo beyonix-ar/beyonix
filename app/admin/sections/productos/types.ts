@@ -12,6 +12,7 @@ export interface ProductoFormState {
   nombre: string
   slug: string
   descripcion: string
+  video_url: string
   precio: string
   precio_anterior: string
   cuotas: "sin_cuotas" | "3" | "6"

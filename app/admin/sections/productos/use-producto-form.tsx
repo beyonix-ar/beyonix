@@ -34,6 +34,10 @@ import {
 } from "@/lib/supabase/queries/productos"
 
 import { slugify } from "./helpers"
+import {
+  isPlayableProductVideo,
+  isValidHttpsVideoUrl,
+} from "@/lib/products/product-video"
 
 interface Props {
   producto?: SupabaseProducto | null
@@ -168,6 +172,8 @@ export function useProductoForm({
     slug: producto?.slug ?? "",
     descripcion:
       producto?.descripcion ?? "",
+    video_url:
+      producto?.video_url ?? "",
     precio:
       String(producto?.precio ?? ""),
     precio_anterior: String(
@@ -255,6 +261,10 @@ export function useProductoForm({
         form.descripcion.trim() ||
         null,
 
+      video_url:
+        form.video_url.trim() ||
+        null,
+
       precio,
 
       precio_anterior:
@@ -325,6 +335,28 @@ export function useProductoForm({
     if (!payload.slug) {
       setError(
         "El slug es obligatorio."
+      )
+
+      return
+    }
+
+    if (
+      form.video_url.trim() &&
+      !isValidHttpsVideoUrl(form.video_url)
+    ) {
+      setError(
+        "El video del producto debe ser una URL HTTPS válida."
+      )
+
+      return
+    }
+
+    if (
+      form.video_url.trim() &&
+      !isPlayableProductVideo(form.video_url)
+    ) {
+      setError(
+        "Usá YouTube, Vimeo o un enlace directo a un archivo de video compatible."
       )
 
       return

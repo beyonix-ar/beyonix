@@ -72,6 +72,7 @@ export interface SupabaseProducto {
   activo: boolean
 
   imagen_principal: string | null
+  video_url: string | null
 
   created_at: string
 

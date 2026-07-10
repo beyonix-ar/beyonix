@@ -46,6 +46,7 @@ import {
 import {
   getProductPriceRange,
 } from "@/lib/products/price-range"
+import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 import { SITE_SETTINGS } from "@/config/site-settings"
 
 const baseColorOrder = [
@@ -688,7 +689,11 @@ export function ProductsPageLayout() {
           handleAddToCart(
             product,
             selectedColor,
-            images[selectedImage]
+            getImageUrlFromMediaIndex(
+              images,
+              selectedImage,
+              product.video_url
+            )
           )
         }}
         onDecreaseCart={() => {

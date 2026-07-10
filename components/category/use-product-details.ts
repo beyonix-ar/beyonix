@@ -13,6 +13,7 @@ import {
   getProductImagesByVariant,
   getVariantOptionByValue,
 } from "@/lib/products/product-variants"
+import { isPlayableProductVideo } from "@/lib/products/product-video"
 
 type ProductDetailsInput = SupabaseProducto & {
   selectedColor?: string
@@ -43,6 +44,14 @@ export function useProductDetails() {
       selectedColor
     )
   }, [product, selectedColor])
+
+  const mediaCount = useMemo(() => {
+    if (!product) {
+      return images.length
+    }
+
+    return images.length + (isPlayableProductVideo(product.video_url) ? 1 : 0)
+  }, [images.length, product])
 
   const openDetails = useCallback(
     (
@@ -82,19 +91,19 @@ export function useProductDetails() {
 
   const nextImage = useCallback(() => {
     setSelectedImage((prev) =>
-      prev === images.length - 1
+      prev === mediaCount - 1
         ? 0
         : prev + 1
     )
-  }, [images.length])
+  }, [mediaCount])
 
   const prevImage = useCallback(() => {
     setSelectedImage((prev) =>
       prev === 0
-        ? images.length - 1
+        ? mediaCount - 1
         : prev - 1
     )
-  }, [images.length])
+  }, [mediaCount])
 
   const changeColor = useCallback(
     (colorName: string) => {

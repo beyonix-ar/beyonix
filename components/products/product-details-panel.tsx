@@ -12,6 +12,7 @@ import {
   Package,
   Radio,
   Shield,
+  Sparkles,
   Star,
   Truck,
   Volume2,
@@ -140,28 +141,30 @@ export function ProductDetailsPanel({
       : [limitedFeatures]
 
   return (
-    <aside className="flex min-h-0 flex-col bg-beyonix-surface text-white lg:h-full">
+    <aside className="flex min-h-0 flex-col bg-[#080B0F] text-white lg:h-full">
       <div className="flex min-h-0 flex-1 flex-col lg:overflow-hidden">
-        {/* Header */}
-        <div className="shrink-0 px-5 pb-4 pt-5 lg:px-8 lg:pb-5 lg:pt-8">
-          <p className="mb-2 text-10px font-bold uppercase tracking-widest text-beyonix-sky">
-            {product.categorias?.nombre}
-          </p>
+        <div className="shrink-0 px-5 pb-5 pt-6 lg:px-8 lg:pb-6 lg:pt-8">
+          {product.categorias?.nombre && (
+            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-3 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
+              <Sparkles className="size-3.5" />
+              {product.categorias.nombre}
+            </span>
+          )}
 
-          <h2 className="text-2xl font-semibold leading-snug tracking-tight text-white lg:text-28px">
+          <h2 className="text-3xl font-bold leading-tight text-white lg:text-[34px]">
             {product.nombre}
           </h2>
         </div>
 
-        <div className="h-px bg-white/8" />
+        <div className="h-px bg-beyonix-blue-light/16" />
 
         <div className="custom-scrollbar flex min-h-0 flex-1 flex-col lg:overflow-y-auto">
-          <section className="shrink-0 border-b border-white/8 px-5 py-4 lg:px-8 lg:py-5">
-            <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
+          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-5 lg:px-8 lg:py-6">
+            <p className="mb-3 text-11px font-bold uppercase tracking-widest text-white/68">
               Descripción
             </p>
 
-            <div className="max-h-32 overflow-y-auto pr-2 text-white/72 lg:max-h-40">
+            <div className="max-h-36 overflow-y-auto pr-2 text-white/82 lg:max-h-44">
               {product.descripcion && (
                 <ProductDescription
                   shortDescription={product.descripcion}
@@ -172,21 +175,21 @@ export function ProductDetailsPanel({
             </div>
           </section>
 
-          <section className="shrink-0 border-b border-white/8 px-5 py-4 lg:px-8 lg:py-5">
-            <p className="mb-3 text-10px font-bold uppercase tracking-widest text-white/40">
+          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-5 lg:px-8 lg:py-6">
+            <p className="mb-4 text-11px font-bold uppercase tracking-widest text-white/68">
               Especificaciones
             </p>
 
             <div className="pr-2">
               <div
-                className={`grid items-start gap-4 ${
+                className={`grid items-start gap-x-5 gap-y-3 ${
                   featureColumns.length > 1 ? "sm:grid-cols-2" : "grid-cols-1"
                 }`}
               >
                 {featureColumns.map((column, columnIndex) => (
                   <ul
                     key={`feature-column-${columnIndex}`}
-                    className="grid content-start gap-y-2.5 self-start"
+                    className="grid content-start gap-y-3 self-start"
                   >
                     {column.map((feature) => {
                       const Icon = feature.icon
@@ -194,10 +197,10 @@ export function ProductDetailsPanel({
                       return (
                         <li
                           key={feature.text}
-                          className="flex items-center gap-2.5 text-12px leading-5 text-white/70"
+                          className="flex items-center gap-3 text-13px leading-5 text-white/82"
                         >
-                          <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/20 bg-beyonix-blue/30 text-beyonix-sky">
-                            <Icon className="size-3" />
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/24 bg-[#0D1720] text-beyonix-sky/88">
+                            <Icon className="size-3.5" />
                           </span>
                           <span className="leading-tight">{feature.text}</span>
                         </li>
@@ -210,8 +213,8 @@ export function ProductDetailsPanel({
           </section>
 
           {hasVariants && (
-            <section className="shrink-0 px-5 py-4 lg:px-8 lg:py-5">
-              <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/40">
+            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-5 lg:px-8 lg:py-6">
+              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-white/68">
                 Variante
               </p>
 
@@ -232,8 +235,7 @@ export function ProductDetailsPanel({
         </div>
       </div>
 
-      {/* Purchase footer */}
-      <div className="shrink-0 border-t border-white/8 bg-beyonix-surface">
+      <div className="shrink-0 border-t border-beyonix-blue-light/16 bg-[#070A0E]">
         <ProductPurchaseBox
           price={product.precio}
           originalPrice={product.precio_anterior || undefined}
