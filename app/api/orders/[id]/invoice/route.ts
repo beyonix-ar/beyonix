@@ -80,7 +80,7 @@ export async function GET(
 
   const { data: itemRows, error: itemsError } = await admin
     .from("orden_items")
-    .select("*")
+    .select("id, orden_id, producto_id, variante_id, cantidad, precio, precio_unitario")
     .eq("orden_id", orderId)
 
   if (itemsError) {

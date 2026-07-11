@@ -46,6 +46,28 @@
   --beyonix-checkout-content-max: clamp(72rem, 92vw, 96rem);
   --beyonix-product-card-max: clamp(17.5rem, 14.8vw, 20.5rem);
   --beyonix-section-y: clamp(3rem, 5vw, 6rem);
+  --beyonix-page-background: #000000;
+  --beyonix-surface-base: #0A0A0A;
+  --beyonix-surface-raised: #0D0D0D;
+  --beyonix-surface-interactive: #111111;
+  --beyonix-surface-muted: #0f0f0f;
+  --beyonix-input-background: #050607;
+  --beyonix-border-subtle: rgba(255, 255, 255, 0.08);
+  --beyonix-border-default: rgba(30, 77, 123, 0.24);
+  --beyonix-border-interactive: rgba(30, 77, 123, 0.7);
+  --beyonix-border-active: rgba(140, 200, 242, 0.62);
+  --beyonix-text-primary: #f8fafc;
+  --beyonix-text-secondary: rgba(248, 250, 252, 0.66);
+  --beyonix-text-muted: rgba(248, 250, 252, 0.42);
+  --beyonix-brand-primary: #112A43;
+  --beyonix-brand-hover: #163552;
+  --beyonix-brand-active: #1E4D7B;
+  --beyonix-focus-ring: rgba(30, 77, 123, 0.28);
+  --beyonix-success: #34d399;
+  --beyonix-warning: #f59e0b;
+  --beyonix-danger: #ef4444;
+  --beyonix-shadow-subtle: 0 18px 44px rgba(0, 0, 0, 0.22);
+  --beyonix-glow-subtle: 0 0 0 1px rgba(30, 77, 123, 0.22);
 }
 
 .dark {
@@ -130,21 +152,51 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --color-beyonix-page: #050505;
+  --color-beyonix-page: var(--beyonix-page-background);
   --color-beyonix-section: #030303;
-  --color-beyonix-surface: #0A0A0A;
-  --color-beyonix-surface-2: #0D0D0D;
-  --color-beyonix-surface-3: #111111;
-  --color-beyonix-surface-4: #0f0f0f;
-  --color-beyonix-blue: #112A43;
-  --color-beyonix-blue-light: #1E4D7B;
-  --color-beyonix-blue-hover: #163552;
+  --color-beyonix-surface: var(--beyonix-surface-base);
+  --color-beyonix-surface-2: var(--beyonix-surface-raised);
+  --color-beyonix-surface-3: var(--beyonix-surface-interactive);
+  --color-beyonix-surface-4: var(--beyonix-surface-muted);
+  --color-beyonix-blue: var(--beyonix-brand-primary);
+  --color-beyonix-blue-light: var(--beyonix-brand-active);
+  --color-beyonix-blue-hover: var(--beyonix-brand-hover);
   --color-beyonix-cyan: #4A90B8;
   --color-beyonix-sky: #8CC8F2;
   --color-beyonix-focus: #3b82f6;
   --color-beyonix-slider: #005E94;
   --color-beyonix-account: #0A1624;
   --color-beyonix-account-active: #0D2035;
+  --account-background: #05070a;
+  --account-surface: #0d1117;
+  --account-surface-raised: #111820;
+  --account-surface-hover: #142033;
+  --account-surface-highlight: #0d2035;
+  --account-input: #0b111a;
+  --account-border: rgba(140, 200, 242, 0.18);
+  --account-border-subtle: rgba(255, 255, 255, 0.08);
+  --account-border-strong: rgba(140, 200, 242, 0.46);
+  --account-border-highlight: rgba(30, 77, 123, 0.72);
+  --account-text-primary: #f8fafc;
+  --account-text-secondary: rgba(248, 250, 252, 0.66);
+  --account-text-muted: rgba(248, 250, 252, 0.42);
+  --account-accent: #112a43;
+  --account-accent-hover: #183b5e;
+  --account-accent-soft: #8cc8f2;
+  --account-success: #34d399;
+  --account-success-bg: rgba(16, 185, 129, 0.12);
+  --account-success-border: rgba(52, 211, 153, 0.32);
+  --account-success-text: #d1fae5;
+  --account-warning: #f59e0b;
+  --account-warning-bg: rgba(245, 158, 11, 0.12);
+  --account-warning-border: rgba(251, 191, 36, 0.32);
+  --account-warning-text: #fde68a;
+  --account-danger: #ef4444;
+  --account-danger-bg: rgba(239, 68, 68, 0.1);
+  --account-danger-border: rgba(248, 113, 113, 0.28);
+  --account-danger-text: #fecaca;
+  --account-focus-ring: rgba(140, 200, 242, 0.26);
+  --account-glow-subtle: 0 0 0 1px rgba(30, 111, 174, 0.28), 0 18px 46px rgba(0, 0, 0, 0.28);
   --color-whatsapp: #25D366;
   --color-product-azul-lavanda: #8797BF;
   --color-product-verde-sage: #79A885;
@@ -311,7 +363,7 @@
 }
 
 @utility grid-cols-product-modal {
-  grid-template-columns: 55fr 45fr;
+  grid-template-columns: 58fr 42fr;
 }
 
 @utility grid-cols-category-hero {
@@ -380,6 +432,22 @@
 
 @utility transition-color-shadow {
   transition-property: color, box-shadow;
+}
+
+@utility beyonix-interactive-outline {
+  border: 1px solid var(--beyonix-border-subtle);
+  outline: none;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    color 200ms ease,
+    transform 200ms ease;
+}
+
+@utility beyonix-interactive-outline-hover {
+  border-color: var(--beyonix-border-interactive);
+  box-shadow: var(--beyonix-glow-subtle);
 }
 
 @utility stroke-2-8 {
@@ -1668,9 +1736,6 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-grid {
   align-items: stretch;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-grid {
   gap: 0.625rem !important;
 }
 
@@ -1943,14 +2008,7 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
 
 @media (prefers-reduced-motion: reduce) {
   .beyonix-shooting-star {
-    opacity: 0.16;
-    transform: translate3d(var(--start-x), var(--start-y), 0);
-  }
-  .beyonix-shooting-star {
     animation: none;
-  }
-
-  .beyonix-shooting-star {
     opacity: 0.16;
     transform: translate3d(var(--start-x), var(--start-y), 0) rotate(var(--star-angle));
   }
@@ -2005,21 +2063,37 @@ body.product-modal-open .category-hero {
   box-shadow: none;
 }
 
+.product-description-scrollbar {
+  scrollbar-color: rgba(140, 200, 242, 0.5) rgba(17, 42, 67, 0.24);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.product-description-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.product-description-scrollbar::-webkit-scrollbar-track {
+  background: rgba(17, 42, 67, 0.24);
+  border-radius: 9999px;
+}
+
+.product-description-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(140, 200, 242, 0.78), rgba(30, 77, 123, 0.92));
+  border: 1px solid rgba(8, 11, 15, 0.9);
+  border-radius: 9999px;
+}
+
+.product-description-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(215, 236, 255, 0.9), rgba(74, 144, 184, 0.95));
+}
+
 .min-h-screen-small {
   min-height: 500px;
 }
 
 .product-card-image {
   height: 100%;
-}
-
-.hero-divider {
-  background-color: #ffffff;
-}
-
-/* Progress bar sin inline width */
-.custom-progress {
-  width: var(--progress);
 }
 
 .beyonix-success-glow {
@@ -2030,6 +2104,59 @@ body.product-modal-open .category-hero {
   box-shadow:
     0 0 8px rgba(16, 185, 129, 0.7),
     0 0 16px rgba(16, 185, 129, 0.4);
+}
+
+.account-logout-button {
+  align-items: center;
+  background: var(--account-surface);
+  border: 1px solid var(--account-border-highlight);
+  border-radius: 12px;
+  color: var(--account-text-secondary);
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+  height: 40px;
+  justify-content: center;
+  padding-inline: 1.25rem;
+  transition:
+    border-color 220ms ease,
+    background-color 220ms ease,
+    color 220ms ease;
+  width: 100%;
+}
+
+.account-logout-button:hover {
+  background: var(--account-surface);
+  border-color: var(--account-danger);
+  color: var(--account-danger);
+}
+
+.account-logout-button:focus-visible {
+  outline: 2px solid var(--account-focus-ring);
+  outline-offset: 3px;
+}
+
+.account-logout-button__icon {
+  align-items: center;
+  display: inline-flex;
+  height: 1rem;
+  justify-content: center;
+  transition:
+    color 220ms ease;
+  width: 1rem;
+}
+
+.account-logout-button:hover .account-logout-button__icon {
+  color: var(--account-danger);
+}
+
+.account-logout-button__label {
+  font-size: 0.875rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
 }
 
 /* 🔵 Glow Beyonix barra progreso */

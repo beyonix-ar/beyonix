@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react"
 import { Bell, Check, ExternalLink, Package, Star } from "lucide-react"
 
+import { BeyonixButton } from "@/components/account/account-ui"
 import { supabase } from "@/lib/supabase/client"
-import { beyonixHoverBorder, cn } from "@/lib/utils"
 import { formatPublicOrderId } from "@/lib/account/account-formatters"
 import {
   getCuentaItemImage,
@@ -90,14 +90,15 @@ export function OrderTrackingPanel({ order }: { order: SupabasePedido }) {
           </p>
         </div>
         {trackingUrl && (
-          <a
-            href={trackingUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-10 shrink-0 cursor-pointer self-center items-center justify-center rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover"
-          >
-            Ver seguimiento
-          </a>
+          <BeyonixButton asChild size="sm" className="shrink-0 self-center">
+            <a
+              href={trackingUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Ver seguimiento
+            </a>
+          </BeyonixButton>
         )}
       </div>
     </div>
@@ -153,21 +154,17 @@ export function PaymentProofViewButton({
 
   return (
     <span className="flex w-full flex-col items-stretch gap-1">
-      <button
+      <BeyonixButton
         type="button"
         aria-label={`Ver comprobante del pedido ${formatPublicOrderId(order.id)}`}
-        title="Ver comprobante"
         disabled={loading}
         onClick={() => void handleOpenProof()}
-        className={cn(
-          beyonixHoverBorder,
-          "inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-wait disabled:opacity-60",
-          className,
-        )}
+        size="md"
+        className={className}
       >
         <ExternalLink className="size-4" />
         {loading ? "Abriendo..." : "Ver comprobante"}
-      </button>
+      </BeyonixButton>
       {error && (
         <span className="max-w-52 text-left text-10px font-semibold leading-4 text-red-300 sm:text-right">
           {error}

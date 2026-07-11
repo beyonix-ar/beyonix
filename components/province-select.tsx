@@ -132,7 +132,6 @@ export function ProvinceSelect({
     <div ref={wrapperRef} className="relative">
       <button
         type="button"
-        title="Seleccionar provincia"
         aria-label="Seleccionar provincia"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -145,10 +144,10 @@ export function ProvinceSelect({
                   ? "border-[rgba(191,228,255,0.42)] text-[#D7ECFF] shadow-[0_0_18px_rgba(96,165,250,0.18)]"
                   : "border-[rgba(148,197,255,0.18)] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF]"
               }`
-            : `${compact ? "h-10 rounded-lg px-3" : "h-12 rounded-xl px-4"} bg-[#0B111A] focus-visible:border-[rgba(191,228,255,0.42)] focus-visible:ring-0 ${
+            : `${compact ? "h-10 rounded-lg px-3" : "h-11 rounded-xl px-4"} bg-[var(--account-input)] font-heading focus-visible:border-[var(--account-border-strong)] focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)] ${
                 open
-                  ? "border-[rgba(191,228,255,0.42)] text-[#D7ECFF] shadow-[0_0_18px_rgba(96,165,250,0.18)]"
-                  : "border-[rgba(148,197,255,0.18)] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF]"
+                  ? "border-[var(--account-border-strong)] text-[var(--account-text-primary)]"
+                  : "border-[var(--account-border)] text-[var(--account-text-primary)] hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)]"
               }`
         } ${value ? "" : "text-white/35"}`}
       >
@@ -167,7 +166,7 @@ export function ProvinceSelect({
           className={`absolute left-0 z-50 w-full overflow-hidden border p-1 shadow-2xl shadow-black/70 ${
             isCheckoutAppearance
               ? "top-[38px] rounded-xl border-[rgba(148,197,255,0.18)] bg-[#080D14] font-heading"
-              : `${compact ? "top-11" : "top-14"} rounded-xl border-[rgba(148,197,255,0.18)] bg-[#080D14]`
+              : `${compact ? "top-11" : "top-12"} rounded-xl border-[var(--account-border)] bg-[var(--account-surface)] font-heading`
           }`}
         >
           <div className="custom-scrollbar max-h-64 overflow-y-auto py-1">
@@ -191,10 +190,10 @@ export function ProvinceSelect({
                   onClick={() => selectProvince(province)}
                   className={`flex h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-3 text-left text-sm transition-colors ${
                     selected
-                      ? "bg-[rgba(17,42,67,0.9)] text-[#D7ECFF] shadow-[inset_0_0_0_1px_rgba(191,228,255,0.16)]"
+                      ? "bg-[var(--account-surface-highlight)] text-[var(--account-text-primary)] shadow-[inset_0_0_0_1px_var(--account-border-highlight)]"
                       : active
-                        ? "bg-[rgba(17,42,67,0.75)] text-[#D7ECFF]"
-                        : "text-[#F8FAFC] hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF]"
+                        ? "bg-[var(--account-surface-hover)] text-[var(--account-text-primary)]"
+                        : "text-[var(--account-text-secondary)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
                   }`}
                 >
                   <span className="truncate">{label}</span>

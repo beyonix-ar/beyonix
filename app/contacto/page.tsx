@@ -13,24 +13,24 @@ const GMAIL_COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encod
 
 const infoCards = [
   {
-    label: "Horarios de atención",
-    value: "Lunes a viernes: 7:00 a 20:00 hs",
-    subValue: "Sábados: 8:00 a 14:00 hs",
+    label: "GESTIÓN DE PEDIDOS",
+    value: "Validación de pagos y consultas",
+    subValue: "Dentro de horarios operativos",
     icon: Clock,
   },
   {
-    label: "Ubicación",
+    label: "UBICACIÓN",
     value: "Rosario, Santa Fe",
     icon: MapPin,
   },
   {
-    label: "Cobertura",
-    value: "Envíos a todo el país",
+    label: "ENVÍOS",
+    value: "A todo el país",
     icon: Truck,
   },
   {
-    label: "Medios de pago",
-    value: "Tarjetas, transferencia y Mercado Pago",
+    label: "FORMAS DE PAGO",
+    value: "Transferencia bancaria (10% OFF) y Mercado Pago",
     icon: CreditCard,
   },
 ]
@@ -46,19 +46,14 @@ export default function ContactoPage() {
             </h1>
 
             <p className="mt-4 text-xl font-semibold text-beyonix-cyan">
-              Estamos para ayudarte
+              Estamos para ayudarte.
             </p>
 
             <div className="mt-6 h-px w-20 bg-beyonix-blue-light/70" />
 
             <p className="mt-6 text-base leading-8 text-white/74">
-              Si tenés dudas sobre productos, compras, envíos, cambios o
-              devoluciones, podés contactarnos por Instagram o email.
-            </p>
-
-            <p className="mt-3 text-base leading-8 text-white/74">
-              Te responderemos a la brevedad dentro de nuestros horarios de
-              atención para acompañarte en el proceso de compra.
+              Consultas sobre productos, compras, envíos, cambios o
+              devoluciones a través de nuestros canales oficiales.
             </p>
           </div>
 
@@ -77,10 +72,10 @@ export default function ContactoPage() {
 
               <div>
                 <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-                  Instagram
+                  INSTAGRAM
                 </p>
                 <p className="mt-1 text-sm font-medium text-white/80">
-                  @beyonix.ar
+                  beyonix.ar
                 </p>
                 <p className="mt-2 text-xs font-medium text-beyonix-cyan">
                   Abrir Instagram
@@ -102,7 +97,7 @@ export default function ContactoPage() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-                  Email
+                  EMAIL
                 </p>
                 <p className="mt-1 truncate text-sm font-medium text-white/80">
                   {EMAIL}
@@ -140,26 +135,30 @@ export default function ContactoPage() {
           </div>
 
           <div className="mt-8 rounded-2xl border border-beyonix-blue-light/16 bg-beyonix-surface p-6 shadow-2xl shadow-black/25">
-            <p className="mx-auto max-w-3xl text-center text-base leading-8 text-white/76">
-              Nuestro objetivo es brindarte una atención clara, simple y cercana
-              antes, durante y después de tu compra.
+            <p className="text-center text-sm font-semibold text-beyonix-blue-light">
+              Tecnología pensada para tu comodidad.
+            </p>
+            <p className="mx-auto mt-2 max-w-3xl text-center text-base font-semibold leading-8 text-white/86">
+              Una experiencia simple, clara y confiable en cada etapa de tu
+              compra.
             </p>
           </div>
 
           <div className="mt-6 rounded-2xl border border-beyonix-blue-light/16 bg-beyonix-surface p-6 shadow-2xl shadow-black/25">
             <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-              Envíos
+              ENVÍOS
             </p>
 
             <p className="mt-4 max-w-3xl text-base leading-8 text-white/76">
-              Trabajamos con envíos a domicilio y a sucursal Andreani, según
-              disponibilidad, destino y dimensiones del pedido.
+              Realizamos envíos a todo el país a través de Andreani,
+              permitiéndote recibir tu compra de forma segura y confiable estés
+              donde estés.
             </p>
 
             <p className="mt-3 max-w-3xl text-base leading-8 text-white/76">
-              El costo de envío se calculará durante el proceso de compra cuando
-              la integración esté disponible. Hasta entonces, podremos coordinar
-              la información del envío por nuestros canales de contacto.
+              Una vez despachado el pedido, recibirás el número de seguimiento
+              correspondiente para poder consultar el estado del envío en todo
+              momento.
             </p>
           </div>
         </div>

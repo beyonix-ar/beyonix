@@ -43,6 +43,9 @@ interface SharedProductCardProps {
     product: SupabaseProducto,
     isFavorite: boolean
   ) => void
+
+  showFavorite?: boolean
+  showRating?: boolean
 }
 
 export default function SharedProductCard({
@@ -50,6 +53,8 @@ export default function SharedProductCard({
   onOpenPreview,
   onAddToCart,
   onFavoriteChange,
+  showFavorite = true,
+  showRating = true,
 }: SharedProductCardProps) {
   const { user } = useAuth()
   const {
@@ -105,6 +110,11 @@ export default function SharedProductCard({
     let active = true
 
     async function loadFavorite() {
+      if (!showFavorite) {
+        setIsFavorite(false)
+        return
+      }
+
       if (!user) {
         setIsFavorite(false)
         return
@@ -129,7 +139,7 @@ export default function SharedProductCard({
     return () => {
       active = false
     }
-  }, [product.id, user])
+  }, [product.id, showFavorite, user])
 
   useEffect(() => {
     return () => {
@@ -232,27 +242,29 @@ export default function SharedProductCard({
           </span>
         )}
 
-        <button
-          type="button"
-          aria-label={
-            isFavorite
-              ? `Quitar ${product.nombre} de favoritos`
-              : `Marcar ${product.nombre} como favorito`
-          }
-          title={isFavorite ? "Quitar de favoritos" : "Favorito"}
-          disabled={favoriteLoading}
-          onClick={(event) => {
-            event.stopPropagation()
-            void handleToggleFavorite()
-          }}
-          className={`absolute right-3 top-3 z-10 flex size-9 cursor-pointer items-center justify-center rounded-full border backdrop-blur-md transition-all disabled:cursor-wait ${
-            isFavorite
-              ? "border-beyonix-sky/50 bg-beyonix-blue/70 text-beyonix-sky shadow-[0_0_16px_rgba(140,200,242,0.18)]"
-              : "border-beyonix-blue-light/24 bg-black/58 text-white/72 hover:border-beyonix-sky/48 hover:bg-beyonix-blue/42 hover:text-white"
-          }`}
-        >
-          <Heart className={`size-4 ${isFavorite ? "fill-current" : ""}`} />
-        </button>
+        {showFavorite && (
+          <button
+            type="button"
+            aria-label={
+              isFavorite
+                ? `Quitar ${product.nombre} de favoritos`
+                : `Marcar ${product.nombre} como favorito`
+            }
+            title={isFavorite ? "Quitar de favoritos" : "Favorito"}
+            disabled={favoriteLoading}
+            onClick={(event) => {
+              event.stopPropagation()
+              void handleToggleFavorite()
+            }}
+            className={`absolute right-3 top-3 z-10 flex size-9 cursor-pointer items-center justify-center rounded-full border backdrop-blur-md transition-all disabled:cursor-wait ${
+              isFavorite
+                ? "border-beyonix-sky/50 bg-beyonix-blue/70 text-beyonix-sky shadow-[0_0_16px_rgba(140,200,242,0.18)]"
+                : "border-beyonix-blue-light/24 bg-black/58 text-white/72 hover:border-beyonix-sky/48 hover:bg-beyonix-blue/42 hover:text-white"
+            }`}
+          >
+            <Heart className={`size-4 ${isFavorite ? "fill-current" : ""}`} />
+          </button>
+        )}
 
         {favoriteFeedback ? (
           <div className="absolute right-3 top-14 z-20 max-w-220px rounded-xl border border-beyonix-blue-light/25 bg-[#071018]/95 px-3 py-2 text-left text-11px font-bold text-white/86 shadow-[0_14px_34px_rgba(0,0,0,0.34)]">
@@ -262,28 +274,32 @@ export default function SharedProductCard({
       </div>
 
       <div className="flex flex-1 flex-col p-4">
-        <p className="min-h-18px truncate text-10px font-bold uppercase tracking-[0.16em] text-beyonix-sky/82">
-          {
-            product.categorias
-              ?.nombre
-          }
-        </p>
+        <div className="flex min-h-18px w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <p className="min-w-0 truncate text-10px font-bold uppercase tracking-[0.16em] text-beyonix-sky/82">
+            {
+              product.categorias
+                ?.nombre
+            }
+          </p>
+
+          {showRating && (
+            <div className="flex shrink-0 items-center gap-1 text-10px text-yellow-400">
+              {[0, 1, 2, 3, 4].map((item) => (
+                <Star
+                  key={item}
+                  className="size-3 fill-current"
+                />
+              ))}
+              <span className="ml-0.5 text-white/48">({ratingCount})</span>
+            </div>
+          )}
+        </div>
 
         <h3
-          className="mt-1.5 min-h-44px line-clamp-2 text-15px font-semibold leading-product-title tracking-tight text-white transition-colors group-hover:text-white sm:text-16px"
+          className="mt-1.5 min-h-48px line-clamp-2 text-18px font-semibold leading-product-title tracking-tight text-white transition-colors group-hover:text-white sm:text-19px"
         >
           {product.nombre}
         </h3>
-
-        <div className="mt-2 flex items-center gap-1.5 text-11px text-yellow-400">
-          {[0, 1, 2, 3, 4].map((item) => (
-            <Star
-              key={item}
-              className="size-3.5 fill-current"
-            />
-          ))}
-          <span className="ml-1 text-white/48">({ratingCount})</span>
-        </div>
 
         <div className="mt-3 border-t border-beyonix-blue-light/12 pt-3">
           <ProductCardPricing

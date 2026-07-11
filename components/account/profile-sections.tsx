@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
 import {
   Camera,
   Check,
@@ -12,10 +11,16 @@ import {
   Mail,
   MapPin,
   Phone,
+  ShieldCheck,
   User,
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import {
+  AccountCard,
+  BeyonixButton,
+  IconContainer,
+} from "@/components/account/account-ui"
 import { AccountViewFrame } from "@/components/account/account-view-frame"
 import { InputField, ReadOnlyField, TextareaField } from "@/components/account/account-form-fields"
 import { ProvinceSelect } from "@/components/province-select"
@@ -32,7 +37,6 @@ import {
   onlyDigits,
   validateProfilePayload,
 } from "@/lib/validation/account-fields"
-import { beyonixHoverBorder, cn } from "@/lib/utils"
 const PASSWORD_CHANGE_COOLDOWN_DAYS = 15
 const PASSWORD_CHANGE_COOLDOWN_MS =
   PASSWORD_CHANGE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
@@ -168,9 +172,8 @@ function ChangePasswordForm() {
           <button
             type="button"
             aria-label="Mostrar u ocultar contraseña actual"
-            title="Mostrar u ocultar contraseña actual"
             onClick={() => setShowCurrent((value) => !value)}
-            className="cursor-pointer text-white/40 transition-colors hover:text-white/70"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
           >
             {showCurrent ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
@@ -189,9 +192,8 @@ function ChangePasswordForm() {
           <button
             type="button"
             aria-label="Mostrar u ocultar nueva contraseña"
-            title="Mostrar u ocultar nueva contraseña"
             onClick={() => setShowNew((value) => !value)}
-            className="cursor-pointer text-white/40 transition-colors hover:text-white/70"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
           >
             {showNew ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
@@ -210,46 +212,45 @@ function ChangePasswordForm() {
           <button
             type="button"
             aria-label="Mostrar u ocultar confirmación"
-            title="Mostrar u ocultar confirmación"
             onClick={() => setShowConfirm((value) => !value)}
-            className="cursor-pointer text-white/40 transition-colors hover:text-white/70"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
           >
             {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
         }
       />
 
-      <div className="rounded-xl border border-white/7 bg-white/2 px-4 py-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-white/45">
+      <div className="rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3">
+        <p className="text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
           Requisitos
         </p>
-        <p className="mt-2 text-sm leading-6 text-white/55">
+        <p className="mt-2 text-sm leading-6 text-[var(--account-text-secondary)]">
           Mínimo 8 caracteres, una mayúscula y al menos un número. Puede cambiarse una vez cada 15 días.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
-          <p className="text-sm text-red-400">{error}</p>
-        </div>
+        <AccountCard padding="sm" className="border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]">
+          <p className="text-sm text-[var(--account-danger-text)]">{error}</p>
+        </AccountCard>
       )}
 
       {success && (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-4 py-3">
-          <p className="text-sm text-emerald-400">{success}</p>
-        </div>
+        <AccountCard padding="sm" className="border-[var(--account-success-border)] bg-[var(--account-success-bg)]">
+          <p className="text-sm text-[var(--account-success-text)]">{success}</p>
+        </AccountCard>
       )}
 
-      <button
+      <BeyonixButton
         type="button"
         aria-label="Cambiar contraseña"
-        title="Cambiar contraseña"
         disabled={loading}
         onClick={handleSubmit}
-        className="h-11 w-full cursor-pointer rounded-xl border border-beyonix-blue-light/60 bg-beyonix-blue text-sm font-semibold text-white transition-colors hover:bg-beyonix-blue-light disabled:opacity-50"
+        size="lg"
+        fullWidth
       >
         {loading ? "Validando..." : "Cambiar contraseña"}
-      </button>
+      </BeyonixButton>
     </div>
   )
 }
@@ -260,11 +261,39 @@ export function Seguridad({ onBack }: { onBack: () => void }) {
       onBack={onBack}
       kicker="Seguridad"
       title="Cambiar contraseña"
-      maxWidth="max-w-4xl"
+      description="Actualizá tu acceso con los mismos controles seguros del área de cliente."
     >
-      <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-6">
-        <ChangePasswordForm />
-      </div>
+      <AccountCard
+        variant="form"
+        padding="lg"
+        className="mx-auto w-full max-w-[920px]"
+      >
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,0.64fr)_minmax(230px,0.36fr)] lg:items-start">
+          <ChangePasswordForm />
+
+          <aside className="border-t border-[var(--account-border-subtle)] pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <IconContainer size="md" tone="highlight" className="mb-4">
+              <ShieldCheck className="size-6" />
+            </IconContainer>
+            <p className="text-lg font-semibold text-[var(--account-text-primary)]">
+              Acceso protegido
+            </p>
+            <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
+              Usá una contraseña única y evitá compartirla. Por seguridad, el
+              cambio puede realizarse una vez cada 15 días.
+            </p>
+
+            <div className="mt-5 rounded-xl bg-[var(--account-surface-raised)] px-4 py-3">
+              <p className="text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
+                Recomendación
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--account-text-secondary)]">
+                Combiná letras, números y una frase fácil de recordar para vos.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </AccountCard>
     </AccountViewFrame>
   )
 }
@@ -467,137 +496,146 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
       onBack={onBack}
       kicker="Mis datos"
       title="Datos de la cuenta"
-      maxWidth="max-w-4xl"
+      description="Gestioná tu teléfono, dirección de entrega y foto de perfil."
     >
-      <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-4 sm:p-5">
+      <AccountCard variant="form" padding="md">
         <form onSubmit={handleSave} className="space-y-4">
-          <div className="flex items-center gap-3 rounded-xl border border-white/7 bg-white/2 p-3">
-            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" className="size-full object-cover" />
-              ) : (
-                <User className="size-9" />
-              )}
-            </div>
+          <div className="rounded-2xl bg-[var(--account-surface-raised)] p-4 sm:p-5">
+            <div className="grid gap-5 lg:grid-cols-[minmax(230px,0.34fr)_minmax(0,0.66fr)] lg:items-start">
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="relative shrink-0">
+                  <div className="flex size-18 items-center justify-center overflow-hidden rounded-full border border-white/14 bg-white text-black shadow-sm shadow-black/40 sm:size-20">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      <User className="size-9 sm:size-10" />
+                    )}
+                  </div>
 
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-white">Foto de perfil</p>
-              <p className="mt-0.5 text-xs text-white/45">
-                JPG o PNG, hasta 2 MB.
-              </p>
-              {avatarError && (
-                <p className="mt-2 text-xs text-red-400">{avatarError}</p>
-              )}
-            </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="hidden"
+                    aria-label="Cambiar foto de perfil"
+                  />
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              className="hidden"
-              title="Cambiar foto de perfil"
-              aria-label="Cambiar foto de perfil"
-            />
+                  <button
+                    type="button"
+                    aria-label="Subir foto de perfil"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={avatarLoading}
+                    className="absolute -bottom-1 -right-1 flex size-8 cursor-pointer items-center justify-center rounded-xl border border-[var(--account-border-strong)] bg-[var(--account-surface)] text-[var(--account-text-primary)] shadow-[0_8px_18px_rgba(0,0,0,0.28)] transition-colors hover:border-[var(--account-accent-soft)] disabled:opacity-50"
+                  >
+                    <Camera className="size-4" />
+                  </button>
+                </div>
 
-            <button
-              type="button"
-              aria-label="Subir foto de perfil"
-              title="Subir foto de perfil"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={avatarLoading}
-              className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/10 text-white/70 transition-colors hover:border-white/22 hover:text-white disabled:opacity-50"
-            >
-              <Camera className="size-4" />
-            </button>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <ReadOnlyField
-              label="Nombre de usuario"
-              value={uppercaseAccountText(user?.username ?? "")}
-              icon={User}
-              help="El nombre de usuario no se puede cambiar."
-            />
-            <ReadOnlyField
-              label="Email"
-              value={user?.email || ""}
-              icon={Mail}
-              help="El email no se puede cambiar."
-            />
-
-            <ReadOnlyField
-              label="Nombre y apellido"
-              value={uppercaseAccountText(user?.name ?? "")}
-              icon={User}
-              help="El nombre y apellido no se pueden cambiar."
-            />
-            <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
-          </div>
-
-          <div className="rounded-2xl border border-beyonix-blue-light/12 bg-black/30 p-3">
-            <div className="mb-3">
-              <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-                Dirección de entrega
-              </p>
-              <p className="mt-1 text-xs leading-5 text-white/42">
-                Estos datos ayudan a preparar futuros envíos a domicilio con Andreani.
-              </p>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <InputField label="Calle" type="text" value={street} onChange={(value) => setStreet(uppercaseAccountText(value))} placeholder="San Martín" icon={MapPin} maxLength={60} />
-              <InputField label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
-              <InputField label="Piso opcional" type="text" value={floor} onChange={(value) => setFloor(uppercaseAccountText(value))} placeholder="3" icon={Hash} maxLength={12} />
-              <InputField label="Departamento opcional" type="text" value={apartment} onChange={(value) => setApartment(uppercaseAccountText(value))} placeholder="B" icon={Hash} maxLength={12} />
-              <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
-              <InputField label="Localidad" type="text" value={locality} onChange={(value) => setLocality(uppercaseAccountText(value))} placeholder="Rosario" icon={MapPin} maxLength={60} />
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
-                  Provincia / Región
-                </label>
-                <ProvinceSelect value={province} onChange={(value) => setProvince(uppercaseAccountText(value))} />
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-[var(--account-text-primary)] sm:text-lg">
+                    {user?.name}
+                  </p>
+                  <p className="truncate text-sm text-[var(--account-text-secondary)]">{user?.email}</p>
+                  <p className="mt-1 text-11px font-medium uppercase tracking-widest text-[var(--account-accent-soft)]">
+                    Cliente BEYONIX
+                  </p>
+                  <p className="mt-3 text-xs leading-5 text-[var(--account-text-muted)]">
+                    Imagen JPG o PNG, hasta 2 MB.
+                  </p>
+                  {avatarError && (
+                    <p className="mt-1 text-xs text-[var(--account-danger-text)]">{avatarError}</p>
+                  )}
+                </div>
               </div>
-              <div className="md:col-span-2">
-                <TextareaField
-                  label="Referencias para llegar"
-                  value={references}
-                  onChange={(value) => setReferences(uppercaseAccountText(value))}
-                  placeholder="Entre calles, fachada blanca, portón negro, antes de llegar a la esquina."
-                  icon={MapPin}
-                  maxLength={FIELD_LIMITS.references}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ReadOnlyField
+                  label="Usuario"
+                  value={uppercaseAccountText(user?.username ?? "")}
+                  icon={User}
+                />
+                <ReadOnlyField
+                  label="Nombre y apellido"
+                  value={uppercaseAccountText(user?.name ?? "")}
+                  icon={User}
+                />
+                <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
+                <ReadOnlyField
+                  label="Email"
+                  value={user?.email || ""}
+                  icon={Mail}
                 />
               </div>
             </div>
           </div>
 
-          {profileError && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
-              <p className="text-sm text-red-400">{profileError}</p>
+          <div className="border-t border-[var(--account-border-subtle)] pt-4">
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-11px font-semibold uppercase tracking-widest text-[var(--account-accent-soft)]">
+                  Dirección de entrega
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[var(--account-text-muted)]">
+                  Datos para preparar futuros envíos a domicilio con Andreani.
+                </p>
+              </div>
             </div>
+
+            <div className="grid gap-3 md:grid-cols-6 xl:grid-cols-12">
+              <InputField className="md:col-span-4 xl:col-span-5" label="Calle" type="text" value={street} onChange={(value) => setStreet(uppercaseAccountText(value))} placeholder="San Martín" icon={MapPin} maxLength={60} />
+              <InputField className="md:col-span-2 xl:col-span-2" label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
+              <InputField className="md:col-span-2 xl:col-span-2" label="Piso opcional" type="text" value={floor} onChange={(value) => setFloor(uppercaseAccountText(value))} placeholder="3" icon={Hash} maxLength={12} />
+              <InputField className="md:col-span-2 xl:col-span-3" label="Departamento opcional" type="text" value={apartment} onChange={(value) => setApartment(uppercaseAccountText(value))} placeholder="B" icon={Hash} maxLength={12} />
+              <InputField className="md:col-span-2 xl:col-span-2" label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
+              <InputField className="md:col-span-4 xl:col-span-4" label="Localidad" type="text" value={locality} onChange={(value) => setLocality(uppercaseAccountText(value))} placeholder="Rosario" icon={MapPin} maxLength={60} />
+              <div className="space-y-1 md:col-span-2 xl:col-span-3">
+                <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
+                  Provincia / Región
+                </label>
+                <ProvinceSelect value={province} onChange={(value) => setProvince(uppercaseAccountText(value))} />
+              </div>
+              <TextareaField
+                className="md:col-span-6 xl:col-span-12"
+                label="Referencias para llegar"
+                value={references}
+                onChange={(value) => setReferences(uppercaseAccountText(value))}
+                placeholder="Entre calles, fachada blanca, portón negro, antes de llegar a la esquina."
+                icon={MapPin}
+                maxLength={FIELD_LIMITS.references}
+              />
+            </div>
+          </div>
+
+          {profileError && (
+            <AccountCard padding="sm" className="border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]">
+              <p className="text-sm text-[var(--account-danger-text)]">{profileError}</p>
+            </AccountCard>
           )}
 
-          <button
-            type="submit"
-            aria-label="Guardar cambios"
-            title="Guardar cambios"
-            className={`flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm font-semibold text-white transition-colors ${
-              saved
-                ? "border-emerald-400/60 bg-emerald-600 hover:bg-emerald-600"
-                : "border-beyonix-blue-light/60 bg-beyonix-blue hover:bg-beyonix-blue-light"
-            }`}
-          >
-            {saved ? (
-              <>
-                <Check className="size-4" />
-                Guardado
-              </>
-            ) : (
-              "Guardar cambios"
-            )}
-          </button>
+          <div className="flex justify-end">
+            <BeyonixButton
+              type="submit"
+              aria-label="Guardar cambios"
+              size="lg"
+              className={
+                saved
+                  ? "w-full border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)] hover:bg-[var(--account-success-bg)] sm:w-auto sm:min-w-[220px]"
+                  : "w-full sm:w-auto sm:min-w-[220px]"
+              }
+            >
+              {saved ? (
+                <>
+                  <Check className="size-4" />
+                  Guardado
+                </>
+              ) : (
+                "Guardar cambios"
+              )}
+            </BeyonixButton>
+          </div>
         </form>
-      </div>
+      </AccountCard>
     </AccountViewFrame>
   )
 }

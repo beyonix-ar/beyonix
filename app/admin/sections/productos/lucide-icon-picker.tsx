@@ -290,10 +290,10 @@ export function LucideIconPicker({
         title="Abrir buscador de iconos"
         aria-label="Abrir buscador de iconos"
         onClick={() => setOpen((current) => !current)}
-        className="flex min-h-40px w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#181818] px-3.5 text-left transition-colors hover:border-[#112A43] hover:bg-[#112A43]"
+        className="flex min-h-48px w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#181818] px-4 text-left transition-colors hover:border-[#112A43] hover:bg-[#112A43]"
       >
         <span className="flex min-w-0 items-center gap-3">
-          <SelectedIcon className="size-5 shrink-0 text-beyonix-sky" />
+          <SelectedIcon className="size-5.5 shrink-0 text-beyonix-sky" />
           <span className="truncate text-sm font-semibold text-white">
             {selectedLabel}
           </span>
@@ -302,9 +302,9 @@ export function LucideIconPicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-48px z-30 space-y-2 rounded-xl border border-white/10 bg-[#141414] p-2.5 shadow-beyonix-modal">
-          <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-[#181818] px-3 py-2.5">
-        <SelectedIcon className="size-5 shrink-0 text-beyonix-sky" />
+        <div className="absolute left-0 right-0 top-56px z-30 space-y-3 rounded-2xl border border-white/10 bg-[#141414] p-3 shadow-beyonix-modal">
+          <div className="flex min-h-48px items-center gap-3 rounded-xl border border-white/8 bg-[#181818] px-3.5 py-2.5">
+        <SelectedIcon className="size-5.5 shrink-0 text-beyonix-sky" />
         <input
           type="search"
           title="Buscar ícono"
@@ -325,7 +325,7 @@ export function LucideIconPicker({
             </button>
       </div>
 
-          <div className="grid max-h-220px gap-2 overflow-y-auto pr-1 custom-scrollbar sm:grid-cols-2">
+          <div className="grid max-h-340px gap-3 overflow-y-auto pr-2 custom-scrollbar sm:grid-cols-2">
         {filteredOptions.map((option) => {
           const Icon = getLucideIcon(option.name)
           const selected = value === option.name
@@ -340,17 +340,17 @@ export function LucideIconPicker({
                 onChange(option.name)
                 setOpen(false)
               }}
-              className={`flex min-h-10 cursor-pointer items-center gap-3 rounded-xl border px-3 text-left transition-colors ${
+              className={`flex min-h-56px cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2 text-left transition-colors ${
                 selected
                   ? "border-beyonix-sky bg-beyonix-blue text-white"
                   : "border-white/8 bg-[#181818] text-white/70 hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
               }`}
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/20 bg-beyonix-blue/35 text-beyonix-sky">
-                <Icon className="size-4" />
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/20 bg-beyonix-blue/35 text-beyonix-sky">
+                <Icon className="size-5" />
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-semibold">{option.label}</span>
+                <span className="block text-sm font-semibold leading-tight">{option.label}</span>
                 <span className="block truncate text-11px text-white/42">
                   {option.name}
                 </span>

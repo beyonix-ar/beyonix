@@ -4,6 +4,13 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Heart, Loader2 } from "lucide-react"
 
+import {
+  AccountCard,
+  AccountEmptyState,
+  AccountPageContainer,
+  AccountPageHeader,
+  BeyonixButton,
+} from "@/components/account/account-ui"
 import SharedProductCard from "@/components/products/shared/shared-product-card"
 import { useAuth } from "@/context/auth-context"
 import { useCart } from "@/context/cart-context"
@@ -86,61 +93,57 @@ export function FavoritosClient() {
 
   if (isLoading || loading) {
     return (
-      <main className="min-h-screen bg-black px-4 pt-32 text-white lg:px-8">
-        <div className="mx-auto flex max-w-[var(--beyonix-content-max)] items-center justify-center py-24">
+      <main className="min-h-screen bg-[var(--account-background)] pt-32 text-white">
+        <AccountPageContainer className="flex items-center justify-center py-24">
           <Loader2 className="size-8 animate-spin text-beyonix-sky" />
-        </div>
+        </AccountPageContainer>
       </main>
     )
   }
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-black px-4 pt-32 text-white lg:px-8">
-        <div className="mx-auto max-w-md rounded-3xl border border-beyonix-blue-light/20 bg-[#071018] p-8 text-center">
-          <Heart className="mx-auto mb-4 size-10 text-beyonix-sky" />
-          <h1 className="text-2xl font-black">Favoritos</h1>
-          <p className="mt-2 text-sm text-white/62">
-            Iniciá sesión para guardar y ver tus productos favoritos.
-          </p>
-          <Link
-            href="/login?redirect=/cuenta/favoritos"
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-2xl bg-white px-6 text-sm font-black text-black transition hover:bg-white/90"
-          >
-            Iniciar sesión
-          </Link>
-        </div>
+      <main className="min-h-screen bg-[var(--account-background)] pt-32 text-white">
+        <AccountPageContainer>
+          <AccountEmptyState
+            icon={<Heart className="fill-white" />}
+            title="Favoritos"
+            description="Iniciá sesión para guardar y ver tus productos favoritos."
+            action={
+              <BeyonixButton asChild size="lg">
+                <Link href="/login?redirect=/cuenta/favoritos">
+                  Iniciar sesión
+                </Link>
+              </BeyonixButton>
+            }
+          />
+        </AccountPageContainer>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-black px-4 pb-16 pt-32 text-white lg:px-8">
-      <section className="mx-auto max-w-[var(--beyonix-content-max)]">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-              Mi cuenta
-            </p>
-            <h1 className="text-3xl font-black text-white">Favoritos</h1>
-            <p className="mt-2 text-sm text-white/62">
-              Tus productos guardados para volver a encontrarlos rápido.
-            </p>
-          </div>
-          <Link
-            href="/productos"
-            className="inline-flex h-11 min-w-150px items-center justify-center rounded-2xl border border-beyonix-blue-light/28 bg-beyonix-blue/22 px-5 text-sm font-black text-white/86 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-beyonix-sky/42 hover:bg-beyonix-blue/36 hover:text-white hover:shadow-[0_0_16px_rgba(96,165,250,0.12),inset_0_1px_0_rgba(255,255,255,0.06)]"
-          >
-            Ver productos
-          </Link>
-        </div>
+    <main className="min-h-screen bg-[var(--account-background)] pb-16 pt-32 text-white">
+      <AccountPageContainer asChild>
+      <section>
+        <AccountPageHeader
+          eyebrow="Mi cuenta"
+          title="Favoritos"
+          description="Tus productos guardados para volver a encontrarlos rápido."
+          className="mb-6"
+          action={
+            <BeyonixButton asChild size="lg">
+              <Link href="/productos">Ver productos</Link>
+            </BeyonixButton>
+          }
+        />
 
         {error ? (
-          <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          <AccountCard padding="sm" className="border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-sm text-[var(--account-danger-text)]">
             {error}
-          </div>
+          </AccountCard>
         ) : products.length ? (
-          <div className="grid grid-cols-1 items-stretch justify-start justify-items-stretch gap-[clamp(1rem,1.4vw,1.35rem)] sm:grid-cols-product-cards-2 xl:grid-cols-product-cards-4">
+          <div className="grid grid-cols-1 items-stretch justify-start justify-items-stretch gap-[clamp(1rem,1.4vw,1.35rem)] sm:grid-cols-product-cards-2 xl:grid-cols-product-cards-3 2xl:grid-cols-product-cards-4">
             {products.map((product) => (
               <SharedProductCard
                 key={product.id}
@@ -156,19 +159,14 @@ export function FavoritosClient() {
             ))}
           </div>
         ) : (
-          <div className="rounded-3xl border border-beyonix-blue-light/20 bg-[#071018] px-6 py-14 text-center">
-            <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl border border-beyonix-blue-light/30 bg-beyonix-blue/35 text-beyonix-sky">
-              <Heart className="size-6 text-white" />
-            </div>
-            <h2 className="text-xl font-black text-white">
-              Todavía no agregaste productos a favoritos.
-            </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-white/58">
-              Tocá el corazón en cualquier producto para guardarlo acá.
-            </p>
-          </div>
+          <AccountEmptyState
+            icon={<Heart className="fill-white" />}
+            title="Todavía no agregaste productos a favoritos."
+            description="Tocá el corazón en cualquier producto para guardarlo acá."
+          />
         )}
       </section>
+      </AccountPageContainer>
     </main>
   )
 }

@@ -546,7 +546,7 @@ export function ProductsPageLayout() {
                   key={label}
                   className="beyonix-benefit-item flex items-center gap-3 rounded-lg px-3 py-3 text-left"
                 >
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/24 bg-beyonix-blue/34 text-beyonix-sky/86 shadow-[0_0_8px_rgba(30,140,255,0.08)]">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/24 bg-beyonix-blue/34 text-white shadow-[0_0_8px_rgba(30,140,255,0.08)]">
                     <Icon className="size-4" />
                   </span>
                   <span className="text-13px font-semibold text-white/86">

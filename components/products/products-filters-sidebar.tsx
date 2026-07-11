@@ -84,7 +84,7 @@ export function ProductsFiltersSidebar({
         className="flex min-h-52px w-full cursor-pointer items-center justify-between gap-3 border-b border-beyonix-blue-light/18 px-4 py-3 text-left lg:hidden"
       >
         <span className="flex items-center gap-2.5">
-          <span className="flex size-9 items-center justify-center rounded-md border border-beyonix-blue-light/22 bg-beyonix-blue/24 text-beyonix-sky/86">
+          <span className="flex size-9 items-center justify-center rounded-md border border-beyonix-blue-light/22 bg-beyonix-blue/24 text-white">
             <Filter className="size-4" />
           </span>
           <span className="text-11px font-bold uppercase tracking-widest text-beyonix-sky">
@@ -96,7 +96,7 @@ export function ProductsFiltersSidebar({
       </button>
 
       <div className="hidden items-center gap-2.5 border-b border-beyonix-blue-light/18 px-4 py-4 lg:flex">
-        <span className="flex size-9 items-center justify-center rounded-md border border-beyonix-blue-light/22 bg-beyonix-blue/24 text-beyonix-sky/86 shadow-[0_0_8px_rgba(30,140,255,0.07)]">
+        <span className="flex size-9 items-center justify-center rounded-md border border-beyonix-blue-light/22 bg-beyonix-blue/24 text-white shadow-[0_0_8px_rgba(30,140,255,0.07)]">
           <Filter className="size-4" />
         </span>
         <h3 className="text-11px font-bold uppercase tracking-widest text-beyonix-sky">

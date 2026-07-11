@@ -1,9 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import {
   LoaderCircle,
   MapPin,
+  MessageSquareText,
   ShieldCheck,
   Star,
   Trash2,
@@ -11,12 +13,15 @@ import {
   X,
 } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import {
-  getSafeSupabaseSession,
-  supabase,
-} from "@/lib/supabase/client"
+  BeyonixButton,
+  BeyonixCard,
+  BeyonixEmptyState,
+  BeyonixIconBox,
+  BeyonixSectionHeader,
+} from "@/components/beyonix-ui"
+import { Textarea } from "@/components/ui/textarea"
+import { getSafeSupabaseSession, supabase } from "@/lib/supabase/client"
 
 type Review = {
   id: number
@@ -44,7 +49,6 @@ type ReviewsResponse = {
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const session = await getSafeSupabaseSession()
-
   const headers: Record<string, string> = {}
 
   if (session?.access_token) {
@@ -169,9 +173,7 @@ export function ReviewsSection() {
         throw new Error(payload.error || "No pudimos eliminar la reseña.")
       }
 
-      setReviews((current) =>
-        current.filter((item) => item.id !== review.id)
-      )
+      setReviews((current) => current.filter((item) => item.id !== review.id))
       await loadReviews()
     } catch (error) {
       setErrorMessage(
@@ -194,78 +196,85 @@ export function ReviewsSection() {
       : "0.0"
 
   const ReviewCard = ({ review }: { review: Review }) => (
-    <article className="relative overflow-hidden rounded-2xl border border-beyonix-blue-light/25 bg-beyonix-surface p-6 shadow-xl shadow-black/25">
-      <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-beyonix-blue via-beyonix-cyan to-beyonix-blue" />
+    <BeyonixCard asChild variant="default" className="relative overflow-hidden p-6">
+      <article>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div
+            className="flex gap-1"
+            aria-label={`${review.rating} de 5 estrellas`}
+          >
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Star
+                key={index}
+                className={
+                  index < review.rating
+                    ? "size-4 fill-beyonix-sky text-beyonix-sky"
+                    : "size-4 text-beyonix-blue-light/50"
+                }
+              />
+            ))}
+          </div>
 
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div className="flex gap-1" aria-label={`${review.rating} de 5 estrellas`}>
-          {Array.from({ length: 5 }).map((_, index) => (
-            <Star
-              key={index}
-              className={
-                index < review.rating
-                  ? "size-4 fill-beyonix-sky text-beyonix-sky"
-                  : "size-4 text-beyonix-blue-light/50"
-              }
-            />
-          ))}
+          {review.canDelete && (
+            <BeyonixButton
+              type="button"
+              aria-label="Eliminar mi reseña"
+              variant="destructive"
+              size="icon"
+              onClick={() => void handleDeleteReview(review)}
+              disabled={deletingId === review.id}
+              className="size-8"
+            >
+              {deletingId === review.id ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+            </BeyonixButton>
+          )}
         </div>
 
-        {review.canDelete && (
-          <button
-            type="button"
-            aria-label="Eliminar mi reseña"
-            title="Eliminar mi reseña"
-            onClick={() => void handleDeleteReview(review)}
-            disabled={deletingId === review.id}
-            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/20 bg-red-500/8 text-red-300 transition-colors hover:bg-red-500/15 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {deletingId === review.id ? (
-              <LoaderCircle className="size-4 animate-spin" />
-            ) : (
-              <Trash2 className="size-4" />
-            )}
-          </button>
-        )}
-      </div>
-
-      <p className="mb-5 leading-relaxed text-white/90">
-        “{review.comment}”
-      </p>
-
-      <div className="border-t border-beyonix-blue-light/20 pt-4">
-        <p className="flex items-center gap-2 text-sm font-semibold text-white">
-          <UserRound className="size-4 text-beyonix-sky" />
-          {review.nickname}
+        <p className="mb-5 leading-relaxed text-white/88">
+          “{review.comment}”
         </p>
-        <p className="mt-2 flex items-center gap-2 text-sm text-white/58">
-          <MapPin className="size-4 text-beyonix-cyan" />
-          {review.city} · {review.province}
-        </p>
-      </div>
-    </article>
+
+        <div className="border-t border-beyonix-blue-light/14 pt-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-white">
+            <UserRound className="size-4 text-beyonix-sky" />
+            {review.nickname}
+          </p>
+          <p className="mt-2 flex items-center gap-2 text-sm text-white/58">
+            <MapPin className="size-4 text-beyonix-cyan" />
+            {review.city} · {review.province}
+          </p>
+        </div>
+      </article>
+    </BeyonixCard>
   )
 
   return (
     <section className="beyonix-section-spacing">
       <div className="container mx-auto px-4 lg:px-8">
-        <div className="mb-[clamp(2.5rem,4vw,4rem)] text-center">
-          <p className="mb-3 text-sm font-medium uppercase tracking-widest text-beyonix-cyan">
-            Reseñas
-          </p>
-          <h2 className="mb-4 text-[clamp(1.9rem,3.2vw,3.25rem)] font-bold text-white">
-            Opiniones verificadas
-          </h2>
-          {reviews.length > 0 && (
-            <p className="text-sm text-beyonix-sky/70">
-              {averageRating}/5 basado en {reviews.length}{" "}
-              {reviews.length === 1 ? "reseña verificada" : "reseñas verificadas"}
-            </p>
-          )}
-        </div>
+        <BeyonixSectionHeader
+          align="center"
+          eyebrow="Reseñas"
+          title="Opiniones verificadas"
+          description={
+            reviews.length > 0
+              ? `${averageRating}/5 basado en ${reviews.length} ${
+                  reviews.length === 1
+                    ? "reseña verificada"
+                    : "reseñas verificadas"
+                }`
+              : undefined
+          }
+        />
 
         {eligibleReview && (
-          <div className="mx-auto mb-12 max-w-xl space-y-4 rounded-2xl border border-beyonix-blue-light/35 bg-beyonix-blue/20 p-6 shadow-2xl shadow-black/30">
+          <BeyonixCard
+            variant="highlighted"
+            className="mx-auto mb-12 max-w-xl space-y-4 p-6"
+          >
             <div className="space-y-2">
               <p className="flex items-center gap-2 text-sm font-semibold text-white">
                 <ShieldCheck className="size-4 text-beyonix-sky" />
@@ -286,11 +295,10 @@ export function ReviewsSection() {
                     key={value}
                     type="button"
                     aria-label={`Calificar con ${value} estrellas`}
-                    title={`Calificar con ${value} estrellas`}
                     onClick={() => setRating(value)}
                     onMouseEnter={() => setHover(value)}
                     onMouseLeave={() => setHover(0)}
-                    className="cursor-pointer"
+                    className="cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/35"
                   >
                     <Star
                       className={`size-6 transition-all ${
@@ -308,7 +316,7 @@ export function ReviewsSection() {
               placeholder="Comentá tu experiencia (máx. 150 caracteres)"
               maxLength={150}
               rows={4}
-              className="h-28 resize-none border-beyonix-blue-light/30 bg-black/55 text-white focus-visible:border-beyonix-cyan focus-visible:ring-beyonix-blue/60"
+              className="h-28 resize-none border-beyonix-blue-light/30 bg-black/55 text-white focus-visible:border-beyonix-blue-light focus-visible:ring-beyonix-blue-light/25"
               value={comment}
               onChange={(event) => setComment(event.target.value)}
             />
@@ -317,13 +325,12 @@ export function ReviewsSection() {
               {comment.length}/150
             </p>
 
-            <Button
+            <BeyonixButton
               type="button"
               aria-label="Enviar reseña"
-              title="Enviar reseña"
               onClick={() => void handleAddReview()}
               disabled={!comment.trim() || isSubmitting}
-              className="w-full cursor-pointer bg-beyonix-blue text-white hover:bg-beyonix-blue-hover disabled:cursor-not-allowed"
+              className="w-full"
             >
               {isSubmitting ? (
                 <>
@@ -333,8 +340,8 @@ export function ReviewsSection() {
               ) : (
                 "Enviar reseña"
               )}
-            </Button>
-          </div>
+            </BeyonixButton>
+          </BeyonixCard>
         )}
 
         {errorMessage && (
@@ -352,9 +359,16 @@ export function ReviewsSection() {
             Cargando reseñas...
           </div>
         ) : reviews.length === 0 ? (
-          <div className="text-center text-beyonix-sky/60">
-            Sé el primero en dejar una reseña.
-          </div>
+          <BeyonixEmptyState
+            icon={<MessageSquareText className="size-5 text-white" />}
+            title="Todavía no hay reseñas publicadas"
+            description="Las opiniones verificadas de nuestros clientes aparecerán en esta sección."
+            action={
+              <BeyonixButton asChild variant="outline">
+                <Link href="/productos">Conocé nuestros productos</Link>
+              </BeyonixButton>
+            }
+          />
         ) : (
           <>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -365,16 +379,14 @@ export function ReviewsSection() {
 
             {reviews.length > 3 && (
               <div className="mt-8 text-center">
-                <Button
+                <BeyonixButton
                   type="button"
                   aria-label="Ver todas las reseñas"
-                  title="Ver todas las reseñas"
                   variant="outline"
                   onClick={() => setIsModalOpen(true)}
-                  className="cursor-pointer border-beyonix-blue-light/35 bg-beyonix-blue/15 text-white hover:bg-beyonix-blue/30"
                 >
                   Ver todas las reseñas
-                </Button>
+                </BeyonixButton>
               </div>
             )}
           </>
@@ -382,18 +394,20 @@ export function ReviewsSection() {
 
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
-            <div className="relative max-h-screen w-full max-w-4xl overflow-y-auto rounded-2xl border border-beyonix-blue-light/30 bg-beyonix-surface p-6 shadow-2xl shadow-black/60">
-              <Button
+            <BeyonixCard
+              variant="elevated"
+              className="relative max-h-screen w-full max-w-4xl overflow-y-auto p-6"
+            >
+              <BeyonixButton
                 type="button"
                 aria-label="Cerrar reseñas"
-                title="Cerrar reseñas"
-                variant="ghost"
+                variant="icon"
                 size="icon"
-                className="absolute right-4 top-4 cursor-pointer text-beyonix-sky hover:bg-beyonix-blue/30"
+                className="absolute right-4 top-4"
                 onClick={() => setIsModalOpen(false)}
               >
                 <X className="size-5" />
-              </Button>
+              </BeyonixButton>
 
               <h3 className="mb-6 text-2xl font-bold text-white">
                 Todas las reseñas
@@ -404,7 +418,7 @@ export function ReviewsSection() {
                   <ReviewCard key={review.id} review={review} />
                 ))}
               </div>
-            </div>
+            </BeyonixCard>
           </div>
         )}
       </div>

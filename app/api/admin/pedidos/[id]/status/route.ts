@@ -3,6 +3,13 @@ import { NextResponse } from "next/server"
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import {
+  DEFAULT_PRODUCT_WARRANTY_MONTHS,
+  getWarrantyExpiration,
+} from "@/lib/orders/warranty"
+import type { createAdminClient } from "@/lib/supabase/admin"
+
+type AdminClient = ReturnType<typeof createAdminClient>
 
 const ALLOWED_ORDER_STATUSES = [
   "pendiente",
@@ -58,6 +65,106 @@ function isOrderInvoiced(order: {
     Boolean(order.invoice_cae) ||
     Boolean(order.invoice_number && order.invoice_point)
   )
+}
+
+async function activatePendingItemWarranties(
+  admin: AdminClient,
+  {
+    orderId,
+    deliveredAt,
+    actorId,
+  }: {
+    orderId: number
+    deliveredAt: string
+    actorId: string
+  },
+) {
+  const { data: items, error: itemsError } = await admin
+    .from("orden_items")
+    .select("id, warranty_started_at, warranty_expires_at, warranty_status, warranty_months")
+    .eq("orden_id", orderId)
+
+  if (itemsError) {
+    console.warn("ORDER_WARRANTY_ITEMS_ERROR", {
+      orderId,
+      message: itemsError.message,
+    })
+    return
+  }
+
+  const pendingItems = (items ?? []).filter(
+    (item) =>
+      !item.warranty_started_at &&
+      !item.warranty_expires_at &&
+      (item.warranty_status === null ||
+        item.warranty_status === undefined ||
+        item.warranty_status === "pending_delivery"),
+  )
+
+  if (!pendingItems.length) return
+
+  const previousByItemId = Object.fromEntries(
+    pendingItems.map((item) => [
+      item.id,
+      {
+        warranty_started_at: item.warranty_started_at,
+        warranty_expires_at: item.warranty_expires_at,
+        warranty_months: item.warranty_months,
+        warranty_status: item.warranty_status,
+      },
+    ]),
+  )
+
+  const updates = pendingItems.map((item) => {
+    const months =
+      typeof item.warranty_months === "number" && item.warranty_months > 0
+        ? item.warranty_months
+        : DEFAULT_PRODUCT_WARRANTY_MONTHS
+
+    return {
+      id: item.id,
+      warranty_started_at: deliveredAt,
+      warranty_expires_at: getWarrantyExpiration(deliveredAt, months),
+      warranty_months: months,
+      warranty_status: "active",
+    }
+  })
+
+  for (const update of updates) {
+    const { error } = await admin
+      .from("orden_items")
+      .update({
+        warranty_started_at: update.warranty_started_at,
+        warranty_expires_at: update.warranty_expires_at,
+        warranty_months: update.warranty_months,
+        warranty_status: update.warranty_status,
+      })
+      .eq("id", update.id)
+      .is("warranty_started_at", null)
+      .is("warranty_expires_at", null)
+
+    if (error) {
+      console.warn("ORDER_WARRANTY_ACTIVATION_ERROR", {
+        orderId,
+        itemId: update.id,
+        message: error.message,
+      })
+    }
+  }
+
+  await appendOrderAuditEvent(admin, {
+    orderId,
+    actorType: "admin",
+    actorId,
+    action: "order_item_warranty_started",
+    previousStatus: "pending_delivery",
+    newStatus: "active",
+    metadata: {
+      delivered_at: deliveredAt,
+      previous: previousByItemId,
+      next: updates,
+    },
+  })
 }
 
 async function sendOrderStateEmail(order: {
@@ -145,7 +252,7 @@ export async function PATCH(
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
-    .select("id, estado, payment_status, paid_at, financial_status, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point")
+    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -212,7 +319,7 @@ export async function PATCH(
               }),
         }
       : {}),
-    ...(estado === "entregado"
+    ...(estado === "entregado" && !currentOrder.delivered_at
       ? { delivered_at: new Date().toISOString() }
       : {}),
     ...(body.tracking_number !== undefined
@@ -251,6 +358,14 @@ export async function PATCH(
   }
 
   if (currentOrder.estado !== estado) {
+    if (estado === "entregado" && data.delivered_at) {
+      await activatePendingItemWarranties(auth.admin, {
+        orderId,
+        deliveredAt: data.delivered_at,
+        actorId: auth.user.id,
+      })
+    }
+
     await appendOrderAuditEvent(auth.admin, {
       orderId,
       actorType: "admin",

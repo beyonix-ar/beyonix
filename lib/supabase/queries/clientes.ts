@@ -40,7 +40,7 @@ export async function getClientes() {
     supabase.rpc("admin_get_client_profiles"),
     supabase
       .from("ordenes")
-      .select("*, orden_items(*, productos(*), producto_variantes(*))")
+      .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
       .order("created_at", { ascending: false }),
     supabase.rpc("admin_get_client_presence"),
     supabase.rpc("admin_get_client_carts"),

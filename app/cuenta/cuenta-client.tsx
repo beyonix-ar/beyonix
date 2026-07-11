@@ -9,17 +9,19 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  Coins,
   CreditCard,
   Download,
   DollarSign,
   Eye,
   FileText,
   Heart,
+  IdCard,
   Loader2,
-  Lock,
+  LockKeyhole,
   LogOut,
   Mail,
-  Shield,
+  ShieldCheck,
   ShoppingBag,
   Truck,
   RefreshCcw,
@@ -28,6 +30,12 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import {
+  AccountCard,
+  AccountPageContainer,
+  AccountPageHeader,
+  IconContainer,
+} from "@/components/account/account-ui"
 import { LoginForm, RegisterForm } from "@/components/account/auth-forms"
 import { MisOrdenes } from "@/components/account/account-orders"
 import { MisDatos, Seguridad } from "@/components/account/profile-sections"
@@ -114,99 +122,142 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
     icon: typeof ShoppingBag
     label: string
     sub: string
+    filled?: boolean
+    dollarBadge?: boolean
     view?: ProfileView
     href?: string
   }> = [
-    { icon: ShoppingBag, label: "Mis compras", sub: "Historial de compras", view: "ordenes" as ProfileView },
-    { icon: Heart, label: "Favoritos", sub: "Productos guardados", href: "/cuenta/favoritos" },
-    { icon: User, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
-    { icon: Lock, label: "Seguridad", sub: "Contraseña y acceso", view: "seguridad" as ProfileView },
+    { icon: Coins, label: "Mis compras", sub: "Historial de compras", dollarBadge: true, view: "ordenes" as ProfileView },
+    { icon: Heart, label: "Favoritos", sub: "Productos guardados", filled: true, href: "/cuenta/favoritos" },
+    { icon: IdCard, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
+    { icon: LockKeyhole, label: "Seguridad", sub: "Contraseña y acceso", view: "seguridad" as ProfileView },
   ]
 
   return (
-    <div className="mx-auto max-w-md space-y-6">
-      <div className="flex items-center gap-4 p-5 rounded-2xl border border-white/7 bg-white/2">
-        <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
-          {user.avatarUrl ? (
-            <img src={user.avatarUrl} alt="" className="size-full object-cover" />
-          ) : (
-            <User className="size-8" />
-          )}
-        </div>
-        <div className="min-w-0">
-          <p className="font-semibold text-white truncate">{user.name}</p>
-          <p className="text-sm text-white/55 truncate">{user.email}</p>
-          <p className="mt-1 text-11px text-beyonix-cyan font-medium">Cliente BEYONIX</p>
-        </div>
-      </div>
+    <AccountPageContainer className="space-y-4">
+      <AccountPageHeader
+        eyebrow="Mi cuenta"
+        title={`Hola, ${(user.username || user.name.split(" ")[0]).toUpperCase()}`}
+        className="border-transparent bg-transparent p-0 shadow-none"
+      />
 
-      <div className="space-y-2">
-        {menuItems.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            aria-label={item.label}
-            title={item.label}
-            onClick={() => {
-              if (item.href) {
-                router.push(item.href)
-                return
-              }
-
-              if (item.view) {
-                goToView(item.view)
-              }
-            }}
-            className={cn(
-              "w-full flex items-center gap-4 p-4 rounded-xl bg-white/2 hover:bg-white/4 group cursor-pointer text-left",
-              beyonixHoverBorder
-            )}
-          >
-            <div className="size-9 rounded-lg bg-beyonix-blue/50 border border-beyonix-blue-light/30 flex items-center justify-center shrink-0">
-              <item.icon className="size-4 text-beyonix-cyan" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white">{item.label}</p>
-              <p className="text-xs text-white/50">{item.sub}</p>
-            </div>
-            <ChevronRight className="size-4 text-white/25 group-hover:text-white/60 transition-colors shrink-0" />
-          </button>
-        ))}
-      </div>
-
-      {isInternal && (
-        <button
-          type="button"
-          aria-label="Ir al panel admin"
-          title="Ir al panel admin"
-          onClick={() => router.push("/admin")}
-          className={cn(
-            "w-full flex items-center gap-4 p-4 rounded-xl bg-beyonix-account hover:bg-beyonix-blue group cursor-pointer text-left",
-            beyonixHoverBorder
-          )}
+      <div className="grid gap-5 lg:grid-cols-[minmax(280px,0.34fr)_minmax(0,0.66fr)]">
+        <AccountCard
+          padding="lg"
+          className="flex h-full min-h-0 flex-col justify-between gap-5"
         >
-          <div className="size-9 rounded-lg bg-beyonix-blue/60 border border-beyonix-blue-light/40 flex items-center justify-center shrink-0">
-            <Shield className="size-4 text-beyonix-cyan" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white">Panel administrador</p>
-            <p className="text-xs text-white/55">Gestión de tienda</p>
-          </div>
-          <ChevronRight className="size-4 text-white/25 group-hover:text-white/70 transition-colors shrink-0" />
-        </button>
-      )}
+          <div>
+            <div className="flex items-center gap-4">
+              <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/14 bg-white text-black shadow-sm shadow-black/35">
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="" className="size-full object-cover" />
+                ) : (
+                  <User className="size-9" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-lg font-semibold text-[var(--account-text-primary)]">{user.name}</p>
+                <p className="truncate text-sm text-[var(--account-text-secondary)]">{user.email}</p>
+                <p className="mt-1 text-11px font-medium uppercase tracking-widest text-[var(--account-accent-soft)]">
+                  Cliente BEYONIX
+                </p>
+              </div>
+            </div>
 
-      <button
-        type="button"
-        aria-label="Cerrar sesión"
-        title="Cerrar sesión"
-        onClick={() => { logout(); router.push("/") }}
-        className="w-full flex items-center justify-center gap-2 h-11 rounded-xl border border-white/8 text-sm font-medium text-white/60 hover:text-white hover:border-white/20 transition-all cursor-pointer"
-      >
-        <LogOut className="size-4" />
-        Cerrar sesión
-      </button>
-    </div>
+            <button
+              type="button"
+              aria-label="Ver mis datos"
+              onClick={() => goToView("datos")}
+              className="mt-5 inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-xs font-semibold text-[var(--account-text-secondary)] transition-all hover:border-[var(--account-border-strong)] hover:text-[var(--account-text-primary)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]"
+            >
+              Ver datos
+            </button>
+          </div>
+
+          <div className="border-t border-[var(--account-border-subtle)] pt-4">
+            <button
+              type="button"
+              aria-label="Cerrar sesión"
+              onClick={() => { logout(); router.push("/") }}
+              className="account-logout-button group"
+            >
+              <span className="account-logout-button__icon">
+                <LogOut className="size-4 stroke-[2.3]" />
+              </span>
+              <span className="account-logout-button__label">Cerrar sesión</span>
+            </button>
+          </div>
+        </AccountCard>
+
+        <div className="min-w-0 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {menuItems.map((item) => (
+              <AccountCard
+                asChild
+                variant="interactive"
+                padding="sm"
+                key={item.label}
+                className="min-h-[104px] bg-[var(--account-surface-raised)]"
+              >
+                <button
+                  type="button"
+                  aria-label={item.label}
+                  onClick={() => {
+                    if (item.href) {
+                      router.push(item.href)
+                      return
+                    }
+
+                    if (item.view) {
+                      goToView(item.view)
+                    }
+                  }}
+                  className="group flex w-full cursor-pointer items-center gap-4 text-left"
+                >
+                  <IconContainer dollarBadge={item.dollarBadge}>
+                    <item.icon
+                      className={`size-5 stroke-[2.35] drop-shadow-[0_0_5px_rgba(255,255,255,0.22)] ${
+                        item.filled ? "fill-white" : "fill-none"
+                      }`}
+                    />
+                  </IconContainer>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[var(--account-text-primary)]">{item.label}</p>
+                    <p className="mt-0.5 text-xs text-[var(--account-text-secondary)]">{item.sub}</p>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-[var(--account-text-muted)] transition-colors group-hover:text-[var(--account-text-primary)]" />
+                </button>
+              </AccountCard>
+            ))}
+          </div>
+
+          {isInternal && (
+            <AccountCard
+              asChild
+              variant="interactive"
+              padding="sm"
+              className="border-[var(--account-border-highlight)] bg-[rgba(9,21,34,0.92)] hover:bg-[rgba(17,42,67,0.74)]"
+            >
+              <button
+                type="button"
+                aria-label="Ir al panel admin"
+                onClick={() => router.push("/admin")}
+                className="group flex min-h-[82px] w-full cursor-pointer items-center gap-4 text-left"
+              >
+                <IconContainer>
+                  <ShieldCheck className="size-5 fill-white/10 stroke-[2.35] drop-shadow-[0_0_5px_rgba(255,255,255,0.22)]" />
+                </IconContainer>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-white">Panel administrador</p>
+                  <p className="text-xs text-white/55">Gestión de tienda</p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-white/25 transition-colors group-hover:text-white/70" />
+              </button>
+            </AccountCard>
+          )}
+        </div>
+      </div>
+    </AccountPageContainer>
   )
 }
 
@@ -249,7 +300,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       setError("")
       const { data, error: orderError } = await supabase
         .from("ordenes")
-        .select("*, orden_items(*, productos(*), producto_variantes(*))")
+        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
         .eq("id", orderId)
         .maybeSingle()
 
@@ -592,7 +643,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             {refundProofAvailable && (
                               <button
                                 type="button"
-                                title="Ver comprobante de reintegro"
                                 aria-label="Ver comprobante de reintegro"
                                 disabled={refundProofOpening}
                                 onClick={() => void handleOpenRefundProof()}
@@ -604,7 +654,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             {creditNoteAvailable && (
                               <button
                                 type="button"
-                                title="Descargar nota de crédito"
                                 aria-label="Descargar nota de crédito"
                                 disabled={downloadingCreditNote}
                                 onClick={() => void handleDownloadInvoice("credit_note")}
@@ -939,7 +988,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
       setLoading(true)
       const { data, error: orderError } = await supabase
         .from("ordenes")
-        .select("*, orden_items(*, productos(*), producto_variantes(*))")
+        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
         .eq("id", orderId)
         .maybeSingle()
 
@@ -1027,7 +1076,7 @@ export function CuentaClient() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-black flex items-center justify-center pt-20">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--account-background)] pt-20">
         <div className="size-8 rounded-full border-2 border-white/10 border-t-white/60 animate-spin" />
       </main>
     )
@@ -1035,27 +1084,17 @@ export function CuentaClient() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-black flex items-center justify-center pt-20">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--account-background)] pt-20">
         <div className="size-8 rounded-full border-2 border-white/10 border-t-white/60 animate-spin" />
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-black pt-20">
-      <div className="account-page container mx-auto max-w-7xl px-4 py-8 lg:py-10">
+    <main className="min-h-screen bg-[var(--account-background)] pt-20">
+      <div className="account-page py-6 lg:py-7">
         {user ? (
-          <>
-            {initialView !== "ordenes" && <div className="account-welcome mb-8">
-              <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan mb-2">
-                Mi cuenta
-              </p>
-              <h1 className="text-2xl font-bold text-white tracking-tight">
-                Hola, {(user.username || user.name.split(" ")[0]).toUpperCase()}
-              </h1>
-            </div>}
-            <ProfilePanel initialView={initialView} />
-          </>
+          <ProfilePanel initialView={initialView} />
         ) : null}
         {false && (
           <>
@@ -1079,7 +1118,6 @@ export function CuentaClient() {
                   key={value}
                   type="button"
                   aria-label={value === "login" ? "Iniciar sesión" : "Registrarse"}
-                  title={value === "login" ? "Iniciar sesión" : "Registrarse"}
                   onClick={() => setTab(value)}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                     tab === value

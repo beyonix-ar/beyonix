@@ -53,6 +53,38 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
   const videoSource = getProductVideoSource(form.video_url)
   const canPreviewVideo =
     videoSource && videoSource.kind !== "unsupported"
+  const cleanSlug = form.slug.trim()
+  const cleanVideoUrl = form.video_url.trim()
+  const cleanPrice = Number(form.precio)
+  const hasValidDraftVariants =
+    draftVariants.length > 0 &&
+    draftVariants.every(
+      (variant) =>
+        variant.nombre.trim() &&
+        /^#[0-9A-F]{6}$/i.test(variant.color_hex) &&
+        Number.isFinite(Number(variant.stock)) &&
+        Number(variant.stock) >= 0
+    )
+  const hasValidDraftSpecifications =
+    draftSpecifications.every(
+      (specification) =>
+        specification.icono.trim() &&
+        specification.texto.trim() &&
+        Number.isFinite(Number(specification.orden))
+    )
+  const isSubmitReady = Boolean(
+    form.nombre.trim() &&
+    cleanSlug &&
+    Number.isFinite(cleanPrice) &&
+    cleanPrice > 0 &&
+    (!cleanVideoUrl ||
+      (videoSource && videoSource.kind !== "unsupported")) &&
+    (producto || savedId || hasValidDraftVariants) &&
+    hasValidDraftSpecifications
+  )
+  const submitButtonStateClass = isSubmitReady
+    ? "hover:border-emerald-400/55 hover:bg-emerald-500 hover:text-white hover:shadow-[0_0_24px_rgba(16,185,129,0.28)]"
+    : "hover:border-red-400/55 hover:bg-red-500 hover:text-white hover:shadow-[0_0_24px_rgba(239,68,68,0.24)]"
 
   return (
     <div className="min-h-screen px-4 py-5 sm:px-6 lg:px-7 lg:py-6">
@@ -297,7 +329,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-5">
+            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-4">
               <div>
                 <label className={labelCls}>Variantes</label>
                 <ProductVariantsEditor
@@ -308,7 +340,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-3">
+            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-4">
               <div>
                 <label className={labelCls}>Especificaciones</label>
                 <ProductSpecificationsEditor
@@ -333,13 +365,13 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             )}
 
-            <div className="flex gap-3 border-t border-white/7 pt-4">
+            <div className="flex flex-col gap-3 border-t border-white/7 pt-4 sm:flex-row sm:justify-end">
               <button
                 type="submit"
                 disabled={saving}
                 title="Guardar producto"
                 aria-label="Guardar producto"
-                className="flex h-11 flex-1 items-center justify-center rounded-xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-[#112A43] hover:text-white disabled:opacity-50 cursor-pointer"
+                className={`flex h-10 w-full items-center justify-center rounded-xl border border-white bg-white px-7 text-sm font-semibold text-black transition-all disabled:opacity-50 cursor-pointer sm:w-auto sm:min-w-180px ${submitButtonStateClass}`}
               >
                 {saving ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -357,7 +389,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 title="Cancelar"
                 aria-label="Cancelar"
                 onClick={onCancel}
-                className="h-11 min-w-140px rounded-xl border border-white/10 bg-[#141414] px-6 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
+                className="h-11 w-full rounded-xl border border-white/10 bg-[#141414] px-6 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer sm:w-auto sm:min-w-140px"
               >
                 Cancelar
               </button>

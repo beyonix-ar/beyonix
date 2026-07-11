@@ -1,20 +1,38 @@
 "use client"
 
-import Link from "next/link"
-import { ArrowRight, CheckCircle2, PackageCheck, Sparkles } from "lucide-react"
+import { useEffect, useState } from "react"
 
-import { beyonixHoverBorder, cn } from "@/lib/utils"
+import Image from "next/image"
+import Link from "next/link"
+import {
+  ArrowRight,
+  PackageCheck,
+  SearchCheck,
+  ShieldCheck,
+  Sparkles,
+  Tag,
+} from "lucide-react"
+
+import {
+  BeyonixButton,
+  BeyonixCard,
+  BeyonixIconBox,
+} from "@/components/beyonix-ui"
+import { getDefaultVariantOption } from "@/lib/products/product-variants"
+import { getProductDiscount } from "@/lib/store-config"
+import { getFeaturedProductos } from "@/lib/supabase/queries/store"
+import type { SupabaseProducto } from "@/lib/supabase/types"
 
 const trustItems = [
   {
     title: "Selección cuidada",
     sub: "Productos elegidos con criterio",
-    icon: CheckCircle2,
+    icon: SearchCheck,
   },
   {
     title: "Tecnología útil",
     sub: "Para tu día a día",
-    icon: Sparkles,
+    icon: ShieldCheck,
   },
   {
     title: "Envío a todo el país",
@@ -23,78 +41,202 @@ const trustItems = [
   },
 ]
 
-export function HeroSection() {
+const formatPrice = (price: number) =>
+  new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 0,
+  }).format(price)
+
+interface HeroSectionProps {
+  onOpenPreview: (product: SupabaseProducto) => void
+}
+
+export function HeroSection({ onOpenPreview }: HeroSectionProps) {
+  const [featuredProduct, setFeaturedProduct] =
+    useState<SupabaseProducto | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    getFeaturedProductos()
+      .then((products) => {
+        if (active) {
+          setFeaturedProduct(products[0] ?? null)
+        }
+      })
+      .catch((error) => {
+        console.error("Error cargando producto destacado del hero:", error)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const defaultVariant = featuredProduct
+    ? getDefaultVariantOption(featuredProduct)
+    : null
+  const productImage =
+    defaultVariant?.images[0] ??
+    featuredProduct?.imagen_principal
+  const discount = featuredProduct ? getProductDiscount(featuredProduct.id) : 0
+  const hasSale = discount > 0
+  const finalPrice = featuredProduct
+    ? Math.round(featuredProduct.precio * (1 - discount))
+    : 0
+
+  const openFeaturedProduct = () => {
+    if (!featuredProduct) {
+      return
+    }
+
+    onOpenPreview(featuredProduct)
+  }
+
   return (
-    <section className="relative min-h-[clamp(560px,80vh,860px)] overflow-hidden pt-18 lg:pt-20">
-      <div className="container relative mx-auto flex min-h-[clamp(560px,80vh,860px)] items-center py-[clamp(3rem,5vw,4.5rem)]">
-        <div className="grid w-full gap-[clamp(2.25rem,3vw,3.5rem)]">
-          <div className="max-w-3xl">
-            <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/4 px-3.5 py-2 text-11px font-semibold uppercase tracking-widest text-white/72 lg:mb-6">
-              <span className="inline-block size-1.5 rounded-full bg-beyonix-cyan" />
-              Conexión y comodidad
-            </span>
+    <section className="relative overflow-hidden pt-18 lg:pt-20">
+      <div className="container relative mx-auto grid min-h-[clamp(620px,78vh,840px)] items-center gap-[clamp(2.5rem,4vw,4.5rem)] py-[clamp(3.75rem,5.5vw,5.5rem)] lg:grid-cols-hero-premium">
+        <div className="max-w-3xl">
+          <h1 className="mb-5 max-w-3xl text-[clamp(2.4rem,4.3vw,4.65rem)] font-bold leading-1-1 tracking-tight text-white">
+            Tecnología para tu comodidad
+          </h1>
 
-            <h1 className="mb-5 max-w-3xl text-[clamp(2.35rem,4.25vw,4.5rem)] font-bold leading-1-1 tracking-tight text-white">
-              Conectados con tu comodidad
-            </h1>
+          <p className="mb-8 max-w-xl text-[clamp(1rem,1vw,1.15rem)] leading-1-8 text-white/68">
+            Productos confiables, útiles y seleccionados para que tu vida se
+            sienta más simple, segura y tranquila.
+          </p>
 
-            <p className="mb-8 max-w-xl text-[clamp(1rem,1vw,1.15rem)] leading-1-8 text-white/68">
-              Tecnología premium, práctica y confiable para acompañar tu día a día con estilo.
-            </p>
-
-            <div className="flex flex-col items-start gap-3 sm:flex-row">
-              <Link
-                href="/productos"
-                className={cn(
-                  "inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-black hover:bg-white/90 sm:h-12 sm:px-6",
-                  beyonixHoverBorder
-                )}
-              >
+          <div className="flex flex-col items-start gap-3 sm:flex-row">
+            <BeyonixButton asChild size="lg">
+              <Link href="/productos">
                 Explorar tienda
                 <ArrowRight className="size-4" />
               </Link>
+            </BeyonixButton>
 
-              <Link
-                href="/categorias"
-                className={cn(
-                  "inline-flex h-11 cursor-pointer items-center rounded-lg px-5 text-sm font-medium text-white hover:bg-white/6 sm:h-12 sm:px-6",
-                  beyonixHoverBorder
-                )}
-              >
-                Ver categorías
-              </Link>
-            </div>
+            <BeyonixButton asChild variant="outline" size="lg">
+              <Link href="/categorias">Ver categorías</Link>
+            </BeyonixButton>
           </div>
 
-          <div className="max-w-4xl border-t border-white/10 pt-6">
-            <div className="grid gap-3 sm:grid-cols-3">
-              {trustItems.map((item) => {
-                const Icon = item.icon
+          <div className="mt-8 grid max-w-4xl gap-3 border-t border-beyonix-blue-light/16 pt-6 sm:grid-cols-3">
+            {trustItems.map((item) => {
+              const Icon = item.icon
 
-                return (
-                  <div
-                    key={item.title}
-                    className="flex min-h-22 items-center gap-3 rounded-lg border border-white/10 bg-white/3 p-3.5"
-                  >
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-beyonix-cyan/25 bg-beyonix-blue/35 text-beyonix-sky">
-                      <Icon className="size-4" />
+              return (
+                <BeyonixCard
+                  key={item.title}
+                  variant="information"
+                  className="flex min-h-24 items-center gap-3 p-3.5"
+                >
+                  <BeyonixIconBox size="sm" className="text-white">
+                    <Icon className="size-5" />
+                  </BeyonixIconBox>
+
+                  <div className="min-w-0">
+                    <span className="block text-sm font-semibold leading-5 text-white sm:text-base">
+                      {item.title}
                     </span>
-
-                    <div className="min-w-0">
-                      <span className="block text-sm font-bold leading-5 text-white sm:text-base">
-                        {item.title}
-                      </span>
-                      <span className="mt-1 block text-11px leading-5 text-white/52">
-                        {item.sub}
-                      </span>
-                    </div>
+                    <span className="mt-1 block text-11px leading-5 text-white/52">
+                      {item.sub}
+                    </span>
                   </div>
-                )
-              })}
-            </div>
+                </BeyonixCard>
+              )
+            })}
           </div>
         </div>
+
+        <BeyonixCard
+          variant="highlighted"
+          onClick={openFeaturedProduct}
+          className="relative cursor-pointer overflow-hidden p-4 sm:p-5"
+        >
+          {featuredProduct && productImage ? (
+            <>
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+                    Producto destacado
+                  </p>
+                  <h2 className="mt-2 line-clamp-2 text-2xl font-bold leading-tight text-white">
+                    {featuredProduct.nombre}
+                  </h2>
+                </div>
+
+                {hasSale && (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/24 bg-emerald-500/12 px-2.5 py-1 text-xs font-semibold text-emerald-200">
+                    <Tag className="size-3" />
+                    -{Math.round(discount * 100)}%
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openFeaturedProduct()
+                }}
+                aria-label={`Ver ${featuredProduct.nombre}`}
+                className="group block w-full cursor-pointer rounded-2xl text-left outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/35"
+              >
+                <div className="relative aspect-[1.08] overflow-hidden rounded-2xl border border-beyonix-blue-light/18 bg-[#f8fafc] p-5">
+                  <Image
+                    fill
+                    src={productImage}
+                    alt={featuredProduct.nombre}
+                    sizes="(min-width: 1024px) 420px, calc(100vw - 48px)"
+                    className="object-contain transition-transform duration-500 group-hover:scale-[1.025]"
+                    priority
+                  />
+                </div>
+              </button>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-2xl font-bold leading-none text-white">
+                    {formatPrice(finalPrice)}
+                  </p>
+                  {hasSale && (
+                    <p className="mt-1 text-sm text-white/42 line-through">
+                      {formatPrice(featuredProduct.precio)}
+                    </p>
+                  )}
+                </div>
+
+                <BeyonixButton
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    openFeaturedProduct()
+                  }}
+                >
+                  Ver producto
+                  <ArrowRight className="size-4" />
+                </BeyonixButton>
+              </div>
+            </>
+          ) : (
+            <div className="flex min-h-360px flex-col items-center justify-center p-6 text-center">
+              <BeyonixIconBox size="lg" className="mb-4 text-beyonix-sky">
+                <Sparkles className="size-5" />
+              </BeyonixIconBox>
+              <h2 className="text-2xl font-bold text-white">
+                Catálogo BEYONIX
+              </h2>
+              <p className="mt-3 max-w-sm text-sm leading-6 text-white/58">
+                Una selección de tecnología y accesorios pensados para comprar
+                con confianza.
+              </p>
+            </div>
+          )}
+        </BeyonixCard>
       </div>
+
     </section>
   )
 }

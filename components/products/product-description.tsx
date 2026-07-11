@@ -23,7 +23,7 @@ export function ProductDescription({
       )}
 
       {longDescription && (
-        <p className="text-14px leading-7 text-white/68">
+        <p className="text-14px leading-6 text-white/68">
           {longDescription}
         </p>
       )}

@@ -73,14 +73,14 @@ export function ProductPurchaseBox({
       : null
 
   return (
-    <div className="bg-[#070A0E] px-5 pb-5 pt-5 lg:px-8 lg:pb-6 lg:pt-6">
-      <div className="mb-4 flex flex-wrap items-end gap-3 lg:mb-5">
-        <span className="text-3xl font-black leading-none tracking-tight text-white lg:text-[34px]">
+    <div className="bg-[#070A0E] px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
+      <div className="mb-3 flex flex-wrap items-end gap-2.5">
+        <span className="text-[34px] font-black leading-none tracking-tight text-white md:text-[38px]">
           {formatPrice(price)}
         </span>
 
         {discount && (
-          <span className="rounded-lg border border-emerald-300/30 bg-emerald-400/16 px-2.5 py-1 text-13px font-bold leading-none text-emerald-200">
+          <span className="rounded-lg border border-emerald-300/30 bg-emerald-400/16 px-3 py-1.5 text-13px font-bold leading-none text-emerald-200">
             -{discount}%
           </span>
         )}
@@ -93,7 +93,7 @@ export function ProductPurchaseBox({
       </div>
 
       {installmentsLabel && (
-        <div className="mb-4 lg:mb-5">
+        <div className="mb-4">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-2 text-13px font-semibold text-white/70">
             <CreditCard className="size-3.5" />
             {installmentsLabel}
@@ -101,7 +101,7 @@ export function ProductPurchaseBox({
         </div>
       )}
 
-      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+      <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="flex-1">
           <ProductCartToggleButton
             quantity={quantity}
@@ -116,7 +116,7 @@ export function ProductPurchaseBox({
           type="button"
           aria-label="Ver carrito"
           onClick={onViewCart}
-          className="flex h-12 w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-xl border border-beyonix-blue-light/45 bg-[#112A43] px-5 text-14px font-bold text-white transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:text-white active:scale-95 sm:w-auto lg:px-6"
+          className="flex h-12 w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-xl border border-beyonix-blue-light/45 bg-[#112A43] px-5 text-14px font-bold text-white transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:text-white active:scale-95 sm:w-auto"
         >
           Ver carrito
         </button>

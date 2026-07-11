@@ -286,6 +286,10 @@ export interface SupabasePedidoItem {
   variante_id?: number | null
   cantidad: number
   precio: number
+  warranty_started_at?: string | null
+  warranty_expires_at?: string | null
+  warranty_months?: number | null
+  warranty_status?: "pending_delivery" | "active" | "expired" | "voided" | null
   productos?: SupabaseProducto | null
   producto_variantes?: SupabaseProductoVariante | null
 }

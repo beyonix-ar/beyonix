@@ -66,6 +66,7 @@ import type {
   OrderClaimStatus,
   SupabaseOrderClaim,
   SupabasePedido,
+  SupabasePedidoItem,
 } from "@/lib/supabase/types"
 import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
@@ -291,6 +292,67 @@ function getPaymentMethodLabel(pedido: SupabasePedido) {
   if (pedido.payment_method_id || pedido.payment_type_id) return "Otro"
 
   return "No informado"
+}
+
+function formatWarrantyDate(value?: string | null) {
+  if (!value) return "Sin definir"
+
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(value))
+}
+
+function getWarrantyDaysRemaining(expiresAt?: string | null) {
+  if (!expiresAt) return null
+
+  const now = new Date()
+  const expires = new Date(expiresAt)
+  const msPerDay = 24 * 60 * 60 * 1000
+
+  return Math.ceil((expires.getTime() - now.getTime()) / msPerDay)
+}
+
+function getWarrantyVisual(item: SupabasePedidoItem) {
+  if (item.warranty_status === "voided") {
+    return {
+      label: "Garantía anulada",
+      daysRemaining: null,
+      className: "border-white/12 bg-white/5 text-white/48",
+    }
+  }
+
+  if (!item.warranty_started_at || !item.warranty_expires_at) {
+    return {
+      label: "Pendiente de entrega",
+      daysRemaining: null,
+      className: "border-white/12 bg-white/5 text-white/58",
+    }
+  }
+
+  const daysRemaining = getWarrantyDaysRemaining(item.warranty_expires_at)
+
+  if (daysRemaining !== null && daysRemaining < 0) {
+    return {
+      label: "Garantía vencida",
+      daysRemaining,
+      className: "border-red-400/20 bg-red-400/8 text-red-200",
+    }
+  }
+
+  if (daysRemaining !== null && daysRemaining <= 30) {
+    return {
+      label: "Próxima a vencer",
+      daysRemaining,
+      className: "border-amber-300/25 bg-amber-400/10 text-amber-100",
+    }
+  }
+
+  return {
+    label: "Garantía activa",
+    daysRemaining,
+    className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
+  }
 }
 
 function getCompactPaymentMethodLabel(pedido: SupabasePedido) {
@@ -3508,6 +3570,7 @@ function PedidoDetailModal({
   onDownloadCreditNote,
   onClaimChange,
   onRefundUpdated,
+  onWarrantyUpdated,
   embedded = false,
 }: {
   pedido: SupabasePedido
@@ -3532,6 +3595,7 @@ function PedidoDetailModal({
   ) => Promise<{ ok: boolean; message: string }>
   onClaimChange: (pedidoId: number, claim: SupabaseOrderClaim) => void
   onRefundUpdated: (order: SupabasePedido) => void
+  onWarrantyUpdated: () => Promise<void>
   embedded?: boolean
 }) {
   const router = useRouter()
@@ -3556,6 +3620,11 @@ function PedidoDetailModal({
   const [invoiceDownloading, setInvoiceDownloading] = useState(false)
   const [paymentProofSeen, setPaymentProofSeen] = useState(true)
   const [invoiceNotice, setInvoiceNotice] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
+  const [warrantySavingItemId, setWarrantySavingItemId] = useState<number | null>(null)
+  const [warrantyNotice, setWarrantyNotice] = useState<{
     ok: boolean
     message: string
   } | null>(null)
@@ -3672,6 +3741,121 @@ function PedidoDetailModal({
     const result = await onAndreaniAction(action, pedido.id)
     setAndreaniNotice(result)
     setAndreaniLoading(null)
+  }
+
+  const handleWarrantyEdit = async (item: SupabasePedidoItem) => {
+    const currentDeliveredAt = pedido.delivered_at?.slice(0, 10) ?? ""
+    const currentStartedAt = item.warranty_started_at?.slice(0, 10) ?? ""
+    const currentExpiresAt = item.warranty_expires_at?.slice(0, 10) ?? ""
+    const currentMonths = String(item.warranty_months ?? 6)
+    const currentStatus = item.warranty_status ?? "pending_delivery"
+
+    const deliveredAtInput = window.prompt(
+      "Fecha de entrega efectiva (YYYY-MM-DD). Dejá vacío si sigue pendiente.",
+      currentDeliveredAt,
+    )
+    if (deliveredAtInput === null) return
+
+    const startedAtInput = window.prompt(
+      "Inicio de garantía (YYYY-MM-DD). Dejá vacío si todavía no comenzó.",
+      currentStartedAt,
+    )
+    if (startedAtInput === null) return
+
+    const expiresAtInput = window.prompt(
+      "Garantía válida hasta (YYYY-MM-DD). Dejá vacío si todavía no comenzó.",
+      currentExpiresAt,
+    )
+    if (expiresAtInput === null) return
+
+    const monthsInput = window.prompt("Meses de garantía.", currentMonths)
+    if (monthsInput === null) return
+
+    const statusInput = window.prompt(
+      "Estado: pending_delivery, active, expired o voided.",
+      currentStatus,
+    )
+    if (statusInput === null) return
+
+    if (
+      !window.confirm(
+        "¿Guardar esta corrección interna de garantía? El cambio quedará registrado en el historial del pedido.",
+      )
+    ) {
+      return
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setWarrantyNotice({ ok: false, message: "La sesión administrativa venció." })
+      return
+    }
+    const accessToken = session.access_token
+
+    const payload = {
+      delivered_at: deliveredAtInput.trim() || null,
+      warranty_started_at: startedAtInput.trim() || null,
+      warranty_expires_at: expiresAtInput.trim() || null,
+      warranty_months: Number(monthsInput),
+      warranty_status: statusInput.trim(),
+    }
+
+    async function saveWarranty(forceShortWarranty = false) {
+      return fetch(`/api/admin/pedidos/${pedido.id}/warranty/${item.id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...payload,
+          forceShortWarranty,
+        }),
+      })
+    }
+
+    setWarrantySavingItemId(item.id)
+    setWarrantyNotice(null)
+
+    try {
+      let response = await saveWarranty()
+      let data = (await response.json()) as {
+        error?: string
+        requiresShortWarrantyConfirmation?: boolean
+      }
+
+      if (
+        response.status === 409 &&
+        data.requiresShortWarrantyConfirmation &&
+        window.confirm(
+          "El vencimiento indicado reduce la garantía por debajo de 6 meses desde la entrega. ¿Guardar igualmente?",
+        )
+      ) {
+        response = await saveWarranty(true)
+        data = (await response.json()) as { error?: string }
+      }
+
+      if (!response.ok) {
+        setWarrantyNotice({
+          ok: false,
+          message: data.error || "No se pudo actualizar la garantía.",
+        })
+        return
+      }
+
+      setWarrantyNotice({ ok: true, message: "Garantía actualizada." })
+      await onWarrantyUpdated()
+    } catch {
+      setWarrantyNotice({
+        ok: false,
+        message: "No se pudo actualizar la garantía.",
+      })
+    } finally {
+      setWarrantySavingItemId(null)
+    }
   }
 
   const handleIssueInvoice = async () => {
@@ -4003,8 +4187,98 @@ function PedidoDetailModal({
                 </p>
               )}
             </div>
-          </section>
-          )}
+           </section>
+           )}
+
+           {activeView === "resumen" && (
+            <section className="admin-order-products-panel mt-3 rounded-xl border border-white/8 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                    Garantía
+                  </p>
+                  <p className="mt-1 text-sm text-white/55">
+                    Control interno por producto vendido.
+                  </p>
+                </div>
+              </div>
+
+              {warrantyNotice && (
+                <p
+                  role="status"
+                  className={`mt-3 rounded-xl border px-3 py-2 text-xs font-medium ${
+                    warrantyNotice.ok
+                      ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-200"
+                      : "border-red-400/20 bg-red-400/8 text-red-200"
+                  }`}
+                >
+                  {warrantyNotice.message}
+                </p>
+              )}
+
+              <div className="mt-3 space-y-2">
+                {items.length ? (
+                  items.map((item) => {
+                    const productName =
+                      item.productos?.nombre ?? `Producto #${item.producto_id}`
+                    const visual = getWarrantyVisual(item)
+                    const daysText =
+                      visual.daysRemaining === null
+                        ? "Sin calcular"
+                        : visual.daysRemaining < 0
+                          ? `Vencida hace ${Math.abs(visual.daysRemaining)} días`
+                          : `${visual.daysRemaining} días`
+
+                    return (
+                      <article
+                        key={`warranty-${item.id}`}
+                        className="rounded-lg border border-white/8 bg-white/3 px-3 py-3"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-white">{productName}</p>
+                            <p className="mt-1 text-xs text-white/52">
+                              Color: {getItemColor(item)}
+                            </p>
+                          </div>
+                          <span
+                            className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${visual.className}`}
+                          >
+                            {visual.label}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-5">
+                          <ItemValue label="Fecha de entrega" value={formatWarrantyDate(pedido.delivered_at)} />
+                          <ItemValue label="Inicio" value={formatWarrantyDate(item.warranty_started_at)} />
+                          <ItemValue label="Válida hasta" value={formatWarrantyDate(item.warranty_expires_at)} />
+                          <ItemValue label="Meses" value={String(item.warranty_months ?? 6)} />
+                          <ItemValue label="Restan" value={daysText} />
+                        </div>
+
+                        {canEditRefundAmount && (
+                          <button
+                            type="button"
+                            disabled={warrantySavingItemId === item.id}
+                            onClick={() => void handleWarrantyEdit(item)}
+                            className="mt-3 inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-white/10 px-3 text-10px font-black uppercase tracking-wide text-white/62 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+                          >
+                            {warrantySavingItemId === item.id
+                              ? "Guardando..."
+                              : "Editar garantía"}
+                          </button>
+                        )}
+                      </article>
+                    )
+                  })
+                ) : (
+                  <p className="rounded-xl border border-white/8 p-4 text-sm text-white/55">
+                    Este pedido no tiene productos cargados.
+                  </p>
+                )}
+              </div>
+            </section>
+           )}
 
           {activeView === "envio" && (
           <section className="admin-order-shipping-panel admin-order-shipping-section mt-3 rounded-xl border p-3">
@@ -5787,6 +6061,7 @@ export function AdminPedidos({
           onDownloadCreditNote={handleDownloadCreditNote}
           onClaimChange={handleClaimChange}
           onRefundUpdated={handleRefundUpdated}
+          onWarrantyUpdated={() => reloadPedidos({ silent: true })}
         />
         <ForcedStatusConfirmModal request={forcedStatusRequest} loading={forcedStatusLoading} onCancel={() => setForcedStatusRequest(null)} onConfirm={() => void confirmForcedStatusChange()} />
         <TrackingStatusModal request={trackingStatusRequest} loading={trackingStatusLoading} onCancel={() => setTrackingStatusRequest(null)} onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)} />
@@ -6197,6 +6472,7 @@ export function AdminPedidos({
           onDownloadCreditNote={handleDownloadCreditNote}
           onClaimChange={handleClaimChange}
           onRefundUpdated={handleRefundUpdated}
+          onWarrantyUpdated={() => reloadPedidos({ silent: true })}
         />
       )}
       <ForcedStatusConfirmModal

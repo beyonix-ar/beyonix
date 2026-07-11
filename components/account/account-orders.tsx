@@ -13,6 +13,11 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import {
+  AccountCard,
+  AccountEmptyState,
+  BeyonixButton,
+} from "@/components/account/account-ui"
 import { AccountViewFrame } from "@/components/account/account-view-frame"
 import {
   CustomerInvoiceBell,
@@ -43,9 +48,6 @@ import {
   type CustomerOrderDetailView,
 } from "@/lib/account/account-utils"
 import type { SupabasePedido } from "@/lib/supabase/types"
-
-const beyonixAccountButton =
-  "inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-4 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
 
 export function MisOrdenes({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
@@ -93,7 +95,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
 
       const { data, error: ordersError } = await supabase
         .from("ordenes")
-        .select("*, orden_items(*, productos(*), producto_variantes(*))")
+        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
         .order("created_at", { ascending: false })
 
       if (ordersError) {
@@ -290,41 +292,33 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
       onBack={onBack}
       kicker="Mis compras"
       title="Historial de compras"
-      maxWidth="max-w-6xl"
-      hideHeading
-      backButtonClassName={beyonixAccountButton}
+      description="Revisá el estado de tus pedidos, facturas y comprobantes."
     >
-      <div>
-        <h1 className="text-2xl font-black tracking-tight text-white">Mis compras</h1>
-        <p className="mt-1 text-sm text-[#A0A0A0]">
-          Revisá el estado de tus pedidos, facturas y comprobantes.
-        </p>
-      </div>
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, index) => (
-            <div
+            <AccountCard
               key={index}
-              className="h-132px animate-pulse rounded-2xl border border-white/7 bg-beyonix-surface"
+              className="h-132px animate-pulse"
             />
           ))}
         </div>
       ) : error ? (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3 text-sm text-red-300">
+        <AccountCard padding="sm" className="border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-sm text-[var(--account-danger-text)]">
           {error}
-        </div>
+        </AccountCard>
       ) : orders.length === 0 ? (
-        <div className="rounded-2xl border border-white/7 bg-beyonix-surface p-8 text-center">
-          <ShoppingBag className="size-10 text-white/15 mx-auto mb-3" />
-          <p className="text-sm font-medium text-white/60">Todavía no has realizado ningún pedido.</p>
-          <p className="text-xs text-white/40 mt-1">Cuando compres algo aparecerá aquí.</p>
-        </div>
+        <AccountEmptyState
+          icon={<ShoppingBag />}
+          title="Todavía no realizaste ninguna compra."
+          description="Cuando hagas un pedido, vas a poder consultar acá su estado, factura y seguimiento."
+        />
       ) : (
         <div className="space-y-8 sm:space-y-10">
           {invoiceError && (
-            <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-4 py-3 text-sm text-red-200">
+            <AccountCard padding="sm" className="border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-sm text-[var(--account-danger-text)]">
               {invoiceError}
-            </div>
+            </AccountCard>
           )}
           {[...orders]
             .sort(
@@ -440,7 +434,10 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}`)} className={beyonixAccountButton}><FileText className="size-4" />Ver compra</button>
+                    <BeyonixButton type="button" size="sm" onClick={() => router.push(`/cuenta/compras/${order.id}`)}>
+                      <FileText className="size-4" />
+                      Ver compra
+                    </BeyonixButton>
                   </div>
                 </div>
 

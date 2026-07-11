@@ -1,21 +1,12 @@
 "use client"
 
 import {
-  BatteryCharging,
-  Bluetooth,
-  Cable,
-  Clock,
-  Headphones,
-  Home,
-  Mic,
   Music,
   Package,
-  Radio,
   Shield,
   Sparkles,
   Star,
   Truck,
-  Volume2,
   Zap,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -55,48 +46,13 @@ interface ProductDetailsPanelProps {
   selectedStock: number
 }
 
-const productFeatures = [
-  {
-    icon: Music,
-    text: "Sonido estereo de alta fidelidad",
-  },
-  {
-    icon: Volume2,
-    text: "Graves profundos y claros",
-  },
-  {
-    icon: Radio,
-    text: "Aislamiento pasivo del ruido",
-  },
-  {
-    icon: BatteryCharging,
-    text: "Batería de larga duración",
-  },
-  {
-    icon: Bluetooth,
-    text: "Bluetooth 5.3",
-  },
-  {
-    icon: Mic,
-    text: "Microfono integrado",
-  },
-]
-
 const iconMap: Record<string, LucideIcon> = {
-  BatteryCharging,
-  Bluetooth,
-  Cable,
-  Clock,
-  Headphones,
-  Home,
-  Mic,
   Music,
   Package,
-  Radio,
   Shield,
+  Sparkles,
   Star,
   Truck,
-  Volume2,
   Zap,
 }
 
@@ -124,14 +80,11 @@ export function ProductDetailsPanel({
         if (a.orden !== b.orden) return a.orden - b.orden
         return a.id - b.id
       }) ?? []
-  const visibleFeatures =
-    productSpecifications.length > 0
-      ? productSpecifications.map((specification) => ({
-          icon: iconMap[specification.icono] ?? Music,
-          text: specification.texto,
-        }))
-      : productFeatures
-  const limitedFeatures = visibleFeatures.slice(0, 10)
+  const visibleFeatures = productSpecifications.map((specification) => ({
+    icon: iconMap[specification.icono] ?? Sparkles,
+    text: specification.texto,
+  }))
+  const limitedFeatures = visibleFeatures.slice(0, 8)
   const featureColumns =
     limitedFeatures.length >= 4
       ? [
@@ -141,95 +94,99 @@ export function ProductDetailsPanel({
       : [limitedFeatures]
 
   return (
-    <aside className="flex min-h-0 flex-col bg-[#080B0F] text-white lg:h-full">
-      <div className="flex min-h-0 flex-1 flex-col lg:overflow-hidden">
-        <div className="shrink-0 px-5 pb-5 pt-6 lg:px-8 lg:pb-6 lg:pt-8">
+    <aside className="flex min-h-0 flex-col bg-[#080B0F] text-white md:h-full">
+      <div className="flex min-h-0 flex-1 flex-col md:overflow-hidden">
+        <div className="shrink-0 px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
           {product.categorias?.nombre && (
-            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-3 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
+            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
               <Sparkles className="size-3.5" />
               {product.categorias.nombre}
             </span>
           )}
 
-          <h2 className="text-3xl font-bold leading-tight text-white lg:text-[34px]">
+          <h2 className="text-[28px] font-bold leading-tight text-white md:text-[34px]">
             {product.nombre}
           </h2>
         </div>
 
         <div className="h-px bg-beyonix-blue-light/16" />
 
-        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col lg:overflow-y-auto">
-          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-5 lg:px-8 lg:py-6">
-            <p className="mb-3 text-11px font-bold uppercase tracking-widest text-white/68">
+        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col md:overflow-y-auto">
+          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
+            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-white/68">
               Descripción
             </p>
 
-            <div className="max-h-36 overflow-y-auto pr-2 text-white/82 lg:max-h-44">
-              {product.descripcion && (
+            <div className="product-description-scrollbar max-h-32 overflow-y-auto pr-3 text-white/82">
+              {product.descripcion ? (
                 <ProductDescription
                   shortDescription={product.descripcion}
                   longDescription=""
                   features={[]}
                 />
+              ) : (
+                <p className="text-15px leading-6 text-white/68">
+                  Producto seleccionado para una experiencia de compra simple y confiable.
+                </p>
               )}
             </div>
           </section>
 
-          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-5 lg:px-8 lg:py-6">
-            <p className="mb-4 text-11px font-bold uppercase tracking-widest text-white/68">
-              Especificaciones
-            </p>
+          {limitedFeatures.length > 0 && (
+            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
+              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-white/68">
+                Características principales
+              </p>
 
-            <div className="pr-2">
-              <div
-                className={`grid items-start gap-x-5 gap-y-3 ${
-                  featureColumns.length > 1 ? "sm:grid-cols-2" : "grid-cols-1"
-                }`}
-              >
-                {featureColumns.map((column, columnIndex) => (
-                  <ul
-                    key={`feature-column-${columnIndex}`}
-                    className="grid content-start gap-y-3 self-start"
-                  >
-                    {column.map((feature) => {
-                      const Icon = feature.icon
+              <div className="pr-2">
+                <div
+                  className={`grid items-start gap-x-4 gap-y-2.5 ${
+                    featureColumns.length > 1 ? "sm:grid-cols-2" : "grid-cols-1"
+                  }`}
+                >
+                  {featureColumns.map((column, columnIndex) => (
+                    <ul
+                      key={`feature-column-${columnIndex}`}
+                      className="grid content-start gap-y-2.5 self-start"
+                    >
+                      {column.map((feature) => {
+                        const Icon = feature.icon
 
-                      return (
-                        <li
-                          key={feature.text}
-                          className="flex items-center gap-3 text-13px leading-5 text-white/82"
-                        >
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/24 bg-[#0D1720] text-beyonix-sky/88">
-                            <Icon className="size-3.5" />
-                          </span>
-                          <span className="leading-tight">{feature.text}</span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ))}
+                        return (
+                          <li
+                            key={feature.text}
+                            className="flex items-center gap-2.5 text-14px leading-5 text-white/82"
+                          >
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/24 bg-[#0D1720] text-beyonix-sky/88">
+                              <Icon className="size-3.5" />
+                            </span>
+                            <span className="leading-tight">{feature.text}</span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ))}
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           {hasVariants && (
-            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-5 lg:px-8 lg:py-6">
+            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
               <p className="mb-3 text-11px font-bold uppercase tracking-widest text-white/68">
                 Variante
               </p>
 
-              <div>
-                <ColorSelector
-                  colors={colors.map((color) => ({
-                    name: color.name,
-                    value: color.value,
-                    colorHex: color.colorHex,
-                  }))}
-                  selectedColor={selectedColor}
-                  onSelect={onColorChange}
-                  showLabels
-                />
-              </div>
+              <ColorSelector
+                colors={colors.map((color) => ({
+                  name: color.name,
+                  value: color.value,
+                  colorHex: color.colorHex,
+                }))}
+                selectedColor={selectedColor}
+                onSelect={onColorChange}
+                showLabels
+              />
             </section>
           )}
         </div>

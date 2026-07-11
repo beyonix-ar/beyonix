@@ -123,11 +123,11 @@ export function ProductDetailsGallery({
   }, [safeIndex])
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden bg-[#090D12] px-3 pb-4 pt-3 sm:px-5 sm:pb-5 sm:pt-5 lg:h-full lg:px-6 lg:pb-6 lg:pt-6">
-      <div className="relative flex min-h-320px flex-1 items-center justify-center rounded-2xl border border-beyonix-blue-light/18 bg-[#0D1118] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_46px_rgba(0,0,0,0.28)] sm:min-h-440px sm:p-3 lg:min-h-0">
+    <div className="flex min-h-0 flex-col overflow-hidden bg-[#090D12] px-3 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4 md:h-full">
+      <div className="relative flex min-h-290px flex-1 items-center justify-center rounded-2xl border border-beyonix-blue-light/18 bg-[#0D1118] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_46px_rgba(0,0,0,0.28)] sm:min-h-380px sm:p-3 md:min-h-0">
         <div className="flex h-full min-h-0 w-full items-center justify-center">
           <div
-            className="relative flex aspect-square h-full max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.24),0_24px_60px_rgba(0,0,0,0.32)]"
+            className="relative flex aspect-square h-auto w-full max-w-[min(100%,660px)] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.24),0_24px_60px_rgba(0,0,0,0.32)] md:max-h-[660px]"
           >
             {isVideoSelected && playableVideo ? (
               <ProductVideoPlayer
@@ -149,7 +149,7 @@ export function ProductDetailsGallery({
                 onLoad={() => {
                   setIsLoaded(true)
                 }}
-                className={`h-full w-full object-contain p-2 transition-opacity duration-300 sm:p-3 ${
+                className={`h-full w-full object-contain p-1.5 transition-opacity duration-300 sm:p-2 ${
                   isLoaded
                     ? "opacity-100"
                     : "opacity-0"
@@ -163,7 +163,7 @@ export function ProductDetailsGallery({
                   type="button"
                   aria-label="Imagen anterior"
                   onClick={onPrev}
-                  className="absolute left-4 top-1/2 z-10 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-2 border-beyonix-sky/70 bg-[#07121E]/92 text-white shadow-[0_10px_26px_rgba(0,0,0,0.42),0_0_0_4px_rgba(0,0,0,0.22)] backdrop-blur-sm transition-all hover:border-white hover:bg-[#112A43] active:scale-95"
+                  className="absolute left-3 top-1/2 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/65 bg-[#07121E]/92 text-white shadow-[0_10px_26px_rgba(0,0,0,0.42)] backdrop-blur-sm transition-all hover:border-white hover:bg-[#112A43] active:scale-95"
                 >
                   <ChevronLeft className="size-5 stroke-[2.6]" />
                 </button>
@@ -172,7 +172,7 @@ export function ProductDetailsGallery({
                   type="button"
                   aria-label="Imagen siguiente"
                   onClick={onNext}
-                  className="absolute right-4 top-1/2 z-10 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-2 border-beyonix-sky/70 bg-[#07121E]/92 text-white shadow-[0_10px_26px_rgba(0,0,0,0.42),0_0_0_4px_rgba(0,0,0,0.22)] backdrop-blur-sm transition-all hover:border-white hover:bg-[#112A43] active:scale-95"
+                  className="absolute right-3 top-1/2 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/65 bg-[#07121E]/92 text-white shadow-[0_10px_26px_rgba(0,0,0,0.42)] backdrop-blur-sm transition-all hover:border-white hover:bg-[#112A43] active:scale-95"
                 >
                   <ChevronRight className="size-5 stroke-[2.6]" />
                 </button>
@@ -180,7 +180,7 @@ export function ProductDetailsGallery({
             )}
 
             <span
-              className={`absolute right-3 top-3 rounded-full border-2 px-4 py-2 text-13px font-black tracking-wide ${stockBadge.className}`}
+              className={`absolute right-3 top-3 rounded-full border px-3.5 py-1.5 text-13px font-black tracking-wide ${stockBadge.className}`}
             >
               {stockBadge.text}
             </span>
@@ -192,14 +192,14 @@ export function ProductDetailsGallery({
         )}
       </div>
 
-      <div className="flex h-36px shrink-0 items-center justify-center sm:h-42px">
+      <div className="flex h-30px shrink-0 items-center justify-center sm:h-34px">
         <span className="rounded-full border border-white/8 bg-white/4 px-3 py-1 text-12px font-bold tabular-nums tracking-widest text-white/78">
           {safeIndex + 1} / {mediaCount || 1}
         </span>
       </div>
 
       {visibleMedia.length > 0 && (
-        <div className="flex h-64px shrink-0 items-center justify-center sm:h-72px">
+        <div className="flex h-62px shrink-0 items-center justify-center sm:h-70px">
           <div className="flex items-center justify-center gap-2.5">
             {visibleMedia.map((media, index) => {
               const isVideo = media.type === "video"
@@ -302,7 +302,7 @@ function ProductMediaThumbnail({
       type="button"
       aria-label={label}
       onClick={() => onSelectImage(index)}
-      className={`group relative size-14 cursor-pointer overflow-hidden rounded-xl border transition-all duration-200 sm:size-16 ${
+      className={`group relative size-16 cursor-pointer overflow-hidden rounded-xl border transition-all duration-200 sm:size-[72px] ${
         isActive
           ? "scale-105 border-beyonix-sky shadow-[0_0_0_3px_rgba(30,140,255,0.16),0_10px_24px_rgba(0,0,0,0.35)]"
           : "border-white/14 hover:scale-105 hover:border-beyonix-blue-light/65"

@@ -1,5 +1,7 @@
 import type { ElementType, InputHTMLAttributes, ReactNode } from "react"
 
+import { cn } from "@/lib/utils"
+
 export function InputField({
   label,
   type,
@@ -11,6 +13,7 @@ export function InputField({
   error,
   maxLength,
   inputMode,
+  className,
 }: {
   label: string
   type: string
@@ -22,18 +25,21 @@ export function InputField({
   error?: string
   maxLength?: number
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"]
+  className?: string
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
+    <div className={cn("space-y-1", className)}>
+      <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
         {label}
       </label>
       <div
-        className={`relative flex items-center rounded-xl border bg-white/5 transition-colors focus-within:border-beyonix-blue-light focus-within:ring-2 focus-within:ring-beyonix-blue/40 ${
-          error ? "border-red-500/50" : "border-white/8 hover:border-white/14"
+        className={`relative flex h-11 items-center rounded-xl border bg-[var(--account-input)] transition-colors focus-within:border-[var(--account-border-strong)] focus-within:ring-3 focus-within:ring-[var(--account-focus-ring)] ${
+          error
+            ? "border-[var(--account-danger-border)]"
+            : "border-[var(--account-border)] hover:border-[var(--account-border-strong)]"
         }`}
       >
-        <Icon className="absolute left-3.5 size-4 text-white/40 pointer-events-none" />
+        <Icon className="pointer-events-none absolute left-3.5 size-4 text-[var(--account-text-muted)]" />
         <input
           type={type}
           value={value}
@@ -41,11 +47,11 @@ export function InputField({
           placeholder={placeholder}
           maxLength={maxLength}
           inputMode={inputMode}
-          className="w-full bg-transparent py-2.5 pl-10 pr-10 text-sm text-white placeholder:text-white/25 outline-none"
+          className="h-full w-full bg-transparent pl-10 pr-10 text-sm font-medium text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)]"
         />
         {rightElement && <div className="absolute right-3">{rightElement}</div>}
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-[var(--account-danger-text)]">{error}</p>}
     </div>
   )
 }
@@ -57,6 +63,7 @@ export function TextareaField({
   placeholder,
   icon: Icon,
   maxLength,
+  className,
 }: {
   label: string
   value: string
@@ -64,21 +71,22 @@ export function TextareaField({
   placeholder?: string
   icon: ElementType
   maxLength?: number
+  className?: string
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
+    <div className={cn("space-y-1", className)}>
+      <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
         {label}
       </label>
-      <div className="relative rounded-xl border border-white/8 bg-white/5 transition-colors hover:border-white/14 focus-within:border-beyonix-blue-light focus-within:ring-2 focus-within:ring-beyonix-blue/40">
-        <Icon className="pointer-events-none absolute left-3.5 top-3.5 size-4 text-white/40" />
+      <div className="relative rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] transition-colors hover:border-[var(--account-border-strong)] focus-within:border-[var(--account-border-strong)] focus-within:ring-3 focus-within:ring-[var(--account-focus-ring)]">
+        <Icon className="pointer-events-none absolute left-3.5 top-3.5 size-4 text-[var(--account-text-muted)]" />
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           maxLength={maxLength}
           rows={2}
-          className="min-h-20 w-full resize-none bg-transparent py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-white/25 outline-none"
+          className="min-h-16 w-full resize-none bg-transparent py-2.5 pl-10 pr-4 text-sm font-medium text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)]"
         />
       </div>
     </div>
@@ -90,22 +98,24 @@ export function ReadOnlyField({
   value,
   icon: Icon,
   help,
+  className,
 }: {
   label: string
   value: string
   icon: ElementType
   help?: string
+  className?: string
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
+    <div className={cn("space-y-1", className)}>
+      <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
         {label}
       </label>
-      <div className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/1 px-3.5 py-3">
-        <Icon className="size-4 shrink-0 text-white/20" />
-        <span className="truncate text-sm text-white/50">{value}</span>
+      <div className="flex h-11 items-center gap-2 rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5">
+        <Icon className="size-4 shrink-0 text-[var(--account-text-muted)]" />
+        <span className="truncate text-sm font-medium text-[var(--account-text-secondary)]">{value}</span>
       </div>
-      {help && <p className="text-11px text-white/25">{help}</p>}
+      {help && <p className="text-11px text-[var(--account-text-muted)]">{help}</p>}
     </div>
   )
 }

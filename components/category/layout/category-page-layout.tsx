@@ -166,7 +166,7 @@ export function CategoryPageLayout({
                     key={label}
                     className="beyonix-benefit-item flex items-center gap-3 rounded-lg px-3 py-3 text-left"
                   >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/35 bg-beyonix-blue/55 text-beyonix-sky shadow-[0_0_18px_rgba(30,140,255,0.18)]">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/35 bg-beyonix-blue/55 text-white shadow-[0_0_18px_rgba(30,140,255,0.18)]">
                       <Icon className="size-4" />
                     </span>
                     <span className="text-13px font-semibold text-white/86">
