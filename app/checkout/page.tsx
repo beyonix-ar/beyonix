@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  type ReactNode,
   useEffect,
   useRef,
   useState,
@@ -13,6 +14,7 @@ import {
 } from "next/navigation"
 
 import {
+  AlertCircle,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -21,6 +23,7 @@ import {
   Home,
   Instagram,
   Landmark,
+  Loader2,
   Mail,
   MapPin,
   Minus,
@@ -121,6 +124,14 @@ function formatPrice(
   ).format(safePrice)
 }
 
+function normalizeShippingOptionPrice(price: number, fallbackCost: number) {
+  const quotedPrice = Number(price)
+
+  return Number.isFinite(quotedPrice) && quotedPrice > 0
+    ? quotedPrice
+    : fallbackCost
+}
+
 function getStockIndicatorClassName(status: StockStatus) {
   if (status === "low") {
     return "text-amber-200/75"
@@ -134,8 +145,7 @@ function getStockIndicatorClassName(status: StockStatus) {
 }
 
 function getStockIndicatorSymbol(status: StockStatus) {
-  if (status === "available") return "✔️"
-  if (status === "low") return "🔥"
+  if (status === "available") return "✓"
 
   return ""
 }
@@ -156,7 +166,68 @@ const paymentMethods = [
 ]
 
 const checkoutInputClassName =
-  "beyonix-checkout-input h-8 rounded-xl border-[#30363D] bg-[#1F242B] font-heading uppercase text-white placeholder:normal-case placeholder:text-white/40 hover:border-[#46505c] focus-visible:border-[#112A43] focus-visible:ring-1 focus-visible:ring-[#112A43]/70"
+  "beyonix-checkout-input h-10 rounded-lg border-beyonix-blue-light/18 bg-[#10151C] font-heading text-sm font-semibold text-white placeholder:text-white/36 hover:border-beyonix-blue-light/35 focus-visible:border-beyonix-blue-light/65 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/18"
+
+const checkoutPanelClassName =
+  "checkout-panel relative overflow-hidden rounded-xl border border-beyonix-blue-light/18 bg-[#0B1118] shadow-[0_24px_70px_rgba(0,0,0,0.34)]"
+
+const checkoutFormPanelClassName =
+  "checkout-panel checkout-form-panel relative overflow-hidden rounded-xl border border-[#112A43] bg-[#070C12] shadow-[0_24px_70px_#000000]"
+
+const checkoutSectionHeadingClassName =
+  "border-l-4 border-beyonix-blue py-0.5 pl-3 text-lg font-bold text-white"
+
+const checkoutDividerClassName =
+  "h-px flex-1 bg-beyonix-blue-light/14"
+
+const checkoutSectionKickerClassName =
+  "shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/46"
+
+const checkoutOptionClassName =
+  "checkout-option flex w-full cursor-pointer rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] text-left transition-all hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/38 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/22"
+
+const checkoutOptionSelectedClassName =
+  "checkout-option-selected border-beyonix-blue-light/70 bg-[#112A43] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_0_0_1px_rgba(79,131,173,0.18)]"
+
+const checkoutPrimaryButtonClassName =
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)]"
+
+const checkoutSecondaryButtonClassName =
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/24 bg-[#10151C] font-bold text-white/78 transition-all duration-200 hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/42 hover:text-white"
+
+const checkoutDisabledButtonClassName =
+  "cursor-not-allowed border-white/10 bg-[#111820] text-white/45 shadow-none hover:border-white/10 hover:bg-[#111820] hover:text-white/45"
+
+function CheckoutNotice({
+  children,
+  tone = "info",
+  className,
+}: {
+  children: ReactNode
+  tone?: "info" | "error" | "warning"
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "checkout-note flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-sm leading-5",
+        tone === "error"
+          ? "border-red-400/24 bg-red-500/10 text-red-200"
+          : tone === "warning"
+            ? "border-amber-300/22 bg-amber-300/[0.055] text-white/82"
+            : "border-beyonix-blue-light/16 bg-[#10151C] text-white/68",
+        className,
+      )}
+    >
+      {tone === "error" ? (
+        <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-300" />
+      ) : tone === "warning" ? (
+        <Clock3 className="mt-0.5 size-4 shrink-0 text-amber-300" />
+      ) : null}
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
 
 const CHECKOUT_EMAIL = "beyonix.ar@gmail.com"
 const CHECKOUT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CHECKOUT_EMAIL)}&su=${encodeURIComponent("Consulta sobre mi compra en BEYONIX")}`
@@ -182,7 +253,7 @@ interface ShippingOption {
   type: ShippingType
   label: string
   price: number
-  provider: "andreani" | "manual"
+  provider: "andreani"
 }
 
 interface CheckoutStoreBenefit {
@@ -211,18 +282,6 @@ const checkoutSteps = [
 
 function hasLetters(value: string) {
   return /\p{L}/u.test(value)
-}
-
-function normalizePlaceName(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-}
-
-function isRosarioLocality(value: string) {
-  return normalizePlaceName(value) === "rosario"
 }
 
 type RequiredCheckoutField =
@@ -531,6 +590,10 @@ export default function CheckoutPage() {
   ])
 
   const baseTotals = calculateCartTotals(items)
+  const totalCartUnits = items.reduce(
+    (total, item) => total + item.quantity,
+    0,
+  )
   const packageInfo = calculateCartShippingPackage(items)
   const manualShippingCost = getShippingCost(baseTotals.productsTotal)
   const selectedShippingOption =
@@ -544,7 +607,7 @@ export default function CheckoutPage() {
   const shippingCostReal =
     selectedShippingOption?.price ?? 0
   const freeShippingApplied =
-    manualShippingCost === 0 || selectedShippingOption?.price === 0
+    manualShippingCost === 0
   const shippingCostCharged =
     selectedShippingOption &&
     !freeShippingApplied
@@ -607,20 +670,6 @@ export default function CheckoutPage() {
       return
     }
 
-    if (isRosarioLocality(localidad)) {
-      setShippingOptions([
-        {
-          type: "domicilio",
-          label: "Envío sin costo Rosario",
-          price: 0,
-          provider: "manual",
-        },
-      ])
-      setSelectedShippingType("domicilio")
-      setShippingMessage("Entrega local sin costo dentro de Rosario.")
-      return
-    }
-
     let cancelled = false
 
     fetch("/api/andreani/cotizar", {
@@ -644,7 +693,10 @@ export default function CheckoutPage() {
             data.options.map((option: ShippingOption) => ({
               type: option.type,
               label: option.label,
-              price: Number(option.price) || 0,
+              price: normalizeShippingOptionPrice(
+                option.price,
+                manualShippingCost,
+              ),
               provider: "andreani",
             }))
           )
@@ -965,24 +1017,26 @@ export default function CheckoutPage() {
   if (items.length === 0) {
     return (
       <>
-        <main className="bg-background">
-          <div className="container mx-auto px-4 py-16 lg:py-24">
-            <div className="max-w-md mx-auto text-center">
-              <h1 className="text-2xl font-bold text-foreground mb-4">
-                Tu carrito está vacío
-              </h1>
+        <main className="min-h-screen bg-[#05070A] px-4 py-16 font-heading text-white lg:py-24">
+          <div className="mx-auto max-w-md rounded-xl border border-beyonix-blue-light/18 bg-[#0B1118] p-6 text-center shadow-2xl shadow-black/45">
+            <h1 className="mb-3 text-2xl font-bold text-white">
+              Tu carrito está vacío
+            </h1>
+            <p className="mb-5 text-sm leading-6 text-white/58">
+              Agregá productos para continuar con la compra.
+            </p>
 
-              <Button
-                type="button"
-                aria-label="Volver a la tienda"
-                title="Volver a la tienda"
-                onClick={() =>
-                  router.push("/")
-                }
-              >
-                Volver a la tienda
-              </Button>
-            </div>
+            <Button
+              type="button"
+              aria-label="Volver a la tienda"
+              title="Volver a la tienda"
+              onClick={() =>
+                router.push("/")
+              }
+              className={cn("h-10 px-5 text-sm", checkoutPrimaryButtonClassName)}
+            >
+              Volver a la tienda
+            </Button>
           </div>
         </main>
         <Footer />
@@ -992,8 +1046,8 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <main className="bg-[#05070A] font-heading">
-      <header className="border-b border-border bg-black sticky top-0 z-50">
+      <main className="min-h-screen bg-[#05070A] font-heading text-white">
+      <header className="sticky top-0 z-50 border-b border-beyonix-blue-light/14 bg-[#05070A]/95 backdrop-blur">
         <div className="container mx-auto px-4 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
             <button
@@ -1003,7 +1057,7 @@ export default function CheckoutPage() {
               onClick={() =>
                 router.push("/")
               }
-              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-beyonix-blue-light/25 bg-[#111820] px-3 text-sm font-semibold text-white/78 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43] hover:text-white"
+              className={cn("h-9 px-3 text-sm", checkoutSecondaryButtonClassName)}
             >
               <ArrowLeft className="size-4" />
 
@@ -1149,21 +1203,21 @@ export default function CheckoutPage() {
                 <div
                   key={step.id}
                   className={cn(
-                    "flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
+                    "flex min-h-12 min-w-0 items-center gap-2 rounded-lg border px-3 py-2 text-left transition-all",
                     complete
-                      ? "border-emerald-500/35 bg-emerald-950/20 text-white/88"
+                      ? "border-beyonix-blue-light/38 bg-[#112A43]/55 text-white/88"
                       : active
-                        ? "border-beyonix-blue-light bg-beyonix-blue/45 text-white"
-                        : "border-white/8 bg-[#121212] text-white/40"
+                        ? "border-beyonix-blue-light/70 bg-[#112A43] text-white shadow-[0_0_18px_rgba(47,111,163,0.16)]"
+                        : "border-beyonix-blue-light/12 bg-[#10151C] text-white/44"
                   )}
                 >
                   <span
                     className={cn(
                       "flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
                       complete
-                        ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-300"
+                        ? "border-beyonix-blue-light/36 bg-beyonix-blue/40 text-beyonix-sky"
                         : active
-                          ? "border-beyonix-sky/35 bg-beyonix-blue text-beyonix-sky"
+                          ? "border-beyonix-sky/35 bg-[#0B1118] text-beyonix-sky"
                           : "border-white/10 bg-black/35 text-white/45"
                     )}
                   >
@@ -1186,20 +1240,20 @@ export default function CheckoutPage() {
             onSubmit={handleSubmit}
             className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(22rem,0.85fr)] lg:gap-4 2xl:gap-5"
           >
-            <section className="checkout-panel flex min-h-[clamp(440px,52vh,560px)] flex-col rounded-2xl border px-4 pb-3 pt-4 shadow-xl shadow-black/25 sm:px-5 sm:pb-4 sm:pt-5">
+            <section className={cn(checkoutFormPanelClassName, "flex min-h-[clamp(440px,52vh,560px)] flex-col px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5")}>
               {currentStep === 1 && (
-                <div className="animate-in fade-in slide-in-from-right-2 space-y-3 rounded-2xl border border-[#30363D]/80 bg-[#15191F] px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] duration-300 sm:px-5 sm:py-3.5 [&_label]:text-[13px]">
-                  <h2 className="border-l-4 border-beyonix-blue py-0.5 pl-3 text-xl font-bold text-foreground">
+                <div className="animate-in fade-in slide-in-from-right-2 space-y-3 duration-300 [&_label]:text-[13px]">
+                  <h2 className={checkoutSectionHeadingClassName}>
                     Datos de quien recibe
                   </h2>
 
                   <div className="space-y-3">
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        <p className="shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/45">
+                        <p className={checkoutSectionKickerClassName}>
                           Datos personales
                         </p>
-                        <span className="h-px flex-1 bg-[#30363D]" />
+                        <span className={checkoutDividerClassName} />
                       </div>
 
                       <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
@@ -1229,10 +1283,10 @@ export default function CheckoutPage() {
 
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        <p className="shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/45">
+                        <p className={checkoutSectionKickerClassName}>
                           Dirección de entrega
                         </p>
-                        <span className="h-px flex-1 bg-[#30363D]" />
+                        <span className={checkoutDividerClassName} />
                       </div>
 
                       <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
@@ -1302,7 +1356,7 @@ export default function CheckoutPage() {
 
               {currentStep === 2 && (
                 <div className="animate-in fade-in slide-in-from-right-2 space-y-4 duration-300">
-                  <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
+                  <h2 className={checkoutSectionHeadingClassName}>
                     Método de envío
                   </h2>
 
@@ -1326,10 +1380,11 @@ export default function CheckoutPage() {
                             setShippingSelectionMissing(false)
                           }}
                           className={cn(
-                            "checkout-option flex w-full cursor-pointer items-center gap-4 rounded-xl border px-4 py-3.5 text-left transition-all hover:border-beyonix-blue-light/55",
+                            checkoutOptionClassName,
+                            "items-center gap-4 px-4 py-3.5",
                             selected
-                              ? "checkout-option-selected border-beyonix-blue-light/70 bg-[#112033]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-                              : "border-[#30363D] bg-[#15191F]/80"
+                              ? checkoutOptionSelectedClassName
+                              : "border-beyonix-blue-light/16 bg-[#10151C]"
                           )}
                         >
                           <span className={cn(
@@ -1345,9 +1400,7 @@ export default function CheckoutPage() {
                               {option.label}
                             </span>
                             <span className="mt-0.5 block text-xs text-white/42">
-                              {option.provider === "manual"
-                                ? "Entrega local BEYONIX"
-                                : "Cotización Andreani"}
+                              Cotización Andreani
                             </span>
                           </span>
                           <span className="flex shrink-0 items-center gap-2 text-right">
@@ -1368,16 +1421,16 @@ export default function CheckoutPage() {
                   </div>
 
                   {shippingMessage && (
-                    <div className="checkout-note rounded-xl border px-4 py-3 text-sm text-white/65">
+                    <CheckoutNotice>
                       {shippingMessage}
-                    </div>
+                    </CheckoutNotice>
                   )}
                 </div>
               )}
 
               {currentStep === 3 && (
                 <div className="animate-in fade-in slide-in-from-right-2 space-y-4 duration-300">
-                  <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
+                  <h2 className={checkoutSectionHeadingClassName}>
                     Método de pago
                   </h2>
 
@@ -1390,9 +1443,10 @@ export default function CheckoutPage() {
                           setSelectedPayment(method.id)
                         }
                         className={cn(
-                          "checkout-option flex w-full cursor-pointer items-center gap-3 rounded-xl border p-4 text-left transition-all hover:border-beyonix-blue-light/55",
+                          checkoutOptionClassName,
+                          "items-center gap-3 p-4",
                           selectedPayment === method.id &&
-                            "checkout-option-selected"
+                            checkoutOptionSelectedClassName
                         )}
                       >
                         <span className={cn(
@@ -1417,7 +1471,7 @@ export default function CheckoutPage() {
 
                   {isTransferPayment && (
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="checkout-note rounded-xl border p-4">
+                      <div className="checkout-note rounded-lg border p-4">
                         <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
                           Datos de transferencia
                         </p>
@@ -1437,7 +1491,7 @@ export default function CheckoutPage() {
                         </p>
                       </div>
 
-                      <div className="checkout-note flex items-start gap-3 rounded-xl border p-4">
+                      <div className="checkout-note flex items-start gap-3 rounded-lg border p-4">
                         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
                           <Clock3 className="size-5" />
                         </span>
@@ -1458,7 +1512,7 @@ export default function CheckoutPage() {
                     </div>
                   )}
 
-                  <div className="rounded-xl border border-white/8 bg-[#141414] p-4">
+                  <div className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
                       ¿Necesitás ayuda con tu pago?
                     </p>
@@ -1467,7 +1521,7 @@ export default function CheckoutPage() {
                         href="https://instagram.com/beyonix.ar"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-[#1b1b1b] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
+                        className="group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
                           <Instagram className="size-4" />
@@ -1482,7 +1536,7 @@ export default function CheckoutPage() {
                         href={CHECKOUT_EMAIL_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-[#1b1b1b] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
+                        className="group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
                           <Mail className="size-4" />
@@ -1499,7 +1553,7 @@ export default function CheckoutPage() {
 
               <div
                 className={cn(
-                  "mt-auto flex items-center gap-3 border-t border-white/8 pt-3",
+                  "mt-auto flex items-center gap-3 pt-3",
                   currentStep === 1 ? "justify-end" : "justify-between",
                 )}
               >
@@ -1514,7 +1568,7 @@ export default function CheckoutPage() {
                         ) as CheckoutStep
                       )
                     }
-                    className="h-10 min-w-110px cursor-pointer rounded-xl border border-beyonix-blue-light/35 bg-[#112033] px-4 text-sm font-semibold text-white/82 transition-colors hover:border-beyonix-blue-light/65 hover:bg-[#14304A] hover:text-white"
+                    className={cn("h-10 min-w-110px px-4 text-sm", checkoutSecondaryButtonClassName)}
                   >
                     Anterior
                   </button>
@@ -1525,10 +1579,10 @@ export default function CheckoutPage() {
                     type="button"
                     onClick={goToNextStep}
                     className={cn(
-                      "h-10 min-w-140px cursor-pointer rounded-xl px-5 text-sm font-semibold text-white transition-colors",
+                      "h-10 min-w-140px px-5 text-sm",
                       isCurrentStepValid
-                        ? "bg-[#16A34A] hover:bg-[#15803D]"
-                        : "bg-neutral-700/80 text-white/45 hover:bg-neutral-700/80"
+                        ? checkoutPrimaryButtonClassName
+                        : cn(checkoutSecondaryButtonClassName, checkoutDisabledButtonClassName)
                     )}
                   >
                     Continuar
@@ -1537,13 +1591,13 @@ export default function CheckoutPage() {
                   <Button
                     type="submit"
                     className={cn(
-                      "h-10 min-w-180px",
+                      "h-10 min-w-180px px-5 text-sm",
                       isFormValid &&
                       !isProcessing &&
                       !stockError &&
                       isSelectedPaymentValid
-                        ? "bg-[#16A34A] text-white hover:bg-[#15803D]"
-                        : "cursor-not-allowed bg-neutral-700 text-white/55 hover:bg-neutral-700"
+                        ? checkoutPrimaryButtonClassName
+                        : cn(checkoutSecondaryButtonClassName, checkoutDisabledButtonClassName)
                     )}
                     disabled={
                       !isFormValid ||
@@ -1552,26 +1606,31 @@ export default function CheckoutPage() {
                       !isSelectedPaymentValid
                     }
                   >
-                    {isProcessing
-                      ? "Procesando..."
-                      : "Pagar"}
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Procesando...
+                      </>
+                    ) : (
+                      "Pagar"
+                    )}
                   </Button>
                 )}
               </div>
             </section>
 
-            <aside className="checkout-panel relative h-fit self-start overflow-hidden rounded-2xl border px-4 py-3 shadow-2xl shadow-black/25 lg:sticky lg:top-24">
+            <aside className={cn(checkoutPanelClassName, "h-fit self-start px-4 py-3 lg:sticky lg:top-24")}>
               <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-beyonix-blue-light/75 to-transparent" />
               <div className="flex items-center justify-between gap-3">
-                <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-semibold text-foreground">
+                <h2 className={checkoutSectionHeadingClassName}>
                   Resumen del pedido
                 </h2>
-                <span className="rounded-full border border-beyonix-blue-light/30 bg-transparent px-2.5 py-1 text-10px font-semibold uppercase tracking-widest text-white/60">
-                  {items.reduce((total, item) => total + item.quantity, 0)} unidades
+                <span className="rounded-full border border-beyonix-blue-light/25 bg-[#10151C] px-2.5 py-1 text-10px font-semibold uppercase tracking-widest text-white/60">
+                  {totalCartUnits} {totalCartUnits === 1 ? "UNIDAD" : "UNIDADES"}
                 </span>
               </div>
 
-              <div className="my-2.5 rounded-xl border border-[#30363D] bg-[#15191F] px-3 py-2 shadow-inner shadow-black/20">
+              <div className="my-2.5 rounded-lg border border-beyonix-blue-light/14 bg-[#10151C] px-3 py-2 shadow-inner shadow-black/20">
                 <FreeShippingBar subtotal={baseTotals.productsTotal} />
               </div>
 
@@ -1587,7 +1646,7 @@ export default function CheckoutPage() {
                   return (
                     <div
                       key={`${item.product.id}-${item.variantId ?? item.color}`}
-                      className="checkout-order-item group grid min-h-[92px] grid-cols-[78px_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-xl border border-[#30363D] bg-[#15191F] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
+                      className="checkout-order-item group grid min-h-[92px] grid-cols-[78px_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-lg border border-beyonix-blue-light/14 bg-[#10151C] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
                     >
                     <div className="h-full min-h-[80px] overflow-hidden rounded-lg border border-white/8 bg-beyonix-surface-3">
                       <TransparencyAwareImage
@@ -1637,9 +1696,11 @@ export default function CheckoutPage() {
                                   getStockIndicatorClassName(stockStatus),
                                 )}
                               >
-                                <span aria-hidden="true" className="shrink-0">
-                                  {stockSymbol}
-                                </span>
+                                {stockSymbol && (
+                                  <span aria-hidden="true" className="shrink-0">
+                                    {stockSymbol}
+                                  </span>
+                                )}
                                 <span className="truncate">
                                   {getStockStatusLabel(stockStatus)}
                                 </span>
@@ -1705,37 +1766,40 @@ export default function CheckoutPage() {
               </div>
 
               {storeBenefits.length > 0 && (
-                <div className="mt-2 rounded-xl border border-beyonix-blue-light/25 bg-[#0B1624] px-3 py-2.5">
+                <div className="mt-2 rounded-lg border border-beyonix-blue-light/18 bg-[#10151C] px-3 py-2.5">
                   <label
                     htmlFor="store-benefit"
                     className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/62"
                   >
                     Beneficio disponible
                   </label>
-                  <select
-                    id="store-benefit"
-                    value={selectedStoreBenefitId}
-                    onChange={(event) =>
-                      setSelectedStoreBenefitId(event.target.value)
-                    }
-                    className="h-9 w-full rounded-lg border border-beyonix-blue-light/30 bg-[#07111E] px-3 text-xs font-bold text-white outline-none focus:border-beyonix-blue-light"
-                  >
-                    {storeBenefits.map((benefit) => (
-                      <option key={benefit.id} value={benefit.id}>
-                        {getStoreBenefitLabel(benefit.benefit_type)}{" "}
-                        {benefit.percent}% · {benefit.code}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      id="store-benefit"
+                      value={selectedStoreBenefitId}
+                      onChange={(event) =>
+                        setSelectedStoreBenefitId(event.target.value)
+                      }
+                      className="h-10 w-full appearance-none rounded-lg border border-beyonix-blue-light/24 bg-[#0B1118] px-3 pr-9 text-xs font-bold text-white outline-none transition-colors focus:border-beyonix-blue-light/70 focus:ring-2 focus:ring-beyonix-blue-light/18"
+                    >
+                      {storeBenefits.map((benefit) => (
+                        <option key={benefit.id} value={benefit.id}>
+                          {getStoreBenefitLabel(benefit.benefit_type)}{" "}
+                          {benefit.percent}% · {benefit.code}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-white/45" />
+                  </div>
                   <p className="mt-1.5 text-11px font-semibold leading-5 text-white/56">
                     Se aplica una sola vez y queda consumido al confirmar la compra.
                   </p>
                 </div>
               )}
 
-              <Separator className="my-2 bg-[#242424]" />
+              <Separator className="my-2 bg-beyonix-blue-light/12" />
 
-              <div className="space-y-1 rounded-xl border border-[#242a31] bg-[#090C10] px-3 py-2.5 text-sm shadow-inner shadow-black/20">
+              <div className="space-y-1 rounded-lg border border-beyonix-blue-light/14 bg-[#0B1118] px-3 py-2.5 text-sm shadow-inner shadow-black/20">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatPrice(totals.subtotal)}</span>
@@ -1785,7 +1849,7 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
-                <Separator className="bg-[#242424]" />
+                <Separator className="bg-beyonix-blue-light/12" />
                 <div className="flex items-end justify-between pt-0.5 font-heading text-white">
                   <span className="font-bold">Total</span>
                   <span className="text-xl font-bold">
@@ -1795,14 +1859,14 @@ export default function CheckoutPage() {
               </div>
 
               {stockError && (
-                <div className="mt-4 rounded-xl border border-red-500/20 bg-red-950 px-4 py-3 text-sm text-red-300">
+                <CheckoutNotice tone="error" className="mt-4">
                   {stockError}
-                </div>
+                </CheckoutNotice>
               )}
               {checkoutError && (
-                <div className="mt-4 rounded-xl border border-red-500/20 bg-red-950 px-4 py-3 text-sm text-red-300">
+                <CheckoutNotice tone="error" className="mt-4">
                   {checkoutError}
-                </div>
+                </CheckoutNotice>
               )}
 
               <p className="mt-2.5 text-center text-xs text-muted-foreground">

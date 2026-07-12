@@ -5,6 +5,7 @@ import type {
   SupabaseProducto,
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
+import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
 
 export interface ProductoPayload {
   nombre: string
@@ -128,13 +129,13 @@ export async function getProductos() {
       return acc
     }, {})
 
-  return productos.map((producto) => ({
+  return attachProductReviewSummaries(productos.map((producto) => ({
     ...producto,
     producto_variantes:
       variantesByProducto[
         producto.id
       ] || [],
-  }))
+  })))
 }
 
 export async function getProductoById(
@@ -150,7 +151,11 @@ export async function getProductoById(
     throw error
   }
 
-  return data as SupabaseProducto
+  const [product] = await attachProductReviewSummaries([
+    data as SupabaseProducto,
+  ])
+
+  return product
 }
 
 export async function getProductoBySlug(
@@ -166,7 +171,11 @@ export async function getProductoBySlug(
     throw error
   }
 
-  return data as SupabaseProducto
+  const [product] = await attachProductReviewSummaries([
+    data as SupabaseProducto,
+  ])
+
+  return product
 }
 
 export async function getFeaturedProductos() {
@@ -183,7 +192,7 @@ export async function getFeaturedProductos() {
     throw error
   }
 
-  return (data || []) as SupabaseProducto[]
+  return attachProductReviewSummaries((data || []) as SupabaseProducto[])
 }
 
 // ─────────────────────────────────────────────────────────────

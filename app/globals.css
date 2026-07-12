@@ -689,6 +689,8 @@
 
 .beyonix-checkout-container {
   margin-inline: auto;
+  position: relative;
+  z-index: 1;
   width: min(calc(100% - (var(--beyonix-page-gutter) * 2)), var(--beyonix-checkout-content-max));
 }
 
@@ -1436,10 +1438,10 @@
 }
 
 main[class*="bg-"],
-section[class*="bg-"],
+section[class*="bg-"]:not(.checkout-form-panel),
 footer[class*="bg-"],
 body > div.relative.z-10 main,
-body > div.relative.z-10 section,
+body > div.relative.z-10 section:not(.checkout-form-panel),
 body > div.relative.z-10 footer,
 body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   background-color: transparent !important;
@@ -1522,8 +1524,8 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 
 .beyonix-checkout-input,
 .beyonix-checkout-input:focus {
-  background: #1F242B !important;
-  background-color: #1F242B !important;
+  background: #10151C !important;
+  background-color: #10151C !important;
   background-image: none !important;
   color: #ffffff !important;
   caret-color: #ffffff !important;
@@ -1537,30 +1539,50 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 .beyonix-checkout-input:-webkit-autofill:hover,
 .beyonix-checkout-input:-webkit-autofill:focus,
 .beyonix-checkout-input:-webkit-autofill:active {
-  background: #1F242B !important;
-  background-color: #1F242B !important;
+  background: #10151C !important;
+  background-color: #10151C !important;
   background-image: none !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
   caret-color: #ffffff !important;
-  box-shadow: 0 0 0 1000px #1F242B inset !important;
-  -webkit-box-shadow: 0 0 0 1000px #1F242B inset !important;
+  box-shadow: 0 0 0 1000px #10151C inset !important;
+  -webkit-box-shadow: 0 0 0 1000px #10151C inset !important;
   transition: background-color 9999s ease-out 0s !important;
 }
 
 .checkout-panel {
-  background: #0D1117 !important;
-  background-color: #0D1117 !important;
-  border-color: #30363D !important;
+  background: #0B1118 !important;
+  background-color: #0B1118 !important;
+  border-color: rgba(110, 168, 255, 0.18) !important;
   background-image: none !important;
+}
+
+body > div.relative.z-10 section.checkout-panel.checkout-form-panel,
+section.checkout-panel.checkout-form-panel {
+  background: #070c12 !important;
+  background-color: #070c12 !important;
+  background-image: none !important;
+  border-color: #112A43 !important;
+  isolation: isolate;
   opacity: 1 !important;
+  overflow: hidden;
+  position: relative;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  z-index: 2;
+}
+
+body > div.relative.z-10 section.checkout-panel.checkout-form-panel::before,
+body > div.relative.z-10 section.checkout-panel.checkout-form-panel::after,
+section.checkout-panel.checkout-form-panel::before,
+section.checkout-panel.checkout-form-panel::after {
+  background-image: none !important;
+  content: none !important;
 }
 
 .beyonix-checkout-input {
-  min-height: 2rem;
-  padding-block: 0.25rem;
+  min-height: 2.5rem;
+  padding-block: 0.5rem;
   padding-inline: 0.75rem;
 }
 
@@ -1570,7 +1592,7 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 }
 
 .checkout-panel button[aria-label="Seleccionar provincia"] {
-  height: 2rem;
+  height: 2.5rem;
   border-radius: 0.5rem;
   padding-inline: 0.75rem;
 }
@@ -1585,18 +1607,18 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 
 .checkout-subpanel,
 .checkout-note {
-  background-color: #181818;
-  border-color: rgba(255, 255, 255, 0.1);
+  background-color: #10151C;
+  border-color: rgba(110, 168, 255, 0.16);
 }
 
 .checkout-option,
 .checkout-order-item {
-  background-color: #15191F;
-  border-color: #30363D;
+  background-color: #10151C;
+  border-color: rgba(110, 168, 255, 0.14);
 }
 
 .checkout-option-selected {
-  background-color: #14283b;
+  background-color: #112A43;
   border-color: #4f83ad;
   box-shadow: 0 0 0 1px rgba(79, 131, 173, 0.2);
 }

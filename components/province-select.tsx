@@ -139,10 +139,10 @@ export function ProvinceSelect({
         onKeyDown={handleTriggerKeyDown}
         className={`flex w-full cursor-pointer items-center justify-between gap-3 border text-left text-sm transition-all focus-visible:outline-none ${
           isCheckoutAppearance
-            ? `h-9 rounded-xl bg-[#1F242B] px-3 font-heading ${
+            ? `h-10 rounded-lg bg-[#10151C] px-3 font-heading ${
                 open
-                  ? "border-[rgba(191,228,255,0.42)] text-[#D7ECFF] shadow-[0_0_18px_rgba(96,165,250,0.18)]"
-                  : "border-[rgba(148,197,255,0.18)] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF]"
+                  ? "border-[rgba(191,228,255,0.42)] text-[#D7ECFF] shadow-[0_0_18px_rgba(96,165,250,0.14)]"
+                  : "border-[rgba(148,197,255,0.18)] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.35)] hover:text-[#D7ECFF]"
               }`
             : `${compact ? "h-10 rounded-lg px-3" : "h-11 rounded-xl px-4"} bg-[var(--account-input)] font-heading focus-visible:border-[var(--account-border-strong)] focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)] ${
                 open
@@ -165,7 +165,7 @@ export function ProvinceSelect({
           aria-label="Provincias"
           className={`absolute left-0 z-50 w-full overflow-hidden border p-1 shadow-2xl shadow-black/70 ${
             isCheckoutAppearance
-              ? "top-[38px] rounded-xl border-[rgba(148,197,255,0.18)] bg-[#080D14] font-heading"
+              ? "top-[42px] rounded-lg border-[rgba(148,197,255,0.18)] bg-[#080D14] font-heading"
               : `${compact ? "top-11" : "top-12"} rounded-xl border-[var(--account-border)] bg-[var(--account-surface)] font-heading`
           }`}
         >

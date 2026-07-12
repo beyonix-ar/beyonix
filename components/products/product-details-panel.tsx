@@ -16,6 +16,7 @@ import type { SupabaseProducto } from "@/lib/supabase/types"
 import { ColorSelector } from "./color-selector"
 import { ProductDescription } from "./product-description"
 import { ProductPurchaseBox } from "./product-purchase-box"
+import { ProductRatingSummary } from "./product-rating-summary"
 import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
@@ -107,6 +108,14 @@ export function ProductDetailsPanel({
           <h2 className="text-[28px] font-bold leading-tight text-white md:text-[34px]">
             {product.nombre}
           </h2>
+
+          <ProductRatingSummary
+            averageRating={product.average_rating}
+            reviewsCount={product.reviews_count}
+            className="mt-3 text-sm"
+            starClassName="size-4"
+            countClassName="text-white/55"
+          />
         </div>
 
         <div className="h-px bg-beyonix-blue-light/16" />

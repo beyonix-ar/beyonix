@@ -11,7 +11,6 @@ import type {
 import {
   ArrowRight,
   Heart,
-  Star,
 } from "lucide-react"
 
 import { useCart } from "@/context/cart-context"
@@ -21,6 +20,7 @@ import { supabase } from "@/lib/supabase/client"
 import { ProductCardImage } from "./product-card-image"
 
 import { ProductCardPricing } from "./product-card-pricing"
+import { ProductRatingSummary } from "@/components/products/product-rating-summary"
 import {
   getDefaultVariantOption,
 } from "@/lib/products/product-variants"
@@ -98,13 +98,6 @@ export default function SharedProductCard({
       : null
   const installmentsLabel =
     getInstallmentsLabel(product)
-  const ratingSeed = String(product.id)
-    .split("")
-    .reduce(
-      (total, character) => total + character.charCodeAt(0),
-      0
-    )
-  const ratingCount = 18 + (ratingSeed % 37)
 
   useEffect(() => {
     let active = true
@@ -283,15 +276,13 @@ export default function SharedProductCard({
           </p>
 
           {showRating && (
-            <div className="flex shrink-0 items-center gap-1 text-10px text-yellow-400">
-              {[0, 1, 2, 3, 4].map((item) => (
-                <Star
-                  key={item}
-                  className="size-3 fill-current"
-                />
-              ))}
-              <span className="ml-0.5 text-white/48">({ratingCount})</span>
-            </div>
+            <ProductRatingSummary
+              averageRating={product.average_rating}
+              reviewsCount={product.reviews_count}
+              className="text-10px"
+              starClassName="size-3"
+              countClassName="text-white/48"
+            />
           )}
         </div>
 

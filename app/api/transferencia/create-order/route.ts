@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 
+import { normalizeCheckoutShipping } from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import {
@@ -11,7 +12,7 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-import { getProductDiscount, getShippingCost } from "@/lib/store-config"
+import { getProductDiscount } from "@/lib/store-config"
 import {
   calculateStoreBenefitDiscount,
   findActiveStoreBenefit,
@@ -43,7 +44,6 @@ interface CheckoutPayload {
     type?: "sucursal" | "domicilio"
     costReal?: number
     costCharged?: number
-    freeShippingApplied?: boolean
   }
 }
 
@@ -98,47 +98,11 @@ function normalizeCustomer(customer: CheckoutPayload["customer"]) {
   }
 }
 
-function normalizePlaceName(value?: string | null) {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-}
-
-function isRosarioCustomer(customer: CheckoutPayload["customer"]) {
-  return normalizePlaceName(customer?.localidad) === "rosario"
-}
-
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
   productsTotal: number,
-  customer: CheckoutPayload["customer"]
 ) {
-  if (isRosarioCustomer(customer)) {
-    return {
-      provider: "manual",
-      type: "domicilio" as const,
-      costReal: 0,
-      costCharged: 0,
-      freeShippingApplied: true,
-    }
-  }
-
-  const realCost = Number(shipping?.costReal)
-  const fallbackCost = getShippingCost(productsTotal)
-  const shippingCostReal =
-    Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
-  const freeShippingApplied = getShippingCost(productsTotal) === 0
-  const chargedCost = freeShippingApplied ? 0 : shippingCostReal
-
-  return {
-    provider: shipping?.provider || "manual",
-    type: shipping?.type === "sucursal" ? "sucursal" : "domicilio",
-    costReal: shippingCostReal,
-    costCharged: chargedCost,
-    freeShippingApplied,
-  }
+  return normalizeCheckoutShipping(shipping, productsTotal)
 }
 
 function getUnitPrice(product: ProductRow) {
@@ -283,7 +247,6 @@ export async function POST(request: Request) {
     const shipping = normalizeShipping(
       payload.shipping,
       baseTotals.productsTotal,
-      payload.customer,
     )
     const totals = calculateCartTotals(cartRows, {
       shippingCost: shipping.costCharged,

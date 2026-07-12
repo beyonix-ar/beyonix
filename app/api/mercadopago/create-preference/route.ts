@@ -5,9 +5,11 @@ import { createClient } from "@/lib/supabase/server"
 import {
   getProductDiscount,
 } from "@/lib/store-config"
+import {
+  normalizeCheckoutShipping,
+} from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
-import { getShippingCost } from "@/lib/store-config"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
@@ -41,7 +43,6 @@ interface CheckoutPayload {
     type?: "sucursal" | "domicilio"
     costReal?: number
     costCharged?: number
-    freeShippingApplied?: boolean
   }
 }
 
@@ -103,46 +104,21 @@ function normalizeCustomer(customer: CheckoutPayload["customer"]) {
   }
 }
 
-function normalizePlaceName(value?: string | null) {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-}
-
-function isRosarioCustomer(customer: CheckoutPayload["customer"]) {
-  return normalizePlaceName(customer?.localidad) === "rosario"
-}
-
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
   productsTotal: number,
-  customer: CheckoutPayload["customer"]
 ) {
-  if (isRosarioCustomer(customer)) {
-    return {
-      shipping_provider: "manual",
-      shipping_type: "domicilio",
-      shipping_cost_real: 0,
-      shipping_cost_charged: 0,
-      free_shipping_applied: true,
-    }
-  }
-
-  const realCost = Number(shipping?.costReal)
-  const fallbackCost = getShippingCost(productsTotal)
-  const shippingCostReal =
-    Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
-  const freeShippingApplied = getShippingCost(productsTotal) === 0
-  const chargedCost = freeShippingApplied ? 0 : shippingCostReal
+  const normalizedShipping = normalizeCheckoutShipping(
+    shipping,
+    productsTotal,
+  )
 
   return {
-    shipping_provider: shipping?.provider || "manual",
-    shipping_type: shipping?.type === "sucursal" ? "sucursal" : "domicilio",
-    shipping_cost_real: shippingCostReal,
-    shipping_cost_charged: chargedCost,
-    free_shipping_applied: freeShippingApplied,
+    shipping_provider: normalizedShipping.provider,
+    shipping_type: normalizedShipping.type,
+    shipping_cost_real: normalizedShipping.costReal,
+    shipping_cost_charged: normalizedShipping.costCharged,
+    free_shipping_applied: normalizedShipping.freeShippingApplied,
   }
 }
 
@@ -311,7 +287,6 @@ export async function POST(request: Request) {
     const shipping = normalizeShipping(
       payload.shipping,
       baseTotals.productsTotal,
-      payload.customer,
     )
     const totals = calculateCartTotals(
       items.map((item) => {
@@ -370,6 +345,8 @@ export async function POST(request: Request) {
         estado: "pendiente",
         payment_method_id: "mercadopago",
         payment_status: "pending_checkout",
+        envio_proveedor: shipping.shipping_provider,
+        andreani_costo: shipping.shipping_cost_charged,
         cliente_nombre: legacyCustomer.cliente_nombre,
         cliente_email: legacyCustomer.cliente_email,
         cliente_telefono: legacyCustomer.cliente_telefono,

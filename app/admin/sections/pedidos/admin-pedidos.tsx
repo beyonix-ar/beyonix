@@ -100,7 +100,7 @@ type TrackingStatusRequest = {
   pedido: SupabasePedido
   nextEstado: string
 } | null
-type ShippingModalityOption = "andreani" | "rosario" | "otro"
+type ShippingModalityOption = "andreani" | "otro"
 const DEFAULT_REFUND_METHOD = "Transferencia"
 const REFUND_METHOD_OPTIONS = [
   DEFAULT_REFUND_METHOD,
@@ -251,37 +251,6 @@ function getShippingProvider(pedido: SupabasePedido) {
   const provider = pedido.envio_proveedor?.trim() || "Andreani"
 
   return provider.replace(/andreani/gi, "Andreani")
-}
-
-function normalizePlaceName(value?: string | null) {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-}
-
-function isRosarioOrder(pedido: SupabasePedido) {
-  return normalizePlaceName(pedido.localidad) === "rosario"
-}
-
-function isAndreaniShippingOrder(pedido: SupabasePedido) {
-  const provider = normalizePlaceName(
-    pedido.envio_proveedor ?? pedido.shipping_provider
-  )
-
-  return (
-    provider.includes("andreani") ||
-    Boolean(
-      pedido.andreani_envio_id ||
-        pedido.andreani_tracking ||
-        pedido.andreani_etiqueta_url
-    )
-  )
-}
-
-function isLocalRosarioDeliveryOrder(pedido: SupabasePedido) {
-  return isRosarioOrder(pedido) && !isAndreaniShippingOrder(pedido)
 }
 
 function getAndreaniStatus(pedido: SupabasePedido) {
@@ -3608,7 +3577,6 @@ function PedidoDetailModal({
   const financialBreakdown = getOrderFinancialBreakdown(pedido)
   const dispatch = getDispatchAlert(pedido)
   const tracking = pedido.andreani_tracking || pedido.tracking_number
-  const isLocalRosarioOrder = isLocalRosarioDeliveryOrder(pedido)
   const [shippingModality, setShippingModality] =
     useState<ShippingModalityOption>("andreani")
   const [customShippingModality, setCustomShippingModality] = useState("")
@@ -4295,17 +4263,10 @@ function PedidoDetailModal({
                     Envío
                   </p>
                   <h3 className="mt-1 text-base font-black text-white">
-                    {isLocalRosarioOrder
-                      ? "Envío sin costo"
-                      : pedido.shipping_type === "sucursal"
-                        ? "Retiro en sucursal"
-                        : "Envío a domicilio"}
+                    {pedido.shipping_type === "sucursal"
+                      ? "Retiro en sucursal"
+                      : "Envío a domicilio"}
                   </h3>
-                  {isLocalRosarioOrder && (
-                    <p className="mt-1 text-sm leading-5 text-white/68">
-                      Entrega local dentro de Rosario.
-                    </p>
-                  )}
                 </div>
               </div>
               <span
@@ -4345,14 +4306,10 @@ function PedidoDetailModal({
                       <option value="pendiente">Pendiente</option>
                       <option value="pagado">Pago confirmado</option>
                       <option value="enviado">Enviado</option>
-                      {(isLocalRosarioOrder ||
-                        isSuperAdmin ||
-                        pedido.estado === "en_camino") && (
+                      {(isSuperAdmin || pedido.estado === "en_camino") && (
                         <option value="en_camino">En camino</option>
                       )}
-                      {(isLocalRosarioOrder ||
-                        isSuperAdmin ||
-                        pedido.estado === "entregado") && (
+                      {(isSuperAdmin || pedido.estado === "entregado") && (
                         <option value="entregado">Entregado</option>
                       )}
                       <option value="cancelado">Cancelado</option>
@@ -4372,7 +4329,6 @@ function PedidoDetailModal({
                       onChange={(value) => setShippingModality(value as ShippingModalityOption)}
                     >
                       <option value="andreani">ANDREANI</option>
-                      <option value="rosario">ROSARIO</option>
                       <option value="otro">OTRO</option>
                     </AdminSelect>
                   </div>
@@ -4386,14 +4342,10 @@ function PedidoDetailModal({
                   )}
                 </div>
                 <ShippingMiniCard label="Estado del envío" value={getAndreaniStatus(pedido)} />
-                {(isLocalRosarioOrder || typeof pedido.andreani_costo === "number") && (
+                {typeof pedido.andreani_costo === "number" && (
                   <ShippingMiniCard
                     label="Costo"
-                    value={
-                      isLocalRosarioOrder
-                        ? "Sin costo"
-                        : formatPrice(pedido.andreani_costo ?? 0)
-                    }
+                    value={formatPrice(pedido.andreani_costo ?? 0)}
                   />
                 )}
                 {tracking && (
@@ -5648,13 +5600,12 @@ export function AdminPedidos({
   ) => {
     const pedidoId = pedido.id
     const estadoActual = pedido.estado
-    const isLocalRosarioOrder = isLocalRosarioDeliveryOrder(pedido)
 
     if (estadoActual === nextEstado) return
 
     if (
-      (nextEstado === "en_camino" || nextEstado === "entregado") &&
-      !isLocalRosarioOrder
+      nextEstado === "en_camino" ||
+      nextEstado === "entregado"
     ) {
       if (isSuperAdmin) {
         setForcedStatusRequest({
@@ -5667,7 +5618,7 @@ export function AdminPedidos({
       setNotice({
         type: "error",
         message:
-          "Los estados En camino y Entregado se actualizan desde Andreani. Solo el envío local de Rosario puede cambiarlos manualmente.",
+          "Los estados En camino y Entregado se actualizan desde Andreani. Solo un superadministrador puede cambiarlos manualmente.",
       })
       return
     }
@@ -5683,20 +5634,6 @@ export function AdminPedidos({
       }
 
       await handlePaymentStatusChange(pedidoId, "confirmado")
-      return
-    }
-
-    if (
-      (nextEstado === "en_camino" || nextEstado === "entregado") &&
-      isLocalRosarioOrder
-    ) {
-      const updated = await updatePedidoEstado(pedidoId, nextEstado)
-      if (updated) {
-        setNotice({ type: "ok", message: "Estado del envío local actualizado." })
-        notifyOrderNotificationsChanged()
-      } else {
-        setNotice({ type: "error", message: "No se pudo actualizar el estado." })
-      }
       return
     }
 

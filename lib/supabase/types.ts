@@ -76,6 +76,9 @@ export interface SupabaseProducto {
 
   created_at: string
 
+  average_rating?: number | null
+  reviews_count?: number
+
   categorias?: SupabaseCategoria | null
 
   imagenes_producto?: SupabaseImagenProducto[]
