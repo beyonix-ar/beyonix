@@ -33,11 +33,10 @@ const TYPE_LABELS: Record<AdminNotificationType, string> = {
 }
 
 const ADMIN_NEUTRAL_CARD_STYLE =
-  "border-[#303846] bg-[#141820] hover:border-beyonix-blue-light/35 hover:bg-[#1B2028]"
+  "admin-ds-notification-card"
 const ADMIN_NEUTRAL_ICON_STYLE =
-  "border-white/10 bg-[#0D1117] text-white/58 group-hover:border-beyonix-blue-light/30 group-hover:text-beyonix-sky"
-const ADMIN_NEUTRAL_DOT_STYLE =
-  "bg-[#77E6E2] shadow-[0_0_8px_rgba(119,230,226,0.55)]"
+  "admin-ds-notification-icon"
+const ADMIN_NEUTRAL_DOT_STYLE = "admin-ds-notification-dot"
 
 function getNotificationIcon(type: AdminNotificationType) {
   if (type === "order") return ShoppingCart
@@ -77,8 +76,8 @@ export function AdminNotificationsPopover({
   onRetry,
 }: AdminNotificationsPopoverProps) {
   return (
-    <div className="w-full overflow-hidden rounded-2xl border border-[#303846] bg-[#0D1117] font-heading shadow-2xl shadow-black/75">
-      <div className="border-b border-[#303846] px-4 py-3">
+    <div className="admin-ds-notification-popover w-full overflow-hidden font-heading">
+      <div className="admin-ds-notification-header px-4 py-3">
         <p className="text-sm font-black text-white">Notificaciones admin</p>
         <p className="mt-0.5 text-10px text-white/50">
           {notifications.length > 0
@@ -87,13 +86,13 @@ export function AdminNotificationsPopover({
         </p>
       </div>
 
-      <div className="custom-scrollbar max-h-[min(460px,68vh)] overflow-y-auto p-2">
+      <div className="admin-ds-notification-scroll custom-scrollbar overflow-y-auto p-2">
         {loading ? (
           <div className="space-y-2">
             {[0, 1, 2].map((item) => (
               <div
                 key={item}
-                className="h-24 animate-pulse rounded-xl border border-[#303846] bg-[#141820]"
+                className="admin-ds-skeleton h-24 animate-pulse"
               />
             ))}
           </div>
@@ -114,7 +113,7 @@ export function AdminNotificationsPopover({
           </div>
         ) : notifications.length === 0 ? (
           <div className="px-5 py-9 text-center">
-            <span className="mx-auto flex size-11 items-center justify-center rounded-full border border-[#303846] bg-[#141820] text-white/50">
+            <span className="admin-ds-empty-icon mx-auto flex size-11 items-center justify-center rounded-full border text-white/50">
               <Bell className="size-5" />
             </span>
             <p className="mt-3 text-sm font-semibold text-white">
@@ -153,7 +152,7 @@ export function AdminNotificationsPopover({
                     <span className="flex items-start gap-2">
                       <span
                         className={cn(
-                          "min-w-0 flex-1 text-[13px] font-bold uppercase tracking-normal leading-4",
+                          "min-w-0 flex-1 text-xs font-bold uppercase tracking-normal leading-4",
                           sensitive ? ADMIN_SENSITIVE_DANGER.label : "text-white/64",
                         )}
                       >
@@ -170,13 +169,13 @@ export function AdminNotificationsPopover({
                         />
                       )}
                     </span>
-                    <span className="mt-0.5 block text-[13px] font-semibold leading-4 text-white">
+                    <span className="mt-0.5 block text-xs font-semibold leading-4 text-white">
                       {notification.title}
                     </span>
-                    <span className="mt-0.5 line-clamp-2 block text-[11px] leading-4 text-white/65">
+                    <span className="mt-0.5 line-clamp-2 block text-11px leading-4 text-white/65">
                       {notification.body}
                     </span>
-                    <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] leading-none text-white/42">
+                    <span className="mt-1 flex flex-wrap items-center gap-2 text-11px leading-none text-white/42">
                       <span>{formatNotificationDate(notification.eventAt)}</span>
                       {notification.actionLabel && (
                         <span

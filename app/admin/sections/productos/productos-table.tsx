@@ -6,6 +6,11 @@ import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
 
+import {
+  AdminEmptyState,
+  AdminSkeleton,
+  AdminTable,
+} from "../../components/admin-controls"
 import { ProductosRow } from "./productos-row"
 
 interface ProductosTableProps {
@@ -34,40 +39,21 @@ export function ProductosTable({
   onToggleActivo,
 }: ProductosTableProps) {
   if (loading) {
-    return (
-      <div className="space-y-3">
-        {[...Array(5)].map(
-          (_, i) => (
-            <div
-              key={i}
-              className="h-16 animate-pulse rounded-2xl border border-white/6 bg-white/2"
-            />
-          )
-        )}
-      </div>
-    )
+    return <AdminSkeleton rows={5} />
   }
 
   if (!productos.length) {
     return (
-      <div className="rounded-3xl border border-white/6 bg-black p-14 text-center">
-        <Package className="mx-auto mb-4 size-10 text-white/15" />
-
-        <p className="text-sm font-medium text-white/60">
-          No hay productos
-          cargados.
-        </p>
-
-        <p className="mt-1 text-xs text-white/40">
-          Creá tu primer
-          producto para empezar.
-        </p>
-      </div>
+      <AdminEmptyState
+        icon={<Package className="size-5" />}
+        title="No hay productos cargados."
+        description="Creá tu primer producto para empezar."
+      />
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-white/7 bg-black">
+    <AdminTable>
       <div className="grid grid-cols-admin-products gap-4 border-b border-white/6 bg-black px-5 py-3">
         {[
           "Producto",
@@ -113,6 +99,6 @@ export function ProductosTable({
           />
         )
       )}
-    </div>
+    </AdminTable>
   )
 }

@@ -88,17 +88,13 @@ function SidebarItem({
       title={`${item.label}: ${item.description}`}
       aria-label={item.label}
       onClick={onClick}
-      className={`group flex min-h-48px w-full cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
-        active
-          ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-beyonix-slider"
-          : "border-[#1e6fae]/25 text-white/70 hover:border-[#1e6fae]/55 hover:bg-[#112A43]/45 hover:text-white hover:shadow-[0_0_0_1px_rgba(30,111,174,0.22)]"
+      className={`admin-ds-nav-item group flex min-h-48px w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-all ${
+        active ? "admin-ds-nav-item-active" : "admin-ds-nav-item-muted"
       }`}
     >
       <span
-        className={`flex size-10 shrink-0 items-center justify-center rounded-xl border ${
-          active
-            ? "border-beyonix-sky/30 bg-black/20 text-beyonix-sky"
-            : "border-[#1e6fae]/25 bg-white/4 text-white/68 group-hover:border-[#1e6fae]/50 group-hover:bg-[#112A43]/45 group-hover:text-beyonix-sky"
+        className={`admin-ds-nav-icon flex size-10 shrink-0 items-center justify-center ${
+          active ? "admin-ds-nav-icon-active" : "admin-ds-nav-icon-muted"
         }`}
       >
         {item.icon}
@@ -119,8 +115,8 @@ function SidebarItem({
             title={`${item.notificationCount} notificaciones requieren atención`}
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black transition-colors group-hover:text-white ${
               sensitiveNotificationTone
-                ? `${ADMIN_SENSITIVE_DANGER.badge} shadow-[0_0_14px_rgba(159,53,70,0.14)] group-hover:border-[#bf4a5b] group-hover:bg-[#35151d]`
-                : "border-[#77E6E2]/25 bg-[#102034] text-[#D7FFFD] shadow-[0_0_12px_rgba(119,230,226,0.12)] group-hover:border-[#77E6E2]/45 group-hover:bg-[#13283f]"
+                ? `${ADMIN_SENSITIVE_DANGER.badge} admin-ds-nav-badge-danger`
+                : "admin-ds-nav-badge"
             }`}
           >
             {item.notificationCount}
@@ -408,7 +404,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   }
 
   const sidebar = (
-    <aside className="beyonix-admin-sidebar flex h-full flex-col border-r border-beyonix-blue-light/20 bg-black">
+    <aside className="beyonix-admin-sidebar admin-ds-sidebar flex h-full flex-col border-r">
       <div className="flex items-start justify-between gap-3 border-b border-beyonix-blue-light/20 px-5 py-5">
         <button
           type="button"
@@ -420,7 +416,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             Panel administrativo
           </p>
-          <h1 className="text-2xl font-black text-white transition-colors duration-150 group-hover:text-[#2F6FA3]">
+          <h1 className="text-2xl font-black text-white transition-colors duration-150 group-hover:text-beyonix-sky">
             BEYONIX
           </h1>
         </button>
@@ -437,7 +433,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       </div>
 
       <div className="border-b border-beyonix-blue-light/18 p-4">
-        <div className="rounded-3xl border border-beyonix-blue-light/20 bg-beyonix-surface p-4">
+        <div className="admin-ds-sidebar-card p-4">
           <p className="truncate text-sm font-bold uppercase text-white">
             {user.username || user.name}
           </p>
@@ -478,10 +474,10 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   )
 
   return (
-    <div className="beyonix-admin-shell min-h-screen bg-black text-white lg:flex">
+    <div className="beyonix-admin-shell min-h-screen text-white lg:flex">
       <div className="hidden lg:block">{sidebar}</div>
 
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-beyonix-blue-light/20 bg-black px-4 lg:hidden">
+      <header className="admin-ds-mobile-header sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 lg:hidden">
         <button
           type="button"
           title="Abrir navegación"

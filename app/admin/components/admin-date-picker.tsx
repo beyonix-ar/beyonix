@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react"
 
+import { adminControlClassName, AdminGhostButton, AdminSecondaryButton } from "./admin-controls"
+
 interface AdminDatePickerProps {
   title: string
   ariaLabel: string
@@ -200,28 +202,24 @@ export function AdminDatePicker({
           spellCheck={false}
           onFocus={() => setOpen(true)}
           onChange={(event) => handleManualChange(event.target.value)}
-          className="h-11 w-full rounded-18px border border-white/12 bg-black px-4 pr-11 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
+          className={`${adminControlClassName} pr-11`}
         />
 
-        <button
-          type="button"
+        <AdminGhostButton
           title="Abrir calendario"
           aria-label="Abrir calendario"
+          size="icon"
           onClick={() => setOpen((current) => !current)}
-          className="absolute right-3 top-1/2 cursor-pointer rounded-full p-1 text-white/56 transition -translate-y-1/2 hover:bg-white/6 hover:text-beyonix-sky"
+          className="absolute right-2 top-1/2 size-8 min-h-0 -translate-y-1/2"
         >
           <CalendarDays className="size-4" />
-        </button>
+        </AdminGhostButton>
       </div>
 
       {open && (
-        <div className="absolute right-0 top-14 z-50 w-80 overflow-hidden rounded-3xl border border-white/10 bg-black shadow-2xl shadow-black/60">
+        <div className="admin-ds-datepicker-popover absolute right-0 top-14 z-50 w-80 overflow-hidden">
           <div
-            className="border-b border-white/8 px-4 py-4"
-            style={{
-              background:
-                "linear-gradient(135deg, rgba(17, 42, 67, 0.72), rgba(0, 0, 0, 0.95))",
-            }}
+            className="admin-ds-datepicker-header border-b px-4 py-4"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -241,7 +239,7 @@ export function AdminDatePicker({
                   title="Mes anterior"
                   aria-label="Mes anterior"
                   onClick={() => changeMonth(-1)}
-                  className="grid size-9 cursor-pointer place-items-center rounded-2xl border border-white/10 bg-black/60 text-white/70 transition hover:border-beyonix-blue-light hover:text-beyonix-sky"
+                  className="admin-ds-datepicker-nav grid size-9 cursor-pointer place-items-center rounded-xl border transition"
                 >
                   <ChevronLeft className="size-4" />
                 </button>
@@ -251,7 +249,7 @@ export function AdminDatePicker({
                   title="Mes siguiente"
                   aria-label="Mes siguiente"
                   onClick={() => changeMonth(1)}
-                  className="grid size-9 cursor-pointer place-items-center rounded-2xl border border-white/10 bg-black/60 text-white/70 transition hover:border-beyonix-blue-light hover:text-beyonix-sky"
+                  className="admin-ds-datepicker-nav grid size-9 cursor-pointer place-items-center rounded-xl border transition"
                 >
                   <ChevronRight className="size-4" />
                 </button>
@@ -287,14 +285,14 @@ export function AdminDatePicker({
                     title={toDisplayDate(toInputDate(date))}
                     aria-label={toDisplayDate(toInputDate(date))}
                     onClick={() => handleSelectDate(date)}
-                    className={`grid h-9 cursor-pointer place-items-center rounded-xl border text-sm font-bold transition ${
+                    className={`admin-ds-datepicker-day grid h-9 cursor-pointer place-items-center rounded-xl border text-sm font-bold transition ${
                       selected
-                        ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-lg shadow-black/40"
+                        ? "admin-ds-datepicker-day-selected"
                         : currentToday
-                          ? "border-beyonix-blue-light/45 bg-white/6 text-white"
+                          ? "admin-ds-datepicker-day-today"
                           : currentMonth
-                            ? "border-transparent text-white/88 hover:border-beyonix-blue-light/50 hover:bg-beyonix-blue hover:text-white"
-                            : "border-transparent text-white/28 hover:bg-white/5 hover:text-white/48"
+                            ? "admin-ds-datepicker-day-current"
+                            : "admin-ds-datepicker-day-muted"
                     }`}
                   >
                     {date.getDate()}
@@ -304,26 +302,24 @@ export function AdminDatePicker({
             </div>
 
             <div className="mt-4 flex items-center justify-between border-t border-white/8 pt-4">
-              <button
-                type="button"
+              <AdminSecondaryButton
                 title="Limpiar fecha"
                 aria-label="Limpiar fecha"
+                size="sm"
                 onClick={handleClear}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-black px-3 py-2 text-xs font-bold text-white/60 transition hover:border-beyonix-blue-light/35 hover:text-beyonix-sky"
               >
                 <X className="size-3.5" />
                 Limpiar
-              </button>
+              </AdminSecondaryButton>
 
-              <button
-                type="button"
+              <AdminSecondaryButton
                 title="Ir a hoy"
                 aria-label="Ir a hoy"
+                size="sm"
                 onClick={() => setVisibleMonth(today)}
-                className="cursor-pointer rounded-2xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 py-2 text-xs font-black text-beyonix-sky transition hover:border-beyonix-blue-light hover:text-white"
               >
                 Hoy
-              </button>
+              </AdminSecondaryButton>
             </div>
           </div>
         </div>

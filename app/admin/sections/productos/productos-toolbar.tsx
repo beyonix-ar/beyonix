@@ -2,8 +2,13 @@
 
 import { FolderOpen, Package, Plus, Search } from "lucide-react"
 
-import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
-import { beyonixHoverBorder, cn } from "@/lib/utils"
+import {
+  AdminFiltersBar,
+  AdminPageHeader,
+  AdminPrimaryButton,
+  AdminSelect,
+  AdminTextInput,
+} from "../../components/admin-controls"
 
 type StockFilter = "todos" | "sin_stock" | "bajo_stock" | "disponible"
 type ActiveFilter = "todos" | "activos" | "inactivos"
@@ -54,18 +59,12 @@ export function ProductosToolbar({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-            Gestión
-          </p>
-          <h1 className="text-3xl font-black text-white/95">Productos</h1>
-          <p className="mt-2 text-sm text-white/68">
-            Catálogo, stock, variantes, imágenes, categorías y disponibilidad.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
+      <AdminPageHeader
+        eyebrow="Gestión"
+        title="Productos"
+        description="Catálogo, stock, variantes, imágenes, categorías y disponibilidad."
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-xl border border-beyonix-blue-light/25 bg-black/35 p-0.5 shadow-inner shadow-black/40">
             <button
               type="button"
@@ -97,23 +96,21 @@ export function ProductosToolbar({
             </button>
           </div>
 
-          <button
-            type="button"
+          <AdminPrimaryButton
             title={createLabel}
             aria-label={createLabel}
+            size="lg"
             onClick={createHandler}
-            className={cn(
-              "inline-flex h-12 min-w-160px cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-black text-black hover:bg-white/90",
-              beyonixHoverBorder
-            )}
+            className="min-w-160px"
           >
             <Plus className="size-4" />
             {createLabel}
-          </button>
+          </AdminPrimaryButton>
         </div>
-      </div>
+        }
+      />
 
-      <div className="rounded-3xl border border-white/8 bg-transparent p-4">
+      <AdminFiltersBar>
         {view === "productos" ? (
           <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-admin-product-filters">
             <AdminTextInput
@@ -190,7 +187,7 @@ export function ProductosToolbar({
             </p>
           </div>
         )}
-      </div>
+      </AdminFiltersBar>
     </div>
   )
 }

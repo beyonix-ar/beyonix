@@ -12,8 +12,19 @@ import {
 } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
-import { AdminTextInput } from "../../components/admin-controls"
-import { beyonixHoverBorder, cn } from "@/lib/utils"
+import {
+  adminPageClassName,
+  AdminBadge,
+  AdminCard,
+  AdminDangerButton,
+  AdminEmptyState,
+  AdminGhostButton,
+  AdminInfoBlock,
+  AdminPageHeader,
+  AdminPrimaryButton,
+  AdminSecondaryButton,
+  AdminTextInput,
+} from "../../components/admin-controls"
 
 interface AdminBanner {
   id: string
@@ -298,47 +309,39 @@ export function AdminBanners() {
   }
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-            Comunicación visual
-          </p>
-          <h1 className="text-3xl font-black text-white/95">Banners</h1>
-          <p className="mt-2 text-sm text-white/68">
-            Administrá las imágenes promocionales visibles en la tienda.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          title="Nuevo banner"
-          aria-label="Nuevo banner"
-          onClick={resetForm}
-          className={cn(
-            "inline-flex h-12 min-w-160px cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-6 text-sm font-black text-black transition hover:bg-white/90",
-            beyonixHoverBorder
-          )}
-        >
-          <Plus className="size-4" />
-          Nuevo banner
-        </button>
-      </div>
+    <div className={adminPageClassName}>
+      <AdminPageHeader
+        eyebrow="Comunicación visual"
+        title="Banners"
+        description="Administrá las imágenes promocionales visibles en la tienda."
+        actions={
+          <AdminPrimaryButton
+            title="Nuevo banner"
+            aria-label="Nuevo banner"
+            size="lg"
+            onClick={resetForm}
+            className="min-w-160px"
+          >
+            <Plus className="size-4" />
+            Nuevo banner
+          </AdminPrimaryButton>
+        }
+      />
 
       {error ? (
-        <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+        <AdminInfoBlock tone="danger">
           {error}
-        </div>
+        </AdminInfoBlock>
       ) : null}
 
       {message ? (
-        <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-4 py-3 text-sm text-emerald-100">
+        <AdminInfoBlock tone="success">
           {message}
-        </div>
+        </AdminInfoBlock>
       ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,420px)_1fr]">
-        <div className="space-y-4 rounded-3xl border border-white/8 bg-black/20 p-4">
+        <AdminCard className="space-y-4">
           <div>
             <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
               Productos
@@ -356,17 +359,17 @@ export function AdminBanners() {
             onChange={handleUpload}
           />
 
-          <button
-            type="button"
+          <AdminSecondaryButton
             title="Subir imagen"
             aria-label="Subir imagen"
             disabled={uploading || saving}
             onClick={() => fileInputRef.current?.click()}
-            className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-beyonix-blue-light/35 bg-beyonix-blue/45 px-4 text-sm font-black text-beyonix-sky transition disabled:cursor-not-allowed disabled:opacity-45 hover:border-beyonix-sky/60 hover:bg-beyonix-blue"
+            size="lg"
+            className="w-full"
           >
             <Upload className="size-4" />
             {uploading ? "Subiendo" : "Subir imagen"}
-          </button>
+          </AdminSecondaryButton>
 
           <AdminTextInput
             title="URL de imagen"
@@ -394,12 +397,12 @@ export function AdminBanners() {
             onChange={setSortOrder}
           />
 
-          <button
-            type="button"
+          <AdminSecondaryButton
             title={active ? "Banner activo" : "Banner inactivo"}
             aria-label={active ? "Banner activo" : "Banner inactivo"}
             onClick={() => setActive((current) => !current)}
-            className="flex h-12 w-full cursor-pointer items-center justify-between rounded-2xl border border-white/10 bg-[#141414] px-4 text-left text-sm font-bold text-white/78 transition hover:border-beyonix-blue-light/45 hover:text-white"
+            size="lg"
+            className="w-full justify-between"
           >
             <span>{active ? "Activo en Productos" : "Oculto en Productos"}</span>
             <span
@@ -413,42 +416,38 @@ export function AdminBanners() {
                 }`}
               />
             </span>
-          </button>
+          </AdminSecondaryButton>
 
           <div className="flex gap-3">
-            <button
-              type="button"
+            <AdminPrimaryButton
               title="Guardar banner"
               aria-label="Guardar banner"
               disabled={saving || uploading}
               onClick={handleSave}
-              className={cn(
-                "inline-flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-black transition disabled:cursor-not-allowed disabled:opacity-45 hover:bg-white/90",
-                beyonixHoverBorder
-              )}
+              size="lg"
+              className="flex-1"
             >
               <Save className="size-4" />
               {saving ? "Guardando" : "Guardar"}
-            </button>
-            <button
-              type="button"
+            </AdminPrimaryButton>
+            <AdminGhostButton
               title="Limpiar formulario"
               aria-label="Limpiar formulario"
+              size="icon"
               onClick={resetForm}
-              className="inline-flex h-11 w-12 cursor-pointer items-center justify-center rounded-2xl border border-white/10 text-white/62 transition hover:border-white/22 hover:text-white"
             >
               <X className="size-4" />
-            </button>
+            </AdminGhostButton>
           </div>
 
           <p className="text-xs leading-relaxed text-white/45">
             Podés subir una imagen, pegar una URL externa o usar una ruta local
             como /images/banners/banner-productos.png.
           </p>
-        </div>
+        </AdminCard>
 
         <div className="space-y-4">
-          <div className="rounded-3xl border border-white/8 bg-black/20 p-4">
+          <AdminCard>
             <p className="mb-3 text-11px font-black uppercase tracking-widest text-beyonix-cyan">
               Vista previa del formulario
             </p>
@@ -468,7 +467,7 @@ export function AdminBanners() {
                 </div>
               )}
             </div>
-          </div>
+          </AdminCard>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -480,9 +479,9 @@ export function AdminBanners() {
 
             {banners.length ? (
               banners.map((banner) => (
-                <article
+                <AdminCard
                   key={banner.id}
-                  className="grid gap-4 rounded-3xl border border-white/8 bg-black/20 p-4 lg:grid-cols-[220px_1fr_auto]"
+                  className="grid gap-4 lg:grid-cols-[220px_1fr_auto]"
                 >
                   <div className="relative min-h-120px overflow-hidden rounded-xl border border-beyonix-blue-light/20 bg-[#03070D]">
                     <img
@@ -494,25 +493,23 @@ export function AdminBanners() {
 
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-beyonix-blue-light/30 bg-beyonix-blue/40 px-2.5 py-1 text-10px font-black uppercase tracking-widest text-beyonix-sky">
+                      <AdminBadge tone="info">
                         Productos
-                      </span>
-                      <button
-                        type="button"
+                      </AdminBadge>
+                      <AdminSecondaryButton
                         title={banner.active ? "Desactivar banner" : "Activar banner"}
                         aria-label={banner.active ? "Desactivar banner" : "Activar banner"}
+                        size="sm"
                         onClick={() => void handleToggleBanner(banner)}
-                        className={`rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-widest ${
-                          banner.active
-                            ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-                            : "border-white/10 bg-white/5 text-white/45"
-                        }`}
+                        className="min-h-0 border-0 bg-transparent p-0 hover:bg-transparent"
                       >
-                        {banner.active ? "Activo" : "Inactivo"}
-                      </button>
-                      <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-10px font-black uppercase tracking-widest text-white/52">
+                        <AdminBadge tone={banner.active ? "success" : "neutral"}>
+                          {banner.active ? "Activo" : "Inactivo"}
+                        </AdminBadge>
+                      </AdminSecondaryButton>
+                      <AdminBadge tone="neutral">
                         Orden {banner.sort_order}
-                      </span>
+                      </AdminBadge>
                     </div>
 
                     <p className="mt-3 truncate text-sm font-bold text-white/86">
@@ -524,32 +521,31 @@ export function AdminBanners() {
                   </div>
 
                   <div className="flex items-center gap-2 lg:flex-col lg:items-end">
-                    <button
-                      type="button"
+                    <AdminGhostButton
                       title="Editar banner"
                       aria-label="Editar banner"
+                      size="icon"
                       onClick={() => handleEdit(banner)}
-                      className="inline-flex size-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 text-white/62 transition hover:border-beyonix-blue-light/40 hover:text-beyonix-sky"
                     >
                       <Pencil className="size-4" />
-                    </button>
-                    <button
-                      type="button"
+                    </AdminGhostButton>
+                    <AdminDangerButton
                       title="Eliminar banner"
                       aria-label="Eliminar banner"
+                      size="icon"
                       onClick={() => void handleDelete(banner)}
-                      className="inline-flex size-10 cursor-pointer items-center justify-center rounded-xl border border-red-300/15 text-red-200/70 transition hover:border-red-300/35 hover:text-red-100"
                     >
                       <Trash2 className="size-4" />
-                    </button>
+                    </AdminDangerButton>
                   </div>
-                </article>
+                </AdminCard>
               ))
             ) : (
-              <div className="rounded-3xl border border-white/8 bg-black/20 p-6 text-center text-sm text-white/55">
-                No hay banners cargados. El espacio de Productos queda reservado
-                y vacío.
-              </div>
+              <AdminEmptyState
+                icon={<ImageIcon className="size-5" />}
+                title="No hay banners cargados."
+                description="El espacio de Productos queda reservado y vacío."
+              />
             )}
           </div>
         </div>

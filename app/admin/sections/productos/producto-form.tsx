@@ -12,7 +12,15 @@ import type {
 import { ProductSpecificationsEditor } from "./product-specifications-editor"
 import { ProductVariantsEditor } from "./product-variants-editor"
 import { useProductoForm } from "./use-producto-form"
-import { AdminSelect } from "../../components/admin-controls"
+import {
+  adminControlClassName,
+  adminPageClassName,
+  AdminInfoBlock,
+  AdminPageHeader,
+  AdminPrimaryButton,
+  AdminSecondaryButton,
+  AdminSelect,
+} from "../../components/admin-controls"
 import { getProductVideoSource } from "@/lib/products/product-video"
 
 interface ProductoFormProps {
@@ -22,7 +30,7 @@ interface ProductoFormProps {
 }
 
 const inputCls =
-  "h-10 w-full rounded-xl border border-white/8 bg-[#141414] px-3.5 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-[#112A43] focus:border-beyonix-blue-light"
+  adminControlClassName
 
 const labelCls =
   "mb-2 block text-xs font-semibold uppercase tracking-widest text-white/50"
@@ -53,63 +61,24 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
   const videoSource = getProductVideoSource(form.video_url)
   const canPreviewVideo =
     videoSource && videoSource.kind !== "unsupported"
-  const cleanSlug = form.slug.trim()
-  const cleanVideoUrl = form.video_url.trim()
-  const cleanPrice = Number(form.precio)
-  const hasValidDraftVariants =
-    draftVariants.length > 0 &&
-    draftVariants.every(
-      (variant) =>
-        variant.nombre.trim() &&
-        /^#[0-9A-F]{6}$/i.test(variant.color_hex) &&
-        Number.isFinite(Number(variant.stock)) &&
-        Number(variant.stock) >= 0
-    )
-  const hasValidDraftSpecifications =
-    draftSpecifications.every(
-      (specification) =>
-        specification.icono.trim() &&
-        specification.texto.trim() &&
-        Number.isFinite(Number(specification.orden))
-    )
-  const isSubmitReady = Boolean(
-    form.nombre.trim() &&
-    cleanSlug &&
-    Number.isFinite(cleanPrice) &&
-    cleanPrice > 0 &&
-    (!cleanVideoUrl ||
-      (videoSource && videoSource.kind !== "unsupported")) &&
-    (producto || savedId || hasValidDraftVariants) &&
-    hasValidDraftSpecifications
-  )
-  const submitButtonStateClass = isSubmitReady
-    ? "hover:border-emerald-400/55 hover:bg-emerald-500 hover:text-white hover:shadow-[0_0_24px_rgba(16,185,129,0.28)]"
-    : "hover:border-red-400/55 hover:bg-red-500 hover:text-white hover:shadow-[0_0_24px_rgba(239,68,68,0.24)]"
-
   return (
-    <div className="min-h-screen px-4 py-5 sm:px-6 lg:px-7 lg:py-6">
-      <div className="mx-auto w-full max-w-[1720px]">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-              Productos
-            </p>
-            <h1 className="text-3xl font-bold text-white">
-              {producto ? "Editar producto" : "Nuevo producto"}
-            </h1>
-          </div>
-
-          <button
-            type="button"
-            title="Volver"
-            aria-label="Volver"
-            onClick={onCancel}
-            className="inline-flex h-10 min-w-120px items-center justify-center gap-2 rounded-xl border border-white/8 bg-[#141414] px-5 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
-          >
-            <ArrowLeft className="size-4" />
-            Volver
-          </button>
-        </div>
+    <div className={adminPageClassName}>
+      <div className="w-full">
+        <AdminPageHeader
+          eyebrow="Productos"
+          title={producto ? "Editar producto" : "Nuevo producto"}
+          actions={
+            <AdminSecondaryButton
+              title="Volver"
+              aria-label="Volver"
+              onClick={onCancel}
+              className="min-w-120px"
+            >
+              <ArrowLeft className="size-4" />
+              Volver
+            </AdminSecondaryButton>
+          }
+        />
 
         <form
           onSubmit={(event) => {
@@ -123,12 +92,12 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               },
             })
           }}
-          className="admin-product-form rounded-3xl border border-white/8 bg-[#0d0d0d] p-3 shadow-2xl shadow-black/30 sm:p-4"
+          className="admin-product-form admin-ds-surface mt-5 p-3 sm:p-4"
         >
           <div className="grid gap-4 xl:grid-cols-2 xl:items-start 2xl:grid-cols-12">
-            <section className="admin-product-section space-y-3 rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-4">
+            <section className="admin-product-section admin-ds-card space-y-3 p-4 2xl:col-span-4">
               <div className="border-b border-white/7 pb-3">
-                <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan/75">
+                <p className="text-10px font-semibold uppercase tracking-widest text-beyonix-cyan/75">
                   Información general
                 </p>
               </div>
@@ -173,7 +142,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     </div>
                   </div>
                 ) : form.video_url.trim() ? (
-                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/8 bg-[#181818] px-3 py-2 text-xs text-white/55">
+                  <div className="admin-ds-card mt-3 flex items-center gap-2 px-3 py-2 text-xs text-white/55">
                     <Play className="size-3.5 text-beyonix-cyan" />
                     La URL es HTTPS, pero no corresponde a un proveedor o archivo compatible.
                   </div>
@@ -316,7 +285,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     title={toggle.label}
                     aria-label={toggle.label}
                     onClick={() => setField(toggle.key, !toggle.active)}
-                    className="flex min-h-10 items-center gap-3 rounded-xl border border-white/8 bg-[#181818] px-3.5 text-left transition-colors hover:border-[#112A43] hover:bg-[#112A43] cursor-pointer"
+                    className="admin-ds-button admin-ds-button-secondary flex min-h-10 items-center gap-3 px-3.5 text-left"
                   >
                     {toggle.active ? (
                       <ToggleRight className={`size-6 ${toggle.color}`} />
@@ -329,7 +298,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-4">
+            <section className="admin-product-section admin-ds-card p-4 2xl:col-span-4">
               <div>
                 <label className={labelCls}>Variantes</label>
                 <ProductVariantsEditor
@@ -340,7 +309,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="admin-product-section rounded-2xl border border-white/7 bg-[#141414] p-4 2xl:col-span-4">
+            <section className="admin-product-section admin-ds-card p-4 2xl:col-span-4">
               <div>
                 <label className={labelCls}>Especificaciones</label>
                 <ProductSpecificationsEditor
@@ -354,24 +323,20 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
 
           <div className="mt-4 space-y-3">
             {error && (
-              <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
-                <p className="text-sm text-red-400">{error}</p>
-              </div>
+              <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
             )}
 
             {success && (
-              <div className="rounded-2xl border border-green-500/20 bg-green-500/8 px-4 py-3">
-                <p className="text-sm text-green-300">{success}</p>
-              </div>
+              <AdminInfoBlock tone="success">{success}</AdminInfoBlock>
             )}
 
             <div className="flex flex-col gap-3 border-t border-white/7 pt-4 sm:flex-row sm:justify-end">
-              <button
+              <AdminPrimaryButton
                 type="submit"
                 disabled={saving}
                 title="Guardar producto"
                 aria-label="Guardar producto"
-                className={`flex h-10 w-full items-center justify-center rounded-xl border border-white bg-white px-7 text-sm font-semibold text-black transition-all disabled:opacity-50 cursor-pointer sm:w-auto sm:min-w-180px ${submitButtonStateClass}`}
+                className="w-full sm:w-auto sm:min-w-180px"
               >
                 {saving ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -382,17 +347,16 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 ) : (
                   "Crear producto"
                 )}
-              </button>
+              </AdminPrimaryButton>
 
-              <button
-                type="button"
+              <AdminSecondaryButton
                 title="Cancelar"
                 aria-label="Cancelar"
                 onClick={onCancel}
-                className="h-11 w-full rounded-xl border border-white/10 bg-[#141414] px-6 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer sm:w-auto sm:min-w-140px"
+                className="w-full sm:w-auto sm:min-w-140px"
               >
                 Cancelar
-              </button>
+              </AdminSecondaryButton>
             </div>
           </div>
         </form>

@@ -1,10 +1,23 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertCircle, Filter, History, RotateCcw, Search, ShieldCheck, X } from "lucide-react"
+import { AlertCircle, Filter, History, RotateCcw, ShieldCheck } from "lucide-react"
 
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
-import { AdminSelect, AdminTextInput } from "@/app/admin/components/admin-controls"
+import {
+  adminPageClassName,
+  AdminDangerButton,
+  AdminEmptyState,
+  AdminFiltersBar,
+  AdminInfoBlock,
+  AdminModal,
+  AdminPageHeader,
+  AdminSearchInput,
+  AdminSecondaryButton,
+  AdminSection,
+  AdminSelect,
+  AdminSkeleton,
+} from "@/app/admin/components/admin-controls"
 import { getAuditLogs, undoAuditLog } from "@/lib/supabase/queries/auditoria"
 import type { SupabaseAuditLog } from "@/lib/supabase/types"
 
@@ -248,38 +261,19 @@ export function AdminAuditoria() {
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <div>
-          <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-sky-300">
-            Super admin
-          </p>
+    <div className={adminPageClassName}>
+      <AdminPageHeader eyebrow="Super admin" title="Auditoría" />
 
-          <h1 className="text-3xl font-bold text-white">
-            Auditoría
-          </h1>
-        </div>
-
-      </div>
-
-      <div className="rounded-3xl border border-white/7 bg-black p-6">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex size-12 items-center justify-center rounded-2xl border border-sky-300/25 bg-sky-300/10 text-sky-300">
+      <AdminSection
+        title="Registro de actividad administrativa"
+        description="Acciones realizadas por administradores dentro del panel. Los eventos normales de clientes, pagos y envíos quedan fuera de esta vista."
+        actions={
+          <span className="flex size-12 items-center justify-center rounded-xl border border-beyonix-blue-light/25 bg-beyonix-blue/20 text-beyonix-sky">
             <ShieldCheck className="size-5" />
-          </div>
-
-          <div>
-            <h2 className="text-xl font-bold text-white">
-              Registro de actividad administrativa
-            </h2>
-
-            <p className="mt-1 text-sm text-white/65">
-              Acciones realizadas por administradores dentro del panel. Los eventos normales de clientes, pagos y envíos quedan fuera de esta vista.
-            </p>
-          </div>
-        </div>
-
-        <div className="mb-6 rounded-3xl border border-white/7 bg-transparent p-4">
+          </span>
+        }
+      >
+        <AdminFiltersBar className="mb-6">
           <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white/78">
             <Filter className="size-4 text-beyonix-sky" />
             Filtros
@@ -302,12 +296,11 @@ export function AdminAuditoria() {
               onChange={setDateToFilter}
             />
 
-            <AdminTextInput
+            <AdminSearchInput
               title="Filtrar por administrador"
               ariaLabel="Filtrar por administrador"
               value={adminFilter}
               placeholder="Usuario/admin"
-              icon={<Search className="size-4" />}
               onChange={setAdminFilter}
             />
 
@@ -360,29 +353,25 @@ export function AdminAuditoria() {
               />
             </label>
           </div>
-        </div>
+        </AdminFiltersBar>
 
         {error && (
-          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-            <AlertCircle className="size-5 shrink-0" />
+          <AdminInfoBlock
+            tone="danger"
+            icon={<AlertCircle className="size-5" />}
+            className="mb-5"
+          >
             {error}
-          </div>
+          </AdminInfoBlock>
         )}
 
         {loading ? (
-          <div className="rounded-2xl border border-white/7 bg-black px-5 py-6 text-sm text-white/60">
-            Cargando movimientos...
-          </div>
+          <AdminSkeleton rows={4} />
         ) : filteredGroups.length === 0 ? (
-          <div className="rounded-2xl border border-white/7 bg-black px-5 py-6">
-            <div className="flex items-center gap-3 text-white/65">
-              <History className="size-5" />
-
-              <p className="text-sm">
-                No hay acciones administrativas para los filtros seleccionados.
-              </p>
-            </div>
-          </div>
+          <AdminEmptyState
+            icon={<History className="size-5" />}
+            title="No hay acciones administrativas para los filtros seleccionados."
+          />
         ) : (
           <div className="space-y-3">
             {filteredGroups.map((group) => {
@@ -452,17 +441,16 @@ export function AdminAuditoria() {
 
                     <div className="flex justify-start xl:justify-end">
                       {canUndo && (
-                        <button
-                          type="button"
+                        <AdminSecondaryButton
                           aria-label={`Deshacer movimiento ${log.id}`}
                           title="Deshacer movimiento"
                           disabled={undoingId === log.id}
                           onClick={() => setPendingUndoGroup(group)}
-                          className="inline-flex min-h-44px min-w-140px cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-5 py-2 text-sm font-bold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+                          className="min-w-140px"
                         >
                           <RotateCcw className="size-4" />
                           {undoingId === log.id ? "Deshaciendo..." : "Deshacer"}
-                        </button>
+                        </AdminSecondaryButton>
                       )}
                     </div>
                   </div>
@@ -479,64 +467,40 @@ export function AdminAuditoria() {
             })}
           </div>
         )}
-      </div>
+      </AdminSection>
 
       {pendingUndoGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-3xl border border-beyonix-blue-light/25 bg-black p-6 shadow-2xl shadow-black">
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <p className="mb-2 text-11px font-black uppercase tracking-widest text-beyonix-sky">
-                  Confirmar acción
-                </p>
-                <h2 className="text-2xl font-black text-white">
-                  Deshacer movimiento
-                </h2>
-              </div>
-
-              <button
-                type="button"
-                aria-label="Cerrar alerta"
-                title="Cerrar"
-                onClick={() => setPendingUndoGroup(null)}
-                className="flex size-10 cursor-pointer items-center justify-center rounded-2xl border border-white/10 bg-black text-white/55 transition hover:border-white/25 hover:text-white"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="rounded-2xl border border-white/8 bg-black px-4 py-4">
-              <p className="text-sm font-bold leading-6 text-white">
-                ¿Está seguro de deshacer "{formatAuditGroupDescription(pendingUndoGroup).lines[0] ?? formatAuditGroupDescription(pendingUndoGroup).title}"?
-              </p>
-              <div className="mt-3 space-y-1 text-sm leading-6 text-white/55">
-                <p>{formatAuditGroupDescription(pendingUndoGroup).title}</p>
-                {formatAuditGroupDescription(pendingUndoGroup).lines.map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setPendingUndoGroup(null)}
-                className="inline-flex min-h-44px cursor-pointer items-center justify-center rounded-2xl border border-white/10 bg-black px-5 py-2 text-sm font-black text-white transition hover:border-beyonix-blue-light/40 hover:text-beyonix-sky"
-              >
+        <AdminModal
+          open
+          eyebrow="Confirmar acción"
+          title="Deshacer movimiento"
+          onClose={() => setPendingUndoGroup(null)}
+          footer={
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <AdminSecondaryButton onClick={() => setPendingUndoGroup(null)}>
                 Cancelar
-              </button>
-
-              <button
-                type="button"
+              </AdminSecondaryButton>
+              <AdminDangerButton
                 onClick={() => void handleUndo()}
                 disabled={undoingId === pendingUndoGroup.primaryLog.id || !canUndoAuditGroup(pendingUndoGroup)}
-                className="inline-flex min-h-44px cursor-pointer items-center justify-center rounded-2xl border border-white/10 bg-black px-5 py-2 text-sm font-black text-white/55 transition hover:border-red-600 hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-black disabled:text-white/25"
               >
                 {undoingId === pendingUndoGroup.primaryLog.id ? "Deshaciendo..." : "Sí, estoy seguro"}
-              </button>
+              </AdminDangerButton>
+            </div>
+          }
+        >
+          <div className="rounded-2xl border border-white/8 bg-black/30 px-4 py-4">
+            <p className="text-sm font-bold leading-6 text-white">
+              ¿Está seguro de deshacer "{formatAuditGroupDescription(pendingUndoGroup).lines[0] ?? formatAuditGroupDescription(pendingUndoGroup).title}"?
+            </p>
+            <div className="mt-3 space-y-1 text-sm leading-6 text-white/55">
+              <p>{formatAuditGroupDescription(pendingUndoGroup).title}</p>
+              {formatAuditGroupDescription(pendingUndoGroup).lines.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
             </div>
           </div>
-        </div>
+        </AdminModal>
       )}
     </div>
   )

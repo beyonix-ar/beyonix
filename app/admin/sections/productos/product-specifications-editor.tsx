@@ -38,6 +38,7 @@ import {
   isAllowedLucideIcon,
   LucideIconPicker,
 } from "./lucide-icon-picker"
+import { adminControlClassName } from "../../components/admin-controls"
 
 interface ProductSpecificationsEditorProps {
   productoId?: number
@@ -59,7 +60,7 @@ type EditingSpecification =
   | null
 
 const inputCls =
-  "h-10 w-full rounded-xl border border-white/8 bg-[#181818] px-3.5 text-sm text-white outline-none transition-colors placeholder:text-white/30 hover:border-[#112A43] focus:border-beyonix-blue-light"
+  adminControlClassName
 
 function normalizeOrder(value: string, fallback: number) {
   const parsed = Number(value)

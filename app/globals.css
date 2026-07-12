@@ -701,6 +701,241 @@
   width: min(100vw, var(--beyonix-admin-sidebar-width));
 }
 
+.beyonix-admin-shell {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(17, 42, 67, 0.42), transparent 28rem),
+    #000000;
+}
+
+.admin-ds-sidebar {
+  background:
+    linear-gradient(180deg, rgba(5, 12, 20, 0.98), rgba(0, 0, 0, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.28) !important;
+}
+
+.admin-ds-sidebar-card {
+  background:
+    linear-gradient(145deg, rgba(11, 22, 34, 0.96), rgba(6, 13, 22, 0.98)) !important;
+  border: 1px solid rgba(92, 159, 215, 0.22) !important;
+  border-radius: 1rem !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+.admin-ds-nav-item {
+  border: 1px solid rgba(92, 159, 215, 0.18) !important;
+  border-radius: 0.875rem !important;
+  background-color: rgba(17, 42, 67, 0.08) !important;
+}
+
+.admin-ds-nav-item:hover {
+  border-color: rgba(140, 200, 242, 0.42) !important;
+  background-color: rgba(17, 42, 67, 0.28) !important;
+}
+
+.admin-ds-nav-item-active {
+  border-color: rgba(140, 200, 242, 0.62) !important;
+  background-color: #112A43 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 1px rgba(140, 200, 242, 0.18), 0 12px 26px rgba(0, 0, 0, 0.24) !important;
+}
+
+.admin-ds-nav-item-muted {
+  color: rgba(248, 250, 252, 0.7) !important;
+}
+
+.admin-ds-nav-icon {
+  border: 1px solid rgba(92, 159, 215, 0.22) !important;
+  border-radius: 0.75rem !important;
+  background-color: rgba(17, 42, 67, 0.18) !important;
+}
+
+.admin-ds-nav-icon-active {
+  border-color: rgba(140, 200, 242, 0.34) !important;
+  background-color: rgba(0, 0, 0, 0.2) !important;
+  color: #8cc8f2 !important;
+}
+
+.admin-ds-nav-icon-muted {
+  color: rgba(248, 250, 252, 0.68) !important;
+}
+
+.admin-ds-nav-item:hover .admin-ds-nav-icon-muted {
+  border-color: rgba(140, 200, 242, 0.48) !important;
+  background-color: rgba(17, 42, 67, 0.42) !important;
+  color: #8cc8f2 !important;
+}
+
+.admin-ds-nav-badge,
+.admin-ds-nav-badge-danger {
+  border-color: rgba(119, 230, 226, 0.25) !important;
+  background-color: rgba(16, 32, 52, 0.9) !important;
+  color: #D7FFFD !important;
+  box-shadow: 0 0 12px rgba(119, 230, 226, 0.12) !important;
+}
+
+.admin-ds-nav-badge-danger {
+  border-color: rgba(248, 113, 113, 0.34) !important;
+  background-color: rgba(127, 29, 29, 0.2) !important;
+  color: #fecaca !important;
+  box-shadow: 0 0 14px rgba(159, 53, 70, 0.14) !important;
+}
+
+.admin-ds-mobile-header {
+  background-color: rgba(2, 6, 10, 0.96) !important;
+  border-color: rgba(92, 159, 215, 0.24) !important;
+}
+
+.admin-ds-bell-button,
+.admin-ds-bell-button-idle,
+.admin-ds-notification-bell {
+  background-color: rgba(17, 42, 67, 0.18) !important;
+  border-color: rgba(92, 159, 215, 0.28) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32) !important;
+}
+
+.admin-ds-bell-button:hover,
+.admin-ds-bell-button-idle:hover,
+.admin-ds-notification-bell:hover {
+  background-color: rgba(17, 42, 67, 0.38) !important;
+  border-color: rgba(140, 200, 242, 0.48) !important;
+}
+
+.admin-ds-notification-count,
+.admin-ds-notification-dot {
+  background-color: #8cc8f2 !important;
+  color: #02060a !important;
+  box-shadow: 0 0 10px rgba(140, 200, 242, 0.38) !important;
+}
+
+.admin-ds-popover-position {
+  max-width: calc(100vw - 2rem);
+}
+
+.admin-ds-notification-popover {
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  border: 1px solid rgba(92, 159, 215, 0.28) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.62) !important;
+}
+
+.admin-ds-notification-header {
+  border-bottom: 1px solid rgba(92, 159, 215, 0.18) !important;
+}
+
+.admin-ds-notification-scroll {
+  max-height: min(460px, 68vh);
+}
+
+.admin-ds-datepicker-popover {
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  border: 1px solid rgba(92, 159, 215, 0.28) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.62) !important;
+}
+
+.admin-ds-datepicker-header {
+  background:
+    linear-gradient(135deg, rgba(17, 42, 67, 0.72), rgba(4, 10, 17, 0.95)) !important;
+  border-color: rgba(92, 159, 215, 0.18) !important;
+}
+
+.admin-ds-notification-card {
+  background-color: rgba(11, 22, 34, 0.96) !important;
+  border-color: rgba(92, 159, 215, 0.18) !important;
+}
+
+.admin-ds-notification-card:hover {
+  background-color: rgba(17, 42, 67, 0.28) !important;
+  border-color: rgba(140, 200, 242, 0.42) !important;
+}
+
+.admin-ds-notification-icon,
+.admin-ds-empty-icon {
+  background-color: rgba(17, 42, 67, 0.2) !important;
+  border-color: rgba(92, 159, 215, 0.22) !important;
+}
+
+.admin-category-image-dropzone {
+  aspect-ratio: 16 / 10;
+  min-height: 22rem;
+  border-color: rgba(92, 159, 215, 0.28) !important;
+  border-radius: 1rem !important;
+  background-color: rgba(11, 22, 34, 0.96) !important;
+}
+
+.admin-category-image-dropzone:hover {
+  border-color: rgba(140, 200, 242, 0.6) !important;
+}
+
+.admin-ds-upload-zone {
+  min-height: 7rem;
+  border-color: rgba(92, 159, 215, 0.28) !important;
+  border-radius: 1rem !important;
+  background:
+    linear-gradient(145deg, rgba(11, 22, 34, 0.92), rgba(6, 13, 22, 0.96)) !important;
+}
+
+.admin-ds-upload-zone-large {
+  min-height: 9rem;
+}
+
+.admin-ds-upload-zone-compact {
+  min-height: 6rem;
+}
+
+.admin-ds-upload-zone:hover,
+.admin-ds-upload-zone-active {
+  border-color: rgba(140, 200, 242, 0.58) !important;
+  background-color: rgba(17, 42, 67, 0.38) !important;
+  box-shadow: 0 0 0 2px rgba(140, 200, 242, 0.08) !important;
+}
+
+.admin-ds-media-tile {
+  border: 1px solid rgba(92, 159, 215, 0.18) !important;
+  border-radius: 1rem !important;
+  background-color: rgba(11, 22, 34, 0.96) !important;
+}
+
+.admin-ds-media-tile:hover {
+  border-color: rgba(140, 200, 242, 0.48) !important;
+}
+
+.admin-ds-icon-action {
+  border: 1px solid rgba(140, 200, 242, 0.28) !important;
+  border-radius: 0.75rem !important;
+  background-color: rgba(17, 42, 67, 0.9) !important;
+  color: #ffffff !important;
+}
+
+.admin-ds-icon-action:hover {
+  border-color: rgba(191, 228, 255, 0.62) !important;
+  background-color: #183b5e !important;
+}
+
+.admin-ds-icon-action-danger {
+  border-color: rgba(248, 113, 113, 0.34) !important;
+  background-color: rgba(127, 29, 29, 0.86) !important;
+}
+
+.admin-ds-icon-action-danger:hover {
+  border-color: rgba(252, 165, 165, 0.62) !important;
+  background-color: rgba(185, 28, 28, 0.9) !important;
+}
+
+@media (min-width: 1280px) {
+  .admin-category-image-dropzone {
+    min-height: 31.25rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .admin-category-image-dropzone {
+    min-height: 36.25rem;
+  }
+}
+
 .beyonix-admin-sidebar :where(.border-b, .border-t) {
   border-color: rgba(110, 168, 255, 0.18);
 }
@@ -713,6 +948,349 @@
   margin-inline: auto;
   max-width: var(--beyonix-admin-content-max);
   width: 100%;
+}
+
+.beyonix-admin-main {
+  --admin-bg: #02060a;
+  --admin-panel: #07111b;
+  --admin-panel-2: #0b1622;
+  --admin-panel-3: #101b27;
+  --admin-surface: var(--admin-panel);
+  --admin-surface-raised: var(--admin-panel-2);
+  --admin-surface-muted: var(--admin-panel-3);
+  --admin-control: #0b111a;
+  --admin-brand: #112A43;
+  --admin-brand-hover: #183b5e;
+  --admin-border: rgba(92, 159, 215, 0.28);
+  --admin-border-soft: rgba(92, 159, 215, 0.16);
+  --admin-border-strong: rgba(140, 200, 242, 0.48);
+  --admin-text: #f8fafc;
+  --admin-text-soft: rgba(248, 250, 252, 0.68);
+  --admin-text-muted: rgba(248, 250, 252, 0.46);
+  --admin-radius: 0.875rem;
+  --admin-radius-lg: 1rem;
+  --admin-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+  --admin-glow: 0 0 0 1px rgba(30, 77, 123, 0.18), 0 18px 42px rgba(0, 0, 0, 0.24);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(17, 42, 67, 0.28), transparent 30rem),
+    linear-gradient(180deg, #02060a 0%, #000000 100%) !important;
+  letter-spacing: 0;
+}
+
+.beyonix-admin-main > :where(div, section) {
+  padding: clamp(1rem, 2.2vw, 2rem) !important;
+}
+
+.admin-ds-surface,
+.admin-ds-card,
+.beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"] {
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  border-color: var(--admin-border) !important;
+  border-radius: var(--admin-radius-lg) !important;
+  box-shadow: var(--admin-glow) !important;
+}
+
+.admin-ds-card {
+  border-radius: var(--admin-radius-lg) !important;
+}
+
+.admin-ds-card-interactive:hover {
+  box-shadow:
+    0 0 0 1px rgba(140, 200, 242, 0.28),
+    0 18px 42px rgba(0, 0, 0, 0.3) !important;
+}
+
+.beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]
+  :where(section, article, aside, details, div, label)[class*="rounded"][class*="border"] {
+  background:
+    linear-gradient(145deg, rgba(11, 22, 34, 0.98), rgba(6, 13, 22, 0.98)) !important;
+  border-color: var(--admin-border-soft) !important;
+  border-radius: var(--admin-radius) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+}
+
+.beyonix-admin-main :where(h1) {
+  color: var(--admin-text) !important;
+  font-size: clamp(1.65rem, 1.1vw + 1.25rem, 2.1rem) !important;
+  font-weight: 900 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.12 !important;
+}
+
+.beyonix-admin-main :where(h2, h3) {
+  color: var(--admin-text) !important;
+  font-weight: 850 !important;
+  letter-spacing: 0 !important;
+}
+
+.beyonix-admin-main :where(p, span, li, td, th) {
+  letter-spacing: 0;
+}
+
+.beyonix-admin-main :where(p)[class*="tracking-widest"],
+.beyonix-admin-main :where(span)[class*="tracking-widest"] {
+  color: var(--admin-text-muted) !important;
+  letter-spacing: 0.06em !important;
+}
+
+.admin-ds-control,
+.admin-control-select,
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  background-color: var(--admin-control) !important;
+  border: 1px solid var(--admin-border) !important;
+  border-radius: var(--admin-radius) !important;
+  color: var(--admin-text) !important;
+  color-scheme: dark;
+  min-height: 2.75rem !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+.admin-ds-control::placeholder,
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea)::placeholder {
+  color: rgba(248, 250, 252, 0.38) !important;
+}
+
+.admin-ds-control:hover,
+.admin-control-select:hover,
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):hover {
+  background-color: #0e1b2a !important;
+  border-color: var(--admin-border-strong) !important;
+}
+
+.admin-ds-control:focus,
+.admin-ds-control:focus-visible,
+.admin-control-select:focus,
+.admin-control-select:focus-visible,
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus,
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus-visible {
+  border-color: var(--admin-border-strong) !important;
+  box-shadow: 0 0 0 2px rgba(140, 200, 242, 0.14) !important;
+  outline: none !important;
+}
+
+.admin-ds-select-menu,
+.beyonix-admin-main :where([role="listbox"]) {
+  background-color: #07111b !important;
+  border: 1px solid var(--admin-border) !important;
+  border-radius: var(--admin-radius) !important;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.52) !important;
+}
+
+.admin-ds-select-option,
+.admin-ds-select-option-selected {
+  color: var(--admin-text) !important;
+}
+
+.admin-ds-select-option:hover,
+.admin-ds-select-option-selected {
+  background-color: var(--admin-brand) !important;
+  color: #d7ecff !important;
+}
+
+.admin-ds-button,
+.beyonix-admin-main :where(button, a)[class*="rounded"]:not(.admin-control-select) {
+  border-radius: var(--admin-radius) !important;
+  min-height: 2.5rem;
+}
+
+.admin-ds-button-primary {
+  background-color: var(--admin-brand) !important;
+  border: 1px solid var(--admin-border-strong) !important;
+  color: var(--admin-text) !important;
+  box-shadow: 0 0 0 1px rgba(17, 42, 67, 0.25) !important;
+}
+
+.admin-ds-button-primary:hover {
+  background-color: var(--admin-brand-hover) !important;
+  border-color: rgba(191, 228, 255, 0.62) !important;
+  color: #d7ecff !important;
+}
+
+.admin-ds-button-secondary,
+.admin-ds-button-ghost {
+  background-color: rgba(17, 42, 67, 0.18) !important;
+  border: 1px solid var(--admin-border) !important;
+  color: rgba(248, 250, 252, 0.78) !important;
+}
+
+.admin-ds-button-secondary:hover,
+.admin-ds-button-ghost:hover {
+  background-color: rgba(17, 42, 67, 0.38) !important;
+  border-color: var(--admin-border-strong) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-ds-button-destructive,
+.beyonix-admin-main :where(button[aria-label*="Eliminar"], button[title*="Eliminar"], button[aria-label*="Bloquear"], button[title*="Bloquear"]) {
+  background-color: rgba(127, 29, 29, 0.18) !important;
+  border: 1px solid rgba(248, 113, 113, 0.34) !important;
+  color: #fecaca !important;
+}
+
+.admin-ds-button-destructive:hover,
+.beyonix-admin-main :where(button[aria-label*="Eliminar"], button[title*="Eliminar"], button[aria-label*="Bloquear"], button[title*="Bloquear"]):hover {
+  background-color: rgba(185, 28, 28, 0.28) !important;
+  border-color: rgba(252, 165, 165, 0.52) !important;
+  color: #ffffff !important;
+}
+
+.admin-ds-badge,
+.beyonix-admin-main :where(span, button)[class*="rounded-full"][class*="border"] {
+  border-radius: 9999px !important;
+  border-color: var(--admin-border) !important;
+  background-color: rgba(17, 42, 67, 0.22) !important;
+  color: #d7ecff !important;
+}
+
+.admin-ds-tone-neutral {
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  background-color: rgba(148, 163, 184, 0.08) !important;
+  color: rgba(248, 250, 252, 0.68) !important;
+}
+
+.admin-ds-tone-info {
+  border-color: var(--admin-border-strong) !important;
+  background-color: rgba(17, 42, 67, 0.28) !important;
+  color: #d7ecff !important;
+}
+
+.admin-ds-tone-success {
+  border-color: rgba(52, 211, 153, 0.34) !important;
+  background-color: rgba(6, 78, 59, 0.22) !important;
+  color: #d1fae5 !important;
+}
+
+.admin-ds-tone-warning {
+  border-color: rgba(245, 158, 11, 0.34) !important;
+  background-color: rgba(120, 53, 15, 0.22) !important;
+  color: #fde68a !important;
+}
+
+.admin-ds-tone-danger {
+  border-color: rgba(248, 113, 113, 0.34) !important;
+  background-color: rgba(127, 29, 29, 0.22) !important;
+  color: #fecaca !important;
+}
+
+.admin-ds-table,
+.beyonix-admin-main :where(table),
+.beyonix-admin-main :where(.admin-orders-table-header, .grid-cols-admin-products, .grid-cols-admin-categories, .grid-cols-admin-clients) {
+  background-color: #07111b !important;
+  border-color: var(--admin-border) !important;
+  border-radius: var(--admin-radius-lg) !important;
+}
+
+.admin-ds-table-header,
+.beyonix-admin-main :where(thead, th),
+.beyonix-admin-main :where(.admin-orders-table-header) {
+  background-color: #0b1622 !important;
+  border-color: var(--admin-border-soft) !important;
+  color: var(--admin-text-muted) !important;
+}
+
+.beyonix-admin-main :where(tr, .admin-orders-list-row, .grid-cols-admin-products, .grid-cols-admin-categories, .grid-cols-admin-clients) {
+  border-color: var(--admin-border-soft) !important;
+}
+
+.beyonix-admin-main :where(tr:hover, .admin-orders-list-row:hover, details:hover) {
+  background-color: rgba(17, 42, 67, 0.22) !important;
+}
+
+.admin-ds-skeleton {
+  border: 1px solid var(--admin-border-soft) !important;
+  border-radius: var(--admin-radius-lg) !important;
+  background:
+    linear-gradient(90deg, rgba(17, 42, 67, 0.24), rgba(140, 200, 242, 0.08), rgba(17, 42, 67, 0.24)) !important;
+}
+
+.admin-ds-drawer-body {
+  height: calc(100% - 8rem);
+}
+
+.beyonix-admin-main .admin-claim-manager {
+  border-color: var(--admin-border) !important;
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  box-shadow: var(--admin-glow) !important;
+}
+
+.beyonix-admin-main .admin-claim-header,
+.beyonix-admin-main .admin-claim-composer {
+  border-color: var(--admin-border-soft) !important;
+}
+
+.beyonix-admin-main .admin-claim-composer {
+  background-color: rgba(6, 13, 22, 0.96) !important;
+}
+
+.admin-claim-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-claim-definition-row {
+  grid-template-columns: 7rem minmax(0, 1fr);
+}
+
+.admin-claim-summary-card,
+.admin-claim-card,
+.admin-claim-note,
+.admin-claim-file-row,
+.admin-claim-chat-bubble {
+  border-color: var(--admin-border-soft) !important;
+  background-color: rgba(11, 22, 34, 0.96) !important;
+}
+
+.admin-claim-chat-panel {
+  min-height: 30rem;
+}
+
+.admin-claim-chat-bubble {
+  max-width: 82%;
+}
+
+.admin-claim-file-action {
+  min-height: 1.75rem !important;
+  border-radius: 0.5rem !important;
+}
+
+@media (min-width: 1024px) {
+  .admin-claim-layout {
+    grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.25fr);
+  }
+
+  .admin-claim-chat-panel {
+    height: clamp(30rem, 58vh, 40rem);
+  }
+}
+
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea) {
+  background-color: var(--admin-surface-raised);
+  border-color: var(--admin-border);
+  border-radius: var(--admin-radius);
+  color: var(--admin-text);
+  color-scheme: dark;
+  min-height: 2.75rem;
+}
+
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea)::placeholder {
+  color: rgba(248, 250, 252, 0.34);
+}
+
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea):hover {
+  background-color: rgba(17, 42, 67, 0.28);
+  border-color: rgba(191, 228, 255, 0.28);
+}
+
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea):focus,
+.beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea):focus-visible {
+  border-color: var(--admin-border-strong);
+  box-shadow: 0 0 18px rgba(96, 165, 250, 0.14);
+  outline: none;
+}
+
+.beyonix-admin-main .admin-control-input {
+  background-color: var(--admin-surface-raised);
 }
 
 .beyonix-section-spacing {
@@ -868,38 +1446,50 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 }
 
 .admin-solid-surface {
-  background-color: #000000 !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(17, 42, 67, 0.24), transparent 30rem),
+    #02060a !important;
 }
 
 .admin-solid-surface main[class*="bg-"],
 .admin-solid-surface > section[class*="bg-"] {
-  background-color: #000000 !important;
+  background-color: transparent !important;
 }
 
 .admin-solid-surface :where(section, article, aside, div)[class*="rounded-"][class*="border"][class*="bg-black"] {
-  background-color: #111111 !important;
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.28) !important;
 }
 
 .admin-solid-surface :where(section, article, aside, div)[class*="rounded-"][class*="border"][class*="bg-beyonix-surface"],
 .admin-solid-surface :where(section, article, aside, div)[class*="rounded-"][class*="border"][class*="bg-zinc-900"],
 .admin-solid-surface :where(section, article, aside, div)[class*="rounded-"][class*="border"][class*="bg-zinc-950"] {
-  background-color: #141414 !important;
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.28) !important;
 }
 
 .admin-solid-surface :where(section, article, aside, div)[class*="rounded-"][class*="border"] :where(section, article, aside, div)[class*="rounded-"][class*="border"][class*="bg-black"] {
-  background-color: #181818 !important;
+  background-color: #0b1622 !important;
+  border-color: rgba(92, 159, 215, 0.16) !important;
 }
 
 .admin-solid-surface :where(section, article, aside, div)[class*="rounded-"][class*="border"] :where(section, article, aside, div)[class*="rounded-"][class*="border"][class*="bg-white/"] {
-  background-color: #1c1c1c !important;
+  background-color: #101b27 !important;
+  border-color: rgba(92, 159, 215, 0.16) !important;
 }
 
 .admin-solid-surface .admin-product-form {
-  background-color: #0d0d0d !important;
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.28) !important;
 }
 
 .admin-solid-surface section.admin-product-section {
-  background-color: #141414 !important;
+  background:
+    linear-gradient(145deg, rgba(11, 22, 34, 0.98), rgba(6, 13, 22, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.18) !important;
 }
 
 .beyonix-login-input,
@@ -2486,4 +3076,289 @@ body.product-modal-open .category-hero {
   .admin-orders-filter-shell {
     border-radius: 1rem;
   }
+}
+
+/* Admin visual refinement: hierarchy, contrast and calm separation. */
+.beyonix-admin-main {
+  --admin-level-1: rgba(5, 12, 20, 0.98);
+  --admin-level-2: rgba(8, 18, 29, 0.98);
+  --admin-level-3: rgba(13, 27, 42, 0.98);
+  --admin-highlight: rgba(17, 42, 67, 0.74);
+  --admin-success-bg: rgba(3, 58, 41, 0.86);
+  --admin-warning-bg: rgba(86, 52, 9, 0.86);
+  --admin-danger-bg: rgba(89, 24, 34, 0.86);
+  --admin-info-bg: rgba(10, 35, 58, 0.9);
+}
+
+.beyonix-admin-main .admin-ds-surface {
+  background:
+    linear-gradient(145deg, var(--admin-level-1), rgba(3, 8, 14, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.2) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.026),
+    0 18px 42px rgba(0, 0, 0, 0.22) !important;
+}
+
+.beyonix-admin-main .admin-ds-card {
+  background:
+    linear-gradient(145deg, var(--admin-level-2), rgba(6, 14, 23, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.13) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.028) !important;
+}
+
+.beyonix-admin-main .admin-ds-surface .admin-ds-card,
+.beyonix-admin-main .admin-ds-card .admin-ds-card {
+  background:
+    linear-gradient(145deg, var(--admin-level-3), rgba(8, 17, 27, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.1) !important;
+  box-shadow: none !important;
+}
+
+.beyonix-admin-main .admin-ds-stat-card {
+  background:
+    linear-gradient(145deg, rgba(12, 28, 44, 0.98), rgba(7, 15, 24, 0.98)) !important;
+  border-color: rgba(140, 200, 242, 0.18) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 14px 34px rgba(0, 0, 0, 0.18) !important;
+}
+
+.beyonix-admin-main .admin-ds-stat-card p.wrap-break-word {
+  font-size: clamp(2rem, 1.6vw + 1rem, 2.7rem) !important;
+  line-height: 0.95 !important;
+}
+
+.beyonix-admin-main .admin-ds-stat-card p:first-child {
+  color: rgba(215, 236, 255, 0.62) !important;
+}
+
+.admin-ds-tone-success,
+.beyonix-admin-main :where(span, div, p)[class*="border-emerald"] {
+  background-color: var(--admin-success-bg) !important;
+  border-color: rgba(92, 255, 176, 0.36) !important;
+  color: #7DFFBF !important;
+}
+
+.admin-ds-tone-warning,
+.beyonix-admin-main :where(span, div, p)[class*="border-amber"] {
+  background-color: var(--admin-warning-bg) !important;
+  border-color: rgba(245, 158, 11, 0.42) !important;
+  color: #F5C15A !important;
+}
+
+.admin-ds-tone-danger,
+.beyonix-admin-main :where(span, div, p)[class*="border-red"] {
+  background-color: var(--admin-danger-bg) !important;
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  color: #FFB4BD !important;
+}
+
+.admin-ds-tone-info,
+.beyonix-admin-main :where(span, div, p)[class*="border-beyonix-blue-light"] {
+  background-color: var(--admin-info-bg) !important;
+  border-color: rgba(140, 200, 242, 0.34) !important;
+  color: #BFE4FF !important;
+}
+
+.beyonix-admin-main .admin-ds-table,
+.beyonix-admin-main :where(table),
+.beyonix-admin-main .admin-orders-table-header {
+  background:
+    linear-gradient(145deg, rgba(5, 12, 20, 0.98), rgba(3, 8, 14, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.2) !important;
+}
+
+.beyonix-admin-main .admin-ds-table-header,
+.beyonix-admin-main :where(thead, th),
+.beyonix-admin-main .admin-orders-table-header {
+  background-color: rgba(13, 27, 42, 0.94) !important;
+  color: rgba(215, 236, 255, 0.62) !important;
+}
+
+.beyonix-admin-main :where(tbody tr, .admin-orders-list-row),
+.beyonix-admin-main .admin-ds-table > :where(div, article):not(.admin-ds-table-header) {
+  background-color: rgba(8, 18, 29, 0.72) !important;
+  border-color: rgba(92, 159, 215, 0.1) !important;
+}
+
+.beyonix-admin-main :where(tbody tr:hover, .admin-orders-list-row:hover),
+.beyonix-admin-main .admin-ds-table > :where(div, article):not(.admin-ds-table-header):hover {
+  background-color: rgba(17, 42, 67, 0.52) !important;
+  border-color: rgba(140, 200, 242, 0.34) !important;
+  box-shadow:
+    inset 3px 0 0 rgba(140, 200, 242, 0.34),
+    0 10px 28px rgba(0, 0, 0, 0.16) !important;
+}
+
+.admin-ds-datepicker-popover {
+  background:
+    linear-gradient(145deg, rgba(4, 10, 17, 0.99), rgba(8, 18, 29, 0.99)) !important;
+  border-color: rgba(140, 200, 242, 0.34) !important;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(140, 200, 242, 0.08) !important;
+}
+
+.admin-ds-datepicker-header {
+  background:
+    linear-gradient(135deg, rgba(17, 42, 67, 0.92), rgba(6, 15, 25, 0.98)) !important;
+  border-color: rgba(140, 200, 242, 0.22) !important;
+}
+
+.admin-ds-datepicker-nav {
+  background-color: rgba(8, 18, 29, 0.98) !important;
+  border-color: rgba(140, 200, 242, 0.24) !important;
+  color: rgba(248, 250, 252, 0.78) !important;
+}
+
+.admin-ds-datepicker-nav:hover {
+  background-color: #112A43 !important;
+  border-color: rgba(191, 228, 255, 0.58) !important;
+  color: #ffffff !important;
+}
+
+.admin-ds-datepicker-day {
+  background-color: rgba(5, 12, 20, 0.9) !important;
+  border-color: rgba(92, 159, 215, 0.12) !important;
+  color: rgba(248, 250, 252, 0.82) !important;
+}
+
+.admin-ds-datepicker-day-current:hover,
+.admin-ds-datepicker-day-muted:hover {
+  background-color: rgba(17, 42, 67, 0.72) !important;
+  border-color: rgba(140, 200, 242, 0.45) !important;
+  color: #ffffff !important;
+}
+
+.admin-ds-datepicker-day-muted {
+  color: rgba(248, 250, 252, 0.3) !important;
+}
+
+.admin-ds-datepicker-day-today {
+  border-color: rgba(140, 200, 242, 0.52) !important;
+  background-color: rgba(17, 42, 67, 0.42) !important;
+  color: #D7ECFF !important;
+}
+
+.admin-ds-datepicker-day-selected {
+  background:
+    linear-gradient(135deg, #112A43, #1E4D7B) !important;
+  border-color: rgba(191, 228, 255, 0.78) !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 0 0 1px rgba(191, 228, 255, 0.12),
+    0 0 18px rgba(140, 200, 242, 0.22) !important;
+}
+
+.admin-order-detail-scope {
+  --order-level-1: rgba(5, 12, 20, 0.98);
+  --order-level-2: rgba(8, 18, 29, 0.98);
+  --order-level-3: rgba(13, 27, 42, 0.98);
+}
+
+.admin-order-detail-scope,
+.admin-order-detail-scope .custom-scrollbar {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(17, 42, 67, 0.28), transparent 24rem),
+    #02060A !important;
+}
+
+.admin-order-detail-scope :is(.admin-order-data-panel, .admin-order-client-panel, .admin-order-payment-panel, .admin-order-products-panel, .admin-order-shipping-panel, .admin-order-invoice-panel) {
+  background:
+    linear-gradient(145deg, var(--order-level-1), rgba(3, 8, 14, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.18) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.028),
+    0 14px 34px rgba(0, 0, 0, 0.16) !important;
+}
+
+.admin-order-detail-scope .admin-order-summary-main-panel {
+  background:
+    linear-gradient(135deg, rgba(17, 42, 67, 0.9), rgba(6, 15, 25, 0.98)) !important;
+  border-color: rgba(140, 200, 242, 0.26) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 16px 36px rgba(0, 0, 0, 0.18) !important;
+}
+
+.admin-order-detail-scope .admin-order-action-tone-urgent {
+  border-left: 3px solid #FFB4BD !important;
+}
+
+.admin-order-detail-scope .admin-order-action-tone-warning {
+  border-left: 3px solid #F5C15A !important;
+}
+
+.admin-order-detail-scope .admin-order-action-tone-info {
+  border-left: 3px solid #8CC8F2 !important;
+}
+
+.admin-order-detail-scope .admin-order-action-tone-success {
+  border-left: 3px solid #7DFFBF !important;
+}
+
+.admin-order-detail-scope .admin-order-status-badge-info {
+  background-color: rgba(10, 35, 58, 0.9) !important;
+  border-color: rgba(140, 200, 242, 0.36) !important;
+  color: #BFE4FF !important;
+}
+
+.admin-order-detail-scope .admin-order-status-badge-danger {
+  background-color: rgba(89, 24, 34, 0.9) !important;
+  border-color: rgba(248, 113, 113, 0.42) !important;
+  color: #FFB4BD !important;
+}
+
+.admin-order-detail-scope .admin-order-recommended-action,
+.admin-order-detail-scope .admin-order-info-card,
+.admin-order-detail-scope .admin-order-proof-card,
+.admin-order-detail-scope .admin-order-item-card {
+  background:
+    linear-gradient(145deg, var(--order-level-2), rgba(6, 14, 23, 0.98)) !important;
+  border-color: rgba(92, 159, 215, 0.12) !important;
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-order-finance-panel {
+  background:
+    linear-gradient(145deg, rgba(8, 18, 29, 0.96), rgba(5, 11, 18, 0.98)) !important;
+  border: 0 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.024) !important;
+}
+
+.admin-order-detail-scope .admin-order-finance-row {
+  color: rgba(248, 250, 252, 0.62) !important;
+  padding-block: 0.2rem;
+}
+
+.admin-order-detail-scope .admin-order-finance-row span:last-child {
+  color: rgba(248, 250, 252, 0.82) !important;
+  font-weight: 650 !important;
+}
+
+.admin-order-detail-scope .admin-order-final-total-card,
+.admin-order-detail-scope .admin-order-total-card,
+.admin-order-detail-scope .admin-order-received-card {
+  background:
+    linear-gradient(135deg, rgba(3, 58, 41, 0.96), rgba(5, 83, 58, 0.92)) !important;
+  border: 1px solid rgba(92, 255, 176, 0.42) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 24px rgba(16, 185, 129, 0.16) !important;
+}
+
+.admin-order-detail-scope .admin-order-final-total-card p:first-child {
+  color: rgba(209, 250, 229, 0.86) !important;
+}
+
+.admin-order-detail-scope .admin-order-final-total-card p:nth-child(2) {
+  color: #7DFFBF !important;
+  letter-spacing: 0 !important;
+  text-shadow: 0 0 16px rgba(16, 185, 129, 0.24);
+}
+
+.admin-order-detail-scope .admin-order-summary-products-panel .admin-order-item-card {
+  margin-top: 0.5rem;
+  border-color: transparent !important;
+  background-color: rgba(13, 27, 42, 0.84) !important;
 }

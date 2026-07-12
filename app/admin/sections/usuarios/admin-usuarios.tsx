@@ -1,9 +1,20 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Save, Search, ShieldCheck, Users } from "lucide-react"
+import { Save, ShieldCheck, Users } from "lucide-react"
 
-import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
+import {
+  adminPageClassName,
+  AdminCard,
+  AdminEmptyState,
+  AdminFiltersBar,
+  AdminInfoBlock,
+  AdminPageHeader,
+  AdminPrimaryButton,
+  AdminSearchInput,
+  AdminSelect,
+  AdminSkeleton,
+} from "../../components/admin-controls"
 import { useAuth } from "@/context/auth-context"
 import { supabase } from "@/lib/supabase/client"
 import {
@@ -131,43 +142,34 @@ export function AdminUsuarios() {
   }
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div>
-        <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-          Seguridad
-        </p>
-        <h1 className="text-3xl font-black text-white">Usuarios y roles</h1>
-        <p className="mt-2 text-sm text-white/60">
-          Administrá accesos internos con validación de servidor y auditoría.
-        </p>
-      </div>
+    <div className={adminPageClassName}>
+      <AdminPageHeader
+        eyebrow="Seguridad"
+        title="Usuarios y roles"
+        description="Administrá accesos internos con validación de servidor y auditoría."
+      />
 
-      <div className="rounded-3xl border border-white/8 bg-[#141414] p-4">
-        <AdminTextInput
+      <AdminFiltersBar>
+        <AdminSearchInput
           title="Buscar usuario"
           ariaLabel="Buscar usuario"
           value={search}
           placeholder="Email, usuario o nombre"
-          icon={<Search className="size-4" />}
           onChange={setSearch}
         />
-      </div>
+      </AdminFiltersBar>
 
       {message && (
-        <div
+        <AdminInfoBlock
           role="status"
-          className={`rounded-2xl border px-4 py-3 text-sm ${
-            message.type === "success"
-              ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
-              : "border-red-400/25 bg-red-400/10 text-red-200"
-          }`}
+          tone={message.type === "success" ? "success" : "danger"}
         >
           {message.text}
-        </div>
+        </AdminInfoBlock>
       )}
 
       {loading ? (
-        <div className="h-72 animate-pulse rounded-3xl border border-white/8 bg-[#141414]" />
+        <AdminSkeleton rows={5} />
       ) : (
         <div className="space-y-3">
           {filteredUsers.map((managedUser) => {
@@ -179,9 +181,9 @@ export function AdminUsuarios() {
             const disabled = protectedUser || lockedSuperAdmin
 
             return (
-              <div
+              <AdminCard
                 key={managedUser.id}
-                className="grid gap-4 rounded-3xl border border-white/8 bg-[#141414] p-4 md:grid-cols-[minmax(0,1fr)_220px_120px] md:items-center"
+                className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_120px] md:items-center"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -216,28 +218,26 @@ export function AdminUsuarios() {
                   )}
                 </AdminSelect>
 
-                <button
-                  type="button"
+                <AdminPrimaryButton
                   disabled={
                     disabled ||
                     savingId === managedUser.id ||
                     draftRoles[managedUser.id] === managedUser.rol
                   }
                   onClick={() => void saveRole(managedUser)}
-                  className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-beyonix-blue-light/40 bg-beyonix-blue px-4 text-sm font-black text-white transition hover:border-beyonix-sky disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Save className="size-4" />
                   Guardar
-                </button>
-              </div>
+                </AdminPrimaryButton>
+              </AdminCard>
             )
           })}
 
           {!filteredUsers.length && (
-            <div className="rounded-3xl border border-white/8 bg-[#141414] px-6 py-12 text-center">
-              <Users className="mx-auto mb-3 size-10 text-white/25" />
-              <p className="text-sm text-white/60">No se encontraron usuarios.</p>
-            </div>
+            <AdminEmptyState
+              icon={<Users className="size-5" />}
+              title="No se encontraron usuarios."
+            />
           )}
         </div>
       )}

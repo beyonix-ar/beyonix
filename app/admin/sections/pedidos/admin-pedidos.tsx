@@ -20,7 +20,6 @@ import {
   LoaderCircle,
   Printer,
   RefreshCw,
-  Search,
   ShieldCheck,
   ShoppingCart,
   Truck,
@@ -68,7 +67,16 @@ import type {
   SupabasePedido,
   SupabasePedidoItem,
 } from "@/lib/supabase/types"
-import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
+import {
+  AdminEmptyState,
+  AdminFiltersBar,
+  AdminInfoBlock,
+  AdminPageHeader,
+  AdminSearchInput,
+  AdminSelect,
+  AdminSkeleton,
+  AdminTextInput,
+} from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
 type StatusFilter =
@@ -2831,25 +2839,20 @@ function AdminOrderSummaryDashboard({
       ? pendingBalance
       : orderTotal
   const finalBalance = Math.max(0, orderTotal - refundAmount)
-  const actionToneClass = {
-    urgent: "border-[#7f2d3a]/65 bg-[#0B1118]",
-    warning: "border-amber-300/24 bg-[#0B1118]",
-    info: "border-beyonix-blue-light/22 bg-[#0B1118]",
-    success: "border-emerald-300/22 bg-[#0B1118]",
-  }[action.tone]
+  const actionToneClass = `admin-order-action-tone-${action.tone}`
   return (
     <div className="admin-order-summary-view space-y-2.5">
-      <section className={`admin-order-summary-main-panel rounded-xl border bg-[#0B1118] px-3 py-2.5 ${actionToneClass}`}>
+      <section className={`admin-order-summary-main-panel rounded-xl border px-3 py-2.5 ${actionToneClass}`}>
         <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-black text-white">
                 Pedido #{formatPublicOrderId(pedido.id)}
               </h3>
-              <span className={`rounded-full border px-2.5 py-0.5 text-10px font-black uppercase tracking-wide ${
+              <span className={`admin-order-status-badge rounded-full border px-2.5 py-0.5 text-10px font-black uppercase tracking-wide ${
                 isAdminSensitiveStatus(mainStatus)
-                  ? "border-[#9f3546]/65 bg-[#2a1117] text-[#ffc2c8]"
-                  : "border-white/10 bg-black/24 text-white/82"
+                  ? "admin-order-status-badge-danger"
+                  : "admin-order-status-badge-info"
               }`}>
                 {mainStatus}
               </span>
@@ -2862,14 +2865,14 @@ function AdminOrderSummaryDashboard({
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-[#111827] px-2.5 py-2 lg:min-w-52">
+          <div className="admin-order-recommended-action rounded-lg px-2.5 py-2 lg:min-w-52">
             <div className="min-w-0">
               <p className="truncate text-sm font-black text-white">{action.title}</p>
             </div>
             <button
               type="button"
               onClick={() => onGoToView(action.target)}
-              className="mt-2 inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-10px font-black uppercase tracking-wide text-white transition hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B]"
+              className="admin-ds-button admin-ds-button-primary mt-2 inline-flex h-8 cursor-pointer items-center justify-center px-3 text-10px font-black uppercase tracking-wide transition"
             >
               {action.buttonLabel}
             </button>
@@ -2878,7 +2881,7 @@ function AdminOrderSummaryDashboard({
       </section>
 
       <div className="grid gap-2.5 xl:grid-cols-[minmax(300px,0.4fr)_minmax(0,0.6fr)]">
-        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3">
+        <section className="admin-order-finance-panel rounded-xl p-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
               Resumen económico
@@ -2886,11 +2889,11 @@ function AdminOrderSummaryDashboard({
           </div>
 
           <div className="mt-2.5 space-y-1.5 text-sm">
-            <div className="flex items-baseline justify-between gap-4">
+            <div className="admin-order-finance-row flex items-baseline justify-between gap-4">
               <span className="text-white/54">Subtotal productos</span>
               <span className="font-bold text-white/82">{formatPrice(financialBreakdown.productsSubtotal)}</span>
             </div>
-            <div className="flex items-baseline justify-between gap-4">
+            <div className="admin-order-finance-row flex items-baseline justify-between gap-4">
               <span className="text-white/54">Descuento transferencia</span>
               <span className="font-bold text-emerald-200">
                 {financialBreakdown.transferDiscount > 0
@@ -2898,7 +2901,7 @@ function AdminOrderSummaryDashboard({
                   : formatPrice(0)}
               </span>
             </div>
-            <div className="flex items-baseline justify-between gap-4">
+            <div className="admin-order-finance-row flex items-baseline justify-between gap-4">
               <span className="text-white/54">Envío</span>
               <span className="font-bold text-white/82">
                 {financialBreakdown.shipping > 0 ? formatPrice(financialBreakdown.shipping) : "Gratis"}
@@ -2911,8 +2914,8 @@ function AdminOrderSummaryDashboard({
           <div
             className={
               isCollectedTotal
-                ? "admin-order-received-card rounded-lg border px-3 py-3"
-                : "admin-order-total-card rounded-lg border px-3 py-2"
+                ? "admin-order-received-card admin-order-final-total-card rounded-lg px-4 py-4"
+                : "admin-order-total-card admin-order-final-total-card rounded-lg px-4 py-4"
             }
           >
             <p
@@ -2927,8 +2930,8 @@ function AdminOrderSummaryDashboard({
             <p
               className={
                 isCollectedTotal
-                  ? "admin-order-total-received-amount mt-0.5 text-lg font-black text-emerald-100"
-                  : "mt-0.5 text-lg font-black text-white sm:text-xl"
+                  ? "admin-order-total-received-amount mt-1 text-2xl font-black text-emerald-100"
+                  : "mt-1 text-2xl font-black text-white"
               }
             >
               {formatPrice(totalValue)}
@@ -2936,8 +2939,8 @@ function AdminOrderSummaryDashboard({
             <p
               className={
                 isCollectedTotal
-                  ? "mt-0.5 text-[11px] font-medium text-white/76"
-                  : "mt-0.5 text-[11px] font-medium text-white"
+                  ? "mt-1 text-11px font-medium text-white/76"
+                  : "mt-1 text-11px font-medium text-white"
               }
             >
               {paymentContext}
@@ -6071,30 +6074,18 @@ export function AdminPedidos({
 
   return (
     <div className="min-w-0 space-y-5 p-3 sm:p-5 lg:p-6 2xl:p-8">
-      <div className="admin-orders-header-panel rounded-3xl border bg-black/80 p-4 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0">
-            <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-              Pedidos
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-black text-white/95 sm:text-3xl">
-                Gestión de pedidos
-              </h1>
-            </div>
-            <p className="mt-2 text-sm text-white/68">
-              Seguimiento de pago, productos, envío y prioridad de despacho.
-            </p>
-          </div>
-
-          <div className="admin-orders-filter-shell grid w-full gap-3 rounded-2xl border p-2 sm:grid-cols-admin-order-filters xl:max-w-2xl">
+      <AdminPageHeader
+        eyebrow="Pedidos"
+        title="Gestión de pedidos"
+        description="Seguimiento de pago, productos, envío y prioridad de despacho."
+        actions={
+          <AdminFiltersBar className="grid w-full gap-3 sm:grid-cols-admin-order-filters xl:w-[42rem]">
             <div className="admin-orders-search-field min-w-0">
-              <AdminTextInput
+              <AdminSearchInput
                 title="Buscar pedido"
                 ariaLabel="Buscar pedido"
                 placeholder="Buscar pedido, cliente o producto"
                 value={search}
-                icon={<Search className="size-4" />}
                 onChange={setSearch}
               />
             </div>
@@ -6117,13 +6108,14 @@ export function AdminPedidos({
                 <option value="rechazado">Comprobantes rechazados</option>
               </AdminSelect>
             </div>
-          </div>
-        </div>
-      </div>
+          </AdminFiltersBar>
+        }
+      />
 
       {attentionFilter !== "all" && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#141820] px-3 py-2 text-xs text-white/70">
-          <span>
+        <AdminInfoBlock tone="info">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
             Filtro de notificaciones: {attentionFilter === "claim"
               ? "Reclamos por responder"
               : attentionFilter === "message"
@@ -6137,62 +6129,52 @@ export function AdminPedidos({
                 : attentionFilter === "cancellation"
                   ? "Cancelaciones y reintegros"
                   : "Pedidos nuevos"}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setAttentionFilter("all")
-              const nextParams = new URLSearchParams(searchParams.toString())
-              nextParams.delete("attention")
-              router.replace(`/admin?${nextParams.toString()}`, { scroll: false })
-            }}
-            className="cursor-pointer font-black text-beyonix-sky hover:text-white"
-          >
-            Ver todos
-          </button>
-        </div>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setAttentionFilter("all")
+                const nextParams = new URLSearchParams(searchParams.toString())
+                nextParams.delete("attention")
+                router.replace(`/admin?${nextParams.toString()}`, { scroll: false })
+              }}
+              className="cursor-pointer font-black text-beyonix-sky hover:text-white"
+            >
+              Ver todos
+            </button>
+          </div>
+        </AdminInfoBlock>
       )}
 
       {error && (
-        <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+        <AdminInfoBlock tone="danger">
           {error}
-        </div>
+        </AdminInfoBlock>
       )}
 
       {notice && (
-        <div
+        <AdminInfoBlock
           role="status"
-          className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
-            notice.type === "ok"
-              ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
-              : "border-red-400/20 bg-red-400/10 text-red-200"
-          }`}
+          tone={notice.type === "ok" ? "success" : "danger"}
+          icon={
+            notice.type === "ok" ? (
+              <CheckCircle2 className="size-4" />
+            ) : (
+              <AlertTriangle className="size-4" />
+            )
+          }
         >
-          {notice.type === "ok" ? (
-            <CheckCircle2 className="size-4 shrink-0" />
-          ) : (
-            <AlertTriangle className="size-4 shrink-0" />
-          )}
           {notice.message}
-        </div>
+        </AdminInfoBlock>
       )}
 
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 7 }).map((_, index) => (
-            <div
-              key={index}
-              className="h-112px animate-pulse rounded-3xl border border-white/7 bg-white/3"
-            />
-          ))}
-        </div>
+        <AdminSkeleton rows={7} />
       ) : pedidosFiltrados.length === 0 ? (
-        <div className="rounded-3xl border border-white/8 bg-black p-12 text-center">
-          <ShoppingCart className="mx-auto mb-4 size-11 text-white/24" />
-          <p className="text-sm font-bold text-white/72">
-            No hay pedidos para los filtros seleccionados.
-          </p>
-        </div>
+        <AdminEmptyState
+          icon={<ShoppingCart className="size-5" />}
+          title="No hay pedidos para los filtros seleccionados."
+        />
       ) : (
         <div className="w-full min-w-0 space-y-3">
             <div className="admin-orders-table-header hidden grid-cols-admin-orders-pro gap-3 rounded-2xl border bg-black/90 px-4 py-3 2xl:grid">

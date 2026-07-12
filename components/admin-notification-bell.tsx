@@ -18,9 +18,8 @@ import { AdminNotificationsPopover } from "@/components/admin-notifications-popo
 import { cn } from "@/lib/utils"
 
 const ADMIN_NEUTRAL_BELL_STYLE =
-  "border-[#77E6E2]/25 bg-[#102034] text-[#D7FFFD] hover:border-[#77E6E2]/45 hover:bg-[#13283f] hover:text-white"
-const ADMIN_NEUTRAL_BADGE_STYLE =
-  "bg-[#77E6E2] text-black shadow-[0_0_10px_rgba(119,230,226,0.58)]"
+  "admin-ds-notification-bell"
+const ADMIN_NEUTRAL_BADGE_STYLE = "admin-ds-notification-count"
 
 interface AdminNotificationBellProps {
   count: number
@@ -119,19 +118,19 @@ export function AdminNotificationBell({
         onClick={() => setOpen((current) => !current)}
         onFocus={openPopover}
         className={cn(
-          "relative flex size-10 cursor-pointer items-center justify-center rounded-full border text-white shadow-lg shadow-black/35 transition-all hover:shadow-[0_0_0_1px_rgba(30,111,174,0.45)]",
+          "admin-ds-bell-button relative flex size-10 cursor-pointer items-center justify-center rounded-full border text-white transition-all",
           count > 0
             ? sensitiveTone
               ? ADMIN_SENSITIVE_DANGER.action
               : ADMIN_NEUTRAL_BELL_STYLE
-            : "border-white/12 bg-[#0D1117] hover:border-[#1e6fae] hover:bg-[#15191F]",
+            : "admin-ds-bell-button-idle",
         )}
       >
         <Bell className="size-4" />
         {count > 0 && (
           <span
             className={cn(
-              "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[7px] font-medium leading-none",
+              "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-9px font-medium leading-none",
               sensitiveTone
                 ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
                 : ADMIN_NEUTRAL_BADGE_STYLE,
@@ -145,7 +144,7 @@ export function AdminNotificationBell({
       {open && (
         <div
           className={cn(
-            "absolute top-12 z-100 w-80 max-w-[calc(100vw-2rem)] sm:w-96",
+            "admin-ds-popover-position absolute top-12 z-100 w-80 sm:w-96",
             align === "start" ? "left-0" : "right-0",
           )}
           onMouseEnter={openPopover}

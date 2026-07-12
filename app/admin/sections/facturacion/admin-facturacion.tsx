@@ -2,10 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, ExternalLink, FileText, LoaderCircle, RefreshCw, Search } from "lucide-react"
+import { AlertTriangle, ExternalLink, FileText, LoaderCircle, RefreshCw } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
-import { AdminTextInput } from "../../components/admin-controls"
+import {
+  adminPageClassName,
+  AdminBadge,
+  AdminEmptyState,
+  AdminInfoBlock,
+  AdminPageHeader,
+  AdminPrimaryButton,
+  AdminSearchInput,
+  AdminSecondaryButton,
+  AdminSkeleton,
+  AdminTable,
+} from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
 interface PendingInvoiceOrder {
@@ -43,10 +54,10 @@ function getInvoiceStatusLabel(status?: PendingInvoiceOrder["invoice_status"]) {
   return "Pendiente"
 }
 
-function getInvoiceStatusClass(status?: PendingInvoiceOrder["invoice_status"]) {
-  if (status === "processing") return "border-blue-300/25 bg-blue-400/10 text-blue-200"
-  if (status === "error") return "border-red-300/25 bg-red-400/10 text-red-200"
-  return "border-amber-300/25 bg-amber-300/10 text-amber-100"
+function getInvoiceStatusTone(status?: PendingInvoiceOrder["invoice_status"]) {
+  if (status === "processing") return "info"
+  if (status === "error") return "danger"
+  return "warning"
 }
 
 function getInvoiceErrorText(order: PendingInvoiceOrder) {
@@ -186,45 +197,35 @@ export function AdminFacturacion() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-7xl space-y-4 px-4 py-5 sm:px-6 lg:px-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-            Facturación
-          </p>
-          <h1 className="text-3xl font-black text-white/95">Facturas pendientes</h1>
-          <p className="mt-2 text-sm text-white/68">
-            Pedidos pagos que necesitan emisión de Factura C.
-          </p>
-        </div>
-
-        <div className="w-full max-w-md">
-          <AdminTextInput
+    <section className={adminPageClassName}>
+      <AdminPageHeader
+        eyebrow="Facturación"
+        title="Facturas pendientes"
+        description="Pedidos pagos que necesitan emisión de Factura C."
+        actions={
+          <div className="w-full min-w-80 sm:w-96">
+            <AdminSearchInput
             title="Buscar factura pendiente"
             ariaLabel="Buscar factura pendiente"
             value={search}
             placeholder="Buscar pedido, cliente o error"
-            icon={<Search className="size-4" />}
             onChange={setSearch}
           />
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {notice && (
-        <div
+        <AdminInfoBlock
           role="status"
-          className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
-            notice.type === "ok"
-              ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
-              : "border-red-400/20 bg-red-400/10 text-red-200"
-          }`}
+          tone={notice.type === "ok" ? "success" : "danger"}
+          icon={notice.type === "error" ? <AlertTriangle className="size-4" /> : null}
         >
-          {notice.type === "error" && <AlertTriangle className="size-4 shrink-0" />}
           {notice.message}
-        </div>
+        </AdminInfoBlock>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-white/8 bg-black">
+      <AdminTable>
         <div className="hidden grid-cols-[1fr_1.8fr_1fr_1fr_1fr_1.8fr] gap-3 border-b border-white/8 px-4 py-3 text-11px font-black uppercase tracking-wide text-white/55 xl:grid">
           <span>Pedido</span>
           <span>Cliente</span>
@@ -235,18 +236,13 @@ export function AdminFacturacion() {
         </div>
 
         {loading ? (
-          <div className="divide-y divide-white/8">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="h-14 animate-pulse bg-white/4" />
-            ))}
-          </div>
+          <AdminSkeleton rows={8} className="p-3" />
         ) : filteredOrders.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <FileText className="mx-auto mb-4 size-10 text-white/24" />
-            <p className="text-sm font-bold text-white/72">
-              No hay facturas pendientes para los filtros seleccionados.
-            </p>
-          </div>
+          <AdminEmptyState
+            icon={<FileText className="size-5" />}
+            title="No hay facturas pendientes para los filtros seleccionados."
+            className="rounded-none border-0 bg-transparent shadow-none"
+          />
         ) : (
           <div className="divide-y divide-white/8">
             {filteredOrders.map((order) => {
@@ -290,11 +286,9 @@ export function AdminFacturacion() {
 
                   <div>
                     <p className="text-11px font-bold uppercase text-white/42 xl:hidden">Estado</p>
-                    <span
-                      className={`inline-flex rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${getInvoiceStatusClass(order.invoice_status)}`}
-                    >
+                    <AdminBadge tone={getInvoiceStatusTone(order.invoice_status)}>
                       {getInvoiceStatusLabel(order.invoice_status)}
-                    </span>
+                    </AdminBadge>
                     {errorText && (
                       <p className="mt-1 line-clamp-2 text-xs leading-5 text-red-200/78 xl:hidden">
                         {errorText}
@@ -303,11 +297,10 @@ export function AdminFacturacion() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                    <button
-                      type="button"
+                    <AdminPrimaryButton
                       disabled={actionDisabled}
+                      size="sm"
                       onClick={() => void handleIssueInvoice(order)}
-                      className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-beyonix-blue-light/30 bg-[#112A43] px-3 text-xs font-black text-white transition-all hover:border-[#1e6fae] hover:shadow-[0_0_0_1px_rgba(30,111,174,0.35)] disabled:cursor-not-allowed disabled:opacity-55"
                     >
                       {isIssuing || isProcessing ? (
                         <LoaderCircle className="size-4 animate-spin" />
@@ -321,16 +314,15 @@ export function AdminFacturacion() {
                         : canRetry
                           ? "Reintentar emisión"
                           : "Emitir factura"}
-                    </button>
+                    </AdminPrimaryButton>
 
-                    <button
-                      type="button"
+                    <AdminSecondaryButton
+                      size="sm"
                       onClick={() => router.push(`/admin/pedidos/${order.id}?tab=pago`)}
-                      className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-black text-white/72 transition-all hover:border-[#1e6fae] hover:text-white hover:shadow-[0_0_0_1px_rgba(30,111,174,0.35)]"
                     >
                       <ExternalLink className="size-4" />
                       Ver pedido
-                    </button>
+                    </AdminSecondaryButton>
                   </div>
 
                   {errorText && (
@@ -344,7 +336,7 @@ export function AdminFacturacion() {
             })}
           </div>
         )}
-      </div>
+      </AdminTable>
     </section>
   )
 }

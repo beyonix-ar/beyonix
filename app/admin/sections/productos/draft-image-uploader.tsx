@@ -114,10 +114,8 @@ export function DraftImageUploader({
         onDragLeave={() =>
           setDragging(false)
         }
-        className={`flex h-24 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed transition-colors ${
-          dragging
-            ? "border-blue-400 bg-sky-950/30"
-            : "border-white/10 bg-[#181818] hover:border-[#112A43]"
+        className={`admin-ds-upload-zone admin-ds-upload-zone-compact flex cursor-pointer flex-col items-center justify-center gap-1.5 border border-dashed transition-colors ${
+          dragging ? "admin-ds-upload-zone-active" : ""
         }`}
       >
         <Upload className="size-6 text-white/25" />
@@ -159,7 +157,7 @@ export function DraftImageUploader({
       </div>
 
       {!files.length && (
-        <div className="rounded-xl border border-white/6 bg-[#181818] px-4 py-4 text-center">
+        <div className="admin-ds-card px-4 py-4 text-center">
           <ImageIcon className="mx-auto mb-2 size-7 text-white/15" />
 
           <p className="text-sm text-white/55">
@@ -191,7 +189,7 @@ export function DraftImageUploader({
                 setDraggedIndex(null)
               }}
               onDragEnd={() => setDraggedIndex(null)}
-              className="group relative aspect-square cursor-grab overflow-hidden rounded-xl border border-white/8 bg-beyonix-surface-3 p-1 transition-colors hover:border-[#112A43] active:cursor-grabbing"
+              className="admin-ds-media-tile group relative aspect-square cursor-grab overflow-hidden p-1 transition-colors active:cursor-grabbing"
             >
               <TransparencyAwareImage
                 alt={preview.file.name}
@@ -206,7 +204,7 @@ export function DraftImageUploader({
               )}
 
               <div className="absolute inset-0 flex items-center justify-center bg-black/65 opacity-0 transition-opacity group-hover:opacity-100">
-                <span className="absolute left-2 top-2 flex size-7 items-center justify-center rounded-lg border border-white/10 bg-black/70 text-white/60">
+                <span className="admin-ds-icon-action absolute left-2 top-2 flex size-7 items-center justify-center text-white/60">
                   <GripVertical className="size-4" />
                 </span>
 
@@ -217,7 +215,7 @@ export function DraftImageUploader({
                   onClick={() =>
                     removeFile(preview)
                   }
-                  className="flex size-9 cursor-pointer items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-[#112A43]"
+                  className="admin-ds-icon-action admin-ds-icon-action-danger flex size-9 cursor-pointer items-center justify-center transition-colors"
                 >
                   <Trash2 className="size-4 text-white" />
                 </button>

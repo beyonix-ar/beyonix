@@ -65,10 +65,8 @@ export function ImageUploader({
         onDragLeave={() =>
           setDragging(false)
         }
-        className={`flex h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed transition-colors ${
-          dragging
-            ? "border-beyonix-cyan bg-beyonix-blue/30"
-            : "border-white/10 bg-[#181818] hover:border-[#112A43]"
+        className={`admin-ds-upload-zone admin-ds-upload-zone-large flex cursor-pointer flex-col items-center justify-center gap-3 border border-dashed transition-colors ${
+          dragging ? "admin-ds-upload-zone-active" : ""
         }`}
       >
         {uploading ? (
@@ -114,7 +112,7 @@ export function ImageUploader({
       </div>
 
       {error && (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
+        <div className="admin-ds-card admin-ds-tone-danger px-4 py-3">
           <p className="text-sm text-red-400">
             {error}
           </p>
@@ -123,7 +121,7 @@ export function ImageUploader({
 
       {!uploading &&
         !imagenes.length && (
-          <div className="rounded-2xl border border-white/6 bg-black px-5 py-10 text-center">
+          <div className="admin-ds-card px-5 py-10 text-center">
             <ImageIcon className="mx-auto mb-3 size-8 text-white/15" />
 
             <p className="text-sm text-white/55">
@@ -138,7 +136,7 @@ export function ImageUploader({
           {imagenes.map((img) => (
             <div
               key={img.id}
-              className="group relative aspect-square overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface-3 p-1.5 transition-colors hover:border-[#112A43]"
+              className="admin-ds-media-tile group relative aspect-square overflow-hidden p-1.5 transition-colors"
             >
               <TransparencyAwareImage
                 alt=""
@@ -156,7 +154,7 @@ export function ImageUploader({
                       img.url
                     )
                   }
-                  className="flex size-9 items-center justify-center rounded-xl bg-amber-500/90 transition-colors hover:bg-[#112A43] cursor-pointer"
+                  className="admin-ds-icon-action flex size-9 cursor-pointer items-center justify-center transition-colors"
                 >
                   <Star className="size-4 text-white" />
                 </button>
@@ -170,7 +168,7 @@ export function ImageUploader({
                       img
                     )
                   }
-                  className="flex size-9 items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-[#112A43] cursor-pointer"
+                  className="admin-ds-icon-action admin-ds-icon-action-danger flex size-9 cursor-pointer items-center justify-center transition-colors"
                 >
                   <Trash2 className="size-4 text-white" />
                 </button>

@@ -14,6 +14,14 @@ import {
 } from "@/lib/supabase/queries/categorias"
 
 import { slugify } from "../productos/helpers"
+import {
+  adminControlClassName,
+  AdminDangerButton,
+  AdminInfoBlock,
+  AdminPageHeader,
+  AdminPrimaryButton,
+  AdminSecondaryButton,
+} from "../../components/admin-controls"
 
 interface CategoriaFormProps {
   categoria?: SupabaseCategoria | null
@@ -108,7 +116,7 @@ export function CategoriaForm({
   }
 
   const inputClass =
-    "w-full rounded-2xl border border-white/8 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-beyonix-blue-light"
+    adminControlClassName
   const labelClass =
     "mb-2 block text-xs font-semibold uppercase tracking-widest text-white/50"
   const previewImage = previewUrl || imagen
@@ -117,34 +125,27 @@ export function CategoriaForm({
 
   return (
     <div className="w-full">
-      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
-            Categorías
-          </p>
-
-          <h1 className="text-3xl font-bold text-white">
-            {categoria ? "Editar categoría" : "Nueva categoría"}
-          </h1>
-        </div>
-
-        <button
-          type="button"
-          title="Volver"
-          aria-label="Volver"
-          onClick={onCancel}
-          className="inline-flex h-11 min-w-140px cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/8 px-5 text-white/70 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="size-4" />
-          Volver
-        </button>
-      </div>
+      <AdminPageHeader
+        eyebrow="Categorías"
+        title={categoria ? "Editar categoría" : "Nueva categoría"}
+        actions={
+          <AdminSecondaryButton
+            title="Volver"
+            aria-label="Volver"
+            onClick={onCancel}
+            className="min-w-140px"
+          >
+            <ArrowLeft className="size-4" />
+            Volver
+          </AdminSecondaryButton>
+        }
+      />
 
       <form
         onSubmit={handleSubmit}
-        className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.78fr)] 2xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,0.72fr)]"
+        className="mt-5 grid gap-5 xl:grid-cols-2"
       >
-        <section className="space-y-5 rounded-3xl border border-white/7 bg-black p-5">
+        <section className="admin-ds-surface space-y-5 p-5">
           <div>
             <div>
               <label htmlFor="categoria-nombre" className={labelClass}>
@@ -174,8 +175,8 @@ export function CategoriaForm({
             />
           </div>
 
-          <div className="grid gap-5 2xl:grid-cols-[minmax(0,0.82fr)_minmax(320px,0.68fr)]">
-            <section className="space-y-4 rounded-3xl border border-white/7 bg-black p-4">
+          <div className="grid gap-5 2xl:grid-cols-2">
+            <section className="admin-ds-card space-y-4 p-4">
               <button
                 type="button"
                 onClick={() =>
@@ -224,7 +225,7 @@ export function CategoriaForm({
                       value ? (Number(value) as 1 | 2 | 3) : null
                     )
                   }}
-                  className={`${inputClass} admin-control-select cursor-pointer appearance-none border-[rgba(148,197,255,0.18)] bg-[#0B111A] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] focus:border-[rgba(191,228,255,0.42)] disabled:cursor-not-allowed disabled:opacity-45`}
+                  className={`${inputClass} admin-control-select cursor-pointer appearance-none disabled:cursor-not-allowed disabled:opacity-45`}
                 >
                   <option value="">Sin posición</option>
                   <option value="1">1</option>
@@ -234,7 +235,7 @@ export function CategoriaForm({
               </div>
             </section>
 
-            <section className="rounded-3xl border border-beyonix-blue-light/18 bg-beyonix-blue/15 p-4">
+            <section className="admin-ds-card p-4">
               <p className="mb-3 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                 Vista previa
               </p>
@@ -264,28 +265,25 @@ export function CategoriaForm({
           </div>
 
           {error && (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
-              <p className="text-sm text-red-400">{error}</p>
-            </div>
+            <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
           )}
 
           <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:justify-end">
-            <button
-              type="button"
+            <AdminSecondaryButton
               title="Cancelar"
               aria-label="Cancelar"
               onClick={onCancel}
-              className="h-12 min-w-140px cursor-pointer rounded-2xl border border-white/10 px-6 text-sm text-white/70 transition-colors hover:text-white"
+              className="min-w-140px"
             >
               Cancelar
-            </button>
+            </AdminSecondaryButton>
 
-            <button
+            <AdminPrimaryButton
               type="submit"
               disabled={saving}
               title="Guardar categoría"
               aria-label="Guardar categoría"
-              className="flex h-12 min-w-180px cursor-pointer items-center justify-center rounded-2xl bg-white px-6 text-sm font-semibold text-black transition-all hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-w-180px"
             >
               {saving ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -294,11 +292,11 @@ export function CategoriaForm({
               ) : (
                 "Crear categoría"
               )}
-            </button>
+            </AdminPrimaryButton>
           </div>
         </section>
 
-        <aside className="rounded-3xl border border-white/7 bg-black p-4">
+        <aside className="admin-ds-surface p-4">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
@@ -310,23 +308,22 @@ export function CategoriaForm({
             </div>
 
             {previewImage && (
-              <button
-                type="button"
+              <AdminDangerButton
                 onClick={() => {
                   setImagen("")
                   setImageFile(null)
                 }}
-                className="flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-500/25 px-4 text-sm font-semibold text-red-300 transition-colors hover:border-red-400/45 hover:text-red-200"
+                className="shrink-0"
               >
                 <Trash2 className="size-4" />
                 Eliminar
-              </button>
+              </AdminDangerButton>
             )}
           </div>
 
           <label
             htmlFor="categoria-imagen"
-            className="group relative flex aspect-[16/10] min-h-[360px] cursor-pointer overflow-hidden rounded-2xl border border-dashed border-beyonix-blue-light/28 bg-beyonix-surface-3 transition-colors hover:border-beyonix-blue-light/60 xl:min-h-[500px] 2xl:min-h-[580px]"
+            className="admin-category-image-dropzone group relative flex cursor-pointer overflow-hidden border border-dashed transition-colors"
           >
             {previewImage ? (
               <>

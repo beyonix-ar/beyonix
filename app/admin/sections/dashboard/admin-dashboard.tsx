@@ -29,7 +29,12 @@ import { useDashboard } from "@/hooks/use-dashboard"
 import { formatPrice } from "../productos/helpers"
 import { SITE_SETTINGS } from "@/config/site-settings"
 import { AdminDatePicker } from "../../components/admin-date-picker"
-import { AdminSelect } from "../../components/admin-controls"
+import {
+  AdminEmptyState,
+  AdminSelect,
+  AdminSkeleton,
+  AdminStatCard,
+} from "../../components/admin-controls"
 
 interface AdminDashboardProps {
   onNavigate: (section: AdminSection) => void
@@ -248,54 +253,21 @@ function StatCard({
   icon: React.ReactNode
   onClick?: () => void
 }) {
-  const valueClass =
-    typeof value === "number"
-      ? "text-2xl"
-      : String(value).length > 16
-        ? "text-lg leading-tight"
-        : "text-xl"
-  const content = (
-    <>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan/85">
-            {title}
-          </p>
-          <p className={`mt-3 wrap-break-word font-black text-white ${valueClass}`}>
-            {value}
-          </p>
-          {helper && <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-white/58">{helper}</p>}
-        </div>
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-beyonix-blue-light/26 bg-beyonix-blue/35 text-beyonix-sky shadow-[0_0_18px_rgba(96,165,250,0.08)]">
-          {icon}
-        </span>
-      </div>
-      {onClick && (
-        <span className="mt-4 inline-flex h-8 items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/18 px-3 text-xs font-black text-white/72 transition group-hover:border-beyonix-sky/38 group-hover:text-white">
-          Abrir <ArrowRight className="size-3.5" />
-        </span>
-      )}
-    </>
-  )
-
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        title={`Abrir ${title}`}
-        aria-label={`Abrir ${title}`}
-        onClick={onClick}
-        className="group min-h-136px cursor-pointer rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.96),rgba(3,7,13,0.92))] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_42px_rgba(0,0,0,0.22)] transition duration-200 hover:-translate-y-0.5 hover:border-beyonix-sky/38 hover:shadow-[0_0_22px_rgba(96,165,250,0.08),0_18px_42px_rgba(0,0,0,0.28)]"
-      >
-        {content}
-      </button>
-    )
-  }
-
   return (
-    <div className="min-h-136px rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.96),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_42px_rgba(0,0,0,0.22)]">
-      {content}
-    </div>
+    <AdminStatCard
+      title={title}
+      value={value}
+      helper={helper}
+      icon={icon}
+      onClick={onClick}
+      action={
+        onClick ? (
+          <span className="inline-flex h-8 items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/18 px-3 text-xs font-black text-white/72 transition group-hover:border-beyonix-sky/38 group-hover:text-white">
+            Abrir <ArrowRight className="size-3.5" />
+          </span>
+        ) : null
+      }
+    />
   )
 }
 
@@ -309,15 +281,7 @@ function EmptyState({
   description: string
 }) {
   return (
-    <div className="rounded-3xl border border-beyonix-blue-light/14 bg-[linear-gradient(145deg,rgba(7,16,24,0.86),rgba(3,7,13,0.94))] px-5 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-      <span className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl border border-beyonix-blue-light/22 bg-beyonix-blue/24 text-white/78">
-        {icon}
-      </span>
-      <p className="text-sm font-black text-white">{title}</p>
-      <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-white/48">
-        {description}
-      </p>
-    </div>
+    <AdminEmptyState icon={icon} title={title} description={description} />
   )
 }
 
@@ -491,23 +455,7 @@ function SystemStatusPill({ item }: { item: DashboardSystemStatus }) {
 }
 
 function Skeleton() {
-  return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="h-32 animate-pulse rounded-3xl border border-white/7 bg-white/3" />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-140px animate-pulse rounded-3xl border border-white/7 bg-white/3"
-          />
-        ))}
-      </div>
-      <div className="grid gap-6 xl:grid-cols-2">
-        <div className="h-320px animate-pulse rounded-3xl border border-white/7 bg-white/3" />
-        <div className="h-320px animate-pulse rounded-3xl border border-white/7 bg-white/3" />
-      </div>
-    </div>
-  )
+  return <AdminSkeleton rows={7} className="p-4 sm:p-6 lg:p-8" />
 }
 
 function MiniLineChart({

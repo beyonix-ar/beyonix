@@ -7,7 +7,6 @@ import {
   FileText,
   LockKeyhole,
   Save,
-  Search,
   ShieldOff,
   ShoppingBag,
   Trash2,
@@ -21,7 +20,18 @@ import type {
   ClientRiskStatus,
 } from "@/lib/clients/client-blocking"
 import type { SupabaseCliente } from "@/lib/supabase/types"
-import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
+import {
+  adminPageClassName,
+  AdminEmptyState,
+  AdminFiltersBar,
+  AdminInfoBlock,
+  AdminPageHeader,
+  AdminSearchInput,
+  AdminSelect,
+  AdminSkeleton,
+  AdminStatCard,
+  AdminTextInput,
+} from "../../components/admin-controls"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 import { formatPrice } from "../productos/helpers"
 
@@ -685,49 +695,23 @@ export function AdminClientes({
   )
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-            Clientes
-          </p>
-          <h1 className="text-3xl font-black text-white/95">
-            Clientes registrados
-          </h1>
-          <p className="mt-2 text-sm text-white/68">
-            Base de clientes, compras, datos de envío y estado operativo.
-          </p>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-white/8 bg-black px-4 py-3">
-            <p className="text-11px font-bold uppercase tracking-widest text-white/48">
-              Total
-            </p>
-            <p className="mt-1 text-2xl font-black text-white/92">{clientes.length}</p>
+    <div className={adminPageClassName}>
+      <AdminPageHeader
+        eyebrow="Clientes"
+        title="Clientes registrados"
+        description="Base de clientes, compras, datos de envío y estado operativo."
+        actions={
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <AdminStatCard title="Total" value={clientes.length} />
+            <AdminStatCard title="Activos" value={activeCount} tone="success" />
+            <AdminStatCard
+              title="Con compras"
+              value={clientes.filter((cliente) => cliente.order_count > 0).length}
+            />
+            <AdminStatCard title="Bloqueados" value={blockedCount} tone="danger" />
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black px-4 py-3">
-            <p className="text-11px font-bold uppercase tracking-widest text-white/48">
-              Activos
-            </p>
-            <p className="mt-1 text-2xl font-black text-white/92">{activeCount}</p>
-          </div>
-          <div className="rounded-2xl border border-white/8 bg-black px-4 py-3">
-            <p className="text-11px font-bold uppercase tracking-widest text-white/48">
-              Con compras
-            </p>
-            <p className="mt-1 text-2xl font-black text-white/92">
-              {clientes.filter((cliente) => cliente.order_count > 0).length}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-red-400/15 bg-black px-4 py-3">
-            <p className="text-11px font-bold uppercase tracking-widest text-white/48">
-              Bloqueados
-            </p>
-            <p className="mt-1 text-2xl font-black text-red-200">{blockedCount}</p>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       <BlockedClientsPanel
         blockedIdentifiers={blockedIdentifiers}
@@ -737,14 +721,13 @@ export function AdminClientes({
         onRemove={removeBlockedIdentifier}
       />
 
-      <div className="rounded-3xl border border-white/8 bg-transparent p-4">
+      <AdminFiltersBar>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-admin-client-filters">
-          <AdminTextInput
+          <AdminSearchInput
             title="Buscar cliente"
             ariaLabel="Buscar cliente"
             value={search}
             placeholder="Buscar nombre, usuario, email o teléfono"
-            icon={<Search className="size-4" />}
             onChange={setSearch}
           />
 
@@ -818,31 +801,24 @@ export function AdminClientes({
             onChange={setRegisteredTo}
           />
         </div>
-      </div>
+      </AdminFiltersBar>
 
-      <div className="rounded-2xl border border-beyonix-blue-light/25 bg-beyonix-blue px-4 py-3 text-sm text-beyonix-sky">
+      <AdminInfoBlock tone="info">
         {activeCount > 0
           ? `${activeCount} cliente${activeCount === 1 ? "" : "s"} activo${
               activeCount === 1 ? "" : "s"
             } detectado${activeCount === 1 ? "" : "s"} en los últimos 5 minutos.`
           : "Sin clientes activos detectados en los últimos 5 minutos."}
-      </div>
+      </AdminInfoBlock>
 
       {error && (
-        <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+        <AdminInfoBlock tone="danger">
           {error}
-        </div>
+        </AdminInfoBlock>
       )}
 
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div
-              key={index}
-              className="h-88px animate-pulse rounded-3xl border border-white/7 bg-white/3"
-            />
-          ))}
-        </div>
+        <AdminSkeleton rows={6} />
       ) : filteredClients.length ? (
         <div className="space-y-3">
           <div className="hidden grid-cols-admin-clients gap-4 rounded-2xl border border-white/8 bg-black/85 px-4 py-3 lg:grid">
@@ -867,19 +843,17 @@ export function AdminClientes({
           ))}
         </div>
       ) : (
-        <div className="rounded-3xl border border-white/8 bg-black px-6 py-12 text-center">
-          {initialActiveOnly ? (
-            <UserCheck className="mx-auto mb-4 size-11 text-white/24" />
-          ) : (
-            <Users className="mx-auto mb-4 size-11 text-white/24" />
-          )}
-          <p className="text-sm font-bold text-white/72">
-            No hay clientes para los filtros seleccionados.
-          </p>
-          <p className="mt-2 text-xs text-white/48">
-            Ajustá búsqueda, compras, fechas o mínimos para ampliar resultados.
-          </p>
-        </div>
+        <AdminEmptyState
+          icon={
+            initialActiveOnly ? (
+              <UserCheck className="size-5" />
+            ) : (
+              <Users className="size-5" />
+            )
+          }
+          title="No hay clientes para los filtros seleccionados."
+          description="Ajustá búsqueda, compras, fechas o mínimos para ampliar resultados."
+        />
       )}
 
       {initialActiveOnly && (
