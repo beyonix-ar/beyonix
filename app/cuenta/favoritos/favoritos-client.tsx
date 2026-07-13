@@ -94,7 +94,7 @@ export function FavoritosClient() {
   if (isLoading || loading) {
     return (
       <main className="min-h-screen bg-[var(--account-background)] pt-32 text-white">
-        <AccountPageContainer className="flex items-center justify-center py-24">
+        <AccountPageContainer className="flex max-w-[1160px] items-center justify-center py-24">
           <Loader2 className="size-8 animate-spin text-beyonix-sky" />
         </AccountPageContainer>
       </main>
@@ -104,7 +104,7 @@ export function FavoritosClient() {
   if (!user) {
     return (
       <main className="min-h-screen bg-[var(--account-background)] pt-32 text-white">
-        <AccountPageContainer>
+        <AccountPageContainer className="max-w-[1160px]">
           <AccountEmptyState
             icon={<Heart className="fill-white" />}
             title="Favoritos"
@@ -124,7 +124,7 @@ export function FavoritosClient() {
 
   return (
     <main className="min-h-screen bg-[var(--account-background)] pb-16 pt-32 text-white">
-      <AccountPageContainer asChild>
+      <AccountPageContainer asChild className="max-w-[1160px]">
       <section>
         <AccountPageHeader
           eyebrow="Mi cuenta"

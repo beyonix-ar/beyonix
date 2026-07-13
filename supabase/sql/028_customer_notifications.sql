@@ -64,7 +64,7 @@ select
   ordenes.usuario_id,
   'payment_proof_pending',
   'Comprobante pendiente',
-  'Subí el comprobante para que podamos validar tu pago.',
+  'Subí el comprobante para que podamos confirmar tu pago.',
   '/checkout/success?method=transferencia&order_id=' || ordenes.id,
   ordenes.id,
   'order:' || ordenes.id || ':payment-proof-pending'
@@ -101,7 +101,7 @@ begin
         new.usuario_id,
         'payment_proof_pending',
         'Comprobante pendiente',
-        'Subí el comprobante para que podamos validar tu pago.',
+        'Subí el comprobante para que podamos confirmar tu pago.',
         '/checkout/success?method=transferencia&order_id=' || new.id,
         new.id,
         'order:' || new.id || ':payment-proof-pending'
@@ -119,8 +119,8 @@ begin
     ) values (
       new.usuario_id,
       'payment_validated',
-      'Pago validado',
-      'Confirmamos tu pago y comenzaremos a preparar tu pedido.',
+      'Pago confirmado',
+      'Tu pago fue confirmado correctamente.',
       '/cuenta?tab=ordenes',
       new.id,
       'order:' || new.id || ':payment-validated'

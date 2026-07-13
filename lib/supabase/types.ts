@@ -96,6 +96,7 @@ export interface SupabaseProfile {
   username?: string | null
   nombre: string
   telefono?: string | null
+  dni?: string | null
   direccion?: string | null
   calle?: string | null
   numero?: string | null
@@ -151,6 +152,7 @@ export interface SupabasePedido {
   cliente_nombre?: string | null
   cliente_email?: string | null
   cliente_telefono?: string | null
+  cliente_dni?: string | null
   cliente_direccion?: string | null
   cp_destino?: string | null
   localidad?: string | null

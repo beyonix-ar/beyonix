@@ -173,8 +173,11 @@ export function getPaymentProgressLabel(order: SupabasePedido) {
     return "Transferencia confirmada"
   }
 
-  if (paymentStatus === "en_revision") {
-    return "Comprobante pendiente"
+  if (
+    paymentStatus === "en_revision" ||
+    Boolean(order.payment_proof_url || order.payment_proof_uploaded_at)
+  ) {
+    return "Comprobante recibido"
   }
 
   if (paymentStatus === "rechazado") {

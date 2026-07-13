@@ -287,7 +287,6 @@ export function LucideIconPicker({
     <div className="relative">
       <button
         type="button"
-        title="Abrir buscador de iconos"
         aria-label="Abrir buscador de iconos"
         onClick={() => setOpen((current) => !current)}
         className="flex min-h-48px w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#181818] px-4 text-left transition-colors hover:border-[#112A43] hover:bg-[#112A43]"
@@ -307,7 +306,6 @@ export function LucideIconPicker({
         <SelectedIcon className="size-5.5 shrink-0 text-beyonix-sky" />
         <input
           type="search"
-          title="Buscar ícono"
           aria-label="Buscar ícono"
           value={search}
           placeholder="Buscar: batería, sonido, envío..."
@@ -316,7 +314,6 @@ export function LucideIconPicker({
         />
             <button
               type="button"
-              title="Cerrar buscador de iconos"
               aria-label="Cerrar buscador de iconos"
               onClick={() => setOpen(false)}
               className="flex size-7 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/55 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
@@ -334,7 +331,6 @@ export function LucideIconPicker({
             <button
               key={option.name}
               type="button"
-              title={`Elegir ícono ${option.label}`}
               aria-label={`Elegir ícono ${option.label}`}
               onClick={() => {
                 onChange(option.name)

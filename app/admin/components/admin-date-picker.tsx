@@ -192,7 +192,6 @@ export function AdminDatePicker({
         <input
           type="text"
           name={inputName}
-          title={title}
           aria-label={ariaLabel}
           value={textValue}
           placeholder={placeholder}
@@ -236,7 +235,6 @@ export function AdminDatePicker({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  title="Mes anterior"
                   aria-label="Mes anterior"
                   onClick={() => changeMonth(-1)}
                   className="admin-ds-datepicker-nav grid size-9 cursor-pointer place-items-center rounded-xl border transition"
@@ -246,7 +244,6 @@ export function AdminDatePicker({
 
                 <button
                   type="button"
-                  title="Mes siguiente"
                   aria-label="Mes siguiente"
                   onClick={() => changeMonth(1)}
                   className="admin-ds-datepicker-nav grid size-9 cursor-pointer place-items-center rounded-xl border transition"
@@ -282,7 +279,6 @@ export function AdminDatePicker({
                   <button
                     key={date.toISOString()}
                     type="button"
-                    title={toDisplayDate(toInputDate(date))}
                     aria-label={toDisplayDate(toInputDate(date))}
                     onClick={() => handleSelectDate(date)}
                     className={`admin-ds-datepicker-day grid h-9 cursor-pointer place-items-center rounded-xl border text-sm font-bold transition ${

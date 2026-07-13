@@ -7,6 +7,7 @@ import {
   Eye,
   EyeOff,
   Hash,
+  IdCard,
   Lock,
   Mail,
   MapPin,
@@ -262,6 +263,7 @@ export function Seguridad({ onBack }: { onBack: () => void }) {
       kicker="Seguridad"
       title="Cambiar contraseña"
       description="Actualizá tu acceso con los mismos controles seguros del área de cliente."
+      headingClassName="mx-auto w-full max-w-[920px] items-center justify-center gap-2 py-4 text-center sm:flex-col sm:items-center sm:justify-center sm:py-4 [&_p]:mx-auto [&_p]:max-w-none"
     >
       <AccountCard
         variant="form"
@@ -302,6 +304,9 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
   const { user, updateUser } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [phone, setPhone] = useState(user?.phone ?? "")
+  const [dni, setDni] = useState(
+    onlyDigits(user?.dni ?? "", FIELD_LIMITS.dni)
+  )
   const [province, setProvince] = useState(
     uppercaseAccountText(nonEmptyAccountText(user?.province) ?? "")
   )
@@ -331,8 +336,11 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
   const [profileError, setProfileError] = useState("")
   const [avatarLoading, setAvatarLoading] = useState(false)
   const [avatarError, setAvatarError] = useState("")
+  const storedDni = onlyDigits(user?.dni ?? "", FIELD_LIMITS.dni)
+  const canEditDni = storedDni.length === 0
   const formSignature = [
     phone,
+    dni,
     province,
     postalCode,
     street,
@@ -346,6 +354,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     setPhone(user?.phone ?? "")
+    setDni(onlyDigits(user?.dni ?? "", FIELD_LIMITS.dni))
     setProvince(uppercaseAccountText(nonEmptyAccountText(user?.province) ?? ""))
     setPostalCode(user?.postalCode ?? "")
     setStreet(
@@ -376,10 +385,12 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setProfileError("")
+    const normalizedDni = canEditDni ? dni : storedDni
 
     const validationError = validateProfilePayload({
       name: user?.name ?? "",
       phone,
+      dni: normalizedDni,
       calle: street,
       numero: streetNumber,
       piso: floor,
@@ -420,6 +431,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
       const normalizedReferences = uppercaseAccountText(references.trim())
       await updateUser({
         phone,
+        dni: normalizedDni,
         province: normalizedProvince,
         street: normalizedStreet,
         streetNumber,
@@ -431,6 +443,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
       })
       savedSignatureRef.current = [
         phone,
+        normalizedDni,
         normalizedProvince,
         postalCode,
         normalizedStreet,
@@ -441,8 +454,12 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
         normalizedReferences,
       ].join("|")
       setSaved(true)
-    } catch {
-      setProfileError("No hemos podido guardar tus datos. Inténtalo de nuevo.")
+    } catch (error) {
+      setProfileError(
+        error instanceof Error
+          ? error.message
+          : "No hemos podido guardar tus datos. Inténtalo de nuevo."
+      )
     }
   }
 
@@ -497,18 +514,20 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
       kicker="Mis datos"
       title="Datos de la cuenta"
       description="Gestioná tu teléfono, dirección de entrega y foto de perfil."
+      className="max-w-[1160px] space-y-3"
+      headingClassName="mx-auto w-full max-w-[1160px] py-4 sm:py-4"
     >
-      <AccountCard variant="form" padding="md">
-        <form onSubmit={handleSave} className="space-y-4">
-          <div className="rounded-2xl bg-[var(--account-surface-raised)] p-4 sm:p-5">
-            <div className="grid gap-5 lg:grid-cols-[minmax(230px,0.34fr)_minmax(0,0.66fr)] lg:items-start">
-              <div className="flex min-w-0 items-center gap-4">
+      <AccountCard variant="form" padding="sm" className="mx-auto w-full max-w-[1160px]">
+        <form onSubmit={handleSave} className="space-y-3">
+          <div className="rounded-2xl bg-[var(--account-surface-raised)] p-3 sm:p-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.32fr)_minmax(0,0.68fr)] lg:items-center">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="relative shrink-0">
-                  <div className="flex size-18 items-center justify-center overflow-hidden rounded-full border border-white/14 bg-white text-black shadow-sm shadow-black/40 sm:size-20">
+                  <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-white/14 bg-white text-black shadow-sm shadow-black/40 sm:size-18">
                     {avatarUrl ? (
                       <img src={avatarUrl} alt="" className="size-full object-cover" />
                     ) : (
-                      <User className="size-9 sm:size-10" />
+                      <User className="size-8 sm:size-9" />
                     )}
                   </div>
 
@@ -526,21 +545,21 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                     aria-label="Subir foto de perfil"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={avatarLoading}
-                    className="absolute -bottom-1 -right-1 flex size-8 cursor-pointer items-center justify-center rounded-xl border border-[var(--account-border-strong)] bg-[var(--account-surface)] text-[var(--account-text-primary)] shadow-[0_8px_18px_rgba(0,0,0,0.28)] transition-colors hover:border-[var(--account-accent-soft)] disabled:opacity-50"
+                    className="absolute -bottom-1 -right-1 flex size-7 cursor-pointer items-center justify-center rounded-lg border border-[var(--account-border-strong)] bg-[var(--account-surface)] text-[var(--account-text-primary)] shadow-[0_8px_18px_rgba(0,0,0,0.28)] transition-colors hover:border-[var(--account-accent-soft)] disabled:opacity-50"
                   >
-                    <Camera className="size-4" />
+                    <Camera className="size-3.5" />
                   </button>
                 </div>
 
                 <div className="min-w-0">
-                  <p className="truncate text-base font-semibold text-[var(--account-text-primary)] sm:text-lg">
+                  <p className="truncate text-base font-semibold text-[var(--account-text-primary)]">
                     {user?.name}
                   </p>
                   <p className="truncate text-sm text-[var(--account-text-secondary)]">{user?.email}</p>
                   <p className="mt-1 text-11px font-medium uppercase tracking-widest text-[var(--account-accent-soft)]">
                     Cliente BEYONIX
                   </p>
-                  <p className="mt-3 text-xs leading-5 text-[var(--account-text-muted)]">
+                  <p className="mt-2 text-xs leading-5 text-[var(--account-text-muted)]">
                     Imagen JPG o PNG, hasta 2 MB.
                   </p>
                   {avatarError && (
@@ -549,7 +568,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                 <ReadOnlyField
                   label="Usuario"
                   value={uppercaseAccountText(user?.username ?? "")}
@@ -560,18 +579,49 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                   value={uppercaseAccountText(user?.name ?? "")}
                   icon={User}
                 />
-                <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
+                {canEditDni ? (
+                  <InputField
+                    label="DNI"
+                    type="tel"
+                    value={dni}
+                    onChange={(value) =>
+                      setDni(onlyDigits(value, FIELD_LIMITS.dni))
+                    }
+                    placeholder="12345678"
+                    icon={IdCard}
+                    maxLength={FIELD_LIMITS.dni}
+                    inputMode="numeric"
+                  />
+                ) : (
+                  <ReadOnlyField
+                    label="DNI"
+                    value={storedDni}
+                    icon={IdCard}
+                  />
+                )}
                 <ReadOnlyField
                   label="Email"
                   value={user?.email || ""}
                   icon={Mail}
                 />
+                <InputField
+                  label="Teléfono móvil"
+                  type="tel"
+                  value={phone}
+                  onChange={(value) =>
+                    setPhone(onlyDigits(value, FIELD_LIMITS.phone))
+                  }
+                  placeholder="1100000000"
+                  icon={Phone}
+                  maxLength={FIELD_LIMITS.phone}
+                  inputMode="numeric"
+                />
               </div>
             </div>
           </div>
 
-          <div className="border-t border-[var(--account-border-subtle)] pt-4">
-            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div className="border-t border-[var(--account-border-subtle)] pt-3">
+            <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-11px font-semibold uppercase tracking-widest text-[var(--account-accent-soft)]">
                   Dirección de entrega
@@ -582,7 +632,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-6 xl:grid-cols-12">
+            <div className="grid gap-2.5 md:grid-cols-6 xl:grid-cols-12">
               <InputField className="md:col-span-4 xl:col-span-5" label="Calle" type="text" value={street} onChange={(value) => setStreet(uppercaseAccountText(value))} placeholder="San Martín" icon={MapPin} maxLength={60} />
               <InputField className="md:col-span-2 xl:col-span-2" label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
               <InputField className="md:col-span-2 xl:col-span-2" label="Piso opcional" type="text" value={floor} onChange={(value) => setFloor(uppercaseAccountText(value))} placeholder="3" icon={Hash} maxLength={12} />
@@ -613,7 +663,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
             </AccountCard>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-center pt-1">
             <BeyonixButton
               type="submit"
               aria-label="Guardar cambios"

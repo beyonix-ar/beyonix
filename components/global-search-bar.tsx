@@ -162,7 +162,6 @@ export function GlobalSearchBar({
         <button
           type="button"
           aria-label="Buscar productos"
-          title="Buscar productos"
           onClick={() =>
             redirectSearch(
               search
@@ -189,9 +188,6 @@ export function GlobalSearchBar({
                   }
                   type="button"
                   aria-label={
-                    product.nombre
-                  }
-                  title={
                     product.nombre
                   }
                   onClick={() => {

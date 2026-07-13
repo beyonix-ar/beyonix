@@ -47,7 +47,6 @@ export function ColorFilter({
               type="button"
               onClick={() => onToggleColor(colorKey)}
               aria-label={`Filtrar por color ${colorLabels[colorKey] ?? colorKey}`}
-              title={colorLabels[colorKey] ?? colorKey}
               className={`relative size-7 rounded-full border shadow-[inset_0_0_0_2px_rgba(255,255,255,0.12)] transition-all duration-200 cursor-pointer ${colorClass} ${
                 isSelected
                   ? "border-beyonix-cyan ring-2 ring-beyonix-cyan/60 ring-offset-2 ring-offset-[#071018] shadow-beyonix-color-selected"

@@ -4,7 +4,7 @@ const nextConfig = {
     NEXT_PUBLIC_FREE_SHIPPING_MIN_AMOUNT:
       process.env.NEXT_PUBLIC_FREE_SHIPPING_MIN_AMOUNT ||
       process.env.FREE_SHIPPING_MIN_AMOUNT ||
-      "90000",
+      "75000",
     NEXT_PUBLIC_FREE_SHIPPING_MODE:
       process.env.NEXT_PUBLIC_FREE_SHIPPING_MODE ||
       process.env.FREE_SHIPPING_MODE ||

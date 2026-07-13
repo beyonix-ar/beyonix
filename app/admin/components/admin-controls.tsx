@@ -299,11 +299,9 @@ export function AdminSelect({
     <div
       ref={wrapperRef}
       className="relative block w-full"
-      title={title}
     >
       <button
         type="button"
-        title={title}
         aria-label={ariaLabel ?? title}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -390,7 +388,7 @@ export function AdminTextInput({
   onChange,
 }: AdminTextInputProps) {
   return (
-    <label className="relative block" title={title}>
+    <label className="relative block">
       {icon && (
         <span className="pointer-events-none absolute left-4 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center text-white/38">
           {icon}
@@ -398,7 +396,6 @@ export function AdminTextInput({
       )}
       <input
         type={type}
-        title={title}
         aria-label={ariaLabel ?? title}
         value={value}
         placeholder={placeholder}
@@ -421,7 +418,6 @@ export function AdminTextarea({
 }: AdminTextareaProps) {
   return (
     <textarea
-      title={title}
       aria-label={ariaLabel ?? title}
       value={value}
       onChange={(event) => onChange(event.target.value)}
@@ -615,7 +611,6 @@ export function AdminStatCard({
     return (
       <button
         type="button"
-        title={`Abrir ${title}`}
         aria-label={`Abrir ${title}`}
         onClick={onClick}
         className={cn(

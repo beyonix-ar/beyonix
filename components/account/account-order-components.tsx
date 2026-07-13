@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { Bell, Check, ExternalLink, Package, Star } from "lucide-react"
@@ -18,7 +18,6 @@ export const DOWNLOADED_INVOICES_STORAGE_KEY = "beyonix:downloaded-invoices"
 export function CustomerInvoiceBell() {
   return (
     <span
-      title="Tu factura ya está disponible"
       className="inline-flex size-5 items-center justify-center rounded-full border border-red-300/45 bg-red-500 text-white shadow-lg shadow-red-950/35"
     >
       <Bell className="size-3" />
@@ -29,11 +28,11 @@ export function CustomerInvoiceBell() {
 export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
   const steps = getOrderProgressSteps(order)
   const toneClassNames: Record<OrderProgressTone, string> = {
-    done: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
-    current: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
-    pending: "border-white/10 bg-white/5 text-white/45",
-    danger: "border-red-400/35 bg-red-400/12 text-red-200",
-    warning: "border-amber-300/35 bg-amber-400/12 text-amber-200",
+    done: "border-emerald-400/35 bg-[#102A22] text-emerald-200",
+    current: "border-[#2C6CA3] bg-[#183654] text-white",
+    pending: "border-[#21476B] bg-[#13263B] text-[#9EB4C8]",
+    danger: "border-red-400/35 bg-[#2A1218] text-red-200",
+    warning: "border-amber-300/35 bg-[#2A2212] text-amber-200",
   }
   const gridClassName =
     steps.length >= 6
@@ -45,11 +44,11 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
         : "md:grid-cols-5"
 
   return (
-    <div className="mb-2 rounded-xl border border-white/8 bg-black/25 p-2">
-      <p className="mb-1.5 text-10px font-black uppercase tracking-widest text-white/45">
+    <div className="rounded-xl border border-transparent bg-[#0B1118] p-1.5">
+      <p className="mb-1.5 text-10px font-black uppercase tracking-widest text-[#9EB4C8]">
         Estado del pedido
       </p>
-      <div className={"grid gap-1.5 " + gridClassName}>
+      <div className={"grid gap-2 " + gridClassName}>
         {steps.map((step, index) => (
           <div
             key={step.label + "-" + index}
@@ -241,7 +240,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   }
 
   return (
-    <section className="rounded-xl border border-white/8 bg-[#141414] p-3">
+    <section className="rounded-xl border border-[#18334D] bg-[#101923] p-3">
       <h4 className="text-sm font-black text-white">Reseña del producto</h4>
       <div className="mt-2 space-y-2">
         {items.map((item) => {
@@ -251,7 +250,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
           const selectedRating = ratings[productId] ?? 0
           const visualRating = hoverRatings[productId] ?? selectedRating
           return (
-            <div key={item.id} className="rounded-lg border border-white/8 bg-[#181818] p-2.5">
+            <div key={item.id} className="rounded-lg border border-[#21476B] bg-[#13263B] p-2.5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={productName} className="size-full object-contain" /> : <Package className="size-4 text-black/30" />}</div>
@@ -259,7 +258,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                 </div>
                 {submitted.has(productId) ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300"><Check className="size-3.5" />Reseña enviada</span> : <div className="flex items-center gap-1" aria-label={`Calificar ${productName}`} onMouseLeave={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })}>{[1, 2, 3, 4, 5].map((rating) => <button key={rating} type="button" aria-label={`${rating} estrellas`} onMouseEnter={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onFocus={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onBlur={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })} onClick={() => { setRatings((current) => ({ ...current, [productId]: rating })); setActiveProductId(productId); setFeedbackMessage("") }} className="cursor-pointer p-0.5"><Star className={`size-5 transition-colors ${rating <= visualRating ? "fill-amber-300 text-amber-300" : "text-white/25"}`} /></button>)}</div>}
               </div>
-              {activeProductId === productId && !submitted.has(productId) && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={comments[productId] ?? ""} maxLength={150} onChange={(event) => setComments((current) => ({ ...current, [productId]: event.target.value }))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (submitting === productId || !(comments[productId]?.trim()) || !ratings[productId]) return; void submitReview(productId) }} placeholder="Contanos brevemente tu experiencia" className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-blue-300/40" /><button type="button" disabled={submitting === productId} onClick={() => void submitReview(productId)} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-50">{submitting === productId ? "Enviando..." : "Enviar reseña"}</button></div>}
+              {activeProductId === productId && !submitted.has(productId) && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={comments[productId] ?? ""} maxLength={150} onChange={(event) => setComments((current) => ({ ...current, [productId]: event.target.value }))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (submitting === productId || !(comments[productId]?.trim()) || !ratings[productId]) return; void submitReview(productId) }} placeholder="Contanos brevemente tu experiencia" className="h-9 min-w-0 flex-1 rounded-lg border border-[#21476B] bg-[#13263B] px-3 text-xs text-white outline-none placeholder:text-[#7D8FA1] focus:border-[#2C6CA3]" /><button type="button" disabled={submitting === productId} onClick={() => void submitReview(productId)} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-50">{submitting === productId ? "Enviando..." : "Enviar reseña"}</button></div>}
             </div>
           )
         })}

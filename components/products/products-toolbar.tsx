@@ -63,7 +63,6 @@ export function ProductsToolbar({
         <button
           type="button"
           aria-label="Ordenar productos"
-          title="Ordenar productos"
           onClick={() => setOpen(!open)}
           className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-sm transition-all duration-150 sm:w-auto ${
             open
@@ -84,7 +83,6 @@ export function ProductsToolbar({
                 key={option.value}
                 type="button"
                 aria-label={`Ordenar por ${option.label}`}
-                title={`Ordenar por ${option.label}`}
                 onClick={() => {
                   setSortBy(option.value)
                   setOpen(false)

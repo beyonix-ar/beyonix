@@ -198,28 +198,28 @@ function ClientCard({
     <details className="rounded-3xl border border-white/8 bg-black">
       <summary className="grid cursor-pointer gap-4 px-4 py-4 lg:grid-cols-admin-clients lg:items-center">
         <div className="min-w-0">
-          <p title={username} className="truncate text-sm font-black uppercase text-white/92">
+          <p className="truncate text-sm font-black uppercase text-white/92">
             {username}
           </p>
-          <p title={cliente.email ?? ""} className="mt-1 truncate text-xs text-white/58">
+          <p className="mt-1 truncate text-xs text-white/58">
             {cliente.email}
           </p>
         </div>
 
         <div className="min-w-0">
-          <p title={cliente.nombre} className="truncate text-sm font-bold text-white/88">
+          <p className="truncate text-sm font-bold text-white/88">
             {cliente.nombre}
           </p>
-          <p title={cliente.apellido ?? ""} className="mt-1 truncate text-xs text-white/55">
+          <p className="mt-1 truncate text-xs text-white/55">
             {cliente.apellido || "Apellido no separado"}
           </p>
         </div>
 
-        <p title={cliente.telefono ?? ""} className="truncate text-sm text-white/72">
+        <p className="truncate text-sm text-white/72">
           {cliente.telefono || "Sin teléfono"}
         </p>
 
-        <p title={cliente.direccion ?? ""} className="truncate text-sm text-white/72">
+        <p className="truncate text-sm text-white/72">
           {cliente.direccion || "Sin dirección"}
         </p>
 
@@ -267,7 +267,6 @@ function ClientCard({
               Detalle
             </p>
             <p
-              title={getLastOrderSummary(cliente)}
               className="mt-2 truncate text-sm font-bold text-white/88"
             >
               {getLastOrderSummary(cliente)}
@@ -284,7 +283,7 @@ function ClientCard({
             {cliente.provincia || "Sin provincia"}
           </p>
           {cliente.referencias && (
-            <p title={cliente.referencias} className="mt-2 text-sm text-white/62">
+            <p className="mt-2 text-sm text-white/62">
               {cliente.referencias}
             </p>
           )}
@@ -316,7 +315,6 @@ function ClientCard({
               </AdminSelect>
               <button
                 type="button"
-                title="Guardar clasificacion"
                 aria-label="Guardar clasificacion"
                 disabled={saving}
                 onClick={saveAdminInfo}
@@ -327,7 +325,6 @@ function ClientCard({
               </button>
             </div>
             <textarea
-              title="Nota interna del cliente"
               aria-label="Nota interna del cliente"
               value={adminNote}
               placeholder="Descripcion privada para recordar por que es tedioso o complicado."
@@ -344,7 +341,6 @@ function ClientCard({
               </h3>
             </div>
             <textarea
-              title="Motivo del bloqueo"
               aria-label="Motivo del bloqueo"
               value={blockReason}
               placeholder="Motivo: estafa, maltrato, disputa, datos falsos..."
@@ -359,7 +355,6 @@ function ClientCard({
               </p>
               <button
                 type="button"
-                title={isBlocked ? "Desbloquear cliente" : "Bloquear cliente"}
                 aria-label={isBlocked ? "Desbloquear cliente" : "Bloquear cliente"}
                 disabled={saving}
                 onClick={toggleBlocked}
@@ -533,7 +528,6 @@ function BlockedClientsPanel({
           />
           <button
             type="button"
-            title="Agregar bloqueo"
             aria-label="Agregar bloqueo"
             disabled={saving || !value.trim()}
             onClick={handleCreate}
@@ -581,7 +575,6 @@ function BlockedClientsPanel({
                 </span>
                 <button
                   type="button"
-                  title="Quitar bloqueo"
                   aria-label="Quitar bloqueo"
                   disabled={saving}
                   onClick={() => void onRemove(row.id, row.sourceProfileId, row.ids)}
@@ -766,7 +759,6 @@ export function AdminClientes({
           <input
             type="number"
             min="0"
-            title="Total gastado mínimo"
             aria-label="Total gastado mínimo"
             value={minSpent}
             placeholder="Gasto mín."
@@ -777,7 +769,6 @@ export function AdminClientes({
           <input
             type="number"
             min="0"
-            title="Cantidad mínima de pedidos"
             aria-label="Cantidad mínima de pedidos"
             value={minOrders}
             placeholder="Pedidos mín."

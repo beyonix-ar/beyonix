@@ -75,7 +75,6 @@ function Field({
           name={name}
           type={inputType}
           aria-label={label}
-          title={label}
           required={required}
           value={value}
           placeholder={placeholder}
@@ -93,7 +92,6 @@ function Field({
           <button
             type="button"
             aria-label={passwordVisible ? "Ocultar contraseña" : "Mostrar contraseña"}
-            title={passwordVisible ? "Ocultar contraseña" : "Mostrar contraseña"}
             onClick={() => setPasswordVisible((current) => !current)}
             className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-white/55 transition hover:bg-white/5 hover:text-white"
           >
@@ -132,7 +130,6 @@ function TextareaField({
         id={name}
         name={name}
         aria-label={label}
-        title={label}
         value={value}
         placeholder={placeholder}
         maxLength={maxLength}
@@ -707,7 +704,6 @@ function LoginContent() {
             <button
               type="button"
               aria-label="Volver al inicio de sesión"
-              title="Volver al inicio de sesión"
               disabled={finishingConfirmation}
               onClick={() => {
                 setConfirmationEmail("")
@@ -752,7 +748,6 @@ function LoginContent() {
             <button
               type="button"
               aria-label="Iniciar sesión"
-              title="Iniciar sesión"
               onClick={() => handleModeChange("login")}
               className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
                 mode === "login"
@@ -766,7 +761,6 @@ function LoginContent() {
             <button
               type="button"
               aria-label="Registrarme"
-              title="Registrarme"
               onClick={() => handleModeChange("register")}
               className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
                 mode === "register"
@@ -842,7 +836,6 @@ function LoginContent() {
                       name="phone-area-code"
                       type="tel"
                       aria-label="Característica"
-                      title="Característica"
                       required
                       value={phoneAreaCode}
                       placeholder="341"
@@ -857,7 +850,6 @@ function LoginContent() {
                       name="phone"
                       type="tel"
                       aria-label="Teléfono móvil"
-                      title="Teléfono móvil"
                       required
                       value={phone}
                       placeholder="6000000"
@@ -888,7 +880,6 @@ function LoginContent() {
             <button
               type="button"
               aria-label="Olvidé mi contraseña"
-              title="Olvidé mi contraseña"
               onClick={handleForgotPassword}
               className="cursor-pointer text-left text-sm text-beyonix-focus transition-opacity hover:opacity-80"
             >
@@ -912,7 +903,6 @@ function LoginContent() {
             <button
               type="submit"
               aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
-              title={mode === "login" ? "Ingresar" : "Crear cuenta"}
               disabled={loading}
               className={`flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-[linear-gradient(135deg,#112A43_0%,#1e4d7b_100%)] px-10 font-semibold text-white shadow-lg shadow-black/35 transition-all hover:border-beyonix-sky hover:brightness-110 disabled:opacity-50 ${
                 mode === "login" ? "w-full" : "min-w-44"

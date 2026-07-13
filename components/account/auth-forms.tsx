@@ -107,7 +107,6 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
           <button
             type="button"
             aria-label="Mostrar u ocultar contraseña"
-            title="Mostrar u ocultar contraseña"
             onClick={() => setShowPass((value) => !value)}
             className="cursor-pointer text-slate-700 transition-colors hover:text-black"
           >
@@ -120,7 +119,6 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
         <button
           type="button"
           aria-label="Recuperar contraseña"
-          title="Recuperar contraseña"
           onClick={handleForgotPassword}
           disabled={resetLoading}
           className="text-sm font-medium text-beyonix-cyan transition-colors hover:text-white disabled:opacity-50 cursor-pointer"
@@ -143,7 +141,6 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
       <button
         type="submit"
         aria-label="Iniciar sesión"
-        title="Iniciar sesión"
         disabled={loading}
         className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all active:scale-95 cursor-pointer"
       >
@@ -155,7 +152,6 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
         <button
           type="button"
           aria-label="Ir a registro"
-          title="Ir a registro"
           onClick={onSwitch}
           className="text-beyonix-cyan hover:text-white transition-colors cursor-pointer font-medium"
         >
@@ -452,7 +448,6 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
           <button
             type="button"
             aria-label="Mostrar u ocultar contraseña"
-            title="Mostrar u ocultar contraseña"
             onClick={() => setShowPass((value) => !value)}
             className="text-white/40 hover:text-white/70 transition-colors cursor-pointer"
           >
@@ -471,7 +466,6 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       <button
         type="submit"
         aria-label="Crear cuenta"
-        title="Crear cuenta"
         disabled={loading}
         className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 transition-all active:scale-95 cursor-pointer"
       >
@@ -483,7 +477,6 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
         <button
           type="button"
           aria-label="Ir a inicio de sesión"
-          title="Ir a inicio de sesión"
           onClick={onSwitch}
           className="text-beyonix-cyan hover:text-white transition-colors cursor-pointer font-medium"
         >

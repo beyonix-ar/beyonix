@@ -1,6 +1,6 @@
 import { SITE_SETTINGS } from "@/config/site-settings"
 
-// Envio gratis a partir de este subtotal.
+// Bonificacion de envio a partir de este subtotal.
 const configuredFreeShippingMin = Number(
   process.env.NEXT_PUBLIC_FREE_SHIPPING_MIN_AMOUNT ??
     process.env.FREE_SHIPPING_MIN_AMOUNT,
@@ -28,15 +28,43 @@ function getFreeShippingMode(): FreeShippingMode {
 export const FREE_SHIPPING_MODE = getFreeShippingMode()
 export const IS_FREE_SHIPPING_ENABLED = getFreeShippingMode() === "full"
 
-// Costo de envio al cliente cuando no supera el minimo.
+// Costo de envio base para fallback cuando no hay cotizacion real.
 export const SHIPPING_COST = SITE_SETTINGS.shipping.defaultShippingCost
+export const SHIPPING_BONUS_MAX = 12000
 
-export function getShippingCost(subtotal: number) {
+export function hasShippingBonus(subtotal: number) {
   const safeSubtotal = Number.isFinite(subtotal) ? subtotal : 0
 
   return safeSubtotal >= FREE_SHIPPING_MIN && IS_FREE_SHIPPING_ENABLED
-    ? 0
-    : SHIPPING_COST
+}
+
+export function calculateShippingBonus(
+  subtotal: number,
+  shippingCost: number,
+) {
+  const safeShippingCost =
+    Number.isFinite(shippingCost) && shippingCost > 0 ? shippingCost : 0
+
+  return hasShippingBonus(subtotal)
+    ? Math.min(safeShippingCost, SHIPPING_BONUS_MAX)
+    : 0
+}
+
+export function calculateCustomerShippingCost(
+  subtotal: number,
+  shippingCost: number,
+) {
+  const safeShippingCost =
+    Number.isFinite(shippingCost) && shippingCost > 0 ? shippingCost : 0
+
+  return Math.max(
+    safeShippingCost - calculateShippingBonus(subtotal, safeShippingCost),
+    0,
+  )
+}
+
+export function getShippingCost(subtotal: number) {
+  return calculateCustomerShippingCost(subtotal, SHIPPING_COST)
 }
 
 export function hasFreeShipping(subtotal: number) {

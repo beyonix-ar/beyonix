@@ -489,11 +489,6 @@ export function ProductosRow({
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
-            title={
-              variantes.length
-                ? "Ver variantes"
-                : "Sin variantes"
-            }
             aria-label={
               variantes.length
                 ? `Ver variantes de ${producto.nombre}`
@@ -598,11 +593,6 @@ export function ProductosRow({
 
         <button
           type="button"
-          title={
-            producto.activo
-              ? "Desactivar producto"
-              : "Activar producto"
-          }
           aria-label={
             producto.activo
               ? "Desactivar producto"
@@ -633,7 +623,6 @@ export function ProductosRow({
         <div className="flex items-center justify-end gap-1.5 pr-2">
           <button
             type="button"
-            title="Ver producto"
             aria-label={`Ver producto ${producto.nombre}`}
             onClick={() => setPreviewOpen(true)}
             className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400 cursor-pointer"
@@ -643,7 +632,6 @@ export function ProductosRow({
 
           <button
             type="button"
-            title="Editar"
             aria-label="Editar"
             onClick={() =>
               onEdit(producto)
@@ -655,7 +643,6 @@ export function ProductosRow({
 
           <button
             type="button"
-            title="Eliminar"
             aria-label="Eliminar"
             onClick={() =>
               onDelete(producto.id)
@@ -692,7 +679,6 @@ export function ProductosRow({
                     {variantes.length > 1 ? (
                       <button
                         type="button"
-                        title="Arrastrar para reordenar variante"
                         aria-label={`Reordenar variante ${variante.nombre}`}
                         onPointerDown={(event) =>
                           handleVariantPointerDown(
@@ -755,7 +741,6 @@ export function ProductosRow({
                       <input
                         min="0"
                         type="number"
-                        title="Editar stock"
                         value={editStock}
                         aria-label={`Editar stock de ${variante.nombre}`}
                         onChange={(event) =>
@@ -768,7 +753,6 @@ export function ProductosRow({
 
                       <input
                         type="color"
-                        title="Editar color"
                         value={editColor}
                         aria-label={`Editar color de ${variante.nombre}`}
                         onChange={(event) =>
@@ -782,7 +766,6 @@ export function ProductosRow({
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          title="Guardar variante"
                           aria-label={`Guardar variante ${variante.nombre}`}
                           onClick={() =>
                             saveVariant(
@@ -796,7 +779,6 @@ export function ProductosRow({
 
                         <button
                           type="button"
-                          title="Cancelar edición"
                           aria-label="Cancelar edición"
                           onClick={() =>
                             setEditingVariantId(
@@ -828,7 +810,6 @@ export function ProductosRow({
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          title="Ver variante"
                           aria-label={`Ver variante ${variante.nombre}`}
                           onClick={() =>
                             viewVariant(
@@ -842,7 +823,6 @@ export function ProductosRow({
 
                         <button
                           type="button"
-                          title="Editar variante"
                           aria-label={`Editar variante ${variante.nombre}`}
                           onClick={() =>
                             startEditVariant(
@@ -856,7 +836,6 @@ export function ProductosRow({
 
                         <button
                           type="button"
-                          title="Eliminar variante"
                           aria-label={`Eliminar variante ${variante.nombre}`}
                           onClick={() =>
                             removeVariant(
@@ -934,7 +913,6 @@ function VariantModal({
     <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/80 px-6 py-8">
       <button
         type="button"
-        title="Cerrar detalle de variante"
         aria-label="Cerrar detalle de variante"
         onClick={onClose}
         className="absolute inset-0 cursor-default"
@@ -982,7 +960,6 @@ function VariantModal({
 
           <button
             type="button"
-            title="Cerrar"
             aria-label="Cerrar"
             onClick={onClose}
             className="min-h-44px min-w-120px rounded-2xl border border-white/10 px-5 py-2 text-sm font-semibold text-white/70 transition-colors hover:text-white cursor-pointer"

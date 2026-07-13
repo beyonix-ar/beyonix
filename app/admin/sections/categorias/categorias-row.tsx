@@ -72,7 +72,6 @@ export function CategoriasRow({
       <div className="flex justify-center">
         <button
           type="button"
-          title={isFeatured ? "Quitar destacada" : "Marcar destacada"}
           aria-label={
             isFeatured
               ? "Quitar categoría destacada"
@@ -121,7 +120,6 @@ export function CategoriasRow({
       <div className="flex items-center justify-end gap-1.5">
         <button
           type="button"
-          title="Editar categoría"
           aria-label="Editar categoría"
           onClick={() => onEdit(categoria)}
           className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-all hover:-translate-y-0.5 hover:border-beyonix-blue-light/35 hover:bg-beyonix-blue/20 hover:text-white"
@@ -131,7 +129,6 @@ export function CategoriasRow({
 
         <button
           type="button"
-          title="Eliminar categoría"
           aria-label="Eliminar categoría"
           onClick={() => onDelete(categoria.id)}
           className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-all hover:-translate-y-0.5 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400"

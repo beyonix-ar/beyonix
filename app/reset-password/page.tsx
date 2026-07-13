@@ -229,7 +229,6 @@ function ResetPasswordContent() {
               <input
                 type="password"
                 aria-label="Contraseña nueva"
-                title="Contraseña nueva"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -244,7 +243,6 @@ function ResetPasswordContent() {
               <input
                 type="password"
                 aria-label="Repetir contraseña"
-                title="Repetir contraseña"
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -261,7 +259,6 @@ function ResetPasswordContent() {
             <button
               type="submit"
               aria-label="Guardar contraseña nueva"
-              title="Guardar contraseña nueva"
               disabled={loading}
               className="flex h-12 w-full items-center justify-center rounded-xl bg-white font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50 cursor-pointer"
             >

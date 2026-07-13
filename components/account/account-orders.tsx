@@ -293,6 +293,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
       kicker="Mis compras"
       title="Historial de compras"
       description="Revisá el estado de tus pedidos, facturas y comprobantes."
+      className="max-w-[1160px]"
     >
       {loading ? (
         <div className="space-y-3">
@@ -412,9 +413,9 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                         </span>
                       </div>
                     </div>
-                    <div className="shrink-0 rounded-xl border border-emerald-300/32 bg-[#0F4F3A] px-3.5 py-2.5 shadow-[0_0_14px_rgba(16,185,129,0.12)] sm:text-right">
-                      <p className="text-10px font-black uppercase tracking-widest text-white">TOTAL PAGADO</p>
-                      <p className="mt-1 text-2xl font-black leading-none text-white">{formatCuentaPrice(Number(order.total ?? 0))}</p>
+                    <div className="shrink-0 rounded-xl border border-emerald-300/20 bg-[#0E2B24] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.18)] sm:w-36">
+                      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-200/80">Total pagado</p>
+                      <p className="mt-1 text-lg font-black leading-none tracking-tight text-emerald-50">{formatCuentaPrice(Number(order.total ?? 0))}</p>
                     </div>
                   </div>
 
@@ -480,7 +481,6 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                           <button
                             type="button"
                             aria-label={"Descargar factura del pedido " + formatPublicOrderId(order.id)}
-                            title="Descargar factura"
                             disabled={downloadingInvoiceId === order.id}
                             onClick={() => void handleDownloadInvoice(order.id)}
                             className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 text-11px font-black uppercase tracking-wide text-emerald-200 transition-colors hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-60"

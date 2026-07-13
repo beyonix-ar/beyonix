@@ -21,6 +21,7 @@ import {
   CircleUserRound,
   Clock3,
   Home,
+  IdCard,
   Instagram,
   Landmark,
   Loader2,
@@ -80,7 +81,9 @@ import {
   calculateCartShippingPackage,
 } from "@/lib/cart/shipping-package"
 import {
-  getShippingCost,
+  calculateCustomerShippingCost,
+  calculateShippingBonus,
+  SHIPPING_COST,
 } from "@/lib/store-config"
 import {
   formatDeliveryAddress,
@@ -160,7 +163,7 @@ const paymentMethods = [
   {
     id: "transferencia",
     name: "Transferencia bancaria",
-    description: `Transferencia con ${TRANSFER_DISCOUNT_PERCENT}% OFF y validación manual`,
+    description: `Transferencia bancaria con ${TRANSFER_DISCOUNT_PERCENT}% OFF`,
     icon: Landmark,
   },
 ]
@@ -236,6 +239,7 @@ const initialCheckoutFormData = {
   nombre: "",
   email: "",
   telefono: "",
+  dni: "",
   direccion: "",
   calle: "",
   numero: "",
@@ -288,6 +292,7 @@ type RequiredCheckoutField =
   | "nombre"
   | "email"
   | "telefono"
+  | "dni"
   | "calle"
   | "numero"
   | "cpDestino"
@@ -300,6 +305,7 @@ function getFirstInvalidCheckoutField(
   const nombre = data.nombre.trim()
   const email = data.email.trim()
   const telefono = data.telefono.replace(/\D/g, "")
+  const dni = data.dni.replace(/\D/g, "")
   const calle = data.calle.trim()
   const numero = data.numero.trim()
   const cpDestino = data.cpDestino.trim()
@@ -309,6 +315,7 @@ function getFirstInvalidCheckoutField(
   if (nombre.length < 3 || !hasLetters(nombre)) return "nombre"
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "email"
   if (telefono.length < 8 || telefono.length > 15) return "telefono"
+  if (!/^\d{7,8}$/.test(dni)) return "dni"
   if (calle.length < 2 || !hasLetters(calle)) return "calle"
   if (numero.length < 1) return "numero"
   if (!/^\d{4,8}$/.test(cpDestino)) return "cpDestino"
@@ -411,7 +418,7 @@ export default function CheckoutPage() {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, email, nombre, username, telefono, calle, numero, piso, departamento, localidad, codigo_postal, provincia, referencias, rol, created_at"
+          "id, email, nombre, username, telefono, dni, calle, numero, piso, departamento, localidad, codigo_postal, provincia, referencias, rol, created_at"
         )
         .eq("id", currentUser.id)
         .maybeSingle()
@@ -444,6 +451,9 @@ export default function CheckoutPage() {
           nombre: profile?.nombre ?? currentUser.name ?? "",
           email: profile?.email ?? currentUser.email ?? "",
           telefono: profile?.telefono ?? currentUser.phone ?? "",
+          dni: (profile?.dni ?? currentUser.dni ?? "")
+            .replace(/\D/g, "")
+            .slice(0, 8),
           direccion: fallbackAddress,
           calle: profile?.calle ?? currentUser.street ?? parsedAddress.street,
           numero:
@@ -595,7 +605,7 @@ export default function CheckoutPage() {
     0,
   )
   const packageInfo = calculateCartShippingPackage(items)
-  const manualShippingCost = getShippingCost(baseTotals.productsTotal)
+  const manualShippingCost = SHIPPING_COST
   const selectedShippingOption =
     selectedShippingType
       ? shippingOptions.find(
@@ -606,12 +616,23 @@ export default function CheckoutPage() {
       : null
   const shippingCostReal =
     selectedShippingOption?.price ?? 0
+  const shippingBonus =
+    selectedShippingOption
+      ? calculateShippingBonus(baseTotals.productsTotal, shippingCostReal)
+      : 0
   const freeShippingApplied =
-    manualShippingCost === 0
+    selectedShippingOption != null &&
+    shippingCostReal > 0 &&
+    calculateCustomerShippingCost(
+      baseTotals.productsTotal,
+      shippingCostReal,
+    ) === 0
   const shippingCostCharged =
-    selectedShippingOption &&
-    !freeShippingApplied
-      ? shippingCostReal
+    selectedShippingOption
+      ? calculateCustomerShippingCost(
+          baseTotals.productsTotal,
+          shippingCostReal,
+        )
       : 0
   const totals = calculateCartTotals(items, {
     shippingCost: shippingCostCharged,
@@ -767,10 +788,14 @@ export default function CheckoutPage() {
   ) => {
     const { name, value } =
       e.target
-    const normalizedValue =
+    let normalizedValue =
       value.toLocaleUpperCase(
         "es-AR"
       )
+
+    if (name === "dni") {
+      normalizedValue = value.replace(/\D/g, "").slice(0, 8)
+    }
 
     hasEditedCheckoutFormRef.current = true
 
@@ -1053,7 +1078,6 @@ export default function CheckoutPage() {
             <button
               type="button"
               aria-label="Volver a la tienda"
-              title="Volver a la tienda"
               onClick={() =>
                 router.push("/")
               }
@@ -1090,7 +1114,6 @@ export default function CheckoutPage() {
               <button
                 type="button"
                 aria-label="Abrir menú de cuenta"
-                title="Abrir menú de cuenta"
                 aria-expanded={accountMenuOpen}
                 onClick={() => setAccountMenuOpen((current) => !current)}
                 className={cn(
@@ -1159,7 +1182,6 @@ export default function CheckoutPage() {
                   <button
                     type="button"
                     aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
                     onClick={() => {
                       setAccountMenuOpen(false)
                       logout()
@@ -1278,6 +1300,13 @@ export default function CheckoutPage() {
                           </Label>
                           <Input id="telefono" name="telefono" type="tel" className={getCheckoutInputClassName("telefono")} value={formData.telefono} onChange={handleInputChange} required />
                         </div>
+                        <div className="space-y-0.5">
+                          <Label htmlFor="dni" className="text-white/75">
+                            <IdCard aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
+                            DNI *
+                          </Label>
+                          <Input id="dni" name="dni" type="tel" inputMode="numeric" className={getCheckoutInputClassName("dni")} value={formData.dni} onChange={handleInputChange} required />
+                        </div>
                       </div>
                     </div>
 
@@ -1370,6 +1399,11 @@ export default function CheckoutPage() {
                     {shippingOptions.map((option) => {
                       const selected =
                         selectedShippingType === option.type
+                      const optionShippingCostCharged =
+                        calculateCustomerShippingCost(
+                          baseTotals.productsTotal,
+                          option.price,
+                        )
 
                       return (
                         <button
@@ -1409,10 +1443,10 @@ export default function CheckoutPage() {
                                 <Check className="size-3" />
                               </span>
                             )}
-                            <span className={freeShippingApplied ? "text-sm font-semibold text-emerald-400" : "text-sm font-semibold text-white"}>
-                              {freeShippingApplied
-                                ? "GRATIS"
-                                : formatPrice(option.price)}
+                            <span className={optionShippingCostCharged === 0 ? "text-sm font-semibold text-emerald-400" : "text-sm font-semibold text-white"}>
+                              {optionShippingCostCharged === 0
+                                ? "Sin cargo"
+                                : formatPrice(optionShippingCostCharged)}
                             </span>
                           </span>
                         </button>
@@ -1487,7 +1521,7 @@ export default function CheckoutPage() {
                           </span>
                         </p>
                         <p className="mt-1 text-sm text-white/55">
-                          {TRANSFER_DISCOUNT_PERCENT}% OFF con validación manual.
+                          {TRANSFER_DISCOUNT_PERCENT}% OFF por transferencia bancaria.
                         </p>
                       </div>
 
@@ -1497,7 +1531,7 @@ export default function CheckoutPage() {
                         </span>
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
-                            Validación de pagos
+                            Confirmación del pago
                           </p>
                           <p className="mt-2 text-sm text-white/75">
                             Comprobantes revisados:
@@ -1720,7 +1754,6 @@ export default function CheckoutPage() {
                             <button
                               type="button"
                               aria-label="Disminuir cantidad"
-                              title="Disminuir cantidad"
                               onClick={() =>
                                 item.quantity > 1 &&
                                 decreaseQuantity(item.product.id, item.color)
@@ -1749,7 +1782,6 @@ export default function CheckoutPage() {
 
                         <button
                           type="button"
-                          title="Eliminar producto"
                           aria-label="Eliminar producto"
                           onClick={() =>
                             removeFromCart(item.product.id, item.color)
@@ -1824,18 +1856,20 @@ export default function CheckoutPage() {
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Envío</span>
+                  <span className="text-muted-foreground">
+                    {shippingBonus > 0 ? "Envío bonificado" : "Envío"}
+                  </span>
                   <span className={
                     !selectedShippingOption
                       ? "text-white/45"
-                      : totals.shipping === 0
+                      : totals.shipping === 0 && shippingBonus > 0
                         ? "font-semibold text-emerald-400"
                         : "text-white"
                   }>
                     {!selectedShippingOption
                       ? "A definir"
-                      : totals.shipping === 0
-                        ? "GRATIS"
+                      : totals.shipping === 0 && shippingBonus > 0
+                        ? "Sin cargo"
                         : formatPrice(totals.shipping)}
                   </span>
                 </div>

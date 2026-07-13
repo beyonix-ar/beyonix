@@ -5,7 +5,8 @@ import { Separator } from "@/components/ui/separator"
 import { FreeShippingBar } from "./free-shipping-bar"
 import {
   ACTIVE_SALE_EVENT,
-  hasFreeShipping,
+  FREE_SHIPPING_MIN,
+  IS_FREE_SHIPPING_ENABLED,
 } from "@/lib/store-config"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 
@@ -29,7 +30,10 @@ export function CartSummary({
   onContinueShopping,
 }: Props) {
   const totals = calculateCartTotals(items)
-  const isFreeShipping = hasFreeShipping(totals.productsTotal)
+  const hasShippingBonus =
+    IS_FREE_SHIPPING_ENABLED &&
+    totals.productsTotal >= FREE_SHIPPING_MIN
+  const displayedTotal = totals.productsTotal
 
   return (
     <div className="space-y-2 border-t border-beyonix-blue-light/60 bg-beyonix-surface px-4 py-2.5">
@@ -67,12 +71,12 @@ export function CartSummary({
             <span className="text-white/60">Envío</span>
             <span
               className={`${
-                isFreeShipping
+                hasShippingBonus
                   ? "beyonix-success-glow font-semibold text-emerald-400"
                   : "text-white"
               }`}
             >
-              {isFreeShipping ? "GRATIS" : formatPrice(totals.shipping)}
+              {hasShippingBonus ? "Bonificado" : "A definir"}
             </span>
           </div>
 
@@ -80,7 +84,7 @@ export function CartSummary({
 
           <div className="flex justify-between text-base font-bold">
             <span className="text-white">Total</span>
-            <span className="text-white">{formatPrice(totals.total)}</span>
+            <span className="text-white">{formatPrice(displayedTotal)}</span>
           </div>
         </div>
       </div>

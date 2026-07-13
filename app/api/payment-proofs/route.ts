@@ -23,6 +23,57 @@ const REPLACEABLE_PAYMENT_STATUSES = [
   "rechazado",
 ]
 
+async function upsertPaymentProofReceivedNotification(
+  admin: ReturnType<typeof createAdminClient>,
+  order: SupabasePedido,
+) {
+  if (!order.usuario_id) return
+
+  const notification = {
+    user_id: order.usuario_id,
+    type: "payment_proof_received",
+    title: "Comprobante recibido",
+    body: "Recibimos tu comprobante y estamos revisando el pago.",
+    action_url: "/cuenta?tab=ordenes",
+    order_id: order.id,
+  }
+
+  const { data: updatedPendingNotifications, error: updateError } = await admin
+    .from("customer_notifications")
+    .update({
+      type: notification.type,
+      title: notification.title,
+      body: notification.body,
+      action_url: notification.action_url,
+      is_read: false,
+    })
+    .eq("order_id", order.id)
+    .eq("type", "payment_proof_pending")
+    .select("id")
+
+  if (updateError) {
+    console.error("payment proof notification update error", updateError)
+  }
+
+  if (updatedPendingNotifications && updatedPendingNotifications.length > 0) {
+    return
+  }
+
+  const { error: insertError } = await admin
+    .from("customer_notifications")
+    .upsert(
+      {
+        ...notification,
+        source_key: `order:${order.id}:payment-proof-received`,
+      },
+      { onConflict: "source_key" },
+    )
+
+  if (insertError) {
+    console.error("payment proof notification insert error", insertError)
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -173,6 +224,11 @@ export async function POST(request: Request) {
         uploadedAt,
       },
     })
+
+    await upsertPaymentProofReceivedNotification(
+      admin,
+      updatedOrder as SupabasePedido,
+    )
 
     return NextResponse.json({ order: updatedOrder })
   } catch (error) {

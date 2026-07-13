@@ -1,4 +1,7 @@
-import { getShippingCost } from "@/lib/store-config"
+import {
+  calculateCustomerShippingCost,
+  SHIPPING_COST,
+} from "@/lib/store-config"
 
 export type CheckoutShippingType = "sucursal" | "domicilio"
 
@@ -19,17 +22,18 @@ export function normalizeCheckoutShipping(
   shipping: CheckoutShippingInput | null | undefined,
   productsTotal: number,
 ): NormalizedCheckoutShipping {
-  const fallbackCost = getShippingCost(productsTotal)
+  const fallbackCost = SHIPPING_COST
   const realCost = Number(shipping?.costReal)
   const costReal =
     Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
-  const freeShippingApplied = fallbackCost === 0
+  const costCharged = calculateCustomerShippingCost(productsTotal, costReal)
+  const freeShippingApplied = costReal > 0 && costCharged === 0
 
   return {
     provider: "andreani",
     type: shipping?.type === "sucursal" ? "sucursal" : "domicilio",
     costReal,
-    costCharged: freeShippingApplied ? 0 : costReal,
+    costCharged,
     freeShippingApplied,
   }
 }

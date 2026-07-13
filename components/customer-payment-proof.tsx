@@ -18,19 +18,19 @@ import type { SupabasePedido } from "@/lib/supabase/types"
 const PAYMENT_STATUS_CONTENT = {
   pendiente_comprobante: {
     title: "Comprobante pendiente",
-    description: "Subí el comprobante para validar tu pago.",
+    description: "Subí el comprobante para que podamos confirmar tu pago.",
     icon: Clock3,
     className: "border-amber-300/18 bg-amber-300/[0.06] text-amber-300",
   },
   en_revision: {
-    title: "Pago en revisión",
-    description: "Recibimos tu comprobante correctamente.",
+    title: "Comprobante recibido",
+    description: "Recibimos tu comprobante y estamos revisando el pago.",
     icon: Clock3,
     className: "border-amber-300/18 bg-amber-300/[0.06] text-amber-300",
   },
   confirmado: {
     title: "Pago confirmado",
-    description: "Tu comprobante ya fue validado.",
+    description: "Tu pago fue confirmado correctamente.",
     icon: CheckCircle2,
     className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
   },
@@ -60,14 +60,20 @@ export function CustomerPaymentProof({
   showHeading?: boolean
   hideProofWhenConfirmed?: boolean
 }) {
-  const paymentStatus =
+  const hasProof = Boolean(order.payment_proof_url || order.payment_proof_uploaded_at)
+  const rawPaymentStatus =
     order.payment_status &&
     order.payment_status in PAYMENT_STATUS_CONTENT
       ? (order.payment_status as keyof typeof PAYMENT_STATUS_CONTENT)
       : "pendiente_comprobante"
+  const paymentStatus =
+    order.payment_method_id === "transferencia" &&
+    rawPaymentStatus === "pendiente_comprobante" &&
+    hasProof
+      ? "en_revision"
+      : rawPaymentStatus
   const status = PAYMENT_STATUS_CONTENT[paymentStatus]
   const StatusIcon = status.icon
-  const hasProof = Boolean(order.payment_proof_url)
   const isConfirmed = paymentStatus === "confirmado"
   const isCanceled = (order.estado ?? "").toLowerCase() === "cancelado"
   const showProof = hasProof && !(hideProofWhenConfirmed && isConfirmed)

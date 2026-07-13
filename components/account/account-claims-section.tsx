@@ -145,7 +145,6 @@ function ClaimAttachmentChip({
       href={file.signedUrl ?? undefined}
       target="_blank"
       rel="noreferrer"
-      title={file.file_name}
       className="group inline-flex max-w-full items-center gap-2 rounded-xl border border-beyonix-blue-light/25 bg-black px-2.5 py-2 text-xs font-bold text-white transition-colors hover:border-beyonix-blue-light hover:bg-[#112A43]"
     >
       {isImage && file.signedUrl ? (
@@ -264,7 +263,7 @@ function ClaimHeaderCard({
             <p className="text-10px font-black uppercase tracking-widest text-white/55">
               Producto
             </p>
-            <p className="mt-1 truncate text-white" title={getClaimOrderProduct(order)}>
+            <p className="mt-1 truncate text-white">
               {getClaimOrderProduct(order)}
             </p>
           </div>
@@ -498,7 +497,6 @@ function ClaimReplyBox({
           {files.map((file) => (
             <span
               key={`${file.name}-${file.size}`}
-              title={file.name}
               className="inline-flex max-w-56 items-center gap-2 rounded-xl border border-beyonix-blue-light/25 bg-[#181818] px-3 py-2 text-xs font-bold text-white"
             >
               <FileText className="size-4 shrink-0 text-beyonix-sky" />

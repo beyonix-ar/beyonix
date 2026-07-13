@@ -440,7 +440,6 @@ export function ProductSpecificationsEditor({
         <div>
           <input
             type="text"
-            title="Texto de especificación"
             value={texto}
             placeholder="Sonido estereo de alta fidelidad"
             onChange={(event) => setTexto(event.target.value)}
@@ -450,7 +449,6 @@ export function ProductSpecificationsEditor({
 
         <button
           type="button"
-          title={activo ? "Desactivar especificación" : "Activar especificación"}
           aria-label={
             activo ? "Desactivar especificación" : "Activar especificación"
           }
@@ -471,11 +469,6 @@ export function ProductSpecificationsEditor({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          title={
-            editingSpecification
-              ? "Guardar especificación"
-              : "Agregar especificación"
-          }
           aria-label={
             editingSpecification
               ? "Guardar especificación"
@@ -496,7 +489,6 @@ export function ProductSpecificationsEditor({
         {editingSpecification && (
           <button
             type="button"
-            title="Cancelar edicion"
             aria-label="Cancelar edicion"
             onClick={resetFields}
             className="inline-flex h-10 min-w-110px cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#181818] px-4 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
@@ -706,7 +698,6 @@ function SpecificationRow({
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
-            title={activo ? "Desactivar especificación" : "Activar especificación"}
             aria-label={
               activo ? "Desactivar especificación" : "Activar especificación"
             }
@@ -722,7 +713,6 @@ function SpecificationRow({
 
           <button
             type="button"
-            title="Editar especificación"
             aria-label="Editar especificación"
             onClick={onEdit}
             className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
@@ -732,7 +722,6 @@ function SpecificationRow({
 
           <button
             type="button"
-            title="Eliminar especificación"
             aria-label="Eliminar especificación"
             onClick={onRemove}
             className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"

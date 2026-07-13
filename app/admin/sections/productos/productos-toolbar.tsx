@@ -68,7 +68,6 @@ export function ProductosToolbar({
           <div className="inline-flex rounded-xl border border-beyonix-blue-light/25 bg-black/35 p-0.5 shadow-inner shadow-black/40">
             <button
               type="button"
-              title="Ver productos"
               aria-label="Ver productos"
               onClick={() => onViewChange("productos")}
               className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
@@ -82,7 +81,6 @@ export function ProductosToolbar({
             </button>
             <button
               type="button"
-              title="Ver categorías"
               aria-label="Ver categorías"
               onClick={() => onViewChange("categorias")}
               className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${

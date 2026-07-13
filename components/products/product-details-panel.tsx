@@ -1,12 +1,36 @@
 "use client"
 
 import {
+  Armchair,
+  BadgeCheck,
+  Battery,
+  BatteryCharging,
+  BatteryFull,
+  Bluetooth,
+  Cable,
+  CircleHelp,
+  Clock,
+  CookingPot,
+  CupSoda,
+  Gamepad2,
+  Hammer,
+  Headphones,
+  Home,
+  Lock,
+  Mic,
+  Monitor,
   Music,
   Package,
+  Plug,
+  Rocket,
   Shield,
+  ShieldCheck,
+  Smile,
   Sparkles,
   Star,
   Truck,
+  Usb,
+  Volume2,
   Zap,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -48,12 +72,35 @@ interface ProductDetailsPanelProps {
 }
 
 const iconMap: Record<string, LucideIcon> = {
+  Armchair,
+  BadgeCheck,
+  Battery,
+  BatteryCharging,
+  BatteryFull,
+  Bluetooth,
+  Cable,
+  Clock,
+  CookingPot,
+  CupSoda,
+  Gamepad2,
+  Hammer,
+  Headphones,
+  Home,
+  Lock,
+  Mic,
+  Monitor,
   Music,
   Package,
+  Plug,
+  Rocket,
   Shield,
+  ShieldCheck,
+  Smile,
   Sparkles,
   Star,
   Truck,
+  Usb,
+  Volume2,
   Zap,
 }
 
@@ -82,7 +129,7 @@ export function ProductDetailsPanel({
         return a.id - b.id
       }) ?? []
   const visibleFeatures = productSpecifications.map((specification) => ({
-    icon: iconMap[specification.icono] ?? Sparkles,
+    icon: iconMap[specification.icono] ?? CircleHelp,
     text: specification.texto,
   }))
   const limitedFeatures = visibleFeatures.slice(0, 8)
@@ -122,7 +169,7 @@ export function ProductDetailsPanel({
 
         <div className="custom-scrollbar flex min-h-0 flex-1 flex-col md:overflow-y-auto">
           <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
-            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-white/68">
+            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
               Descripción
             </p>
 
@@ -143,7 +190,7 @@ export function ProductDetailsPanel({
 
           {limitedFeatures.length > 0 && (
             <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
-              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-white/68">
+              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
                 Características principales
               </p>
 
@@ -182,7 +229,7 @@ export function ProductDetailsPanel({
 
           {hasVariants && (
             <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
-              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-white/68">
+              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
                 Variante
               </p>
 

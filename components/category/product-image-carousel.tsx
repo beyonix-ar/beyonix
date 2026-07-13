@@ -49,7 +49,6 @@ export function ProductImageCarousel({
           <button
             type="button"
             aria-label="Imagen anterior"
-            title="Imagen anterior"
             onClick={(e) => {
               e.stopPropagation()
               prevImage()
@@ -62,7 +61,6 @@ export function ProductImageCarousel({
           <button
             type="button"
             aria-label="Imagen siguiente"
-            title="Imagen siguiente"
             onClick={(e) => {
               e.stopPropagation()
               nextImage()

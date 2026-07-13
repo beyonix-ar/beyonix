@@ -141,7 +141,6 @@ export function DraftImageUploader({
           type="file"
           accept="image/*"
           aria-label="Seleccionar imágenes"
-          title="Seleccionar imágenes"
           onChange={(event) => {
             if (event.target.files) {
               addFiles(
@@ -210,7 +209,6 @@ export function DraftImageUploader({
 
                 <button
                   type="button"
-                  title="Quitar imagen"
                   aria-label={`Quitar imagen ${preview.file.name}`}
                   onClick={() =>
                     removeFile(preview)

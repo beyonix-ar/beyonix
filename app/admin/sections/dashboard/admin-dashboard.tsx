@@ -705,7 +705,6 @@ function MercadoLibreImporter({ onImported }: { onImported: () => void }) {
             />
             <button
               type="button"
-              title="Importar ventas MercadoLibre"
               aria-label="Importar ventas MercadoLibre"
               onClick={() => inputRef.current?.click()}
               className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-white/90"
@@ -773,7 +772,6 @@ function MercadoLibreImporter({ onImported }: { onImported: () => void }) {
           </div>
           <button
             type="button"
-            title="Confirmar importación"
             aria-label="Confirmar importación"
             disabled={saving}
             onClick={() => void confirmImport()}
@@ -948,7 +946,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 <button
                   key={key}
                   type="button"
-                  title={label}
                   aria-label={label}
                   onClick={() => setTab(key as DashboardTab)}
                   className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
@@ -1016,7 +1013,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               <SectionHeader eyebrow="Operación" title="Últimos pedidos" />
               <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
                 {recentOrders.length ? recentOrders.map((order) => (
-                  <button type="button" title={`Abrir pedido ${order.id}`} aria-label={`Abrir pedido ${order.id}`} key={order.id} onClick={() => onNavigate("pedidos")} className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 text-left transition hover:border-beyonix-sky/35 hover:bg-beyonix-blue/20">
+                  <button type="button" aria-label={`Abrir pedido ${order.id}`} key={order.id} onClick={() => onNavigate("pedidos")} className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 text-left transition hover:border-beyonix-sky/35 hover:bg-beyonix-blue/20">
                     <span className="min-w-0"><span className="block text-sm font-bold text-white">Pedido #{order.id}</span><span className="mt-1 block truncate text-xs text-white/45">{order.cliente_nombre || order.cliente_email || "Cliente"}</span></span>
                     <span className="text-right"><span className="block text-sm font-black text-white">{order.estado}</span><span className="mt-1 block text-11px uppercase text-white/42">{formatRelativeTime(order.created_at)}</span></span>
                   </button>
@@ -1032,7 +1029,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </div>
 
           <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-            <SectionHeader eyebrow="Stock" title="Productos sin stock o bajo stock" action={<button type="button" title="Ver productos" aria-label="Ver productos" onClick={() => onNavigate("productos")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-4 text-sm font-black text-white/78 transition hover:border-beyonix-sky/42 hover:bg-beyonix-blue/32 hover:text-white">Ver productos <ArrowRight className="size-4" /></button>} />
+            <SectionHeader eyebrow="Stock" title="Productos sin stock o bajo stock" action={<button type="button" aria-label="Ver productos" onClick={() => onNavigate("productos")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-4 text-sm font-black text-white/78 transition hover:border-beyonix-sky/42 hover:bg-beyonix-blue/32 hover:text-white">Ver productos <ArrowRight className="size-4" /></button>} />
             <div className="custom-scrollbar grid max-h-420px gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
               {lowStock.length ? lowStock.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
@@ -1071,7 +1068,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   </div>
                   <button
                     type="button"
-                    title={hiddenValues ? "Mostrar valores" : "Ocultar valores"}
                     aria-label={hiddenValues ? "Mostrar valores" : "Ocultar valores"}
                     onClick={toggleHiddenValues}
                     className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 px-5 text-sm font-black text-white/72 transition hover:border-beyonix-sky/45 hover:text-white"

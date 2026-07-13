@@ -58,7 +58,6 @@ export function ProductPreviewModal({
       <button
         type="button"
         aria-label="Cerrar modal"
-        title="Cerrar modal"
         className="absolute inset-0 z-0"
         onClick={onClose}
       />
@@ -69,7 +68,6 @@ export function ProductPreviewModal({
         <button
           type="button"
           aria-label="Cerrar vista previa"
-          title="Cerrar vista previa"
           onClick={onClose}
           className={`${actionButtonClass} top-4 right-4`}
         >
@@ -81,7 +79,6 @@ export function ProductPreviewModal({
           <button
             type="button"
             aria-label="Imagen anterior"
-            title="Imagen anterior"
             onClick={onPrev}
             className={`${actionButtonClass} left-4 top-1/2 -translate-y-1/2`}
           >
@@ -94,7 +91,6 @@ export function ProductPreviewModal({
           <button
             type="button"
             aria-label="Imagen siguiente"
-            title="Imagen siguiente"
             onClick={onNext}
             className={`${actionButtonClass} right-4 top-1/2 -translate-y-1/2`}
           >

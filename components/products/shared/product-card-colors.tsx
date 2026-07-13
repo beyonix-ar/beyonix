@@ -28,7 +28,6 @@ export function ProductCardColors({
           type="button"
           onClick={() => onSelectColor(index)}
           aria-label={`Color ${color.name}`}
-          title={color.name.charAt(0).toUpperCase() + color.name.slice(1)}
           className={`size-5 rounded-full border transition-all duration-150 cursor-pointer hover:scale-110 ${
             productColors[
               color.value as keyof typeof productColors

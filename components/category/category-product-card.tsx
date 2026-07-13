@@ -91,7 +91,6 @@ export function CategoryProductCard({
           <button
             type="button"
             aria-label={`Ver ${product.nombre}`}
-            title={`Ver ${product.nombre}`}
             onClick={handleOpenPreview}
             className="absolute inset-0 z-5 cursor-pointer"
           />

@@ -111,7 +111,6 @@ export function CartDrawer({
       <button
         type="button"
         aria-label="Cerrar carrito"
-        title="Cerrar carrito"
         className="absolute inset-0 bg-black/80 backdrop-blur-sm"
         onClick={onClose}
       />

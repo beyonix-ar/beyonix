@@ -14,6 +14,7 @@ export function AccountViewFrame({
   description,
   children,
   className,
+  headingClassName,
   hideHeading = false,
 }: {
   onBack: () => void
@@ -22,6 +23,7 @@ export function AccountViewFrame({
   description?: string
   children: ReactNode
   className?: string
+  headingClassName?: string
   hideHeading?: boolean
 }) {
   return (
@@ -33,6 +35,7 @@ export function AccountViewFrame({
           eyebrow={kicker}
           title={title}
           description={description}
+          className={headingClassName}
         />
       )}
 

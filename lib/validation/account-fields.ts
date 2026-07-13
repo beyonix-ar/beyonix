@@ -35,6 +35,7 @@ export const FIELD_LIMITS = {
   province: 30,
   postalCode: 8,
   phone: 15,
+  dni: 8,
   password: 20,
   loginIdentifier: 120,
   references: 80,
@@ -73,6 +74,7 @@ export type ProfileValidationPayload = {
   province: string
   postalCode: string
   phone: string
+  dni: string
   references?: string
 }
 
@@ -290,6 +292,10 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
     }
   )
   if (nameError) return nameError
+
+  if (!/^\d{7,8}$/.test(data.dni.trim())) {
+    return "Ingresá un DNI válido de 7 u 8 números."
+  }
 
   const streetError = validateCleanText(data.calle, "la calle", 60, {
     minLength: 2,

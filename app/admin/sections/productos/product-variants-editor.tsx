@@ -538,7 +538,6 @@ export function ProductVariantsEditor({
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(190px,1fr)_minmax(100px,0.55fr)]">
         <input
           type="text"
-          title="Nombre de variante"
           value={nombre}
           placeholder="Negro, azul, rosa..."
           onChange={(e) =>
@@ -550,7 +549,6 @@ export function ProductVariantsEditor({
         <div className="flex gap-2">
           <input
             type="color"
-            title="Color"
             value={normalizeHex(colorHex)}
             onChange={(e) =>
               setColorHex(
@@ -564,7 +562,6 @@ export function ProductVariantsEditor({
 
           <input
             type="text"
-            title="Color hexadecimal"
             value={colorHex}
             placeholder="#000000"
             onChange={(e) =>
@@ -582,7 +579,6 @@ export function ProductVariantsEditor({
         <input
           min="0"
           type="number"
-          title="Stock de variante"
           value={stock}
           placeholder="Stock"
           onChange={(e) =>
@@ -622,7 +618,6 @@ export function ProductVariantsEditor({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          title="Crear variante"
           aria-label="Crear variante"
           onClick={addVariant}
           disabled={saving}
@@ -641,7 +636,6 @@ export function ProductVariantsEditor({
         {editingVariant && (
           <button
             type="button"
-            title="Cancelar edición"
             aria-label="Cancelar edición"
             onClick={resetFields}
             className="inline-flex h-10 min-w-120px items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#181818] px-5 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
@@ -809,7 +803,6 @@ function PersistedVariantImages({
 
             <button
               type="button"
-              title="Eliminar imagen"
               aria-label={`Eliminar imagen ${index + 1}`}
               onClick={() => onRemove(image)}
               className="flex size-9 cursor-pointer items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-[#112A43]"
@@ -867,7 +860,6 @@ function VariantRow({
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          title="Editar variante"
           aria-label={`Editar variante ${nombre}`}
           onClick={onEdit}
           className="flex size-8 items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
@@ -877,7 +869,6 @@ function VariantRow({
 
         <button
           type="button"
-          title="Eliminar variante"
           aria-label={`Eliminar variante ${nombre}`}
           onClick={onRemove}
           className="flex size-8 items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"

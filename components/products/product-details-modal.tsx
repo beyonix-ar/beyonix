@@ -127,7 +127,6 @@ export function ProductDetailsModal({
         <button
           type="button"
           aria-label="Cerrar detalle del producto"
-          title="Cerrar detalle del producto"
           onClick={onClose}
           className="absolute right-4 top-4 z-30 flex size-10 cursor-pointer items-center justify-center rounded-full border border-beyonix-blue-light/36 bg-[#07121E]/95 text-white shadow-lg shadow-black/45 backdrop-blur-md transition-all hover:border-beyonix-sky/65 hover:bg-beyonix-blue/70 active:scale-95"
         >

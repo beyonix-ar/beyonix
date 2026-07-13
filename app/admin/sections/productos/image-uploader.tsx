@@ -99,7 +99,6 @@ export function ImageUploader({
           type="file"
           accept="image/*"
           aria-label="Seleccionar imágenes"
-          title="Seleccionar imágenes"
           onChange={(e) =>
             e.target.files &&
             uploadFiles(
@@ -147,7 +146,6 @@ export function ImageUploader({
               <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/65 opacity-0 transition-opacity group-hover:opacity-100">
                 <button
                   type="button"
-                  title="Imagen principal"
                   aria-label="Imagen principal"
                   onClick={() =>
                     setPrincipal(
@@ -161,7 +159,6 @@ export function ImageUploader({
 
                 <button
                   type="button"
-                  title="Eliminar imagen"
                   aria-label="Eliminar imagen"
                   onClick={() =>
                     deleteImage(

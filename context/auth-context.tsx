@@ -207,6 +207,8 @@ export interface BeyonixUser {
 
   phone?: string
 
+  dni?: string
+
   city?: string
 
   province?: string
@@ -312,6 +314,9 @@ function profileToUser(
 
     phone:
       profile.telefono ?? undefined,
+
+    dni:
+      profile.dni ?? undefined,
 
     province:
       profile.provincia ?? undefined,
@@ -1232,93 +1237,34 @@ export function AuthProvider({
           return
         }
 
-        const payload: Record<
-          string,
-          unknown
-        > = {}
+        const session = await getSafeSupabaseSession()
 
-        if (
-          data.name !==
-          undefined
-        ) {
-          payload.nombre =
-            data.name
+        if (!session?.access_token) {
+          throw new Error("No se pudo validar la sesión.")
         }
 
-        if (
-          data.rol !==
-          undefined
-        ) {
-          payload.rol =
-            data.rol
+        const response = await fetch("/api/auth/profile", {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        })
+        const result = await response.json().catch(() => ({}))
+
+        if (!response.ok || !result.profile) {
+          throw new Error(result.error || "No se pudo guardar el perfil.")
         }
 
-        if (data.username !== undefined) {
-          payload.username = data.username
-        }
-
-        if (data.phone !== undefined) {
-          payload.telefono = data.phone
-        }
-
-        if (data.street !== undefined) {
-          payload.calle = data.street
-        }
-
-        if (data.streetNumber !== undefined) {
-          payload.numero = data.streetNumber
-        }
-
-        if (data.floor !== undefined) {
-          payload.piso = data.floor || null
-        }
-
-        if (data.apartment !== undefined) {
-          payload.departamento = data.apartment || null
-        }
-
-        if (data.postalCode !== undefined) {
-          payload.codigo_postal = data.postalCode
-        }
-
-        if (data.province !== undefined) {
-          payload.provincia = data.province
-        }
-
-        if (data.city !== undefined) {
-          payload.localidad = data.city
-        }
-
-        if (data.avatarUrl !== undefined) {
-          payload.avatar_url = data.avatarUrl
-        }
-
-        if (data.references !== undefined) {
-          payload.referencias = data.references
-        }
-
-        const { error } = await supabase
-          .from(
-            "profiles"
-          )
-          .update(payload)
-          .eq(
-            "id",
-            user.id
-          )
-
-        if (error) {
-          throw error
-        }
+        const nextProfile = result.profile as SupabaseProfile
 
         setUser(
-          (prev) =>
-            prev
-              ? {
-                  ...prev,
-                  ...data,
-                }
-              : prev
+          profileToUser(
+            nextProfile,
+            nextProfile.email ?? user.email,
+            user.username,
+          )
         )
       },
       [user]

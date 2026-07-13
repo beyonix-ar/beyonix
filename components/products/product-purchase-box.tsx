@@ -75,7 +75,7 @@ export function ProductPurchaseBox({
   return (
     <div className="bg-[#070A0E] px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
       <div className="mb-3 flex flex-wrap items-end gap-2.5">
-        <span className="text-[34px] font-black leading-none tracking-tight text-white md:text-[38px]">
+        <span className="text-[28px] font-black leading-none tracking-tight text-white md:text-[32px]">
           {formatPrice(price)}
         </span>
 
@@ -94,8 +94,8 @@ export function ProductPurchaseBox({
 
       {installmentsLabel && (
         <div className="mb-4">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-2 text-13px font-semibold text-white/70">
-            <CreditCard className="size-3.5" />
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3.5 py-2 text-13px font-semibold text-[#8AB9DF]">
+            <CreditCard className="size-3.5 text-[#8AB9DF]" />
             {installmentsLabel}
           </span>
         </div>

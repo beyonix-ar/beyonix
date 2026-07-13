@@ -243,7 +243,6 @@ export default function SharedProductCard({
                 ? `Quitar ${product.nombre} de favoritos`
                 : `Marcar ${product.nombre} como favorito`
             }
-            title={isFavorite ? "Quitar de favoritos" : "Favorito"}
             disabled={favoriteLoading}
             onClick={(event) => {
               event.stopPropagation()
@@ -331,7 +330,6 @@ export default function SharedProductCard({
         <button
           type="button"
           aria-label={`Ver ${product.nombre}`}
-          title={`Ver ${product.nombre}`}
           onClick={(event) => {
             event.stopPropagation()
             onOpenPreview?.(product)

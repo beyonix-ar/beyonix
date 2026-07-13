@@ -489,19 +489,6 @@ export function AdminClaimManager({
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {[
-            ["Pedido", pedido.estado || "-"],
-            ["Facturación", invoiced ? "Facturado / en proceso" : "Sin factura emitida"],
-            ["Envío", dispatched ? "Despachado" : "No despachado"],
-          ].map(([label, value]) => (
-            <div key={label} className="admin-claim-summary-card rounded-xl border px-3 py-2">
-              <p className={`text-10px font-bold uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.label}`}>{label}</p>
-              <p className="mt-0.5 text-xs font-black text-white">{value}</p>
-            </div>
-          ))}
-        </div>
-
         {cancellation && !cancellationCanBeApproved && !closed && (
           <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
             Esta orden ya está facturada, despachada o entregada. No se puede aprobar la cancelación desde esta acción.

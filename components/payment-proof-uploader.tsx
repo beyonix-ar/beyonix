@@ -290,7 +290,6 @@ export function PaymentProofActionButton({
       <button
         type="button"
         aria-label={`${actionLabel} del pedido ${orderId}`}
-        title={actionLabel}
         disabled={uploading}
         onClick={() => inputRef.current?.click()}
         className={`${className} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}

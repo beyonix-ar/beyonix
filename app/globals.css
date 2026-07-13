@@ -2841,6 +2841,124 @@ body.product-modal-open .category-hero {
   cursor: not-allowed;
 }
 
+.customer-claim-experience > section.claim-form-shell,
+.customer-claim-experience > div.claim-form-shell,
+section.claim-form-shell,
+div.claim-form-shell {
+  background: #0b1118 !important;
+  background-color: #0b1118 !important;
+  background-image: none !important;
+  border: 1px solid #18334d !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-clip: border-box !important;
+  box-sizing: border-box;
+  box-shadow: inset 0 0 0 9999px #0b1118 !important;
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+  z-index: 1;
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.claim-form-content {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  position: relative;
+  z-index: 1;
+}
+
+section.claim-form-shell::before,
+section.claim-form-shell::after,
+div.claim-form-shell::before,
+div.claim-form-shell::after {
+  background: none !important;
+  background-image: none !important;
+  content: none !important;
+  display: none !important;
+}
+
+.claim-form-subsection + .claim-form-subsection {
+  margin-top: 16px;
+  border-top: 1px solid rgba(24, 51, 77, 0.85);
+  padding-top: 16px;
+}
+
+.order-detail-solid-surface > div > header,
+.order-detail-solid-surface > div > div.grid > div > section,
+.order-detail-solid-surface > div > div.grid > aside > section {
+  background: #0b1118 !important;
+  background-color: #0b1118 !important;
+  background-image: none !important;
+  border-color: #18334d !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: inset 0 0 0 9999px #0b1118;
+}
+
+.order-detail-components-shell {
+  background: #111418 !important;
+  background-color: #111418 !important;
+  background-image: none !important;
+  border: 1px solid #18334d !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: inset 0 0 0 9999px #111418;
+}
+
+.claim-start-button {
+  background-color: #112a43;
+  border: 1px solid #21476b;
+  color: #ffffff;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.claim-start-button:hover {
+  background-color: #163a5c;
+  border-color: #2c6ca3;
+  box-shadow:
+    0 0 0 1px rgba(44, 108, 163, 0.35),
+    0 6px 18px rgba(17, 42, 67, 0.28);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.claim-start-button:active {
+  box-shadow: 0 0 0 1px rgba(44, 108, 163, 0.25);
+  transform: translateY(0);
+}
+
+.claim-start-button:focus-visible {
+  outline: 2px solid #2c6ca3;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  section.claim-form-shell,
+  div.claim-form-shell {
+    border-radius: 14px;
+    padding: 16px;
+  }
+
+  .claim-form-subsection + .claim-form-subsection {
+    margin-top: 14px;
+    padding-top: 14px;
+  }
+}
+
 .admin-claim-manager button:not(:disabled),
 .admin-claim-manager a[href],
 .admin-claim-manager select:not(:disabled),

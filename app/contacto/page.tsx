@@ -63,7 +63,6 @@ export default function ContactoPage() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Abrir Instagram oficial de Beyonix"
-              title="Abrir Instagram oficial de Beyonix"
               className="group flex cursor-pointer items-center gap-4 rounded-2xl border border-beyonix-blue-light/14 bg-beyonix-surface p-5 shadow-2xl shadow-black/25 transition-colors hover:border-beyonix-blue-light/50"
             >
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/28 bg-beyonix-blue/18 text-white transition-colors group-hover:border-beyonix-blue-light group-hover:bg-beyonix-blue">
@@ -88,7 +87,6 @@ export default function ContactoPage() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Abrir Gmail para enviar email a Beyonix"
-              title="Abrir Gmail para enviar email a Beyonix"
               className="group flex cursor-pointer items-center gap-4 rounded-2xl border border-beyonix-blue-light/14 bg-beyonix-surface p-5 text-left shadow-2xl shadow-black/25 transition-colors hover:border-beyonix-blue-light/50"
             >
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/28 bg-beyonix-blue/18 text-white transition-colors group-hover:border-beyonix-blue-light group-hover:bg-beyonix-blue">

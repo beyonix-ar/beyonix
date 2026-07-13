@@ -267,7 +267,6 @@ function ProductVideoPlayer({
 
   return (
     <iframe
-      title={`Video de ${productName}`}
       src={source.embedUrl}
       loading="lazy"
       allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

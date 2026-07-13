@@ -3,7 +3,7 @@
 import {
   FREE_SHIPPING_MIN,
   IS_FREE_SHIPPING_ENABLED,
-  hasFreeShipping,
+  hasShippingBonus,
 } from "@/lib/store-config"
 
 interface Props {
@@ -27,7 +27,7 @@ export function FreeShippingBar({ subtotal }: Props) {
       ? 100
       : Math.min((subtotal / FREE_SHIPPING_MIN) * 100, 100)
   const remaining = Math.max(FREE_SHIPPING_MIN - subtotal, 0)
-  const isComplete = hasFreeShipping(subtotal)
+  const isComplete = hasShippingBonus(subtotal)
 
   return (
     <div className="space-y-1.5">
@@ -57,7 +57,7 @@ export function FreeShippingBar({ subtotal }: Props) {
             </span>
 
             <span className="beyonix-success-glow">
-              ¡Tenés envío GRATIS!
+              🎉 ¡Conseguiste envío bonificado!
             </span>
           </>
         ) : (
@@ -66,7 +66,9 @@ export function FreeShippingBar({ subtotal }: Props) {
             <span className="text-white font-semibold tracking-wide">
               {formatPrice(remaining)}
             </span>{" "}
-            <span className="text-white/80 text-sm">para envío gratis</span>
+            <span className="text-white/80 text-sm">
+              para conseguir envío bonificado.
+            </span>
           </span>
         )}
       </p>

@@ -34,6 +34,7 @@ interface CheckoutPayload {
     nombre?: string
     email?: string
     telefono?: string
+    dni?: string
     direccion?: string
     cpDestino?: string
     localidad?: string
@@ -92,6 +93,7 @@ function normalizeCustomer(customer: CheckoutPayload["customer"]) {
     cliente_nombre: customer?.nombre?.trim() || null,
     cliente_email: customer?.email?.trim() || null,
     cliente_telefono: customer?.telefono?.trim() || null,
+    cliente_dni: customer?.dni?.replace(/\D/g, "").trim() || null,
     cliente_direccion: customer?.direccion?.trim() || null,
     localidad: customer?.localidad?.trim() || null,
     provincia: customer?.provincia?.trim() || null,

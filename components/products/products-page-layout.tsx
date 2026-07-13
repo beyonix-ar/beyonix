@@ -489,7 +489,6 @@ export function ProductsPageLayout() {
             <>
               <button
                 type="button"
-                title="Banner anterior"
                 aria-label="Banner anterior"
                 onClick={goToPreviousBanner}
                 className="absolute left-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
@@ -498,7 +497,6 @@ export function ProductsPageLayout() {
               </button>
               <button
                 type="button"
-                title="Banner siguiente"
                 aria-label="Banner siguiente"
                 onClick={goToNextBanner}
                 className="absolute right-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
@@ -510,7 +508,6 @@ export function ProductsPageLayout() {
                   <button
                     key={banner.id}
                     type="button"
-                    title={`Ver banner ${index + 1}`}
                     aria-label={`Ver banner ${index + 1}`}
                     onClick={() => setActiveBannerIndex(index)}
                     className={`h-1.5 cursor-pointer rounded-full transition-all ${

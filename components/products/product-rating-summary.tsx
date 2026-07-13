@@ -43,7 +43,6 @@ export function ProductRatingSummary({
       aria-label={`${averageLabel} de 5 estrellas basado en ${safeReviewsCount} ${
         safeReviewsCount === 1 ? "reseña" : "reseñas"
       }`}
-      title={`${averageLabel}/5 (${safeReviewsCount})`}
     >
       {[1, 2, 3, 4, 5].map((rating) => (
         <Star

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 // @refresh reset
 
 import { useEffect, useState } from "react"
@@ -31,6 +31,7 @@ import {
 
 import { useAuth } from "@/context/auth-context"
 import {
+  AccountBackButton,
   AccountCard,
   AccountPageContainer,
   AccountPageHeader,
@@ -47,7 +48,8 @@ import {
 import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
 import { CustomerClaimExperience } from "@/components/claims/customer-claim-experience"
 import { supabase } from "@/lib/supabase/client"
-import type { SupabasePedido } from "@/lib/supabase/types"
+import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
+import { getOrderClaimStatusLabel } from "@/lib/order-claims"
 import {
   formatCuentaInvoiceNumber,
   formatCuentaPrice,
@@ -64,6 +66,22 @@ import {
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
 type ProfileView = "home" | "ordenes" | "datos" | "seguridad"
+
+const ACCOUNT_ORDER_SELECT =
+  "*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*, order_claim_files(*), order_claim_messages(*))"
+
+function isOrderPaymentConfirmed(order: SupabasePedido) {
+  const paymentStatus = (order.payment_status ?? "").toLowerCase()
+
+  return (
+    order.estado === "pagado" ||
+    paymentStatus === "confirmado" ||
+    paymentStatus === "confirmed" ||
+    paymentStatus === "approved" ||
+    Boolean(order.paid_at) ||
+    Number(order.payment_confirmed_amount ?? 0) > 0
+  )
+}
 
 function isOrderDetailDispatched(order: SupabasePedido) {
   const status = (order.estado ?? "").toLowerCase()
@@ -90,6 +108,19 @@ function isOrderDetailInvoiced(order: SupabasePedido) {
     Boolean(order.invoice_cae) ||
     Boolean(order.invoice_number && order.invoice_point)
   )
+}
+
+function canShowOrderClaimHelp(order: SupabasePedido) {
+  if ((order.estado ?? "").toLowerCase() === "cancelado") return false
+  if (!isOrderPaymentConfirmed(order)) return false
+
+  return isOrderDetailDispatched(order) || isOrderDetailDelivered(order)
+}
+
+function getLatestCustomerClaim(claims: SupabaseOrderClaim[] = []) {
+  return claims
+    .filter((claim) => claim.failure_type !== "cancelar_compra")
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
 }
 
 function ProfilePanel({ initialView }: { initialView: ProfileView }) {
@@ -134,7 +165,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   ]
 
   return (
-    <AccountPageContainer className="space-y-4">
+    <AccountPageContainer className="max-w-[1160px] space-y-4">
       <AccountPageHeader
         eyebrow="Mi cuenta"
         title={`Hola, ${(user.username || user.name.split(" ")[0]).toUpperCase()}`}
@@ -300,7 +331,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       setError("")
       const { data, error: orderError } = await supabase
         .from("ordenes")
-        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
+        .select(ACCOUNT_ORDER_SELECT)
         .eq("id", orderId)
         .maybeSingle()
 
@@ -464,11 +495,18 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const hasProof = Boolean(order.payment_proof_url)
   const status = getClientOrderStatusBadge(order)
   const isCancelled = (order.estado ?? "").toLowerCase() === "cancelado"
+  const orderDelivered = isOrderDetailDelivered(order)
   const trackingNumber = order.andreani_tracking || order.tracking_number || ""
   const trackingUrl = normalizeTrackingUrl(order.tracking_url)
+  const existingClaim = getLatestCustomerClaim(order.order_claims)
+  const showClaimHelp = canShowOrderClaimHelp(order)
+  const claimHelpTitle = existingClaim ? "Ver reclamo" : "Iniciar reclamo"
+  const claimHelpAriaLabel = existingClaim
+    ? `Ver reclamo del pedido ${formatPublicOrderId(order.id)}`
+    : `Iniciar reclamo del pedido ${formatPublicOrderId(order.id)}`
   const canCancelOrder =
     !isCancelled &&
-    !isOrderDetailDelivered(order) &&
+    !orderDelivered &&
     !isOrderDetailDispatched(order)
 
   if (isCancelled) {
@@ -792,21 +830,30 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#05070A] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
+    <main className="order-detail-solid-surface min-h-screen bg-[#05070A] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
       <div className="mx-auto max-w-[1200px]">
         <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a Mis compras</button>
 
-        <header className="mt-4 rounded-2xl border border-[#112A43]/70 bg-[#0D1117] p-4 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-5">
-          <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
+        <header className="mt-4 rounded-2xl border border-[#18334D] bg-[#0B1118] p-3.5 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
               <h1 className="mt-1 text-xl font-black text-white sm:text-2xl">Pedido #{formatPublicOrderId(order.id)}</h1>
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-white/58"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
+              <div className="mt-2.5">
+                {invoiceAvailable ? (
+                  <button type="button" disabled={downloadingInvoice} onClick={() => void handleDownloadInvoice()} className={cn(beyonixHoverBorder, "inline-flex h-8 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto")}><Download className="size-3.5" />{downloadingInvoice ? "Preparando..." : "Ver factura"}</button>
+                ) : (
+                  <p className="w-full rounded-lg border border-[#21476B] bg-[#13263B] px-3 py-2 text-xs font-medium leading-4 text-[#9EB4C8] sm:w-auto">Estará disponible una vez confirmado el pago</p>
+                )}
+              </div>
             </div>
-            <div className="flex min-h-20 items-center justify-center rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-5 py-3.5 text-center shadow-[0_14px_32px_rgba(16,185,129,0.1)] lg:min-w-52">
-              <div>
-                <p className="text-10px font-semibold uppercase tracking-[0.16em] text-emerald-200">Total pagado</p>
-                <p className="mt-1.5 text-xl font-bold leading-none text-emerald-50">{formatCuentaPrice(Number(order.total))}</p>
+            <div className="flex flex-col gap-2 lg:items-end">
+              <div className="flex min-h-16 items-center justify-center rounded-xl border border-emerald-300/35 bg-[#102A22] px-5 py-3 text-center shadow-[0_14px_32px_rgba(16,185,129,0.1)] lg:min-w-48">
+                <div>
+                  <p className="text-10px font-semibold uppercase tracking-[0.16em] text-emerald-200">Total pagado</p>
+                  <p className="mt-1.5 text-xl font-bold leading-none text-emerald-50">{formatCuentaPrice(Number(order.total))}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -814,13 +861,13 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 
         {error && <p className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">{error}</p>}
 
-        <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
+        <div className="order-detail-components-shell mt-4 grid items-start gap-4 rounded-2xl border border-[#18334D] bg-[#111418] p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
           <div className="space-y-4">
-            <section className="rounded-2xl border border-white/9 bg-[#0D1117] p-3 sm:p-4">
+            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-2.5 sm:p-3">
               <OrderProgressTimeline order={order} />
             </section>
 
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3.5 sm:p-4">
+            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Productos comprados</h2>
               <div className="mt-3 space-y-2">
                 {items.map((item) => {
@@ -828,7 +875,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   const unitPrice = Number(item.precio ?? 0)
                   const name = item.productos?.nombre ?? `Producto #${item.producto_id}`
                   const image = getCuentaItemImage(item)
-                  return <div key={item.id} className="grid gap-3 rounded-xl border border-white/8 bg-[#1B2028] px-3 py-2.5 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
+                  return <div key={item.id} className="grid gap-3 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3"><div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{name}</p><p className="mt-0.5 text-xs font-normal text-white/55">{getCuentaItemColor(item)}</p></div></div>
                     <div><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Cantidad</p><p className="mt-0.5 text-sm font-bold text-white">{quantity}</p></div>
                     <div><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Precio unitario</p><p className="mt-0.5 text-sm font-bold text-white">{formatCuentaPrice(unitPrice)}</p></div>
@@ -842,13 +889,39 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
           </div>
 
           <aside className="space-y-3.5 lg:sticky lg:top-24">
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3.5 sm:p-4">
+            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Resumen de pago</h2>
               <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-semibold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-semibold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}</dl>
-              <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/12 px-3.5 py-3"><span className="text-10px font-semibold uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-base font-bold text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
+              <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/35 bg-[#102A22] px-3.5 py-3"><span className="text-10px font-semibold uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-base font-bold text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
             </section>
 
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3.5 sm:p-4">
+            {showClaimHelp && (
+              <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-white">Ayuda con tu compra</h2>
+                <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
+                  ¿Tuviste un problema con el pedido? Contactanos para que podamos ayudarte.
+                </p>
+                {existingClaim && (
+                  <p className="mt-2 text-xs font-medium text-white/60">
+                    Estado: {getOrderClaimStatusLabel(existingClaim.status)}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  aria-label={claimHelpAriaLabel}
+                  onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
+                  className={cn(
+                    beyonixHoverBorder,
+                    "claim-start-button mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white transition-[background-color,border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-[#2C6CA3] hover:bg-[#163A5C] hover:text-white hover:shadow-[0_0_0_1px_rgba(44,108,163,0.35),0_6px_18px_rgba(17,42,67,0.28)] active:translate-y-0 active:shadow-[0_0_0_1px_rgba(44,108,163,0.25)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2C6CA3]",
+                  )}
+                >
+                  {claimHelpTitle}
+                </button>
+              </section>
+            )}
+
+            {!orderDelivered && (
+            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Comprobante</h2>
               <div className="mt-2.5">
                 {hasProof ? (
@@ -861,17 +934,19 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                     className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")}
                   />
                 ) : (
-                  <p className="rounded-xl bg-[#1B2028] px-3 py-2 text-xs font-semibold leading-5 text-white/65">Este medio de pago no requiere comprobante.</p>
+                  <p className="rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2 text-xs font-semibold leading-5 text-[#9EB4C8]">Este medio de pago no requiere comprobante.</p>
                 )}
               </div>
             </section>
+            )}
 
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3.5 sm:p-4">
+            {!orderDelivered && (
+            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Seguimiento</h2>
               {trackingNumber || trackingUrl ? (
                 <div className="mt-2.5 space-y-2">
                   {trackingNumber && (
-                    <p className="rounded-xl bg-[#1B2028] px-3.5 py-2.5 text-xs font-medium leading-5 text-white/70">
+                    <p className="rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
                       {trackingNumber}
                     </p>
                   )}
@@ -887,16 +962,12 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   )}
                 </div>
               ) : (
-                <p className="mt-2.5 rounded-xl bg-[#1B2028] px-3.5 py-2.5 text-xs font-medium leading-5 text-white/65">
+                <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
                   Estará disponible una vez despachado tu pedido
                 </p>
               )}
             </section>
-
-            <section className="rounded-2xl border border-white/9 bg-[#141820] p-3.5 sm:p-4">
-              <h2 className="text-sm font-bold text-white">Factura</h2>
-              {invoiceAvailable ? <><p className="mt-2 text-xs font-medium text-white/60">Factura C {formatCuentaInvoiceNumber(order.invoice_point, order.invoice_number)}</p><button type="button" disabled={downloadingInvoice} onClick={() => void handleDownloadInvoice()} className={cn(beyonixHoverBorder, "mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60")}><Download className="size-4" />{downloadingInvoice ? "Preparando..." : "Ver factura"}</button></> : <p className="mt-2.5 rounded-xl bg-[#1B2028] px-3.5 py-2.5 text-xs font-medium leading-5 text-white/65">Estará disponible una vez confirmado el pago</p>}
-            </section>
+            )}
 
             {canCancelOrder && (
               <div className="flex justify-end pt-1">
@@ -988,7 +1059,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
       setLoading(true)
       const { data, error: orderError } = await supabase
         .from("ordenes")
-        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
+        .select(ACCOUNT_ORDER_SELECT)
         .eq("id", orderId)
         .maybeSingle()
 
@@ -1032,11 +1103,11 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
   return (
     <main className="min-h-screen bg-[#05070A] px-3 pb-12 pt-24 font-heading sm:px-5 lg:px-8">
       <div className="mx-auto max-w-5xl">
-        <button type="button" onClick={() => router.push(`/cuenta/compras/${order.id}`)} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a la compra</button>
-
-        <header className="mt-3 rounded-xl border border-[#112A43]/55 bg-[#0D1117] px-4 py-3 shadow-[0_0_18px_rgba(17,42,67,0.16)]">
-          <div className="flex flex-wrap items-center justify-between gap-2"><div><h1 className="text-lg font-black text-white">Ayuda con tu compra</h1><p className="mt-0.5 text-xs font-semibold text-white/55">Pedido #{formatPublicOrderId(order.id)} · {formatOrderCardDate(order.created_at)}</p></div></div>
-        </header>
+        <AccountBackButton
+          type="button"
+          label="Volver a la compra"
+          onClick={() => router.push(`/cuenta/compras/${order.id}`)}
+        />
 
         <section className="customer-claim-experience mt-4">
           <CustomerClaimExperience order={order} />
@@ -1107,7 +1178,7 @@ export function CuentaClient() {
               </h1>
               <p className="text-sm text-white/50">
                 {tab === "login"
-                  ? "Inicia sesión para ver tus compras y datos."
+                  ? "Iniciá sesión para ver tus compras y datos."
                   : "Registrate para comprar en BEYONIX."}
               </p>
             </div>

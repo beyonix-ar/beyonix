@@ -29,6 +29,7 @@ interface CustomerNotificationsBellProps {
 
 function getNotificationIcon(type: string) {
   if (type === "payment_proof_pending") return Clock3
+  if (type === "payment_proof_received") return Clock3
   if (type === "admin_message" || type === "claim_response") return MessageCircle
   if (type === "offer") return Tag
   if (type === "payment_validated") return BadgeCheck
@@ -154,6 +155,22 @@ export function CustomerNotificationsBell({
       )
       .subscribe()
 
+    const ordersChannel = supabase
+      .channel(`customer-notification-orders-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ordenes",
+          filter: `usuario_id=eq.${userId}`,
+        },
+        () => {
+          void loadNotifications()
+        },
+      )
+      .subscribe()
+
     const handleFocus = () => {
       void loadNotifications()
     }
@@ -163,6 +180,7 @@ export function CustomerNotificationsBell({
     return () => {
       window.removeEventListener("focus", handleFocus)
       void supabase.removeChannel(channel)
+      void supabase.removeChannel(ordersChannel)
     }
   }, [loadNotifications, userId])
 
@@ -253,7 +271,6 @@ export function CustomerNotificationsBell({
         ref={buttonRef}
         type="button"
         aria-label="Abrir notificaciones"
-        title="Notificaciones"
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         onFocus={openPopover}
@@ -288,7 +305,6 @@ export function CustomerNotificationsBell({
             {unreadCount > 0 && (
               <button
                 type="button"
-                title="Marcar todas como leídas"
                 aria-label="Marcar todas las notificaciones como leídas"
                 onClick={() => void handleMarkAllRead()}
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-[#9CA3AF] transition-colors hover:bg-[#1B2028] hover:text-white"

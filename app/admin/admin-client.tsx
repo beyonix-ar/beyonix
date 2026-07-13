@@ -85,7 +85,6 @@ function SidebarItem({
   return (
     <button
       type="button"
-      title={`${item.label}: ${item.description}`}
       aria-label={item.label}
       onClick={onClick}
       className={`admin-ds-nav-item group flex min-h-48px w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-all ${
@@ -104,7 +103,6 @@ function SidebarItem({
         <span className="min-w-0">
           <span className="block text-sm font-bold">{item.label}</span>
           <span
-            title={item.description}
             className="mt-0.5 block truncate text-11px text-white/58"
           >
             {item.description}
@@ -112,7 +110,6 @@ function SidebarItem({
         </span>
         {item.notificationCount ? (
           <span
-            title={`${item.notificationCount} notificaciones requieren atención`}
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black transition-colors group-hover:text-white ${
               sensitiveNotificationTone
                 ? `${ADMIN_SENSITIVE_DANGER.badge} admin-ds-nav-badge-danger`
@@ -380,7 +377,6 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           </p>
           <button
             type="button"
-            title="Volver al inicio"
             aria-label="Volver al inicio"
             onClick={() => router.push(user ? "/" : "/login?redirect=/admin")}
             className="mt-6 h-12 min-w-140px rounded-2xl bg-white px-6 text-sm font-bold text-black transition hover:bg-white/90"
@@ -408,7 +404,6 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       <div className="flex items-start justify-between gap-3 border-b border-beyonix-blue-light/20 px-5 py-5">
         <button
           type="button"
-          title="Ir al inicio"
           aria-label="Ir al inicio"
           onClick={() => router.push("/")}
           className="group cursor-pointer text-left"
@@ -461,7 +456,6 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       <div className="border-t border-beyonix-blue-light/18 p-4">
         <button
           type="button"
-          title="Cerrar sesión"
           aria-label="Cerrar sesión"
           onClick={handleLogout}
           className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-beyonix-blue-light/20 px-6 text-sm font-bold text-white/62 transition-all hover:border-red-500/30 hover:text-red-300"
@@ -480,7 +474,6 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       <header className="admin-ds-mobile-header sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 lg:hidden">
         <button
           type="button"
-          title="Abrir navegación"
           aria-label="Abrir navegación"
           onClick={() => setMobileOpen(true)}
           className="flex size-10 items-center justify-center rounded-xl border border-white/10 text-white"
@@ -504,7 +497,6 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           <div className="absolute right-4 top-4 z-10">
             <button
               type="button"
-              title="Cerrar navegación"
               aria-label="Cerrar navegación"
               onClick={() => setMobileOpen(false)}
               className="flex size-10 items-center justify-center rounded-xl border border-white/10 text-white"

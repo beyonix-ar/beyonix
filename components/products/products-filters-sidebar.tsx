@@ -78,7 +78,6 @@ export function ProductsFiltersSidebar({
       <button
         type="button"
         aria-label="Mostrar u ocultar filtros"
-        title="Mostrar u ocultar filtros"
         aria-expanded={mobileOpen}
         onClick={() => setMobileOpen((current) => !current)}
         className="flex min-h-52px w-full cursor-pointer items-center justify-between gap-3 border-b border-beyonix-blue-light/18 px-4 py-3 text-left lg:hidden"

@@ -5,12 +5,12 @@ export const SITE_SETTINGS = {
     // Costo de envio base usado por la tienda.
     defaultShippingCost: 15000,
 
-    // El cliente tiene envio gratis cuando el total de productos supera este monto.
-    // Cambia este valor para activar o ajustar el envio gratis.
-    freeShippingMinAmount: 90000,
+    // El cliente accede a una bonificacion parcial de envio desde este monto.
+    // Cambia este valor para activar o ajustar el beneficio.
+    freeShippingMinAmount: 75000,
 
-    // "full" = envio gratis al superar freeShippingMinAmount.
-    // "off" = nunca aplicar envio gratis automatico.
+    // "full" = bonificacion activa al superar freeShippingMinAmount.
+    // "off" = nunca aplicar bonificacion automatica.
     freeShippingMode: "full" as FreeShippingMode,
   },
 

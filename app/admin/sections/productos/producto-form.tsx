@@ -108,7 +108,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 <input
                   id="video_url"
                   type="url"
-                  title="Video del producto"
                   value={form.video_url}
                   placeholder="https://..."
                   onChange={(event) => setField("video_url", event.target.value)}
@@ -130,7 +129,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                         />
                       ) : (
                         <iframe
-                          title="Previsualización del video del producto"
                           src={videoSource.embedUrl}
                           loading="lazy"
                           allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -157,7 +155,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   <input
                     id="nombre"
                     type="text"
-                    title="Nombre"
                     value={form.nombre}
                     placeholder="Auriculares..."
                     onChange={(event) => handleNombreChange(event.target.value)}
@@ -172,7 +169,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   <input
                     id="slug"
                     type="text"
-                    title="Slug"
                     value={form.slug}
                     placeholder="auriculares..."
                     onChange={(event) => setField("slug", event.target.value)}
@@ -187,7 +183,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 </label>
                 <textarea
                   id="descripcion"
-                  title="Descripción"
                   value={form.descripcion}
                   placeholder="Descripción del producto..."
                   onChange={(event) => setField("descripcion", event.target.value)}
@@ -204,7 +199,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     min="0"
                     type="number"
                     id="precio"
-                    title="Precio"
                     placeholder="0"
                     value={form.precio}
                     onChange={(event) => setField("precio", event.target.value)}
@@ -220,7 +214,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     min="0"
                     type="number"
                     id="precio_anterior"
-                    title="Precio anterior"
                     placeholder="0"
                     value={form.precio_anterior}
                     onChange={(event) =>
@@ -282,7 +275,6 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   <button
                     key={toggle.key}
                     type="button"
-                    title={toggle.label}
                     aria-label={toggle.label}
                     onClick={() => setField(toggle.key, !toggle.active)}
                     className="admin-ds-button admin-ds-button-secondary flex min-h-10 items-center gap-3 px-3.5 text-left"
