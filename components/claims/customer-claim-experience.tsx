@@ -10,13 +10,14 @@ import {
   MessageCircle,
   Package,
   Paperclip,
+  Plus,
   Send,
   Truck,
   Upload,
   X,
 } from "lucide-react"
 
-import { getClaimFileValidationError } from "@/lib/order-claims"
+import { getClaimFileValidationError, getOrderClaimResolutionLabel } from "@/lib/order-claims"
 import { beyonixHoverBorder } from "@/lib/utils"
 import type {
   OrderClaimType,
@@ -170,6 +171,31 @@ function getCustomerClaimMessageText(message: string) {
   return match?.[1]?.trim() || message
 }
 
+function CustomerClaimMessageBody({ message }: { message: string }) {
+  const text = getCustomerClaimMessageText(message)
+  const email = "beyonix.ar@gmail.com"
+  const parts = text.split(email)
+
+  if (parts.length === 1) {
+    return <>{text}</>
+  }
+
+  return (
+    <>
+      {parts.map((part, index) => (
+        <span key={index}>
+          {part}
+          {index < parts.length - 1 && (
+            <a href={`mailto:${email}`} className="font-black text-blue-200 underline decoration-blue-200/45 underline-offset-2 hover:text-white">
+              {email}
+            </a>
+          )}
+        </span>
+      ))}
+    </>
+  )
+}
+
 function getAffectedProductsFromDescription(description: string) {
   const match = description.match(/^Producto afectado:\s*(.+?)(?:\r?\n){2}/)
   return match?.[1]?.trim() || ""
@@ -249,6 +275,65 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
   if (claim.status === "cerrado") return { label: "Caso resuelto", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
 
   return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }
+}
+
+function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
+  const resolution = claim.resolution ?? claim.customer_selected_resolution
+
+  if (resolution === "cambio_producto") {
+    if (claim.status === "reemplazo_enviado") {
+      const tracking = claim.replacement_tracking ? ` Seguimiento: ${claim.replacement_tracking}.` : ""
+      return {
+        title: "Solución: cambio de producto",
+        body: `BEYONIX ya despachó el reemplazo.${tracking}`,
+        nextStep: "Podés seguir la novedad desde este chat.",
+      }
+    }
+
+    if (claim.status === "cambio_pendiente" || claim.status === "cerrado") {
+      return {
+        title: "Solución: cambio de producto",
+        body: "El cambio quedó registrado.",
+        nextStep: "Podés consultar la conversación cuando quieras.",
+      }
+    }
+
+    return {
+      title: "Solución: cambio de producto",
+      body: "BEYONIX aprobó el cambio del producto.",
+      nextStep: "Te vamos a indicar por este chat dónde enviar o entregar el producto original. Cuando lo recibamos, prepararemos el reemplazo.",
+    }
+  }
+
+  if (resolution === "cupon_descuento") {
+    return {
+      title: "Solución: nota de crédito",
+      body: "BEYONIX aprobó una nota de crédito a tu favor.",
+      nextStep: claim.coupon_code
+        ? "Ya tenés el código disponible en esta pantalla."
+        : "Te avisaremos por este chat cuando quede disponible.",
+    }
+  }
+
+  if (resolution === "reintegro_total" || resolution === "reintegro_parcial") {
+    return {
+      title: `Solución: ${getOrderClaimResolutionLabel(resolution).toLowerCase()}`,
+      body: "BEYONIX aprobó la devolución del dinero correspondiente.",
+      nextStep: claim.refund_details_submitted_at
+        ? "Ya recibimos tus datos. Estamos gestionando el reintegro."
+        : "Completá los datos de la cuenta para poder avanzar con el reintegro.",
+    }
+  }
+
+  if (resolution === "otro") {
+    return {
+      title: "Solución en proceso",
+      body: "BEYONIX está gestionando la solución del caso.",
+      nextStep: "Te avisaremos cualquier novedad por este chat.",
+    }
+  }
+
+  return null
 }
 
 function FilePreview({ file }: { file: SupabaseOrderClaimFile }) {
@@ -369,6 +454,35 @@ function ProductSummary({ order }: { order: SupabasePedido }) {
   )
 }
 
+function CustomerClaimExperienceSkeleton() {
+  return (
+    <section
+      className="customer-claim-followup-shell mb-1 rounded-xl border border-blue-300/15 p-2.5"
+      style={{
+        background: "#070C12",
+        backgroundColor: "#070C12",
+        backgroundImage: "none",
+        opacity: 1,
+        backdropFilter: "none",
+        WebkitBackdropFilter: "none",
+      }}
+      aria-label="Cargando seguimiento"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/8 pb-2">
+        <div className="space-y-2">
+          <div className="h-3 w-36 rounded bg-[#112A43]" />
+          <div className="h-5 w-44 rounded bg-white/10" />
+          <div className="h-3 w-56 rounded bg-white/8" />
+        </div>
+        <div className="h-7 w-32 rounded-full border border-blue-300/20 bg-[#112A43]" />
+      </div>
+      <div className="mt-2.5 h-[21rem] rounded-lg border border-white/7 bg-[#181818]" />
+      <div className="mt-2.5 h-9 rounded-lg border border-blue-300/15 bg-[#112A43]/25" />
+      <div className="mt-2.5 h-9 w-56 rounded-lg border border-blue-300/25 bg-[#112A43]" />
+    </section>
+  )
+}
+
 export function CustomerClaimExperience({
   order,
   initialProblem,
@@ -403,8 +517,12 @@ export function CustomerClaimExperience({
   const [refundBank, setRefundBank] = useState("")
   const [refundAmountConfirmed, setRefundAmountConfirmed] = useState("")
   const [justCreated, setJustCreated] = useState<SupabaseOrderClaim | null>(null)
+  const [startingNewConversation, setStartingNewConversation] = useState(false)
+  const [claimsReady, setClaimsReady] = useState(false)
+  const [claimsReadyOrderId, setClaimsReadyOrderId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const shellRef = useRef<HTMLElement>(null)
   const chatRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -412,12 +530,20 @@ export function CustomerClaimExperience({
   }, [cancelled])
 
   const loadClaims = useCallback(async () => {
-    const response = await fetch(`/api/orders/${order.id}/claims`)
-    const data = (await response.json()) as { claims?: SupabaseOrderClaim[] }
-    if (response.ok) setClaims(data.claims ?? [])
+    try {
+      const response = await fetch(`/api/orders/${order.id}/claims`)
+      const data = (await response.json()) as { claims?: SupabaseOrderClaim[] }
+      if (response.ok) setClaims(data.claims ?? [])
+    } finally {
+      setClaimsReadyOrderId(order.id)
+      setClaimsReady(true)
+    }
   }, [order.id])
 
   useEffect(() => {
+    setClaimsReady(false)
+    setClaimsReadyOrderId(null)
+    setClaims(order.order_claims ?? [])
     void loadClaims()
     const intervalId = window.setInterval(() => void loadClaims(), 5000)
     window.addEventListener("focus", loadClaims)
@@ -428,7 +554,10 @@ export function CustomerClaimExperience({
   }, [loadClaims])
 
   const visibleClaims = claims.filter((claim) => claim.failure_type !== "cancelar_compra")
-  const activeClaim = visibleClaims.find((claim) =>
+  const displayableClaims = canCreatePostDeliveryClaim
+    ? visibleClaims.filter((claim) => claim.failure_type !== HELP_MESSAGE_PROBLEM_TYPE)
+    : visibleClaims
+  const activeClaim = displayableClaims.find((claim) =>
     [
       "recibido",
       "en_revision",
@@ -440,15 +569,40 @@ export function CustomerClaimExperience({
       "reemplazo_enviado",
     ].includes(claim.status),
   )
-  const claim = activeClaim ?? visibleClaims[0]
+  const claim = startingNewConversation ? null : activeClaim ?? displayableClaims[0]
   const messageCount = claim?.order_claim_messages?.length ?? 0
   const goToOrders = () => router.push("/cuenta?tab=ordenes")
+
+  useEffect(() => {
+    if (activeClaim) setStartingNewConversation(false)
+  }, [activeClaim?.id])
 
   useLayoutEffect(() => {
     const chat = chatRef.current
     if (!chat) return
     chat.scrollTop = chat.scrollHeight
   }, [claim?.id, messageCount])
+
+  const scrollToClaimTop = () => {
+    window.requestAnimationFrame(() => {
+      if (!shellRef.current) {
+        window.scrollTo({ top: 0, behavior: "auto" })
+        return
+      }
+
+      const headerOffset = 84
+      const top = Math.max(
+        0,
+        shellRef.current.getBoundingClientRect().top + window.scrollY - headerOffset,
+      )
+
+      window.scrollTo({ top, behavior: "auto" })
+    })
+  }
+
+  if (!claimsReady || claimsReadyOrderId !== order.id) {
+    return <CustomerClaimExperienceSkeleton />
+  }
 
   const validateFiles = (selectedFiles: File[]) =>
     selectedFiles.map((file) => getClaimFileValidationError(file)).find(Boolean) ?? ""
@@ -527,8 +681,10 @@ export function CustomerClaimExperience({
 
       updateClaimInState(data.claim)
       setJustCreated(data.claim)
+      setStartingNewConversation(false)
       setDescription("")
       setFiles([])
+      scrollToClaimTop()
     } catch {
       setError("No se pudo enviar el reclamo. Intentá nuevamente.")
     } finally {
@@ -571,7 +727,9 @@ export function CustomerClaimExperience({
 
       updateClaimInState(data.claim)
       setJustCreated(data.claim)
+      setStartingNewConversation(false)
       setDescription("")
+      scrollToClaimTop()
     } catch {
       setError("No se pudo enviar el mensaje de ayuda. Intentá nuevamente.")
     } finally {
@@ -676,9 +834,15 @@ export function CustomerClaimExperience({
   const toggleAffectedProduct = (value: string) => {
     setAffectedItems((current) => {
       const withoutWholeOrder = current.filter((item) => item !== "order")
-      return withoutWholeOrder.includes(value)
+      const nextSelection = withoutWholeOrder.includes(value)
         ? withoutWholeOrder.filter((item) => item !== value)
         : [...withoutWholeOrder, value]
+
+      if (orderItems.length > 1 && nextSelection.length === orderItems.length) {
+        return ["order"]
+      }
+
+      return nextSelection
     })
     setError("")
   }
@@ -694,7 +858,7 @@ export function CustomerClaimExperience({
     const info = getClaimStatusInfo(justCreated)
 
     return (
-      <section className="mb-2 rounded-xl border border-blue-300/15 bg-black p-3">
+      <section ref={shellRef} className="customer-claim-followup-shell mb-2 rounded-xl border border-blue-300/15 bg-black p-3">
         <div className="mx-auto w-full rounded-xl border border-blue-300/15 bg-[#141414] p-4 text-center">
           <CircleCheck className="mx-auto size-9 text-blue-300" />
           <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-blue-300">
@@ -735,6 +899,13 @@ export function CustomerClaimExperience({
     const helpMessage = claim.failure_type === HELP_MESSAGE_PROBLEM_TYPE
     const info = getClaimStatusInfo(claim)
     const messages = sortUniqueMessages(claim.order_claim_messages)
+    const hideClosedHelpMetadata = helpMessage && claim.status === "cerrado"
+    const visibleMessages = hideClosedHelpMetadata
+      ? messages.filter((message) => {
+          const text = message.message.trim()
+          return !/^Esta conversación fue cerrada el .+ por BEYONIX\.$/.test(text)
+        })
+      : messages
     const customerTurnLocked = messages[messages.length - 1]?.author_role === "cliente"
     const open = !["cerrado", "rechazado"].includes(claim.status)
     const claimFiles = claim.order_claim_files ?? []
@@ -742,9 +913,11 @@ export function CustomerClaimExperience({
     const evidenceFiles = claimFiles.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
     const evidenceSent = evidenceFiles.length > 0
     const canUploadEvidence = !cancellation && (!evidenceSent || claim.status === "falta_informacion")
+    const closedHelp = helpMessage && claim.status === "cerrado"
     const refundPending =
       claim.status === "reintegro_pendiente" &&
       ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? claim.customer_selected_resolution ?? "")
+    const resolutionSummary = getCustomerResolutionSummary(claim)
     const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
     const affectedProductLabel = cancellation
       ? "Pedido completo"
@@ -753,96 +926,144 @@ export function CustomerClaimExperience({
       : getAffectedProductsFromDescription(claim.description) || "Producto del pedido"
 
     return (
-      <section className="mb-1 rounded-xl border border-blue-300/15 bg-[#141414] p-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/8 pb-2">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">Ayuda con tu compra</p>
-            <h3 className="mt-0.5 text-base font-black text-white">
-              {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Seguimiento de ayuda" : "Seguimiento del reclamo"}
+      <section
+        ref={shellRef}
+        className="customer-claim-followup-shell mb-1 overflow-hidden rounded-xl border border-blue-300/15"
+        style={{
+          background: "#070C12",
+          backgroundColor: "#070C12",
+          backgroundImage: "none",
+          opacity: 1,
+          backdropFilter: "none",
+          WebkitBackdropFilter: "none",
+        }}
+      >
+        <header className="flex flex-col gap-3 border-b border-white/8 bg-[#07111B] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">
+              {getOrderCode(order.id)} · {hideClosedHelpMetadata ? "Ayuda" : (PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo")}
+            </p>
+            <h3 className="mt-1 text-base font-black text-white">
+              {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Chat de ayuda" : "Chat del reclamo"}
             </h3>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/55">
-              <span>Pedido {getOrderCode(order.id)}</span>
-              <span>Fecha: {formatDate(claim.created_at)}</span>
-              <span>Motivo: {PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Solicitud de ayuda"}</span>
-              <span>{cancellation ? "Alcance" : helpMessage ? "Consulta" : "Producto"}: {affectedProductLabel}</span>
-            </div>
+            {!hideClosedHelpMetadata && (
+              <p className="mt-1 truncate text-xs font-semibold text-white/55">
+                {cancellation ? "Pedido completo" : helpMessage ? "Consulta sobre la compra" : affectedProductLabel}
+              </p>
+            )}
           </div>
-          <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black text-white ${info.style}`}>
-            <span className={`size-2 rounded-full ${info.dot}`} />
-            {info.label}
-          </span>
-        </div>
+          {closedHelp ? (
+            <div className="flex w-fit shrink-0 items-center gap-3 rounded-xl border border-emerald-200/55 bg-emerald-300/18 px-4 py-3 shadow-[0_0_0_1px_rgba(167,243,208,0.16),0_12px_28px_rgba(16,185,129,0.12)]">
+              <span className="flex size-9 items-center justify-center rounded-full border border-emerald-100/45 bg-emerald-200/20">
+                <Check className="size-5 text-emerald-50" />
+              </span>
+              <div>
+                <p className="text-sm font-black leading-none text-emerald-50">Consulta resuelta</p>
+                <p className="mt-1 text-xs font-bold leading-none text-emerald-50/78">Chat cerrado</p>
+              </div>
+            </div>
+          ) : (
+            <span className={`inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black text-white ${info.style}`}>
+              <span className={`size-2 rounded-full ${info.dot}`} />
+              {info.label}
+            </span>
+          )}
+        </header>
 
         {claim.rejection_reason && (
-          <div className="mt-2.5 rounded-xl border border-red-300/20 bg-red-500/8 p-3">
-            <p className="text-xs font-black text-white">Motivo del rechazo</p>
-            <p className="mt-1 text-xs leading-5 text-white/85">{claim.rejection_reason}</p>
+          <div className="border-b border-white/8 bg-red-500/8 px-3.5 py-3">
+            <p className="text-xs font-black text-red-100">Reclamo rechazado</p>
+            <p className="mt-1 text-xs leading-5 text-white/75">{claim.rejection_reason}</p>
           </div>
         )}
 
-        <div className="mt-2.5 overflow-hidden rounded-lg border border-white/7 bg-[#181818]">
-          <div className="border-b border-white/8 px-3 py-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">Conversación</p>
+        {closedHelp && !claim.rejection_reason && (
+          <div className="border-b border-[#77E6E2]/20 bg-[#071C20] px-3.5 py-3">
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/10">
+                <Check className="size-3.5 text-[#D7FFFD]" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-[#D7FFFD]">Consulta cerrada</p>
+                <p className="mt-1 text-xs font-semibold leading-5 text-white/80">
+                  La conversación de ayuda fue finalizada.
+                </p>
+              </div>
+            </div>
           </div>
-          <div ref={chatRef} className="min-h-72 max-h-[32rem] space-y-2 overflow-y-auto p-2.5">
-            {messages.map((message) => {
-              const customer = message.author_role === "cliente"
-              return (
-                <div key={message.id} className={`flex ${customer ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[82%] rounded-lg px-2.5 py-1.5 ${customer ? "bg-[#112A43]" : "bg-black/45"}`}>
-                    <p className="text-[10px] font-black text-blue-200">{customer ? "Vos" : "BEYONIX"}</p>
-                    <p className="whitespace-pre-wrap text-xs leading-4 text-white">{getCustomerClaimMessageText(message.message)}</p>
-                    <p className="mt-0.5 text-[9px] text-white/45">{formatDate(message.created_at)}</p>
-                  </div>
+        )}
+
+        {resolutionSummary && !helpMessage && !claim.rejection_reason && (
+          <div className="border-b border-[#77E6E2]/20 bg-[#071C20] px-3.5 py-3">
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/10">
+                <Check className="size-3.5 text-[#D7FFFD]" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-[#D7FFFD]">{resolutionSummary.title}</p>
+                <p className="mt-1 text-xs font-semibold leading-5 text-white/80">{resolutionSummary.body}</p>
+                <p className="mt-1 text-xs leading-5 text-white/60">{resolutionSummary.nextStep}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div ref={chatRef} className="customer-claim-chat-thread min-h-[18rem] max-h-[30rem] space-y-3 overflow-y-auto bg-[#070C12] px-3.5 py-3.5">
+          {visibleMessages.map((message) => {
+            const customer = message.author_role === "cliente"
+            return (
+              <div key={message.id} className={`flex ${customer ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[84%] rounded-2xl px-3 py-2 shadow-[0_10px_28px_rgba(0,0,0,0.18)] sm:max-w-[70%] ${customer ? "rounded-br-md bg-[#112A43]" : "rounded-bl-md border border-white/8 bg-[#101820]"}`}>
+                  <p className="text-[10px] font-black uppercase tracking-wide text-blue-200/80">{customer ? "Vos" : "BEYONIX"}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm font-semibold leading-5 text-white">
+                    <CustomerClaimMessageBody message={message.message} />
+                  </p>
+                  <p className="mt-1 text-[10px] font-semibold text-white/40">{formatDate(message.created_at)}</p>
                 </div>
-              )
-            })}
-            {messages.length === 0 && <p className="text-xs text-white/65">La conversación todavía no tiene mensajes.</p>}
-          </div>
+              </div>
+            )
+          })}
+          {visibleMessages.length === 0 && (
+            <p className="rounded-lg border border-white/8 bg-[#101820] px-3 py-2 text-xs font-semibold text-white/65">
+              La conversación todavía no tiene mensajes.
+            </p>
+          )}
         </div>
 
-        {evidenceSent && (
-          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#181818] px-3 py-2">
-            <span className="text-xs font-bold text-blue-200">
-              <Check className="mr-1 inline size-3.5" />
-              Evidencia enviada
-            </span>
-            <details>
-              <summary className="cursor-pointer text-xs font-black text-blue-300">Ver archivos enviados ({evidenceFiles.length})</summary>
+        <div className="border-t border-white/8 bg-[#08111A] px-3.5 py-3">
+          {evidenceSent && (
+            <details className="mb-2 rounded-lg border border-white/8 bg-[#101820] px-3 py-2">
+              <summary className="cursor-pointer text-xs font-black text-blue-200">
+                Evidencia enviada ({evidenceFiles.length})
+              </summary>
               <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {evidenceFiles.map((file) => <FilePreview key={file.id} file={file} />)}
               </div>
             </details>
-          </div>
-        )}
+          )}
 
-        {["aprobado", "cambio_pendiente", "cupon_pendiente", "reemplazo_enviado"].includes(claim.status) && (
-          <p className="mt-2.5 rounded-lg border border-blue-300/20 bg-[#112A43]/35 px-3 py-2 text-xs font-bold text-blue-100">
-            BEYONIX está gestionando la solución del caso. Te avisaremos cualquier novedad por este chat.
-          </p>
-        )}
+          {claim.coupon_code && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2">
+              <span className="text-xs font-bold text-[#D7FFFD]">Nota de crédito:</span>
+              <code className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-xs font-black text-white">{claim.coupon_code}</code>
+              <button type="button" onClick={() => void navigator.clipboard?.writeText(claim.coupon_code ?? "")} className="h-7 rounded-md border border-blue-300/20 px-2 text-10px font-black text-blue-200 hover:border-blue-300/45">
+                Copiar
+              </button>
+            </div>
+          )}
 
-        {claim.coupon_code && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2">
-            <span className="text-xs font-bold text-[#D7FFFD]">Cupón disponible:</span>
-            <code className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-xs font-black text-white">{claim.coupon_code}</code>
-            <button type="button" onClick={() => void navigator.clipboard?.writeText(claim.coupon_code ?? "")} className="h-7 rounded-md border border-blue-300/20 px-2 text-10px font-black text-blue-200 hover:border-blue-300/45">
-              Copiar
-            </button>
-          </div>
-        )}
+          {error && <p className="mb-2 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
 
-        {open ? (
-          <div className="mt-2.5">
-            {refundPending && !refundDetailsSubmitted ? (
+          {open ? (
+            refundPending && !refundDetailsSubmitted ? (
               <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 p-3">
-                <p className="text-xs font-black text-white">Completá los datos para recibir el reintegro.</p>
-                <p className="mt-1 text-xs leading-5 text-white/65">Mientras esperamos estos datos, la conversación queda pausada.</p>
+                <p className="text-xs font-black text-white">Datos para el reintegro</p>
+                <p className="mt-1 text-xs leading-5 text-white/65">Completalos para que podamos avanzar.</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <input value={refundAccountHolder} onChange={(event) => setRefundAccountHolder(event.target.value)} placeholder="Titular de la cuenta" className="h-9 rounded-lg border border-white/10 bg-[#181818] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                  <input value={refundAccountIdentifier} onChange={(event) => setRefundAccountIdentifier(event.target.value)} placeholder="Alias o CBU/CVU" className="h-9 rounded-lg border border-white/10 bg-[#181818] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                  <input value={refundBank} onChange={(event) => setRefundBank(event.target.value)} placeholder="Banco / billetera" className="h-9 rounded-lg border border-white/10 bg-[#181818] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                  <input value={refundAmountConfirmed} onChange={(event) => setRefundAmountConfirmed(event.target.value)} placeholder="Importe a recibir" className="h-9 rounded-lg border border-white/10 bg-[#181818] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                  <input value={refundAccountHolder} onChange={(event) => setRefundAccountHolder(event.target.value)} placeholder="Titular de la cuenta" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                  <input value={refundAccountIdentifier} onChange={(event) => setRefundAccountIdentifier(event.target.value)} placeholder="Alias o CBU/CVU" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                  <input value={refundBank} onChange={(event) => setRefundBank(event.target.value)} placeholder="Banco / billetera" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                  <input value={refundAmountConfirmed} onChange={(event) => setRefundAmountConfirmed(event.target.value)} placeholder="Importe a recibir" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
                 </div>
                 <button type="button" disabled={loading} onClick={() => void submitRefundDetails(claim)} className="mt-3 h-9 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45">
                   Enviar datos
@@ -852,57 +1073,90 @@ export function CustomerClaimExperience({
               <p className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2 text-xs font-bold text-[#D7FFFD]">
                 Datos recibidos. BEYONIX realizará el reintegro.
               </p>
+            ) : customerTurnLocked ? (
+              <p className="rounded-lg border border-blue-300/15 bg-[#112A43]/30 px-3 py-2 text-xs font-bold text-blue-100">
+                Mensaje enviado. Te responderemos por este chat.
+              </p>
             ) : (
-              <>
-                <textarea
-                  value={reply}
-                  disabled={customerTurnLocked || loading}
-                  onChange={(event) => setReply(event.target.value)}
-                  rows={2}
-                  placeholder="Escribí tu mensaje"
-                  className="w-full resize-none rounded-lg border border-blue-300/15 bg-[#181818] px-3 py-2 text-xs leading-5 text-white outline-none placeholder:text-white/50 focus:border-blue-300/50 disabled:cursor-not-allowed disabled:opacity-45"
-                />
-                {customerTurnLocked && (
-                  <p className="mt-2 rounded-lg border border-blue-300/15 bg-[#112A43]/30 px-3 py-2 text-xs font-bold text-blue-100">
-                    Mensaje enviado. Esperá la respuesta de BEYONIX para continuar.
-                  </p>
-                )}
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                  {canUploadEvidence ? (
-                    <div className={`min-w-0 flex-1 ${customerTurnLocked ? "opacity-45" : ""}`}>
-                      <EvidenceUploader files={replyFiles} onChange={setReplyFiles} disabled={loading || customerTurnLocked} />
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-white/55">Podrás adjuntar nueva evidencia si BEYONIX solicita más información.</p>
-                  )}
-                  <button type="button" disabled={loading || customerTurnLocked} onClick={() => void sendReply(claim)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45">
+              <div className="space-y-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <textarea
+                    value={reply}
+                    disabled={loading}
+                    onChange={(event) => setReply(event.target.value)}
+                    rows={2}
+                    placeholder="Escribí tu mensaje"
+                    className="min-h-12 flex-1 resize-none rounded-lg border border-blue-300/15 bg-[#101820] px-3 py-2 text-sm leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/50 disabled:cursor-not-allowed disabled:opacity-45"
+                  />
+                  <button type="button" disabled={loading} onClick={() => void sendReply(claim)} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45">
                     <Send className="size-3.5" />
                     {loading ? "Enviando..." : "Enviar"}
                   </button>
                 </div>
-              </>
-            )}
-            {error && <p className="mt-2 text-xs font-bold text-red-300">{error}</p>}
-          </div>
-        ) : (
-          <div className="mt-2.5 space-y-2">
-            <p className="rounded-lg border border-blue-300/15 bg-[#112A43]/25 px-3 py-2 text-xs font-bold text-blue-100">
-            {cancellation ? "La compra figura como cancelada." : "Caso finalizado. Podés consultar la conversación cuando quieras."}
-            </p>
-            {refundProof?.signedUrl && (
-              <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-white hover:border-[#77E6E2]/45">
-                <FileText className="size-3.5 text-[#77E6E2]" />
-                Ver comprobante de devolución
-              </a>
-            )}
-          </div>
-        )}
+                {canUploadEvidence ? (
+                  <details className="rounded-lg border border-white/8 bg-[#101820] px-3 py-2">
+                    <summary className="cursor-pointer text-xs font-black text-white/70">Adjuntar evidencia</summary>
+                    <div className="mt-2">
+                      <EvidenceUploader files={replyFiles} onChange={setReplyFiles} disabled={loading} />
+                    </div>
+                  </details>
+                ) : (
+                  <p className="text-[11px] font-semibold text-white/45">Podrás adjuntar nueva evidencia si BEYONIX solicita más información.</p>
+                )}
+              </div>
+            )
+          ) : (
+            <div className="space-y-2">
+              {closedHelp ? (
+                <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-3">
+                  <p className="text-xs font-black text-[#D7FFFD]">Chat de ayuda cerrado</p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-white/70">
+                    Si surge otra consulta previa a la entrega, escribinos por mail.
+                  </p>
+                  <a
+                    href="mailto:beyonix.ar@gmail.com"
+                    className="mt-2 inline-flex h-8 items-center rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white hover:border-blue-300/55 hover:bg-[#183B5E]"
+                  >
+                    beyonix.ar@gmail.com
+                  </a>
+                </div>
+              ) : (
+                <p className="rounded-lg border border-blue-300/15 bg-[#112A43]/25 px-3 py-2 text-xs font-bold text-blue-100">
+                  {cancellation ? "La compra figura como cancelada." : "Caso finalizado. Podés consultar la conversación cuando quieras."}
+                </p>
+              )}
+              {!cancellation && !helpMessage && claim.status === "cerrado" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStartingNewConversation(true)
+                    setJustCreated(null)
+                    setDescription("")
+                    setReply("")
+                    setReplyFiles([])
+                    setError("")
+                  }}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white hover:border-blue-300/55 hover:bg-[#183B5E]"
+                >
+                  <Plus className="size-3.5" />
+                  Iniciar nueva conversación
+                </button>
+              )}
+              {refundProof?.signedUrl && (
+                <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-white hover:border-[#77E6E2]/45">
+                  <FileText className="size-3.5 text-[#77E6E2]" />
+                  Ver comprobante de devolución
+                </a>
+              )}
+            </div>
+          )}
+        </div>
       </section>
     )
   }
 
   return (
-    <section className="customer-claim-experience">
+    <section ref={shellRef} className="customer-claim-experience">
       {cancellationSuccess && (
         <div className="mt-3 flex flex-col gap-3 rounded-xl border border-emerald-400/22 bg-emerald-500/10 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5">

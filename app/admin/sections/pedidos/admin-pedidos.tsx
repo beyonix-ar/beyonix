@@ -24,7 +24,6 @@ import {
   ShieldCheck,
   ShoppingCart,
   Truck,
-  Trash2,
   Upload,
   X,
   type LucideIcon,
@@ -117,6 +116,7 @@ type AdminOrderDetailView =
   | "pago"
   | "envio"
   | "facturacion"
+  | "mensajeria"
   | "reclamos"
   | "cancelacion"
   | "historial"
@@ -164,6 +164,7 @@ const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "pago",
   "envio",
   "facturacion",
+  "mensajeria",
   "reclamos",
   "cancelacion",
   "historial",
@@ -512,9 +513,21 @@ function needsCreditNoteReminder(pedido: SupabasePedido) {
   )
 }
 
+function isHelpMessageClaim(claim: SupabaseOrderClaim) {
+  return claim.failure_type === "consulta_pedido"
+}
+
+function isFormalClaim(claim: SupabaseOrderClaim) {
+  return claim.failure_type !== "consulta_pedido" && claim.failure_type !== "cancelar_compra"
+}
+
+function shouldShowMessagingTab(pedido: SupabasePedido) {
+  return (pedido.order_claims ?? []).some(isHelpMessageClaim)
+}
+
 function shouldShowClaimsTab(pedido: SupabasePedido) {
   return (
-    (pedido.order_claims ?? []).length > 0 ||
+    (pedido.order_claims ?? []).some(isFormalClaim) ||
     Boolean(pedido.return_status && pedido.return_status !== "resuelta")
   )
 }
@@ -553,6 +566,7 @@ function getAdminOrderTabState(
 
   return {
     visible: {
+      mensajeria: shouldShowMessagingTab(pedido),
       reclamos: shouldShowClaimsTab(pedido),
       cancelacion: isCancellationFlowOrder(pedido),
     },
@@ -581,12 +595,17 @@ function getAdminOrderTabState(
                 label: "Facturación pendiente",
               }
             : null,
-      reclamos: pendingClaim
+      mensajeria: pendingClaim && isHelpMessageClaim(pendingClaim)
         ? {
             type: "danger",
-            label: pendingClaim.failure_type === "consulta_pedido"
-              ? "Mensaje de ayuda pendiente"
-              : "Reclamo abierto",
+            label: "Mensaje de ayuda pendiente",
+            critical: true,
+          }
+        : null,
+      reclamos: pendingClaim && isFormalClaim(pendingClaim)
+        ? {
+            type: "danger",
+            label: "Reclamo abierto",
             critical: true,
           }
         : null,
@@ -780,7 +799,7 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
       description: helpMessage
         ? "Hay una consulta del cliente que requiere respuesta administrativa."
         : "Hay una gestión de reclamo que requiere revisión administrativa.",
-      target: "reclamos",
+      target: helpMessage ? "mensajeria" : "reclamos",
       buttonLabel: helpMessage ? "Ir a Mensajería" : "Ir a Reclamos",
       tone: "urgent",
     }
@@ -3627,17 +3646,6 @@ function PedidoDetailModal({
       claim.admin_needs_action ||
       !["cerrado", "rechazado"].includes(claim.status ?? ""),
   )
-  const hasHelpMessages = (pedido.order_claims ?? []).some(
-    (claim) => claim.failure_type === "consulta_pedido",
-  )
-  const hasFormalClaims = (pedido.order_claims ?? []).some(
-    (claim) =>
-      claim.failure_type !== "consulta_pedido" &&
-      claim.failure_type !== "cancelar_compra",
-  )
-  const claimsTabIsMessaging =
-    pendingClaim?.failure_type === "consulta_pedido" ||
-    (hasHelpMessages && !hasFormalClaims)
   const showOrderSummaryIndicator = !orderSummarySeen
   const tabState = useMemo(
     () =>
@@ -3663,18 +3671,14 @@ function PedidoDetailModal({
       { view: "pago" as const, label: "Pago", icon: CreditCard, badge: tabState.badges.pago },
       { view: "facturacion" as const, label: "Facturación", icon: FileText, badge: tabState.badges.facturacion },
       { view: "envio" as const, label: "Envío", icon: Truck, badge: tabState.badges.envio },
-      {
-        view: "reclamos" as const,
-        label: claimsTabIsMessaging ? "Mensajería" : "Reclamos",
-        icon: claimsTabIsMessaging ? MessageCircle : AlertTriangle,
-        badge: tabState.badges.reclamos,
-      },
+      { view: "mensajeria" as const, label: "Mensajería", icon: MessageCircle, badge: tabState.badges.mensajeria },
+      { view: "reclamos" as const, label: "Reclamo", icon: AlertTriangle, badge: tabState.badges.reclamos },
       ...(tabState.visible.cancelacion
         ? [{ view: "cancelacion" as const, label: "Cancelación", icon: X, badge: tabState.badges.cancelacion }]
         : []),
       { view: "historial" as const, label: "Historial", icon: Clock3, badge: null },
     ],
-    [claimsTabIsMessaging, showOrderSummaryIndicator, tabState],
+    [showOrderSummaryIndicator, tabState],
   )
   const paymentStatusValue =
     pedido.payment_status === "confirmado" || pedido.payment_status === "approved"
@@ -3760,8 +3764,10 @@ function PedidoDetailModal({
   ])
 
   useEffect(() => {
-    if (activeView !== "reclamos") return
+    if (activeView !== "reclamos" && activeView !== "mensajeria") return
     if (!pendingClaim) return
+    if (activeView === "mensajeria" && !isHelpMessageClaim(pendingClaim)) return
+    if (activeView === "reclamos" && !isFormalClaim(pendingClaim)) return
 
     void markAdminClaimNotificationsRead(pedido.id)
   }, [activeView, pedido.id, pendingClaim?.id])
@@ -4154,9 +4160,18 @@ function PedidoDetailModal({
             />
           )}
 
+          {activeView === "mensajeria" && (
+          <AdminClaimManager
+            pedido={pedido}
+            mode="messaging"
+            onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
+          />
+          )}
+
           {activeView === "reclamos" && (
           <AdminClaimManager
             pedido={pedido}
+            mode="claims"
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
           />
           )}
@@ -4369,14 +4384,13 @@ function PedidoDetailModal({
                   <div className="mt-2">
                     <AdminSelect
                       title="Estado operativo del pedido"
-                      value={pedido.estado}
+                      value={pedido.estado === "enviado" ? "en_camino" : pedido.estado}
                       triggerClassName={`admin-order-shipping-status-select ${getOrderStatusSelectClassName(pedido.estado)}`}
                       onChange={(value) => onEstadoChange(pedido, value)}
                     >
                       <option value="pendiente">Pendiente</option>
                       <option value="pagado">Pago confirmado</option>
-                      <option value="enviado">Enviado</option>
-                      {(isSuperAdmin || pedido.estado === "en_camino") && (
+                      {(isSuperAdmin || pedido.estado === "en_camino" || pedido.estado === "enviado") && (
                         <option value="en_camino">En camino</option>
                       )}
                       {(isSuperAdmin || pedido.estado === "entregado") && (
@@ -4398,8 +4412,8 @@ function PedidoDetailModal({
                       triggerClassName="admin-order-shipping-modality-select"
                       onChange={(value) => setShippingModality(value as ShippingModalityOption)}
                     >
-                      <option value="andreani">ANDREANI</option>
-                      <option value="otro">OTRO</option>
+                      <option value="andreani">Andreani</option>
+                      <option value="otro">Otro</option>
                     </AdminSelect>
                   </div>
                   {shippingModality === "otro" && (
@@ -5310,7 +5324,7 @@ export function AdminPedidos({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAdmin, isSuperAdmin } = useAuth()
-  const { pedidos, loading, error, deletePedido, updatePedidoEstado, reloadPedidos } =
+  const { pedidos, loading, error, updatePedidoEstado, reloadPedidos } =
     usePedidos()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
@@ -5647,13 +5661,6 @@ export function AdminPedidos({
       return matchesSearch && matchesStatus && matchesAttention
     })
   }, [attentionFilter, attentionLastSeenAt, attentionOrderIds, pedidos, search, statusFilter])
-
-  const handleDelete = async (id: number) => {
-    const ok = confirm("¿Eliminar pedido?")
-    if (!ok) return
-    const deleted = await deletePedido(id)
-    if (deleted) notifyOrderNotificationsChanged()
-  }
 
   const handleEstadoChange = async (
     pedido: SupabasePedido,
@@ -6314,14 +6321,6 @@ export function AdminPedidos({
                             <Eye className="size-3.5" />
                             Ver
                           </button>
-                          <button
-                            type="button"
-                            aria-label={`Eliminar pedido ${pedido.id}`}
-                            onClick={() => handleDelete(pedido.id)}
-                            className="admin-orders-action-button admin-orders-action-button-danger flex size-9 cursor-pointer items-center justify-center rounded-xl border text-white/62 transition-colors hover:border-red-500/30 hover:text-red-300"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -6405,14 +6404,6 @@ export function AdminPedidos({
                       className="admin-orders-action-button flex size-8 cursor-pointer items-center justify-center rounded-lg border text-white/68 transition-colors hover:text-beyonix-sky"
                     >
                       <Eye className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Eliminar pedido ${pedido.id}`}
-                      onClick={() => handleDelete(pedido.id)}
-                      className="admin-orders-action-button admin-orders-action-button-danger flex size-8 cursor-pointer items-center justify-center rounded-lg border text-white/62 transition-colors hover:border-red-500/30 hover:text-red-300"
-                    >
-                      <Trash2 className="size-4" />
                     </button>
                   </div>
                 </div>

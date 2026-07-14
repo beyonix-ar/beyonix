@@ -1199,6 +1199,40 @@
   background-color: rgba(17, 42, 67, 0.22) !important;
 }
 
+.admin-products-table {
+  overflow: hidden !important;
+}
+
+.admin-products-table .admin-products-table-header {
+  border-radius: 0 !important;
+}
+
+.admin-products-table .admin-product-row {
+  background-color: #050c14 !important;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.admin-products-table .admin-product-row::before {
+  background:
+    linear-gradient(90deg, rgba(17, 42, 67, 0.42), rgba(7, 17, 27, 0.86));
+  content: "";
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 160ms ease;
+  z-index: 0;
+}
+
+.admin-products-table .admin-product-row:hover::before {
+  opacity: 1;
+}
+
+.admin-products-table .admin-product-row-grid {
+  border-radius: 0 !important;
+}
+
 .admin-ds-skeleton {
   border: 1px solid var(--admin-border-soft) !important;
   border-radius: var(--admin-radius-lg) !important;
@@ -1226,8 +1260,20 @@
   background-color: rgba(6, 13, 22, 0.96) !important;
 }
 
+.beyonix-admin-main .admin-claim-composer :where(textarea, input) {
+  min-height: 2rem !important;
+}
+
+.beyonix-admin-main .admin-claim-composer .admin-ds-button {
+  min-height: 2rem !important;
+}
+
 .admin-claim-layout {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-claim-workspace {
+  align-items: start;
 }
 
 .admin-claim-definition-row {
@@ -1243,8 +1289,43 @@
   background-color: rgba(11, 22, 34, 0.96) !important;
 }
 
+.admin-claim-card {
+  background:
+    linear-gradient(145deg, rgba(8, 18, 29, 0.98), rgba(5, 11, 19, 0.98)) !important;
+}
+
+.admin-claim-decision-button {
+  width: 100%;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+.admin-claim-decision-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.34) !important;
+}
+
+.admin-claim-decision-button.is-secondary {
+  background: #162230 !important;
+}
+
+.admin-claim-decision-button.is-warning {
+  background: #6b420d !important;
+}
+
+.admin-claim-decision-button.is-success {
+  background: #075032 !important;
+}
+
+.admin-claim-decision-button.is-danger {
+  background: #6f1d1d !important;
+}
+
+.admin-claim-decision-button.is-primary {
+  background: #112A43 !important;
+}
+
 .admin-claim-chat-panel {
-  min-height: 30rem;
+  min-height: unset !important;
 }
 
 .admin-claim-chat-bubble {
@@ -1252,23 +1333,68 @@
 }
 
 .admin-claim-chat-thread {
+  flex: none !important;
+  height: auto !important;
+  min-height: unset !important;
+  max-height: 260px !important;
+  overflow-y: auto !important;
   background:
-    linear-gradient(180deg, rgba(24, 24, 24, 0.98), rgba(19, 19, 19, 0.98)) !important;
+    linear-gradient(180deg, rgba(14, 14, 14, 0.98), rgba(10, 10, 10, 0.98)) !important;
+}
+
+.admin-claim-manager-messaging .admin-claim-chat-panel {
+  height: clamp(34rem, 62vh, 44rem) !important;
+  min-height: 34rem !important;
+}
+
+.admin-claim-manager-messaging .admin-claim-chat-thread {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+.admin-claim-help-resolved-badge {
+  border-color: rgba(134, 239, 172, 0.95) !important;
+  background: linear-gradient(135deg, #bbf7d0, #86efac) !important;
+  color: #052e16 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 0 18px rgba(34, 197, 94, 0.32) !important;
+}
+
+.admin-claim-help-resolved-card {
+  border-color: rgba(134, 239, 172, 0.8) !important;
+  background:
+    linear-gradient(145deg, rgba(187, 247, 208, 0.92), rgba(134, 239, 172, 0.82)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 0 24px rgba(34, 197, 94, 0.24) !important;
+}
+
+.admin-claim-help-resolved-card :where(h4, p) {
+  color: #052e16 !important;
+}
+
+.admin-claim-help-resolved-state,
+.admin-claim-help-resolved-note {
+  border: 1px solid rgba(22, 101, 52, 0.25) !important;
+  background: rgba(240, 253, 244, 0.62) !important;
+  color: #052e16 !important;
 }
 
 .admin-claim-chat-bubble-customer {
-  border-color: rgba(73, 139, 199, 0.45) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
   background:
-    linear-gradient(135deg, rgba(19, 58, 92, 0.98), rgba(17, 42, 67, 0.98)) !important;
+    linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(17, 17, 17, 0.98)) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.045),
     0 10px 22px rgba(0, 0, 0, 0.22) !important;
 }
 
 .admin-claim-chat-bubble-beyonix {
-  border-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(73, 139, 199, 0.45) !important;
   background:
-    linear-gradient(135deg, rgba(8, 8, 8, 0.98), rgba(12, 12, 12, 0.98)) !important;
+    linear-gradient(135deg, rgba(19, 58, 92, 0.98), rgba(17, 42, 67, 0.98)) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
     0 10px 22px rgba(0, 0, 0, 0.24) !important;
@@ -1279,13 +1405,50 @@
   border-radius: 0.5rem !important;
 }
 
+.admin-claim-evidence-action {
+  width: 1.65rem !important;
+  height: 1.65rem !important;
+  min-width: 1.65rem !important;
+  min-height: 1.65rem !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+}
+
+.admin-claim-evidence-action-view {
+  border-color: rgba(74, 144, 184, 0.62) !important;
+  background: #112A43 !important;
+  color: #ffffff !important;
+}
+
+.admin-claim-evidence-action-view:hover,
+.admin-claim-evidence-action-view:focus-visible {
+  border-color: rgba(140, 200, 242, 0.9) !important;
+  background: #183b5e !important;
+}
+
+.admin-claim-evidence-action-download {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(0, 0, 0, 0.2) !important;
+  color: rgba(248, 250, 252, 0.76) !important;
+}
+
+.admin-claim-evidence-action-download:hover,
+.admin-claim-evidence-action-download:focus-visible {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: #ffffff !important;
+}
+
 @media (min-width: 1024px) {
   .admin-claim-layout {
     grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.25fr);
   }
 
-  .admin-claim-chat-panel {
-    height: clamp(30rem, 58vh, 40rem);
+}
+
+@media (min-width: 1280px) {
+  .admin-claim-workspace {
+    grid-template-columns: minmax(0, 2.55fr) minmax(260px, 1fr);
   }
 }
 
@@ -1464,7 +1627,7 @@ main[class*="bg-"],
 section[class*="bg-"]:not(.checkout-form-panel),
 footer[class*="bg-"],
 body > div.relative.z-10 main,
-body > div.relative.z-10 section:not(.checkout-form-panel),
+body > div.relative.z-10 section:not(.checkout-form-panel):not(.customer-claim-followup-shell),
 body > div.relative.z-10 footer,
 body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   background-color: transparent !important;
@@ -2332,6 +2495,28 @@ body > div[role="listbox"][aria-label="Método de reintegro"] button[aria-select
   min-width: 0;
   width: 100% !important;
   max-width: none;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select span {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select,
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select {
+  min-width: 0;
+  width: 100% !important;
+  max-width: none;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select span,
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select span {
+  font-size: 13px !important;
+  font-weight: 400 !important;
 }
 
 body > div[role="listbox"][aria-label="Estado operativo del pedido"],
@@ -2355,8 +2540,83 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
   color: #fff !important;
 }
 
+body > div[role="listbox"][aria-label="Estado operativo del pedido"] {
+  border-color: rgba(125, 186, 255, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(7, 18, 31, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 20px 46px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(93, 162, 220, 0.08) !important;
+}
+
+body > div[role="listbox"][aria-label="Estado operativo del pedido"] button {
+  border: 1px solid transparent !important;
+  border-radius: 0.625rem !important;
+  color: rgba(241, 247, 255, 0.82) !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  min-height: 2.25rem !important;
+}
+
+body > div[role="listbox"][aria-label="Estado operativo del pedido"] button:hover {
+  border-color: rgba(125, 186, 255, 0.32) !important;
+  background:
+    linear-gradient(135deg, rgba(17, 42, 67, 0.9), rgba(8, 24, 40, 0.96)) !important;
+  color: #ffffff !important;
+}
+
+body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria-selected="true"] {
+  border-color: rgba(110, 168, 255, 0.52) !important;
+  background:
+    linear-gradient(135deg, rgba(17, 42, 67, 0.96), rgba(10, 35, 58, 0.96)) !important;
+  color: #eaf6ff !important;
+  font-weight: 500 !important;
+}
+
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select {
   width: 100% !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select span {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+body > div[role="listbox"][aria-label="Modalidad logística"] {
+  border-color: rgba(125, 186, 255, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(7, 18, 31, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 20px 46px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(93, 162, 220, 0.08) !important;
+}
+
+body > div[role="listbox"][aria-label="Modalidad logística"] button {
+  border: 1px solid transparent !important;
+  border-radius: 0.625rem !important;
+  color: rgba(241, 247, 255, 0.82) !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  min-height: 2.25rem !important;
+}
+
+body > div[role="listbox"][aria-label="Modalidad logística"] button:hover {
+  border-color: rgba(125, 186, 255, 0.32) !important;
+  background:
+    linear-gradient(135deg, rgba(17, 42, 67, 0.9), rgba(8, 24, 40, 0.96)) !important;
+  color: #ffffff !important;
+}
+
+body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-selected="true"] {
+  border-color: rgba(110, 168, 255, 0.52) !important;
+  background:
+    linear-gradient(135deg, rgba(17, 42, 67, 0.96), rgba(10, 35, 58, 0.96)) !important;
+  color: #eaf6ff !important;
+  font-weight: 500 !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-other-modality {
@@ -2862,6 +3122,68 @@ body.product-modal-open .category-hero {
 .customer-claim-experience button:disabled,
 .customer-claim-experience label:has(input:disabled) {
   cursor: not-allowed;
+}
+
+.admin-claim-chat-thread,
+.customer-claim-chat-thread {
+  scrollbar-color: rgba(140, 200, 242, 0.42) rgba(5, 12, 20, 0.78);
+  scrollbar-width: thin;
+}
+
+.admin-claim-chat-thread::-webkit-scrollbar,
+.customer-claim-chat-thread::-webkit-scrollbar {
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.admin-claim-chat-thread::-webkit-scrollbar-track,
+.customer-claim-chat-thread::-webkit-scrollbar-track {
+  background: rgba(5, 12, 20, 0.78);
+  border-left: 1px solid rgba(140, 200, 242, 0.08);
+}
+
+.admin-claim-chat-thread::-webkit-scrollbar-thumb,
+.customer-claim-chat-thread::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(180deg, rgba(140, 200, 242, 0.7), rgba(30, 77, 123, 0.88));
+  border: 2px solid rgba(5, 12, 20, 0.92);
+  border-radius: 9999px;
+}
+
+.admin-claim-chat-thread::-webkit-scrollbar-thumb:hover,
+.customer-claim-chat-thread::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, rgba(190, 225, 250, 0.88), rgba(44, 108, 163, 0.95));
+}
+
+.admin-claim-chat-thread::-webkit-scrollbar-corner,
+.customer-claim-chat-thread::-webkit-scrollbar-corner {
+  background: rgba(5, 12, 20, 0.78);
+}
+
+.customer-claim-followup-shell {
+  background: #070C12 !important;
+  background-color: #070C12 !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+}
+
+.customer-claim-followup-shell::before {
+  background: #070C12 !important;
+  background-color: #070C12 !important;
+  background-image: none !important;
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  opacity: 1 !important;
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
 }
 
 .customer-claim-experience > section.claim-form-shell,

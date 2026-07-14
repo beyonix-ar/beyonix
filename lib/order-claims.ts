@@ -75,10 +75,10 @@ export function getOrderClaimTypeLabel(type?: string | null) {
 
 export function getOrderClaimResolutionLabel(resolution?: string | null) {
   const labels: Record<string, string> = {
-    cambio_producto: "Solución operativa",
+    cambio_producto: "Cambio de producto",
     reintegro_total: "Reintegro total",
     reintegro_parcial: "Reintegro parcial",
-    cupon_descuento: "Cupón de descuento",
+    cupon_descuento: "Nota de crédito",
     rechazado: "Rechazado",
     otro: "Otra solución",
   }

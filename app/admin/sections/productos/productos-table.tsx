@@ -53,8 +53,8 @@ export function ProductosTable({
   }
 
   return (
-    <AdminTable>
-      <div className="grid grid-cols-admin-products gap-4 border-b border-white/6 bg-black px-5 py-3">
+    <AdminTable className="admin-products-table">
+      <div className="admin-products-table-header grid grid-cols-admin-products gap-4 border-b border-white/6 bg-black px-5 py-3">
         {[
           "Producto",
           "Categoría",

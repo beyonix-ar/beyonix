@@ -100,7 +100,8 @@ function isOrderDetailDispatched(order: SupabasePedido) {
 
 function isOrderDetailDelivered(order: SupabasePedido) {
   const status = (order.estado ?? "").toLowerCase()
-  return status === "entregado" || Boolean(order.delivered_at)
+  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
+  return status === "entregado" || Boolean(order.delivered_at) || andreaniStatus.includes("entregado")
 }
 
 function isOrderDetailInvoiced(order: SupabasePedido) {
@@ -114,7 +115,6 @@ function isOrderDetailInvoiced(order: SupabasePedido) {
 
 function canShowOrderClaimHelp(order: SupabasePedido) {
   if ((order.estado ?? "").toLowerCase() === "cancelado") return false
-  if (!isOrderPaymentConfirmed(order)) return false
 
   return isOrderDetailDelivered(order)
 }
@@ -122,6 +122,12 @@ function canShowOrderClaimHelp(order: SupabasePedido) {
 function getLatestCustomerClaim(claims: SupabaseOrderClaim[] = []) {
   return claims
     .filter((claim) => claim.failure_type !== "cancelar_compra")
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
+}
+
+function getLatestFormalCustomerClaim(claims: SupabaseOrderClaim[] = []) {
+  return claims
+    .filter((claim) => claim.failure_type !== "cancelar_compra" && claim.failure_type !== "consulta_pedido")
     .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
 }
 
@@ -503,9 +509,11 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const orderDelivered = isOrderDetailDelivered(order)
   const trackingNumber = order.andreani_tracking || order.tracking_number || ""
   const trackingUrl = normalizeTrackingUrl(order.tracking_url)
-  const existingClaim = getLatestCustomerClaim(order.order_claims)
   const showClaimHelp = canShowOrderClaimHelp(order)
-  const existingHelpMessage = existingClaim?.failure_type === "consulta_pedido"
+  const existingClaim = orderDelivered
+    ? getLatestFormalCustomerClaim(order.order_claims)
+    : getLatestCustomerClaim(order.order_claims)
+  const existingHelpMessage = !orderDelivered && existingClaim?.failure_type === "consulta_pedido"
   const showPreDeliveryHelp = !isCancelled && !orderDelivered && !showClaimHelp
   const claimHelpTitle = existingClaim
     ? existingHelpMessage
@@ -766,15 +774,21 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
-              <h1 className="mt-1 text-xl font-black text-white sm:text-2xl">Pedido #{formatPublicOrderId(order.id)}</h1>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-white/58"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
-              <div className="mt-2.5">
-                {invoiceAvailable ? (
-                  <button type="button" disabled={downloadingInvoice} onClick={() => void handleDownloadInvoice()} className={cn(beyonixHoverBorder, "inline-flex h-8 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto")}><Download className="size-3.5" />{downloadingInvoice ? "Preparando..." : "Ver factura"}</button>
-                ) : (
-                  <p className="w-full rounded-lg border border-[#21476B] bg-[#13263B] px-3 py-2 text-xs font-medium leading-4 text-[#9EB4C8] sm:w-auto">Estará disponible una vez confirmado el pago</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-black text-white sm:text-2xl">Pedido #{formatPublicOrderId(order.id)}</h1>
+                {invoiceAvailable && (
+                  <button
+                    type="button"
+                    disabled={downloadingInvoice}
+                    onClick={() => void handleDownloadInvoice()}
+                    className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60")}
+                  >
+                    <Download className="size-3.5" />
+                    {downloadingInvoice ? "Preparando..." : "Ver factura"}
+                  </button>
                 )}
               </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-white/58"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
             </div>
             <div className="flex flex-col gap-2 lg:items-end">
               <div className="flex min-h-16 items-center justify-center rounded-xl border border-emerald-300/35 bg-[#102A22] px-5 py-3 text-center shadow-[0_14px_32px_rgba(16,185,129,0.1)] lg:min-w-48">
@@ -1000,6 +1014,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
   const router = useRouter()
   const [order, setOrder] = useState<SupabasePedido | null>(null)
   const [loading, setLoading] = useState(true)
+  const [redirecting, setRedirecting] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -1009,10 +1024,12 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
   useEffect(() => {
     if (isLoading) return
     if (!user) {
+      setRedirecting(true)
       router.replace(`/login?redirect=/cuenta/compras/${orderId}/ayuda`)
       return
     }
 
+    setRedirecting(false)
     const currentUser = user
     let active = true
 
@@ -1053,7 +1070,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
     return () => { active = false }
   }, [isLoading, orderId, router, user])
 
-  if (isLoading || loading) {
+  if (isLoading || loading || redirecting) {
     return <main className="flex min-h-screen items-center justify-center bg-[#05070A] pt-20"><div className="size-9 animate-spin rounded-full border-2 border-white/10 border-t-blue-300" /></main>
   }
 

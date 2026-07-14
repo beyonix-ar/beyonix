@@ -355,7 +355,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   : order.estado === "entregado"
                 ? "Entregado"
                 : order.estado === "en_camino" || order.estado === "enviado"
-                  ? "Enviado"
+                  ? "En camino"
                   : "Preparando envío"
             const shippingDetail =
               order.financial_status === "refunded"
@@ -370,7 +370,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                 ? formatOrderCardDate(order.delivered_at).split(" · ")[0]
                 : trackingUrl || order.andreani_tracking || order.tracking_number
                   ? "Andreani · Seguimiento disponible"
-                  : "Te avisaremos cuando sea enviado"
+                  : "Te avisaremos cuando el pedido esté en camino"
             const canOpenClaim = order.estado !== "cancelado"
 
             return (

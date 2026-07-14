@@ -87,14 +87,7 @@ export function getClientOrderStatusBadge(order: SupabasePedido) {
     }
   }
 
-  if (status === "enviado") {
-    return {
-      label: "Enviado",
-      className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
-    }
-  }
-
-  if (status === "en_camino") {
+  if (status === "enviado" || status === "en_camino") {
     return {
       label: "En camino",
       className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
@@ -308,17 +301,12 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
       tone: isPaid ? (isDispatched ? "done" : "current") : "pending",
     },
     {
-      label: "Enviado",
-      detail: isDispatched
-        ? "Tu pedido ya fue enviado."
-        : "Te avisaremos cuando sea enviado.",
-      tone: isDispatched ? "done" : "pending",
-    },
-    {
       label: "En camino",
       detail: isInTransit
         ? "Andreani está llevando el pedido al domicilio indicado."
-        : "Este paso se activa cuando Andreani inicia el transporte.",
+        : isDispatched
+          ? "El envío fue generado y quedará activo cuando Andreani inicie el transporte."
+          : "Este paso se activa cuando Andreani inicia el transporte.",
       tone: isInTransit ? (isDelivered ? "done" : "current") : "pending",
     },
     {

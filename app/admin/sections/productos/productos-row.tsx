@@ -479,13 +479,13 @@ export function ProductosRow({
 
   return (
     <div
-      className={`bg-black transition-colors hover:bg-admin-hover ${
+      className={`admin-product-row relative bg-black transition-colors ${
         !isLast
           ? "border-b border-white/5"
           : ""
       }`}
     >
-      <div className="grid grid-cols-admin-products items-center gap-4 px-5 py-4">
+      <div className="admin-product-row-grid relative z-[1] grid grid-cols-admin-products items-center gap-4 px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
