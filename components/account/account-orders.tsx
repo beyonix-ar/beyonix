@@ -42,7 +42,6 @@ import {
   getCuentaItemColor,
   getCuentaItemImage,
   getPaymentProgressLabel,
-  isAndreaniOrderInTransit,
   isInvoiceAvailable,
   normalizeTrackingUrl,
   type CustomerOrderDetailView,
@@ -372,17 +371,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                 : trackingUrl || order.andreani_tracking || order.tracking_number
                   ? "Andreani · Seguimiento disponible"
                   : "Te avisaremos cuando sea enviado"
-            const orderPaymentConfirmed =
-              order.estado === "pagado" ||
-              order.payment_status === "confirmado" ||
-              order.payment_status === "approved"
-            const orderDispatched =
-              order.estado === "enviado" ||
-              order.estado === "en_camino" ||
-              order.estado === "entregado" ||
-              Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
-              isAndreaniOrderInTransit(order)
-            const canOpenClaim = order.estado === "entregado" || (orderPaymentConfirmed && !orderDispatched)
+            const canOpenClaim = order.estado !== "cancelado"
 
             return (
               <article

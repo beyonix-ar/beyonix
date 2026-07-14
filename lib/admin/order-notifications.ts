@@ -311,13 +311,8 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
         (order) =>
           isVisibleAdminOrderNotification(order) &&
           Number(order.total ?? 0) > 0 &&
-          order.estado !== "cancelado" &&
-          !["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
-            order.financial_status ?? "",
-          ) &&
           !["rechazado", "rejected"].includes(order.payment_status ?? "") &&
-          (order.payment_status === "confirmado" ||
-            order.payment_status === "approved" ||
+          (isPaymentReceived(order) ||
             ["pagado", "enviado", "en_camino", "entregado"].includes(
               order.estado ?? "",
             )) &&

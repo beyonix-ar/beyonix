@@ -5,14 +5,12 @@ import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Coins,
   CreditCard,
   Download,
-  DollarSign,
   Eye,
   FileText,
   Heart,
@@ -20,11 +18,10 @@ import {
   Loader2,
   LockKeyhole,
   LogOut,
-  Mail,
+  MessageCircle,
   ShieldCheck,
   ShoppingBag,
   Truck,
-  RefreshCcw,
   User,
   X,
 } from "lucide-react"
@@ -69,6 +66,11 @@ type ProfileView = "home" | "ordenes" | "datos" | "seguridad"
 
 const ACCOUNT_ORDER_SELECT =
   "*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*, order_claim_files(*), order_claim_messages(*))"
+const CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES = [
+  "pendiente_comprobante",
+  "en_revision",
+  "rechazado",
+]
 
 function isOrderPaymentConfirmed(order: SupabasePedido) {
   const paymentStatus = (order.payment_status ?? "").toLowerCase()
@@ -114,7 +116,7 @@ function canShowOrderClaimHelp(order: SupabasePedido) {
   if ((order.estado ?? "").toLowerCase() === "cancelado") return false
   if (!isOrderPaymentConfirmed(order)) return false
 
-  return isOrderDetailDispatched(order) || isOrderDetailDelivered(order)
+  return isOrderDetailDelivered(order)
 }
 
 function getLatestCustomerClaim(claims: SupabaseOrderClaim[] = []) {
@@ -493,6 +495,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   )
   const invoiceAvailable = isInvoiceAvailable(order)
   const hasProof = Boolean(order.payment_proof_url)
+  const paymentStatus = (order.payment_status ?? "pendiente_comprobante").toLowerCase()
+  const isTransferPayment = order.payment_method_id === "transferencia"
+  const paymentConfirmed = isOrderPaymentConfirmed(order)
   const status = getClientOrderStatusBadge(order)
   const isCancelled = (order.estado ?? "").toLowerCase() === "cancelado"
   const orderDelivered = isOrderDetailDelivered(order)
@@ -500,14 +505,27 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const trackingUrl = normalizeTrackingUrl(order.tracking_url)
   const existingClaim = getLatestCustomerClaim(order.order_claims)
   const showClaimHelp = canShowOrderClaimHelp(order)
-  const claimHelpTitle = existingClaim ? "Ver reclamo" : "Iniciar reclamo"
+  const existingHelpMessage = existingClaim?.failure_type === "consulta_pedido"
+  const showPreDeliveryHelp = !isCancelled && !orderDelivered && !showClaimHelp
+  const claimHelpTitle = existingClaim
+    ? existingHelpMessage
+      ? "Ver mensaje de ayuda"
+      : "Ver reclamo"
+    : "Iniciar reclamo"
   const claimHelpAriaLabel = existingClaim
-    ? `Ver reclamo del pedido ${formatPublicOrderId(order.id)}`
+    ? existingHelpMessage
+      ? `Ver mensaje de ayuda del pedido ${formatPublicOrderId(order.id)}`
+      : `Ver reclamo del pedido ${formatPublicOrderId(order.id)}`
     : `Iniciar reclamo del pedido ${formatPublicOrderId(order.id)}`
   const canCancelOrder =
     !isCancelled &&
     !orderDelivered &&
     !isOrderDetailDispatched(order)
+  const showPaymentProofSection =
+    isTransferPayment &&
+    !paymentConfirmed &&
+    !isCancelled &&
+    CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES.includes(paymentStatus)
 
   if (isCancelled) {
     const productCount = items.reduce(
@@ -519,7 +537,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const refunded = order.financial_status === "refunded"
     const refundFlow = refundPending || refunded
     const cancellationDate = order.cancellation_requested_at || order.cancelled_at
-    const paidAmount = Number(order.payment_confirmed_amount ?? order.refund_amount ?? order.total ?? 0)
     const invoiceIssued = isOrderDetailInvoiced(order)
     const orderDispatched = isOrderDetailDispatched(order)
     const creditNoteAvailable =
@@ -533,7 +550,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const refundStatusLabel = refunded
       ? "Cancelado · dinero reintegrado"
       : refundPending
-        ? "Reintegro pendiente"
+        ? "Cancelado · reintegro pendiente"
         : "Pedido cancelado"
     const headerRefundStatusClassName = refunded
       ? "border-emerald-300/30 bg-[#123329] text-emerald-50"
@@ -541,19 +558,19 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
         ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
         : "border-[#3b4656] bg-[#252B33] text-zinc-100"
     return (
-      <main className="relative isolate min-h-screen overflow-hidden bg-[#070B11] px-3 pb-8 pt-24 font-heading sm:px-5 lg:px-8">
-        <div className="relative z-20 mx-auto max-w-[1320px]">
+      <main className="relative isolate min-h-screen overflow-hidden bg-[#070B11] px-3 py-24 font-heading sm:px-5 lg:px-8">
+        <div className="relative z-20 mx-auto flex min-h-[calc(100vh-12rem)] max-w-[860px] flex-col justify-center">
           <button
             type="button"
             onClick={() => router.push("/cuenta?tab=ordenes")}
-            className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#2a4b6c] bg-[#132033] px-3.5 text-xs font-medium text-white/84 shadow-sm shadow-black/20 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white"
+            className="mb-3 inline-flex h-9 w-fit cursor-pointer items-center gap-2 rounded-lg border border-[#2a4b6c] bg-[#132033] px-3.5 text-xs font-medium text-white/84 shadow-sm shadow-black/20 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white"
           >
             <ChevronLeft className="size-4" />
             Volver a Mis compras
           </button>
 
           <section
-            className="relative isolate z-30 mt-3 overflow-hidden rounded-2xl border border-[#223249] !bg-[#101114] bg-none p-3 shadow-[0_18px_44px_#000000] sm:p-4"
+            className="relative isolate z-30 overflow-hidden rounded-2xl border border-[#223249] !bg-[#101114] bg-none p-3 shadow-[0_18px_44px_#000000] sm:p-4"
             style={{ backgroundColor: "#101114", backgroundImage: "none" }}
           >
             <div className="relative z-20 flex flex-col gap-3 rounded-xl border border-[#2a4c72] bg-[#132238] px-3.5 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.28)] sm:flex-row sm:items-center sm:justify-between">
@@ -573,218 +590,128 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </span>
             </div>
 
-            <div className="relative z-20 mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,0.72fr)_minmax(260px,0.28fr)]">
+            <div className="relative z-20 mt-3">
               <div className="space-y-3">
-                <section className={`rounded-xl border px-3.5 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.18)] sm:px-4 ${
+                <section className={`rounded-xl border px-4 py-4 shadow-[0_18px_42px_rgba(0,0,0,0.28)] ${
                   refunded
-                    ? "border-emerald-300/30 bg-[#102A22]"
+                    ? "border-emerald-300/30 bg-[linear-gradient(135deg,#102A22,#0c1519)]"
                     : refundPending
-                      ? "border-[#6a3340] bg-[#181216]"
-                      : "border-zinc-300/26 bg-[#191C22]"
+                      ? "border-[#315f85] bg-[linear-gradient(135deg,#101a25,#111317)]"
+                      : "border-[#315f85] bg-[linear-gradient(135deg,#111b27,#111317)]"
                 }`}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                    <span className={`flex size-10 shrink-0 items-center justify-center rounded-full border ${
+                  <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
+                    <span className={`flex size-12 shrink-0 items-center justify-center rounded-full border shadow-[0_0_28px_rgba(120,190,255,0.16)] ${
                       refunded
                         ? "border-emerald-200/35 bg-[#123329]"
                         : refundPending
-                          ? "border-[#8a4a58] bg-[#2a171d]"
-                          : "border-zinc-200/22 bg-[#252B33]"
+                          ? "border-[#7fb9ef]/35 bg-[#13263a]"
+                          : "border-[#7fb9ef]/35 bg-[#13263a]"
                     }`}>
-                      {refunded ? (
-                        <CheckCircle2 className="size-5 text-emerald-200" />
-                      ) : (
-                        <X className={`size-5 ${refundPending ? "text-[#f0a8b7]" : "text-zinc-100"}`} />
-                      )}
+                      <CheckCircle2 className={`size-6 ${refunded ? "text-emerald-200" : "text-[#b8d7f4]"}`} />
                     </span>
-                    <div className="min-w-0">
-                      <h2 className="text-base font-bold leading-tight text-white sm:text-lg">
-                        {refunded
-                          ? "¡Reintegro realizado con éxito!"
-                          : refundPending
-                            ? "Lamentamos que hayas cancelado tu compra."
-                            : "Tu compra fue cancelada correctamente."}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-10px font-medium uppercase tracking-[0.22em] text-[#9fd8ff]">
+                        Estado de compra
+                      </p>
+                      <h2 className="mt-1 text-xl font-bold leading-tight text-white sm:text-2xl">
+                        Pedido cancelado correctamente
                       </h2>
                       <p className="mt-1.5 max-w-3xl text-sm font-normal leading-5 text-white/78">
                         {refunded
-                          ? "El dinero de tu compra ya fue reintegrado. Esperamos verte pronto para una nueva compra."
+                          ? "El pedido fue cancelado y el dinero ya fue reintegrado."
                           : refundPending
-                            ? "Estamos revisando tu situación. Te devolveremos tu dinero una vez validado todo el proceso."
+                            ? "La cancelación quedó registrada. Estamos gestionando el reintegro correspondiente."
                             : "El pedido quedó cancelado y no requiere acciones adicionales."}
                       </p>
+                      <dl className="mt-4 grid gap-2 text-left sm:grid-cols-2">
+                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Pedido</dt>
+                          <dd className="mt-1 text-sm font-medium text-white">{formatPublicOrderId(order.id)}</dd>
+                        </div>
+                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Fecha</dt>
+                          <dd className="mt-1 truncate text-sm font-medium text-white">{formatOrderCardDate(order.created_at)}</dd>
+                        </div>
+                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Estado</dt>
+                          <dd className="mt-1 truncate text-sm font-medium text-white">{refundStatusLabel}</dd>
+                        </div>
+                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Total</dt>
+                          <dd className="mt-1 text-sm font-medium text-white">{formatCuentaPrice(Number(order.total ?? 0))}</dd>
+                        </div>
+                      </dl>
                     </div>
                   </div>
                 </section>
 
                 {refundFlow && (
-                  <section className="rounded-xl border border-[#28435e] bg-[#0f1824] p-3.5 shadow-[0_14px_36px_rgba(0,0,0,0.34)] sm:p-4">
-                    <div>
-                      <p className="text-10px font-medium uppercase tracking-[0.18em] text-[#9fd8ff]">
-                        Reintegro
-                      </p>
-                      <h2 className="mt-0.5 text-base font-bold text-white">
-                        Estado del reintegro
-                      </h2>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="flex items-center gap-2.5 rounded-lg border border-[#335274] bg-[#162235] px-3 py-2.5">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#6f4b55]/70 bg-[#24171d]">
-                          <RefreshCcw className="size-3.5 text-[#e9b8c1]" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-10px font-medium uppercase tracking-widest text-[#9fb3c9]">
-                            Estado actual
-                          </p>
-                          <p className="mt-0.5 truncate text-sm font-medium text-white">
-                            {refundStatusLabel}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2.5 rounded-lg border border-emerald-300/22 bg-[#122A24] px-3 py-2.5">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-emerald-300/24 bg-emerald-400/10">
-                          <DollarSign className="size-3.5 text-emerald-200" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-10px font-medium uppercase tracking-widest text-emerald-100">
-                            Monto abonado
-                          </p>
-                          <p className="mt-0.5 truncate text-sm font-medium text-white">
-                            {formatCuentaPrice(paidAmount)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2.5 rounded-lg border border-[#335274] bg-[#162235] px-3 py-2.5">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#3d5875] bg-[#13263a]">
-                          <CalendarDays className="size-3.5 text-[#b8d7f4]" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-10px font-medium uppercase tracking-widest text-[#9fb3c9]">
-                            Fecha de solicitud
-                          </p>
-                          <p className="mt-0.5 truncate text-sm font-normal text-white">
-                            {cancellationDate ? formatOrderCardDate(cancellationDate) : "Recibida"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2.5 rounded-lg border border-[#335274] bg-[#142232] px-3 py-2.5">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#3d5875] bg-[#13263a]">
-                          <FileText className="size-3.5 text-[#b8d7f4]" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-10px font-medium uppercase tracking-widest text-[#9fb3c9]">
-                            Documentación
-                          </p>
-                          <div className="mt-0.5 flex min-h-8 items-center gap-2">
-                            {!refundProofAvailable && !creditNoteAvailable && (
-                              <span className="text-sm font-normal text-[#9fb3c9]">Pendiente</span>
-                            )}
-                            {refundProofAvailable && (
-                              <button
-                                type="button"
-                                aria-label="Ver comprobante de reintegro"
-                                disabled={refundProofOpening}
-                                onClick={() => void handleOpenRefundProof()}
-                                className={cn(beyonixHoverBorder, "inline-flex size-8 cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-light/25 bg-[#112A43] text-white transition disabled:cursor-wait disabled:opacity-60")}
-                              >
-                                <Eye className="size-3.5" />
-                              </button>
-                            )}
-                            {creditNoteAvailable && (
-                              <button
-                                type="button"
-                                aria-label="Descargar nota de crédito"
-                                disabled={downloadingCreditNote}
-                                onClick={() => void handleDownloadInvoice("credit_note")}
-                                className={cn(beyonixHoverBorder, "inline-flex size-8 cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-light/25 bg-[#112A43] text-white transition disabled:cursor-wait disabled:opacity-60")}
-                              >
-                                <Download className="size-3.5" />
-                              </button>
-                            )}
-                          </div>
-                          {refundProofError && (
-                            <p className="mt-1.5 text-xs font-normal text-red-200">
-                              {refundProofError}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 rounded-lg border border-[#2a4b6c] bg-[#111b28] px-3 py-2.5">
-                      <h3 className="text-10px font-bold uppercase tracking-[0.16em] text-[#9fd8ff]">
-                        ¿Cómo es el proceso de reintegro?
-                      </h3>
-                      <div className="mt-2.5 space-y-2">
-                        <div className="flex gap-2.5">
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[#3d658c] bg-[#132843]">
-                            <CreditCard className="size-4 text-blue-200" />
-                          </span>
-                          <div className="min-w-0 border-b border-white/7 pb-2">
-                            <p className="text-sm font-medium leading-5 text-white">
-                              Si la factura aún no fue emitida
-                            </p>
-                            <p className="mt-0.5 text-xs font-normal leading-5 text-white/66">
-                              Se realizará la devolución del dinero al mismo medio de pago.
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2.5">
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[#3d658c] bg-[#132843]">
-                            <FileText className="size-4 text-blue-200" />
-                          </span>
-                          <div className="min-w-0 border-b border-white/7 pb-2">
-                            <p className="text-sm font-medium leading-5 text-white">
-                              Si la factura ya fue emitida
-                            </p>
-                            <p className="mt-0.5 text-xs font-normal leading-5 text-white/66">
-                              Se emitirá la nota de crédito correspondiente y quedará disponible para visualizar o descargar desde la sección Documentación.
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2.5">
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[#5f3c48] bg-[#24171d]">
-                            <Truck className="size-4 text-[#e9b8c1]" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium leading-5 text-white">
-                              Si el envío ya fue despachado
-                            </p>
-                            <p className="mt-0.5 text-xs font-normal leading-5 text-white/66">
-                              Podrás cancelar la compra, pero el costo del envío quedará a tu cargo.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-cyan-300/35 bg-cyan-400/10 px-3 py-2">
-                        <Mail className="size-4 shrink-0 text-cyan-200" />
-                        <p className="text-xs font-normal leading-5 text-cyan-50/88">
-                          Te notificaremos por email y desde tu cuenta sobre cualquier actualización del reintegro.
+                  <section className="rounded-xl border border-[#28435e] bg-[#0f1824] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.26)]">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-10px font-medium uppercase tracking-[0.18em] text-[#9fd8ff]">
+                          Reintegro
+                        </p>
+                        <p className="mt-0.5 text-sm font-medium text-white">
+                          {refunded ? "Dinero reintegrado" : "Gestión de reintegro pendiente"}
                         </p>
                       </div>
+                      <p className="text-xs font-normal text-[#9fb3c9]">
+                        {cancellationDate ? formatOrderCardDate(cancellationDate) : "Solicitud recibida"}
+                      </p>
                     </div>
 
+                    {(refundProofAvailable || creditNoteAvailable) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {refundProofAvailable && (
+                          <button
+                            type="button"
+                            aria-label="Ver comprobante de reintegro"
+                            disabled={refundProofOpening}
+                            onClick={() => void handleOpenRefundProof()}
+                            className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3 text-xs font-medium text-white transition disabled:cursor-wait disabled:opacity-60")}
+                          >
+                            <Eye className="size-3.5" />
+                            Comprobante
+                          </button>
+                        )}
+                        {creditNoteAvailable && (
+                          <button
+                            type="button"
+                            aria-label="Descargar nota de crédito"
+                            disabled={downloadingCreditNote}
+                            onClick={() => void handleDownloadInvoice("credit_note")}
+                            className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3 text-xs font-medium text-white transition disabled:cursor-wait disabled:opacity-60")}
+                          >
+                            <Download className="size-3.5" />
+                            Nota de crédito
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {refundProofError && (
+                      <p className="mt-2 text-xs font-normal text-red-200">
+                        {refundProofError}
+                      </p>
+                    )}
+
                     {order.refund_observation && (
-                      <p className="mt-3 rounded-lg border border-emerald-300/18 bg-[#102A22] px-3 py-2 text-xs font-normal leading-5 text-emerald-50/82">
+                      <p className="mt-2 rounded-lg border border-emerald-300/18 bg-[#102A22] px-3 py-2 text-xs font-normal leading-5 text-emerald-50/82">
                         {order.refund_observation}
                       </p>
                     )}
 
                     {orderDispatched && (
-                      <div className="mt-3 rounded-lg border border-[#6f4b55]/70 bg-[#21171c] px-3 py-2.5">
-                        <div className="flex gap-2.5">
-                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#e9b8c1]" />
-                          <p className="text-sm font-normal leading-5 text-[#efd8dd]">
-                            {shippingChargeDetail}
-                          </p>
-                        </div>
-                      </div>
+                      <p className="mt-2 flex gap-2 rounded-lg border border-[#6f4b55]/70 bg-[#21171c] px-3 py-2 text-xs font-normal leading-5 text-[#efd8dd]">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[#e9b8c1]" />
+                        {shippingChargeDetail}
+                      </p>
                     )}
                   </section>
                 )}
 
-              </div>
-
-              <section className="rounded-xl border border-[#28435e] bg-[#0f1824] p-3.5 shadow-[0_14px_36px_rgba(0,0,0,0.34)] sm:p-4">
+              <section className="rounded-xl border border-[#28435e] bg-[#0f1824] p-3.5 shadow-[0_14px_36px_rgba(0,0,0,0.34)]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-base font-bold text-white">
                     Productos comprados
@@ -822,6 +749,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   })}
                 </div>
               </section>
+            </div>
             </div>
           </section>
         </div>
@@ -920,24 +848,57 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </section>
             )}
 
-            {!orderDelivered && (
-            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-              <h2 className="text-sm font-bold text-white">Comprobante</h2>
-              <div className="mt-2.5">
-                {hasProof ? (
-                  <PaymentProofViewButton order={order} className="h-9 w-full" />
-                ) : order.payment_method_id === "transferencia" ? (
-                  <PaymentProofActionButton
-                    orderId={order.id}
-                    onUploaded={handleProofUploaded}
-                    label="Subir comprobante"
-                    className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")}
-                  />
-                ) : (
-                  <p className="rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2 text-xs font-semibold leading-5 text-[#9EB4C8]">Este medio de pago no requiere comprobante.</p>
+            {showPaymentProofSection && (
+              <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-white">Comprobante</h2>
+                <div className="mt-2.5 space-y-2">
+                  {hasProof ? (
+                    <>
+                      <PaymentProofViewButton order={order} className="h-9 w-full" />
+                      <PaymentProofActionButton
+                        orderId={order.id}
+                        initialUploaded
+                        onUploaded={handleProofUploaded}
+                        label="Cambiar comprobante"
+                        className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")}
+                      />
+                    </>
+                  ) : (
+                    <PaymentProofActionButton
+                      orderId={order.id}
+                      onUploaded={handleProofUploaded}
+                      label="Subir comprobante"
+                      className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")}
+                    />
+                  )}
+                </div>
+              </section>
+            )}
+
+            {showPreDeliveryHelp && (
+              <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-white">¿Necesitás ayuda?</h2>
+                <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
+                  Si tu pedido no llega o necesitás consultar algo, escribinos desde este chat.
+                </p>
+                {existingClaim && (
+                  <p className="mt-2 text-xs font-medium text-white/60">
+                    Estado: {getOrderClaimStatusLabel(existingClaim.status)}
+                  </p>
                 )}
-              </div>
-            </section>
+                <button
+                  type="button"
+                  aria-label={`Enviar mensaje de ayuda del pedido ${formatPublicOrderId(order.id)}`}
+                  onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
+                  className={cn(
+                    beyonixHoverBorder,
+                    "mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white transition-[background-color,border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-[#2C6CA3] hover:bg-[#163A5C] hover:text-white hover:shadow-[0_0_0_1px_rgba(44,108,163,0.35),0_6px_18px_rgba(17,42,67,0.28)] active:translate-y-0 active:shadow-[0_0_0_1px_rgba(44,108,163,0.25)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2C6CA3]",
+                  )}
+                >
+                  <MessageCircle className="size-3.5" />
+                  {existingClaim ? "Ver mensaje de ayuda" : "Enviar mensaje de ayuda"}
+                </button>
+              </section>
             )}
 
             {!orderDelivered && (

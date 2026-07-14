@@ -5,7 +5,7 @@ import { CompraAyudaClient } from "@/app/cuenta/cuenta-client"
 
 export const metadata: Metadata = {
   title: "Ayuda con tu compra | BEYONIX",
-  description: "Consultá o iniciá un reclamo relacionado con tu compra.",
+  description: "Enviá un mensaje de ayuda o iniciá un reclamo relacionado con tu compra.",
 }
 
 export default async function CompraAyudaPage({

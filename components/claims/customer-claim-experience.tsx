@@ -40,6 +40,7 @@ export type ClaimProblemId =
   | "cambio_cantidad"
   | "modificar_envio"
   | "otro_pre_despacho"
+  | "consulta_pedido"
 
 type ClaimProblemOption = {
   id: ClaimProblemId
@@ -51,6 +52,7 @@ type ClaimProblemOption = {
 
 const CLAIM_DESCRIPTION_MIN_LENGTH = 10
 const CLAIM_DESCRIPTION_MAX_LENGTH = 600
+const HELP_MESSAGE_PROBLEM_TYPE: ClaimProblemId = "consulta_pedido"
 
 const POST_DELIVERY_PROBLEMS: ClaimProblemOption[] = [
   {
@@ -98,6 +100,7 @@ const PROBLEM_LABELS: Record<string, string> = {
   cambio_cantidad: "Solicitud anterior",
   modificar_envio: "Solicitud anterior",
   otro_pre_despacho: "Solicitud anterior",
+  consulta_pedido: "Mensaje de ayuda",
 }
 
 function isOrderDelivered(order: SupabasePedido) {
@@ -201,18 +204,19 @@ function getOrderStage(order: SupabasePedido) {
   if (isOrderDispatched(order)) {
     return {
       title: "Pedido en camino",
-      detail: "Cuando recibas tu compra, si hay algún problema con el producto, vas a poder iniciar un reclamo.",
+      detail: "Si tu pedido se demora o necesitás consultar algo, podés enviarnos un mensaje de ayuda.",
     }
   }
 
   return {
     title: "Pedido en preparación",
-    detail: "Estamos preparando tu compra. Te avisaremos cuando haya novedades.",
+    detail: "Estamos preparando tu compra. Si necesitás consultar algo, podés enviarnos un mensaje de ayuda.",
   }
 }
 
 function getClaimStatusInfo(claim: SupabaseOrderClaim) {
   const cancellation = claim.failure_type === "cancelar_compra"
+  const helpMessage = claim.failure_type === HELP_MESSAGE_PROBLEM_TYPE
   const base = "border-blue-300/25 bg-[#112A43]/35"
 
   if (cancellation) {
@@ -226,6 +230,13 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
       return { label: "Esperando tu respuesta", dot: "bg-blue-300", style: base }
     }
     return { label: "Compra cancelada", dot: "bg-blue-300", style: base }
+  }
+
+  if (helpMessage) {
+    if (claim.status === "rechazado") return { label: "Consulta cerrada", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
+    if (claim.status === "cerrado") return { label: "Consulta resuelta", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
+    if (claim.status === "falta_informacion") return { label: "Esperando tu respuesta", dot: "bg-blue-300", style: base }
+    return { label: "Mensaje recibido", dot: "bg-blue-300", style: base }
   }
 
   if (claim.status === "recibido") return { label: "Reclamo recibido", dot: "bg-blue-300", style: base }
@@ -372,6 +383,7 @@ export function CustomerClaimExperience({
   const cancelled = isOrderCancelled(order)
   const canCancel = false
   const canCreatePostDeliveryClaim = delivered && !cancelled
+  const canCreateHelpMessage = !delivered && !cancelled
   const initialProblemAllowed = POST_DELIVERY_PROBLEMS.some((item) => item.id === initialProblem)
   const defaultAffectedItems = orderItems.length === 1 ? [String(orderItems[0].id)] : []
 
@@ -524,6 +536,49 @@ export function CustomerClaimExperience({
     }
   }
 
+  const createHelpMessage = async () => {
+    if (!canCreateHelpMessage) {
+      setError("Este canal de ayuda está disponible antes de que el pedido figure como entregado.")
+      return
+    }
+
+    const trimmedDescription = description.trim()
+
+    if (trimmedDescription.length < CLAIM_DESCRIPTION_MIN_LENGTH) {
+      setError("Contanos un poco más para poder ayudarte.")
+      return
+    }
+
+    setLoading(true)
+    setError("")
+
+    try {
+      const formData = new FormData()
+      formData.set("claimType", "transporte_48hs")
+      formData.set("problemType", HELP_MESSAGE_PROBLEM_TYPE)
+      formData.set("description", trimmedDescription)
+
+      const response = await fetch(`/api/orders/${order.id}/claims`, {
+        method: "POST",
+        body: formData,
+      })
+      const data = (await response.json()) as { claim?: SupabaseOrderClaim; error?: string }
+
+      if (!response.ok || !data.claim) {
+        setError(data.error || "No se pudo enviar el mensaje de ayuda.")
+        return
+      }
+
+      updateClaimInState(data.claim)
+      setJustCreated(data.claim)
+      setDescription("")
+    } catch {
+      setError("No se pudo enviar el mensaje de ayuda. Intentá nuevamente.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const sendReply = async (currentClaim: SupabaseOrderClaim) => {
     const currentMessages = sortUniqueMessages(currentClaim.order_claim_messages)
 
@@ -635,6 +690,7 @@ export function CustomerClaimExperience({
 
   if (justCreated) {
     const cancellation = justCreated.failure_type === "cancelar_compra"
+    const helpMessage = justCreated.failure_type === HELP_MESSAGE_PROBLEM_TYPE
     const info = getClaimStatusInfo(justCreated)
 
     return (
@@ -642,10 +698,14 @@ export function CustomerClaimExperience({
         <div className="mx-auto w-full rounded-xl border border-blue-300/15 bg-[#141414] p-4 text-center">
           <CircleCheck className="mx-auto size-9 text-blue-300" />
           <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-blue-300">
-            {cancellation ? "Compra cancelada" : "Reclamo creado"}
+            {cancellation ? "Compra cancelada" : helpMessage ? "Mensaje enviado" : "Reclamo creado"}
           </p>
           <h3 className="mt-1 text-xl font-black text-white">
-            {cancellation ? "Tu compra fue cancelada correctamente." : "Recibimos tu reclamo"}
+            {cancellation
+              ? "Tu compra fue cancelada correctamente."
+              : helpMessage
+                ? "Recibimos tu mensaje de ayuda"
+                : "Recibimos tu reclamo"}
           </h3>
           <div className={`mx-auto mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black text-white ${info.style}`}>
             <span className={`size-2 rounded-full ${info.dot}`} />
@@ -654,7 +714,9 @@ export function CustomerClaimExperience({
           <p className="mx-auto mt-3 max-w-xl text-sm font-semibold leading-5 text-white/80">
             {cancellation
               ? "Tu compra fue cancelada correctamente."
-              : "BEYONIX revisará el caso y te responderá desde este chat."}
+              : helpMessage
+                ? "BEYONIX revisará tu consulta y te responderá desde este chat."
+                : "BEYONIX revisará el caso y te responderá desde este chat."}
           </p>
           <button
             type="button"
@@ -670,6 +732,7 @@ export function CustomerClaimExperience({
 
   if (claim) {
     const cancellation = claim.failure_type === "cancelar_compra"
+    const helpMessage = claim.failure_type === HELP_MESSAGE_PROBLEM_TYPE
     const info = getClaimStatusInfo(claim)
     const messages = sortUniqueMessages(claim.order_claim_messages)
     const customerTurnLocked = messages[messages.length - 1]?.author_role === "cliente"
@@ -685,6 +748,8 @@ export function CustomerClaimExperience({
     const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
     const affectedProductLabel = cancellation
       ? "Pedido completo"
+      : helpMessage
+        ? "Pedido completo"
       : getAffectedProductsFromDescription(claim.description) || "Producto del pedido"
 
     return (
@@ -693,13 +758,13 @@ export function CustomerClaimExperience({
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">Ayuda con tu compra</p>
             <h3 className="mt-0.5 text-base font-black text-white">
-              {cancellation ? "Seguimiento de cancelación" : "Seguimiento del reclamo"}
+              {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Seguimiento de ayuda" : "Seguimiento del reclamo"}
             </h3>
             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/55">
               <span>Pedido {getOrderCode(order.id)}</span>
               <span>Fecha: {formatDate(claim.created_at)}</span>
               <span>Motivo: {PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Solicitud de ayuda"}</span>
-              <span>{cancellation ? "Alcance" : "Producto"}: {affectedProductLabel}</span>
+              <span>{cancellation ? "Alcance" : helpMessage ? "Consulta" : "Producto"}: {affectedProductLabel}</span>
             </div>
           </div>
           <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black text-white ${info.style}`}>
@@ -858,7 +923,7 @@ export function CustomerClaimExperience({
         </div>
       )}
 
-      {!canCancel && !canCreatePostDeliveryClaim && !cancelled && (
+      {!canCancel && !canCreatePostDeliveryClaim && !canCreateHelpMessage && !cancelled && (
         <div className="rounded-xl border border-white/9 bg-[#141820] p-3">
           <div className="flex gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
@@ -878,6 +943,65 @@ export function CustomerClaimExperience({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {canCreateHelpMessage && (
+        <div className="mt-3 rounded-xl border border-white/9 bg-[#141820] p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
+              <MessageCircle className="size-5 text-white" />
+            </span>
+            <div>
+              <h4 className="text-sm font-black text-white">Enviar mensaje de ayuda</h4>
+              <p className="mt-1 text-xs leading-5 text-white/65">
+                Usá este chat si necesitás consultar el estado del pedido, si el envío se demora o si querés avisarnos algo antes de la entrega.
+              </p>
+            </div>
+          </div>
+
+          <section className="mt-4 rounded-xl border border-[#18334D] bg-[#101923] p-4 sm:p-5">
+            <div>
+              <h4 className="border-l-4 border-[#2C6CA3] py-0.5 pl-3 text-base font-bold leading-5 text-white">Contanos qué necesitás</h4>
+              <p className="mt-1.5 pl-4 text-xs font-medium leading-5 text-[#9EB4C8]">
+                Tu mensaje llegará al equipo de BEYONIX y vas a poder seguir la respuesta desde esta misma sección.
+              </p>
+              <div className="mt-3">
+                <textarea
+                  value={description}
+                  onChange={(event) => {
+                    setDescription(event.target.value)
+                    setError("")
+                  }}
+                  rows={4}
+                  minLength={CLAIM_DESCRIPTION_MIN_LENGTH}
+                  maxLength={CLAIM_DESCRIPTION_MAX_LENGTH}
+                  placeholder="Ejemplo: mi pedido figura enviado, pero todavía no llegó y necesito ayuda con el seguimiento..."
+                  className="w-full resize-none rounded-xl border border-[#21476B] bg-[#2A313A] px-3 py-2.5 text-sm font-medium leading-6 text-white outline-none placeholder:text-[#A8B3BE] transition-all duration-200 hover:border-[#2B5D8A] hover:bg-[#333B46] focus:border-[#2C6CA3] focus:ring-2 focus:ring-[#2C6CA3]/20"
+                />
+                <p className="mt-1.5 pr-1 text-right text-10px text-white/40">{description.length}/{CLAIM_DESCRIPTION_MAX_LENGTH}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 border-t border-[#18334D]/85 pt-5">
+              <div className="flex items-start gap-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 text-xs font-semibold leading-5 text-[#9EB4C8]">
+                <CircleCheck className="mt-0.5 size-4 shrink-0 text-[#9EB4C8]" />
+                <span>Este mensaje no inicia un reclamo formal. Es un canal de ayuda para resolver consultas antes de la entrega.</span>
+              </div>
+              {error && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  aria-label="Enviar mensaje de ayuda"
+                  disabled={loading || description.trim().length < CLAIM_DESCRIPTION_MIN_LENGTH}
+                  onClick={() => void createHelpMessage()}
+                  className="h-10 w-full rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-5 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111820] disabled:text-white/45 disabled:shadow-none disabled:hover:border-white/10 disabled:hover:bg-[#111820] sm:w-auto"
+                >
+                  {loading ? "Enviando..." : "Enviar mensaje de ayuda"}
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
       )}
 
@@ -1033,7 +1157,7 @@ export function CustomerClaimExperience({
         </div>
       )}
 
-      {error && !canCreatePostDeliveryClaim && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
+      {error && !canCreatePostDeliveryClaim && !canCreateHelpMessage && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
     </section>
   )
 }

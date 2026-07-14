@@ -971,9 +971,10 @@ export async function PATCH(
 
   const { data: currentClaim } = await auth.admin
     .from("order_claims")
-    .select("admin_response, status, first_reviewed_at")
+    .select("admin_response, status, first_reviewed_at, failure_type")
     .eq("id", id)
     .maybeSingle()
+  const helpMessage = currentClaim?.failure_type === "consulta_pedido"
   const shouldInsertAdminMessage =
     Boolean(adminResponse) &&
     (body.append_message === true ||
@@ -984,6 +985,8 @@ export async function PATCH(
     currentClaim?.status === "recibido" &&
     status === "en_revision" &&
     !currentClaim.first_reviewed_at
+  const clearsAdminAttention = shouldInsertAdminMessage || finalStatus || isFirstReview
+  const nowIso = new Date().toISOString()
   const { data, error } = await auth.admin
     .from("order_claims")
     .update({
@@ -992,10 +995,20 @@ export async function PATCH(
       rejection_reason: rejectionReason || null,
       resolution,
       offered_resolutions: offeredResolutions,
-      closed_at: finalStatus ? new Date().toISOString() : null,
+      closed_at: finalStatus ? nowIso : null,
+      ...(clearsAdminAttention
+        ? {
+            admin_needs_action: false,
+          }
+        : {}),
+      ...(shouldInsertAdminMessage
+        ? {
+            last_admin_response_at: nowIso,
+          }
+        : {}),
       ...(isFirstReview
         ? {
-            first_reviewed_at: new Date().toISOString(),
+            first_reviewed_at: nowIso,
             first_reviewed_by: auth.user.id,
           }
         : {}),
@@ -1021,13 +1034,25 @@ export async function PATCH(
 
     await sendClaimUpdateEmail(auth.admin, {
       orderId: data.order_id,
-      title: status === "cerrado" ? "Reclamo resuelto" : status === "rechazado" ? "Reclamo rechazado" : "Respuesta de BEYONIX",
+      title: helpMessage && status === "cerrado"
+        ? "Chat finalizado"
+        : status === "cerrado"
+          ? "Reclamo resuelto"
+          : status === "rechazado"
+            ? "Reclamo rechazado"
+            : "Respuesta de BEYONIX",
       message: adminResponse,
     })
   } else if (finalStatus) {
-    const title = status === "cerrado" ? "Reclamo resuelto" : "Reclamo rechazado"
+    const title = helpMessage && status === "cerrado"
+      ? "Chat finalizado"
+      : status === "cerrado"
+        ? "Reclamo resuelto"
+        : "Reclamo rechazado"
     const message =
-      status === "cerrado"
+      helpMessage && status === "cerrado"
+        ? "El chat de ayuda fue finalizado. Podés revisar el seguimiento desde tu cuenta."
+        : status === "cerrado"
         ? "El caso fue resuelto. Podés revisar el seguimiento desde tu cuenta."
         : "El caso fue rechazado. Podés revisar el detalle desde tu cuenta."
 

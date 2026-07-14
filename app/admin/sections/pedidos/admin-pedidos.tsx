@@ -18,6 +18,7 @@ import {
   Info,
   Landmark,
   LoaderCircle,
+  MessageCircle,
   Printer,
   RefreshCw,
   ShieldCheck,
@@ -167,6 +168,14 @@ const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "cancelacion",
   "historial",
 ]
+
+const ADMIN_STATUS_BADGES = {
+  danger: "admin-order-tone-danger",
+  success: "admin-order-tone-success",
+  warning: "admin-order-tone-warning",
+  info: "admin-order-tone-info",
+  muted: "admin-order-tone-muted",
+} as const
 
 function getAdminOrderDetailView(value: string | null): AdminOrderDetailView {
   return ADMIN_ORDER_DETAIL_VIEWS.includes(value as AdminOrderDetailView)
@@ -373,13 +382,10 @@ function isRefundPaymentAttentionOrder(pedido: SupabasePedido) {
 
 function needsInvoiceReminder(pedido: SupabasePedido) {
   return (
-    pedido.estado !== "cancelado" &&
-    !["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
-      pedido.financial_status ?? "",
-    ) &&
     !isRejectedPayment(pedido.payment_status) &&
     isOrderPaymentConfirmed(pedido) &&
     pedido.invoice_status !== "authorized" &&
+    !pedido.invoice_cae &&
     Number(pedido.total ?? 0) > 0
   )
 }
@@ -428,6 +434,7 @@ function isRejectedPayment(status?: string | null) {
 }
 
 function getDisplayedOrderStatus(pedido: SupabasePedido) {
+  if (isAdminCancelledOrder(pedido)) return "cancelado"
   if (pedido.financial_status === "refund_pending") return "refund_pending"
   if (pedido.financial_status === "refunded") return "refunded"
   if (!isTransferOrder(pedido)) return pedido.estado
@@ -456,20 +463,7 @@ function getCurrentOrderStatusForHeader(pedido: SupabasePedido) {
 }
 
 function isApprovedPayment(pedido: SupabasePedido) {
-  if (
-    pedido.estado === "cancelado" ||
-    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
-      pedido.financial_status ?? "",
-    )
-  ) {
-    return false
-  }
-
-  return (
-    pedido.estado === "pagado" ||
-    pedido.payment_status === "confirmado" ||
-    pedido.payment_status === "approved"
-  )
+  return !isRejectedPayment(pedido.payment_status) && isOrderPaymentConfirmed(pedido)
 }
 
 function isRefundPendingOrder(pedido: SupabasePedido) {
@@ -496,6 +490,15 @@ function isCancellationFlowOrder(pedido: SupabasePedido) {
       pedido.financial_status ?? "",
     ) ||
     Boolean(pedido.return_status)
+  )
+}
+
+function isAdminCancelledOrder(pedido: SupabasePedido) {
+  return (
+    pedido.estado === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      pedido.financial_status ?? "",
+    )
   )
 }
 
@@ -541,7 +544,7 @@ function getAdminOrderTabState(
     pendingClaim,
   }: {
     paymentProofPending: boolean
-    pendingClaim: boolean
+    pendingClaim?: SupabaseOrderClaim | null
   },
 ) {
   const refundPending = isRefundPaymentAttentionOrder(pedido)
@@ -581,7 +584,9 @@ function getAdminOrderTabState(
       reclamos: pendingClaim
         ? {
             type: "danger",
-            label: "Reclamo abierto",
+            label: pendingClaim.failure_type === "consulta_pedido"
+              ? "Mensaje de ayuda pendiente"
+              : "Reclamo abierto",
             critical: true,
           }
         : null,
@@ -619,15 +624,10 @@ type RecommendedAction = {
 }
 
 function getShippingSummary(pedido: SupabasePedido) {
-  if (isCancellationFlowOrder(pedido)) return "Cancelado"
+  if (isAdminCancelledOrder(pedido)) return "Cancelado"
   if (pedido.estado === "entregado" || pedido.delivered_at) return "Entregado"
-  if (
-    pedido.estado === "enviado" ||
-    pedido.estado === "en_camino" ||
-    Boolean(pedido.tracking_number || pedido.tracking_url || pedido.andreani_tracking)
-  ) {
-    return "Despachado"
-  }
+  if (pedido.estado === "en_camino") return "En camino"
+  if (pedido.estado === "enviado") return "Enviado"
 
   return "No despachado"
 }
@@ -641,11 +641,40 @@ function getInvoiceSummary(pedido: SupabasePedido) {
 function getClaimSummary(pedido: SupabasePedido) {
   const claims = pedido.order_claims ?? []
   if (!claims.length) return "Sin reclamos"
-  if (claims.some((claim) => claim.admin_needs_action)) return "Reclamo abierto"
-  if (claims.some((claim) => !["cerrado", "rechazado"].includes(claim.status ?? ""))) {
-    return "Reclamo abierto"
+  const openClaim = claims.find(
+    (claim) =>
+      claim.admin_needs_action ||
+      !["cerrado", "rechazado"].includes(claim.status ?? ""),
+  )
+  if (openClaim) {
+    return openClaim.failure_type === "consulta_pedido"
+      ? "Mensaje de ayuda"
+      : "Reclamo abierto"
   }
+  if (claims.some((claim) => claim.failure_type === "consulta_pedido")) return "Ayuda cerrada"
   return "Reclamo cerrado"
+}
+
+function getAdminClaimFailureLabel(failureType?: string | null) {
+  const labels: Record<string, string> = {
+    danado: "Producto dañado",
+    incorrecto: "Producto incorrecto",
+    falla: "Producto con falla",
+    faltante: "Faltó un producto",
+    cantidad_menor: "Menos cantidad recibida",
+    cancelar_compra: "Cancelar compra",
+    consulta_pedido: "Mensaje de ayuda",
+    devolucion: "Solicitud anterior",
+    no_llego: "Solicitud anterior",
+    cambio_producto: "Solicitud anterior",
+    cambio_color: "Solicitud anterior",
+    cambio_cantidad: "Solicitud anterior",
+    modificar_envio: "Solicitud anterior",
+    otro_pre_despacho: "Solicitud anterior",
+    otro: "Otro problema",
+  }
+
+  return failureType ? labels[failureType] ?? failureType : "Sin detalle"
 }
 
 function getCancellationSummary(pedido: SupabasePedido) {
@@ -657,6 +686,7 @@ function getCancellationSummary(pedido: SupabasePedido) {
 }
 
 function getPaymentSummary(pedido: SupabasePedido) {
+  if (isAdminCancelledOrder(pedido)) return "Cancelado"
   if (isRejectedPayment(pedido.payment_status)) return "Rechazado"
   if (isOrderPaymentConfirmed(pedido)) return "Confirmado"
   return "Pendiente"
@@ -670,7 +700,12 @@ function getExecutiveOrderStatus(pedido: SupabasePedido) {
   if (isRefundedOrder(pedido)) return "Reintegrado"
   if (isRefundPaymentAttentionOrder(pedido)) return "Reintegro pendiente"
   if (pedido.financial_status === "cancellation_requested") return "Cancelación solicitada"
-  if ((pedido.order_claims ?? []).some((claim) => claim.admin_needs_action)) return "Reclamo abierto"
+  const pendingClaim = (pedido.order_claims ?? []).find((claim) => claim.admin_needs_action)
+  if (pendingClaim) {
+    return pendingClaim.failure_type === "consulta_pedido"
+      ? "Mensaje de ayuda"
+      : "Reclamo abierto"
+  }
   if (isRejectedPayment(pedido.payment_status)) return "Pago rechazado"
   if (needsCreditNoteReminder(pedido)) return "Falta nota de crédito"
   if (needsInvoiceReminder(pedido)) return "Factura pendiente"
@@ -680,38 +715,46 @@ function getExecutiveOrderStatus(pedido: SupabasePedido) {
 
 function getSummaryBadgeClass(value: string) {
   if (isAdminSensitiveStatus(value) || ["Cancelado", "Solicitada", "Cancelación cerrada"].includes(value)) {
-    return "border-[#7f2d3a]/55 bg-[#111827] text-[#ffc2c8]"
+    return ADMIN_STATUS_BADGES.danger
   }
   if (
     [
       "Confirmado",
-      "Despachado",
       "Entregado",
       "Factura emitida",
       "Sin reclamos",
+      "Ayuda cerrada",
       "Reintegrado",
       "Reintegro completado",
     ].includes(value)
   ) {
-    return "border-emerald-300/24 bg-[#111827] text-emerald-100"
+    return ADMIN_STATUS_BADGES.success
   }
   if (["Rechazado"].includes(value)) {
-    return "border-[#7f2d3a]/55 bg-[#111827] text-[#ffc2c8]"
+    return ADMIN_STATUS_BADGES.danger
   }
   if (
     ["Pendiente", "No despachado", "Falta factura", "Falta nota de crédito"].includes(value)
   ) {
-    return "border-amber-300/24 bg-[#111827] text-amber-100"
+    return ADMIN_STATUS_BADGES.warning
   }
-  return "border-white/10 bg-[#111827] text-white/72"
+  if (value === "Mensaje de ayuda") return ADMIN_STATUS_BADGES.info
+  if (["En camino", "Enviado"].includes(value)) return ADMIN_STATUS_BADGES.info
+  return ADMIN_STATUS_BADGES.muted
 }
 
 function getOrderSummaryBadges(pedido: SupabasePedido): SummaryBadge[] {
+  const claimSummary = getClaimSummary(pedido)
   const badges = [
     { label: "Pago", value: getPaymentSummary(pedido) },
     { label: "Envío", value: getShippingSummary(pedido) },
     { label: "Facturación", value: getInvoiceSummary(pedido) },
-    { label: "Reclamos", value: getClaimSummary(pedido) },
+    {
+      label: claimSummary === "Mensaje de ayuda" || claimSummary === "Ayuda cerrada"
+        ? "Mensajería"
+        : "Reclamos",
+      value: claimSummary,
+    },
     ...(isCancellationFlowOrder(pedido)
       ? [{ label: "Devolución", value: isRefundedOrder(pedido) ? "Reintegrado" : getCancellationSummary(pedido) }]
       : []),
@@ -724,18 +767,21 @@ function getOrderSummaryBadges(pedido: SupabasePedido): SummaryBadge[] {
 }
 
 function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
-  const openClaim = (pedido.order_claims ?? []).some(
+  const openClaim = (pedido.order_claims ?? []).find(
     (claim) =>
       claim.admin_needs_action ||
       !["cerrado", "rechazado"].includes(claim.status ?? ""),
   )
 
   if (openClaim) {
+    const helpMessage = openClaim.failure_type === "consulta_pedido"
     return {
-      title: "Resolver reclamo abierto",
-      description: "Hay una gestión de reclamo que requiere revisión administrativa.",
+      title: helpMessage ? "Responder mensaje de ayuda" : "Resolver reclamo abierto",
+      description: helpMessage
+        ? "Hay una consulta del cliente que requiere respuesta administrativa."
+        : "Hay una gestión de reclamo que requiere revisión administrativa.",
       target: "reclamos",
-      buttonLabel: "Ir a Reclamos",
+      buttonLabel: helpMessage ? "Ir a Mensajería" : "Ir a Reclamos",
       tone: "urgent",
     }
   }
@@ -1026,14 +1072,13 @@ type AdminNotificationTone =
   | "claim"
 
 function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
-  if (isRefundPaymentAttentionOrder(pedido)) return "cancellation"
+  if (isAdminCancelledOrder(pedido)) return "cancellation"
   if (needsShippingReminder(pedido)) return "shipping"
 
   const hasIssue =
     orderHasPendingClaimAction(pedido) ||
     Boolean(pedido.return_requested_at && !pedido.return_resolved_at) ||
-    isRejectedPayment(pedido.payment_status) ||
-    getDispatchAlert(pedido).label === "Urgente"
+    isRejectedPayment(pedido.payment_status)
 
   if (hasIssue) return "claim"
 
@@ -1061,7 +1106,7 @@ function orderMatchesNotificationTone(
   }
 
   if (tone === "cancellation") {
-    return isRefundPaymentAttentionOrder(pedido)
+    return isAdminCancelledOrder(pedido)
   }
 
   if (tone === "payment") {
@@ -1118,67 +1163,53 @@ function handlePrintAndreaniLabel(pedido: SupabasePedido) {
 }
 
 function getDispatchAlert(pedido: SupabasePedido) {
-  if (isRefundPendingOrder(pedido)) {
+  if (isAdminCancelledOrder(pedido)) {
     return {
-      label: "Reintegro",
-      className: "border-amber-400/25 bg-amber-500/12 text-amber-200",
+      label: "Cancelado",
+      className: ADMIN_STATUS_BADGES.danger,
     }
   }
 
-  if (isRefundedOrder(pedido)) {
+  if (pedido.estado === "entregado" || pedido.delivered_at) {
     return {
-      label: "Reintegrado",
-      className: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
+      label: "Entregado",
+      className: ADMIN_STATUS_BADGES.success,
     }
   }
 
-  const dispatched =
-    pedido.estado === "enviado" ||
-    pedido.estado === "entregado" ||
-    Boolean(pedido.tracking_number || pedido.tracking_url)
+  if (pedido.estado === "en_camino") {
+    return {
+      label: "En camino",
+      className: ADMIN_STATUS_BADGES.info,
+    }
+  }
 
-  if (dispatched || pedido.estado === "cancelado") {
+  if (pedido.estado === "enviado") {
     return {
       label: "Enviado",
-      className: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
-    }
-  }
-
-  const hours = (Date.now() - new Date(pedido.created_at).getTime()) / 36e5
-
-  if (hours > 24) {
-    return {
-      label: "Urgente",
-      className: "border-red-400/25 bg-red-400/10 text-red-300",
-    }
-  }
-
-  if (hours > 12) {
-    return {
-      label: "Atención",
-      className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
+      className: ADMIN_STATUS_BADGES.info,
     }
   }
 
   return {
-    label: "A tiempo",
-    className: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
+    label: "Pendiente",
+    className: ADMIN_STATUS_BADGES.warning,
   }
 }
 
 function EstadoBadge({ estado }: { estado: string }) {
   const styles: Record<string, string> = {
-    pendiente: "border-amber-500/20 bg-amber-500/10 text-amber-300",
-    pagado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    enviado: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
-    en_camino: "border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky",
-    entregado: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    cancelado: ADMIN_SENSITIVE_DANGER.badge,
-    cancelado_refund_pending: ADMIN_SENSITIVE_DANGER.badge,
-    cancelado_refunded: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
-    refund_pending: ADMIN_SENSITIVE_DANGER.badge,
-    refunded: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
-    rechazado: "border-red-500/20 bg-red-500/10 text-red-300",
+    pendiente: ADMIN_STATUS_BADGES.warning,
+    pagado: ADMIN_STATUS_BADGES.success,
+    enviado: ADMIN_STATUS_BADGES.info,
+    en_camino: ADMIN_STATUS_BADGES.info,
+    entregado: ADMIN_STATUS_BADGES.success,
+    cancelado: ADMIN_STATUS_BADGES.danger,
+    cancelado_refund_pending: ADMIN_STATUS_BADGES.danger,
+    cancelado_refunded: ADMIN_STATUS_BADGES.danger,
+    refund_pending: ADMIN_STATUS_BADGES.warning,
+    refunded: ADMIN_STATUS_BADGES.success,
+    rechazado: ADMIN_STATUS_BADGES.danger,
   }
   const labels: Record<string, string> = {
     pendiente: "Pendiente",
@@ -1196,8 +1227,8 @@ function EstadoBadge({ estado }: { estado: string }) {
 
   return (
     <span
-      className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${
-        styles[estado] ?? "border-white/10 bg-white/5 text-white/60"
+      className={`admin-order-state-badge inline-flex w-fit items-center rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${
+        styles[estado] ?? ADMIN_STATUS_BADGES.muted
       }`}
     >
       {labels[estado] ?? estado}
@@ -1698,20 +1729,31 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
 
   for (const claim of pedido.order_claims ?? []) {
     const claimIsCancellation = claim.failure_type === "cancelar_compra"
+    const claimIsHelpMessage = claim.failure_type === "consulta_pedido"
     addEvent({
       key: `claim-opened-${claim.id}`,
-      title: claimIsCancellation ? "Solicitud de cancelación registrada" : "Reclamo iniciado",
+      title: claimIsCancellation
+        ? "Solicitud de cancelación registrada"
+        : claimIsHelpMessage
+          ? "Mensaje de ayuda recibido"
+          : "Reclamo iniciado",
       at: claim.created_at,
       description: claimIsCancellation
         ? "El cliente inició una solicitud sensible de cancelación."
-        : "El cliente inició un reclamo que requiere seguimiento administrativo.",
+        : claimIsHelpMessage
+          ? "El cliente envió una consulta previa a la entrega."
+          : "El cliente inició un reclamo que requiere seguimiento administrativo.",
       type: "danger",
     })
 
     if (claim.last_customer_message_at) {
       addEvent({
         key: `claim-customer-message-${claim.id}`,
-        title: claimIsCancellation ? "Mensaje en cancelación" : "Mensaje en reclamo",
+        title: claimIsCancellation
+          ? "Mensaje en cancelación"
+          : claimIsHelpMessage
+            ? "Mensaje de ayuda"
+            : "Mensaje en reclamo",
         at: claim.last_customer_message_at,
         description: "Hay actividad del cliente dentro del caso.",
         type: "danger",
@@ -1721,7 +1763,11 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     if (claim.status === "rechazado") {
       addEvent({
         key: `claim-rejected-${claim.id}`,
-        title: claimIsCancellation ? "Cancelación rechazada" : "Reclamo rechazado",
+        title: claimIsCancellation
+          ? "Cancelación rechazada"
+          : claimIsHelpMessage
+            ? "Consulta cerrada"
+            : "Reclamo rechazado",
         at: claim.updated_at,
         description: "El caso fue rechazado administrativamente.",
         type: "danger",
@@ -1731,7 +1777,11 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     if (claim.status === "cerrado") {
       addEvent({
         key: `claim-closed-${claim.id}`,
-        title: claimIsCancellation ? "Cancelación cerrada" : "Reclamo cerrado",
+        title: claimIsCancellation
+          ? "Cancelación cerrada"
+          : claimIsHelpMessage
+            ? "Consulta resuelta"
+            : "Reclamo cerrado",
         at: claim.closed_at || claim.updated_at,
         description: "El caso quedó cerrado.",
         type: "success",
@@ -3246,9 +3296,8 @@ function PedidoPreviewModal({
                   Despacho
                 </p>
                 <span
-                  className={`mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${getDispatchAlert(pedido).className}`}
+                  className={`admin-order-dispatch-badge mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${getDispatchAlert(pedido).className}`}
                 >
-                  <AlertTriangle className="size-3.5" />
                   {getDispatchAlert(pedido).label}
                 </span>
               </div>
@@ -3578,12 +3627,23 @@ function PedidoDetailModal({
       claim.admin_needs_action ||
       !["cerrado", "rechazado"].includes(claim.status ?? ""),
   )
+  const hasHelpMessages = (pedido.order_claims ?? []).some(
+    (claim) => claim.failure_type === "consulta_pedido",
+  )
+  const hasFormalClaims = (pedido.order_claims ?? []).some(
+    (claim) =>
+      claim.failure_type !== "consulta_pedido" &&
+      claim.failure_type !== "cancelar_compra",
+  )
+  const claimsTabIsMessaging =
+    pendingClaim?.failure_type === "consulta_pedido" ||
+    (hasHelpMessages && !hasFormalClaims)
   const showOrderSummaryIndicator = !orderSummarySeen
   const tabState = useMemo(
     () =>
       getAdminOrderTabState(pedido, {
         paymentProofPending: showPaymentProofIndicator,
-        pendingClaim: Boolean(pendingClaim),
+        pendingClaim,
       }),
     [pedido, pendingClaim, showPaymentProofIndicator],
   )
@@ -3603,13 +3663,18 @@ function PedidoDetailModal({
       { view: "pago" as const, label: "Pago", icon: CreditCard, badge: tabState.badges.pago },
       { view: "facturacion" as const, label: "Facturación", icon: FileText, badge: tabState.badges.facturacion },
       { view: "envio" as const, label: "Envío", icon: Truck, badge: tabState.badges.envio },
-      { view: "reclamos" as const, label: "Reclamos", icon: AlertTriangle, badge: tabState.badges.reclamos },
+      {
+        view: "reclamos" as const,
+        label: claimsTabIsMessaging ? "Mensajería" : "Reclamos",
+        icon: claimsTabIsMessaging ? MessageCircle : AlertTriangle,
+        badge: tabState.badges.reclamos,
+      },
       ...(tabState.visible.cancelacion
         ? [{ view: "cancelacion" as const, label: "Cancelación", icon: X, badge: tabState.badges.cancelacion }]
         : []),
       { view: "historial" as const, label: "Historial", icon: Clock3, badge: null },
     ],
-    [showOrderSummaryIndicator, tabState],
+    [claimsTabIsMessaging, showOrderSummaryIndicator, tabState],
   )
   const paymentStatusValue =
     pedido.payment_status === "confirmado" || pedido.payment_status === "approved"
@@ -5017,7 +5082,7 @@ function AdminClaimsCenterSection({
           >
             {claims.map((item) => (
               <option key={item.id} value={item.id}>
-                #{item.id} · {getOrderClaimTypeLabel(item.claim_type)}
+                #{item.id} · {getAdminClaimFailureLabel(item.failure_type)}
               </option>
             ))}
           </AdminSelect>
@@ -5034,7 +5099,7 @@ function AdminClaimsCenterSection({
             <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
               <DetailValue
                 label="Tipo de reclamo"
-                value={getOrderClaimTypeLabel(claim.claim_type)}
+                value={claim.failure_type === "consulta_pedido" ? "Mensaje de ayuda" : getOrderClaimTypeLabel(claim.claim_type)}
               />
             </div>
             <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
@@ -5046,7 +5111,7 @@ function AdminClaimsCenterSection({
             </div>
             {claim.failure_type && (
               <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-                <DetailValue label="Tipo de falla" value={claim.failure_type} />
+                <DetailValue label={claim.failure_type === "consulta_pedido" ? "Tipo de consulta" : "Tipo de falla"} value={getAdminClaimFailureLabel(claim.failure_type)} />
               </div>
             )}
             {claim.started_at && (
@@ -6222,9 +6287,8 @@ export function AdminPedidos({
                         <MobileOrderField label="Despacho">
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <span
-                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-9px font-black uppercase tracking-wide ${dispatch.className}`}
+                              className={`admin-order-dispatch-badge inline-flex items-center gap-1 rounded-full border px-2 py-1 text-9px font-black uppercase tracking-wide ${dispatch.className}`}
                             >
-                              <AlertTriangle className="size-3" />
                               {dispatch.label}
                             </span>
                           </div>
@@ -6311,9 +6375,8 @@ export function AdminPedidos({
 
                   <div className="text-center">
                     <span
-                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${dispatch.className}`}
+                      className={`admin-order-dispatch-badge inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${dispatch.className}`}
                     >
-                      <AlertTriangle className="size-3" />
                       {dispatch.label}
                     </span>
                   </div>

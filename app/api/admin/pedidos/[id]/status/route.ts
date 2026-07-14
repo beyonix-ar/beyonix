@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { upsertCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import {
   DEFAULT_PRODUCT_WARRANTY_MONTHS,
@@ -383,6 +384,10 @@ export async function PATCH(
     })
 
     await sendOrderStateEmail(data)
+
+    if (estado === "cancelado") {
+      await upsertCustomerCancelledOrderNotification(auth.admin, data)
+    }
   }
 
   return NextResponse.json({ order: data })

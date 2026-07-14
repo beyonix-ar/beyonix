@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   Bell,
   CheckCheck,
+  CircleX,
   Clock3,
   MessageCircle,
   PackageCheck,
@@ -30,11 +31,12 @@ interface CustomerNotificationsBellProps {
 function getNotificationIcon(type: string) {
   if (type === "payment_proof_pending") return Clock3
   if (type === "payment_proof_received") return Clock3
-  if (type === "admin_message" || type === "claim_response") return MessageCircle
+  if (type === "admin_message" || type === "claim_response" || type === "help_message_started") return MessageCircle
   if (type === "offer") return Tag
   if (type === "payment_validated") return BadgeCheck
   if (type === "order_shipped") return Truck
   if (type === "order_delivered") return PackageCheck
+  if (type === "order_cancelled" || type === "refund_pending") return CircleX
   return Bell
 }
 
@@ -78,7 +80,8 @@ function getNotificationActionUrl(notification: SupabaseCustomerNotification) {
 
   const opensClaim =
     notification.type === "admin_message" ||
-    notification.type === "claim_response"
+    notification.type === "claim_response" ||
+    notification.type === "help_message_started"
 
   return `/cuenta/compras/${notification.order_id}${opensClaim ? "/ayuda" : ""}`
 }

@@ -14,6 +14,7 @@ import type { OrderClaimType } from "@/lib/supabase/types"
 
 const CLAIM_TYPES = ["transporte_48hs", "garantia_beyonix"]
 const CANCELLATION_PROBLEM_TYPE = "cancelar_compra"
+const HELP_MESSAGE_PROBLEM_TYPE = "consulta_pedido"
 const POST_DELIVERY_PROBLEM_TYPES = [
   "danado",
   "incorrecto",
@@ -129,26 +130,42 @@ async function createCustomerNotification(
 async function notifyCustomerCaseCreated(
   admin: ReturnType<typeof createAdminClient>,
   order: OrderState,
-  claim: { id: number },
+  claim: { id: number; failure_type?: string | null },
 ) {
   const orderCode = getOrderCode(order.id)
+  const helpMessage = claim.failure_type === HELP_MESSAGE_PROBLEM_TYPE
+
+  const title = helpMessage ? "Mensaje de ayuda recibido" : "Reclamo iniciado"
+  const body = helpMessage
+    ? `Recibimos tu mensaje de ayuda por el pedido ${orderCode}.`
+    : `Recibimos tu reclamo por el pedido ${orderCode}.`
+  const subject = helpMessage
+    ? `Recibimos tu mensaje de ayuda ${orderCode}`
+    : `Recibimos tu reclamo ${orderCode}`
+  const heading = helpMessage ? "Mensaje de ayuda recibido" : "Reclamo iniciado"
+  const emailBody = helpMessage
+    ? `Hola ${order.cliente_nombre ?? ""}, recibimos tu mensaje de ayuda por el pedido ${orderCode}.`
+    : `Hola ${order.cliente_nombre ?? ""}, recibimos tu reclamo por el pedido ${orderCode}.`
+  const emailDetail = helpMessage
+    ? "BEYONIX revisará tu consulta y te avisará las novedades en tu cuenta y por email."
+    : "BEYONIX revisará el caso y te avisará las novedades en tu cuenta y por email."
 
   await createCustomerNotification(admin, {
     userId: order.usuario_id,
-    type: "claim_started",
-    title: "Reclamo iniciado",
-    body: `Recibimos tu reclamo por el pedido ${orderCode}.`,
+    type: helpMessage ? "help_message_started" : "claim_started",
+    title,
+    body,
     orderId: order.id,
     sourceKey: `claim:${claim.id}:created`,
   })
 
   await sendOrderStatusEmail({
     to: order.cliente_email,
-    subject: `Recibimos tu reclamo ${orderCode}`,
+    subject,
     html: `
-        <h1>Reclamo iniciado</h1>
-        <p>Hola ${order.cliente_nombre ?? ""}, recibimos tu reclamo por el pedido ${orderCode}.</p>
-        <p>BEYONIX revisará el caso y te avisará las novedades en tu cuenta y por email.</p>
+        <h1>${heading}</h1>
+        <p>${emailBody}</p>
+        <p>${emailDetail}</p>
       `,
   })
 }
@@ -440,6 +457,8 @@ export async function POST(
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isFinite(item) && item > 0)
   const delivered = isOrderDelivered(order)
+  const cancelled = (order.estado ?? "").toLowerCase() === "cancelado"
+  const helpMessage = problemType === HELP_MESSAGE_PROBLEM_TYPE
 
   if (!CLAIM_TYPES.includes(claimType)) {
     return NextResponse.json({ error: "Tipo de caso inválido." }, { status: 400 })
@@ -452,7 +471,7 @@ export async function POST(
     )
   }
 
-  if (problemType !== CANCELLATION_PROBLEM_TYPE && !POST_DELIVERY_PROBLEM_TYPES.includes(problemType)) {
+  if (!helpMessage && problemType !== CANCELLATION_PROBLEM_TYPE && !POST_DELIVERY_PROBLEM_TYPES.includes(problemType)) {
     return NextResponse.json({ error: "Motivo de reclamo inválido." }, { status: 400 })
   }
 
@@ -460,6 +479,13 @@ export async function POST(
     return NextResponse.json(
       { error: "La cancelación de compra se procesa automáticamente desde el flujo de cancelación." },
       { status: 410 },
+    )
+  }
+
+  if (helpMessage && cancelled) {
+    return NextResponse.json(
+      { error: "La compra figura como cancelada. Revisá el seguimiento de cancelación desde el detalle del pedido." },
+      { status: 409 },
     )
   }
 
@@ -477,14 +503,21 @@ export async function POST(
     )
   }
 
-  if (!delivered) {
+  if (helpMessage && delivered) {
+    return NextResponse.json(
+      { error: "El pedido ya figura como entregado. Podés iniciar un reclamo si tuviste un problema con la compra recibida." },
+      { status: 409 },
+    )
+  }
+
+  if (!delivered && !helpMessage) {
     return NextResponse.json(
       { error: "Todavía no podés iniciar un reclamo porque el pedido no figura como entregado." },
       { status: 409 },
     )
   }
 
-  if (!isClaimWindowOpen(getDeliveryDate(order), claimType)) {
+  if (!helpMessage && !isClaimWindowOpen(getDeliveryDate(order), claimType)) {
     return NextResponse.json(
       { error: "El plazo para este tipo de reclamo ya finalizó." },
       { status: 409 },

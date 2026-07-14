@@ -6,6 +6,7 @@ interface PaymentNotificationOrder {
   payment_method_id?: string | null
   payment_status?: string | null
   estado?: string | null
+  financial_status?: string | null
   payment_proof_url?: string | null
   payment_proof_uploaded_at?: string | null
 }
@@ -15,6 +16,46 @@ const PAYMENT_NOTIFICATION_TYPES = new Set([
   "payment_proof_received",
   "payment_validated",
 ])
+
+const ORDER_PROGRESS_NOTIFICATION_TYPES = new Set([
+  ...PAYMENT_NOTIFICATION_TYPES,
+  "order_status",
+  "order_cancelled",
+  "refund_pending",
+])
+
+function getOrderCode(orderId: number) {
+  return `BX-${1000 + orderId}`
+}
+
+function isOrderCancelled(order: PaymentNotificationOrder) {
+  return (
+    (order.estado ?? "").toLowerCase() === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending"].includes(
+      order.financial_status ?? "",
+    )
+  )
+}
+
+function normalizeCancelledOrderNotification(
+  notification: SupabaseCustomerNotification,
+  order: PaymentNotificationOrder,
+) {
+  const needsRefund = ["cancellation_requested", "refund_pending"].includes(
+    order.financial_status ?? "",
+  )
+  const orderCode = getOrderCode(order.id)
+
+  return {
+    ...notification,
+    type: "order_cancelled",
+    title: "Pedido cancelado",
+    body: needsRefund
+      ? `Tu pedido ${orderCode} fue cancelado correctamente. Estamos gestionando el reintegro correspondiente.`
+      : `Tu pedido ${orderCode} fue cancelado correctamente.`,
+    action_url: `/cuenta/compras/${order.id}`,
+  }
+}
 
 function isPaymentConfirmed(order: PaymentNotificationOrder) {
   return (
@@ -32,6 +73,10 @@ function normalizePaymentNotification(
   notification: SupabaseCustomerNotification,
   order: PaymentNotificationOrder,
 ) {
+  if (isOrderCancelled(order)) {
+    return normalizeCancelledOrderNotification(notification, order)
+  }
+
   if (order.payment_method_id !== "transferencia") return notification
 
   if (isPaymentConfirmed(order)) {
@@ -60,17 +105,37 @@ function normalizePaymentNotification(
   }
 }
 
-function getPaymentNotificationPriority(notification: SupabaseCustomerNotification) {
+function normalizeOrderProgressNotification(
+  notification: SupabaseCustomerNotification,
+  order: PaymentNotificationOrder,
+) {
+  if (isOrderCancelled(order)) {
+    return normalizeCancelledOrderNotification(notification, order)
+  }
+
+  if (PAYMENT_NOTIFICATION_TYPES.has(notification.type)) {
+    return normalizePaymentNotification(notification, order)
+  }
+
+  return notification
+}
+
+function getOrderProgressNotificationPriority(
+  notification: SupabaseCustomerNotification,
+) {
+  if (notification.type === "order_cancelled") return 4
+  if (notification.type === "refund_pending") return 4
+  if (notification.type === "order_status") return 4
   if (notification.type === "payment_validated") return 3
   if (notification.type === "payment_proof_received") return 2
   if (notification.type === "payment_proof_pending") return 1
   return 0
 }
 
-function removeContradictoryPaymentNotifications(
+function removeContradictoryOrderProgressNotifications(
   notifications: SupabaseCustomerNotification[],
 ) {
-  const bestPaymentNotificationByOrder = new Map<
+  const bestNotificationByOrder = new Map<
     number,
     SupabaseCustomerNotification
   >()
@@ -78,37 +143,37 @@ function removeContradictoryPaymentNotifications(
   for (const notification of notifications) {
     if (
       !notification.order_id ||
-      !PAYMENT_NOTIFICATION_TYPES.has(notification.type)
+      !ORDER_PROGRESS_NOTIFICATION_TYPES.has(notification.type)
     ) {
       continue
     }
 
-    const current = bestPaymentNotificationByOrder.get(notification.order_id)
+    const current = bestNotificationByOrder.get(notification.order_id)
 
     if (
       !current ||
-      getPaymentNotificationPriority(notification) >
-        getPaymentNotificationPriority(current) ||
+      getOrderProgressNotificationPriority(notification) >
+        getOrderProgressNotificationPriority(current) ||
       (
-        getPaymentNotificationPriority(notification) ===
-          getPaymentNotificationPriority(current) &&
+        getOrderProgressNotificationPriority(notification) ===
+          getOrderProgressNotificationPriority(current) &&
         new Date(notification.created_at).getTime() >
           new Date(current.created_at).getTime()
       )
     ) {
-      bestPaymentNotificationByOrder.set(notification.order_id, notification)
+      bestNotificationByOrder.set(notification.order_id, notification)
     }
   }
 
   return notifications.filter((notification) => {
     if (
       !notification.order_id ||
-      !PAYMENT_NOTIFICATION_TYPES.has(notification.type)
+      !ORDER_PROGRESS_NOTIFICATION_TYPES.has(notification.type)
     ) {
       return true
     }
 
-    return bestPaymentNotificationByOrder.get(notification.order_id)?.id === notification.id
+    return bestNotificationByOrder.get(notification.order_id)?.id === notification.id
   })
 }
 
@@ -123,28 +188,28 @@ export async function getCustomerNotifications(userId: string) {
   if (error) throw error
 
   const notifications = (data ?? []) as SupabaseCustomerNotification[]
-  const paymentNotificationOrderIds = [
+  const orderProgressNotificationOrderIds = [
     ...new Set(
       notifications
         .filter(
           (notification) =>
             notification.order_id &&
-            PAYMENT_NOTIFICATION_TYPES.has(notification.type),
+            ORDER_PROGRESS_NOTIFICATION_TYPES.has(notification.type),
         )
         .map((notification) => notification.order_id as number),
     ),
   ]
 
-  if (paymentNotificationOrderIds.length === 0) {
+  if (orderProgressNotificationOrderIds.length === 0) {
     return notifications
   }
 
   const { data: orders, error: ordersError } = await supabase
     .from("ordenes")
     .select(
-      "id, payment_method_id, payment_status, estado, payment_proof_url, payment_proof_uploaded_at",
+      "id, payment_method_id, payment_status, estado, financial_status, payment_proof_url, payment_proof_uploaded_at",
     )
-    .in("id", paymentNotificationOrderIds)
+    .in("id", orderProgressNotificationOrderIds)
 
   if (ordersError) throw ordersError
 
@@ -155,17 +220,17 @@ export async function getCustomerNotifications(userId: string) {
     ]),
   )
 
-  return removeContradictoryPaymentNotifications(
+  return removeContradictoryOrderProgressNotifications(
     notifications.map((notification) => {
       const order = notification.order_id
         ? ordersById.get(notification.order_id)
         : null
 
-      if (!order || !PAYMENT_NOTIFICATION_TYPES.has(notification.type)) {
+      if (!order || !ORDER_PROGRESS_NOTIFICATION_TYPES.has(notification.type)) {
         return notification
       }
 
-      return normalizePaymentNotification(notification, order)
+      return normalizeOrderProgressNotification(notification, order)
     }),
   )
 }

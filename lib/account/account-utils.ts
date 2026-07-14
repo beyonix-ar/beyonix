@@ -33,6 +33,13 @@ export function getClientOrderStatusBadge(order: SupabasePedido) {
   const paymentStatus = order.payment_status ?? ""
   const financialStatus = order.financial_status ?? ""
 
+  if (status === "cancelado") {
+    return {
+      label: "Cancelado",
+      className: "border-zinc-500/30 bg-zinc-500/12 text-zinc-200",
+    }
+  }
+
   if (financialStatus === "refund_pending") {
     return {
       label: "Reintegro pendiente",
@@ -58,13 +65,6 @@ export function getClientOrderStatusBadge(order: SupabasePedido) {
     return {
       label: "Cancelado por falta de pago",
       className: "border-red-400/35 bg-red-400/12 text-red-200",
-    }
-  }
-
-  if (status === "cancelado") {
-    return {
-      label: "✕ Cancelado",
-      className: "border-zinc-500/30 bg-zinc-500/12 text-zinc-200",
     }
   }
 
@@ -265,7 +265,7 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
         tone: "done",
       },
       {
-        label: "✕ Pedido cancelado",
+        label: "Pedido cancelado",
         detail: "La compra fue cancelada.",
         tone: "pending",
       },

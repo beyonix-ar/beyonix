@@ -1251,6 +1251,29 @@
   max-width: 82%;
 }
 
+.admin-claim-chat-thread {
+  background:
+    linear-gradient(180deg, rgba(24, 24, 24, 0.98), rgba(19, 19, 19, 0.98)) !important;
+}
+
+.admin-claim-chat-bubble-customer {
+  border-color: rgba(73, 139, 199, 0.45) !important;
+  background:
+    linear-gradient(135deg, rgba(19, 58, 92, 0.98), rgba(17, 42, 67, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 10px 22px rgba(0, 0, 0, 0.22) !important;
+}
+
+.admin-claim-chat-bubble-beyonix {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background:
+    linear-gradient(135deg, rgba(8, 8, 8, 0.98), rgba(12, 12, 12, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 10px 22px rgba(0, 0, 0, 0.24) !important;
+}
+
 .admin-claim-file-action {
   min-height: 1.75rem !important;
   border-radius: 0.5rem !important;
@@ -3501,4 +3524,48 @@ div.claim-form-shell::after {
   margin-top: 0.5rem;
   border-color: transparent !important;
   background-color: rgba(13, 27, 42, 0.84) !important;
+}
+
+.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-danger,
+.beyonix-admin-main .admin-order-tone-danger {
+  border-color: rgba(248, 113, 113, 0.56) !important;
+  background: rgba(127, 29, 29, 0.34) !important;
+  background-color: rgba(127, 29, 29, 0.34) !important;
+  color: #fecaca !important;
+  box-shadow: 0 0 14px rgba(248, 113, 113, 0.1) !important;
+}
+
+.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-success,
+.beyonix-admin-main .admin-order-tone-success {
+  border-color: rgba(52, 211, 153, 0.5) !important;
+  background: rgba(6, 78, 59, 0.34) !important;
+  background-color: rgba(6, 78, 59, 0.34) !important;
+  color: #bbf7d0 !important;
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.1) !important;
+}
+
+.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-warning,
+.beyonix-admin-main .admin-order-tone-warning {
+  border-color: rgba(245, 158, 11, 0.54) !important;
+  background: rgba(120, 53, 15, 0.32) !important;
+  background-color: rgba(120, 53, 15, 0.32) !important;
+  color: #fde68a !important;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.1) !important;
+}
+
+.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-info,
+.beyonix-admin-main .admin-order-tone-info {
+  border-color: rgba(96, 165, 250, 0.54) !important;
+  background: rgba(30, 64, 175, 0.32) !important;
+  background-color: rgba(30, 64, 175, 0.32) !important;
+  color: #bfdbfe !important;
+  box-shadow: 0 0 14px rgba(96, 165, 250, 0.1) !important;
+}
+
+.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-muted,
+.beyonix-admin-main .admin-order-tone-muted {
+  border-color: rgba(148, 163, 184, 0.32) !important;
+  background: rgba(15, 23, 42, 0.42) !important;
+  background-color: rgba(15, 23, 42, 0.42) !important;
+  color: rgba(226, 232, 240, 0.76) !important;
 }

@@ -125,6 +125,11 @@ export function AdminNotificationsPopover({
             {notifications.map((notification) => {
               const Icon = getNotificationIcon(notification.type)
               const sensitive = isAdminSensitiveNotification(notification)
+              const typeLabel =
+                notification.type === "claim" &&
+                notification.title.toLowerCase().includes("mensaje de ayuda")
+                  ? "Mensaje de ayuda"
+                  : TYPE_LABELS[notification.type]
               return (
                 <button
                   key={notification.id}
@@ -156,7 +161,7 @@ export function AdminNotificationsPopover({
                           sensitive ? ADMIN_SENSITIVE_DANGER.label : "text-white/64",
                         )}
                       >
-                        {TYPE_LABELS[notification.type]}
+                        {typeLabel}
                       </span>
                       {!notification.isRead && (
                         <span

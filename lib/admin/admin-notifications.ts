@@ -173,25 +173,21 @@ function isOrderVisible(order: { id?: number | null }) {
 function isOrderPaidForInvoice(order: {
   estado?: string | null
   payment_status?: string | null
-  financial_status?: string | null
+  paid_at?: string | null
+  payment_confirmed_amount?: number | string | null
   total?: number | null
 }) {
   if (Number(order.total ?? 0) <= 0) return false
-  if (
-    order.estado === "cancelado" ||
-    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
-      order.financial_status ?? "",
-    )
-  ) {
-    return false
-  }
   if (["rechazado", "rejected"].includes(order.payment_status ?? "")) {
     return false
   }
 
   return (
+    Boolean(order.paid_at) ||
+    Number(order.payment_confirmed_amount ?? 0) > 0 ||
     order.payment_status === "confirmado" ||
     order.payment_status === "approved" ||
+    order.payment_status === "confirmed" ||
     ["pagado", "enviado", "en_camino", "entregado"].includes(
       order.estado ?? "",
     )
@@ -238,6 +234,40 @@ function isRefundPaymentAttentionOrder(order: {
   )
 }
 
+function isAdminCancelledOrder(order: {
+  estado?: string | null
+  financial_status?: string | null
+}) {
+  return (
+    order.estado === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      order.financial_status ?? "",
+    )
+  )
+}
+
+function hasCancellationAdminAttention(order: {
+  estado?: string | null
+  financial_status?: string | null
+  payment_status?: string | null
+  payment_proof_url?: string | null
+  paid_at?: string | null
+  payment_confirmed_amount?: number | string | null
+}) {
+  if (order.financial_status === "refunded") return false
+  if (order.financial_status === "refund_pending") return true
+  if (order.financial_status === "cancellation_requested") return true
+
+  return (
+    order.estado === "cancelado" &&
+    (
+      isPaymentReceived(order) ||
+      Number(order.payment_confirmed_amount ?? 0) > 0 ||
+      hasPaymentProofPendingReview(order)
+    )
+  )
+}
+
 function isOrderReadyForShipping(order: {
   estado?: string | null
   financial_status?: string | null
@@ -268,12 +298,13 @@ function claimNeedsAdminAttention(claim: {
   admin_needs_action?: boolean | null
   first_reviewed_at?: string | null
   last_customer_message_at?: string | null
+  last_admin_response_at?: string | null
   status?: string | null
 }) {
   if (claim.admin_needs_action) return true
   if (["cerrado", "rechazado"].includes(claim.status ?? "")) return false
   if (!claim.first_reviewed_at) return true
-  return Boolean(claim.last_customer_message_at)
+  return getTime(claim.last_customer_message_at) > getTime(claim.last_admin_response_at)
 }
 
 function formatOrderId(orderId: number) {
@@ -428,7 +459,7 @@ function getCancellationNotificationContent(
   }
 
   if (order.financial_status === "cancellation_requested") {
-    if (isRefundPaymentAttentionOrder(order)) {
+    if (isPaymentReceived(order) || Number(order.payment_confirmed_amount ?? 0) > 0) {
       return {
         title: "Pedido cancelado con pago confirmado - reintegro pendiente",
         body: `${orderCode} requiere reintegro pendiente. Revisá el comprobante de pago y cargá el comprobante de reintegro.`,
@@ -568,6 +599,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         order.payment_proof_url &&
         order.payment_status === "en_revision" &&
         order.payment_proof_uploaded_at &&
+        !isAdminCancelledOrder(order) &&
         !isRefundPaymentAttentionOrder(order)
       ) {
         notifications.push({
@@ -623,9 +655,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         })
       }
 
-      if (
-        isRefundPaymentAttentionOrder(order)
-      ) {
+      if (hasCancellationAdminAttention(order)) {
         const cancelledAt =
           (order as {
             cancelled_at?: string | null
@@ -662,6 +692,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           eventAt: String(cancelledAt),
           title: cancellationContent.title,
           body: cancellationContent.body,
+          actionLabel: "Ver cancelación",
           actionUrl: `/admin/pedidos/${orderId}?tab=cancelacion`,
           orderId,
           isRead: false,
@@ -674,6 +705,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       if (!claimNeedsAdminAttention(claim)) continue
 
       const orderId = Number(claim.order_id)
+      const helpMessage = claim.failure_type === "consulta_pedido"
       notifications.push({
         id: `claim:${claim.id}`,
         type: "claim",
@@ -681,8 +713,10 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         eventAt: String(
           claim.last_customer_message_at || claim.created_at,
         ),
-        title: "Reclamo por responder",
-        body: `El reclamo del pedido ${formatOrderId(orderId)} requiere atención.`,
+        title: helpMessage ? "Mensaje de ayuda por responder" : "Reclamo por responder",
+        body: helpMessage
+          ? `El mensaje de ayuda del pedido ${formatOrderId(orderId)} requiere atención.`
+          : `El reclamo del pedido ${formatOrderId(orderId)} requiere atención.`,
         actionUrl: `/admin/pedidos/${orderId}?tab=reclamos`,
         orderId,
         isRead: false,

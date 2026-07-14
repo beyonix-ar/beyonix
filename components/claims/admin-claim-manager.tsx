@@ -36,6 +36,7 @@ const PROBLEM_LABELS: Record<string, string> = {
   cambio_cantidad: "Solicitud anterior",
   modificar_envio: "Solicitud anterior",
   otro_pre_despacho: "Solicitud anterior",
+  consulta_pedido: "Mensaje de ayuda",
   otro: "Otro problema",
 }
 
@@ -100,6 +101,8 @@ function getClaimDescription(claim: SupabaseOrderClaim, order: SupabasePedido) {
   return {
     product: claim.failure_type === "cancelar_compra"
       ? "Pedido completo"
+      : claim.failure_type === "consulta_pedido"
+        ? "Pedido completo"
       : match?.[1]?.trim() || productName(order),
     description: match?.[2]?.trim() || claim.description,
   }
@@ -153,6 +156,13 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
     return "Cancelación solicitada"
   }
 
+  if (claim.failure_type === "consulta_pedido") {
+    if (claim.status === "rechazado") return "Consulta cerrada"
+    if (claim.status === "cerrado") return "Consulta resuelta"
+    if (claim.status === "falta_informacion") return "Esperando cliente"
+    return "Mensaje de ayuda"
+  }
+
   if (["cambio_pendiente", "reemplazo_enviado"].includes(claim.status)) {
     return "Solución en proceso"
   }
@@ -175,9 +185,11 @@ export function AdminClaimManager({
   const [response, setResponse] = useState("")
   const [rejectionReason, setRejectionReason] = useState("")
   const [saving, setSaving] = useState(false)
+  const [loadingOrderClaims, setLoadingOrderClaims] = useState(false)
   const [notice, setNotice] = useState("")
   const chatRef = useRef<HTMLDivElement>(null)
   const firstReviewAttemptedRef = useRef<Set<number>>(new Set())
+  const loadedOrderClaimsRef = useRef<Set<number>>(new Set())
   const messageCount = claim?.order_claim_messages?.length ?? 0
 
   const cancellation = claim?.failure_type === "cancelar_compra"
@@ -185,6 +197,50 @@ export function AdminClaimManager({
   const dispatched = isOrderDispatched(pedido)
   const delivered = isOrderDelivered(pedido)
   const cancellationCanBeApproved = cancellation && !invoiced && !dispatched && !delivered
+
+  useEffect(() => {
+    if (claims.length > 0) return
+    if (loadedOrderClaimsRef.current.has(pedido.id)) return
+
+    let active = true
+    loadedOrderClaimsRef.current.add(pedido.id)
+    setLoadingOrderClaims(true)
+
+    async function loadOrderClaims() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) return
+
+        const response = await fetch(`/api/admin/pedidos/${pedido.id}/claims`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        const data = (await response.json()) as {
+          claims?: SupabaseOrderClaim[]
+          error?: string
+        }
+
+        if (!active) return
+        if (!response.ok) {
+          setNotice(data.error || "No se pudieron cargar los mensajes.")
+          return
+        }
+
+        for (const loadedClaim of [...(data.claims ?? [])].reverse()) {
+          onClaimChange(loadedClaim)
+        }
+      } catch {
+        if (active) setNotice("No se pudieron cargar los mensajes.")
+      } finally {
+        if (active) setLoadingOrderClaims(false)
+      }
+    }
+
+    void loadOrderClaims()
+
+    return () => {
+      active = false
+    }
+  }, [claims.length, onClaimChange, pedido.id])
 
   useLayoutEffect(() => {
     const chat = chatRef.current
@@ -292,11 +348,14 @@ export function AdminClaimManager({
     if (firstReviewAttemptedRef.current.has(claim.id)) return
 
     firstReviewAttemptedRef.current.add(claim.id)
+    const helpMessage = claim.failure_type === "consulta_pedido"
     void updateClaim(
       { status: "en_revision" },
       cancellation
         ? "Solicitud abierta. Estado actualizado a En revisión."
-        : "Reclamo abierto. Estado actualizado a En revisión.",
+        : helpMessage
+          ? "Mensaje de ayuda abierto. Estado actualizado a En revisión."
+          : "Reclamo abierto. Estado actualizado a En revisión.",
     ).then((updated) => {
       if (!updated) firstReviewAttemptedRef.current.delete(claim.id)
     })
@@ -402,6 +461,22 @@ export function AdminClaimManager({
     if (sent) setResponse("")
   }
 
+  const finishHelpChat = async () => {
+    if (!claim) return
+
+    const message = response.trim()
+    const sent = await updateClaim(
+      {
+        status: "cerrado",
+        resolution: "otro",
+        admin_response: message || claim.admin_response || "Chat finalizado por BEYONIX.",
+        append_message: Boolean(message),
+      },
+      "Chat finalizado.",
+    )
+    if (sent) setResponse("")
+  }
+
   const changeStatus = async () => {
     if (!claim) return
     if (status === "rechazado") {
@@ -425,8 +500,13 @@ export function AdminClaimManager({
   if (!claim) {
     return (
       <section className="admin-claim-manager admin-ds-card mt-3 p-4">
-        <h3 className="text-base font-black text-white">Gestión de ayuda</h3>
-        <p className="mt-1 text-sm text-white/66">Este pedido todavía no tiene solicitudes ni reclamos.</p>
+        <h3 className="text-base font-black text-white">Mensajería de ayuda</h3>
+        <p className="mt-1 text-sm text-white/66">
+          {loadingOrderClaims
+            ? "Buscando mensajes de ayuda para este pedido..."
+            : "Este pedido todavía no tiene mensajes de ayuda ni reclamos."}
+        </p>
+        {notice && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">{notice}</p>}
       </section>
     )
   }
@@ -446,6 +526,7 @@ export function AdminClaimManager({
   const evidenceFiles = files.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
   const statusChanged = status !== claim.status
   const closed = ["cerrado", "rechazado"].includes(claim.status)
+  const helpMessage = claim.failure_type === "consulta_pedido"
 
   return (
     <section className={`admin-claim-manager admin-ds-surface mt-3 overflow-hidden ${ADMIN_SENSITIVE_DANGER.panel}`}>
@@ -453,7 +534,7 @@ export function AdminClaimManager({
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <p className={`text-10px font-black uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
-              {cancellation ? "Solicitud de cancelación" : "Reclamo post-entrega"}
+              {cancellation ? "Solicitud de cancelación" : helpMessage ? "Mensaje de ayuda" : "Reclamo post-entrega"}
             </p>
             <h3 className="mt-1 text-lg font-black text-white">
               Pedido BX-{1000 + pedido.id}
@@ -461,7 +542,9 @@ export function AdminClaimManager({
             <p className={`mt-1 text-xs font-semibold leading-5 ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
               {cancellation
                 ? "Revisá si el pedido no fue facturado ni despachado antes de aprobar."
-                : "El cliente reportó un problema con un producto recibido."}
+                : helpMessage
+                  ? "El cliente necesita asistencia antes de que el pedido figure como entregado."
+                  : "El cliente reportó un problema con un producto recibido."}
             </p>
           </div>
 
@@ -504,7 +587,7 @@ export function AdminClaimManager({
               {[
                 ["Cliente", customer],
                 ["Pedido", `BX-${1000 + pedido.id}`],
-                [cancellation ? "Alcance" : "Producto afectado", details.product],
+                [cancellation ? "Alcance" : helpMessage ? "Consulta" : "Producto afectado", details.product],
                 ["Motivo", reason],
                 ["Estado", getStatusLabel(claim)],
                 ["Fecha de creación", formatDate(claim.created_at)],
@@ -515,112 +598,118 @@ export function AdminClaimManager({
                 </div>
               ))}
             </dl>
-            <div className="admin-claim-note mt-2 rounded-lg border p-2.5">
-              <p className={`text-10px font-bold uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.label}`}>
-                {cancellation ? "Mensaje de cancelación" : "Mensaje inicial del cliente"}
-              </p>
-              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-white/66">{details.description}</p>
-            </div>
+            {!helpMessage && (
+              <div className="admin-claim-note mt-2 rounded-lg border p-2.5">
+                <p className={`text-10px font-bold uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.label}`}>
+                  {cancellation ? "Mensaje de cancelación" : "Mensaje inicial del cliente"}
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-white/66">{details.description}</p>
+              </div>
+            )}
           </section>
 
-          <section className={`admin-claim-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-            <h4 className="text-sm font-black text-white">Evidencia</h4>
-            {evidenceFiles.length === 0 ? (
-              <p className="mt-1.5 text-xs text-white/66">El cliente no adjuntó archivos.</p>
-            ) : (
-              <div className="mt-2 space-y-1.5">
-                {evidenceFiles.map((file) => (
-                  <div key={file.id} className="admin-claim-file-row flex items-center gap-2 rounded-lg border p-2 text-xs font-bold text-white">
-                    {file.mime_type.startsWith("image/") && file.signedUrl ? (
-                      <img src={file.signedUrl} alt={file.file_name} className="size-10 rounded-md object-cover" />
-                    ) : (
-                      <FileText className="size-4 shrink-0 text-red-200" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate">{file.file_name}</p>
-                      <p className={`mt-0.5 text-10px font-bold ${ADMIN_SENSITIVE_DANGER.textMuted}`}>{getFileTypeLabel(file.mime_type)}</p>
+          {!helpMessage && (
+            <section className={`admin-claim-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+              <h4 className="text-sm font-black text-white">Evidencia</h4>
+              {evidenceFiles.length === 0 ? (
+                <p className="mt-1.5 text-xs text-white/66">El cliente no adjuntó archivos.</p>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  {evidenceFiles.map((file) => (
+                    <div key={file.id} className="admin-claim-file-row flex items-center gap-2 rounded-lg border p-2 text-xs font-bold text-white">
+                      {file.mime_type.startsWith("image/") && file.signedUrl ? (
+                        <img src={file.signedUrl} alt={file.file_name} className="size-10 rounded-md object-cover" />
+                      ) : (
+                        <FileText className="size-4 shrink-0 text-red-200" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate">{file.file_name}</p>
+                        <p className={`mt-0.5 text-10px font-bold ${ADMIN_SENSITIVE_DANGER.textMuted}`}>{getFileTypeLabel(file.mime_type)}</p>
+                      </div>
+                      <a href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="admin-ds-button admin-ds-button-ghost admin-claim-file-action px-2 py-1 text-10px">Ver</a>
+                      <a href={file.signedUrl ?? undefined} download={file.file_name} className="admin-ds-button admin-ds-button-ghost admin-claim-file-action px-2 py-1 text-10px">
+                        <Download className="size-3.5" />
+                      </a>
                     </div>
-                    <a href={file.signedUrl ?? undefined} target="_blank" rel="noreferrer" className="admin-ds-button admin-ds-button-ghost admin-claim-file-action px-2 py-1 text-10px">Ver</a>
-                    <a href={file.signedUrl ?? undefined} download={file.file_name} className="admin-ds-button admin-ds-button-ghost admin-claim-file-action px-2 py-1 text-10px">
-                      <Download className="size-3.5" />
-                    </a>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className={`admin-claim-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-            <h4 className="text-sm font-black text-white">Acciones</h4>
-
-            {cancellation ? (
-              <div className="mt-2 grid gap-2">
-                <button
-                  type="button"
-                  disabled={saving || closed || !cancellationCanBeApproved}
-                  onClick={() => void approveCancellation()}
-                  className="admin-ds-button admin-ds-button-primary inline-flex h-10 items-center justify-center gap-2 px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <ShieldCheck className="size-3.5" />
-                  Aprobar cancelación
-                </button>
-                <button
-                  type="button"
-                  disabled={saving || closed}
-                  onClick={() => void rejectCancellation()}
-                  className="admin-ds-button admin-ds-button-destructive inline-flex h-10 items-center justify-center gap-2 px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <X className="size-3.5" />
-                  Rechazar cancelación
-                </button>
-              </div>
-            ) : (
-              <div className="mt-2 space-y-2">
-                <AdminSelect
-                  title="Estado del reclamo"
-                  value={status}
-                  compact
-                  disabled={closed}
-                  onChange={(value) => setStatus(value as OrderClaimStatus)}
-                >
-                  {STATUS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
-                </AdminSelect>
-                <AdminSelect
-                  title="Resolución definida por BEYONIX"
-                  value={resolution}
-                  compact
-                  disabled={closed}
-                  onChange={(value) => setResolution(value as OrderClaimResolution)}
-                >
-                  {RESOLUTION_OPTIONS.map((option) => (
-                    <option key={option} value={option}>{getOrderClaimResolutionLabel(option)}</option>
-                  ))}
-                </AdminSelect>
-                {statusChanged && (
-                  <button type="button" disabled={saving || closed} onClick={() => void changeStatus()} className="admin-ds-button admin-ds-button-secondary h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
-                    Guardar estado
+                </div>
+              )}
+            </section>
+          )}
+
+          {!helpMessage && (
+            <section className={`admin-claim-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
+              <h4 className="text-sm font-black text-white">Acciones</h4>
+
+              {cancellation ? (
+                <div className="mt-2 grid gap-2">
+                  <button
+                    type="button"
+                    disabled={saving || closed || !cancellationCanBeApproved}
+                    onClick={() => void approveCancellation()}
+                    className="admin-ds-button admin-ds-button-primary inline-flex h-10 items-center justify-center gap-2 px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ShieldCheck className="size-3.5" />
+                    Aprobar cancelación
                   </button>
-                )}
-                <button type="button" disabled={saving || closed} onClick={() => void approveSolution()} className="admin-ds-button admin-ds-button-primary h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
-                  Aprobar solución
-                </button>
-                <button type="button" disabled={saving || closed} onClick={() => void markResolved()} className="admin-ds-button admin-ds-button-secondary h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
-                  Marcar como resuelto
-                </button>
-                <input
-                  value={rejectionReason}
-                  onChange={(event) => setRejectionReason(event.target.value)}
-                  placeholder="Motivo de rechazo"
-                  className={adminControlClassName}
-                />
-                <button type="button" disabled={saving || closed} onClick={() => void rejectClaim()} className="admin-ds-button admin-ds-button-destructive h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
-                  Rechazar reclamo
-                </button>
-              </div>
-            )}
-          </section>
+                  <button
+                    type="button"
+                    disabled={saving || closed}
+                    onClick={() => void rejectCancellation()}
+                    className="admin-ds-button admin-ds-button-destructive inline-flex h-10 items-center justify-center gap-2 px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <X className="size-3.5" />
+                    Rechazar cancelación
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <AdminSelect
+                    title="Estado del reclamo"
+                    value={status}
+                    compact
+                    disabled={closed}
+                    onChange={(value) => setStatus(value as OrderClaimStatus)}
+                  >
+                    {STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </AdminSelect>
+                  <AdminSelect
+                    title="Resolución definida por BEYONIX"
+                    value={resolution}
+                    compact
+                    disabled={closed}
+                    onChange={(value) => setResolution(value as OrderClaimResolution)}
+                  >
+                    {RESOLUTION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{getOrderClaimResolutionLabel(option)}</option>
+                    ))}
+                  </AdminSelect>
+                  {statusChanged && (
+                    <button type="button" disabled={saving || closed} onClick={() => void changeStatus()} className="admin-ds-button admin-ds-button-secondary h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
+                      Guardar estado
+                    </button>
+                  )}
+                  <button type="button" disabled={saving || closed} onClick={() => void approveSolution()} className="admin-ds-button admin-ds-button-primary h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
+                    Aprobar solución
+                  </button>
+                  <button type="button" disabled={saving || closed} onClick={() => void markResolved()} className="admin-ds-button admin-ds-button-secondary h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
+                    Marcar como resuelto
+                  </button>
+                  <input
+                    value={rejectionReason}
+                    onChange={(event) => setRejectionReason(event.target.value)}
+                    placeholder="Motivo de rechazo"
+                    className={adminControlClassName}
+                  />
+                  <button type="button" disabled={saving || closed} onClick={() => void rejectClaim()} className="admin-ds-button admin-ds-button-destructive h-10 w-full px-3 text-xs font-black transition disabled:opacity-45">
+                    Rechazar reclamo
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
         </aside>
 
         <section className={`admin-claim-chat-panel flex flex-col overflow-hidden rounded-xl border ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
@@ -628,14 +717,14 @@ export function AdminClaimManager({
             <h4 className="text-sm font-black text-white">Chat Cliente / BEYONIX</h4>
             <p className="mt-0.5 text-10px text-white/45">{messages.length} mensaje{messages.length === 1 ? "" : "s"}</p>
           </div>
-          <div ref={chatRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <div ref={chatRef} className="admin-claim-chat-thread min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
             {messages.length === 0 && <p className="rounded-lg bg-beyonix-blue/12 px-3 py-2 text-xs text-white/66">Todavía no hay mensajes en esta conversación.</p>}
             {messages.map((message) => {
               const isCustomer = message.author_role === "cliente"
               return (
-                <div key={message.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}>
-                  <div className={`admin-claim-chat-bubble rounded-xl px-3 py-2 ${isCustomer ? "border" : "border"}`}>
-                    <p className={`text-10px font-black ${ADMIN_SENSITIVE_DANGER.label}`}>{isCustomer ? "Cliente" : "BEYONIX"}</p>
+                <div key={message.id} className={`flex ${isCustomer ? "justify-end" : "justify-start"}`}>
+                  <div className={`admin-claim-chat-bubble ${isCustomer ? "admin-claim-chat-bubble-customer" : "admin-claim-chat-bubble-beyonix"} rounded-xl px-3 py-2 border`}>
+                    <p className="text-10px font-black text-blue-200">{isCustomer ? "Cliente" : "BEYONIX"}</p>
                     <p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-white">{getClaimMessageText(message.message)}</p>
                     <p className="mt-1 text-9px text-white/45">{formatDate(message.created_at)}</p>
                   </div>
@@ -653,6 +742,12 @@ export function AdminClaimManager({
                 placeholder={closed ? "Caso cerrado" : cancellation ? "Responder o escribir motivo para aprobar/rechazar" : "Responder al cliente"}
                 className={`${adminControlClassName} min-h-16 min-w-0 flex-1 resize-none px-3 py-2 text-xs leading-5 disabled:cursor-not-allowed disabled:opacity-45`}
               />
+              {helpMessage && (
+                <button type="button" disabled={saving || closed} onClick={() => void finishHelpChat()} className="admin-ds-button admin-ds-button-secondary inline-flex h-10 shrink-0 items-center justify-center gap-2 px-4 text-xs font-black disabled:opacity-45">
+                  <Check className="size-3.5" />
+                  Finalizar chat
+                </button>
+              )}
               <button type="button" disabled={saving || closed || response.trim().length < 2} onClick={() => void sendResponse()} className="admin-ds-button admin-ds-button-primary inline-flex h-10 shrink-0 items-center justify-center gap-2 px-4 text-xs font-black disabled:opacity-45">
                 <Send className="size-3.5" />
                 Enviar respuesta

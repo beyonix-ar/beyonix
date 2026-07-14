@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import {
+  buildCustomerCancelledOrderNotification,
+  upsertCustomerCancelledOrderNotification,
+} from "@/lib/orders/customer-cancellation-notification"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -126,26 +130,11 @@ async function notifyCustomerCancellation(
   const orderCode = getOrderCode(order.id)
   const financialStatus = getCancellationFinancialStatus(order)
   const needsRefund = financialStatus === "refund_pending"
-  const title = needsRefund ? "Solicitud de arrepentimiento recibida" : "Compra cancelada"
-  const body = needsRefund
-    ? `Ya recibimos tu solicitud del pedido ${orderCode}. Revisaremos el pago y coordinaremos el reintegro correspondiente.`
-    : `Tu compra ${orderCode} fue cancelada correctamente.`
+  const notification = buildCustomerCancelledOrderNotification(order)
 
   if (order.usuario_id) {
     try {
-      const { error } = await admin.from("customer_notifications").upsert({
-        user_id: order.usuario_id,
-        type: needsRefund ? "refund_pending" : "order_cancelled",
-        title,
-        body,
-        action_url: `/cuenta/compras/${order.id}`,
-        order_id: order.id,
-        source_key: `order:${order.id}:${needsRefund ? "refund-pending" : "cancelled"}`,
-      }, { onConflict: "source_key" })
-
-      if (error && error.code !== "23505") {
-        console.log("No se pudo crear notificación de cancelación", error.message)
-      }
+      await upsertCustomerCancelledOrderNotification(admin, order)
     } catch (notificationError) {
       console.log("No se pudo crear notificación de cancelación", notificationError)
     }
@@ -155,11 +144,11 @@ async function notifyCustomerCancellation(
     await sendOrderStatusEmail({
       to: order.cliente_email,
       subject: needsRefund
-        ? "Recibimos tu solicitud de arrepentimiento"
+        ? `Pedido cancelado ${orderCode}`
         : "Tu compra fue cancelada correctamente",
       html: `
-        <h1>${title}</h1>
-        <p>Hola, ${body}</p>
+        <h1>${notification.title}</h1>
+        <p>Hola ${order.cliente_nombre ?? ""}, ${notification.body}</p>
       `,
     })
   } catch (emailError) {

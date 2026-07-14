@@ -24,6 +24,7 @@ export interface InvoicePdfOrder {
   payment_method_id?: string | null
   transfer_discount_amount?: number | null
   cliente_nombre?: string | null
+  cliente_dni?: string | null
   cliente_email?: string | null
   cliente_telefono?: string | null
   cliente_direccion?: string | null
@@ -592,6 +593,12 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     9.5,
     regular,
   )
+  const dniLines = wrapText(
+    `DNI: ${order.cliente_dni || "No informado"}`,
+    clientLeftWidth,
+    9.5,
+    regular,
+  )
   const emailLines = wrapText(
     `Email: ${order.cliente_email || "No informado"}`,
     clientLeftWidth,
@@ -608,7 +615,7 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     wrapText(line, clientRightWidth, 9.5, regular),
   )
   const clientLines = Math.max(
-    nameLines.length + emailLines.length + orderLines.length,
+    nameLines.length + dniLines.length + emailLines.length + orderLines.length,
     wrappedAddressLines.length,
   )
   const clientHeight = Math.max(76, 39 + clientLines * 13)
@@ -630,17 +637,24 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     clientLeftWidth,
     9.5,
   )
+  const dniHeight = drawWrappedText(
+    `DNI: ${order.cliente_dni || "No informado"}`,
+    MARGIN + 14,
+    y - 39 - nameHeight,
+    clientLeftWidth,
+    9.5,
+  )
   const emailHeight = drawWrappedText(
     `Email: ${order.cliente_email || "No informado"}`,
     MARGIN + 14,
-    y - 39 - nameHeight,
+    y - 39 - nameHeight - dniHeight,
     clientLeftWidth,
     9.5,
   )
   drawWrappedText(
     `Pedido: BX-${1000 + order.id}`,
     MARGIN + 14,
-    y - 45 - nameHeight - emailHeight,
+    y - 45 - nameHeight - dniHeight - emailHeight,
     clientLeftWidth,
     9.5,
   )

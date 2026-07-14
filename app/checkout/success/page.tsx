@@ -37,6 +37,21 @@ const formatPrice = (price: number) =>
     minimumFractionDigits: 0,
   }).format(Number.isFinite(price) ? price : 0)
 
+function isCheckoutPaymentConfirmed(order: SupabasePedido | null) {
+  if (!order) return false
+
+  const paymentStatus = (order.payment_status ?? "").toLowerCase()
+
+  return (
+    order.estado === "pagado" ||
+    paymentStatus === "confirmado" ||
+    paymentStatus === "confirmed" ||
+    paymentStatus === "approved" ||
+    Boolean(order.paid_at) ||
+    Number(order.payment_confirmed_amount ?? 0) > 0
+  )
+}
+
 function CheckoutSuccessContent() {
   const { clearCart } = useCart()
   const hasClearedCartRef = useRef(false)
@@ -50,6 +65,13 @@ function CheckoutSuccessContent() {
   const [sessionExpired, setSessionExpired] = useState(false)
   const [pendingNavigationHref, setPendingNavigationHref] = useState("")
   const [aliasCopied, setAliasCopied] = useState(false)
+  const paymentConfirmed = isCheckoutPaymentConfirmed(order)
+  const showProofPanel =
+    orderLoading ||
+    sessionExpired ||
+    Boolean(orderError) ||
+    !order ||
+    !paymentConfirmed
   const isProofPending = Boolean(
     isTransfer &&
       order &&
@@ -302,65 +324,70 @@ function CheckoutSuccessContent() {
                   </div>
                 </CheckoutStatusPanel>
 
-                <CheckoutStatusPanel id="comprobante-pago" title="Comprobante">
-                  <div className="mt-3">
-                    {orderLoading ? (
-                      <div className="h-40 animate-pulse rounded-lg border border-beyonix-blue-light/14 bg-[#0B1118]" />
-                    ) : sessionExpired ? (
-                      <div className="flex flex-col items-center rounded-lg border border-beyonix-blue-light/20 bg-[#0B1118] px-5 py-6 text-center shadow-[0_0_28px_rgba(17,42,67,0.18)]">
-                        <span className="flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/25 bg-[#112A43]/55 text-beyonix-sky">
-                          <LogIn className="size-5" />
-                        </span>
-                        <h3 className="mt-3 text-lg font-bold text-white">
-                          Tu sesión expiró
-                        </h3>
-                        <p className="mt-1.5 max-w-sm text-sm leading-5 text-white/62">
-                          Para subir el comprobante de este pedido, iniciá sesión nuevamente.
-                        </p>
-                        <BeyonixButton
-                          asChild
-                          size="sm"
-                          className="mt-4 h-9 px-4 text-xs"
-                        >
-                          <Link href={loginHref}>
-                            <LogIn className="size-4" />
-                            Iniciar sesión y continuar
-                          </Link>
-                        </BeyonixButton>
-                      </div>
-                    ) : orderError ? (
-                      <CheckoutStatusNotice tone="failure">
-                        {orderError}
-                      </CheckoutStatusNotice>
-                    ) : order ? (
-                      <CustomerPaymentProof
-                        order={order}
-                        showHeading={false}
-                        onUploaded={(updatedOrder) =>
-                          void handleProofUploaded(updatedOrder)
-                        }
-                      />
-                    ) : (
-                      <CheckoutStatusNotice tone="failure">
-                        No pudimos identificar el pedido. Revisalo desde tu
-                        cuenta para subir el comprobante.
-                      </CheckoutStatusNotice>
-                    )}
-                  </div>
-                </CheckoutStatusPanel>
+                {showProofPanel && (
+                  <CheckoutStatusPanel id="comprobante-pago" title="Comprobante">
+                    <div className="mt-3">
+                      {orderLoading ? (
+                        <div className="h-40 animate-pulse rounded-lg border border-beyonix-blue-light/14 bg-[#0B1118]" />
+                      ) : sessionExpired ? (
+                        <div className="flex flex-col items-center rounded-lg border border-beyonix-blue-light/20 bg-[#0B1118] px-5 py-6 text-center shadow-[0_0_28px_rgba(17,42,67,0.18)]">
+                          <span className="flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/25 bg-[#112A43]/55 text-beyonix-sky">
+                            <LogIn className="size-5" />
+                          </span>
+                          <h3 className="mt-3 text-lg font-bold text-white">
+                            Tu sesión expiró
+                          </h3>
+                          <p className="mt-1.5 max-w-sm text-sm leading-5 text-white/62">
+                            Para subir el comprobante de este pedido, iniciá sesión nuevamente.
+                          </p>
+                          <BeyonixButton
+                            asChild
+                            size="sm"
+                            className="mt-4 h-9 px-4 text-xs"
+                          >
+                            <Link href={loginHref}>
+                              <LogIn className="size-4" />
+                              Iniciar sesión y continuar
+                            </Link>
+                          </BeyonixButton>
+                        </div>
+                      ) : orderError ? (
+                        <CheckoutStatusNotice tone="failure">
+                          {orderError}
+                        </CheckoutStatusNotice>
+                      ) : order ? (
+                        <CustomerPaymentProof
+                          order={order}
+                          showHeading={false}
+                          hideProofWhenConfirmed
+                          onUploaded={(updatedOrder) =>
+                            void handleProofUploaded(updatedOrder)
+                          }
+                        />
+                      ) : (
+                        <CheckoutStatusNotice tone="failure">
+                          No pudimos identificar el pedido. Revisalo desde tu
+                          cuenta para subir el comprobante.
+                        </CheckoutStatusNotice>
+                      )}
+                    </div>
+                  </CheckoutStatusPanel>
+                )}
               </div>
 
-              <CheckoutStatusNotice
-                tone="pending"
-                className="mt-4 flex items-start gap-2.5"
-              >
-                <Clock3 className="mt-0.5 size-4 shrink-0 text-amber-300" />
-                <p>
-                  Tenés hasta 48 hs para realizar el pago y enviar el
-                  comprobante correspondiente. Caso contrario, el pedido se
-                  cancelará automáticamente por falta de pago.
-                </p>
-              </CheckoutStatusNotice>
+              {!paymentConfirmed && (
+                <CheckoutStatusNotice
+                  tone="pending"
+                  className="mt-4 flex items-start gap-2.5"
+                >
+                  <Clock3 className="mt-0.5 size-4 shrink-0 text-amber-300" />
+                  <p>
+                    Tenés hasta 48 hs para realizar el pago y enviar el
+                    comprobante correspondiente. Caso contrario, el pedido se
+                    cancelará automáticamente por falta de pago.
+                  </p>
+                </CheckoutStatusNotice>
+              )}
             </>
           ) : (
             <p className="mx-auto max-w-md py-6 text-center text-sm leading-relaxed text-white/70">

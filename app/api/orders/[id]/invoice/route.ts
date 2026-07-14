@@ -133,6 +133,10 @@ export async function GET(
     total: isCreditNote
       ? Number(order.credit_note_amount ?? 0)
       : Number(order.total ?? 0),
+    cliente_dni:
+      typeof order.cliente_dni === "string" && order.cliente_dni.trim()
+        ? order.cliente_dni.trim()
+        : "No informado",
     shipping_cost_charged:
       orderRecord.shipping_cost_charged ?? orderRecord.andreani_costo ?? 0,
     shipping_provider:

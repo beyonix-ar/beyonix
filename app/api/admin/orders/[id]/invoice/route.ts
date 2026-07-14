@@ -98,6 +98,32 @@ function invoiceProcessingErrorResponse(message?: string) {
   )
 }
 
+function isPaymentConfirmed(order: {
+  estado?: string | null
+  payment_status?: string | null
+  paid_at?: string | null
+  payment_confirmed_amount?: number | string | null
+}) {
+  return (
+    Boolean(order.paid_at) ||
+    Number(order.payment_confirmed_amount ?? 0) > 0 ||
+    ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "") ||
+    ["pagado", "enviado", "en_camino", "entregado"].includes(order.estado ?? "")
+  )
+}
+
+function isCancellationFlow(order: {
+  estado?: string | null
+  financial_status?: string | null
+}) {
+  return (
+    order.estado === "cancelado" ||
+    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
+      order.financial_status ?? "",
+    )
+  )
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -115,7 +141,7 @@ export async function POST(
   const { data: order, error: orderError } = await auth.admin
     .from("ordenes")
     .select(
-      "id, total, estado, payment_status, financial_status, invoice_cae, invoice_status, invoice_error, order_change_status",
+      "id, total, estado, payment_status, paid_at, payment_confirmed_amount, financial_status, invoice_cae, invoice_status, invoice_error, order_change_status",
     )
     .eq("id", orderId)
     .single()
@@ -128,19 +154,7 @@ export async function POST(
     return NextResponse.json({ error: "La orden ya está facturada." }, { status: 409 })
   }
 
-  if (
-    order.estado === "cancelado" ||
-    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
-      String(order.financial_status ?? ""),
-    )
-  ) {
-    return NextResponse.json(
-      { error: "No se puede emitir factura sobre un pedido cancelado o con reintegro pendiente." },
-      { status: 409 },
-    )
-  }
-
-  if (!["approved", "confirmado"].includes(order.payment_status ?? "")) {
+  if (!isPaymentConfirmed(order)) {
     return NextResponse.json(
       { error: "La orden no tiene un pago confirmado." },
       { status: 400 },
@@ -221,6 +235,7 @@ export async function POST(
       invoice_status: "authorized",
       invoice_error: null,
       invoice_created_at: createdAt,
+      credit_note_required: isCancellationFlow(order),
     }
     const { data: updatedOrder, error: updateError } = await auth.admin
       .from("ordenes")

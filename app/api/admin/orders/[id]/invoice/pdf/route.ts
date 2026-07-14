@@ -190,6 +190,10 @@ export async function GET(
       optionalText(profile?.nombre) ??
       optionalText(profile?.username) ??
       "Consumidor final",
+    cliente_dni:
+      optionalText(order.cliente_dni) ??
+      optionalText(profile?.dni) ??
+      "No informado",
     cliente_email:
       optionalText(order.cliente_email) ??
       optionalText(profile?.email) ??

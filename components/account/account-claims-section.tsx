@@ -40,6 +40,7 @@ function formatClaimActivityDate(value: string) {
 }
 
 function getClaimTitle(claim: SupabaseOrderClaim) {
+  if (claim.failure_type === "consulta_pedido") return "Mensaje de ayuda"
   if (claim.claim_type === "transporte_48hs") return "Reclamo por entrega"
   if (claim.claim_type === "garantia_beyonix") return "Garantía del producto"
   return getOrderClaimTypeLabel(claim.claim_type)
@@ -53,6 +54,7 @@ function getClaimReasonLabel(claim: SupabaseOrderClaim) {
     faltante: "Faltó un producto",
     cantidad_menor: "Menos cantidad recibida",
     cancelar_compra: "Cancelar compra",
+    consulta_pedido: "Mensaje de ayuda",
     devolucion: "Solicitud anterior",
     no_llego: "Solicitud anterior",
     cambio_producto: "Solicitud anterior",
@@ -241,10 +243,10 @@ function ClaimHeaderCard({
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-            Centro de reclamos
+            {claim.failure_type === "consulta_pedido" ? "Centro de ayuda" : "Centro de reclamos"}
           </p>
           <h3 className="mt-2 text-2xl font-black text-white">
-            Seguimiento del reclamo
+            {claim.failure_type === "consulta_pedido" ? "Seguimiento de ayuda" : "Seguimiento del reclamo"}
           </h3>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={`rounded-full border px-3 py-1 text-10px font-black uppercase tracking-wide ${getClaimStatusBadge(claim.status)}`}>
@@ -261,7 +263,7 @@ function ClaimHeaderCard({
         <div className="grid gap-2 text-sm font-bold text-white sm:grid-cols-2 xl:min-w-[25rem]">
           <div className="rounded-xl border border-white/8 bg-[#181818] p-3">
             <p className="text-10px font-black uppercase tracking-widest text-white/55">
-              Producto
+              {claim.failure_type === "consulta_pedido" ? "Pedido" : "Producto"}
             </p>
             <p className="mt-1 truncate text-white">
               {getClaimOrderProduct(order)}
@@ -296,10 +298,10 @@ function ClaimSummaryCard({
     <aside className="space-y-3">
       <div className="rounded-2xl border border-white/8 bg-[#141414] p-4">
         <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-          Resumen del problema
+          {claim.failure_type === "consulta_pedido" ? "Resumen de la consulta" : "Resumen del problema"}
         </p>
         <h4 className="mt-3 text-lg font-black text-white">
-          Problema informado
+          {claim.failure_type === "consulta_pedido" ? "Mensaje enviado" : "Problema informado"}
         </h4>
         <p className="mt-2 text-sm font-semibold leading-6 text-white">
           {claim.description}
@@ -307,10 +309,10 @@ function ClaimSummaryCard({
         {claim.failure_type && (
           <div className="mt-3 rounded-xl border border-white/8 bg-[#181818] p-3">
             <p className="text-10px font-black uppercase tracking-widest text-white/55">
-              Tipo de falla
+              {claim.failure_type === "consulta_pedido" ? "Tipo de consulta" : "Tipo de falla"}
             </p>
             <p className="mt-1 text-sm font-bold text-white">
-              {claim.failure_type}
+              {getClaimReasonLabel(claim)}
             </p>
           </div>
         )}
