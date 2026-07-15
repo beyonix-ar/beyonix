@@ -63,6 +63,12 @@ export interface SupabaseProducto {
   descuento: number | null
   cuotas_sin_interes: boolean
   cuotas_maximas: 3 | 6 | null
+  promo_event_id?: string | null
+  promo_original_precio?: number | null
+  promo_original_precio_anterior?: number | null
+  promo_original_descuento?: number | null
+  promo_original_cuotas_sin_interes?: boolean | null
+  promo_original_cuotas_maximas?: 3 | 6 | null
 
   stock: number
 
@@ -388,6 +394,7 @@ export type OrderClaimStatus =
   | "cerrado"
 export type OrderClaimResolution =
   | "cambio_producto"
+  | "envio_unidad_faltante"
   | "reintegro_total"
   | "reintegro_parcial"
   | "cupon_descuento"

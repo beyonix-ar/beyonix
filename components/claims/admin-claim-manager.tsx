@@ -71,6 +71,10 @@ const RESOLUTION_OPTIONS: Array<{
     label: "Cambio del producto",
   },
   {
+    value: "envio_unidad_faltante",
+    label: "Enviar unidad faltante",
+  },
+  {
     value: "cupon_descuento",
     label: "Nota de crédito",
   },
@@ -217,6 +221,18 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
 function getResolutionNextStep(claim: SupabaseOrderClaim) {
   const resolution = claim.resolution ?? claim.customer_selected_resolution
 
+  if (resolution === "envio_unidad_faltante") {
+    if (claim.status === "reemplazo_enviado") {
+      return "Unidad faltante despachada. El cliente puede consultar el seguimiento desde el chat."
+    }
+
+    if (claim.status === "cambio_pendiente" || claim.status === "cerrado") {
+      return "Reposición de la unidad faltante registrada. El caso puede permanecer en historial."
+    }
+
+    return "Prepará y despachá la unidad faltante. Luego registrá la acción cuando corresponda."
+  }
+
   if (resolution === "cambio_producto") {
     if (claim.status === "reemplazo_enviado") {
       return "Reemplazo despachado. El cliente puede consultar el seguimiento desde el chat."
@@ -250,6 +266,18 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
   if (resolution === "rechazado") return "El cliente ve el motivo del rechazo."
 
   return "Todavía no hay una decisión operativa cargada."
+}
+
+function getDefaultDecisionResolution(claim?: SupabaseOrderClaim | null): Exclude<OrderClaimResolution, "rechazado"> {
+  if (claim?.resolution && claim.resolution !== "rechazado") return claim.resolution
+  if (claim?.customer_selected_resolution && claim.customer_selected_resolution !== "rechazado") {
+    return claim.customer_selected_resolution
+  }
+  if (claim?.failure_type === "faltante" || claim?.failure_type === "cantidad_menor") {
+    return "envio_unidad_faltante"
+  }
+
+  return "cambio_producto"
 }
 
 export function AdminClaimManager({
@@ -349,11 +377,7 @@ export function AdminClaimManager({
     setDecisionAction(null)
     setDecisionMessage("")
     setDecisionReason(REJECTION_REASONS[0])
-    setDecisionResolution(
-      claim.resolution === "cupon_descuento" || claim.resolution === "reintegro_total"
-        ? claim.resolution
-        : "cambio_producto",
-    )
+    setDecisionResolution(getDefaultDecisionResolution(claim))
     setRefundProofFile(null)
     setRefundDate("")
     setRefundAmount("")
@@ -473,7 +497,7 @@ export function AdminClaimManager({
 
     const sent = await updateClaim(
       {
-        status: "falta_informacion",
+        status: claim.status === "recibido" ? "en_revision" : claim.status,
         admin_response: response.trim(),
         append_message: true,
       },
@@ -487,11 +511,7 @@ export function AdminClaimManager({
     setDecisionAction(null)
     setDecisionMessage("")
     setDecisionReason(REJECTION_REASONS[0])
-    setDecisionResolution(
-      claim?.resolution === "cupon_descuento" || claim?.resolution === "reintegro_total"
-        ? claim.resolution
-        : "cambio_producto",
-    )
+    setDecisionResolution(getDefaultDecisionResolution(claim))
   }
 
   const approveCancellation = async () => {
@@ -575,10 +595,6 @@ export function AdminClaimManager({
   const markResolved = async () => {
     if (!claim) return
     const resolution = claim.resolution === "rechazado" ? "otro" : claim.resolution ?? "otro"
-    if (!claim.resolution && claim.status !== "rechazado") {
-      setNotice("Antes de cerrar el caso debe existir una resolución.")
-      return
-    }
     const sent = await updateClaim(
       {
         status: "cerrado",
@@ -752,8 +768,11 @@ export function AdminClaimManager({
   const helpMessage = claim.failure_type === "consulta_pedido"
   const canReviewClaim = !closed && ["recibido", "en_revision", "falta_informacion"].includes(claim.status)
   const canCompleteAcceptedSolution = !closed && claim.status === "aprobado"
+  const canCompleteReplacementSolution =
+    canCompleteAcceptedSolution &&
+    (claim.resolution === "cambio_producto" || claim.resolution === "envio_unidad_faltante")
   const canManageRefund = !closed && claim.status === "reintegro_pendiente" && claim.resolution === "reintegro_total"
-  const canCloseResolvedClaim = !closed && ["cambio_pendiente", "cupon_pendiente"].includes(claim.status)
+  const canCloseClaim = !closed && !cancellation
   const canCloseConversation = helpMessage && !closed
   const helpResolved = helpMessage && claim.status === "cerrado"
   const conversationStatus = getConversationStatusLabel(claim, messages)
@@ -948,11 +967,11 @@ export function AdminClaimManager({
                     />
                   </>
                 )}
-                {canCompleteAcceptedSolution && claim.resolution === "cambio_producto" && (
+                {canCompleteReplacementSolution && (
                   <DecisionButton
                     icon={<PackageCheck className="size-4" />}
-                    title="Marcar producto reemplazado"
-                    description="Confirmar que se envió o entregó la nueva unidad."
+                    title={claim.resolution === "envio_unidad_faltante" ? "Marcar unidad enviada" : "Marcar producto reemplazado"}
+                    description={claim.resolution === "envio_unidad_faltante" ? "Confirmar que se envió o entregó la unidad faltante." : "Confirmar que se envió o entregó la nueva unidad."}
                     tone="success"
                     disabled={saving}
                     onClick={() => void markAcceptedSolutionDone()}
@@ -1016,14 +1035,14 @@ export function AdminClaimManager({
                     </div>
                   </div>
                 )}
-                {canCloseResolvedClaim && (
+                {canCloseClaim && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
                     title="Cerrar reclamo"
                     description="Finalizar el caso y moverlo al historial."
                     tone="primary"
                     disabled={saving}
-                    onClick={() => void markResolved()}
+                    onClick={() => setDecisionAction("close")}
                   />
                 )}
                 {closed && (
@@ -1350,6 +1369,7 @@ function ClaimActionModal({
     (action === "approve_cancellation" && !cancellationCanBeApproved)
   const resolutionToneClassNames: Record<Exclude<OrderClaimResolution, "rechazado">, string> = {
     cambio_producto: "border-blue-300/25 hover:border-blue-300/60",
+    envio_unidad_faltante: "border-sky-300/25 hover:border-sky-300/60",
     cupon_descuento: "border-amber-300/25 hover:border-amber-300/60",
     reintegro_total: "border-emerald-300/25 hover:border-emerald-300/60",
     reintegro_parcial: "border-emerald-300/25 hover:border-emerald-300/60",

@@ -142,6 +142,18 @@ async function syncPublishedNotifications(
   if (error) throw error
 }
 
+async function deletePublishedNotifications(
+  auth: Exclude<Awaited<ReturnType<typeof requireInternalUser>>, { error: Response }>,
+  campaignId: string,
+) {
+  const { error } = await auth.admin
+    .from("customer_notifications")
+    .delete()
+    .like("source_key", `campaign:${campaignId}:%`)
+
+  if (error) throw error
+}
+
 async function writeAudit(
   auth: Exclude<Awaited<ReturnType<typeof requireInternalUser>>, { error: Response }>,
   action: "INSERT" | "UPDATE" | "DELETE",
@@ -279,8 +291,91 @@ export async function PATCH(request: Request) {
     starts_at?: unknown
     ends_at?: unknown
     publish?: unknown
+    action?: unknown
   }
   const id = normalizeText(body.id)
+  const action = normalizeText(body.action)
+
+  if (action === "pause" || action === "publish") {
+    if (!id) {
+      return Response.json(
+        {
+          error:
+            action === "pause"
+              ? "Falta la notificación a pausar."
+              : "Falta la notificación a publicar.",
+        },
+        { status: 400 },
+      )
+    }
+
+    const before = await auth.admin
+      .from("customer_notification_campaigns")
+      .select("id, type, title, body, action_url, target_scope, target_items, starts_at, ends_at, status, created_by, updated_by, published_at, created_at, updated_at")
+      .eq("id", id)
+      .maybeSingle()
+
+    if (before.error || !before.data) {
+      return Response.json({ error: "Notificación no encontrada." }, { status: 404 })
+    }
+
+    if (action === "pause") {
+      try {
+        await deletePublishedNotifications(auth, id)
+      } catch (deleteError) {
+        return Response.json(
+          {
+            error:
+              deleteError instanceof Error
+                ? deleteError.message
+                : "No se pudo pausar la notificación.",
+          },
+          { status: 500 },
+        )
+      }
+    }
+
+    const { data, error } = await auth.admin
+      .from("customer_notification_campaigns")
+      .update({
+        status: action === "pause" ? "draft" : "published",
+        updated_by: auth.user.id,
+        published_at:
+          action === "publish" && !before.data.published_at
+            ? new Date().toISOString()
+            : before.data.published_at,
+      })
+      .eq("id", id)
+      .select("id, type, title, body, action_url, target_scope, target_items, starts_at, ends_at, status, created_by, updated_by, published_at, created_at, updated_at")
+      .single()
+
+    if (error) {
+      return Response.json({ error: error.message }, { status: 500 })
+    }
+
+    let publishedCount = 0
+
+    if (action === "publish") {
+      try {
+        publishedCount = await publishCampaign(auth, data)
+      } catch (publishError) {
+        return Response.json(
+          {
+            error:
+              publishError instanceof Error
+                ? publishError.message
+                : "No se pudo publicar la notificación.",
+          },
+          { status: 500 },
+        )
+      }
+    }
+
+    await writeAudit(auth, "UPDATE", id, before.data, data)
+
+    return Response.json({ campaign: data, publishedCount })
+  }
+
   const type = normalizeType(body.type)
   const title = normalizeText(body.title)
   const message = normalizeText(body.body)
@@ -388,14 +483,16 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "Notificación no encontrada." }, { status: 404 })
   }
 
-  const deleteNotifications = await auth.admin
-    .from("customer_notifications")
-    .delete()
-    .like("source_key", `campaign:${id}:%`)
-
-  if (deleteNotifications.error) {
+  try {
+    await deletePublishedNotifications(auth, id)
+  } catch (deleteError) {
     return Response.json(
-      { error: deleteNotifications.error.message },
+      {
+        error:
+          deleteError instanceof Error
+            ? deleteError.message
+            : "No se pudo eliminar la notificación.",
+      },
       { status: 500 },
     )
   }

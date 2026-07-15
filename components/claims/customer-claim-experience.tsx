@@ -286,7 +286,6 @@ function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
       return {
         title: "Solución: cambio de producto",
         body: `BEYONIX ya despachó el reemplazo.${tracking}`,
-        nextStep: "Podés seguir la novedad desde este chat.",
       }
     }
 
@@ -294,14 +293,34 @@ function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
       return {
         title: "Solución: cambio de producto",
         body: "El cambio quedó registrado.",
-        nextStep: "Podés consultar la conversación cuando quieras.",
       }
     }
 
     return {
       title: "Solución: cambio de producto",
       body: "BEYONIX aprobó el cambio del producto.",
-      nextStep: "Te vamos a indicar por este chat dónde enviar o entregar el producto original. Cuando lo recibamos, prepararemos el reemplazo.",
+    }
+  }
+
+  if (resolution === "envio_unidad_faltante") {
+    if (claim.status === "reemplazo_enviado") {
+      const tracking = claim.replacement_tracking ? ` Seguimiento: ${claim.replacement_tracking}.` : ""
+      return {
+        title: "Solución: envío de unidad faltante",
+        body: `BEYONIX ya despachó la unidad pendiente.${tracking}`,
+      }
+    }
+
+    if (claim.status === "cambio_pendiente" || claim.status === "cerrado") {
+      return {
+        title: "Solución: envío de unidad faltante",
+        body: "La reposición de la unidad faltante quedó registrada.",
+      }
+    }
+
+    return {
+      title: "Solución: envío de unidad faltante",
+      body: "BEYONIX aceptó el faltante y va a preparar el envío de la unidad pendiente.",
     }
   }
 
@@ -309,9 +328,6 @@ function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
     return {
       title: "Solución: nota de crédito",
       body: "BEYONIX aprobó una nota de crédito a tu favor.",
-      nextStep: claim.coupon_code
-        ? "Ya tenés el código disponible en esta pantalla."
-        : "Te avisaremos por este chat cuando quede disponible.",
     }
   }
 
@@ -319,9 +335,6 @@ function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
     return {
       title: `Solución: ${getOrderClaimResolutionLabel(resolution).toLowerCase()}`,
       body: "BEYONIX aprobó la devolución del dinero correspondiente.",
-      nextStep: claim.refund_details_submitted_at
-        ? "Ya recibimos tus datos. Estamos gestionando el reintegro."
-        : "Completá los datos de la cuenta para poder avanzar con el reintegro.",
     }
   }
 
@@ -329,7 +342,6 @@ function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
     return {
       title: "Solución en proceso",
       body: "BEYONIX está gestionando la solución del caso.",
-      nextStep: "Te avisaremos cualquier novedad por este chat.",
     }
   }
 
@@ -1002,7 +1014,6 @@ export function CustomerClaimExperience({
               <div className="min-w-0">
                 <p className="text-xs font-black text-[#D7FFFD]">{resolutionSummary.title}</p>
                 <p className="mt-1 text-xs font-semibold leading-5 text-white/80">{resolutionSummary.body}</p>
-                <p className="mt-1 text-xs leading-5 text-white/60">{resolutionSummary.nextStep}</p>
               </div>
             </div>
           </div>
@@ -1088,7 +1099,7 @@ export function CustomerClaimExperience({
                     placeholder="Escribí tu mensaje"
                     className="min-h-12 flex-1 resize-none rounded-lg border border-blue-300/15 bg-[#101820] px-3 py-2 text-sm leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/50 disabled:cursor-not-allowed disabled:opacity-45"
                   />
-                  <button type="button" disabled={loading} onClick={() => void sendReply(claim)} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45">
+                  <button type="button" disabled={loading} onClick={() => void sendReply(claim)} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white transition hover:bg-[#245985] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[#112A43]">
                     <Send className="size-3.5" />
                     {loading ? "Enviando..." : "Enviar"}
                   </button>

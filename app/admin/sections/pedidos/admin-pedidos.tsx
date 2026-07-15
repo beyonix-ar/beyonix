@@ -19,6 +19,7 @@ import {
   Landmark,
   LoaderCircle,
   MessageCircle,
+  Package,
   Printer,
   RefreshCw,
   ShieldCheck,
@@ -62,6 +63,7 @@ import {
   getStoreBenefitTypeFromRefundMethod,
   parseStoreBenefitPercent,
 } from "@/lib/customer-store-benefits"
+import { cn } from "@/lib/utils"
 import type {
   OrderClaimResolution,
   OrderClaimStatus,
@@ -1192,7 +1194,7 @@ function getDispatchAlert(pedido: SupabasePedido) {
   if (pedido.estado === "entregado" || pedido.delivered_at) {
     return {
       label: "Entregado",
-      className: ADMIN_STATUS_BADGES.success,
+      className: `${ADMIN_STATUS_BADGES.success} admin-order-dispatch-badge--delivered`,
     }
   }
 
@@ -3607,6 +3609,7 @@ function PedidoDetailModal({
   const items = pedido.orden_items ?? []
   const financialBreakdown = getOrderFinancialBreakdown(pedido)
   const dispatch = getDispatchAlert(pedido)
+  const DispatchIcon = dispatch.label === "Entregado" ? CheckCircle2 : AlertTriangle
   const tracking = pedido.andreani_tracking || pedido.tracking_number
   const [shippingModality, setShippingModality] =
     useState<ShippingModalityOption>("andreani")
@@ -4356,15 +4359,20 @@ function PedidoDetailModal({
                 </div>
               </div>
               <span
-                className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${dispatch.className}`}
+                className={cn(
+                  "inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide",
+                  dispatch.label === "Entregado"
+                    ? "!border-emerald-300 !bg-emerald-200 !text-emerald-950 shadow-[0_0_18px_rgba(134,239,172,0.2)]"
+                    : dispatch.className,
+                )}
               >
-                <AlertTriangle className="size-3.5" />
+                <DispatchIcon className="size-3.5" />
                 {dispatch.label}
               </span>
             </div>
 
             <div className="admin-order-shipping-address-panel mt-3 rounded-lg border p-3">
-              <p className="text-10px font-black uppercase tracking-widest text-white/92">
+              <p className="text-10px font-black uppercase tracking-widest text-white/68">
                 Dirección de entrega
               </p>
               <div className="mt-2">
@@ -4373,7 +4381,7 @@ function PedidoDetailModal({
             </div>
 
             <div className="admin-order-shipping-ops-panel mt-3 rounded-lg border p-3">
-              <p className="text-10px font-black uppercase tracking-widest text-white/92">
+              <p className="text-10px font-black uppercase tracking-widest text-white/68">
                 Resumen logístico
               </p>
               <div className="admin-order-shipping-ops-grid mt-2 grid gap-2 sm:grid-cols-2">
@@ -4425,18 +4433,23 @@ function PedidoDetailModal({
                     />
                   )}
                 </div>
-                <ShippingMiniCard label="Estado del envío" value={getAndreaniStatus(pedido)} />
+                <ShippingMiniCard
+                  label="Estado del envío"
+                  value={getAndreaniStatus(pedido)}
+                  icon={<Truck className="size-3.5" />}
+                />
                 {typeof pedido.andreani_costo === "number" && (
                   <ShippingMiniCard
                     label="Costo"
                     value={formatPrice(pedido.andreani_costo ?? 0)}
+                    icon={<CreditCard className="size-3.5" />}
                   />
                 )}
                 {tracking && (
-                  <ShippingMiniCard label="Seguimiento" value={tracking} />
+                  <ShippingMiniCard label="Seguimiento" value={tracking} icon={<RefreshCw className="size-3.5" />} />
                 )}
                 {pedido.andreani_envio_id && (
-                  <ShippingMiniCard label="Envío ID" value={pedido.andreani_envio_id} />
+                  <ShippingMiniCard label="Envío ID" value={pedido.andreani_envio_id} icon={<Package className="size-3.5" />} />
                 )}
               </div>
             </div>
@@ -4461,10 +4474,10 @@ function PedidoDetailModal({
             )}
 
             <div className="admin-order-shipping-actions-panel mt-3 rounded-lg border p-3">
-              <p className="text-10px font-black uppercase tracking-widest text-white/92">
+              <p className="text-10px font-black uppercase tracking-widest text-white/68">
                 Acciones de Andreani
               </p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
                 <button
                   type="button"
                   aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
@@ -4714,26 +4727,16 @@ function ShippingAddressDetails({ pedido }: { pedido: SupabasePedido }) {
 
   return (
     <div className="admin-order-shipping-address-card rounded-lg border p-2.5">
-      <div className="grid gap-2 text-sm sm:grid-cols-2">
+      <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <CompactAddressValue
           label="Dirección"
           value={streetLine || cleanAddress || "No informada"}
         />
-        {pedido.cliente_dni && (
-          <CompactAddressValue label="DNI" value={pedido.cliente_dni} />
-        )}
-        {unitLine && (
-          <CompactAddressValue label="Piso / Depto" value={unitLine} />
-        )}
-        {localityLine && (
-          <CompactAddressValue label="Localidad / Provincia" value={localityLine} />
-        )}
-        {postalCode && (
-          <CompactAddressValue label="Código postal" value={postalCode} />
-        )}
-        {reference && (
-          <CompactAddressValue label="Referencias" value={reference} wide />
-        )}
+        <CompactAddressValue label="DNI" value={pedido.cliente_dni || "-"} />
+        <CompactAddressValue label="Piso / Depto" value={unitLine || "-"} />
+        <CompactAddressValue label="Localidad / Provincia" value={localityLine || "-"} />
+        <CompactAddressValue label="Código postal" value={postalCode || "-"} />
+        <CompactAddressValue label="Referencias" value={reference || "-"} />
       </div>
     </div>
   )
@@ -4750,10 +4753,10 @@ function CompactAddressValue({
 }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
-      <p className="text-9px font-bold uppercase tracking-widest text-white/36">
+      <p className="text-9px font-bold uppercase tracking-widest text-white">
         {label}
       </p>
-      <p className="mt-0.5 truncate text-sm font-semibold text-white/82">
+      <p className="mt-0.5 truncate text-sm font-black text-white">
         {value}
       </p>
     </div>

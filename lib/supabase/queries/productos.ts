@@ -16,6 +16,12 @@ export interface ProductoPayload {
   descuento?: number | null
   cuotas_sin_interes?: boolean
   cuotas_maximas?: 3 | 6 | null
+  promo_event_id?: string | null
+  promo_original_precio?: number | null
+  promo_original_precio_anterior?: number | null
+  promo_original_descuento?: number | null
+  promo_original_cuotas_sin_interes?: boolean | null
+  promo_original_cuotas_maximas?: 3 | 6 | null
   stock?: number
   categoria_id?: number | null
   destacado?: boolean

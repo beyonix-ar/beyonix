@@ -26,6 +26,7 @@ export const ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
 
 export const ORDER_CLAIM_RESOLUTIONS: OrderClaimResolution[] = [
   "cambio_producto",
+  "envio_unidad_faltante",
   "reintegro_total",
   "reintegro_parcial",
   "cupon_descuento",
@@ -76,6 +77,7 @@ export function getOrderClaimTypeLabel(type?: string | null) {
 export function getOrderClaimResolutionLabel(resolution?: string | null) {
   const labels: Record<string, string> = {
     cambio_producto: "Cambio de producto",
+    envio_unidad_faltante: "Envío de unidad faltante",
     reintegro_total: "Reintegro total",
     reintegro_parcial: "Reintegro parcial",
     cupon_descuento: "Nota de crédito",

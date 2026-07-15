@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   Edit3,
   Megaphone,
+  Pause,
+  Play,
   Plus,
   Send,
   Sparkles,
@@ -221,6 +223,20 @@ function fromDateInput(value: string, endOfDay = false) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
+function getTodayInputDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date())
+  const year = parts.find((part) => part.type === "year")?.value
+  const month = parts.find((part) => part.type === "month")?.value
+  const day = parts.find((part) => part.type === "day")?.value
+
+  return year && month && day ? `${year}-${month}-${day}` : new Date().toISOString().slice(0, 10)
+}
+
 function getCampaignIcon(type: SupabaseCustomerNotificationCampaignType) {
   return TYPE_OPTIONS.find((option) => option.value === type)?.icon ?? BellRing
 }
@@ -328,6 +344,7 @@ export function AdminNotificaciones() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [publishingId, setPublishingId] = useState("")
+  const [pausingId, setPausingId] = useState("")
   const [deletingId, setDeletingId] = useState("")
   const [campaignToDelete, setCampaignToDelete] =
     useState<SupabaseCustomerNotificationCampaign | null>(null)
@@ -359,6 +376,7 @@ export function AdminNotificaciones() {
       : 0
   const PreviewIcon = getCampaignIcon(form.type)
   const editing = Boolean(form.id)
+  const todayInputDate = getTodayInputDate()
 
   const stats = useMemo(() => {
     const published = campaigns.filter((campaign) => campaign.status === "published").length
@@ -375,6 +393,18 @@ export function AdminNotificaciones() {
     setError("")
 
     try {
+      if (form.starts_at && form.starts_at < todayInputDate) {
+        throw new Error("La fecha Desde no puede ser anterior al día actual.")
+      }
+
+      if (form.ends_at && form.ends_at < todayInputDate) {
+        throw new Error("La fecha Hasta no puede ser anterior al día actual.")
+      }
+
+      if (form.starts_at && form.ends_at && form.ends_at < form.starts_at) {
+        throw new Error("La fecha Hasta no puede ser anterior a la fecha Desde.")
+      }
+
       const token = await getAdminToken()
       const response = await fetch("/api/admin/notifications", {
         headers: { Authorization: `Bearer ${token}` },
@@ -625,6 +655,45 @@ export function AdminNotificaciones() {
     }
   }
 
+  const pauseCampaign = async (campaign: SupabaseCustomerNotificationCampaign) => {
+    setPausingId(campaign.id)
+    setFeedback("")
+    setError("")
+
+    try {
+      const token = await getAdminToken()
+      const response = await fetch("/api/admin/notifications", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: campaign.id, action: "pause" }),
+      })
+      const data = (await response.json()) as {
+        campaign?: SupabaseCustomerNotificationCampaign
+        error?: string
+      }
+
+      if (!response.ok || !data.campaign) {
+        throw new Error(data.error ?? "No se pudo pausar la notificación.")
+      }
+
+      setCampaigns((current) =>
+        current.map((item) => (item.id === data.campaign?.id ? data.campaign : item)),
+      )
+      setFeedback("Notificación pausada.")
+    } catch (pauseError) {
+      setError(
+        pauseError instanceof Error
+          ? pauseError.message
+          : "No se pudo pausar la notificación.",
+      )
+    } finally {
+      setPausingId("")
+    }
+  }
+
   const publishCampaign = async (campaign: SupabaseCustomerNotificationCampaign) => {
     setPublishingId(campaign.id)
     setFeedback("")
@@ -638,21 +707,7 @@ export function AdminNotificaciones() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          id: campaign.id,
-          type: campaign.type,
-          title: campaign.title,
-          body: campaign.body,
-          action_url: campaign.action_url ?? "",
-          target_scope: normalizeCommercialScope(
-            campaign.target_scope,
-            campaign.action_url ?? "",
-          ),
-          target_items: campaign.target_items ?? [],
-          starts_at: campaign.starts_at ?? null,
-          ends_at: campaign.ends_at ?? null,
-          publish: true,
-        }),
+        body: JSON.stringify({ id: campaign.id, action: "publish" }),
       })
       const data = (await response.json()) as {
         campaign?: SupabaseCustomerNotificationCampaign
@@ -727,34 +782,44 @@ export function AdminNotificaciones() {
     setError("")
   }
 
+  const compactStatCardClassName =
+    "min-h-0 p-3 [&_span:last-child]:size-8 [&_p:nth-child(2)]:mt-1 [&_p:nth-child(2)]:text-lg [&_p:nth-child(3)]:mt-0.5 [&_p:nth-child(3)]:text-11px [&_p:nth-child(3)]:leading-4"
+  const compactSectionClassName =
+    "p-4 [&>div:first-child]:mb-3 [&>div:first-child_h2]:text-base [&>div:first-child_p]:text-xs [&>div:first-child_p]:leading-5"
+  const compactInputClassName = "h-8 px-3 text-xs"
+
   return (
-    <div className={adminPageClassName}>
+    <div className={cn(adminPageClassName, "w-full max-w-none space-y-4")}>
       <AdminPageHeader
         eyebrow="Comunicación"
         title="Notificaciones"
         description="Creá campañas breves para promociones, eventos, descuentos, cuotas sin interés o productos destacados. Las publicaciones llegan al panel de notificaciones de cada cliente."
+        className="[&_h1]:text-2xl [&_p:last-child]:max-w-2xl [&_p:last-child]:text-xs [&_p:last-child]:leading-5"
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <AdminStatCard
           title="Campañas"
           value={stats.total}
           helper="Total creadas en el panel"
-          icon={<Megaphone className="size-5" />}
+          icon={<Megaphone className="size-4" />}
+          className={compactStatCardClassName}
         />
         <AdminStatCard
           title="Publicadas"
           value={stats.published}
           helper="Visibles para clientes"
-          icon={<Send className="size-5" />}
+          icon={<Send className="size-4" />}
           tone="success"
+          className={compactStatCardClassName}
         />
         <AdminStatCard
           title="Borradores"
           value={stats.drafts}
           helper="Pendientes de enviar"
-          icon={<Edit3 className="size-5" />}
+          icon={<Edit3 className="size-4" />}
           tone="warning"
+          className={compactStatCardClassName}
         />
       </div>
 
@@ -764,17 +829,20 @@ export function AdminNotificaciones() {
         </AdminInfoBlock>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.96fr)_minmax(360px,0.54fr)]">
+      <div className="grid items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
         <AdminSection
           eyebrow={editing ? "Editando" : "Nueva campaña"}
           title={editing ? "Modificar notificación" : "Crear notificación"}
           description="Usá textos cortos y una acción clara. Si la publicás, se envía a todos los clientes registrados."
+          className={compactSectionClassName}
         >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <AdminFormField label="Tipo">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[150px_220px_150px_150px_minmax(260px,1fr)] xl:items-start">
+            <AdminFormField label="Tipo" className="xl:col-start-1">
               <AdminSelect
                 title="Tipo de notificación"
                 value={form.type}
+                compact
+                triggerClassName="h-8 text-xs"
                 onChange={(value) =>
                   setForm((current) => ({
                     ...current,
@@ -790,10 +858,12 @@ export function AdminNotificaciones() {
               </AdminSelect>
             </AdminFormField>
 
-            <AdminFormField label="Alcance comercial" help={selectedScope.help}>
+            <AdminFormField label="Alcance comercial" className="xl:col-start-2" help={selectedScope.help}>
               <AdminSelect
                 title="Alcance comercial"
                 value={commercialScope}
+                compact
+                triggerClassName="h-8 text-xs"
                 onChange={(value) => updateCommercialScope(value as CommercialScope)}
               >
                 {COMMERCIAL_SCOPE_OPTIONS.map((scope) => (
@@ -805,12 +875,14 @@ export function AdminNotificaciones() {
             </AdminFormField>
 
             {commercialScope === "category" && (
-              <AdminFormField label="Categorías alcanzadas" help="Podés agregar más de una categoría afectada por la promoción.">
+              <AdminFormField label="Categorías alcanzadas" className="sm:col-span-2 xl:col-span-2 xl:col-start-1 xl:row-start-3" help="Podés agregar más de una categoría afectada por la promoción.">
                 <div className="flex gap-2">
                   <AdminSelect
                     title="Categoría para agregar"
                     value={categoryToAdd}
                     disabled={categories.length === 0}
+                    compact
+                    triggerClassName="h-8 text-xs"
                     onChange={setCategoryToAdd}
                   >
                     {categories.length ? (
@@ -828,7 +900,7 @@ export function AdminNotificaciones() {
                     title="Agregar categoría"
                     aria-label="Agregar categoría"
                     disabled={categories.length === 0}
-                    className="font-medium"
+                    className="size-8 min-h-0 font-medium"
                     onClick={addCategoryTarget}
                   >
                     <Plus className="size-4" />
@@ -838,13 +910,13 @@ export function AdminNotificaciones() {
             )}
 
             {commercialScope === "product" && (
-              <div className="lg:col-span-2">
+              <div className="sm:col-span-2 xl:col-span-3 xl:col-start-1 xl:row-start-3">
                 <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
                   Productos alcanzados
                 </p>
-                <div className="custom-scrollbar max-h-72 max-w-[520px] overflow-y-auto rounded-2xl border border-beyonix-blue-light/14 bg-black/18 p-2">
+                <div className="custom-scrollbar max-h-36 max-w-[520px] overflow-y-auto rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-1.5">
                   {products.length === 0 ? (
-                    <div className="px-3 py-4 text-sm text-white/45">
+                    <div className="px-3 py-3 text-xs text-white/45">
                       No hay productos disponibles para seleccionar.
                     </div>
                   ) : (
@@ -857,19 +929,19 @@ export function AdminNotificaciones() {
                           key={product.id}
                           type="button"
                           onClick={() => toggleProductTarget(product)}
-                          className="grid w-full cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-beyonix-blue/18"
+                          className="grid w-full cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-beyonix-blue/18"
                         >
                           <span
-                            className={`grid size-5 shrink-0 place-items-center rounded-md border ${
+                            className={`grid size-4 shrink-0 place-items-center rounded border ${
                               checked
                                 ? "border-beyonix-sky bg-beyonix-blue text-white"
                                 : "border-beyonix-blue-light/24 bg-black/20 text-transparent"
                             }`}
                           >
-                            <CheckCircle2 className="size-3.5" />
+                            <CheckCircle2 className="size-3" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-white/86">
+                            <span className="block truncate text-xs font-medium text-white/86">
                               {product.nombre}
                             </span>
                             {!product.activo && (
@@ -883,21 +955,21 @@ export function AdminNotificaciones() {
                     })
                   )}
                 </div>
-                <p className="mt-2 text-xs leading-5 text-white/45">
+                <p className="mt-1.5 text-11px leading-4 text-white/45">
                   Marcá uno o varios productos afectados por la promoción.
                 </p>
               </div>
             )}
 
             {(commercialScope === "category" || commercialScope === "product") && (
-              <div className="lg:col-span-2">
+              <div className="sm:col-span-2 xl:col-span-2 xl:col-start-4 xl:row-start-3">
                 <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
                   {commercialScope === "category"
                     ? "Categorías agregadas"
                     : "Productos agregados"}
                 </p>
                 {form.target_items.length ? (
-                  <div className="flex flex-wrap gap-2 rounded-2xl border border-beyonix-blue-light/14 bg-black/18 p-3">
+                  <div className="flex flex-wrap gap-2 rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-2.5">
                     {form.target_items.map((item) => (
                       <span
                         key={item.url}
@@ -916,53 +988,61 @@ export function AdminNotificaciones() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-beyonix-blue-light/14 bg-black/18 px-4 py-3 text-sm text-white/45">
+                  <div className="rounded-xl border border-beyonix-blue-light/14 bg-black/18 px-3 py-2 text-xs text-white/45">
                     Todavía no agregaste ningún alcance.
                   </div>
               )}
             </div>
           )}
 
-          <AdminFormField label="Desde" help="Opcional. Si queda vacío, se activa al publicar.">
+          <AdminFormField label="Desde" className="xl:col-start-3 [&_input]:h-8 [&_input]:px-3 [&_input]:text-xs [&_button]:size-7" help="Opcional.">
               <AdminDatePicker
                 title="Desde"
                 ariaLabel="Desde"
                 placeholder="Desde"
                 value={form.starts_at}
+                minDate={todayInputDate}
                 onChange={(value) =>
-                  setForm((current) => ({ ...current, starts_at: value }))
+                  setForm((current) => ({
+                    ...current,
+                    starts_at: value,
+                    ends_at: current.ends_at && value && current.ends_at < value ? "" : current.ends_at,
+                  }))
                 }
               />
             </AdminFormField>
 
-            <AdminFormField label="Hasta" help="Opcional. Al cumplirse, desaparece del menú del cliente.">
+            <AdminFormField label="Hasta" className="xl:col-start-4 [&_input]:h-8 [&_input]:px-3 [&_input]:text-xs [&_button]:size-7" help="Opcional.">
               <AdminDatePicker
                 title="Hasta"
                 ariaLabel="Hasta"
                 placeholder="Hasta"
                 value={form.ends_at}
+                minDate={form.starts_at || todayInputDate}
                 onChange={(value) =>
                   setForm((current) => ({ ...current, ends_at: value }))
                 }
               />
             </AdminFormField>
 
-            <AdminFormField label="Título" className="lg:col-span-2" help={`${form.title.length}/80 caracteres`}>
+            <AdminFormField label="Título" className="sm:col-span-2 xl:col-span-1 xl:col-start-5" help={`${form.title.length}/80 caracteres`}>
               <AdminTextInput
                 title="Título"
                 placeholder="Cyber BEYONIX: descuentos activos"
                 value={form.title}
+                className={compactInputClassName}
                 onChange={(value) =>
                   setForm((current) => ({ ...current, title: value.slice(0, 80) }))
                 }
               />
             </AdminFormField>
 
-            <AdminFormField label="Mensaje" className="lg:col-span-2" help={`${form.body.length}/220 caracteres`}>
+            <AdminFormField label="Mensaje" className="sm:col-span-2 xl:col-span-5" help={`${form.body.length}/220 caracteres`}>
               <AdminTextarea
                 title="Mensaje"
                 placeholder="Aprovechá ofertas seleccionadas por tiempo limitado."
                 value={form.body}
+                className="min-h-12 py-2 text-xs leading-5"
                 onChange={(value) =>
                   setForm((current) => ({ ...current, body: value.slice(0, 220) }))
                 }
@@ -970,10 +1050,11 @@ export function AdminNotificaciones() {
             </AdminFormField>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <AdminPrimaryButton
               icon={<Send className="size-4" />}
               disabled={saving}
+              size="sm"
               className="font-medium"
               onClick={() => void saveCampaign(true)}
             >
@@ -982,13 +1063,14 @@ export function AdminNotificaciones() {
             <AdminButton
               icon={<Edit3 className="size-4" />}
               disabled={saving}
+              size="sm"
               className="font-medium"
               onClick={() => void saveCampaign(false)}
             >
               Guardar borrador
             </AdminButton>
             {editing && (
-              <AdminButton disabled={saving} className="font-medium" onClick={resetForm}>
+              <AdminButton disabled={saving} size="sm" className="font-medium" onClick={resetForm}>
                 Cancelar edición
               </AdminButton>
             )}
@@ -999,11 +1081,12 @@ export function AdminNotificaciones() {
           eyebrow="Vista previa"
           title="Así lo verá el cliente"
           description={selectedType.description}
+          className={compactSectionClassName}
         >
-          <div className="rounded-2xl border border-beyonix-blue-light/20 bg-[rgba(4,10,18,0.72)] p-4">
-            <div className="flex items-start gap-3">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue/25 text-beyonix-sky">
-                <PreviewIcon className="size-5" />
+          <div className="rounded-xl border border-beyonix-blue-light/20 bg-[rgba(4,10,18,0.72)] p-3">
+            <div className="flex items-start gap-2.5">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/30 bg-beyonix-blue/25 text-beyonix-sky">
+                <PreviewIcon className="size-4" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1012,13 +1095,13 @@ export function AdminNotificaciones() {
                     BEYONIX
                   </span>
                 </div>
-                <p className="mt-3 text-base font-black text-white">
+                <p className="mt-2 text-sm font-black text-white">
                   {form.title || "Título de la notificación"}
                 </p>
-                <p className="mt-1.5 text-sm leading-6 text-white/62">
+                <p className="mt-1 text-xs leading-5 text-white/62">
                   {form.body || "Mensaje breve para que el cliente entienda la novedad sin saturar el panel."}
                 </p>
-                <p className="mt-3 text-xs font-black text-beyonix-sky">
+                <p className="mt-2 text-11px font-black text-beyonix-sky">
                   {previewTargetSummary}
                 </p>
                 {previewScopeCount > 1 && (
@@ -1036,6 +1119,10 @@ export function AdminNotificaciones() {
         eyebrow="Historial"
         title="Campañas creadas"
         description="Editá, publicá o eliminá notificaciones comerciales desde un solo lugar."
+        className={cn(
+          compactSectionClassName,
+          "p-3 [&>div:first-child]:mb-2 [&>div:first-child_h2]:text-sm [&>div:first-child_p]:mt-0.5 [&>div:first-child_p]:leading-4",
+        )}
       >
         {loading ? (
           <AdminSkeleton rows={4} />
@@ -1048,76 +1135,95 @@ export function AdminNotificaciones() {
         ) : (
           <AdminTable
             headers={["Campaña", "Estado", "Actualización", "Acciones"]}
-            columnsClassName="grid-cols-[minmax(0,1.4fr)_140px_150px_210px]"
+            columnsClassName="grid-cols-[minmax(0,1fr)_132px_150px_112px]"
+            className="[&_.admin-ds-table-header]:px-3 [&_.admin-ds-table-header]:py-2 [&_.admin-ds-table-header>*:nth-child(n+2)]:text-center"
           >
-            <div className="divide-y divide-beyonix-blue-light/12">
-              {campaigns.map((campaign) => {
-                const Icon = getCampaignIcon(campaign.type)
-                const isPublished = campaign.status === "published"
+            {campaigns.map((campaign) => {
+              const Icon = getCampaignIcon(campaign.type)
+              const isPublished = campaign.status === "published"
 
-                return (
-                  <div
-                    key={campaign.id}
-                    className="grid gap-3 px-4 py-4 xl:grid-cols-[minmax(0,1.4fr)_140px_150px_210px] xl:items-center"
-                  >
-                    <div className="flex min-w-0 items-start gap-3">
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/22 bg-beyonix-blue/18 text-beyonix-sky">
-                        <Icon className="size-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-white">{campaign.title}</p>
-                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/52">
-                          {campaign.body}
-                        </p>
-                        <p className="mt-1 text-11px font-bold text-beyonix-sky/80">
-                          {TYPE_LABELS[campaign.type]}
-                        </p>
-                      </div>
-                    </div>
-
-                    <AdminBadge tone={isPublished ? "success" : "warning"}>
-                      {isPublished ? "Publicada" : "Borrador"}
-                    </AdminBadge>
-
-                    <span className="text-xs font-bold text-white/50">
-                      {formatDate(campaign.published_at ?? campaign.updated_at)}
+              return (
+                <div
+                  key={campaign.id}
+                  className="grid gap-2 border-t border-beyonix-blue-light/12 px-3 py-2 first:border-t-0 xl:grid-cols-[minmax(0,1fr)_132px_150px_112px] xl:items-center"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/22 bg-beyonix-blue/18 text-beyonix-sky">
+                      <Icon className="size-3" />
                     </span>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {!isPublished && (
-                        <AdminButton
-                          size="sm"
-                          icon={<Send className="size-3.5" />}
-                          disabled={publishingId === campaign.id}
-                          className="font-medium"
-                          onClick={() => void publishCampaign(campaign)}
-                        >
-                          Publicar
-                        </AdminButton>
-                      )}
-                      <AdminButton
-                        size="sm"
-                        icon={<Edit3 className="size-3.5" />}
-                        className="font-medium"
-                        onClick={() => editCampaign(campaign)}
-                      >
-                        Editar
-                      </AdminButton>
-                      <AdminButton
-                        size="sm"
-                        variant="destructive"
-                        icon={<Trash2 className="size-3.5" />}
-                        disabled={deletingId === campaign.id}
-                        className={cn("font-medium", deletingId === campaign.id && "opacity-60")}
-                        onClick={() => setCampaignToDelete(campaign)}
-                      >
-                        Eliminar
-                      </AdminButton>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-black text-white">{campaign.title}</p>
+                      <p className="mt-0.5 truncate text-11px leading-4 text-white/52">
+                        {campaign.body}
+                      </p>
+                      <p className="mt-0.5 text-10px font-bold text-beyonix-sky/80">
+                        {TYPE_LABELS[campaign.type]}
+                      </p>
                     </div>
                   </div>
-                )
-              })}
-            </div>
+
+                  <div className="flex xl:justify-center">
+                    <AdminBadge tone={isPublished ? "success" : "warning"} className="w-fit text-10px">
+                      {isPublished ? "Publicada" : "Borrador"}
+                    </AdminBadge>
+                  </div>
+
+                  <span className="text-11px font-bold text-white/50 xl:text-center">
+                    {formatDate(campaign.published_at ?? campaign.updated_at)}
+                  </span>
+
+                  <div className="flex flex-wrap items-center gap-1.5 xl:flex-nowrap xl:justify-end">
+                    <AdminButton
+                      size="icon"
+                      title="Editar"
+                      aria-label="Editar"
+                      className="size-8 min-h-0"
+                      onClick={() => editCampaign(campaign)}
+                    >
+                      <Edit3 className="size-3.5" />
+                    </AdminButton>
+                    {isPublished && (
+                      <AdminButton
+                        size="icon"
+                        title="Pausar"
+                        aria-label="Pausar"
+                        disabled={pausingId === campaign.id}
+                        className={cn("size-8 min-h-0", pausingId === campaign.id && "opacity-60")}
+                        onClick={() => void pauseCampaign(campaign)}
+                      >
+                        <Pause className="size-3.5" />
+                      </AdminButton>
+                    )}
+                    {!isPublished && (
+                      <AdminButton
+                        size="icon"
+                        title={campaign.published_at ? "Reanudar" : "Publicar"}
+                        aria-label={campaign.published_at ? "Reanudar" : "Publicar"}
+                        disabled={publishingId === campaign.id}
+                        className={cn("size-8 min-h-0", publishingId === campaign.id && "opacity-60")}
+                        onClick={() => void publishCampaign(campaign)}
+                      >
+                        <Play className="size-3.5" />
+                      </AdminButton>
+                    )}
+                    <AdminButton
+                      variant="destructive"
+                      size="icon"
+                      title="Eliminar"
+                      aria-label="Eliminar"
+                      disabled={deletingId === campaign.id}
+                      className={cn(
+                        "size-8 min-h-0",
+                        deletingId === campaign.id && "opacity-60",
+                      )}
+                      onClick={() => setCampaignToDelete(campaign)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </AdminButton>
+                  </div>
+                </div>
+              )
+            })}
           </AdminTable>
         )}
       </AdminSection>

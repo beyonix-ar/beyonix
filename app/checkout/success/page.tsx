@@ -209,6 +209,7 @@ function CheckoutSuccessContent() {
               : "Estamos preparando tu pedido"
           }
           orderId={orderId}
+          className="border-[#2A323B] bg-[#11161C] [&>div:first-child]:border-[#2F3842] [&>div:first-child]:bg-[#151B22] [&>div:nth-child(2)]:bg-[#0D1116] [&>div:last-child]:border-[#2F3842] [&>div:last-child]:bg-[#151B22]"
           footer={
             <div className="grid gap-2.5 sm:grid-cols-2">
               <BeyonixButton
@@ -216,7 +217,7 @@ function CheckoutSuccessContent() {
                 size="sm"
                 aria-label="Ir a productos"
                 title="Ir a productos"
-                className="h-10 w-full"
+                className="h-10 w-full !border-[#5CA9E6]/45 !bg-[#1E4D7B] !text-white hover:!border-beyonix-blue-light/80 hover:!bg-[#2F6FA3] hover:!text-white"
               >
                 <Link
                   href="/productos"
@@ -236,7 +237,7 @@ function CheckoutSuccessContent() {
                 size="sm"
                 aria-label="Ir al inicio"
                 title="Ir al inicio"
-                className="h-10 w-full"
+                className="h-10 w-full !border-[#4C5662] !bg-[#252B33] !text-white hover:!border-beyonix-blue-light/70 hover:!bg-[#183B5E] hover:!text-white"
               >
                 <Link
                   href="/"
@@ -255,10 +256,13 @@ function CheckoutSuccessContent() {
           {isTransfer ? (
             <>
               <div className="grid items-start gap-4 lg:grid-cols-2">
-                <CheckoutStatusPanel title="Finalizá tu pago">
-                  <div className="mt-3 rounded-lg border border-beyonix-blue-light/14 bg-[#0B1118] p-3.5 shadow-inner shadow-black/20">
-                    <div className="flex items-center gap-2.5 border-b border-beyonix-blue-light/12 pb-2.5">
-                      <span className="flex size-8 items-center justify-center rounded-lg border border-beyonix-blue-light/24 bg-[#112A43] text-white">
+                <CheckoutStatusPanel
+                  title="Finalizá tu pago"
+                  className="border-[#2F3944] bg-[#171D24]"
+                >
+                  <div className="mt-3 rounded-lg border border-[#394652] bg-[#121820] p-3.5 shadow-inner shadow-black/20">
+                    <div className="flex items-center gap-2.5 border-b border-[#394652] pb-2.5">
+                      <span className="flex size-8 items-center justify-center rounded-lg border border-[#506171] bg-[#202B35] text-[#D7ECFF]">
                         <CreditCard className="size-4" />
                       </span>
                       <p className="text-sm font-bold text-white">
@@ -282,7 +286,7 @@ function CheckoutSuccessContent() {
                           aria-label="Copiar alias de transferencia"
                           title="Copiar alias"
                           onClick={() => void handleCopyAlias()}
-                          className="h-9 shrink-0 px-3 text-xs"
+                          className="h-9 shrink-0 !border-[#5CA9E6]/45 !bg-[#1E4D7B] px-3 text-xs !text-white hover:!border-beyonix-blue-light/80 hover:!bg-[#2F6FA3] hover:!text-white"
                         >
                           {aliasCopied ? (
                             <Check className="size-3.5" />
@@ -325,7 +329,11 @@ function CheckoutSuccessContent() {
                 </CheckoutStatusPanel>
 
                 {showProofPanel && (
-                  <CheckoutStatusPanel id="comprobante-pago" title="Comprobante">
+                  <CheckoutStatusPanel
+                    id="comprobante-pago"
+                    title="Comprobante"
+                    className="border-[#33404A] bg-[#141A20] [&_h2]:border-[#5C748A]"
+                  >
                     <div className="mt-3">
                       {orderLoading ? (
                         <div className="h-40 animate-pulse rounded-lg border border-beyonix-blue-light/14 bg-[#0B1118]" />
@@ -375,7 +383,7 @@ function CheckoutSuccessContent() {
                 )}
               </div>
 
-              {!paymentConfirmed && (
+              {isProofPending && (
                 <CheckoutStatusNotice
                   tone="pending"
                   className="mt-4 flex items-start gap-2.5"

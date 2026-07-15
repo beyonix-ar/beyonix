@@ -287,6 +287,24 @@ export function useProductoForm({
       cuotas_maximas:
         cuotasMaximas,
 
+      promo_event_id:
+        null,
+
+      promo_original_precio:
+        null,
+
+      promo_original_precio_anterior:
+        null,
+
+      promo_original_descuento:
+        null,
+
+      promo_original_cuotas_sin_interes:
+        null,
+
+      promo_original_cuotas_maximas:
+        null,
+
       stock:
         Number(form.stock) || 0,
 

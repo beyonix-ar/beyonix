@@ -1,11 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
   BellRing,
+  CalendarDays,
   FileText,
+  GripVertical,
   History,
   ImageIcon,
   LogOut,
@@ -35,6 +37,7 @@ import { AdminAccionesMasivas } from "./sections/acciones-masivas/admin-acciones
 import { AdminBanners } from "./sections/banners/admin-banners"
 import { AdminClientes } from "./sections/clientes/admin-clientes"
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
+import { AdminEventos } from "./sections/eventos/admin-eventos"
 import { AdminFacturacion } from "./sections/facturacion/admin-facturacion"
 import { AdminNotificaciones } from "./sections/notificaciones/admin-notificaciones"
 import { AdminPedidos } from "./sections/pedidos/admin-pedidos"
@@ -46,6 +49,7 @@ export type AdminSection =
   | "banners"
   | "notificaciones"
   | "acciones-masivas"
+  | "eventos"
   | "productos"
   | "clientes"
   | "facturacion"
@@ -58,6 +62,7 @@ const ADMIN_SECTIONS: AdminSection[] = [
   "banners",
   "notificaciones",
   "acciones-masivas",
+  "eventos",
   "productos",
   "clientes",
   "facturacion",
@@ -67,6 +72,7 @@ const ADMIN_SECTIONS: AdminSection[] = [
 ]
 
 const ADMIN_SECTION_STORAGE_KEY = "beyonix-admin-section"
+const ADMIN_NAV_ORDER_STORAGE_KEY = "beyonix-admin-nav-order"
 
 interface NavigationItem {
   key: AdminSection
@@ -80,55 +86,92 @@ interface NavigationItem {
 function SidebarItem({
   item,
   active,
+  dragging,
+  dragOver,
+  reorderable,
   onClick,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   item: NavigationItem
   active: boolean
+  dragging?: boolean
+  dragOver?: boolean
+  reorderable?: boolean
   onClick: () => void
+  onDragStart?: (event: DragEvent<HTMLButtonElement>) => void
+  onDragOver?: (event: DragEvent<HTMLDivElement>) => void
+  onDrop?: (event: DragEvent<HTMLDivElement>) => void
+  onDragEnd?: () => void
 }) {
   const sensitiveNotificationTone =
     item.notificationTone === "claim" ||
     item.notificationTone === "cancellation"
 
   return (
-    <button
-      type="button"
-      aria-label={item.label}
-      onClick={onClick}
-      className={`admin-ds-nav-item group flex min-h-48px w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-all ${
-        active ? "admin-ds-nav-item-active" : "admin-ds-nav-item-muted"
+    <div
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={`group/nav relative grid grid-cols-[16px_minmax(0,1fr)] items-stretch rounded-2xl transition ${
+        dragging ? "opacity-45" : ""
+      } ${
+        dragOver ? "ring-1 ring-beyonix-sky/55 ring-offset-2 ring-offset-black/40" : ""
       }`}
     >
-      <span
-        className={`admin-ds-nav-icon flex size-10 shrink-0 items-center justify-center ${
-          active ? "admin-ds-nav-icon-active" : "admin-ds-nav-icon-muted"
+      {reorderable && (
+        <button
+          type="button"
+          draggable
+          aria-label={`Mover ${item.label}`}
+          title="Arrastrar para ordenar"
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          className="grid w-4 shrink-0 cursor-grab place-items-center rounded-xl text-white/24 transition hover:bg-white/5 hover:text-beyonix-sky active:cursor-grabbing"
+        >
+          <GripVertical className="size-3.5" strokeWidth={2.2} />
+        </button>
+      )}
+      <button
+        type="button"
+        aria-label={item.label}
+        onClick={onClick}
+        className={`admin-ds-nav-item flex min-h-48px min-w-0 cursor-pointer items-center gap-3 px-4 py-3 text-left transition-all ${
+          active ? "admin-ds-nav-item-active" : "admin-ds-nav-item-muted"
         }`}
       >
-        {item.icon}
-      </span>
-
-      <span className="flex min-w-0 flex-1 items-start justify-between gap-2">
-        <span className="min-w-0">
-          <span className="block text-sm font-bold">{item.label}</span>
-          <span
-            className="mt-0.5 block truncate text-11px text-white/58"
-          >
-            {item.description}
-          </span>
+        <span
+          className={`admin-ds-nav-icon flex size-10 shrink-0 items-center justify-center ${
+            active ? "admin-ds-nav-icon-active" : "admin-ds-nav-icon-muted"
+          }`}
+        >
+          {item.icon}
         </span>
-        {item.notificationCount ? (
-          <span
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black transition-colors group-hover:text-white ${
-              sensitiveNotificationTone
-                ? `${ADMIN_SENSITIVE_DANGER.badge} admin-ds-nav-badge-danger`
-                : "admin-ds-nav-badge"
-            }`}
-          >
-            {item.notificationCount}
+
+        <span className="flex min-w-0 flex-1 items-start justify-between gap-2">
+          <span className="min-w-0">
+            <span className="block text-sm font-bold">{item.label}</span>
+            <span
+              className="mt-0.5 block truncate text-11px text-white/58"
+            >
+              {item.description}
+            </span>
           </span>
-        ) : null}
-      </span>
-    </button>
+          {item.notificationCount ? (
+            <span
+              className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black transition-colors group-hover/nav:text-white ${
+                sensitiveNotificationTone
+                  ? `${ADMIN_SENSITIVE_DANGER.badge} admin-ds-nav-badge-danger`
+                  : "admin-ds-nav-badge"
+              }`}
+            >
+              {item.notificationCount}
+            </span>
+          ) : null}
+        </span>
+      </button>
+    </div>
   )
 }
 
@@ -144,6 +187,24 @@ function getStoredAdminSection() {
   if (typeof window === "undefined") return null
 
   return getAdminSection(window.localStorage.getItem(ADMIN_SECTION_STORAGE_KEY))
+}
+
+function getStoredNavigationOrder(allowedSections: AdminSection[]) {
+  if (typeof window === "undefined") return []
+
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(ADMIN_NAV_ORDER_STORAGE_KEY) ?? "[]",
+    ) as unknown
+
+    if (!Array.isArray(parsed)) return []
+
+    return parsed.filter((item): item is AdminSection =>
+      allowedSections.includes(item as AdminSection),
+    )
+  } catch {
+    return []
+  }
 }
 
 export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}) {
@@ -169,6 +230,9 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   )
   const [mobileOpen, setMobileOpen] = useState(false)
   const [invoicePendingCount, setInvoicePendingCount] = useState(0)
+  const [navigationOrder, setNavigationOrder] = useState<AdminSection[]>([])
+  const [draggedSection, setDraggedSection] = useState<AdminSection | null>(null)
+  const [dragOverSection, setDragOverSection] = useState<AdminSection | null>(null)
 
   const loadInvoicePendingCount = useCallback(async () => {
     if (!isInternal || isOperator) {
@@ -271,9 +335,15 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       },
       {
         key: "acciones-masivas",
-        label: "Acciones masivas",
+        label: "Editor masivo",
         description: "Ofertas, precios y cuotas",
         icon: <Percent className="size-4" />,
+      },
+      {
+        key: "eventos",
+        label: "Eventos",
+        description: "Campañas programadas",
+        icon: <CalendarDays className="size-4" />,
       },
       {
         key: "facturacion",
@@ -307,6 +377,44 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         : []),
     ]
   }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationTone])
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setNavigationOrder([])
+      return
+    }
+
+    setNavigationOrder(getStoredNavigationOrder(navigation.map((item) => item.key)))
+  }, [isSuperAdmin, navigation])
+
+  const orderedNavigation = useMemo(() => {
+    if (!isSuperAdmin || navigationOrder.length === 0) return navigation
+
+    const byKey = new Map(navigation.map((item) => [item.key, item]))
+    const ordered = navigationOrder
+      .map((key) => byKey.get(key))
+      .filter((item): item is NavigationItem => Boolean(item))
+    const missing = navigation.filter((item) => !navigationOrder.includes(item.key))
+
+    return [...ordered, ...missing]
+  }, [isSuperAdmin, navigation, navigationOrder])
+
+  const moveNavigationItem = (source: AdminSection, target: AdminSection) => {
+    if (source === target) return
+
+    const currentOrder = orderedNavigation.map((item) => item.key)
+    const sourceIndex = currentOrder.indexOf(source)
+    const targetIndex = currentOrder.indexOf(target)
+
+    if (sourceIndex < 0 || targetIndex < 0) return
+
+    const nextOrder = [...currentOrder]
+    const [moved] = nextOrder.splice(sourceIndex, 1)
+    nextOrder.splice(targetIndex, 0, moved)
+
+    setNavigationOrder(nextOrder)
+    window.localStorage.setItem(ADMIN_NAV_ORDER_STORAGE_KEY, JSON.stringify(nextOrder))
+  }
 
   useEffect(() => {
     if (initialOrderId) {
@@ -413,6 +521,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     banners: !isOperator ? <AdminBanners /> : null,
     notificaciones: !isOperator ? <AdminNotificaciones /> : null,
     "acciones-masivas": !isOperator ? <AdminAccionesMasivas /> : null,
+    eventos: !isOperator ? <AdminEventos /> : null,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
     facturacion: !isOperator ? <AdminFacturacion /> : null,
@@ -464,13 +573,43 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         </div>
       </div>
 
-      <nav className="custom-scrollbar flex-1 space-y-2 overflow-y-auto p-4">
-        {navigation.map((item) => (
+      <nav className="custom-scrollbar flex-1 space-y-2 overflow-x-hidden overflow-y-auto p-4">
+        {orderedNavigation.map((item) => (
           <SidebarItem
             key={item.key}
             item={item}
             active={section === item.key}
+            reorderable={isSuperAdmin}
+            dragging={draggedSection === item.key}
+            dragOver={dragOverSection === item.key && draggedSection !== item.key}
             onClick={() => goToSection(item.key)}
+            onDragStart={(event) => {
+              setDraggedSection(item.key)
+              event.dataTransfer.effectAllowed = "move"
+              event.dataTransfer.setData("text/plain", item.key)
+            }}
+            onDragOver={(event) => {
+              if (!isSuperAdmin || !draggedSection || draggedSection === item.key) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = "move"
+              setDragOverSection(item.key)
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const source =
+                getAdminSection(event.dataTransfer.getData("text/plain")) ?? draggedSection
+
+              if (isSuperAdmin && source) {
+                moveNavigationItem(source, item.key)
+              }
+
+              setDraggedSection(null)
+              setDragOverSection(null)
+            }}
+            onDragEnd={() => {
+              setDraggedSection(null)
+              setDragOverSection(null)
+            }}
           />
         ))}
       </nav>

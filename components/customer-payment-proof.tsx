@@ -25,8 +25,8 @@ const PAYMENT_STATUS_CONTENT = {
   en_revision: {
     title: "Comprobante recibido",
     description: "Recibimos tu comprobante y estamos revisando el pago.",
-    icon: Clock3,
-    className: "border-amber-300/18 bg-amber-300/[0.06] text-amber-300",
+    icon: CheckCircle2,
+    className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
   },
   confirmado: {
     title: "Pago confirmado",
@@ -152,7 +152,7 @@ export function CustomerPaymentProof({
       </div>
 
       {showProof && (
-        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-[#303846] bg-[#1B2028] p-3 sm:flex-row sm:items-center">
+        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-[#3A444F] bg-[#20262D] p-3 sm:flex-row sm:items-center">
           {isImage && signedUrl ? (
             <img
               src={signedUrl}
@@ -160,7 +160,7 @@ export function CustomerPaymentProof({
               className="h-20 w-24 shrink-0 rounded-lg border border-white/10 bg-black object-cover"
             />
           ) : (
-            <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-lg border border-[#112A43] bg-[#112A43]/30 text-white">
+            <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-lg border border-[#3A444F] bg-[#161C22] text-white">
               <FileText className="size-7" />
             </div>
           )}
@@ -182,7 +182,7 @@ export function CustomerPaymentProof({
               href={signedUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E]"
+              className="inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#5CA9E6]/45 bg-[#1E4D7B] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/80 hover:bg-[#2F6FA3]"
             >
               <ExternalLink className="size-4" />
               Ver comprobante
@@ -192,7 +192,7 @@ export function CustomerPaymentProof({
       )}
 
       {canReplace && hasProof && (
-        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#303846] bg-[#1B2028] px-3 py-2">
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#303840] bg-[#181E25] px-3 py-2">
           <p className="text-xs text-[#C8C8C8]">
             ¿Subiste el archivo equivocado?
           </p>
@@ -201,7 +201,7 @@ export function CustomerPaymentProof({
             initialUploaded
             label="Cambiar comprobante"
             onUploaded={onUploaded}
-            className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E]"
+            className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-[#4C5662] bg-[#252B33] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.10)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E]"
           />
         </div>
       )}

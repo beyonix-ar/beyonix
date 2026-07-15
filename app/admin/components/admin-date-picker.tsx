@@ -9,6 +9,7 @@ interface AdminDatePickerProps {
   title: string
   ariaLabel: string
   value: string
+  minDate?: string
   placeholder?: string
   onChange: (value: string) => void
 }
@@ -100,6 +101,7 @@ export function AdminDatePicker({
   title,
   ariaLabel,
   value,
+  minDate,
   placeholder = "dd/mm/aaaa",
   onChange,
 }: AdminDatePickerProps) {
@@ -167,12 +169,21 @@ export function AdminDatePicker({
     }
 
     if (parsed) {
+      if (minDate && parsed < minDate) {
+        setTextValue(toDisplayDate(value))
+        return
+      }
+
       onChange(parsed)
     }
   }
 
   const handleSelectDate = (date: Date) => {
-    onChange(toInputDate(date))
+    const nextValue = toInputDate(date)
+
+    if (minDate && nextValue < minDate) return
+
+    onChange(nextValue)
     setOpen(false)
   }
 
@@ -274,21 +285,26 @@ export function AdminDatePicker({
                   ? isSameDay(date, selectedDate)
                   : false
                 const currentToday = isSameDay(date, today)
+                const dateValue = toInputDate(date)
+                const disabled = Boolean(minDate && dateValue < minDate)
 
                 return (
                   <button
                     key={date.toISOString()}
                     type="button"
-                    aria-label={toDisplayDate(toInputDate(date))}
+                    aria-label={toDisplayDate(dateValue)}
+                    disabled={disabled}
                     onClick={() => handleSelectDate(date)}
-                    className={`admin-ds-datepicker-day grid h-9 cursor-pointer place-items-center rounded-xl border text-sm font-bold transition ${
+                    className={`admin-ds-datepicker-day grid h-9 place-items-center rounded-xl border text-sm font-bold transition ${
                       selected
                         ? "admin-ds-datepicker-day-selected"
-                        : currentToday
-                          ? "admin-ds-datepicker-day-today"
-                          : currentMonth
-                            ? "admin-ds-datepicker-day-current"
-                            : "admin-ds-datepicker-day-muted"
+                        : disabled
+                          ? "cursor-not-allowed opacity-25"
+                          : currentToday
+                            ? "admin-ds-datepicker-day-today cursor-pointer"
+                            : currentMonth
+                              ? "admin-ds-datepicker-day-current cursor-pointer"
+                              : "admin-ds-datepicker-day-muted cursor-pointer"
                     }`}
                   >
                     {date.getDate()}

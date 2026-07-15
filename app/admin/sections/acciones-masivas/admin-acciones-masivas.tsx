@@ -3,14 +3,10 @@
 import { useEffect, useState } from "react"
 import {
   BadgePercent,
+  Check,
   CheckCircle2,
-  Edit3,
   Package,
-  Play,
-  Plus,
   RotateCcw,
-  Save,
-  Trash2,
   TrendingDown,
   TrendingUp,
   X,
@@ -27,13 +23,8 @@ import {
   AdminTextInput,
   adminPageClassName,
 } from "@/app/admin/components/admin-controls"
-import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
 import { supabase } from "@/lib/supabase/client"
-import type {
-  SupabaseCategoria,
-  SupabaseProducto,
-  SupabaseProductBulkEvent,
-} from "@/lib/supabase/types"
+import type { SupabaseCategoria, SupabaseProducto } from "@/lib/supabase/types"
 
 type BulkScope = "store" | "category" | "product"
 type BulkActionKind =
@@ -51,20 +42,6 @@ type TargetItem = {
 
 type CategoryOption = Pick<SupabaseCategoria, "id" | "nombre" | "slug">
 type ProductOption = Pick<SupabaseProducto, "id" | "nombre" | "slug" | "activo">
-
-type BulkEventForm = {
-  id: string
-  internalName: string
-  startsOn: string
-  durationDays: string
-}
-
-const EMPTY_EVENT_FORM: BulkEventForm = {
-  id: "",
-  internalName: "",
-  startsOn: "",
-  durationDays: "7",
-}
 
 const ACTION_OPTIONS: Array<{
   value: BulkActionKind
@@ -119,14 +96,8 @@ export function AdminAccionesMasivas() {
   const [installments, setInstallments] = useState("3")
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
-  const [events, setEvents] = useState<SupabaseProductBulkEvent[]>([])
-  const [categoryToAdd, setCategoryToAdd] = useState("")
   const [targetItems, setTargetItems] = useState<TargetItem[]>([])
-  const [eventForm, setEventForm] = useState<BulkEventForm>(EMPTY_EVENT_FORM)
   const [saving, setSaving] = useState(false)
-  const [savingEvent, setSavingEvent] = useState(false)
-  const [activatingEventId, setActivatingEventId] = useState("")
-  const [deletingEventId, setDeletingEventId] = useState("")
   const [feedback, setFeedback] = useState("")
   const [error, setError] = useState("")
 
@@ -149,7 +120,6 @@ export function AdminAccionesMasivas() {
 
       setCategories(nextCategories)
       setProducts(nextProducts)
-      setCategoryToAdd(String(nextCategories[0]?.id ?? ""))
     }
 
     void loadCatalog()
@@ -159,60 +129,21 @@ export function AdminAccionesMasivas() {
     }
   }, [])
 
-  useEffect(() => {
-    async function loadEvents() {
-      try {
-        const token = await getAdminToken()
-        const response = await fetch("/api/admin/product-bulk-events", {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = (await response.json()) as {
-          events?: SupabaseProductBulkEvent[]
-          error?: string
-        }
-
-        if (!response.ok) {
-          throw new Error(data.error ?? "No se pudieron cargar los eventos.")
-        }
-
-        setEvents(data.events ?? [])
-      } catch (loadError) {
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "No se pudieron cargar los eventos.",
-        )
-      }
-    }
-
-    void loadEvents()
-  }, [])
-
   const setNextScope = (value: string) => {
-    const nextScope = value as BulkScope
-    setScope(nextScope)
+    setScope(value as BulkScope)
     setTargetItems([])
-  }
-
-  const addCategory = () => {
-    const category = categories.find((item) => String(item.id) === categoryToAdd)
-    if (!category) return
-
-    const item: TargetItem = {
-      type: "category",
-      label: category.nombre,
-      url: `/categorias/${category.slug}`,
-    }
-
-    setTargetItems((current) =>
-      current.some((target) => target.url === item.url) ? current : [...current, item],
-    )
   }
 
   const getProductTargetItem = (product: ProductOption): TargetItem => ({
     type: "product",
     label: product.nombre,
     url: `/productos/${product.slug}`,
+  })
+
+  const getCategoryTargetItem = (category: CategoryOption): TargetItem => ({
+    type: "category",
+    label: category.nombre,
+    url: `/categorias/${category.slug}`,
   })
 
   const toggleProduct = (product: ProductOption) => {
@@ -225,8 +156,14 @@ export function AdminAccionesMasivas() {
     )
   }
 
-  const resetEventForm = () => {
-    setEventForm(EMPTY_EVENT_FORM)
+  const toggleCategory = (category: CategoryOption) => {
+    const item = getCategoryTargetItem(category)
+
+    setTargetItems((current) =>
+      current.some((target) => target.url === item.url)
+        ? current.filter((target) => target.url !== item.url)
+        : [...current, item],
+    )
   }
 
   const applyBulkAction = async () => {
@@ -262,181 +199,18 @@ export function AdminAccionesMasivas() {
       setFeedback(`Acción aplicada sobre ${data.affectedCount ?? 0} productos.`)
     } catch (applyError) {
       setError(
-        applyError instanceof Error
-          ? applyError.message
-          : "No se pudo aplicar la acción masiva.",
+        applyError instanceof Error ? applyError.message : "No se pudo aplicar la acción masiva.",
       )
     } finally {
       setSaving(false)
     }
   }
 
-  const saveEvent = async () => {
-    setSavingEvent(true)
-    setFeedback("")
-    setError("")
-
-    try {
-      const token = await getAdminToken()
-      const response = await fetch("/api/admin/product-bulk-events", {
-        method: eventForm.id ? "PATCH" : "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: eventForm.id || undefined,
-          internal_name: eventForm.internalName,
-          starts_on: eventForm.startsOn,
-          duration_days: eventForm.durationDays ? Number(eventForm.durationDays) : null,
-          scope,
-          target_items: targetItems,
-          action_kind: actionKind,
-          value: value ? Number(value) : null,
-          installments: Number(installments),
-        }),
-      })
-      const data = (await response.json()) as {
-        event?: SupabaseProductBulkEvent
-        error?: string
-      }
-
-      if (!response.ok || !data.event) {
-        throw new Error(data.error ?? "No se pudo guardar el evento.")
-      }
-
-      setEvents((current) => {
-        const withoutEvent = current.filter((event) => event.id !== data.event?.id)
-        return [data.event!, ...withoutEvent].sort(
-          (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-        )
-      })
-      setFeedback(eventForm.id ? "Evento actualizado." : "Evento guardado.")
-      setEventForm({
-        id: data.event.id,
-        internalName: data.event.internal_name,
-        startsOn: data.event.starts_on ?? "",
-        durationDays: String(data.event.duration_days ?? ""),
-      })
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "No se pudo guardar el evento.")
-    } finally {
-      setSavingEvent(false)
-    }
-  }
-
-  const editEvent = (event: SupabaseProductBulkEvent) => {
-    setEventForm({
-      id: event.id,
-      internalName: event.internal_name,
-      startsOn: event.starts_on ?? "",
-      durationDays: String(event.duration_days ?? ""),
-    })
-    setScope(event.scope)
-    setTargetItems(event.target_items ?? [])
-    setActionKind(event.action_kind)
-    setValue(String(event.value ?? ""))
-    setInstallments(String(event.installments ?? "3"))
-  }
-
-  const activateEvent = async (event: SupabaseProductBulkEvent) => {
-    setActivatingEventId(event.id)
-    setFeedback("")
-    setError("")
-
-    try {
-      const token = await getAdminToken()
-      const response = await fetch("/api/admin/product-bulk-events", {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ id: event.id, action: "activate" }),
-      })
-      const data = (await response.json()) as {
-        event?: SupabaseProductBulkEvent
-        affectedCount?: number
-        error?: string
-      }
-
-      if (!response.ok || !data.event) {
-        throw new Error(data.error ?? "No se pudo activar el evento.")
-      }
-
-      setEvents((current) =>
-        current.map((item) => (item.id === data.event?.id ? data.event : item)),
-      )
-      setFeedback(`Evento activado sobre ${data.affectedCount ?? 0} productos.`)
-    } catch (activateError) {
-      setError(
-        activateError instanceof Error
-          ? activateError.message
-          : "No se pudo activar el evento.",
-      )
-    } finally {
-      setActivatingEventId("")
-    }
-  }
-
-  const deleteEvent = async (event: SupabaseProductBulkEvent) => {
-    setDeletingEventId(event.id)
-    setFeedback("")
-    setError("")
-
-    try {
-      const token = await getAdminToken()
-      const response = await fetch(`/api/admin/product-bulk-events?id=${event.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = (await response.json()) as { error?: string }
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "No se pudo eliminar el evento.")
-      }
-
-      setEvents((current) => current.filter((item) => item.id !== event.id))
-      if (eventForm.id === event.id) resetEventForm()
-      setFeedback("Evento eliminado.")
-    } catch (deleteError) {
-      setError(
-        deleteError instanceof Error ? deleteError.message : "No se pudo eliminar el evento.",
-      )
-    } finally {
-      setDeletingEventId("")
-    }
-  }
-
-  const getActionLabel = (kind: BulkActionKind) =>
-    ACTION_OPTIONS.find((option) => option.value === kind)?.label ?? "Promoción"
-
-  const formatEventDetail = (event: SupabaseProductBulkEvent) => {
-    if (PERCENT_ACTIONS.includes(event.action_kind)) {
-      return `${getActionLabel(event.action_kind)} ${event.value ?? 0}%`
-    }
-
-    if (event.action_kind === "installments") {
-      return `${event.installments ?? 3} cuotas sin interés`
-    }
-
-    return getActionLabel(event.action_kind)
-  }
-
-  const formatEventDate = (value: string | null) => {
-    if (!value) return "Sin inicio"
-
-    const [year, month, day] = value.split("-")
-    if (!year || !month || !day) return "Sin inicio"
-
-    return `${day}/${month}/${year}`
-  }
-
   return (
     <div className={adminPageClassName}>
       <AdminPageHeader
         eyebrow="Comercial"
-        title="Acciones masivas"
+        title="Editor masivo"
         description="Aplicá descuentos, aumentos, bajas de precio o cuotas sin interés a muchos productos sin editarlos uno por uno."
       />
 
@@ -446,11 +220,7 @@ export function AdminAccionesMasivas() {
         </AdminInfoBlock>
       )}
 
-      <AdminSection
-        eyebrow="Regla"
-        title="Acción masiva"
-        className="p-3 sm:p-4"
-      >
+      <AdminSection eyebrow="Regla" title="Acción masiva" className="p-3 sm:p-4">
         <div className="grid gap-4 xl:grid-cols-[minmax(280px,420px)_minmax(320px,1fr)]">
           <div className="grid content-start gap-3">
             <AdminFormField label="Alcance">
@@ -499,17 +269,24 @@ export function AdminAccionesMasivas() {
 
             {scope !== "store" && (
               <div>
-                <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
-                  Selección
-                </p>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-11px font-black uppercase tracking-widest text-white/48">
+                    Selección
+                  </p>
+                  {targetItems.length > 0 && (
+                    <span className="rounded-full border border-beyonix-blue-light/18 bg-beyonix-blue/12 px-2 py-0.5 text-10px uppercase tracking-widest text-beyonix-sky/80">
+                      {targetItems.length} seleccionados
+                    </span>
+                  )}
+                </div>
                 {targetItems.length ? (
-                  <div className="flex min-h-10 flex-wrap gap-2 rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-2">
+                  <div className="beyonix-product-picker-scroll flex max-h-[58px] min-h-[44px] flex-wrap items-center gap-1.5 overflow-y-auto rounded-lg border border-beyonix-blue-light/14 bg-black/12 px-2 py-1.5 pr-2.5">
                     {targetItems.map((item) => (
                       <span
                         key={item.url}
-                        className="inline-flex max-w-full items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-2.5 py-1 text-xs font-medium text-white/82"
+                        className="group inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-beyonix-blue-light/20 bg-[#0d2236] px-2 text-11px font-medium text-white/86 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-beyonix-sky/38 hover:bg-[#12365a]"
                       >
-                        <span className="truncate">{item.label}</span>
+                        <span className="max-w-28 truncate sm:max-w-36">{item.label}</span>
                         <button
                           type="button"
                           aria-label={`Quitar ${item.label}`}
@@ -518,9 +295,9 @@ export function AdminAccionesMasivas() {
                               current.filter((target) => target.url !== item.url),
                             )
                           }
-                          className="flex size-5 cursor-pointer items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
+                          className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-full text-white/38 transition hover:text-red-300"
                         >
-                          <X className="size-3" />
+                          <X className="size-2.5" strokeWidth={2.4} />
                         </button>
                       </span>
                     ))}
@@ -550,7 +327,7 @@ export function AdminAccionesMasivas() {
                   )
                 }
                 disabled={saving}
-                className="font-medium"
+                className="h-9 min-h-0 px-3 py-0 text-xs font-medium"
                 onClick={() => void applyBulkAction()}
               >
                 {saving ? "Aplicando" : "Aplicar acción"}
@@ -558,7 +335,7 @@ export function AdminAccionesMasivas() {
               <AdminButton
                 size="sm"
                 icon={<Package className="size-3.5" />}
-                className="font-medium"
+                className="h-9 min-h-0 px-3 py-0 text-xs font-medium"
                 onClick={() => setTargetItems([])}
               >
                 Limpiar selección
@@ -566,231 +343,101 @@ export function AdminAccionesMasivas() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-beyonix-blue-light/14 bg-black/12 p-3">
+          <div className="flex min-h-80 flex-col rounded-2xl border border-beyonix-blue-light/14 bg-black/12 p-3">
             {scope === "product" && (
-              <>
-              <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
-                Productos
-              </p>
-              <div className="custom-scrollbar max-h-52 overflow-y-auto rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-1.5">
-                {products.length === 0 ? (
-                  <div className="px-3 py-3 text-sm text-white/45">
-                    No hay productos disponibles para seleccionar.
-                  </div>
-                ) : (
-                  products.map((product) => {
-                    const item = getProductTargetItem(product)
-                    const checked = targetItems.some((target) => target.url === item.url)
+              <div className="flex min-h-0 flex-1 flex-col">
+                <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
+                  Productos
+                </p>
+                <div className="beyonix-product-picker-scroll min-h-0 flex-1 overflow-y-scroll rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-1.5 pr-2">
+                  {products.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-white/45">
+                      No hay productos disponibles para seleccionar.
+                    </div>
+                  ) : (
+                    products.map((product) => {
+                      const item = getProductTargetItem(product)
+                      const checked = targetItems.some((target) => target.url === item.url)
 
-                    return (
-                      <button
-                        key={product.id}
-                        type="button"
-                        onClick={() => toggleProduct(product)}
-                        className="grid w-full cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-beyonix-blue/18"
-                      >
-                        <span
-                          className={`grid size-4 shrink-0 place-items-center rounded-md border ${
-                            checked
-                              ? "border-beyonix-sky bg-beyonix-blue text-white"
-                              : "border-beyonix-blue-light/24 bg-black/20 text-transparent"
-                          }`}
+                      return (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() => toggleProduct(product)}
+                          className="grid w-full cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-[#1E4D7B]/32"
                         >
-                          <CheckCircle2 className="size-3" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-medium text-white/86">
-                            {product.nombre}
+                          <span
+                            className={`grid size-4 shrink-0 place-items-center rounded border transition ${
+                              checked
+                                ? "border-beyonix-sky bg-beyonix-sky text-[#06111d] shadow-[0_0_0_2px_rgba(140,200,242,0.12)]"
+                                : "border-beyonix-blue-light/36 bg-[#07111d]"
+                            }`}
+                          >
+                            {checked && <Check className="size-3" strokeWidth={3} />}
                           </span>
-                          {!product.activo && (
-                            <span className="mt-0.5 block text-11px text-amber-200/70">
-                              Producto inactivo
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium text-white/86">
+                              {product.nombre}
                             </span>
-                          )}
-                        </span>
-                      </button>
-                    )
-                  })
-                )}
+                            {!product.activo && (
+                              <span className="mt-0.5 block text-11px text-amber-200/70">
+                                Producto inactivo
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
               </div>
-              </>
             )}
 
             {scope === "category" && (
-              <>
+              <div className="flex min-h-0 flex-1 flex-col">
                 <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
                   Categorías
                 </p>
-                <div className="flex gap-2">
-                  <AdminSelect title="Categoría" value={categoryToAdd} onChange={setCategoryToAdd}>
-                    {categories.map((category) => (
-                      <option key={category.id} value={String(category.id)}>
-                        {category.nombre}
-                      </option>
-                    ))}
-                  </AdminSelect>
-                  <AdminButton
-                    size="icon"
-                    aria-label="Agregar categoría"
-                    className="font-medium"
-                    onClick={addCategory}
-                  >
-                    <Plus className="size-4" />
-                  </AdminButton>
+                <div className="beyonix-product-picker-scroll min-h-0 flex-1 overflow-y-scroll rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-1.5 pr-2">
+                  {categories.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-white/45">
+                      No hay categorías disponibles para seleccionar.
+                    </div>
+                  ) : (
+                    categories.map((category) => {
+                      const item = getCategoryTargetItem(category)
+                      const checked = targetItems.some((target) => target.url === item.url)
+
+                      return (
+                        <button
+                          key={category.id}
+                          type="button"
+                          onClick={() => toggleCategory(category)}
+                          className="grid w-full cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-[#1E4D7B]/32"
+                        >
+                          <span
+                            className={`grid size-4 shrink-0 place-items-center rounded border transition ${
+                              checked
+                                ? "border-beyonix-sky bg-beyonix-sky text-[#06111d] shadow-[0_0_0_2px_rgba(140,200,242,0.12)]"
+                                : "border-beyonix-blue-light/36 bg-[#07111d]"
+                            }`}
+                          >
+                            {checked && <Check className="size-3" strokeWidth={3} />}
+                          </span>
+                          <span className="block truncate text-xs font-medium text-white/86">
+                            {category.nombre}
+                          </span>
+                        </button>
+                      )
+                    })
+                  )}
                 </div>
-              </>
+              </div>
             )}
 
             {scope === "store" && (
               <div className="rounded-xl border border-emerald-300/18 bg-emerald-400/10 px-4 py-4 text-sm text-emerald-100/80">
                 La acción se aplicará sobre toda la tienda.
-              </div>
-            )}
-          </div>
-        </div>
-      </AdminSection>
-
-      <AdminSection
-        eyebrow="Evento"
-        title={eventForm.id ? "Editar evento guardado" : "Guardar como evento"}
-        className="p-3 sm:p-4"
-      >
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,1.1fr)]">
-          <div className="rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-3">
-            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_150px_105px]">
-              <AdminFormField label="Nombre interno">
-                <AdminTextInput
-                  title="Nombre interno del evento"
-                  placeholder="Hot Sale mayo"
-                  value={eventForm.internalName}
-                  onChange={(nextValue) =>
-                    setEventForm((current) => ({ ...current, internalName: nextValue }))
-                  }
-                />
-              </AdminFormField>
-
-              <AdminFormField label="Inicio">
-                <AdminDatePicker
-                  title="Inicio del evento"
-                  ariaLabel="Inicio del evento"
-                  placeholder="Inicio"
-                  value={eventForm.startsOn}
-                  onChange={(nextValue) =>
-                    setEventForm((current) => ({ ...current, startsOn: nextValue }))
-                  }
-                />
-              </AdminFormField>
-
-              <AdminFormField label="Duración">
-                <AdminTextInput
-                  title="Duración del evento"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="7"
-                  value={eventForm.durationDays}
-                  onChange={(nextValue) =>
-                    setEventForm((current) => ({ ...current, durationDays: nextValue }))
-                  }
-                />
-              </AdminFormField>
-            </div>
-
-            <div className="mt-2 flex flex-wrap gap-2">
-              <span className="rounded-full border border-beyonix-sky/25 bg-beyonix-blue/22 px-3 py-1 text-xs font-medium text-beyonix-sky">
-                {selectedAction?.label ?? "Acción"}
-                {isPercentAction && value ? ` ${value}%` : ""}
-                {actionKind === "installments" ? ` ${installments} cuotas` : ""}
-              </span>
-              <span className="rounded-full border border-emerald-300/18 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                {scope === "store"
-                  ? "Toda la tienda"
-                  : `${targetItems.length} ${
-                      scope === "category" ? "categorías" : "productos"
-                    }`}
-              </span>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <AdminPrimaryButton
-                size="sm"
-                icon={<Save className="size-4" />}
-                disabled={savingEvent}
-                className="font-medium"
-                onClick={() => void saveEvent()}
-              >
-                {savingEvent ? "Guardando" : eventForm.id ? "Guardar cambios" : "Guardar evento"}
-              </AdminPrimaryButton>
-              {eventForm.id && (
-                <AdminButton size="sm" className="font-medium" onClick={resetEventForm}>
-                  Nuevo
-                </AdminButton>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
-              Eventos guardados
-            </p>
-            {events.length ? (
-              <div className="custom-scrollbar grid max-h-56 gap-2 overflow-y-auto pr-1">
-                {events.map((event) => (
-                  <div
-                    key={event.id}
-                    className="grid gap-2 rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-2.5 lg:grid-cols-[minmax(0,1fr)_auto]"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-white">
-                          {event.internal_name}
-                        </p>
-                        <span className="rounded-full border border-beyonix-blue-light/18 px-2 py-1 text-10px uppercase tracking-widest text-white/45">
-                          {event.status === "active" ? "Activo" : "Guardado"}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-xs leading-5 text-white/55">
-                        {formatEventDetail(event)} {" · "} {formatEventDate(event.starts_on)}
-                        {event.duration_days ? ` · ${event.duration_days} días` : ""}
-                        {event.scope !== "store"
-                          ? ` · ${event.target_items.length} alcanzados`
-                          : " · Toda la tienda"}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <AdminButton
-                        size="sm"
-                        icon={<Edit3 className="size-3.5" />}
-                        className="font-medium"
-                        onClick={() => editEvent(event)}
-                      >
-                        Editar
-                      </AdminButton>
-                      <AdminPrimaryButton
-                        size="sm"
-                        icon={<Play className="size-3.5" />}
-                        disabled={activatingEventId === event.id}
-                        className="font-medium"
-                        onClick={() => void activateEvent(event)}
-                      >
-                        {activatingEventId === event.id ? "Activando" : "Activar"}
-                      </AdminPrimaryButton>
-                      <AdminButton
-                        size="sm"
-                        variant="destructive"
-                        icon={<Trash2 className="size-3.5" />}
-                        disabled={deletingEventId === event.id}
-                        className="font-medium"
-                        onClick={() => void deleteEvent(event)}
-                      >
-                        Eliminar
-                      </AdminButton>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-xl border border-beyonix-blue-light/14 bg-black/18 px-3 py-3 text-sm text-white/45">
-                Todavía no hay eventos guardados.
               </div>
             )}
           </div>

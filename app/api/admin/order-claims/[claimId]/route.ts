@@ -797,27 +797,29 @@ export async function PATCH(
   if (body.action === "mark_replacement_sent") {
     const { data: currentClaim } = await auth.admin
       .from("order_claims")
-      .select("replacement_product, replacement_shipping_company, replacement_tracking")
+      .select("resolution, replacement_product, replacement_shipping_company, replacement_tracking")
       .eq("id", id)
       .maybeSingle()
 
+    const isMissingUnitResolution = currentClaim?.resolution === "envio_unidad_faltante"
+
     if (!currentClaim?.replacement_product) {
       return NextResponse.json(
-        { error: "Guardá el producto de reemplazo antes de marcarlo enviado." },
+        { error: isMissingUnitResolution ? "Guardá la unidad faltante antes de marcarla enviada." : "Guardá el producto de reemplazo antes de marcarlo enviado." },
         { status: 409 },
       )
     }
 
     if (!currentClaim.replacement_shipping_company) {
       return NextResponse.json(
-        { error: "Indicá la empresa de envío antes de marcar el reemplazo enviado." },
+        { error: isMissingUnitResolution ? "Indicá la empresa de envío antes de marcar la unidad faltante enviada." : "Indicá la empresa de envío antes de marcar el reemplazo enviado." },
         { status: 409 },
       )
     }
 
     if (!currentClaim.replacement_tracking) {
       return NextResponse.json(
-        { error: "Indicá el número de seguimiento antes de marcar el reemplazo enviado." },
+        { error: isMissingUnitResolution ? "Indicá el número de seguimiento antes de marcar la unidad faltante enviada." : "Indicá el número de seguimiento antes de marcar el reemplazo enviado." },
         { status: 409 },
       )
     }
@@ -836,7 +838,7 @@ export async function PATCH(
 
     if (updateError || !updatedClaim) {
       return NextResponse.json(
-        { error: updateError?.message || "No se pudo marcar el reemplazo como enviado." },
+        { error: updateError?.message || (isMissingUnitResolution ? "No se pudo marcar la unidad faltante como enviada." : "No se pudo marcar el reemplazo como enviado.") },
         { status: 500 },
       )
     }
@@ -848,7 +850,9 @@ export async function PATCH(
       claim_id: id,
       author_user_id: auth.user.id,
       author_role: auth.profile.rol,
-      message: `BEYONIX despachó el reemplazo.${tracking}`,
+      message: isMissingUnitResolution
+        ? `BEYONIX despachó la unidad faltante.${tracking}`
+        : `BEYONIX despachó el reemplazo.${tracking}`,
     })
 
     return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
@@ -879,7 +883,10 @@ export async function PATCH(
       claim_id: id,
       author_user_id: auth.user.id,
       author_role: auth.profile.rol,
-      message: "BEYONIX completó el cambio de producto.",
+      message:
+        resolution === "envio_unidad_faltante"
+          ? "BEYONIX completó el envío de la unidad faltante."
+          : "BEYONIX completó el cambio de producto.",
     })
 
     return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })

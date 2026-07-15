@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -2384,34 +2384,37 @@ body > div[role="listbox"][aria-label="Método de reintegro"] button[aria-select
 }
 
 .admin-order-detail-scope section.admin-order-shipping-panel.admin-order-shipping-section {
-  --order-shipping-section-bg: #101010;
-  --order-shipping-panel-bg: #1b1b1b;
-  --order-shipping-inner-card-bg: #0d0d0d;
-  --order-shipping-field-bg: #111827;
+  --order-shipping-section-bg: #11161c;
+  --order-shipping-address-panel-bg: #171d24;
+  --order-shipping-ops-panel-bg: #151515;
+  --order-shipping-actions-panel-bg: #161b21;
+  --order-shipping-address-card-bg: #20262d;
+  --order-shipping-field-bg: #202a34;
+  --order-shipping-muted-card-bg: #1d1d1d;
   background: var(--order-shipping-section-bg) !important;
   background-color: var(--order-shipping-section-bg) !important;
   background-image: none !important;
-  border-color: rgba(110, 168, 255, 0.48) !important;
+  border-color: rgba(140, 200, 242, 0.28) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 0 24px rgba(110, 168, 255, 0.06) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 18px 44px rgba(0, 0, 0, 0.22) !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-header {
   align-items: center;
-  border-color: rgba(110, 168, 255, 0.34) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
   padding-bottom: 0.875rem !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-main-icon {
   align-items: center;
-  background: #071527;
-  border: 1px solid rgba(110, 168, 255, 0.34);
+  background: #202a34;
+  border: 1px solid rgba(140, 200, 242, 0.34);
   border-radius: 9999px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 18px rgba(110, 168, 255, 0.1);
-  color: #fff;
+    0 0 18px rgba(140, 200, 242, 0.08);
+  color: #ffffff;
   display: inline-flex;
   flex: 0 0 auto;
   height: 52px;
@@ -2419,50 +2422,88 @@ body > div[role="listbox"][aria-label="Método de reintegro"] button[aria-select
   width: 52px;
 }
 
-.admin-order-detail-scope .admin-order-shipping-panel :is(.admin-order-shipping-address-panel, .admin-order-shipping-ops-panel, .admin-order-shipping-actions-panel) {
-  background: var(--order-shipping-panel-bg) !important;
-  background-color: var(--order-shipping-panel-bg) !important;
-  background-image: linear-gradient(135deg, #1d1d1d, #181818) !important;
-  border-color: rgba(110, 168, 255, 0.44) !important;
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-panel {
+  background: #2b333c !important;
+  background-color: #2b333c !important;
+  background-image: linear-gradient(135deg, #303943, #252d35) !important;
+  border-color: rgba(215, 236, 255, 0.18) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 16px rgba(110, 168, 255, 0.04) !important;
+    0 0 16px rgba(0, 0, 0, 0.12) !important;
   padding: 0.875rem !important;
 }
 
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-card,
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-card {
-  background: var(--order-shipping-inner-card-bg) !important;
-  background-color: var(--order-shipping-inner-card-bg) !important;
-  background-image: linear-gradient(135deg, #101010, #090909) !important;
-  border-color: rgba(110, 168, 255, 0.38) !important;
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-panel > p {
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-panel {
+  background: var(--order-shipping-ops-panel-bg) !important;
+  background-color: var(--order-shipping-ops-panel-bg) !important;
+  background-image: linear-gradient(135deg, #151515, #111111) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 14px rgba(110, 168, 255, 0.045) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 16px rgba(0, 0, 0, 0.12) !important;
+  padding: 0.875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel {
+  background: var(--order-shipping-actions-panel-bg) !important;
+  background-color: var(--order-shipping-actions-panel-bg) !important;
+  background-image: linear-gradient(135deg, #161b21, #12171d) !important;
+  border-color: rgba(140, 200, 242, 0.2) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 16px rgba(0, 0, 0, 0.12) !important;
+  padding: 0.875rem !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-card {
+  background: #38424d !important;
+  background-color: #38424d !important;
+  background-image: linear-gradient(135deg, #3d4854, #303943) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(0, 0, 0, 0.12) !important;
   padding: 0.875rem !important;
 }
 
+.admin-order-detail-scope .admin-order-dispatch-badge--delivered {
+  background: #bbf7d0 !important;
+  border-color: #86efac !important;
+  color: #14532d !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 0 18px rgba(134, 239, 172, 0.18) !important;
+}
+
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-card {
+  background: var(--order-shipping-muted-card-bg) !important;
+  background-color: var(--order-shipping-muted-card-bg) !important;
+  background-image: linear-gradient(135deg, #1f1f1f, #171717) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 12px rgba(0, 0, 0, 0.12) !important;
   min-height: 66px;
   padding: 0.625rem 0.75rem !important;
 }
 
 .admin-order-detail-scope section.admin-order-shipping-panel.admin-order-shipping-section .admin-order-shipping-ops-panel .admin-order-shipping-ops-grid > div.admin-order-shipping-mini-card.rounded-lg.border {
-  background: #141414 !important;
-  background-color: #141414 !important;
-  background-image: linear-gradient(135deg, #151515, #121212) !important;
-  border-color: rgba(110, 168, 255, 0.42) !important;
+  background: #1d1d1d !important;
+  background-color: #1d1d1d !important;
+  background-image: linear-gradient(135deg, #202020, #181818) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-icon {
   align-items: center;
-  background: #071527;
-  border: 1px solid rgba(110, 168, 255, 0.34);
+  background: #202a34;
+  border: 1px solid rgba(140, 200, 242, 0.26);
   border-radius: 9999px;
-  color: #6EA8FF;
+  color: #bfe4ff;
   display: inline-flex;
   flex: 0 0 auto;
   height: 28px;
@@ -2474,16 +2515,16 @@ body > div[role="listbox"][aria-label="Método de reintegro"] button[aria-select
   height: 2.5rem;
   max-width: none;
   min-width: 15.5rem;
-  border-color: rgba(110, 168, 255, 0.58) !important;
+  border-color: rgba(140, 200, 242, 0.26) !important;
   background: var(--order-shipping-field-bg) !important;
   background-color: var(--order-shipping-field-bg) !important;
-  background-image: linear-gradient(135deg, #111827, #071527) !important;
+  background-image: linear-gradient(135deg, #202a34, #18212a) !important;
   color: #fff !important;
   font-size: 0.875rem !important;
   font-weight: 800 !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 12px rgba(110, 168, 255, 0.07) !important;
+    0 0 12px rgba(0, 0, 0, 0.08) !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-control-select span,
@@ -2522,8 +2563,8 @@ body > div[role="listbox"][aria-label="Método de reintegro"] button[aria-select
 body > div[role="listbox"][aria-label="Estado operativo del pedido"],
 body > div[role="listbox"][aria-label="Modalidad logística"] {
   min-width: 15.5rem !important;
-  border-color: rgba(110, 168, 255, 0.58) !important;
-  background: #080D14 !important;
+  border-color: rgba(140, 200, 242, 0.28) !important;
+  background: #141a20 !important;
   color: #fff !important;
 }
 
@@ -2541,13 +2582,13 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
 }
 
 body > div[role="listbox"][aria-label="Estado operativo del pedido"] {
-  border-color: rgba(125, 186, 255, 0.42) !important;
+  border-color: rgba(140, 200, 242, 0.28) !important;
   background:
-    linear-gradient(180deg, rgba(7, 18, 31, 0.98), rgba(4, 10, 17, 0.98)) !important;
+    linear-gradient(180deg, rgba(23, 29, 36, 0.98), rgba(15, 19, 24, 0.98)) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
     0 20px 46px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(93, 162, 220, 0.08) !important;
+    0 0 0 1px rgba(140, 200, 242, 0.06) !important;
 }
 
 body > div[role="listbox"][aria-label="Estado operativo del pedido"] button {
@@ -2560,16 +2601,16 @@ body > div[role="listbox"][aria-label="Estado operativo del pedido"] button {
 }
 
 body > div[role="listbox"][aria-label="Estado operativo del pedido"] button:hover {
-  border-color: rgba(125, 186, 255, 0.32) !important;
+  border-color: rgba(140, 200, 242, 0.3) !important;
   background:
-    linear-gradient(135deg, rgba(17, 42, 67, 0.9), rgba(8, 24, 40, 0.96)) !important;
+    linear-gradient(135deg, rgba(32, 42, 52, 0.96), rgba(24, 31, 39, 0.96)) !important;
   color: #ffffff !important;
 }
 
 body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria-selected="true"] {
-  border-color: rgba(110, 168, 255, 0.52) !important;
+  border-color: rgba(140, 200, 242, 0.42) !important;
   background:
-    linear-gradient(135deg, rgba(17, 42, 67, 0.96), rgba(10, 35, 58, 0.96)) !important;
+    linear-gradient(135deg, rgba(32, 42, 52, 0.96), rgba(24, 31, 39, 0.96)) !important;
   color: #eaf6ff !important;
   font-weight: 500 !important;
 }
@@ -2586,13 +2627,13 @@ body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria
 }
 
 body > div[role="listbox"][aria-label="Modalidad logística"] {
-  border-color: rgba(125, 186, 255, 0.42) !important;
+  border-color: rgba(140, 200, 242, 0.28) !important;
   background:
-    linear-gradient(180deg, rgba(7, 18, 31, 0.98), rgba(4, 10, 17, 0.98)) !important;
+    linear-gradient(180deg, rgba(23, 29, 36, 0.98), rgba(15, 19, 24, 0.98)) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
     0 20px 46px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(93, 162, 220, 0.08) !important;
+    0 0 0 1px rgba(140, 200, 242, 0.06) !important;
 }
 
 body > div[role="listbox"][aria-label="Modalidad logística"] button {
@@ -2605,28 +2646,28 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button {
 }
 
 body > div[role="listbox"][aria-label="Modalidad logística"] button:hover {
-  border-color: rgba(125, 186, 255, 0.32) !important;
+  border-color: rgba(140, 200, 242, 0.3) !important;
   background:
-    linear-gradient(135deg, rgba(17, 42, 67, 0.9), rgba(8, 24, 40, 0.96)) !important;
+    linear-gradient(135deg, rgba(32, 42, 52, 0.96), rgba(24, 31, 39, 0.96)) !important;
   color: #ffffff !important;
 }
 
 body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-selected="true"] {
-  border-color: rgba(110, 168, 255, 0.52) !important;
+  border-color: rgba(140, 200, 242, 0.42) !important;
   background:
-    linear-gradient(135deg, rgba(17, 42, 67, 0.96), rgba(10, 35, 58, 0.96)) !important;
+    linear-gradient(135deg, rgba(32, 42, 52, 0.96), rgba(24, 31, 39, 0.96)) !important;
   color: #eaf6ff !important;
   font-weight: 500 !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-other-modality {
-  background: #111827 !important;
-  background-color: #111827 !important;
-  background-image: linear-gradient(135deg, #111827, #071527) !important;
-  border-color: rgba(110, 168, 255, 0.52) !important;
+  background: #202a34 !important;
+  background-color: #202a34 !important;
+  background-image: linear-gradient(135deg, #202a34, #18212a) !important;
+  border-color: rgba(140, 200, 242, 0.28) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 12px rgba(110, 168, 255, 0.07) !important;
+    0 0 12px rgba(0, 0, 0, 0.08) !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-grid {
@@ -2636,30 +2677,30 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action,
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel a {
-  background: #171717 !important;
-  background-color: #171717 !important;
-  border-color: rgba(110, 168, 255, 0.34) !important;
+  background: #252b33 !important;
+  background-color: #252b33 !important;
+  border-color: rgba(140, 200, 242, 0.22) !important;
   color: rgba(255, 255, 255, 0.82) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action:hover,
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel a:hover {
-  background: #112A43 !important;
-  border-color: rgba(110, 168, 255, 0.58) !important;
+  background: #183b5e !important;
+  border-color: rgba(140, 200, 242, 0.58) !important;
   color: #D7ECFF !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action--primary {
-  background: #112A43 !important;
-  background-color: #112A43 !important;
-  border-color: rgba(110, 168, 255, 0.58) !important;
-  color: #D7ECFF !important;
+  background: #1e4d7b !important;
+  background-color: #1e4d7b !important;
+  border-color: rgba(140, 200, 242, 0.48) !important;
+  color: #ffffff !important;
 }
 
 .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action:disabled {
-  background: #151515 !important;
-  border-color: rgba(110, 168, 255, 0.12) !important;
+  background: #171717 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
   color: rgba(255, 255, 255, 0.32) !important;
 }
 
@@ -2941,7 +2982,7 @@ body.product-modal-open .category-hero {
   background: #112A43;
   border-radius: 9999px;
 
-  /* 🔥 Fade */
+  /* Fade */
   opacity: 0.4;
   transition: all 0.25s ease;
 }
@@ -2950,7 +2991,7 @@ body.product-modal-open .category-hero {
   opacity: 1;
 }
 
-/* ✨ Glow + hover */
+/* Glow + hover */
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #1b3a5a;
 
@@ -3054,7 +3095,7 @@ body.product-modal-open .category-hero {
   z-index: 1;
 }
 
-/* 🔵 Glow Beyonix barra progreso */
+/* ðŸ”µ Glow Beyonix barra progreso */
 .beyonix-progress-bar {
   position: relative;
   border-radius: 9999px;
@@ -3891,3 +3932,45 @@ div.claim-form-shell::after {
   background-color: rgba(15, 23, 42, 0.42) !important;
   color: rgba(226, 232, 240, 0.76) !important;
 }
+
+.beyonix-admin-main .admin-order-dispatch-badge.admin-order-dispatch-badge--delivered {
+  background: #bbf7d0 !important;
+  background-color: #bbf7d0 !important;
+  border-color: #86efac !important;
+  color: #14532d !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 0 18px rgba(134, 239, 172, 0.18) !important;
+}
+
+.beyonix-product-picker-scroll {
+  scrollbar-color: rgba(140, 200, 242, 0.72) rgba(8, 21, 35, 0.92);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.beyonix-product-picker-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.beyonix-product-picker-scroll::-webkit-scrollbar-track {
+  background: linear-gradient(
+    180deg,
+    rgba(8, 21, 35, 0.82),
+    rgba(3, 8, 14, 0.96)
+  );
+  border: 1px solid rgba(30, 77, 123, 0.22);
+  border-radius: 9999px;
+}
+
+.beyonix-product-picker-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8cc8f2, #1e4d7b);
+  border: 2px solid rgba(5, 12, 20, 0.95);
+  border-radius: 9999px;
+}
+
+.beyonix-product-picker-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #b9e0ff, #2d6da9);
+}
+
+
