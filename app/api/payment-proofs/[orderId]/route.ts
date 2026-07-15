@@ -21,10 +21,6 @@ export async function GET(
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
-    return NextResponse.json({ error: "Debés iniciar sesión." }, { status: 401 })
-  }
-
   const { orderId } = await params
   const pedidoId = Number(orderId)
 
@@ -37,11 +33,14 @@ export async function GET(
     .from("ordenes")
     .select("*")
     .eq("id", pedidoId)
-    .eq("usuario_id", user.id)
     .maybeSingle()
 
   if (orderError || !order) {
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
+  }
+
+  if (order.usuario_id && order.usuario_id !== user?.id) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 
   const currentOrder = await expireTransferOrderIfNeeded(

@@ -54,6 +54,24 @@ function AccountMenuIcon({
   )
 }
 
+function AccountLoadingPlaceholder({ mobile = false }: { mobile?: boolean }) {
+  if (mobile) {
+    return (
+      <div className="grid gap-2 px-2 py-3 sm:grid-cols-2" aria-hidden="true">
+        <span className="h-10 animate-pulse rounded-lg border border-beyonix-blue-light/14 bg-white/4" />
+        <span className="h-10 animate-pulse rounded-lg border border-beyonix-blue-light/18 bg-beyonix-blue/35" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2" aria-hidden="true">
+      <span className="h-10 w-32 animate-pulse rounded-full border border-beyonix-blue-light/16 bg-white/4" />
+      <span className="h-10 w-28 animate-pulse rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/35" />
+    </div>
+  )
+}
+
 export function SiteHeader() {
   const pathname = usePathname()
   const { cart, total, openCart } = useCart()
@@ -359,17 +377,27 @@ export function SiteHeader() {
                     </div>
                   )}
                 </>
+              ) : isLoading ? (
+                <AccountLoadingPlaceholder />
               ) : (
-                <Link
-                  href="/login?redirect=/cuenta"
-                  className={cn(
-                    "flex h-10 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/72 hover:text-white",
-                    beyonixHoverBorder
-                  )}
-                >
-                  <User className="size-3.5" />
-                  Iniciar sesión
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href="/login"
+                    className={cn(
+                      "flex h-10 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/78 hover:text-white",
+                      beyonixHoverBorder
+                    )}
+                  >
+                    <User className="size-3.5" />
+                    Iniciar sesión
+                  </Link>
+                  <Link
+                    href="/login?mode=register"
+                    className="flex h-10 cursor-pointer items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-sm font-semibold text-white transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
+                  >
+                    Registrarse
+                  </Link>
+                </div>
               )}
             </div>
 
@@ -539,14 +567,25 @@ export function SiteHeader() {
                     Cerrar sesión
                   </button>
                 </>
+              ) : isLoading ? (
+                <AccountLoadingPlaceholder mobile />
               ) : (
-                <Link
-                  href="/login?redirect=/cuenta"
-                  onClick={() => setMobileOpen(false)}
-                  className="block rounded-lg px-2 py-3 text-15px font-medium text-beyonix-cyan transition-colors hover:bg-white/4 hover:text-white"
-                >
-                  Iniciar sesión / Registrarse
-                </Link>
+                <div className="grid gap-2 px-2 py-3 sm:grid-cols-2">
+                  <Link
+                    href="/login"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex h-10 items-center justify-center rounded-lg border border-beyonix-blue-light/22 bg-white/4 text-sm font-semibold text-white/84 transition hover:border-beyonix-blue-light/45 hover:text-white"
+                  >
+                    Iniciar sesión
+                  </Link>
+                  <Link
+                    href="/login?mode=register"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex h-10 items-center justify-center rounded-lg border border-beyonix-blue-light/45 bg-beyonix-blue text-sm font-semibold text-white transition hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
+                  >
+                    Registrarse
+                  </Link>
+                </div>
               )}
             </div>
           </div>

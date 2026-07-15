@@ -24,7 +24,7 @@ export function ProvinceSelect({
   value: string
   onChange: (value: string) => void
   compact?: boolean
-  appearance?: "default" | "checkout"
+  appearance?: "default" | "checkout" | "login"
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -40,6 +40,7 @@ export function ProvinceSelect({
     ? value.toLocaleUpperCase("es-AR")
     : "Seleccioná una provincia"
   const isCheckoutAppearance = appearance === "checkout"
+  const isLoginAppearance = appearance === "login"
 
   useEffect(() => {
     const selectedIndex = options.findIndex(
@@ -144,6 +145,12 @@ export function ProvinceSelect({
                   ? "border-[rgba(191,228,255,0.42)] text-[#D7ECFF] shadow-[0_0_18px_rgba(96,165,250,0.14)]"
                   : "border-[rgba(148,197,255,0.18)] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.35)] hover:text-[#D7ECFF]"
               }`
+            : isLoginAppearance
+              ? `h-10 rounded-lg bg-[#1b1f24] px-3 font-heading ${
+                  open
+                    ? "border-[rgba(191,228,255,0.42)] text-[#F8FAFC] shadow-[0_0_18px_rgba(96,165,250,0.12)]"
+                    : "border-white/10 text-[#F8FAFC] hover:border-[rgba(140,200,242,0.45)] hover:bg-[#22272e]"
+                }`
             : `${compact ? "h-10 rounded-lg px-3" : "h-11 rounded-xl px-4"} bg-[var(--account-input)] font-heading focus-visible:border-[var(--account-border-strong)] focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)] ${
                 open
                   ? "border-[var(--account-border-strong)] text-[var(--account-text-primary)]"
@@ -166,6 +173,8 @@ export function ProvinceSelect({
           className={`absolute left-0 z-50 w-full overflow-hidden border p-1 shadow-2xl shadow-black/70 ${
             isCheckoutAppearance
               ? "top-[42px] rounded-lg border-[rgba(148,197,255,0.18)] bg-[#080D14] font-heading"
+              : isLoginAppearance
+                ? "top-[42px] rounded-lg border-white/10 bg-[#1b1f24] font-heading"
               : `${compact ? "top-11" : "top-12"} rounded-xl border-[var(--account-border)] bg-[var(--account-surface)] font-heading`
           }`}
         >

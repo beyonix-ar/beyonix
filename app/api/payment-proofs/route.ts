@@ -81,10 +81,6 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    if (!user) {
-      return NextResponse.json({ error: "Debés iniciar sesión." }, { status: 401 })
-    }
-
     const formData = await request.formData()
     const orderId = Number(formData.get("orderId"))
     const file = formData.get("file")
@@ -106,7 +102,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 })
     }
 
-    const { data: order, error: orderError } = await supabase
+    const admin = createAdminClient()
+    const { data: order, error: orderError } = await admin
       .from("ordenes")
       .select(
         "id, usuario_id, estado, created_at, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status",
@@ -118,11 +115,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
     }
 
-    if (order.usuario_id !== user.id) {
+    if (order.usuario_id && order.usuario_id !== user?.id) {
       return NextResponse.json({ error: "No autorizado." }, { status: 403 })
     }
 
-    const admin = createAdminClient()
     const currentOrder = await expireTransferOrderIfNeeded(
       admin,
       order as SupabasePedido,
@@ -212,7 +208,7 @@ export async function POST(request: Request) {
     await appendOrderAuditEvent(admin, {
       orderId,
       actorType: "customer",
-      actorId: user.id,
+      actorId: user?.id ?? null,
       action: "payment_proof_submitted",
       previousStatus:
         order.financial_status ?? order.payment_status ?? "pending_payment",

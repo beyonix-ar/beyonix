@@ -166,6 +166,7 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const { register } = useAuth()
   const [username, setUsername] = useState("")
   const [name, setName] = useState("")
+  const [dni, setDni] = useState("")
   const [email, setEmail] = useState("")
   const [street, setStreet] = useState("")
   const [streetNumber, setStreetNumber] = useState("")
@@ -322,6 +323,7 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       username,
       name,
       email,
+      dni,
       address: deliveryAddress,
       street,
       streetNumber,
@@ -343,6 +345,7 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       username,
       name,
       email,
+      dni,
       password,
       address: deliveryAddress,
       street,
@@ -411,10 +414,13 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <InputField label="Nombre de usuario" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" icon={User} maxLength={FIELD_LIMITS.username} />
-      <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <InputField label="Nombre y apellido" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" icon={User} maxLength={FIELD_LIMITS.name} />
+        <InputField label="DNI" type="tel" value={dni} onChange={(value) => setDni(onlyDigits(value, FIELD_LIMITS.dni))} placeholder="12345678" icon={Hash} maxLength={FIELD_LIMITS.dni} inputMode="numeric" />
+      </div>
       <InputField label="Email" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" icon={Mail} maxLength={FIELD_LIMITS.email} />
       <div className="grid gap-3 md:grid-cols-2">
-        <InputField label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" icon={MapPin} maxLength={60} />
+        <InputField label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" icon={MapPin} maxLength={FIELD_LIMITS.street} />
         <InputField label="Número" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
         <InputField label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" icon={Hash} maxLength={12} />
         <InputField label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" icon={Hash} maxLength={12} />

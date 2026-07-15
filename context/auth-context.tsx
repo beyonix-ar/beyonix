@@ -238,6 +238,7 @@ export interface RegisterPayload {
   username: string
   name: string
   email: string
+  dni: string
   password: string
   address?: string
   street?: string
@@ -974,6 +975,8 @@ export function AuthProvider({
               form.name,
             email:
               form.email,
+            dni:
+              form.dni,
             address:
               form.address ?? "",
             street:
@@ -1035,6 +1038,7 @@ export function AuthProvider({
           email,
           username,
           nombre: form.name.trim(),
+          dni: form.dni.trim(),
           telefono: form.phone?.trim() || null,
           calle: form.street?.trim() || null,
           numero: form.streetNumber?.trim() || null,

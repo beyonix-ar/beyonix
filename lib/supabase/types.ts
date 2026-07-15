@@ -281,7 +281,82 @@ export interface SupabaseCustomerNotification {
   action_url: string | null
   order_id: number | null
   is_read: boolean
+  source_key?: string | null
+  target_items?: Array<{
+    type: "category" | "product"
+    label: string
+    url: string
+  }> | null
+  starts_at?: string | null
+  ends_at?: string | null
+  dismissed_at?: string | null
   created_at: string
+}
+
+export type SupabaseCustomerNotificationCampaignStatus =
+  | "draft"
+  | "published"
+
+export type SupabaseCustomerNotificationCampaignType =
+  | "promocion"
+  | "descuento"
+  | "evento"
+  | "oferta"
+  | "cuotas"
+  | "producto_destacado"
+  | "mensaje"
+
+export interface SupabaseCustomerNotificationCampaign {
+  id: string
+  type: SupabaseCustomerNotificationCampaignType
+  title: string
+  body: string
+  action_url: string | null
+  target_scope?: "store" | "category" | "product" | "general" | null
+  target_items?: Array<{
+    type: "category" | "product"
+    label: string
+    url: string
+  }> | null
+  starts_at?: string | null
+  ends_at?: string | null
+  status: SupabaseCustomerNotificationCampaignStatus
+  created_by: string | null
+  updated_by: string | null
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type SupabaseProductBulkEventStatus = "draft" | "active"
+
+export type SupabaseProductBulkEventActionKind =
+  | "discount_percent"
+  | "price_decrease_percent"
+  | "price_increase_percent"
+  | "installments"
+  | "clear_offer"
+
+export interface SupabaseProductBulkEvent {
+  id: string
+  internal_name: string
+  starts_on: string | null
+  duration_days: number | null
+  scope: "store" | "category" | "product"
+  target_items: Array<{
+    type: "category" | "product"
+    label: string
+    url: string
+  }>
+  action_kind: SupabaseProductBulkEventActionKind
+  value: number | null
+  installments: number | null
+  status: SupabaseProductBulkEventStatus
+  activated_at: string | null
+  created_by: string | null
+  updated_by: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface SupabasePedidoItem {

@@ -93,6 +93,9 @@ import {
   hasBlockedWords,
 } from "@/lib/validation/content-filter"
 import {
+  FIELD_LIMITS,
+} from "@/lib/validation/account-fields"
+import {
   TRANSFER_ALIAS,
   TRANSFER_ACCOUNT_HOLDER,
   TRANSFER_CVU,
@@ -316,7 +319,7 @@ function getFirstInvalidCheckoutField(
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "email"
   if (telefono.length < 8 || telefono.length > 15) return "telefono"
   if (!/^\d{7,8}$/.test(dni)) return "dni"
-  if (calle.length < 2 || !hasLetters(calle)) return "calle"
+  if (calle.length < 2 || calle.length > FIELD_LIMITS.street || !hasLetters(calle)) return "calle"
   if (numero.length < 1) return "numero"
   if (!/^\d{4,8}$/.test(cpDestino)) return "cpDestino"
   if (localidad.length < 2 || !hasLetters(localidad)) return "localidad"
@@ -401,12 +404,6 @@ export default function CheckoutPage() {
       }
     }
   }, [])
-
-  useEffect(() => {
-    if (!mounted || isLoading || user) return
-
-    router.replace("/login?redirect=/checkout")
-  }, [isLoading, mounted, router, user])
 
   useEffect(() => {
     if (!user) return
@@ -549,7 +546,6 @@ export default function CheckoutPage() {
     if (
       !mounted ||
       isLoading ||
-      !user ||
       !isCartReady ||
       !cartSessionId ||
       items.length === 0
@@ -793,8 +789,28 @@ export default function CheckoutPage() {
         "es-AR"
       )
 
+    if (name === "email") {
+      normalizedValue = value.trim().toLowerCase()
+    }
+
+    if (name === "telefono") {
+      normalizedValue = value.replace(/\D/g, "").slice(0, FIELD_LIMITS.phone)
+    }
+
     if (name === "dni") {
       normalizedValue = value.replace(/\D/g, "").slice(0, 8)
+    }
+
+    if (name === "numero") {
+      normalizedValue = value.replace(/\D/g, "").slice(0, 8)
+    }
+
+    if (name === "cpDestino") {
+      normalizedValue = value.replace(/\D/g, "").slice(0, FIELD_LIMITS.postalCode)
+    }
+
+    if (name === "calle") {
+      normalizedValue = normalizedValue.slice(0, FIELD_LIMITS.street)
     }
 
     hasEditedCheckoutFormRef.current = true
@@ -1035,7 +1051,7 @@ export default function CheckoutPage() {
       setIsProcessing(false)
     }
   }
-  if (!mounted || isLoading || !user || !isCartReady) {
+  if (!mounted || isLoading || !isCartReady) {
     return null
   }
 
@@ -1111,85 +1127,104 @@ export default function CheckoutPage() {
                   onRetry={adminNotifications.reloadNotificationCount}
                 />
               )}
-              <button
-                type="button"
-                aria-label="Abrir menú de cuenta"
-                aria-expanded={accountMenuOpen}
-                onClick={() => setAccountMenuOpen((current) => !current)}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-full bg-black py-1.5 pl-1.5 pr-2 sm:pr-3",
-                  beyonixHoverBorder
-                )}
-              >
-                <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
-                  {user.avatarUrl ? (
-                    <img
-                      src={user.avatarUrl}
-                      alt=""
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <CircleUserRound className="size-5" />
-                  )}
-                </span>
-
-                <span className="hidden max-w-32 truncate text-sm font-medium uppercase text-white/86 sm:block">
-                  {(user.username || user.name.split(" ")[0]).toUpperCase()}
-                </span>
-
-                <ChevronDown
-                  className={`hidden size-4 text-white/50 transition-transform sm:block ${
-                    accountMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-
-              {accountMenuOpen && (
-                <div className="absolute right-0 top-12 z-50 w-220px overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-black/70">
-                  <Link
-                    href="/cuenta?tab=datos"
-                    aria-label="Ir a Mis datos"
-                    title="Ir a Mis datos"
-                    className={cn(
-                      "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
-                      beyonixHoverBorder
-                    )}
-                  >
-                    Mis datos
-                  </Link>
-                  <Link
-                    href="/cuenta?tab=ordenes"
-                    aria-label="Ir a Mis compras"
-                    title="Ir a Mis compras"
-                    className={cn(
-                      "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
-                      beyonixHoverBorder
-                    )}
-                  >
-                    Mis compras
-                  </Link>
-                  <Link
-                    href="/cuenta?tab=seguridad"
-                    aria-label="Ir a Seguridad"
-                    title="Ir a Seguridad"
-                    className={cn(
-                      "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
-                      beyonixHoverBorder
-                    )}
-                  >
-                    Seguridad
-                  </Link>
+              {user ? (
+                <>
                   <button
                     type="button"
-                    aria-label="Cerrar sesión"
-                    onClick={() => {
-                      setAccountMenuOpen(false)
-                      logout()
-                    }}
-                    className="block w-full cursor-pointer border-t border-white/8 px-4 py-3 text-left text-sm font-medium text-white/62 transition-colors hover:bg-red-950 hover:text-red-300"
+                    aria-label="Abrir menú de cuenta"
+                    aria-expanded={accountMenuOpen}
+                    onClick={() => setAccountMenuOpen((current) => !current)}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2 rounded-full bg-black py-1.5 pl-1.5 pr-2 sm:pr-3",
+                      beyonixHoverBorder
+                    )}
                   >
-                    Cerrar sesión
+                    <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
+                      {user.avatarUrl ? (
+                        <img
+                          src={user.avatarUrl}
+                          alt=""
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        <CircleUserRound className="size-5" />
+                      )}
+                    </span>
+
+                    <span className="hidden max-w-32 truncate text-sm font-medium uppercase text-white/86 sm:block">
+                      {(user.username || user.name.split(" ")[0]).toUpperCase()}
+                    </span>
+
+                    <ChevronDown
+                      className={`hidden size-4 text-white/50 transition-transform sm:block ${
+                        accountMenuOpen ? "rotate-180" : ""
+                      }`}
+                    />
                   </button>
+
+                  {accountMenuOpen && (
+                    <div className="absolute right-0 top-12 z-50 w-220px overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-black/70">
+                      <Link
+                        href="/cuenta?tab=datos"
+                        aria-label="Ir a Mis datos"
+                        title="Ir a Mis datos"
+                        className={cn(
+                          "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
+                          beyonixHoverBorder
+                        )}
+                      >
+                        Mis datos
+                      </Link>
+                      <Link
+                        href="/cuenta?tab=ordenes"
+                        aria-label="Ir a Mis compras"
+                        title="Ir a Mis compras"
+                        className={cn(
+                          "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
+                          beyonixHoverBorder
+                        )}
+                      >
+                        Mis compras
+                      </Link>
+                      <Link
+                        href="/cuenta?tab=seguridad"
+                        aria-label="Ir a Seguridad"
+                        title="Ir a Seguridad"
+                        className={cn(
+                          "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
+                          beyonixHoverBorder
+                        )}
+                      >
+                        Seguridad
+                      </Link>
+                      <button
+                        type="button"
+                        aria-label="Cerrar sesión"
+                        onClick={() => {
+                          setAccountMenuOpen(false)
+                          logout()
+                        }}
+                        className="block w-full cursor-pointer border-t border-white/8 px-4 py-3 text-left text-sm font-medium text-white/62 transition-colors hover:bg-red-950 hover:text-red-300"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="hidden items-center gap-2 sm:flex">
+                  <Link
+                    href="/login?redirect=/checkout"
+                    className="flex h-9 items-center rounded-full border border-beyonix-blue-light/22 bg-white/4 px-3 text-sm font-semibold text-white/78 transition hover:border-beyonix-blue-light/45 hover:text-white"
+                  >
+                    Iniciar sesión
+                  </Link>
+                  <Link
+                    href="/login?mode=register&redirect=/checkout"
+                    className="flex h-9 items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-3 text-sm font-semibold text-white transition hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
+                  >
+                    Registrarse
+                  </Link>
                 </div>
               )}
             </div>
@@ -1291,21 +1326,21 @@ export default function CheckoutPage() {
                             <Mail aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Email *
                           </Label>
-                          <Input id="email" name="email" type="email" className={getCheckoutInputClassName("email")} value={formData.email} onChange={handleInputChange} required />
+                          <Input id="email" name="email" type="email" className={getCheckoutInputClassName("email")} value={formData.email} onChange={handleInputChange} maxLength={FIELD_LIMITS.email} required />
                         </div>
                         <div className="space-y-0.5">
                           <Label htmlFor="telefono" className="text-white/75">
                             <Smartphone aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Teléfono *
                           </Label>
-                          <Input id="telefono" name="telefono" type="tel" className={getCheckoutInputClassName("telefono")} value={formData.telefono} onChange={handleInputChange} required />
+                          <Input id="telefono" name="telefono" type="tel" inputMode="numeric" className={getCheckoutInputClassName("telefono")} value={formData.telefono} onChange={handleInputChange} maxLength={FIELD_LIMITS.phone} required />
                         </div>
                         <div className="space-y-0.5">
                           <Label htmlFor="dni" className="text-white/75">
                             <IdCard aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             DNI *
                           </Label>
-                          <Input id="dni" name="dni" type="tel" inputMode="numeric" className={getCheckoutInputClassName("dni")} value={formData.dni} onChange={handleInputChange} required />
+                          <Input id="dni" name="dni" type="tel" inputMode="numeric" className={getCheckoutInputClassName("dni")} value={formData.dni} onChange={handleInputChange} maxLength={FIELD_LIMITS.dni} required />
                         </div>
                       </div>
                     </div>
@@ -1324,14 +1359,14 @@ export default function CheckoutPage() {
                             <Home aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Calle *
                           </Label>
-                          <Input id="calle" name="calle" className={getCheckoutInputClassName("calle")} value={formData.calle} onChange={handleInputChange} required />
+                          <Input id="calle" name="calle" className={getCheckoutInputClassName("calle")} value={formData.calle} onChange={handleInputChange} maxLength={FIELD_LIMITS.street} required />
                         </div>
                         <div className="space-y-0.5">
                           <Label htmlFor="numero" className="text-white/75">
                             <Home aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Número *
                           </Label>
-                          <Input id="numero" name="numero" inputMode="numeric" className={getCheckoutInputClassName("numero")} value={formData.numero} onChange={handleInputChange} required />
+                          <Input id="numero" name="numero" inputMode="numeric" className={getCheckoutInputClassName("numero")} value={formData.numero} onChange={handleInputChange} maxLength={8} required />
                         </div>
                         <div className="grid grid-cols-2 gap-3 sm:col-span-2">
                           <div className="space-y-0.5">
@@ -1364,14 +1399,14 @@ export default function CheckoutPage() {
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Localidad *
                           </Label>
-                          <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} required />
+                          <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} maxLength={60} required />
                         </div>
                         <div className="space-y-0.5">
                           <Label htmlFor="cpDestino" className="text-white/75">
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Código postal *
                           </Label>
-                          <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} required />
+                          <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} maxLength={FIELD_LIMITS.postalCode} required />
                         </div>
                         <div className="space-y-0.5 sm:col-span-2">
                           <Label htmlFor="referencias" className="text-white/75">Referencias opcionales</Label>

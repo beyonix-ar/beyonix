@@ -14,6 +14,13 @@ export async function POST(request: Request) {
       )
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json(
+        { error: "Ingresá un email válido." },
+        { status: 400 }
+      )
+    }
+
     const origin =
       request.headers.get("origin") ||
       process.env.NEXT_PUBLIC_SITE_URL ||
@@ -26,8 +33,8 @@ export async function POST(request: Request) {
 
     if (error) {
       return NextResponse.json(
-        { error: "No se pudo enviar el email de recuperación." },
-        { status: 400 }
+        { ok: true },
+        { status: 200 }
       )
     }
 

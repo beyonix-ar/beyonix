@@ -84,7 +84,7 @@ function Field({
           onFocus={onFocus}
           onBlur={onBlur}
           onChange={(e) => onChange(e.target.value)}
-          className={`beyonix-login-input h-10 w-full rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus ${
+          className={`beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-[#1b1f24] px-3 text-sm text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24 ${
             showPasswordToggle ? "pr-12" : ""
           }`}
         />
@@ -134,7 +134,7 @@ function TextareaField({
         placeholder={placeholder}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-14 w-full resize-none rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 py-2 text-sm leading-5 text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus"
+        className="min-h-14 w-full resize-none rounded-lg border border-white/10 bg-[#1b1f24] px-3 py-2 text-sm leading-5 text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
       />
     </div>
   )
@@ -148,6 +148,7 @@ function LoginContent() {
   const [mode, setMode] = useState<"login" | "register">("login")
   const [username, setUsername] = useState("")
   const [name, setName] = useState("")
+  const [dni, setDni] = useState("")
   const [identifier, setIdentifier] = useState("")
   const [email, setEmail] = useState("")
   const [street, setStreet] = useState("")
@@ -177,6 +178,7 @@ function LoginContent() {
 
   const redirect = getSafeRedirect(searchParams.get("redirect"))
   const verificationEmail = searchParams.get("verificar-email")
+  const requestedMode = searchParams.get("mode")
   const confirmationPollInProgress = useRef(false)
   const confirmationCompletionStarted = useRef(false)
   const registerRedirectTimeout = useRef<number | null>(null)
@@ -233,6 +235,15 @@ function LoginContent() {
     setError("")
     setSuccess("")
   }, [verificationEmail])
+
+  useEffect(() => {
+    if (verificationEmail) return
+    if (requestedMode !== "register") return
+
+    setMode("register")
+    setError("")
+    setSuccess("")
+  }, [requestedMode, verificationEmail])
 
   useEffect(() => {
     if (resendCooldown <= 0) return
@@ -490,6 +501,7 @@ function LoginContent() {
       username,
       name,
       email,
+      dni,
       address: deliveryAddress,
       street,
       streetNumber,
@@ -511,6 +523,7 @@ function LoginContent() {
       username,
       name,
       email,
+      dni,
       password,
       address: deliveryAddress,
       street,
@@ -617,8 +630,8 @@ function LoginContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-black">
-      <header className="border-b border-white/10 bg-black">
+    <div className="flex min-h-screen flex-col bg-black text-white">
+      <header className="border-b border-beyonix-blue-light/14 bg-black/95">
         <nav className="container mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-center lg:h-18">
             <BeyonixLogoLink />
@@ -626,7 +639,11 @@ function LoginContent() {
         </nav>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-4 py-4">
+      <main className="relative flex flex-1 items-center justify-center overflow-hidden bg-[linear-gradient(180deg,rgba(17,42,67,0.32)_0%,rgba(7,18,30,0.5)_35%,rgba(0,0,0,0.34)_100%)] px-4 py-5">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-beyonix-blue-light/22"
+        />
         {confirmationEmail ? (
           <div className="w-full max-w-lg rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-surface-4 p-6 text-center shadow-2xl shadow-black/35 lg:p-8">
             <div className="mx-auto flex size-16 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-500/10">
@@ -722,7 +739,7 @@ function LoginContent() {
           </div>
         ) : (
           <div
-          className={`w-full rounded-2xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,#102438_0%,#141414_48%,#0b0b0b_100%)] shadow-2xl shadow-black/70 ${
+          className={`relative z-10 w-full rounded-2xl border border-beyonix-blue-light/30 bg-[linear-gradient(145deg,rgba(15,28,42,0.98),rgba(10,16,23,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-sm ${
             mode === "login" ? "max-w-md" : "max-w-5xl"
           } ${mode === "login" ? "p-5 lg:p-6" : "p-4 lg:p-5"}`}
         >
@@ -737,22 +754,22 @@ function LoginContent() {
             <h1 className="text-2xl font-bold text-white sm:text-3xl">
               {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
             </h1>
-            <p className="mt-1.5 text-sm text-white/65">
+            <p className="mt-1.5 text-sm text-white/72">
               {mode === "login"
                 ? "Accedé a tu cuenta para continuar la compra."
                 : "Registrate para comprar en BEYONIX."}
             </p>
           </div>
 
-          <div className="grid max-w-sm grid-cols-2 rounded-xl border border-beyonix-blue-light/20 bg-[#050607] p-1 shadow-inner shadow-beyonix-blue/20">
+          <div className="grid max-w-sm grid-cols-2 rounded-xl border border-beyonix-blue-light/24 bg-[#08111b] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
             <button
               type="button"
               aria-label="Iniciar sesión"
               onClick={() => handleModeChange("login")}
               className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
                 mode === "login"
-                  ? "border border-beyonix-blue-light/40 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
-                  : "text-white/70 hover:bg-beyonix-blue/18 hover:text-white"
+                  ? "border border-beyonix-blue-light/55 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_rgba(30,77,123,0.22)]"
+                  : "text-white/68 hover:bg-beyonix-blue/24 hover:text-white"
               }`}
             >
               Iniciar sesión
@@ -764,8 +781,8 @@ function LoginContent() {
               onClick={() => handleModeChange("register")}
               className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
                 mode === "register"
-                  ? "border border-beyonix-blue-light/40 bg-beyonix-blue text-beyonix-sky shadow-beyonix-slider"
-                  : "text-white/70 hover:bg-beyonix-blue/18 hover:text-white"
+                  ? "border border-beyonix-blue-light/55 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_rgba(30,77,123,0.22)]"
+                  : "text-white/68 hover:bg-beyonix-blue/24 hover:text-white"
               }`}
             >
               Registrarme
@@ -808,19 +825,24 @@ function LoginContent() {
                 </div>
                 <Field name="confirm-password" label="Confirmar contraseña*" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Repetí la contraseña" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
               </div>
-              <Field name="name" label="Nombre y apellido*" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" maxLength={FIELD_LIMITS.name} autoComplete="name" />
-              <div className="grid gap-2.5 md:grid-cols-[minmax(0,2fr)_minmax(5.5rem,0.6fr)_minmax(4.75rem,0.45fr)_minmax(4.75rem,0.45fr)]">
-                <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={60} autoComplete="address-line1" />
-                <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
-                <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
-                <Field name="apartment" label="Dpto" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <Field name="name" label="Nombre y apellido*" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" maxLength={FIELD_LIMITS.name} autoComplete="name" />
+                <Field name="dni" label="DNI*" type="tel" value={dni} onChange={(value) => setDni(onlyDigits(value, FIELD_LIMITS.dni))} placeholder="12345678" maxLength={FIELD_LIMITS.dni} inputMode="numeric" autoComplete="off" />
+              </div>
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={FIELD_LIMITS.street} autoComplete="address-line1" />
+                <div className="grid gap-2.5 md:grid-cols-[minmax(5.5rem,1fr)_minmax(4.75rem,0.75fr)_minmax(4.75rem,0.75fr)]">
+                  <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
+                  <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
+                  <Field name="apartment" label="Dpto" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
+                </div>
               </div>
               <div className="grid gap-2.5 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-white/78">
                     Provincia*
                   </label>
-                  <ProvinceSelect value={province} onChange={setProvince} compact />
+                  <ProvinceSelect value={province} onChange={setProvince} compact appearance="login" />
                 </div>
                 <Field name="locality" label="Localidad*" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required />
               </div>
@@ -843,7 +865,7 @@ function LoginContent() {
                       inputMode="numeric"
                       autoComplete="tel-area-code"
                       onChange={(event) => setPhoneAreaCode(onlyDigits(event.target.value, 4))}
-                      className="beyonix-login-input h-10 w-full rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus"
+                      className="beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-[#1b1f24] px-3 text-sm text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
                     />
                     <input
                       id="phone"
@@ -857,10 +879,10 @@ function LoginContent() {
                       inputMode="numeric"
                       autoComplete="tel-national"
                       onChange={(event) => setPhone(onlyDigits(event.target.value, 11))}
-                      className="beyonix-login-input h-10 w-full rounded-lg border border-beyonix-blue-light/16 bg-[#050607] px-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 hover:border-beyonix-blue-light/24 focus:border-beyonix-focus"
+                      className="beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-[#1b1f24] px-3 text-sm text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
                     />
                   </div>
-                  <p className="mt-1 text-[11px] leading-4 text-white/45">
+                  <p className="mt-1 text-[11px] leading-4 text-white/58">
                     Ingresá la característica y el número sin 0 ni 15.
                   </p>
                 </div>
@@ -881,7 +903,7 @@ function LoginContent() {
               type="button"
               aria-label="Olvidé mi contraseña"
               onClick={handleForgotPassword}
-              className="cursor-pointer text-left text-sm text-beyonix-focus transition-opacity hover:opacity-80"
+              className="cursor-pointer text-left text-sm font-medium text-beyonix-sky transition-colors hover:text-white"
             >
               ¿Olvidaste tu contraseña?
             </button>
@@ -904,7 +926,7 @@ function LoginContent() {
               type="submit"
               aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
               disabled={loading}
-              className={`flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-[linear-gradient(135deg,#112A43_0%,#1e4d7b_100%)] px-10 font-semibold text-white shadow-lg shadow-black/35 transition-all hover:border-beyonix-sky hover:brightness-110 disabled:opacity-50 ${
+              className={`flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/48 bg-beyonix-blue px-10 font-heading text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_34px_rgba(0,0,0,0.35)] transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 disabled:cursor-not-allowed disabled:opacity-50 ${
                 mode === "login" ? "w-full" : "min-w-44"
               }`}
             >

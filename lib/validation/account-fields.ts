@@ -30,6 +30,7 @@ export const ARGENTINA_PROVINCES = [
 export const FIELD_LIMITS = {
   username: 18,
   name: 60,
+  street: 40,
   email: 120,
   address: 180,
   province: 30,
@@ -53,6 +54,7 @@ export type RegisterValidationPayload = {
   username: string
   name: string
   email: string
+  dni: string
   address: string
   street: string
   streetNumber: string
@@ -214,7 +216,11 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
   const emailError = validateEmail(data.email)
   if (emailError) return emailError
 
-  const streetError = validateCleanText(data.street, "la calle", 60, {
+  if (!/^\d{7,8}$/.test(data.dni.trim())) {
+    return "Ingresá un DNI válido de 7 u 8 números."
+  }
+
+  const streetError = validateCleanText(data.street, "la calle", FIELD_LIMITS.street, {
     minLength: 2,
     pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
     allowedHint: "Usá solo letras, números y signos comunes en la calle.",
@@ -297,7 +303,7 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
     return "Ingresá un DNI válido de 7 u 8 números."
   }
 
-  const streetError = validateCleanText(data.calle, "la calle", 60, {
+  const streetError = validateCleanText(data.calle, "la calle", FIELD_LIMITS.street, {
     minLength: 2,
     pattern: /^[\p{L}\p{M}0-9\s.,'°/-]+$/u,
     allowedHint: "Usá solo letras, números y signos comunes en la calle.",

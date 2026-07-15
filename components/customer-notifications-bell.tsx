@@ -4,17 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   BadgeCheck,
+  BadgePercent,
   Bell,
+  CalendarDays,
   CheckCheck,
   CircleX,
   Clock3,
   MessageCircle,
   PackageCheck,
+  Sparkles,
   Tag,
   Truck,
 } from "lucide-react"
 
 import {
+  dismissReadCustomerNotifications,
   getCustomerNotifications,
   markAllCustomerNotificationsRead,
   markCustomerNotificationRead,
@@ -32,7 +36,10 @@ function getNotificationIcon(type: string) {
   if (type === "payment_proof_pending") return Clock3
   if (type === "payment_proof_received") return Clock3
   if (type === "admin_message" || type === "claim_response" || type === "help_message_started") return MessageCircle
-  if (type === "offer") return Tag
+  if (type === "offer" || type === "oferta") return Tag
+  if (type === "promocion" || type === "producto_destacado") return Sparkles
+  if (type === "descuento" || type === "cuotas") return BadgePercent
+  if (type === "evento") return CalendarDays
   if (type === "payment_validated") return BadgeCheck
   if (type === "order_shipped") return Truck
   if (type === "order_delivered") return PackageCheck
@@ -86,6 +93,10 @@ function getNotificationActionUrl(notification: SupabaseCustomerNotification) {
   return `/cuenta/compras/${notification.order_id}${opensClaim ? "/ayuda" : ""}`
 }
 
+function isCampaignNotification(notification: SupabaseCustomerNotification) {
+  return notification.source_key?.startsWith("campaign:") ?? false
+}
+
 export function CustomerNotificationsBell({
   userId,
   open,
@@ -96,6 +107,7 @@ export function CustomerNotificationsBell({
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wasOpenRef = useRef(false)
   const [notifications, setNotifications] = useState<SupabaseCustomerNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -257,11 +269,44 @@ export function CustomerNotificationsBell({
     }
   }, [loadNotifications, unreadCount, userId])
 
+  const handleDismissReadNotifications = useCallback(async () => {
+    const hasVisibleReadNotifications = notifications.some(
+      (notification) => notification.is_read,
+    )
+
+    if (!hasVisibleReadNotifications) return
+
+    try {
+      await dismissReadCustomerNotifications(userId)
+      setNotifications((current) =>
+        current.filter(
+          (notification) =>
+            !notification.is_read || isCampaignNotification(notification),
+        ),
+      )
+    } catch (dismissError) {
+      console.error("CUSTOMER_NOTIFICATIONS_DISMISS_READ_ERROR", dismissError)
+      void loadNotifications()
+    }
+  }, [loadNotifications, notifications, userId])
+
   useEffect(() => {
     if (!open || loading || unreadCount === 0) return
 
     void handleMarkAllRead()
   }, [handleMarkAllRead, loading, open, unreadCount])
+
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true
+      return
+    }
+
+    if (!wasOpenRef.current) return
+
+    wasOpenRef.current = false
+    void handleDismissReadNotifications()
+  }, [handleDismissReadNotifications, open])
 
   return (
     <div
@@ -384,6 +429,23 @@ export function CustomerNotificationsBell({
                         <span className="mt-1 block text-10px text-[#9CA3AF]">
                           {formatRelativeDate(notification.created_at)}
                         </span>
+                        {notification.target_items?.length ? (
+                          <span className="mt-2 flex flex-wrap gap-1.5">
+                            {notification.target_items.slice(0, 3).map((item) => (
+                              <span
+                                key={item.url}
+                                className="max-w-full truncate rounded-full border border-beyonix-blue-light/18 bg-beyonix-blue/18 px-2 py-1 text-10px font-bold text-beyonix-sky"
+                              >
+                                {item.label}
+                              </span>
+                            ))}
+                            {notification.target_items.length > 3 && (
+                              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-10px font-bold text-white/50">
+                                +{notification.target_items.length - 3}
+                              </span>
+                            )}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   )

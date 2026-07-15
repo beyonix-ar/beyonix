@@ -1682,8 +1682,8 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 
 .beyonix-login-input,
 .beyonix-login-input:focus {
-  background: #000000 !important;
-  background-color: #000000 !important;
+  background: #1b1f24 !important;
+  background-color: #1b1f24 !important;
   background-image: none !important;
   color: #ffffff !important;
   caret-color: #ffffff !important;
@@ -1697,14 +1697,14 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 .beyonix-login-input:-webkit-autofill:hover,
 .beyonix-login-input:-webkit-autofill:focus,
 .beyonix-login-input:-webkit-autofill:active {
-  background: #000000 !important;
-  background-color: #000000 !important;
+  background: #1b1f24 !important;
+  background-color: #1b1f24 !important;
   background-image: none !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
   caret-color: #ffffff !important;
-  box-shadow: 0 0 0 1000px #000000 inset !important;
-  -webkit-box-shadow: 0 0 0 1000px #000000 inset !important;
+  box-shadow: 0 0 0 1000px #1b1f24 inset !important;
+  -webkit-box-shadow: 0 0 0 1000px #1b1f24 inset !important;
   transition: background-color 9999s ease-out 0s !important;
 }
 

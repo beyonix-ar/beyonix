@@ -6,11 +6,11 @@ export function PasswordRequirements({ password }: { password: string }) {
   const requirements = getPasswordRequirements(password)
 
   return (
-    <div className="mt-1.5 rounded-lg border border-beyonix-blue-light/30 bg-[#05090d] p-2.5 shadow-2xl shadow-black/70">
+    <div className="mt-1.5 rounded-lg border border-beyonix-blue-light/30 bg-[#05090d] p-2 shadow-2xl shadow-black/70">
       <p className="text-xs font-semibold text-white/70">
         Requisitos de contraseña:
       </p>
-      <ul className="mt-1.5 grid gap-1 sm:grid-cols-2">
+      <ul className="mt-1.5 grid gap-0.5 sm:grid-cols-2">
         {requirements.map((requirement) => (
           <li
             key={requirement.label}

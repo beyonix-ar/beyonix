@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseCustomerNotification } from "@/lib/supabase/types"
 
+const CUSTOMER_NOTIFICATION_LIMIT = 8
+
 interface PaymentNotificationOrder {
   id: number
   payment_method_id?: string | null
@@ -178,12 +180,16 @@ function removeContradictoryOrderProgressNotifications(
 }
 
 export async function getCustomerNotifications(userId: string) {
+  const now = new Date().toISOString()
   const { data, error } = await supabase
     .from("customer_notifications")
-    .select("id, user_id, type, title, body, action_url, order_id, is_read, created_at")
+    .select("id, user_id, type, title, body, action_url, order_id, is_read, source_key, target_items, starts_at, ends_at, dismissed_at, created_at")
     .eq("user_id", userId)
+    .is("dismissed_at", null)
+    .or(`starts_at.is.null,starts_at.lte.${now}`)
+    .or(`ends_at.is.null,ends_at.gt.${now}`)
     .order("created_at", { ascending: false })
-    .limit(30)
+    .limit(CUSTOMER_NOTIFICATION_LIMIT)
 
   if (error) throw error
 
@@ -254,6 +260,18 @@ export async function markAllCustomerNotificationsRead(userId: string) {
     .update({ is_read: true })
     .eq("user_id", userId)
     .eq("is_read", false)
+
+  if (error) throw error
+}
+
+export async function dismissReadCustomerNotifications(userId: string) {
+  const { error } = await supabase
+    .from("customer_notifications")
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("is_read", true)
+    .is("dismissed_at", null)
+    .not("source_key", "like", "campaign:%")
 
   if (error) throw error
 }

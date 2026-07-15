@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
+  BellRing,
   FileText,
   History,
   ImageIcon,
   LogOut,
   Menu,
   Package,
+  Percent,
   ShieldCheck,
   ShoppingCart,
   UserCog,
@@ -29,10 +31,12 @@ import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
+import { AdminAccionesMasivas } from "./sections/acciones-masivas/admin-acciones-masivas"
 import { AdminBanners } from "./sections/banners/admin-banners"
 import { AdminClientes } from "./sections/clientes/admin-clientes"
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
 import { AdminFacturacion } from "./sections/facturacion/admin-facturacion"
+import { AdminNotificaciones } from "./sections/notificaciones/admin-notificaciones"
 import { AdminPedidos } from "./sections/pedidos/admin-pedidos"
 import { AdminProductos } from "./sections/productos/admin-productos"
 import { AdminUsuarios } from "./sections/usuarios/admin-usuarios"
@@ -40,6 +44,8 @@ import { AdminUsuarios } from "./sections/usuarios/admin-usuarios"
 export type AdminSection =
   | "dashboard"
   | "banners"
+  | "notificaciones"
+  | "acciones-masivas"
   | "productos"
   | "clientes"
   | "facturacion"
@@ -50,6 +56,8 @@ export type AdminSection =
 const ADMIN_SECTIONS: AdminSection[] = [
   "dashboard",
   "banners",
+  "notificaciones",
+  "acciones-masivas",
   "productos",
   "clientes",
   "facturacion",
@@ -256,6 +264,18 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         icon: <ImageIcon className="size-4" />,
       },
       {
+        key: "notificaciones",
+        label: "Notificaciones",
+        description: "Promos y avisos a clientes",
+        icon: <BellRing className="size-4" />,
+      },
+      {
+        key: "acciones-masivas",
+        label: "Acciones masivas",
+        description: "Ofertas, precios y cuotas",
+        icon: <Percent className="size-4" />,
+      },
+      {
         key: "facturacion",
         label: "Facturación",
         description: "Facturas C pendientes",
@@ -391,6 +411,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   const sections: Record<AdminSection, ReactNode> = {
     dashboard: <AdminDashboard onNavigate={goToSection} />,
     banners: !isOperator ? <AdminBanners /> : null,
+    notificaciones: !isOperator ? <AdminNotificaciones /> : null,
+    "acciones-masivas": !isOperator ? <AdminAccionesMasivas /> : null,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
     facturacion: !isOperator ? <AdminFacturacion /> : null,

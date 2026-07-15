@@ -633,7 +633,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="grid gap-2.5 md:grid-cols-6 xl:grid-cols-12">
-              <InputField className="md:col-span-4 xl:col-span-5" label="Calle" type="text" value={street} onChange={(value) => setStreet(uppercaseAccountText(value))} placeholder="San Martín" icon={MapPin} maxLength={60} />
+              <InputField className="md:col-span-4 xl:col-span-5" label="Calle" type="text" value={street} onChange={(value) => setStreet(uppercaseAccountText(value))} placeholder="San Martín" icon={MapPin} maxLength={FIELD_LIMITS.street} />
               <InputField className="md:col-span-2 xl:col-span-2" label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
               <InputField className="md:col-span-2 xl:col-span-2" label="Piso opcional" type="text" value={floor} onChange={(value) => setFloor(uppercaseAccountText(value))} placeholder="3" icon={Hash} maxLength={12} />
               <InputField className="md:col-span-2 xl:col-span-3" label="Departamento opcional" type="text" value={apartment} onChange={(value) => setApartment(uppercaseAccountText(value))} placeholder="B" icon={Hash} maxLength={12} />

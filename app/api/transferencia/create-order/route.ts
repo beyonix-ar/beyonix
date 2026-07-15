@@ -100,6 +100,36 @@ function normalizeCustomer(customer: CheckoutPayload["customer"]) {
   }
 }
 
+function validateCustomer(customer: CheckoutPayload["customer"]) {
+  const normalized = normalizeCustomer(customer)
+
+  if (!normalized.cliente_nombre || normalized.cliente_nombre.length < 3) {
+    return "Ingresá el nombre de quien recibe."
+  }
+
+  if (
+    !normalized.cliente_email ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.cliente_email)
+  ) {
+    return "Ingresá un email válido."
+  }
+
+  const phone = normalized.cliente_telefono?.replace(/\D/g, "") ?? ""
+  if (phone.length < 8 || phone.length > 15) {
+    return "Ingresá un teléfono válido."
+  }
+
+  if (!/^\d{7,8}$/.test(normalized.cliente_dni ?? "")) {
+    return "Ingresá un DNI válido."
+  }
+
+  if (!normalized.cliente_direccion || normalized.cliente_direccion.length < 5) {
+    return "Ingresá una dirección válida."
+  }
+
+  return ""
+}
+
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
   productsTotal: number,
@@ -162,9 +192,14 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as CheckoutPayload
     const items = normalizeItems(payload.items)
+    const customerError = validateCustomer(payload.customer)
 
     if (!items.length) {
       return NextResponse.json({ error: "El carrito esta vacio." }, { status: 400 })
+    }
+
+    if (customerError) {
+      return NextResponse.json({ error: customerError }, { status: 400 })
     }
 
     const supabase = await createClient()
@@ -172,13 +207,6 @@ export async function POST(request: Request) {
     const {
       data: { user },
     } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "Debés iniciar sesión para registrar el pedido." },
-        { status: 401 },
-      )
-    }
 
     const productIds = [...new Set(items.map((item) => item.productId))]
 
@@ -253,11 +281,13 @@ export async function POST(request: Request) {
     const totals = calculateCartTotals(cartRows, {
       shippingCost: shipping.costCharged,
     })
-    const storeBenefit = await findActiveStoreBenefit(
-      admin,
-      user.id,
-      payload.storeBenefitId,
-    )
+    const storeBenefit = user
+      ? await findActiveStoreBenefit(
+          admin,
+          user.id,
+          payload.storeBenefitId,
+        )
+      : null
     const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
       totals.productsTotal,
       storeBenefit?.percent,
@@ -274,7 +304,7 @@ export async function POST(request: Request) {
     const transferTotal = transferPaymentTotals.total
 
     const orderPayload = {
-      usuario_id: user.id,
+      usuario_id: user?.id ?? null,
       total: transferTotal,
       estado: "pendiente",
       envio_proveedor: shipping.provider,
@@ -293,7 +323,9 @@ export async function POST(request: Request) {
       ...normalizeCustomer(payload.customer),
     }
 
-    const { data: order, error: orderError } = await supabase
+    const orderClient = user ? supabase : admin
+
+    const { data: order, error: orderError } = await orderClient
       .from("ordenes")
       .insert(orderPayload as never)
       .select()
@@ -310,7 +342,7 @@ export async function POST(request: Request) {
       throw new Error(orderError?.message || "No se pudo crear la orden.")
     }
 
-    await insertOrderItems(supabase, order.id, items, productRows)
+    await insertOrderItems(orderClient as never, order.id, items, productRows)
 
     if (storeBenefit) {
       await markStoreBenefitAsUsed(admin, {
