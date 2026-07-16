@@ -1044,7 +1044,7 @@ export async function PATCH(
       title: helpMessage && status === "cerrado"
         ? "Chat finalizado"
         : status === "cerrado"
-          ? "Reclamo resuelto"
+          ? "Reclamo finalizado"
           : status === "rechazado"
             ? "Reclamo rechazado"
             : "Respuesta de BEYONIX",
@@ -1054,13 +1054,13 @@ export async function PATCH(
     const title = helpMessage && status === "cerrado"
       ? "Chat finalizado"
       : status === "cerrado"
-        ? "Reclamo resuelto"
+        ? "Reclamo finalizado"
         : "Reclamo rechazado"
     const message =
       helpMessage && status === "cerrado"
         ? "El chat de ayuda fue finalizado. Podés revisar el seguimiento desde tu cuenta."
         : status === "cerrado"
-        ? "El caso fue resuelto. Podés revisar el seguimiento desde tu cuenta."
+        ? "El reclamo fue finalizado. Podés revisar el seguimiento desde tu cuenta."
         : "El caso fue rechazado. Podés revisar el detalle desde tu cuenta."
 
     await notifyCustomer(auth.admin, {

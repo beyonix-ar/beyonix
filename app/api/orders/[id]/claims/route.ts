@@ -503,6 +503,32 @@ export async function POST(
     )
   }
 
+  if (!helpMessage) {
+    const existingFormalClaimResult = await admin
+      .from("order_claims")
+      .select("id")
+      .eq("order_id", orderId)
+      .not("failure_type", "in", "(cancelar_compra,consulta_pedido)")
+      .limit(1)
+
+    if (existingFormalClaimResult.error) {
+      return NextResponse.json(
+        { error: "No pudimos validar los reclamos previos del pedido." },
+        { status: 500 },
+      )
+    }
+
+    if ((existingFormalClaimResult.data ?? []).length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Este pedido ya tiene un reclamo finalizado o en curso. Si necesitás contactarnos, escribinos a beyonix.ar@gmail.com.",
+        },
+        { status: 409 },
+      )
+    }
+  }
+
   if (helpMessage && delivered) {
     return NextResponse.json(
       { error: "El pedido ya figura como entregado. Podés iniciar un reclamo si tuviste un problema con la compra recibida." },

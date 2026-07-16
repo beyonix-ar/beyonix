@@ -257,14 +257,14 @@ export function ReviewsSection() {
       <div className="container mx-auto px-4 lg:px-8">
         <BeyonixSectionHeader
           align="center"
-          eyebrow="Reseñas"
-          title="Opiniones verificadas"
+          eyebrow="Experiencias"
+          title="Experiencias de compra verificadas"
           description={
             reviews.length > 0
               ? `${averageRating}/5 basado en ${reviews.length} ${
                   reviews.length === 1
-                    ? "reseña verificada"
-                    : "reseñas verificadas"
+                    ? "experiencia verificada"
+                    : "experiencias verificadas"
                 }`
               : undefined
           }
@@ -313,7 +313,7 @@ export function ReviewsSection() {
             </div>
 
             <Textarea
-              placeholder="Comentá tu experiencia (máx. 150 caracteres)"
+              placeholder="Comentá tu experiencia en Beyonix (máx. 150 caracteres)"
               maxLength={150}
               rows={4}
               className="h-28 resize-none border-beyonix-blue-light/30 bg-black/55 text-white focus-visible:border-beyonix-blue-light focus-visible:ring-beyonix-blue-light/25"
@@ -327,7 +327,7 @@ export function ReviewsSection() {
 
             <BeyonixButton
               type="button"
-              aria-label="Enviar reseña"
+              aria-label="Enviar experiencia"
               onClick={() => void handleAddReview()}
               disabled={!comment.trim() || isSubmitting}
               className="w-full"
@@ -338,7 +338,7 @@ export function ReviewsSection() {
                   Guardando...
                 </>
               ) : (
-                "Enviar reseña"
+                "Enviar experiencia"
               )}
             </BeyonixButton>
           </BeyonixCard>
@@ -361,8 +361,8 @@ export function ReviewsSection() {
         ) : reviews.length === 0 ? (
           <BeyonixEmptyState
             icon={<MessageSquareText className="size-5 text-white" />}
-            title="Todavía no hay reseñas publicadas"
-            description="Las opiniones verificadas de nuestros clientes aparecerán en esta sección."
+            title="Todavía no hay experiencias publicadas"
+            description="Las experiencias verificadas de nuestros clientes aparecerán en esta sección."
             action={
               <BeyonixButton asChild variant="outline">
                 <Link href="/productos">Conocé nuestros productos</Link>

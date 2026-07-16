@@ -77,11 +77,15 @@ function isPaidOrder(order: OrderRow) {
 export function validateReviewComment(value: unknown) {
   const comment = String(value ?? "").trim()
 
-  if (!comment || comment.length > 150) {
+  if (comment.length > 150) {
     return {
-      error: "La reseña debe tener entre 1 y 150 caracteres.",
+      error: "La reseña puede tener hasta 150 caracteres.",
       comment: "",
     }
+  }
+
+  if (!comment) {
+    return { error: "", comment: "" }
   }
 
   const moderationError = validatePublicText(comment)
@@ -105,7 +109,11 @@ export async function getEligibleReview(
   user: User
 ): Promise<EligibleReview | null> {
   const [reviewsResult, ordersResult, profileResult] = await Promise.all([
-    admin.from("reviews").select("order_id").eq("user_id", user.id),
+    admin
+      .from("reviews")
+      .select("order_id")
+      .eq("user_id", user.id)
+      .is("product_id", null),
     admin
       .from("ordenes")
       .select("id, localidad, provincia, estado, payment_status, created_at")

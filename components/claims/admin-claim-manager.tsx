@@ -59,7 +59,7 @@ const STATUS_OPTIONS: Array<{ value: OrderClaimStatus; label: string }> = [
   { value: "cupon_pendiente", label: "Cupón pendiente" },
   { value: "reemplazo_enviado", label: "Solución en proceso" },
   { value: "rechazado", label: "Rechazado" },
-  { value: "cerrado", label: "Caso resuelto" },
+  { value: "cerrado", label: "Reclamo finalizado" },
 ]
 
 const RESOLUTION_OPTIONS: Array<{
@@ -138,7 +138,8 @@ function getClaimMessageText(message: string) {
 }
 
 function getConversationStatusLabel(claim: SupabaseOrderClaim, messages: SupabaseOrderClaimMessage[]) {
-  if (["cerrado", "rechazado"].includes(claim.status)) return "Cerrado"
+  if (claim.status === "cerrado") return "Finalizado"
+  if (claim.status === "rechazado") return "Rechazado"
   if (claim.status === "falta_informacion") return "Esperando cliente"
   if (messages[messages.length - 1]?.author_role !== "cliente") return "Respondido por BEYONIX"
   return "Abierto"
@@ -201,14 +202,14 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
   }
 
   if (claim.failure_type === "consulta_pedido") {
-    if (claim.status === "rechazado") return "Consulta cerrada"
-    if (claim.status === "cerrado") return "Consulta resuelta"
+    if (claim.status === "rechazado") return "Consulta finalizada"
+    if (claim.status === "cerrado") return "Consulta finalizada"
     if (claim.status === "falta_informacion") return "Esperando cliente"
     return "Mensaje de ayuda"
   }
 
   if (["cambio_pendiente", "cupon_pendiente"].includes(claim.status)) {
-    return "Reclamo resuelto"
+    return "Reclamo finalizado"
   }
 
   if (["reemplazo_enviado"].includes(claim.status)) {
@@ -227,7 +228,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
     }
 
     if (claim.status === "cambio_pendiente" || claim.status === "cerrado") {
-      return "Reposición de la unidad faltante registrada. El caso puede permanecer en historial."
+      return "Reposición de la unidad faltante registrada. El reclamo quedó finalizado en el historial."
     }
 
     return "Prepará y despachá la unidad faltante. Luego registrá la acción cuando corresponda."
@@ -239,7 +240,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
     }
 
     if (claim.status === "cambio_pendiente" || claim.status === "cerrado") {
-      return "Cambio registrado. El caso puede permanecer en historial."
+      return "Cambio registrado. El reclamo quedó finalizado en el historial."
     }
 
     return "Coordiná por el chat dónde debe enviar o entregar el producto original. Luego prepará el reemplazo y marcá la acción cuando corresponda."
@@ -247,7 +248,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
 
   if (resolution === "cupon_descuento") {
     if (claim.status === "cupon_pendiente" || claim.status === "cerrado") {
-      return "Nota de crédito registrada para el cliente."
+      return "Nota de crédito registrada para el cliente. El reclamo quedó finalizado."
     }
 
     return "Generá la nota de crédito y confirmá la acción cuando quede emitida."
@@ -260,7 +261,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
         : "Esperando que el cliente complete los datos para el reintegro."
     }
 
-    return "Reintegro registrado para el cliente."
+    return "Reintegro registrado para el cliente. El reclamo quedó finalizado."
   }
 
   if (resolution === "rechazado") return "El cliente ve el motivo del rechazo."
@@ -602,7 +603,7 @@ export function AdminClaimManager({
         admin_response: decisionMessage.trim() || response.trim() || claim.admin_response || "",
         append_message: Boolean(decisionMessage.trim() || response.trim()),
       },
-      "Caso marcado como resuelto.",
+      "Reclamo finalizado.",
     )
     if (sent) {
       setResponse("")
@@ -638,7 +639,7 @@ export function AdminClaimManager({
         status: nextStatus,
         resolution: claim.resolution ?? decisionResolution,
       },
-      "Reclamo marcado como resuelto.",
+      "Reclamo finalizado.",
     )
     if (sent) closeDecision()
   }
@@ -812,6 +813,14 @@ export function AdminClaimManager({
           <p className="mt-3 rounded-lg border border-red-300/30 bg-red-950/70 px-3 py-2 text-xs font-bold text-red-100">
             Esta orden ya está facturada, despachada o entregada. No se puede aprobar la cancelación desde esta acción.
           </p>
+        )}
+        {closed && !helpMessage && !cancellation && (
+          <div className="mt-3 rounded-lg border border-[#77E6E2]/24 bg-[#77E6E2]/6 px-3 py-2">
+            <p className="text-xs font-black text-[#D7FFFD]">Reclamo finalizado</p>
+            <p className="mt-1 text-[11px] font-semibold leading-4 text-white/65">
+              El historial queda disponible para consulta, pero no se pueden enviar mensajes ni registrar nuevas acciones.
+            </p>
+          </div>
         )}
       </header>
 
@@ -1038,15 +1047,20 @@ export function AdminClaimManager({
                 {canCloseClaim && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
-                    title="Cerrar reclamo"
-                    description="Finalizar el caso y moverlo al historial."
+                    title="Finalizar reclamo"
+                    description="Bloquear nuevas acciones y dejarlo visible en el historial."
                     tone="primary"
                     disabled={saving}
                     onClick={() => setDecisionAction("close")}
                   />
                 )}
                 {closed && (
-                  <p className="rounded-lg bg-black/20 px-3 py-2 text-xs font-bold text-white/55">Sin acciones disponibles.</p>
+                  <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2">
+                    <p className="text-xs font-black text-[#D7FFFD]">Reclamo finalizado</p>
+                    <p className="mt-1 text-[11px] font-semibold leading-4 text-white/65">
+                      No hay acciones pendientes. Si el cliente necesita contactarse de nuevo, debe escribir a beyonix.ar@gmail.com.
+                    </p>
+                  </div>
                 )}
               </div>
             )}
@@ -1196,7 +1210,7 @@ function ClaimConversation({
             disabled={closed || saving}
             onChange={(event) => onResponseChange(event.target.value)}
             rows={1}
-            placeholder={closed ? "Caso cerrado" : "Responder al cliente"}
+            placeholder={closed ? "Reclamo finalizado" : "Responder al cliente"}
             className={`${adminControlClassName} min-h-8 min-w-0 basis-4/5 resize-none px-3 py-1.5 text-xs leading-5 disabled:cursor-not-allowed disabled:opacity-45`}
           />
           <button type="button" disabled={saving || closed || response.trim().length < 2} onClick={onSendResponse} className="admin-ds-button admin-ds-button-primary inline-flex h-8 basis-1/5 shrink-0 items-center justify-center gap-2 px-3 text-10px font-black disabled:opacity-45">
@@ -1337,7 +1351,7 @@ function ClaimActionModal({
         : action === "reject"
           ? "El reclamo no corresponde"
           : action === "close"
-            ? "Cerrar caso"
+            ? "Finalizar reclamo"
             : action === "approve_cancellation"
               ? "Aprobar cancelación"
               : "Rechazar cancelación"
@@ -1347,7 +1361,7 @@ function ClaimActionModal({
         : action === "reject"
           ? "Informar al cliente el motivo del rechazo."
           : action === "close"
-            ? "Cerrar el caso indica que no quedan gestiones pendientes."
+            ? "Finalizar el reclamo indica que no quedan gestiones pendientes."
             : action === "approve_cancellation"
               ? "Esta acción cancela el pedido si el backend confirma que no fue facturado ni despachado."
               : "Esta acción rechazará la cancelación y notificará el motivo al cliente."
@@ -1360,7 +1374,7 @@ function ClaimActionModal({
             ? "Aprobar cancelación"
             : action === "reject_cancellation"
               ? "Rechazar cancelación"
-              : "Cerrar caso"
+              : "Finalizar reclamo"
 
   const confirmDisabled =
     saving ||

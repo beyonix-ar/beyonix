@@ -1,6 +1,8 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { Session } from '@supabase/supabase-js'
 
+installSupabaseAuthConsoleErrorFilter()
+
 export const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -20,6 +22,13 @@ supabase.auth.getSession = (async () => {
 
     if (result.error && isInvalidRefreshTokenError(result.error)) {
       clearSupabaseBrowserSession()
+
+      return {
+        data: {
+          session: null,
+        },
+        error: null,
+      }
     }
 
     return result
@@ -31,7 +40,7 @@ supabase.auth.getSession = (async () => {
         data: {
           session: null,
         },
-        error,
+        error: null,
       }
     }
 
@@ -74,6 +83,29 @@ export function isInvalidRefreshTokenError(error: unknown) {
   )
 }
 
+function installSupabaseAuthConsoleErrorFilter() {
+  if (typeof window === "undefined") return
+
+  const browserWindow = window as Window & {
+    __beyonixSupabaseAuthConsoleErrorFilterInstalled?: boolean
+  }
+
+  if (browserWindow.__beyonixSupabaseAuthConsoleErrorFilterInstalled) return
+
+  const originalConsoleError = console.error.bind(console)
+
+  console.error = ((...args: unknown[]) => {
+    if (args.some(isInvalidRefreshTokenError)) {
+      clearSupabaseBrowserSession()
+      return
+    }
+
+    originalConsoleError(...args)
+  }) as typeof console.error
+
+  browserWindow.__beyonixSupabaseAuthConsoleErrorFilterInstalled = true
+}
+
 export function clearSupabaseBrowserSession() {
   if (typeof window === "undefined") return
 
@@ -81,20 +113,28 @@ export function clearSupabaseBrowserSession() {
 
   if (!storagePrefix) return
 
-  for (const storage of [localStorage, sessionStorage]) {
-    for (const key of Object.keys(storage)) {
-      if (key.startsWith(storagePrefix)) {
-        storage.removeItem(key)
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      for (const key of Object.keys(storage)) {
+        if (key.startsWith(storagePrefix)) {
+          storage.removeItem(key)
+        }
       }
+    } catch {
+      // Algunos navegadores pueden bloquear el storage; las cookies se limpian abajo.
     }
   }
 
-  for (const cookie of document.cookie.split(";")) {
-    const name = cookie.split("=")[0]?.trim()
+  try {
+    for (const cookie of document.cookie.split(";")) {
+      const name = cookie.split("=")[0]?.trim()
 
-    if (name?.startsWith(storagePrefix)) {
-      document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`
+      if (name?.startsWith(storagePrefix)) {
+        document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`
+      }
     }
+  } catch {
+    // Si document.cookie no está disponible, dejamos que el siguiente getSession resuelva.
   }
 }
 

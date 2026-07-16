@@ -93,9 +93,15 @@ export function ProductReviews({ productId }: { productId: number }) {
               ))}
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-white/85">
-              "{review.comment}"
-            </p>
+            {review.comment.trim() ? (
+              <p className="mt-3 text-sm leading-6 text-white/85">
+                "{review.comment}"
+              </p>
+            ) : (
+              <p className="mt-3 text-sm font-semibold text-white/55">
+                Calificación verificada
+              </p>
+            )}
             <p className="mt-3 text-xs font-black text-white">
               {review.nickname}
             </p>

@@ -27,6 +27,8 @@ export async function GET(request: Request) {
 
     if (Number.isInteger(productId) && productId > 0) {
       reviewsQuery = reviewsQuery.eq("product_id", productId)
+    } else {
+      reviewsQuery = reviewsQuery.is("product_id", null)
     }
 
     const { data, error } = await reviewsQuery
@@ -115,6 +117,8 @@ export async function POST(request: Request) {
       productId?: number
     }
     const rating = Number(body.rating)
+    const productId = Number(body.productId)
+    const hasProduct = Number.isInteger(productId) && productId > 0
     const commentValidation = validateReviewComment(body.comment)
 
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -131,8 +135,13 @@ export async function POST(request: Request) {
       )
     }
 
-    const productId = Number(body.productId)
-    const hasProduct = Number.isInteger(productId) && productId > 0
+    if (!hasProduct && !commentValidation.comment) {
+      return Response.json(
+        { error: "Escribí una reseña breve sobre tu experiencia." },
+        { status: 400 }
+      )
+    }
+
     const eligibleReview = hasProduct
       ? await getEligibleProductReview(
           auth.admin,

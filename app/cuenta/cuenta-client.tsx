@@ -46,7 +46,6 @@ import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
 import { CustomerClaimExperience } from "@/components/claims/customer-claim-experience"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
-import { getOrderClaimStatusLabel } from "@/lib/order-claims"
 import {
   formatCuentaInvoiceNumber,
   formatCuentaPrice,
@@ -129,6 +128,47 @@ function getLatestFormalCustomerClaim(claims: SupabaseOrderClaim[] = []) {
   return claims
     .filter((claim) => claim.failure_type !== "cancelar_compra" && claim.failure_type !== "consulta_pedido")
     .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
+}
+
+function getCustomerClaimDetailStatus(claim?: SupabaseOrderClaim | null) {
+  if (!claim) return null
+
+  if (claim.status === "rechazado") {
+    return {
+      label: "Estado: Reclamo rechazado",
+      className: "border-red-300/25 bg-red-500/10 text-red-100",
+    }
+  }
+
+  if (claim.status === "cerrado") {
+    return {
+      label: "Estado: Reclamo solucionado",
+      className: "border-[#77E6E2]/35 bg-[#77E6E2]/12 text-[#D7FFFD]",
+    }
+  }
+
+  return {
+    label: "Estado: En proceso de resolución",
+    className: "border-blue-300/35 bg-[#112A43] text-blue-50",
+  }
+}
+
+async function getOrderClaims(orderId: number) {
+  try {
+    const response = await fetch(`/api/orders/${orderId}/claims`, {
+      cache: "no-store",
+    })
+
+    if (!response.ok) return []
+
+    const data = (await response.json()) as {
+      claims?: SupabaseOrderClaim[]
+    }
+
+    return data.claims ?? []
+  } catch {
+    return []
+  }
 }
 
 function ProfilePanel({ initialView }: { initialView: ProfileView }) {
@@ -365,7 +405,13 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
         return
       }
 
-      setOrder(currentOrder)
+      setOrder({
+        ...currentOrder,
+        order_claims:
+          currentOrder.order_claims && currentOrder.order_claims.length > 0
+            ? currentOrder.order_claims
+            : await getOrderClaims(currentOrder.id),
+      })
       setLoading(false)
     }
 
@@ -525,6 +571,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       ? `Ver mensaje de ayuda del pedido ${formatPublicOrderId(order.id)}`
       : `Ver reclamo del pedido ${formatPublicOrderId(order.id)}`
     : `Iniciar reclamo del pedido ${formatPublicOrderId(order.id)}`
+  const claimDetailStatus = getCustomerClaimDetailStatus(existingClaim)
   const canCancelOrder =
     !isCancelled &&
     !orderDelivered &&
@@ -841,12 +888,14 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
                 <h2 className="text-sm font-bold text-white">Ayuda con tu compra</h2>
                 <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
-                  ¿Tuviste un problema con el pedido? Contactanos para que podamos ayudarte.
+                  {existingClaim
+                    ? "Ya recibimos tu reclamo. Podés ver el seguimiento y la conversación desde acá."
+                    : "¿Tuviste un problema con el pedido? Contactanos para que podamos ayudarte."}
                 </p>
-                {existingClaim && (
-                  <p className="mt-2 text-xs font-medium text-white/60">
-                    Estado: {getOrderClaimStatusLabel(existingClaim.status)}
-                  </p>
+                {claimDetailStatus && (
+                  <div className={`mt-2 rounded-xl border px-3.5 py-2.5 text-xs font-black shadow-[0_0_22px_rgba(119,230,226,0.08)] ${claimDetailStatus.className}`}>
+                    {claimDetailStatus.label}
+                  </div>
                 )}
                 <button
                   type="button"
@@ -893,12 +942,14 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
                 <h2 className="text-sm font-bold text-white">¿Necesitás ayuda?</h2>
                 <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
-                  Si tu pedido no llega o necesitás consultar algo, escribinos desde este chat.
+                  {existingClaim
+                    ? "Ya recibimos tu mensaje. Podés ver el seguimiento desde acá."
+                    : "Si tu pedido no llega o necesitás consultar algo, escribinos desde este chat."}
                 </p>
-                {existingClaim && (
-                  <p className="mt-2 text-xs font-medium text-white/60">
-                    Estado: {getOrderClaimStatusLabel(existingClaim.status)}
-                  </p>
+                {claimDetailStatus && (
+                  <div className={`mt-2 rounded-xl border px-3.5 py-2.5 text-xs font-black shadow-[0_0_22px_rgba(119,230,226,0.08)] ${claimDetailStatus.className}`}>
+                    {claimDetailStatus.label}
+                  </div>
                 )}
                 <button
                   type="button"

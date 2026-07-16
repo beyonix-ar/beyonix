@@ -207,8 +207,8 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   const submitReview = async (productId: number) => {
     const rating = ratings[productId]
     const comment = comments[productId]?.trim() ?? ""
-    if (!rating || !comment) {
-      setFeedbackMessage("Elegí una puntuación y escribí una reseña breve.")
+    if (!rating) {
+      setFeedbackMessage("Elegí una puntuación para enviar la reseña.")
       return
     }
 
@@ -256,9 +256,93 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                   <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={productName} className="size-full object-contain" /> : <Package className="size-4 text-black/30" />}</div>
                   <p className="truncate text-xs font-black text-white">{productName}</p>
                 </div>
-                {submitted.has(productId) ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300"><Check className="size-3.5" />Reseña enviada</span> : <div className="flex items-center gap-1" aria-label={`Calificar ${productName}`} onMouseLeave={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })}>{[1, 2, 3, 4, 5].map((rating) => <button key={rating} type="button" aria-label={`${rating} estrellas`} onMouseEnter={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onFocus={() => setHoverRatings((current) => ({ ...current, [productId]: rating }))} onBlur={() => setHoverRatings((current) => { const next = { ...current }; delete next[productId]; return next })} onClick={() => { setRatings((current) => ({ ...current, [productId]: rating })); setActiveProductId(productId); setFeedbackMessage("") }} className="cursor-pointer p-0.5"><Star className={`size-5 transition-colors ${rating <= visualRating ? "fill-amber-300 text-amber-300" : "text-white/25"}`} /></button>)}</div>}
+                {submitted.has(productId) ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                    <Check className="size-3.5" />
+                    Reseña enviada
+                  </span>
+                ) : (
+                  <div
+                    className="flex items-center gap-1 rounded-lg border border-[#697684] bg-[#8794A2] px-2 py-1"
+                    aria-label={`Calificar ${productName}`}
+                    onMouseLeave={() =>
+                      setHoverRatings((current) => {
+                        const next = { ...current }
+                        delete next[productId]
+                        return next
+                      })
+                    }
+                  >
+                    {[1, 2, 3, 4, 5].map((rating) => {
+                      const active = rating <= visualRating
+                      return (
+                        <button
+                          key={rating}
+                          type="button"
+                          aria-label={`${rating} estrellas`}
+                          aria-pressed={selectedRating === rating}
+                          onMouseEnter={() =>
+                            setHoverRatings((current) => ({ ...current, [productId]: rating }))
+                          }
+                          onFocus={() =>
+                            setHoverRatings((current) => ({ ...current, [productId]: rating }))
+                          }
+                          onBlur={() =>
+                            setHoverRatings((current) => {
+                              const next = { ...current }
+                              delete next[productId]
+                              return next
+                            })
+                          }
+                          onClick={() => {
+                            setRatings((current) => ({ ...current, [productId]: rating }))
+                            setActiveProductId(productId)
+                            setFeedbackMessage("")
+                          }}
+                          className={`grid size-7 cursor-pointer place-items-center rounded-md transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7AB8FF] ${
+                            active ? "text-[#0067C9]" : "text-white"
+                          }`}
+                        >
+                          <Star
+                            className={`size-4 fill-transparent transition-all duration-150 ${
+                              active
+                                ? "drop-shadow-[0_0_4px_rgba(0,103,201,0.55)]"
+                                : "drop-shadow-none"
+                            }`}
+                          />
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-              {activeProductId === productId && !submitted.has(productId) && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={comments[productId] ?? ""} maxLength={150} onChange={(event) => setComments((current) => ({ ...current, [productId]: event.target.value }))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (submitting === productId || !(comments[productId]?.trim()) || !ratings[productId]) return; void submitReview(productId) }} placeholder="Contanos brevemente tu experiencia" className="h-9 min-w-0 flex-1 rounded-lg border border-[#21476B] bg-[#13263B] px-3 text-xs text-white outline-none placeholder:text-[#7D8FA1] focus:border-[#2C6CA3]" /><button type="button" disabled={submitting === productId} onClick={() => void submitReview(productId)} className="h-9 cursor-pointer rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-50">{submitting === productId ? "Enviando..." : "Enviar reseña"}</button></div>}
+              {activeProductId === productId && !submitted.has(productId) && (
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={comments[productId] ?? ""}
+                    maxLength={150}
+                    onChange={(event) =>
+                      setComments((current) => ({ ...current, [productId]: event.target.value }))
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+                      event.preventDefault()
+                      if (submitting === productId || !ratings[productId]) return
+                      void submitReview(productId)
+                    }}
+                    placeholder="Contanos brevemente tu experiencia (opcional)"
+                    className="h-10 min-w-0 flex-1 rounded-lg border border-[#9AA9B8] bg-[#E7EDF3] px-3 text-xs font-semibold text-[#0B1118] outline-none placeholder:text-[#5F6B78] focus:border-[#6EC6FF] focus:ring-2 focus:ring-[#6EC6FF]/35"
+                  />
+                  <button
+                    type="button"
+                    disabled={submitting === productId}
+                    onClick={() => void submitReview(productId)}
+                    className="h-10 cursor-pointer rounded-lg border border-[#21476B] bg-[#112A43] px-4 text-xs font-black text-white transition-colors duration-150 hover:border-[#2C6CA3] hover:bg-[#183654] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {submitting === productId ? "Enviando..." : "Enviar reseña"}
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}

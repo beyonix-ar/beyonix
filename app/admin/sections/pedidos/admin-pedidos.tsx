@@ -673,7 +673,7 @@ function getClaimSummary(pedido: SupabasePedido) {
       : "Reclamo abierto"
   }
   if (claims.some((claim) => claim.failure_type === "consulta_pedido")) return "Ayuda cerrada"
-  return "Reclamo cerrado"
+  return "Reclamo finalizado"
 }
 
 function getAdminClaimFailureLabel(failureType?: string | null) {
@@ -745,6 +745,7 @@ function getSummaryBadgeClass(value: string) {
       "Factura emitida",
       "Sin reclamos",
       "Ayuda cerrada",
+      "Reclamo finalizado",
       "Reintegrado",
       "Reintegro completado",
     ].includes(value)
@@ -877,7 +878,7 @@ function getOrderLatestActivity(pedido: SupabasePedido) {
       at: latestClaim?.updated_at || latestClaim?.created_at,
       label:
         latestClaim?.status === "cerrado"
-          ? "Reclamo cerrado."
+          ? "Reclamo finalizado."
           : latestClaim
             ? "Reclamo abierto por el cliente."
             : "",
@@ -1802,9 +1803,9 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
           ? "Cancelación cerrada"
           : claimIsHelpMessage
             ? "Consulta resuelta"
-            : "Reclamo cerrado",
+            : "Reclamo finalizado",
         at: claim.closed_at || claim.updated_at,
-        description: "El caso quedó cerrado.",
+        description: "El reclamo quedó finalizado.",
         type: "success",
       })
     }
@@ -1978,7 +1979,7 @@ function RefundManagementPanel({
     ? "Finalizado"
     : refundPending
       ? "Pendiente"
-      : "Cerrado"
+      : "Finalizado"
   const cancellationTitle = refunded
     ? "Reintegro completado"
     : refundPending
@@ -5185,7 +5186,7 @@ function AdminClaimsCenterSection({
                   <option value="reintegro_pendiente">Reintegro pendiente</option>
                   <option value="cupon_pendiente">Cupón pendiente</option>
                   <option value="rechazado">Rechazado</option>
-                  <option value="cerrado">Cerrado</option>
+                  <option value="cerrado">Finalizado</option>
                 </AdminSelect>
               </div>
               <div>
@@ -5272,7 +5273,7 @@ function AdminClaimsCenterSection({
               value={adminResponse}
               onChange={(event) => setAdminResponse(event.target.value)}
               rows={4}
-              placeholder="Respuesta visible para el cliente. El reclamo seguirá abierto hasta que lo marques como Cerrado."
+              placeholder="Respuesta visible para el cliente. El reclamo seguirá abierto hasta que lo marques como Finalizado."
               className="w-full resize-none rounded-xl border border-[#2c4058] bg-[#111827] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
             />
             <textarea
@@ -5296,7 +5297,7 @@ function AdminClaimsCenterSection({
             </label>
             <p className="text-xs font-semibold leading-5 text-white/46">
               Para seguir hablando, dejá el estado como En revisión o En
-              conversación. Solo Cerrado o Rechazado finalizan el reclamo.
+              conversación. Solo Finalizado o Rechazado finalizan el reclamo.
             </p>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs font-semibold text-white/48">

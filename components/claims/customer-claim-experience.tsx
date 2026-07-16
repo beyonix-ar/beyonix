@@ -10,7 +10,6 @@ import {
   MessageCircle,
   Package,
   Paperclip,
-  Plus,
   Send,
   Truck,
   Upload,
@@ -54,6 +53,8 @@ type ClaimProblemOption = {
 const CLAIM_DESCRIPTION_MIN_LENGTH = 10
 const CLAIM_DESCRIPTION_MAX_LENGTH = 600
 const HELP_MESSAGE_PROBLEM_TYPE: ClaimProblemId = "consulta_pedido"
+const SUPPORT_EMAIL = "beyonix.ar@gmail.com"
+const SUPPORT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(SUPPORT_EMAIL)}`
 
 const POST_DELIVERY_PROBLEMS: ClaimProblemOption[] = [
   {
@@ -173,8 +174,7 @@ function getCustomerClaimMessageText(message: string) {
 
 function CustomerClaimMessageBody({ message }: { message: string }) {
   const text = getCustomerClaimMessageText(message)
-  const email = "beyonix.ar@gmail.com"
-  const parts = text.split(email)
+  const parts = text.split(SUPPORT_EMAIL)
 
   if (parts.length === 1) {
     return <>{text}</>
@@ -186,8 +186,13 @@ function CustomerClaimMessageBody({ message }: { message: string }) {
         <span key={index}>
           {part}
           {index < parts.length - 1 && (
-            <a href={`mailto:${email}`} className="font-black text-blue-200 underline decoration-blue-200/45 underline-offset-2 hover:text-white">
-              {email}
+            <a
+              href={SUPPORT_EMAIL_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="font-black text-blue-200 underline decoration-blue-200/45 underline-offset-2 hover:text-white"
+            >
+              {SUPPORT_EMAIL}
             </a>
           )}
         </span>
@@ -272,7 +277,7 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
     return { label: "Solución en proceso", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
   }
   if (claim.status === "rechazado") return { label: "Reclamo rechazado", dot: "bg-red-300", style: "border-red-300/25 bg-red-400/8" }
-  if (claim.status === "cerrado") return { label: "Caso resuelto", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
+  if (claim.status === "cerrado") return { label: "Reclamo finalizado", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
 
   return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }
 }
@@ -529,7 +534,6 @@ export function CustomerClaimExperience({
   const [refundBank, setRefundBank] = useState("")
   const [refundAmountConfirmed, setRefundAmountConfirmed] = useState("")
   const [justCreated, setJustCreated] = useState<SupabaseOrderClaim | null>(null)
-  const [startingNewConversation, setStartingNewConversation] = useState(false)
   const [claimsReady, setClaimsReady] = useState(false)
   const [claimsReadyOrderId, setClaimsReadyOrderId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -581,13 +585,9 @@ export function CustomerClaimExperience({
       "reemplazo_enviado",
     ].includes(claim.status),
   )
-  const claim = startingNewConversation ? null : activeClaim ?? displayableClaims[0]
+  const claim = activeClaim ?? displayableClaims[0]
   const messageCount = claim?.order_claim_messages?.length ?? 0
   const goToOrders = () => router.push("/cuenta?tab=ordenes")
-
-  useEffect(() => {
-    if (activeClaim) setStartingNewConversation(false)
-  }, [activeClaim?.id])
 
   useLayoutEffect(() => {
     const chat = chatRef.current
@@ -693,7 +693,6 @@ export function CustomerClaimExperience({
 
       updateClaimInState(data.claim)
       setJustCreated(data.claim)
-      setStartingNewConversation(false)
       setDescription("")
       setFiles([])
       scrollToClaimTop()
@@ -739,7 +738,6 @@ export function CustomerClaimExperience({
 
       updateClaimInState(data.claim)
       setJustCreated(data.claim)
-      setStartingNewConversation(false)
       setDescription("")
       scrollToClaimTop()
     } catch {
@@ -971,7 +969,7 @@ export function CustomerClaimExperience({
               </span>
               <div>
                 <p className="text-sm font-black leading-none text-emerald-50">Consulta resuelta</p>
-                <p className="mt-1 text-xs font-bold leading-none text-emerald-50/78">Chat cerrado</p>
+                <p className="mt-1 text-xs font-bold leading-none text-emerald-50/78">Finalizado</p>
               </div>
             </div>
           ) : (
@@ -996,7 +994,7 @@ export function CustomerClaimExperience({
                 <Check className="size-3.5 text-[#D7FFFD]" />
               </span>
               <div className="min-w-0">
-                <p className="text-xs font-black text-[#D7FFFD]">Consulta cerrada</p>
+                <p className="text-xs font-black text-[#D7FFFD]">Consulta finalizada</p>
                 <p className="mt-1 text-xs font-semibold leading-5 text-white/80">
                   La conversación de ayuda fue finalizada.
                 </p>
@@ -1120,38 +1118,38 @@ export function CustomerClaimExperience({
             <div className="space-y-2">
               {closedHelp ? (
                 <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-3">
-                  <p className="text-xs font-black text-[#D7FFFD]">Chat de ayuda cerrado</p>
+                  <p className="text-xs font-black text-[#D7FFFD]">Chat de ayuda finalizado</p>
                   <p className="mt-1 text-xs font-semibold leading-5 text-white/70">
                     Si surge otra consulta previa a la entrega, escribinos por mail.
                   </p>
                   <a
-                    href="mailto:beyonix.ar@gmail.com"
+                    href={SUPPORT_EMAIL_URL}
+                    target="_blank"
+                    rel="noreferrer"
                     className="mt-2 inline-flex h-8 items-center rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white hover:border-blue-300/55 hover:bg-[#183B5E]"
                   >
-                    beyonix.ar@gmail.com
+                    {SUPPORT_EMAIL}
                   </a>
                 </div>
-              ) : (
+              ) : cancellation ? (
                 <p className="rounded-lg border border-blue-300/15 bg-[#112A43]/25 px-3 py-2 text-xs font-bold text-blue-100">
-                  {cancellation ? "La compra figura como cancelada." : "Caso finalizado. Podés consultar la conversación cuando quieras."}
+                  La compra figura como cancelada.
                 </p>
-              )}
-              {!cancellation && !helpMessage && claim.status === "cerrado" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStartingNewConversation(true)
-                    setJustCreated(null)
-                    setDescription("")
-                    setReply("")
-                    setReplyFiles([])
-                    setError("")
-                  }}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white hover:border-blue-300/55 hover:bg-[#183B5E]"
-                >
-                  <Plus className="size-3.5" />
-                  Iniciar nueva conversación
-                </button>
+              ) : (
+                <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-3">
+                  <p className="text-xs font-black text-[#D7FFFD]">Reclamo finalizado</p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-white/70">
+                    Este pedido ya tuvo un reclamo finalizado. Podés consultar la conversación cuando quieras. Si necesitás contactarnos por otro motivo, escribinos por mail.
+                  </p>
+                  <a
+                    href={SUPPORT_EMAIL_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex h-8 items-center rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white hover:border-blue-300/55 hover:bg-[#183B5E]"
+                  >
+                    {SUPPORT_EMAIL}
+                  </a>
+                </div>
               )}
               {refundProof?.signedUrl && (
                 <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-white hover:border-[#77E6E2]/45">

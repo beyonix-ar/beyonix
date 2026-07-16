@@ -46,7 +46,35 @@ import {
   normalizeTrackingUrl,
   type CustomerOrderDetailView,
 } from "@/lib/account/account-utils"
-import type { SupabasePedido } from "@/lib/supabase/types"
+import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
+
+function getLatestCustomerClaim(claims: SupabaseOrderClaim[] = []) {
+  return claims
+    .filter(
+      (claim) =>
+        claim.failure_type !== "cancelar_compra" &&
+        claim.failure_type !== "consulta_pedido",
+    )
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
+}
+
+async function getOrderClaims(orderId: number) {
+  try {
+    const response = await fetch(`/api/orders/${orderId}/claims`, {
+      cache: "no-store",
+    })
+
+    if (!response.ok) return []
+
+    const data = (await response.json()) as {
+      claims?: SupabaseOrderClaim[]
+    }
+
+    return data.claims ?? []
+  } catch {
+    return []
+  }
+}
 
 export function MisOrdenes({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
@@ -94,7 +122,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
 
       const { data, error: ordersError } = await supabase
         .from("ordenes")
-        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
+        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*)")
         .order("created_at", { ascending: false })
 
       if (ordersError) {
@@ -128,7 +156,17 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
         )
       })
 
-      setOrders(matchedOrders)
+      const ordersWithClaims = await Promise.all(
+        matchedOrders.map(async (order) => ({
+          ...order,
+          order_claims:
+            order.order_claims && order.order_claims.length > 0
+              ? order.order_claims
+              : await getOrderClaims(order.id),
+        })),
+      )
+
+      setOrders(ordersWithClaims)
       if (!silent) setLoading(false)
     },
     [user],
@@ -372,6 +410,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   ? "Andreani · Seguimiento disponible"
                   : "Te avisaremos cuando el pedido esté en camino"
             const canOpenClaim = order.estado !== "cancelado"
+            const existingClaim = getLatestCustomerClaim(order.order_claims)
 
             return (
               <article
@@ -428,6 +467,18 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                       <FileText className="size-4" />
                       Ver compra
                     </BeyonixButton>
+                    {existingClaim && (
+                      <BeyonixButton
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        aria-label={`Ver reclamo del pedido ${formatPublicOrderId(order.id)}`}
+                        onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
+                      >
+                        <MessageCircle className="size-4" />
+                        Ver reclamo
+                      </BeyonixButton>
+                    )}
                   </div>
                 </div>
 
