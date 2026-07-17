@@ -148,9 +148,12 @@ function validateCustomer(customer: CheckoutPayload["customer"]) {
 
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
-  productsTotal: number
+  productsTotal: number,
+  customerCreditApplied = false
 ) {
-  const normalizedShipping = normalizeCheckoutShipping(shipping, productsTotal)
+  const normalizedShipping = normalizeCheckoutShipping(shipping, productsTotal, {
+    customerCreditApplied,
+  })
 
   return {
     shipping_provider: normalizedShipping.provider,
@@ -367,7 +370,11 @@ export async function POST(request: Request) {
       }
     })
     const baseTotals = calculateCartTotals(cartRows)
-    const shipping = normalizeShipping(payload.shipping, baseTotals.productsTotal)
+    const shipping = normalizeShipping(
+      payload.shipping,
+      baseTotals.productsTotal,
+      requestedCredit > 0
+    )
     const totals = calculateCartTotals(cartRows, {
       shippingCost: shipping.shipping_cost_charged,
     })

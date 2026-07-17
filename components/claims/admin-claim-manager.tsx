@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
 import {
   CheckCircle2,
   CreditCard,
@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 
 import { AdminSelect, adminControlClassName } from "@/app/admin/components/admin-controls"
+import { useAuth } from "@/context/auth-context"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
 import { getOrderClaimResolutionLabel } from "@/lib/order-claims"
@@ -76,11 +77,7 @@ const RESOLUTION_OPTIONS: Array<{
   },
   {
     value: "cupon_descuento",
-    label: "Nota de crédito",
-  },
-  {
-    value: "saldo_a_favor",
-    label: "Saldo a favor",
+    label: "Nota de crédito por diferencia",
   },
   {
     value: "reintegro_total",
@@ -141,6 +138,17 @@ function getClaimMessageText(message: string) {
   return match?.[1]?.trim() || message
 }
 
+function getCustomerMentionName(pedido: SupabasePedido) {
+  const candidates = [
+    pedido.cliente_nombre_completo,
+    pedido.cliente_nombre,
+    pedido.cliente_username,
+    pedido.cliente_email,
+  ]
+
+  return candidates.find((value) => value?.trim())?.trim() ?? ""
+}
+
 function getConversationStatusLabel(claim: SupabaseOrderClaim, messages: SupabaseOrderClaimMessage[]) {
   if (claim.status === "cerrado") return "Finalizado"
   if (claim.status === "rechazado") return "Rechazado"
@@ -165,7 +173,7 @@ function getStatusTone(status: OrderClaimStatus, cancellation = false) {
     return "bg-emerald-900/80 text-emerald-100 border-emerald-300/50"
   }
   if (status === "rechazado") return "bg-red-950/85 text-red-100 border-red-300/50"
-  if (status === "cerrado") return "bg-teal-950/85 text-teal-100 border-teal-300/50"
+  if (status === "cerrado") return "admin-claim-status-finalized"
   return "bg-slate-800 text-slate-100 border-slate-400/45"
 }
 
@@ -178,9 +186,20 @@ function isOrderDelivered(order: SupabasePedido) {
 function isOrderDispatched(order: SupabasePedido) {
   const estado = (order.estado ?? "").toLowerCase()
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
+  const dispatchedStatuses = [
+    "enviado",
+    "en_camino",
+    "visita_fallida",
+    "en_sucursal",
+    "retiro_pendiente",
+    "retiro_vencido",
+    "en_devolucion",
+    "devuelto_beyonix",
+    "entregado",
+  ]
 
   return (
-    ["enviado", "en_camino", "entregado"].includes(estado) ||
+    dispatchedStatuses.includes(estado) ||
     Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
     ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
       (status) => andreaniStatus.includes(status),
@@ -274,8 +293,10 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
 }
 
 function getDefaultDecisionResolution(claim?: SupabaseOrderClaim | null): Exclude<OrderClaimResolution, "rechazado"> {
+  if (claim?.resolution === "saldo_a_favor") return "cupon_descuento"
   if (claim?.resolution && claim.resolution !== "rechazado") return claim.resolution
   if (claim?.customer_selected_resolution && claim.customer_selected_resolution !== "rechazado") {
+    if (claim.customer_selected_resolution === "saldo_a_favor") return "cupon_descuento"
     return claim.customer_selected_resolution
   }
   if (claim?.failure_type === "faltante" || claim?.failure_type === "cantidad_menor") {
@@ -294,6 +315,7 @@ export function AdminClaimManager({
   mode?: "all" | "messaging" | "claims"
   onClaimChange: (claim: SupabaseOrderClaim) => void
 }) {
+  const { isAdmin } = useAuth()
   const allClaims = pedido.order_claims ?? []
   const claims = allClaims.filter((item) => {
     if (mode === "messaging") return item.failure_type === "consulta_pedido"
@@ -308,6 +330,7 @@ export function AdminClaimManager({
   const [decisionMessage, setDecisionMessage] = useState("")
   const [decisionReason, setDecisionReason] = useState(REJECTION_REASONS[0])
   const [decisionResolution, setDecisionResolution] = useState<Exclude<OrderClaimResolution, "rechazado">>("cambio_producto")
+  const [decisionCreditNoteAmount, setDecisionCreditNoteAmount] = useState("")
   const [refundProofFile, setRefundProofFile] = useState<File | null>(null)
   const [refundDate, setRefundDate] = useState("")
   const [refundAmount, setRefundAmount] = useState("")
@@ -320,6 +343,7 @@ export function AdminClaimManager({
   const firstReviewAttemptedRef = useRef<Set<number>>(new Set())
   const loadedOrderClaimsRef = useRef<Set<number>>(new Set())
   const messageCount = claim?.order_claim_messages?.length ?? 0
+  const customerMentionName = getCustomerMentionName(pedido)
 
   const cancellation = claim?.failure_type === "cancelar_compra"
   const invoiced = isOrderInvoiced(pedido)
@@ -383,6 +407,7 @@ export function AdminClaimManager({
     setDecisionMessage("")
     setDecisionReason(REJECTION_REASONS[0])
     setDecisionResolution(getDefaultDecisionResolution(claim))
+    setDecisionCreditNoteAmount("")
     setRefundProofFile(null)
     setRefundDate("")
     setRefundAmount("")
@@ -557,21 +582,34 @@ export function AdminClaimManager({
   const approveSolution = async () => {
     if (!claim) return
     const message = decisionMessage.trim() || response.trim()
+    const creditNoteAmount = Number(decisionCreditNoteAmount.replace(",", ".").trim())
+
+    if (
+      decisionResolution === "cupon_descuento" &&
+      (!Number.isFinite(creditNoteAmount) || creditNoteAmount <= 0)
+    ) {
+      setNotice("Indicá el monto real a reconocer con nota de crédito.")
+      return
+    }
+
     const sent = await updateClaim(
       {
         status:
-          decisionResolution === "reintegro_total" ||
-          decisionResolution === "saldo_a_favor"
+          decisionResolution === "reintegro_total"
             ? "reintegro_pendiente"
             : "aprobado",
         resolution: decisionResolution,
         admin_response: message || claim.admin_response || "",
         append_message: Boolean(message),
+        ...(decisionResolution === "cupon_descuento"
+          ? { credit_note_amount: creditNoteAmount }
+          : {}),
       },
       "Solución aprobada por BEYONIX.",
     )
     if (sent) {
       setResponse("")
+      setDecisionCreditNoteAmount("")
       closeDecision()
     }
   }
@@ -650,6 +688,43 @@ export function AdminClaimManager({
       "Reclamo finalizado.",
     )
     if (sent) closeDecision()
+  }
+
+  const issueCreditNote = async () => {
+    if (!claim) return
+    setSaving(true)
+    setNotice("")
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setNotice("La sesión administrativa venció.")
+        return
+      }
+
+      const request = await fetch(`/api/admin/orders/${pedido.id}/credit-note`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      })
+      const data = (await request.json()) as {
+        error?: string
+      }
+
+      if (!request.ok) {
+        setNotice(data.error || "No se pudo emitir la nota de crédito.")
+        return
+      }
+
+      setNotice("Nota de crédito emitida por ARCA.")
+      notifyOrderNotificationsChanged()
+      await markAcceptedSolutionDone()
+    } catch {
+      setNotice("No se pudo emitir la nota de crédito.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const uploadRefundProof = async () => {
@@ -774,6 +849,7 @@ export function AdminClaimManager({
   const refundProof = files.find((file) => file.file_role === "comprobante_devolucion")
   const evidenceFiles = files.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
   const closed = ["cerrado", "rechazado"].includes(claim.status)
+  const conversationLocked = claim.status === "rechazado"
   const helpMessage = claim.failure_type === "consulta_pedido"
   const canReviewClaim = !closed && ["recibido", "en_revision", "falta_informacion"].includes(claim.status)
   const canCompleteAcceptedSolution = !closed && claim.status === "aprobado"
@@ -781,9 +857,16 @@ export function AdminClaimManager({
     canCompleteAcceptedSolution &&
     (claim.resolution === "cambio_producto" || claim.resolution === "envio_unidad_faltante")
   const canManageRefund = !closed && claim.status === "reintegro_pendiente" && claim.resolution === "reintegro_total"
+  const canIssueCreditNote =
+    !closed &&
+    claim.resolution === "cupon_descuento" &&
+    !pedido.credit_note_issued &&
+    pedido.credit_note_status !== "authorized" &&
+    !pedido.credit_note_cae
   const canCloseClaim = !closed && !cancellation
   const canCloseConversation = helpMessage && !closed
   const helpResolved = helpMessage && claim.status === "cerrado"
+  const finalizedStatus = !helpResolved && claim.status === "cerrado"
   const conversationStatus = getConversationStatusLabel(claim, messages)
   return (
     <section className={`admin-claim-manager admin-ds-surface mt-3 overflow-hidden ${mode === "messaging" ? "admin-claim-manager-messaging" : ""} ${ADMIN_SENSITIVE_DANGER.panel}`}>
@@ -792,7 +875,7 @@ export function AdminClaimManager({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-black text-white">Pedido BX-{1000 + pedido.id}</h3>
-              <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-10px font-black uppercase ${helpResolved ? "admin-claim-help-resolved-badge" : getStatusTone(claim.status, cancellation)}`}>
+              <span className={`inline-flex items-center gap-2 px-2.5 py-1 text-10px font-black uppercase ${finalizedStatus ? "admin-claim-status-finalized" : `rounded-full border ${helpResolved ? "admin-claim-help-resolved-badge" : getStatusTone(claim.status, cancellation)}`}`}>
                 <span className="size-2 rounded-full bg-current" />
                 {getStatusLabel(claim)}
               </span>
@@ -826,7 +909,7 @@ export function AdminClaimManager({
           <div className="mt-3 rounded-lg border border-[#77E6E2]/24 bg-[#77E6E2]/6 px-3 py-2">
             <p className="text-xs font-black text-[#D7FFFD]">Reclamo finalizado</p>
             <p className="mt-1 text-[11px] font-semibold leading-4 text-white/65">
-              El historial queda disponible para consulta, pero no se pueden enviar mensajes ni registrar nuevas acciones.
+              El historial queda disponible para consulta. Podés enviar una aclaración al cliente, pero no registrar nuevas acciones.
             </p>
           </div>
         )}
@@ -893,8 +976,10 @@ export function AdminClaimManager({
             chatRef={chatRef}
             response={response}
             saving={saving}
-            closed={closed}
+            closed={conversationLocked}
             statusLabel={conversationStatus}
+            customerMentionName={customerMentionName}
+            canUseCustomerMention={isAdmin}
             onResponseChange={setResponse}
             onSendResponse={() => void sendResponse()}
           />
@@ -992,6 +1077,16 @@ export function AdminClaimManager({
                     tone="success"
                     disabled={saving}
                     onClick={() => void markAcceptedSolutionDone()}
+                  />
+                )}
+                {canCompleteAcceptedSolution && claim.resolution === "cupon_descuento" && canIssueCreditNote && (
+                  <DecisionButton
+                    icon={<CreditCard className="size-4" />}
+                    title="Emitir nota de crédito"
+                    description="Generarla por ARCA con el monto cargado."
+                    tone="success"
+                    disabled={saving || !invoiced}
+                    onClick={() => void issueCreditNote()}
                   />
                 )}
                 {canCompleteAcceptedSolution && claim.resolution === "cupon_descuento" && (
@@ -1114,10 +1209,12 @@ export function AdminClaimManager({
           message={decisionMessage}
           reason={decisionReason}
           resolution={decisionResolution}
+          creditNoteAmount={decisionCreditNoteAmount}
           cancellationCanBeApproved={cancellationCanBeApproved}
           onMessageChange={setDecisionMessage}
           onReasonChange={setDecisionReason}
           onResolutionChange={setDecisionResolution}
+          onCreditNoteAmountChange={setDecisionCreditNoteAmount}
           onClose={closeDecision}
           onConfirm={() => void runDecisionAction()}
         />
@@ -1166,6 +1263,8 @@ function ClaimConversation({
   saving,
   closed,
   statusLabel,
+  customerMentionName,
+  canUseCustomerMention,
   onResponseChange,
   onSendResponse,
 }: {
@@ -1175,9 +1274,46 @@ function ClaimConversation({
   saving: boolean
   closed: boolean
   statusLabel: string
+  customerMentionName: string
+  canUseCustomerMention: boolean
   onResponseChange: (value: string) => void
   onSendResponse: () => void
 }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const nextCaretPositionRef = useRef<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (nextCaretPositionRef.current === null) return
+
+    const textarea = textareaRef.current
+    const position = nextCaretPositionRef.current
+    nextCaretPositionRef.current = null
+    textarea?.setSelectionRange(position, position)
+  }, [response])
+
+  const handleResponseChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.target.value
+    const nativeEvent = event.nativeEvent as InputEvent
+
+    if (
+      canUseCustomerMention &&
+      customerMentionName &&
+      nativeEvent.inputType === "insertText" &&
+      nativeEvent.data === "@"
+    ) {
+      const cursorPosition = event.target.selectionStart ?? nextValue.length
+      const beforeMention = nextValue.slice(0, Math.max(0, cursorPosition - 1))
+      const afterMention = nextValue.slice(cursorPosition)
+      const nextResponse = `${beforeMention}${customerMentionName}${afterMention}`
+
+      nextCaretPositionRef.current = beforeMention.length + customerMentionName.length
+      onResponseChange(nextResponse)
+      return
+    }
+
+    onResponseChange(nextValue)
+  }
+
   return (
     <section className="admin-claim-chat-panel flex flex-col overflow-hidden rounded-xl border">
       <div className="admin-claim-header border-b px-3 py-1.5">
@@ -1214,9 +1350,10 @@ function ClaimConversation({
       <div className="admin-claim-composer border-t p-2">
         <div className="flex gap-2">
           <textarea
+            ref={textareaRef}
             value={response}
             disabled={closed || saving}
-            onChange={(event) => onResponseChange(event.target.value)}
+            onChange={handleResponseChange}
             rows={1}
             placeholder={closed ? "Reclamo finalizado" : "Responder al cliente"}
             className={`${adminControlClassName} min-h-8 min-w-0 basis-4/5 resize-none px-3 py-1.5 text-xs leading-5 disabled:cursor-not-allowed disabled:opacity-45`}
@@ -1333,10 +1470,12 @@ function ClaimActionModal({
   message,
   reason,
   resolution,
+  creditNoteAmount,
   cancellationCanBeApproved,
   onMessageChange,
   onReasonChange,
   onResolutionChange,
+  onCreditNoteAmountChange,
   onClose,
   onConfirm,
 }: {
@@ -1345,10 +1484,12 @@ function ClaimActionModal({
   message: string
   reason: string
   resolution: Exclude<OrderClaimResolution, "rechazado">
+  creditNoteAmount: string
   cancellationCanBeApproved: boolean
   onMessageChange: (value: string) => void
   onReasonChange: (value: string) => void
   onResolutionChange: (value: Exclude<OrderClaimResolution, "rechazado">) => void
+  onCreditNoteAmountChange: (value: string) => void
   onClose: () => void
   onConfirm: () => void
 }) {
@@ -1384,11 +1525,17 @@ function ClaimActionModal({
               ? "Rechazar cancelación"
               : "Finalizar reclamo"
 
+  const creditNoteAmountNumber = Number(creditNoteAmount.replace(",", ".").trim())
   const confirmDisabled =
     saving ||
     (action === "reject" && message.trim().length < 5) ||
     (action === "reject_cancellation" && message.trim().length < 5) ||
-    (action === "approve_cancellation" && !cancellationCanBeApproved)
+    (action === "approve_cancellation" && !cancellationCanBeApproved) ||
+    (
+      action === "approve" &&
+      resolution === "cupon_descuento" &&
+      (!Number.isFinite(creditNoteAmountNumber) || creditNoteAmountNumber <= 0)
+    )
   const resolutionToneClassNames: Record<Exclude<OrderClaimResolution, "rechazado">, string> = {
     cambio_producto: "border-blue-300/25 hover:border-blue-300/60",
     envio_unidad_faltante: "border-sky-300/25 hover:border-sky-300/60",
@@ -1430,6 +1577,23 @@ function ClaimActionModal({
                   </label>
                 ))}
               </div>
+              {resolution === "cupon_descuento" && (
+                <div className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-950/18 p-2">
+                  <label className="text-10px font-black uppercase text-emerald-100/70">
+                    Monto a reconocer con nota de crédito
+                  </label>
+                  <p className="mt-1 text-[11px] font-semibold leading-4 text-emerald-50/70">
+                    Cargá solo la diferencia a favor del cliente. Ej: si facturaste $50.000 y conserva un producto de $20.000, corresponde $30.000.
+                  </p>
+                  <input
+                    inputMode="decimal"
+                    value={creditNoteAmount}
+                    onChange={(event) => onCreditNoteAmountChange(event.target.value)}
+                    placeholder="Ej: 2500"
+                    className={`${adminControlClassName} mt-1 h-8 min-h-8 px-2 text-xs`}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1482,7 +1646,7 @@ function ClaimActionModal({
             type="button"
             disabled={confirmDisabled}
             onClick={onConfirm}
-            className={`admin-ds-button ${destructive ? "admin-ds-button-destructive" : "admin-ds-button-primary"} h-9 px-4 text-xs font-black`}
+            className={`admin-ds-button ${destructive ? "admin-ds-button-destructive" : action === "close" ? "admin-claim-action-confirm-ok" : "admin-ds-button-primary"} h-9 px-4 text-xs font-black`}
           >
             {saving ? "Procesando..." : ctaLabel}
           </button>

@@ -77,7 +77,7 @@ export async function GET(request: Request) {
       ? auth.admin.from("producto_variantes").select("*").in("id", variantIds)
       : Promise.resolve({ data: [], error: null }),
     userIds.length
-      ? auth.admin.from("profiles").select("id, username").in("id", userIds)
+      ? auth.admin.from("profiles").select("id, username, nombre, email").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
     auth.admin
       .from("order_claims")
@@ -140,11 +140,13 @@ export async function GET(request: Request) {
       variant,
     ])
   )
-  const usernamesById = new Map(
+  const profilesById = new Map(
     ((profilesResult.data ?? []) as Array<{
       id: string
       username: string | null
-    }>).map((profile) => [profile.id, profile.username])
+      nombre: string | null
+      email: string | null
+    }>).map((profile) => [profile.id, profile])
   )
   const itemsByOrder = new Map<number, SupabasePedidoItem[]>()
   const claimsByOrder = new Map<number, any[]>()
@@ -210,8 +212,22 @@ export async function GET(request: Request) {
           ? null
           : pedido.transfer_discount_amount,
       cliente_username: pedido.usuario_id
-        ? usernamesById.get(pedido.usuario_id) ?? null
+        ? profilesById.get(pedido.usuario_id)?.username ?? null
         : null,
+      cliente_nombre_completo: (() => {
+        const profile = pedido.usuario_id
+          ? profilesById.get(pedido.usuario_id)
+          : null
+        const profileName = profile?.nombre?.trim()
+
+        return (
+          profileName ||
+          pedido.cliente_nombre?.trim() ||
+          profile?.username?.trim() ||
+          pedido.cliente_email?.trim() ||
+          null
+        )
+      })(),
       orden_items: (itemsByOrder.get(pedido.id) ?? []).map((item) => ({
         ...item,
         precio: auth.profile.rol === "operador" ? 0 : item.precio,

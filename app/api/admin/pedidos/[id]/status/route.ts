@@ -18,8 +18,25 @@ const ALLOWED_ORDER_STATUSES = [
   "pagado",
   "enviado",
   "en_camino",
+  "visita_fallida",
+  "en_sucursal",
+  "retiro_pendiente",
+  "retiro_vencido",
+  "en_devolucion",
+  "devuelto_beyonix",
   "entregado",
   "cancelado",
+]
+const DISPATCHED_ORDER_STATUSES = [
+  "enviado",
+  "en_camino",
+  "visita_fallida",
+  "en_sucursal",
+  "retiro_pendiente",
+  "retiro_vencido",
+  "en_devolucion",
+  "devuelto_beyonix",
+  "entregado",
 ]
 
 function normalizeExternalUrl(value: unknown) {
@@ -51,7 +68,7 @@ function isPaymentConfirmed(order: {
   return (
     Boolean(order.paid_at) ||
     ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "") ||
-    ["pagado", "enviado", "en_camino", "entregado"].includes(order.estado ?? "")
+    ["pagado", ...DISPATCHED_ORDER_STATUSES].includes(order.estado ?? "")
   )
 }
 
@@ -265,7 +282,7 @@ export async function PATCH(
     )
   }
 
-  if (["enviado", "en_camino", "entregado"].includes(estado)) {
+  if (DISPATCHED_ORDER_STATUSES.includes(estado)) {
     if (
       ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
         String(currentOrder.financial_status ?? ""),

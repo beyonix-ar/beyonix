@@ -52,7 +52,18 @@ function isPaymentConfirmed(order: {
   return (
     Boolean(order.paid_at) ||
     ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "") ||
-    ["pagado", "enviado", "en_camino", "entregado"].includes(order.estado ?? "")
+    [
+      "pagado",
+      "enviado",
+      "en_camino",
+      "visita_fallida",
+      "en_sucursal",
+      "retiro_pendiente",
+      "retiro_vencido",
+      "en_devolucion",
+      "devuelto_beyonix",
+      "entregado",
+    ].includes(order.estado ?? "")
   )
 }
 

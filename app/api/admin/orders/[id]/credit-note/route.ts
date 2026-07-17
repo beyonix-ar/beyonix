@@ -10,9 +10,13 @@ import {
   fecaeSolicitar,
   feCompUltimoAutorizado,
 } from "@/lib/arca/wsfe"
+import { creditCustomerForOrderCreditNote } from "@/lib/customer-credit/server"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import type { createAdminClient } from "@/lib/supabase/admin"
 
 export const runtime = "nodejs"
+
+type AdminClient = ReturnType<typeof createAdminClient>
 
 function getPointOfSale() {
   const pointOfSale = Number(process.env.ARCA_PTO_VTA)
@@ -113,22 +117,40 @@ function isCancellationFlow(order: {
   estado?: string | null
   financial_status?: string | null
   return_status?: string | null
+  credit_note_required?: boolean | null
 }) {
   return (
     order.estado === "cancelado" ||
     ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
       order.financial_status ?? "",
     ) ||
-    Boolean(order.return_status)
+    Boolean(order.return_status) ||
+    Boolean(order.credit_note_required)
   )
 }
 
+async function getCreditNoteClaim(admin: AdminClient, orderId: number) {
+  const { data, error } = await admin
+    .from("order_claims")
+    .select("id")
+    .eq("order_id", orderId)
+    .in("resolution", ["cupon_descuento", "saldo_a_favor"])
+    .in("status", ["aprobado", "cupon_pendiente", "cerrado"])
+    .limit(1)
+
+  if (error) throw error
+
+  return data?.[0] ?? null
+}
+
 function getCreditNoteAmount(order: {
+  credit_note_amount?: number | string | null
   total?: number | string | null
   refund_amount?: number | string | null
   payment_confirmed_amount?: number | string | null
 }) {
   const candidates = [
+    Number(order.credit_note_amount ?? 0),
     Number(order.refund_amount ?? 0),
     Number(order.payment_confirmed_amount ?? 0),
     Number(order.total ?? 0),
@@ -154,7 +176,7 @@ export async function POST(
   const { data: order, error: orderError } = await auth.admin
     .from("ordenes")
     .select(
-      "id, total, estado, financial_status, return_status, payment_confirmed_amount, refund_amount, invoice_status, invoice_cae, invoice_number, invoice_point, invoice_created_at, credit_note_status, credit_note_cae, credit_note_number",
+      "id, usuario_id, total, estado, financial_status, return_status, payment_confirmed_amount, refund_amount, invoice_status, invoice_cae, invoice_number, invoice_point, invoice_created_at, credit_note_required, credit_note_status, credit_note_cae, credit_note_number, credit_note_amount",
     )
     .eq("id", orderId)
     .single()
@@ -182,7 +204,9 @@ export async function POST(
     )
   }
 
-  if (!isCancellationFlow(order)) {
+  const creditNoteClaim = await getCreditNoteClaim(auth.admin, orderId)
+
+  if (!isCancellationFlow(order) && !creditNoteClaim) {
     return NextResponse.json(
       { error: "La nota de crédito solo corresponde a pedidos cancelados o con devolución activa." },
       { status: 409 },
@@ -268,6 +292,23 @@ export async function POST(
       )
     }
 
+    const customerCreditMovement = creditNoteClaim
+      ? await creditCustomerForOrderCreditNote(auth.admin, {
+          userId: order.usuario_id,
+          orderId,
+          amount: creditNote.credit_note_amount,
+          creditNoteNumber: creditNote.credit_note_number,
+          creditNotePoint: creditNote.credit_note_point,
+          creditNoteCae: creditNote.credit_note_cae,
+          claimId: Number(creditNoteClaim.id),
+          createdBy: auth.user.id,
+          metadata: {
+            associated_invoice_point: order.invoice_point,
+            associated_invoice_number: order.invoice_number,
+          },
+        })
+      : null
+
     await appendOrderAuditEvent(auth.admin, {
       orderId,
       actorType: "admin",
@@ -281,6 +322,10 @@ export async function POST(
         creditNotePoint: pointOfSale,
         associatedInvoicePoint: order.invoice_point,
         associatedInvoiceNumber: order.invoice_number,
+        customerCreditMovementId:
+          customerCreditMovement && "movement_id" in customerCreditMovement
+            ? customerCreditMovement.movement_id
+            : null,
       },
     })
 
@@ -310,6 +355,7 @@ export async function POST(
         }),
         observations: authorization.observations,
       },
+      customer_credit_movement: customerCreditMovement,
     })
   } catch (error) {
     const message = creditNoteErrorMessage(error)

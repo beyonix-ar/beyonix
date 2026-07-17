@@ -32,9 +32,20 @@ function isOrderDispatched(order: {
 }) {
   const estado = (order.estado ?? "").toLowerCase()
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
+  const dispatchedStatuses = [
+    "enviado",
+    "en_camino",
+    "visita_fallida",
+    "en_sucursal",
+    "retiro_pendiente",
+    "retiro_vencido",
+    "en_devolucion",
+    "devuelto_beyonix",
+    "entregado",
+  ]
 
   return (
-    ["enviado", "en_camino", "entregado"].includes(estado) ||
+    dispatchedStatuses.includes(estado) ||
     Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
     ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
       (status) => andreaniStatus.includes(status),
@@ -156,6 +167,29 @@ async function sendClaimUpdateEmail(
       <p>${payload.message}</p>
     `,
   })
+}
+
+async function markOrderCreditNoteRequired(
+  admin: any,
+  orderId: number,
+  creditNoteAmount?: number | null,
+) {
+  const payload: Record<string, unknown> = {
+    credit_note_required: true,
+    credit_note_status: "pending",
+  }
+
+  if (typeof creditNoteAmount === "number") {
+    payload.credit_note_amount = Number(creditNoteAmount.toFixed(2))
+  }
+
+  const { error } = await admin
+    .from("ordenes")
+    .update(payload)
+    .eq("id", orderId)
+    .is("credit_note_cae", null)
+
+  return error
 }
 
 async function uploadRefundProof(admin: any, claimId: number, userId: string, file: File) {
@@ -313,6 +347,7 @@ export async function PATCH(
     replacement_shipping_company?: unknown
     replacement_tracking?: unknown
     coupon_code?: unknown
+    credit_note_amount?: unknown
   }
   const status = String(body.status ?? "")
   const resolution = body.resolution ? String(body.resolution) : null
@@ -327,6 +362,10 @@ export async function PATCH(
     typeof body.rejection_reason === "string"
       ? body.rejection_reason.trim().slice(0, 1200)
       : ""
+  const creditNoteAmount =
+    body.credit_note_amount === null || body.credit_note_amount === undefined
+      ? null
+      : Number(body.credit_note_amount)
 
   const getUpdatedClaim = async (fallback: any) => {
     const { data: updatedClaim } = await auth.admin
@@ -943,6 +982,25 @@ export async function PATCH(
     return NextResponse.json({ error: "Resolución inválida." }, { status: 400 })
   }
 
+  const { data: currentClaim } = await auth.admin
+    .from("order_claims")
+    .select("admin_response, status, first_reviewed_at, failure_type, order_id, resolution, offered_resolutions")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (!currentClaim) {
+    return NextResponse.json(
+      { error: "No encontramos el reclamo." },
+      { status: 404 },
+    )
+  }
+
+  const effectiveResolution = resolution ?? currentClaim.resolution ?? null
+  const effectiveOfferedResolutions =
+    body.offered_resolutions === undefined
+      ? currentClaim.offered_resolutions ?? []
+      : offeredResolutions
+
   if (
     offeredResolutions.some(
       (item) =>
@@ -962,25 +1020,32 @@ export async function PATCH(
     )
   }
 
-  if (status === "rechazado" && resolution !== "rechazado") {
+  if (status === "rechazado" && effectiveResolution !== "rechazado") {
     return NextResponse.json(
       { error: "Si rechazás el reclamo, la resolución debe ser Rechazado." },
       { status: 400 },
     )
   }
 
-  if (status === "cerrado" && !resolution) {
+  if (status === "cerrado" && !effectiveResolution) {
     return NextResponse.json(
       { error: "Indicá la resolución antes de finalizar la conversación." },
       { status: 400 },
     )
   }
 
-  const { data: currentClaim } = await auth.admin
-    .from("order_claims")
-    .select("admin_response, status, first_reviewed_at, failure_type")
-    .eq("id", id)
-    .maybeSingle()
+  if (
+    effectiveResolution === "cupon_descuento" &&
+    body.credit_note_amount !== undefined &&
+    status !== "rechazado" &&
+    (!Number.isFinite(creditNoteAmount) || Number(creditNoteAmount) <= 0)
+  ) {
+    return NextResponse.json(
+      { error: "Indicá el monto real de la nota de crédito." },
+      { status: 400 },
+    )
+  }
+
   const helpMessage = currentClaim?.failure_type === "consulta_pedido"
   const shouldInsertAdminMessage =
     Boolean(adminResponse) &&
@@ -1000,8 +1065,8 @@ export async function PATCH(
       status,
       admin_response: adminResponse || null,
       rejection_reason: rejectionReason || null,
-      resolution,
-      offered_resolutions: offeredResolutions,
+      resolution: effectiveResolution,
+      offered_resolutions: effectiveOfferedResolutions,
       closed_at: finalStatus ? nowIso : null,
       ...(clearsAdminAttention
         ? {
@@ -1029,6 +1094,25 @@ export async function PATCH(
       { error: error?.message || "No se pudo actualizar el reclamo." },
       { status: 500 },
     )
+  }
+
+  if (
+    effectiveResolution === "cupon_descuento" &&
+    body.credit_note_amount !== undefined &&
+    status !== "rechazado"
+  ) {
+    const creditNoteError = await markOrderCreditNoteRequired(
+      auth.admin,
+      Number(data.order_id),
+      Number(creditNoteAmount),
+    )
+
+    if (creditNoteError) {
+      return NextResponse.json(
+        { error: creditNoteError.message || "No se pudo marcar la nota de crédito como pendiente." },
+        { status: 500 },
+      )
+    }
   }
 
   if (shouldInsertAdminMessage) {

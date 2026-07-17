@@ -150,10 +150,12 @@ function validateCustomer(customer: CheckoutPayload["customer"]) {
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
   productsTotal: number,
+  customerCreditApplied = false,
 ) {
   const normalizedShipping = normalizeCheckoutShipping(
     shipping,
     productsTotal,
+    { customerCreditApplied },
   )
 
   return {
@@ -327,9 +329,11 @@ export async function POST(request: Request) {
         }
       }),
     )
+    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const shipping = normalizeShipping(
       payload.shipping,
       baseTotals.productsTotal,
+      requestedCredit > 0,
     )
     const totals = calculateCartTotals(
       items.map((item) => {
@@ -358,7 +362,6 @@ export async function POST(request: Request) {
     const totalAfterStoreBenefit =
       Math.max(totals.productsTotal - storeBenefitDiscountAmount, 0) +
       totals.shipping
-    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const customerCreditApplication =
       requestedCredit > 0
         ? calculateCustomerCreditApplication({

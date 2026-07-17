@@ -1,5 +1,7 @@
 "use client"
 
+import { Truck } from "lucide-react"
+
 import {
   FREE_SHIPPING_MIN,
   IS_FREE_SHIPPING_ENABLED,
@@ -8,6 +10,7 @@ import {
 
 interface Props {
   subtotal: number
+  coveredByBeyonix?: boolean
 }
 
 const formatPrice = (price: number) =>
@@ -17,7 +20,21 @@ const formatPrice = (price: number) =>
     minimumFractionDigits: 0,
   }).format(price)
 
-export function FreeShippingBar({ subtotal }: Props) {
+export function FreeShippingBar({
+  subtotal,
+  coveredByBeyonix = false,
+}: Props) {
+  if (coveredByBeyonix) {
+    return (
+      <p className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
+          <Truck className="size-3" aria-hidden="true" />
+        </span>
+        <span>Envío a cargo de BEYONIX</span>
+      </p>
+    )
+  }
+
   if (!IS_FREE_SHIPPING_ENABLED) {
     return null
   }

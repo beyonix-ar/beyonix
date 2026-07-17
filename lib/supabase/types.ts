@@ -156,6 +156,7 @@ export interface SupabasePedido {
   usuario_id: string | null
   cliente_username?: string | null
   cliente_nombre?: string | null
+  cliente_nombre_completo?: string | null
   cliente_email?: string | null
   cliente_telefono?: string | null
   cliente_dni?: string | null

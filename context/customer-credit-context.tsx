@@ -89,6 +89,7 @@ export function CustomerCreditProvider({
 }) {
   const { user, isLoading: authLoading } = useAuth()
   const [balance, setBalance] = useState(0)
+  const [balanceUserId, setBalanceUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [movements, setMovements] = useState<CustomerCreditMovement[]>([])
@@ -112,14 +113,20 @@ export function CustomerCreditProvider({
   }, [])
 
   useEffect(() => {
-    if (!user) return
+    if (!user) {
+      setBalance(0)
+      setBalanceUserId(null)
+      return
+    }
 
     setBalance(getStoredBalance(user.id))
+    setBalanceUserId(user.id)
   }, [user])
 
   const reload = useCallback(async () => {
     if (!user) {
       setBalance(0)
+      setBalanceUserId(null)
       setError("")
       setMovements([])
       clearAppliedAmount()
@@ -144,6 +151,7 @@ export function CustomerCreditProvider({
 
       const nextBalance = roundMoney(Number(data.balance ?? 0))
       setBalance(nextBalance)
+      setBalanceUserId(user.id)
       storeBalance(user.id, nextBalance)
     } catch (loadError) {
       setError(
@@ -151,7 +159,6 @@ export function CustomerCreditProvider({
           ? loadError.message
           : "No pudimos cargar tu saldo."
       )
-      setBalance(0)
     } finally {
       setLoading(false)
     }
@@ -184,6 +191,7 @@ export function CustomerCreditProvider({
 
       const nextBalance = roundMoney(Number(data.balance ?? 0))
       setBalance(nextBalance)
+      setBalanceUserId(user.id)
       storeBalance(user.id, nextBalance)
       setMovements(data.movements ?? [])
     } catch (loadError) {
@@ -203,9 +211,15 @@ export function CustomerCreditProvider({
     void reload()
   }, [authLoading, reload])
 
+  const displayedBalance = user
+    ? balanceUserId === user.id
+      ? balance
+      : getStoredBalance(user.id)
+    : 0
+
   const value = useMemo(
     () => ({
-      balance,
+      balance: displayedBalance,
       loading: authLoading || loading,
       error,
       movements,
@@ -219,8 +233,8 @@ export function CustomerCreditProvider({
     [
       appliedAmount,
       authLoading,
-      balance,
       clearAppliedAmount,
+      displayedBalance,
       error,
       loadMovements,
       loading,

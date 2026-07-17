@@ -92,7 +92,17 @@ function isOrderDetailDispatched(order: SupabasePedido) {
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
 
   return (
-    ["enviado", "en_camino", "entregado"].includes(status) ||
+    [
+      "enviado",
+      "en_camino",
+      "visita_fallida",
+      "en_sucursal",
+      "retiro_pendiente",
+      "retiro_vencido",
+      "en_devolucion",
+      "devuelto_beyonix",
+      "entregado",
+    ].includes(status) ||
     Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
     ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some((value) =>
       andreaniStatus.includes(value),

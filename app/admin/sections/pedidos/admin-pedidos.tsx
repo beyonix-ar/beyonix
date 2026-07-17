@@ -89,6 +89,12 @@ type StatusFilter =
   | "pagado"
   | "enviado"
   | "en_camino"
+  | "visita_fallida"
+  | "en_sucursal"
+  | "retiro_pendiente"
+  | "retiro_vencido"
+  | "en_devolucion"
+  | "devuelto_beyonix"
   | "entregado"
   | "cancelado"
   | "refund_pending"
@@ -106,6 +112,35 @@ type TrackingStatusRequest = {
 } | null
 type ShippingModalityOption = "andreani" | "otro"
 const DEFAULT_REFUND_METHOD = "Transferencia"
+const SHIPPING_INCIDENT_STATUSES = [
+  "visita_fallida",
+  "en_sucursal",
+  "retiro_pendiente",
+  "retiro_vencido",
+  "en_devolucion",
+  "devuelto_beyonix",
+] as const
+const SHIPPING_DISPATCHED_STATUSES = [
+  "enviado",
+  "en_camino",
+  "entregado",
+  ...SHIPPING_INCIDENT_STATUSES,
+] as const
+const SHIPPING_STATUS_LABELS: Record<string, string> = {
+  pendiente: "Pendiente",
+  pagado: "Pago confirmado",
+  preparado: "Preparado",
+  enviado: "Enviado",
+  en_camino: "En camino",
+  visita_fallida: "Visita fallida",
+  en_sucursal: "En sucursal",
+  retiro_pendiente: "Retiro pendiente",
+  retiro_vencido: "Retiro vencido",
+  en_devolucion: "En devolución",
+  devuelto_beyonix: "Devuelto a BEYONIX",
+  entregado: "Entregado",
+  cancelado: "Cancelado",
+}
 const REFUND_METHOD_OPTIONS = [
   DEFAULT_REFUND_METHOD,
   "Gift card",
@@ -371,7 +406,7 @@ function isOrderPaymentConfirmed(pedido: SupabasePedido) {
     pedido.payment_status === "confirmado" ||
     pedido.payment_status === "approved" ||
     pedido.payment_status === "confirmed" ||
-    ["pagado", "enviado", "en_camino", "entregado"].includes(pedido.estado)
+    ["pagado", ...SHIPPING_DISPATCHED_STATUSES].includes(pedido.estado)
   )
 }
 
@@ -409,9 +444,7 @@ function needsShippingReminder(pedido: SupabasePedido) {
     Boolean(pedido.invoice_cae) &&
     ![
       "preparado",
-      "enviado",
-      "en_camino",
-      "entregado",
+      ...SHIPPING_DISPATCHED_STATUSES,
       "cancelado",
       "rechazado",
     ].includes(pedido.estado ?? "")
@@ -501,6 +534,21 @@ function isCancellationFlowOrder(pedido: SupabasePedido) {
   )
 }
 
+function hasCreditNoteClaim(pedido: SupabasePedido) {
+  return (pedido.order_claims ?? []).some((claim) =>
+    claim.resolution === "cupon_descuento" &&
+    ["aprobado", "cupon_pendiente", "cerrado"].includes(claim.status)
+  )
+}
+
+function isCreditNoteFlowOrder(pedido: SupabasePedido) {
+  return (
+    isCancellationFlowOrder(pedido) ||
+    Boolean(pedido.credit_note_required) ||
+    hasCreditNoteClaim(pedido)
+  )
+}
+
 function isAdminCancelledOrder(pedido: SupabasePedido) {
   return (
     pedido.estado === "cancelado" ||
@@ -512,7 +560,7 @@ function isAdminCancelledOrder(pedido: SupabasePedido) {
 
 function needsCreditNoteReminder(pedido: SupabasePedido) {
   return (
-    isCancellationFlowOrder(pedido) &&
+    isCreditNoteFlowOrder(pedido) &&
     isOrderInvoicedForCreditNote(pedido) &&
     pedido.credit_note_status !== "authorized" &&
     !pedido.credit_note_cae &&
@@ -652,8 +700,7 @@ type RecommendedAction = {
 function getShippingSummary(pedido: SupabasePedido) {
   if (isAdminCancelledOrder(pedido)) return "Cancelado"
   if (pedido.estado === "entregado" || pedido.delivered_at) return "Entregado"
-  if (pedido.estado === "en_camino") return "En camino"
-  if (pedido.estado === "enviado") return "Enviado"
+  if (SHIPPING_STATUS_LABELS[pedido.estado]) return SHIPPING_STATUS_LABELS[pedido.estado]
 
   return "No despachado"
 }
@@ -1211,6 +1258,17 @@ function getDispatchAlert(pedido: SupabasePedido) {
     }
   }
 
+  if (SHIPPING_INCIDENT_STATUSES.includes(pedido.estado as typeof SHIPPING_INCIDENT_STATUSES[number])) {
+    const warningStatuses = ["visita_fallida", "retiro_vencido", "en_devolucion"]
+
+    return {
+      label: SHIPPING_STATUS_LABELS[pedido.estado] ?? pedido.estado,
+      className: warningStatuses.includes(pedido.estado)
+        ? ADMIN_STATUS_BADGES.warning
+        : ADMIN_STATUS_BADGES.info,
+    }
+  }
+
   if (pedido.estado === "enviado") {
     return {
       label: "Enviado",
@@ -1230,6 +1288,12 @@ function EstadoBadge({ estado }: { estado: string }) {
     pagado: ADMIN_STATUS_BADGES.success,
     enviado: ADMIN_STATUS_BADGES.info,
     en_camino: ADMIN_STATUS_BADGES.info,
+    visita_fallida: ADMIN_STATUS_BADGES.warning,
+    en_sucursal: ADMIN_STATUS_BADGES.info,
+    retiro_pendiente: ADMIN_STATUS_BADGES.info,
+    retiro_vencido: ADMIN_STATUS_BADGES.warning,
+    en_devolucion: ADMIN_STATUS_BADGES.warning,
+    devuelto_beyonix: ADMIN_STATUS_BADGES.warning,
     entregado: ADMIN_STATUS_BADGES.success,
     cancelado: ADMIN_STATUS_BADGES.danger,
     cancelado_refund_pending: ADMIN_STATUS_BADGES.danger,
@@ -1239,12 +1303,8 @@ function EstadoBadge({ estado }: { estado: string }) {
     rechazado: ADMIN_STATUS_BADGES.danger,
   }
   const labels: Record<string, string> = {
-    pendiente: "Pendiente",
+    ...SHIPPING_STATUS_LABELS,
     pagado: "Pago confirmado",
-    enviado: "Enviado",
-    en_camino: "En camino",
-    entregado: "Entregado",
-    cancelado: "Cancelado",
     cancelado_refund_pending: "Cancelado · Reintegro pendiente",
     cancelado_refunded: "Cancelado · Reintegrado",
     refund_pending: "Reintegro pendiente",
@@ -2484,7 +2544,7 @@ function BillingManagementPanel({
               Nota de crédito requerida
             </p>
             <p className="mt-0.5 text-xs font-medium leading-relaxed text-red-100">
-              La Factura C ya fue emitida y el pedido tiene una cancelación o devolución activa.
+              La Factura C ya fue emitida y el pedido tiene una nota de crédito pendiente.
             </p>
           </div>
         </div>
@@ -2588,7 +2648,7 @@ function BillingManagementPanel({
         </p>
       ) : null}
 
-      {invoiceIssued && isCancellationFlowOrder(pedido) && (
+      {invoiceIssued && isCreditNoteFlowOrder(pedido) && (
         <div className="admin-order-billing-panel admin-order-billing-credit-section mt-3 rounded-lg border p-3">
           <p className="text-10px font-black uppercase tracking-widest text-white/92">
             Nota de crédito
@@ -3017,6 +3077,18 @@ function getOrderStatusSelectClassName(status: string) {
       "!border-beyonix-blue-light/45 !bg-beyonix-blue/35 !text-beyonix-sky hover:!bg-beyonix-blue/45",
     en_camino:
       "!border-sky-300/35 !bg-[#111827] !text-sky-200 hover:!bg-[#15191F]",
+    visita_fallida:
+      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
+    en_sucursal:
+      "!border-cyan-300/35 !bg-[#111827] !text-cyan-100 hover:!bg-[#15191F]",
+    retiro_pendiente:
+      "!border-cyan-300/35 !bg-[#111827] !text-cyan-100 hover:!bg-[#15191F]",
+    retiro_vencido:
+      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
+    en_devolucion:
+      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
+    devuelto_beyonix:
+      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
     entregado:
       "!border-emerald-300/45 !bg-[#111827] !text-emerald-100 hover:!bg-[#15191F]",
     cancelado:
@@ -4412,6 +4484,12 @@ function PedidoDetailModal({
                       {(isSuperAdmin || pedido.estado === "entregado") && (
                         <option value="entregado">Entregado</option>
                       )}
+                      <option value="visita_fallida">Visita fallida</option>
+                      <option value="en_sucursal">En sucursal</option>
+                      <option value="retiro_pendiente">Retiro pendiente</option>
+                      <option value="retiro_vencido">Retiro vencido</option>
+                      <option value="en_devolucion">En devolución</option>
+                      <option value="devuelto_beyonix">Devuelto a BEYONIX</option>
                       <option value="cancelado">Cancelado</option>
                     </AdminSelect>
                   </div>
@@ -5661,7 +5739,8 @@ export function AdminPedidos({
       ].some(Boolean)
       const matchesStatus =
         statusFilter === "todos" ||
-        getDisplayedOrderStatus(pedido) === statusFilter
+        getDisplayedOrderStatus(pedido) === statusFilter ||
+        pedido.estado === statusFilter
       const matchesAttention =
         attentionFilter === "all" ||
         orderMatchesNotificationTone(
@@ -6118,6 +6197,12 @@ export function AdminPedidos({
                 <option value="pagado">Pagados</option>
                 <option value="enviado">Enviados</option>
                 <option value="en_camino">En camino</option>
+                <option value="visita_fallida">Visita fallida</option>
+                <option value="en_sucursal">En sucursal</option>
+                <option value="retiro_pendiente">Retiro pendiente</option>
+                <option value="retiro_vencido">Retiro vencido</option>
+                <option value="en_devolucion">En devolución</option>
+                <option value="devuelto_beyonix">Devueltos a BEYONIX</option>
                 <option value="entregado">Entregados</option>
                 <option value="cancelado">Cancelados</option>
                 <option value="refund_pending">Reintegro pendiente</option>
@@ -6268,7 +6353,7 @@ export function AdminPedidos({
                             {showInvoiceReminder && <InvoiceReminderBell />}
                             {showShippingReminder && <ShippingReminderBadge />}
                             <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
-                            {hasPendingClaim && <span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.badge}`}>Reclamo pendiente</span>}
+                            {hasPendingClaim && <span className="admin-order-pending-claim-badge rounded-full border border-red-400/80 bg-red-950/75 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-100 shadow-[0_0_14px_rgba(248,113,113,0.22)]">Reclamo pendiente</span>}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -6357,7 +6442,7 @@ export function AdminPedidos({
                           Nuevo
                         </span>
                       )}
-                      {hasPendingClaim && <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.badge}`}>Reclamo pendiente</span>}
+                      {hasPendingClaim && <span className="admin-order-pending-claim-badge mt-1 inline-flex rounded-full border border-red-400/80 bg-red-950/75 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-red-100 shadow-[0_0_14px_rgba(248,113,113,0.22)]">Reclamo pendiente</span>}
                     </div>
                   </div>
 

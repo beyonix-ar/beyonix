@@ -143,8 +143,11 @@ function validateCustomer(customer: CheckoutPayload["customer"]) {
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
   productsTotal: number,
+  customerCreditApplied = false,
 ) {
-  return normalizeCheckoutShipping(shipping, productsTotal)
+  return normalizeCheckoutShipping(shipping, productsTotal, {
+    customerCreditApplied,
+  })
 }
 
 function getUnitPrice(product: ProductRow) {
@@ -284,9 +287,11 @@ export async function POST(request: Request) {
       }
     })
     const baseTotals = calculateCartTotals(cartRows)
+    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const shipping = normalizeShipping(
       payload.shipping,
       baseTotals.productsTotal,
+      requestedCredit > 0,
     )
     const totals = calculateCartTotals(cartRows, {
       shippingCost: shipping.costCharged,
@@ -312,7 +317,6 @@ export async function POST(request: Request) {
     )
     const transferDiscountAmount = transferPaymentTotals.discount
     const transferTotal = transferPaymentTotals.total
-    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const customerCreditApplication =
       requestedCredit > 0
         ? calculateCustomerCreditApplication({

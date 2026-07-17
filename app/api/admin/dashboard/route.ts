@@ -9,7 +9,18 @@ import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
 
-const PAID_STATES = new Set(["pagado", "enviado", "entregado", "approved"])
+const DISPATCHED_STATES = [
+  "enviado",
+  "en_camino",
+  "visita_fallida",
+  "en_sucursal",
+  "retiro_pendiente",
+  "retiro_vencido",
+  "en_devolucion",
+  "devuelto_beyonix",
+  "entregado",
+] as const
+const PAID_STATES = new Set(["pagado", ...DISPATCHED_STATES, "approved"])
 const PAYMENT_REVIEW_STATES = new Set(["pendiente_comprobante", "en_revision"])
 
 interface DashboardLowStockItem {
@@ -62,7 +73,7 @@ function isPaidOrder(order: SupabasePedido) {
 function isReadyToPrepare(order: SupabasePedido) {
   return (
     isPaidOrder(order) &&
-    !["enviado", "entregado", "cancelado"].includes(order.estado)
+    ![...DISPATCHED_STATES, "cancelado"].includes(order.estado)
   )
 }
 
@@ -370,7 +381,7 @@ export async function GET(request: Request) {
 
   const sensitive = canViewSensitiveNumbers(auth.profile.rol)
   const paidOrderFilter =
-    "estado.in.(pagado,enviado,entregado,approved),payment_status.eq.approved"
+    "estado.in.(pagado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado,approved),payment_status.eq.approved"
 
   const [
     productsCountResult,
@@ -475,7 +486,7 @@ export async function GET(request: Request) {
         .from("ordenes")
         .select(ORDER_SELECT)
         .or(paidOrderFilter)
-        .not("estado", "in", "(enviado,entregado,cancelado)")
+        .not("estado", "in", "(enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado,cancelado)")
         .order("created_at", { ascending: false })
         .limit(50),
       EMPTY_ROWS_RESULT

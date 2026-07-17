@@ -1375,6 +1375,25 @@
   background: #112A43 !important;
 }
 
+.admin-claim-action-confirm-ok {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  border: 1px solid rgba(140, 200, 242, 0.45) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 1px rgba(17, 42, 67, 0.25) !important;
+}
+
+.admin-claim-action-confirm-ok:hover:not(:disabled),
+.admin-claim-action-confirm-ok:focus-visible:not(:disabled) {
+  background: #bbf7d0 !important;
+  background-color: #bbf7d0 !important;
+  border-color: #86efac !important;
+  color: #052e16 !important;
+  box-shadow:
+    0 0 0 1px rgba(134, 239, 172, 0.38),
+    0 0 18px rgba(134, 239, 172, 0.32) !important;
+}
+
 .admin-claim-chat-panel {
   min-height: unset !important;
 }
@@ -1411,6 +1430,17 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.5),
     0 0 18px rgba(34, 197, 94, 0.32) !important;
+}
+
+.admin-claim-status-finalized {
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-radius: 0.5rem !important;
+  border-color: rgba(74, 222, 128, 0.76) !important;
+  background: #15803d !important;
+  background-color: #15803d !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
 }
 
 .admin-claim-help-resolved-card {
@@ -4030,6 +4060,15 @@ div.claim-form-shell::after {
     0 0 18px rgba(134, 239, 172, 0.18) !important;
 }
 
+.beyonix-admin-main span.admin-order-pending-claim-badge,
+.beyonix-admin-main .admin-order-pending-claim-badge.admin-order-pending-claim-badge {
+  border-color: rgba(248, 113, 113, 0.76) !important;
+  background: rgba(127, 29, 29, 0.72) !important;
+  background-color: rgba(127, 29, 29, 0.72) !important;
+  color: #fee2e2 !important;
+  box-shadow: 0 0 14px rgba(248, 113, 113, 0.18) !important;
+}
+
 .beyonix-product-picker-scroll {
   scrollbar-color: rgba(140, 200, 242, 0.72) rgba(8, 21, 35, 0.92);
   scrollbar-gutter: stable;
@@ -4058,6 +4097,28 @@ div.claim-form-shell::after {
 
 .beyonix-product-picker-scroll::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #b9e0ff, #2d6da9);
+}
+
+.admin-claim-action-confirm-ok:hover:not(:disabled),
+.admin-claim-action-confirm-ok:focus-visible:not(:disabled),
+button.admin-claim-action-confirm-ok:hover:not(:disabled),
+button.admin-claim-action-confirm-ok:focus-visible:not(:disabled) {
+  background: #bbf7d0 !important;
+  background-color: #bbf7d0 !important;
+  border-color: #86efac !important;
+  color: #052e16 !important;
+  box-shadow:
+    0 0 0 1px rgba(134, 239, 172, 0.44),
+    0 0 18px rgba(134, 239, 172, 0.34) !important;
+}
+
+span.admin-claim-status-finalized,
+.beyonix-admin-main span.admin-claim-status-finalized {
+  border-color: rgba(74, 222, 128, 0.72) !important;
+  background: #15803d !important;
+  background-color: #15803d !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
 }
 
 

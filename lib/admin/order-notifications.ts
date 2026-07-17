@@ -313,7 +313,18 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
           Number(order.total ?? 0) > 0 &&
           !["rechazado", "rejected"].includes(order.payment_status ?? "") &&
           (isPaymentReceived(order) ||
-            ["pagado", "enviado", "en_camino", "entregado"].includes(
+            [
+              "pagado",
+              "enviado",
+              "en_camino",
+              "visita_fallida",
+              "en_sucursal",
+              "retiro_pendiente",
+              "retiro_vencido",
+              "en_devolucion",
+              "devuelto_beyonix",
+              "entregado",
+            ].includes(
               order.estado ?? "",
             )) &&
           order.invoice_status !== "authorized",

@@ -15,7 +15,8 @@ export async function GET() {
   }
 
   try {
-    const balance = await getCustomerCreditBalance(createAdminClient(), user.id)
+    const admin = createAdminClient()
+    const balance = await getCustomerCreditBalance(admin, user.id)
 
     return NextResponse.json(
       {

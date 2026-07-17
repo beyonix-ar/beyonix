@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -15,7 +15,6 @@ import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
-  normalizeMoney,
 } from "@/lib/customer-credit"
 
 interface Props {
@@ -38,11 +37,11 @@ export function CartSummary({
   onContinueShopping,
 }: Props) {
   const customerCredit = useCustomerCredit()
-  const [creditInput, setCreditInput] = useState("")
   const totals = calculateCartTotals(items)
   const hasShippingBonus =
     IS_FREE_SHIPPING_ENABLED &&
     totals.productsTotal >= FREE_SHIPPING_MIN
+  const shippingCoveredByBeyonix = customerCredit.balance > 0
   const displayedTotal = totals.productsTotal
   const maxApplicableCredit = getMaxApplicableCustomerCredit(
     customerCredit.balance,
@@ -51,21 +50,37 @@ export function CartSummary({
   const creditApplication = calculateCustomerCreditApplication({
     availableBalance: customerCredit.balance,
     eligibleTotal: displayedTotal,
-    requestedAmount: customerCredit.appliedAmount,
+    requestedAmount: maxApplicableCredit,
   })
-  const canUseCustomerCredit =
-    !customerCredit.loading && maxApplicableCredit > 0
+  const showCustomerCreditRow = creditApplication.appliedAmount > 0
 
   useEffect(() => {
-    if (customerCredit.appliedAmount > maxApplicableCredit) {
+    if (customerCredit.loading && customerCredit.balance <= 0) return
+
+    if (Math.abs(customerCredit.appliedAmount - maxApplicableCredit) > 0.009) {
       customerCredit.setAppliedAmount(maxApplicableCredit)
-      setCreditInput(String(maxApplicableCredit))
     }
-  }, [customerCredit, maxApplicableCredit])
+  }, [
+    customerCredit.loading,
+    customerCredit.appliedAmount,
+    customerCredit.setAppliedAmount,
+    maxApplicableCredit,
+  ])
+
+  const handleCheckout = () => {
+    if (!customerCredit.loading || customerCredit.balance > 0) {
+      customerCredit.setAppliedAmount(maxApplicableCredit)
+    }
+
+    onCheckout()
+  }
 
   return (
     <div className="space-y-2 border-t border-beyonix-blue-light/60 bg-beyonix-surface px-4 py-2.5">
-      <FreeShippingBar subtotal={totals.productsTotal} />
+      <FreeShippingBar
+        subtotal={totals.productsTotal}
+        coveredByBeyonix={shippingCoveredByBeyonix}
+      />
 
       <div className="rounded-xl border border-beyonix-blue-light/60 bg-beyonix-surface-3 px-3 py-2.5">
         <h3 className="mb-2 text-sm font-bold tracking-wide text-white">
@@ -77,6 +92,15 @@ export function CartSummary({
             <span className="text-white/60">Subtotal</span>
             <span className="text-white">{formatPrice(totals.subtotal)}</span>
           </div>
+
+          {showCustomerCreditRow && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-beyonix-sky">Saldo a favor</span>
+              <span className="font-semibold tracking-wide text-emerald-400">
+                -{formatPrice(creditApplication.appliedAmount)}
+              </span>
+            </div>
+          )}
 
           {totals.discount > 0 && (
             <div className="flex items-center justify-between text-sm">
@@ -99,25 +123,22 @@ export function CartSummary({
             <span className="text-white/60">Envío</span>
             <span
               className={`${
-                hasShippingBonus
+                shippingCoveredByBeyonix
+                  ? "font-bold text-emerald-400"
+                  : hasShippingBonus
                   ? "beyonix-success-glow font-semibold text-emerald-400"
                   : "text-white"
               }`}
             >
-              {hasShippingBonus ? "Bonificado" : "A definir"}
+              {shippingCoveredByBeyonix
+                ? "GRATIS"
+                : hasShippingBonus
+                  ? "Bonificado"
+                  : "A definir"}
             </span>
           </div>
 
           <Separator />
-
-          {creditApplication.appliedAmount > 0 && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-beyonix-sky">Saldo a favor</span>
-              <span className="font-medium tracking-wide text-emerald-400">
-                -{formatPrice(creditApplication.appliedAmount)}
-              </span>
-            </div>
-          )}
 
           <div className="flex justify-between text-base font-bold">
             <span className="text-white">Total</span>
@@ -127,67 +148,6 @@ export function CartSummary({
           </div>
         </div>
       </div>
-
-      {(customerCredit.loading || canUseCustomerCredit) && (
-        <div className="rounded-xl border border-beyonix-blue-light/28 bg-[#0B1118] px-3 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-beyonix-sky">
-                Saldo a favor
-              </p>
-              {customerCredit.loading ? (
-                <span className="mt-1 block h-4 w-28 animate-pulse rounded-full bg-white/12" />
-              ) : (
-                <p className="mt-1 text-sm font-semibold text-white">
-                  Disponible: {formatPrice(customerCredit.balance)}
-                </p>
-              )}
-            </div>
-            {creditApplication.appliedAmount > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  customerCredit.clearAppliedAmount()
-                  setCreditInput("")
-                }}
-                className="h-8 cursor-pointer rounded-lg border border-white/12 px-2.5 text-xs font-bold text-white/72 transition hover:border-beyonix-blue-light/45 hover:text-white"
-              >
-                Quitar
-              </button>
-            )}
-          </div>
-
-          {canUseCustomerCredit && (
-            <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input
-                type="text"
-                inputMode="decimal"
-                aria-label="Monto de saldo a favor"
-                value={creditInput}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setCreditInput(value)
-                  customerCredit.setAppliedAmount(
-                    Math.min(normalizeMoney(value), maxApplicableCredit)
-                  )
-                }}
-                placeholder="Monto"
-                className="h-9 rounded-lg border border-beyonix-blue-light/18 bg-black/35 px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-blue-light/65"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  customerCredit.setAppliedAmount(maxApplicableCredit)
-                  setCreditInput(String(maxApplicableCredit))
-                }}
-                className="h-9 cursor-pointer rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue/35 px-3 text-xs font-bold text-white transition hover:border-beyonix-blue-light/70 hover:bg-beyonix-blue"
-              >
-                Aplicar máximo
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       <div className="rounded-lg border border-white/10 bg-black px-3 py-1.5 text-center font-heading">
         <p className="text-sm font-bold tracking-widest text-white">
@@ -212,7 +172,7 @@ export function CartSummary({
           event.currentTarget.style.backgroundColor = "#112A43"
         }}
         size="lg"
-        onClick={onCheckout}
+        onClick={handleCheckout}
       >
         Finalizar compra
       </Button>

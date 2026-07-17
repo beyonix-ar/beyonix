@@ -41,6 +41,37 @@ export interface CustomerCreditMovementRow {
   resulting_balance?: number | string | null
 }
 
+function formatCreditNoteId(point?: number | string | null, number?: number | string | null) {
+  const pointNumber = Number(point ?? 0)
+  const pointText =
+    Number.isFinite(pointNumber) && pointNumber > 0
+      ? String(pointNumber).padStart(4, "0")
+      : "0000"
+  const numberText = String(number ?? "").trim()
+
+  return `${pointText}-${numberText.padStart(8, "0")}`
+}
+
+function getCreditNoteSourceKey({
+  orderId,
+  creditNotePoint,
+  creditNoteNumber,
+  creditNoteCae,
+}: {
+  orderId: number
+  creditNotePoint?: number | string | null
+  creditNoteNumber?: number | string | null
+  creditNoteCae?: string | null
+}) {
+  const point = String(creditNotePoint ?? "").trim() || "sin-punto"
+  const number =
+    String(creditNoteNumber ?? "").trim() ||
+    String(creditNoteCae ?? "").trim() ||
+    "autorizada"
+
+  return `credit-note:${orderId}:${point}:${number}`
+}
+
 export async function getCustomerCreditBalance(
   admin: AdminClient,
   userId: string
@@ -181,6 +212,91 @@ export async function createCustomerCreditMovement(
   }
 
   return Array.isArray(data) ? data[0] ?? null : data
+}
+
+export async function creditCustomerForOrderCreditNote(
+  admin: AdminClient,
+  {
+    userId,
+    orderId,
+    amount,
+    creditNoteNumber,
+    creditNotePoint,
+    creditNoteCae,
+    claimId = null,
+    createdBy = null,
+    metadata = {},
+  }: {
+    userId: string | null | undefined
+    orderId: number
+    amount: number
+    creditNoteNumber?: number | string | null
+    creditNotePoint?: number | string | null
+    creditNoteCae?: string | null
+    claimId?: number | null
+    createdBy?: string | null
+    metadata?: Record<string, unknown>
+  }
+) {
+  const safeAmount = roundMoney(amount)
+
+  if (!userId) {
+    throw new Error("La orden no tiene una cuenta de cliente asociada para acreditar el saldo.")
+  }
+
+  if (safeAmount <= 0) {
+    throw new Error("El monto a acreditar debe ser mayor que cero.")
+  }
+
+  const creditNoteId = formatCreditNoteId(creditNotePoint, creditNoteNumber)
+  const { data: existingMovements, error: existingError } = await admin
+    .from("customer_credit_movements")
+    .select("id, resulting_balance")
+    .eq("user_id", userId)
+    .eq("movement_type", "credit")
+    .eq("source_type", "credit_note")
+    .eq("order_id", orderId)
+    .eq("credit_note_id", creditNoteId)
+    .limit(1)
+
+  if (existingError) {
+    throw new Error(existingError.message || "No se pudo verificar el saldo ya acreditado.")
+  }
+
+  const existingMovement = existingMovements?.[0]
+
+  if (existingMovement) {
+    return {
+      movement_id: existingMovement.id,
+      resulting_balance:
+        existingMovement.resulting_balance ?? await getCustomerCreditBalance(admin, userId),
+    }
+  }
+
+  return createCustomerCreditMovement(admin, {
+    userId,
+    movementType: "credit",
+    amount: safeAmount,
+    description: `Nota de crédito C ${creditNoteId} acreditada en saldo a favor`,
+    sourceType: "credit_note",
+    sourceId: creditNoteId,
+    orderId,
+    claimId,
+    creditNoteId,
+    createdBy,
+    metadata: {
+      created_from: "arca_credit_note",
+      credit_note_cae: creditNoteCae ?? null,
+      order_public_id: `BX-${1000 + orderId}`,
+      ...metadata,
+    },
+    sourceKey: getCreditNoteSourceKey({
+      orderId,
+      creditNotePoint,
+      creditNoteNumber,
+      creditNoteCae,
+    }),
+  })
 }
 
 export async function listCustomerCreditMovements(

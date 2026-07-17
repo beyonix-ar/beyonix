@@ -21,12 +21,15 @@ export interface NormalizedCheckoutShipping {
 export function normalizeCheckoutShipping(
   shipping: CheckoutShippingInput | null | undefined,
   productsTotal: number,
+  options: { customerCreditApplied?: boolean } = {},
 ): NormalizedCheckoutShipping {
   const fallbackCost = SHIPPING_COST
   const realCost = Number(shipping?.costReal)
   const costReal =
     Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
-  const costCharged = calculateCustomerShippingCost(productsTotal, costReal)
+  const costCharged = options.customerCreditApplied
+    ? 0
+    : calculateCustomerShippingCost(productsTotal, costReal)
   const freeShippingApplied = costReal > 0 && costCharged === 0
 
   return {

@@ -34,6 +34,18 @@ type CancelableOrder = {
   cancelled_at?: string | null
 }
 
+const DISPATCHED_ORDER_STATUSES = [
+  "enviado",
+  "en_camino",
+  "visita_fallida",
+  "en_sucursal",
+  "retiro_pendiente",
+  "retiro_vencido",
+  "en_devolucion",
+  "devuelto_beyonix",
+  "entregado",
+]
+
 function getOrderCode(orderId: number) {
   return `BX-${1000 + orderId}`
 }
@@ -54,7 +66,7 @@ function isOrderDispatched(order: CancelableOrder) {
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
 
   return (
-    ["enviado", "en_camino", "entregado"].includes(estado) ||
+    DISPATCHED_ORDER_STATUSES.includes(estado) ||
     Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
     ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
       (status) => andreaniStatus.includes(status),
@@ -220,7 +232,7 @@ export async function POST(
     .from("ordenes")
     .update(buildCancellationUpdate(order, true, cancelledAt, user.id))
     .eq("id", order.id)
-    .not("estado", "in", "(cancelado,enviado,en_camino,entregado)")
+    .not("estado", "in", "(cancelado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado)")
     .is("tracking_number", null)
     .is("andreani_tracking", null)
     .is("andreani_envio_id", null)
@@ -233,7 +245,7 @@ export async function POST(
       .from("ordenes")
       .update(buildCancellationUpdate(order, false, cancelledAt, user.id))
       .eq("id", order.id)
-      .not("estado", "in", "(cancelado,enviado,en_camino,entregado)")
+      .not("estado", "in", "(cancelado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado)")
       .is("tracking_number", null)
       .is("andreani_tracking", null)
       .is("andreani_envio_id", null)

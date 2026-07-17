@@ -19,7 +19,6 @@ import {
   Check,
   ChevronDown,
   CircleUserRound,
-  CreditCard,
   Clock3,
   Home,
   IdCard,
@@ -107,7 +106,6 @@ import {
 import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
-  normalizeMoney,
 } from "@/lib/customer-credit"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseProfile } from "@/lib/supabase/types"
@@ -366,7 +364,6 @@ export default function CheckoutPage() {
     selectedPayment,
     setSelectedPayment,
   ] = useState("")
-  const [creditInput, setCreditInput] = useState("")
 
   const [
     isProcessing,
@@ -621,24 +618,30 @@ export default function CheckoutPage() {
       : null
   const shippingCostReal =
     selectedShippingOption?.price ?? 0
+  const customerCreditIncludesShippingBenefit = customerCredit.balance > 0
+  const customerCreditCoversShipping =
+    customerCreditIncludesShippingBenefit &&
+    selectedShippingOption != null &&
+    shippingCostReal > 0
   const shippingBonus =
     selectedShippingOption
-      ? calculateShippingBonus(baseTotals.productsTotal, shippingCostReal)
+      ? customerCreditCoversShipping
+        ? shippingCostReal
+        : calculateShippingBonus(baseTotals.productsTotal, shippingCostReal)
+      : 0
+  const shippingCostCharged =
+    selectedShippingOption
+      ? customerCreditCoversShipping
+        ? 0
+        : calculateCustomerShippingCost(
+            baseTotals.productsTotal,
+            shippingCostReal,
+          )
       : 0
   const freeShippingApplied =
     selectedShippingOption != null &&
     shippingCostReal > 0 &&
-    calculateCustomerShippingCost(
-      baseTotals.productsTotal,
-      shippingCostReal,
-    ) === 0
-  const shippingCostCharged =
-    selectedShippingOption
-      ? calculateCustomerShippingCost(
-          baseTotals.productsTotal,
-          shippingCostReal,
-        )
-      : 0
+    shippingCostCharged === 0
   const totals = calculateCartTotals(items, {
     shippingCost: shippingCostCharged,
   })
@@ -673,7 +676,7 @@ export default function CheckoutPage() {
   const customerCreditApplication = calculateCustomerCreditApplication({
     availableBalance: customerCredit.balance,
     eligibleTotal: totalBeforeCustomerCredit,
-    requestedAmount: customerCredit.appliedAmount,
+    requestedAmount: maxApplicableCustomerCredit,
   })
   const customerCreditCoversTotal =
     customerCreditApplication.appliedAmount > 0 &&
@@ -686,11 +689,20 @@ export default function CheckoutPage() {
   const finalTotal = customerCreditApplication.externalAmountDue
 
   useEffect(() => {
-    if (customerCredit.appliedAmount > maxApplicableCustomerCredit) {
+    if (customerCredit.loading) return
+
+    if (
+      Math.abs(customerCredit.appliedAmount - maxApplicableCustomerCredit) >
+      0.009
+    ) {
       customerCredit.setAppliedAmount(maxApplicableCustomerCredit)
-      setCreditInput(String(maxApplicableCustomerCredit))
     }
-  }, [customerCredit, maxApplicableCustomerCredit])
+  }, [
+    customerCredit.loading,
+    customerCredit.appliedAmount,
+    customerCredit.setAppliedAmount,
+    maxApplicableCustomerCredit,
+  ])
 
   useEffect(() => {
     const cpDestino = formData.cpDestino.trim()
@@ -1487,11 +1499,15 @@ export default function CheckoutPage() {
                     {shippingOptions.map((option) => {
                       const selected =
                         selectedShippingType === option.type
+                      const optionShippingCoveredByBeyonix =
+                        customerCreditIncludesShippingBenefit
                       const optionShippingCostCharged =
-                        calculateCustomerShippingCost(
-                          baseTotals.productsTotal,
-                          option.price,
-                        )
+                        optionShippingCoveredByBeyonix
+                          ? 0
+                          : calculateCustomerShippingCost(
+                              baseTotals.productsTotal,
+                              option.price,
+                            )
 
                       return (
                         <button
@@ -1532,9 +1548,11 @@ export default function CheckoutPage() {
                               </span>
                             )}
                             <span className={optionShippingCostCharged === 0 ? "text-sm font-semibold text-emerald-400" : "text-sm font-semibold text-white"}>
-                              {optionShippingCostCharged === 0
-                                ? "Sin cargo"
-                                : formatPrice(optionShippingCostCharged)}
+                              {optionShippingCoveredByBeyonix
+                                ? "A cargo de BEYONIX"
+                                : optionShippingCostCharged === 0
+                                  ? "Sin cargo"
+                                  : formatPrice(optionShippingCostCharged)}
                             </span>
                           </span>
                         </button>
@@ -1555,82 +1573,6 @@ export default function CheckoutPage() {
                   <h2 className={checkoutSectionHeadingClassName}>
                     Método de pago
                   </h2>
-
-                  {(customerCredit.loading || maxApplicableCustomerCredit > 0) && (
-                    <div className="rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
-                            <CreditCard className="size-5" />
-                          </span>
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
-                              Saldo a favor BEYONIX
-                            </p>
-                            {customerCredit.loading ? (
-                              <span className="mt-2 block h-4 w-32 animate-pulse rounded-full bg-white/12" />
-                            ) : (
-                              <p className="mt-1 text-sm text-white/72">
-                                Disponible: {formatPrice(customerCredit.balance)}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {customerCreditApplication.appliedAmount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              customerCredit.clearAppliedAmount()
-                              setCreditInput("")
-                            }}
-                            className="h-9 cursor-pointer rounded-lg border border-white/12 px-3 text-xs font-bold text-white/72 transition hover:border-beyonix-blue-light/45 hover:text-white"
-                          >
-                            Quitar saldo
-                          </button>
-                        )}
-                      </div>
-
-                      {maxApplicableCustomerCredit > 0 && (
-                        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            aria-label="Monto de saldo a favor"
-                            value={creditInput}
-                            onChange={(event) => {
-                              const value = event.target.value
-                              setCreditInput(value)
-                              customerCredit.setAppliedAmount(
-                                Math.min(
-                                  normalizeMoney(value),
-                                  maxApplicableCustomerCredit,
-                                )
-                              )
-                            }}
-                            placeholder="Monto a usar"
-                            className="h-10 rounded-lg border border-beyonix-blue-light/18 bg-[#0B1118] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-blue-light/65"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              customerCredit.setAppliedAmount(maxApplicableCustomerCredit)
-                              setCreditInput(String(maxApplicableCustomerCredit))
-                            }}
-                            className="h-10 cursor-pointer rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue/35 px-3 text-xs font-bold text-white transition hover:border-beyonix-blue-light/70 hover:bg-beyonix-blue"
-                          >
-                            Aplicar máximo
-                          </button>
-                        </div>
-                      )}
-
-                      {customerCreditCoversTotal && (
-                        <CheckoutNotice className="mt-3">
-                          Tu saldo cubre el total. No necesitás elegir otro método de pago.
-                        </CheckoutNotice>
-                      )}
-                    </div>
-                  )}
 
                   <div className="grid gap-3">
                     {paymentMethods.map((method) => (
@@ -1829,7 +1771,10 @@ export default function CheckoutPage() {
               </div>
 
               <div className="my-2.5 rounded-lg border border-beyonix-blue-light/14 bg-[#10151C] px-3 py-2 shadow-inner shadow-black/20">
-                <FreeShippingBar subtotal={baseTotals.productsTotal} />
+                <FreeShippingBar
+                  subtotal={baseTotals.productsTotal}
+                  coveredByBeyonix={customerCreditIncludesShippingBenefit}
+                />
               </div>
 
               <div className="custom-scrollbar max-h-[clamp(300px,38vh,390px)] space-y-1.5 overflow-y-auto pr-1">
@@ -2021,18 +1966,24 @@ export default function CheckoutPage() {
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
-                    {shippingBonus > 0 ? "Envío bonificado" : "Envío"}
+                    {customerCreditCoversShipping
+                      ? "Envío a cargo de BEYONIX"
+                      : shippingBonus > 0
+                        ? "Envío bonificado"
+                        : "Envío"}
                   </span>
                   <span className={
                     !selectedShippingOption
                       ? "text-white/45"
-                      : totals.shipping === 0 && shippingBonus > 0
+                      : totals.shipping === 0 &&
+                          (shippingBonus > 0 || customerCreditCoversShipping)
                         ? "font-semibold text-emerald-400"
                         : "text-white"
                   }>
                     {!selectedShippingOption
                       ? "A definir"
-                      : totals.shipping === 0 && shippingBonus > 0
+                      : totals.shipping === 0 &&
+                          (shippingBonus > 0 || customerCreditCoversShipping)
                         ? "Sin cargo"
                         : formatPrice(totals.shipping)}
                   </span>

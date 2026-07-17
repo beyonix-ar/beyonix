@@ -12,6 +12,26 @@ export interface OrderProgressStep {
 
 export type CustomerOrderDetailView = "detalle" | "factura" | "reclamo"
 
+const SHIPPING_INCIDENT_LABELS: Record<string, string> = {
+  visita_fallida: "Visita fallida",
+  en_sucursal: "En sucursal",
+  retiro_pendiente: "Retiro pendiente",
+  retiro_vencido: "Retiro vencido",
+  en_devolucion: "En devolución",
+  devuelto_beyonix: "Devuelto a BEYONIX",
+}
+const DISPATCHED_ORDER_STATUSES = [
+  "enviado",
+  "en_camino",
+  "visita_fallida",
+  "en_sucursal",
+  "retiro_pendiente",
+  "retiro_vencido",
+  "en_devolucion",
+  "devuelto_beyonix",
+  "entregado",
+]
+
 export type DeliveryAddressDraft = {
   codigoPostal: string
   calle: string
@@ -79,7 +99,7 @@ export function getClientOrderStatusBadge(order: SupabasePedido) {
     (paymentStatus === "confirmado" ||
       paymentStatus === "approved" ||
       status === "pagado") &&
-    !["enviado", "en_camino", "entregado"].includes(status)
+    !DISPATCHED_ORDER_STATUSES.includes(status)
   ) {
     return {
       label: "Pago confirmado",
@@ -91,6 +111,13 @@ export function getClientOrderStatusBadge(order: SupabasePedido) {
     return {
       label: "En camino",
       className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
+    }
+  }
+
+  if (SHIPPING_INCIDENT_LABELS[status]) {
+    return {
+      label: SHIPPING_INCIDENT_LABELS[status],
+      className: "border-amber-300/35 bg-amber-400/12 text-amber-100",
     }
   }
 
@@ -208,18 +235,15 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
   const isRejected = paymentStatus === "rechazado"
   const isPaid =
     estado === "pagado" ||
-    estado === "enviado" ||
-    estado === "en_camino" ||
-    estado === "entregado" ||
+    DISPATCHED_ORDER_STATUSES.includes(estado) ||
     paymentStatus === "confirmado" ||
     paymentStatus === "approved"
   const isDispatched =
-    estado === "enviado" ||
-    estado === "en_camino" ||
-    estado === "entregado" ||
+    DISPATCHED_ORDER_STATUSES.includes(estado) ||
     Boolean(order.tracking_number || order.andreani_tracking)
   const isDelivered = estado === "entregado"
-  const isInTransit = estado === "en_camino" || isDelivered || isAndreaniOrderInTransit(order)
+  const hasShippingIncident = Boolean(SHIPPING_INCIDENT_LABELS[estado])
+  const isInTransit = estado === "en_camino" || hasShippingIncident || isDelivered || isAndreaniOrderInTransit(order)
 
   if (refundPending || refunded) {
     return [
@@ -306,7 +330,9 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
     },
     {
       label: "En camino",
-      detail: isInTransit
+      detail: hasShippingIncident
+        ? "El envío tiene una incidencia logística. BEYONIX está revisando el seguimiento."
+        : isInTransit
         ? "Andreani está llevando el pedido al domicilio indicado."
         : isDispatched
           ? "El envío fue generado y quedará activo cuando Andreani inicie el transporte."

@@ -188,7 +188,18 @@ function isOrderPaidForInvoice(order: {
     order.payment_status === "confirmado" ||
     order.payment_status === "approved" ||
     order.payment_status === "confirmed" ||
-    ["pagado", "enviado", "en_camino", "entregado"].includes(
+    [
+      "pagado",
+      "enviado",
+      "en_camino",
+      "visita_fallida",
+      "en_sucursal",
+      "retiro_pendiente",
+      "retiro_vencido",
+      "en_devolucion",
+      "devuelto_beyonix",
+      "entregado",
+    ].includes(
       order.estado ?? "",
     )
   )
