@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import {
   AlertCircle,
   CheckCircle2,
-  Clock3,
+  CloudUpload,
   ExternalLink,
   FileText,
 } from "lucide-react"
@@ -19,33 +19,38 @@ const PAYMENT_STATUS_CONTENT = {
   pendiente_comprobante: {
     title: "Comprobante pendiente",
     description: "Subí el comprobante para que podamos confirmar tu pago.",
-    icon: Clock3,
-    className: "border-amber-300/18 bg-amber-300/[0.06] text-amber-300",
+    icon: CloudUpload,
+    className: "border-beyonix-gray-700 bg-beyonix-gray-900",
+    accentClassName: "text-beyonix-status-pending",
   },
   en_revision: {
     title: "Comprobante recibido",
     description: "Recibimos tu comprobante y estamos revisando el pago.",
     icon: CheckCircle2,
-    className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
+    className: "border-beyonix-gray-700 bg-beyonix-gray-900",
+    accentClassName: "text-beyonix-status-success",
   },
   confirmado: {
     title: "Pago confirmado",
     description: "Tu pago fue confirmado correctamente.",
     icon: CheckCircle2,
-    className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
+    className: "border-beyonix-gray-700 bg-beyonix-gray-900",
+    accentClassName: "text-beyonix-status-success",
   },
   rechazado: {
     title: "Comprobante rechazado",
     description:
       "El comprobante no pudo validarse. Podés subir uno nuevo.",
     icon: AlertCircle,
-    className: "border-red-400/20 bg-red-400/8 text-red-200",
+    className: "border-beyonix-gray-700 bg-beyonix-gray-900",
+    accentClassName: "text-beyonix-status-danger",
   },
   vencido_falta_comprobante: {
     title: "Pedido cancelado por falta de pago",
     description: "No se recibió el comprobante dentro del plazo de 48 hs.",
     icon: AlertCircle,
-    className: "border-red-400/20 bg-red-400/8 text-red-200",
+    className: "border-beyonix-gray-700 bg-beyonix-gray-900",
+    accentClassName: "text-beyonix-status-danger",
   },
 } as const
 
@@ -54,11 +59,13 @@ export function CustomerPaymentProof({
   onUploaded,
   showHeading = true,
   hideProofWhenConfirmed = false,
+  expandUploader = false,
 }: {
   order: SupabasePedido
   onUploaded: (updatedOrder: SupabasePedido) => void
   showHeading?: boolean
   hideProofWhenConfirmed?: boolean
+  expandUploader?: boolean
 }) {
   const hasProof = Boolean(order.payment_proof_url || order.payment_proof_uploaded_at)
   const rawPaymentStatus =
@@ -130,9 +137,9 @@ export function CustomerPaymentProof({
   }, [order.id, order.payment_proof_uploaded_at, showProof])
 
   return (
-    <div>
+    <div className={expandUploader ? "flex h-full flex-col" : ""}>
       {showHeading && (
-        <p className="text-11px font-bold uppercase tracking-widest text-white/55">
+        <p className="text-11px font-bold uppercase tracking-widest text-beyonix-gray-500">
           Transferencia bancaria
         </p>
       )}
@@ -141,10 +148,14 @@ export function CustomerPaymentProof({
         className={`${showHeading ? "mt-3" : ""} rounded-xl border ${compactLayout ? "px-3 py-2" : "px-4 py-3"} ${status.className}`}
       >
         <div className={`flex items-start ${compactLayout ? "gap-2" : "gap-3"}`}>
-          <StatusIcon className={`mt-0.5 shrink-0 ${compactLayout ? "size-4" : "size-5"}`} />
+          <StatusIcon
+            className={`mt-0.5 shrink-0 ${status.accentClassName} ${compactLayout ? "size-4" : "size-5"}`}
+          />
           <div>
-            <p className="text-sm font-black">{status.title}</p>
-            <p className={`${compactLayout ? "text-xs text-[#C8C8C8]" : "mt-1 text-sm text-white/65"} leading-5`}>
+            <p className={`text-sm font-black ${status.accentClassName}`}>
+              {status.title}
+            </p>
+            <p className={`${compactLayout ? "text-xs text-beyonix-gray-300" : "mt-1 text-sm text-beyonix-gray-300"} leading-5`}>
               {status.description}
             </p>
           </div>
@@ -152,28 +163,28 @@ export function CustomerPaymentProof({
       </div>
 
       {showProof && (
-        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-[#3A444F] bg-[#20262D] p-3 sm:flex-row sm:items-center">
+        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-beyonix-gray-700 bg-beyonix-gray-900 p-3 sm:flex-row sm:items-center">
           {isImage && signedUrl ? (
             <img
               src={signedUrl}
               alt="Vista previa del comprobante"
-              className="h-20 w-24 shrink-0 rounded-lg border border-white/10 bg-black object-cover"
+              className="h-20 w-24 shrink-0 rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900 object-cover"
             />
           ) : (
-            <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-lg border border-[#3A444F] bg-[#161C22] text-white">
+            <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900 text-white">
               <FileText className="size-7" />
             </div>
           )}
 
           <div className="min-w-0 flex-1">
-            <p className="text-10px font-black uppercase tracking-widest text-white/40">
+            <p className="text-10px font-black uppercase tracking-widest text-beyonix-gray-500">
               Comprobante enviado
             </p>
             <p className="mt-1 truncate text-sm font-semibold text-white">
               {fileName}
             </p>
             {previewError && (
-              <p className="mt-1 text-xs text-red-300">{previewError}</p>
+              <p className="mt-1 text-xs text-beyonix-status-danger">{previewError}</p>
             )}
           </div>
 
@@ -182,7 +193,7 @@ export function CustomerPaymentProof({
               href={signedUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#5CA9E6]/45 bg-[#1E4D7B] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/80 hover:bg-[#2F6FA3]"
+              className="inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-beyonix-blue-500 bg-beyonix-blue-700 px-3 text-xs font-black text-white shadow-md shadow-black/20 transition-colors hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500"
             >
               <ExternalLink className="size-4" />
               Ver comprobante
@@ -192,8 +203,8 @@ export function CustomerPaymentProof({
       )}
 
       {canReplace && hasProof && (
-        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#303840] bg-[#181E25] px-3 py-2">
-          <p className="text-xs text-[#C8C8C8]">
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-beyonix-gray-700 bg-beyonix-gray-900 px-3 py-2">
+          <p className="text-xs text-beyonix-gray-300">
             ¿Subiste el archivo equivocado?
           </p>
           <PaymentProofActionButton
@@ -201,16 +212,17 @@ export function CustomerPaymentProof({
             initialUploaded
             label="Cambiar comprobante"
             onUploaded={onUploaded}
-            className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-[#4C5662] bg-[#252B33] px-3 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.10)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E]"
+            className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-blue-500 bg-beyonix-blue-700 px-3 text-xs font-black text-white shadow-md shadow-black/15 transition-colors hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500"
           />
         </div>
       )}
 
       {canReplace && !hasProof && (
-        <div className={compactLayout ? "mt-2" : "mt-3"}>
+        <div className={`${compactLayout ? "mt-2" : "mt-3"} ${expandUploader ? "flex flex-1 flex-col" : ""}`}>
           <PaymentProofUploader
             orderId={order.id}
             compact
+            expand={expandUploader}
             onUploaded={onUploaded}
           />
         </div>

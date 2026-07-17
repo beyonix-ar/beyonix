@@ -161,6 +161,17 @@
   --color-beyonix-blue: var(--beyonix-brand-primary);
   --color-beyonix-blue-light: var(--beyonix-brand-active);
   --color-beyonix-blue-hover: var(--beyonix-brand-hover);
+  --color-beyonix-blue-900: #0B1B2B;
+  --color-beyonix-blue-700: #112A43;
+  --color-beyonix-blue-500: #1E4D7B;
+  --color-beyonix-blue-300: #7FA4C8;
+  --color-beyonix-gray-900: #101010;
+  --color-beyonix-gray-700: #2A2A2A;
+  --color-beyonix-gray-500: #737373;
+  --color-beyonix-gray-300: #B5B5B5;
+  --color-beyonix-status-success: var(--beyonix-success);
+  --color-beyonix-status-pending: var(--beyonix-warning);
+  --color-beyonix-status-danger: var(--beyonix-danger);
   --color-beyonix-cyan: #4A90B8;
   --color-beyonix-sky: #8CC8F2;
   --color-beyonix-focus: #3b82f6;
@@ -260,6 +271,7 @@
   --text-18px: 18px;
   --text-19px: 19px;
   --text-21px: 21px;
+  --text-25px: 25px;
   --text-26px: 26px;
   --text-28px: 28px;
   --text-8px: 8px;
@@ -4120,5 +4132,209 @@ span.admin-claim-status-finalized,
   color: #ffffff !important;
   box-shadow: none !important;
 }
+
+/* Envío del pedido: tarjetas coordinadas con el detalle de compra. */
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-card {
+  background: var(--beyonix-surface-raised) !important;
+  background-color: var(--beyonix-surface-raised) !important;
+  background-image: none !important;
+  border-color: var(--beyonix-border-default) !important;
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-overview {
+  background-color: var(--beyonix-brand-primary) !important;
+  background: color-mix(
+    in srgb,
+    var(--beyonix-brand-primary) 42%,
+    var(--beyonix-surface-raised)
+  ) !important;
+  border-color: var(--beyonix-border-active) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-progress-card {
+  background: var(--beyonix-surface-base) !important;
+  background-color: var(--beyonix-surface-base) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-step-label {
+  font-family: var(--font-heading) !important;
+  font-size: 0.625rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  line-height: 0.875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-destination-card {
+  background: var(--beyonix-surface-interactive) !important;
+  background-color: var(--beyonix-surface-interactive) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-management-card {
+  background-color: var(--beyonix-surface-raised) !important;
+  background: color-mix(
+    in srgb,
+    var(--beyonix-brand-primary) 24%,
+    var(--beyonix-surface-raised)
+  ) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-operation-card {
+  background-color: var(--beyonix-surface-raised) !important;
+  background: color-mix(
+    in srgb,
+    var(--beyonix-brand-primary) 14%,
+    var(--beyonix-surface-raised)
+  ) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-dispatch-badge {
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-address-surface {
+  background: var(--beyonix-surface-muted) !important;
+  background-color: var(--beyonix-surface-muted) !important;
+  background-image: none !important;
+  border-color: var(--beyonix-border-subtle) !important;
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-facts {
+  background-color: var(--beyonix-brand-primary) !important;
+  background: color-mix(
+    in srgb,
+    var(--beyonix-brand-primary) 44%,
+    var(--beyonix-surface-interactive)
+  ) !important;
+  background-image: none !important;
+  border-color: var(--beyonix-border-default) !important;
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-address-grid p:first-child {
+  color: var(--beyonix-text-muted) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-address-grid p:last-child {
+  color: var(--beyonix-text-primary) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-detail {
+  border-left: 1px solid var(--beyonix-brand-active);
+  padding-left: 0.5rem;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select,
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-other-modality {
+  background: var(--beyonix-input-background) !important;
+  background-color: var(--beyonix-input-background) !important;
+  background-image: none !important;
+  border-color: var(--beyonix-border-default) !important;
+  border-radius: 0.5rem !important;
+  height: 2rem !important;
+  min-height: 2rem !important;
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined button.admin-control-select {
+  gap: 0.375rem !important;
+  padding-inline: 0.75rem !important;
+  font-size: 0.6875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined button.admin-control-select span {
+  font-size: 0.6875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined button.admin-control-select svg {
+  width: 0.875rem !important;
+  height: 0.875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select,
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select span,
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select svg {
+  color: var(--beyonix-text-primary) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select:hover,
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-other-modality:hover {
+  border-color: var(--beyonix-border-interactive) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-custom-provider input {
+  font-family: var(--font-body) !important;
+  font-size: 0.625rem !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-custom-provider .admin-order-shipping-refined-action {
+  font-size: 0.5625rem !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-refined-action {
+  background: var(--beyonix-surface-interactive) !important;
+  background-color: var(--beyonix-surface-interactive) !important;
+  background-image: none !important;
+  border-color: var(--beyonix-border-default) !important;
+  color: var(--beyonix-text-primary) !important;
+  font-family: var(--font-heading) !important;
+  font-size: 0.625rem !important;
+  font-style: normal !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 0.875rem !important;
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-refined-action svg {
+  width: 0.875rem !important;
+  height: 0.875rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-actions .admin-order-shipping-refined-action {
+  flex: 0 0 auto;
+  width: auto !important;
+  min-width: 8rem;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-refined-action:hover:not(:disabled) {
+  background: var(--beyonix-brand-hover) !important;
+  background-color: var(--beyonix-brand-hover) !important;
+  border-color: var(--beyonix-border-active) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-refined-action--primary {
+  background: var(--beyonix-brand-primary) !important;
+  background-color: var(--beyonix-brand-primary) !important;
+  border-color: var(--beyonix-border-active) !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-refined-action:disabled {
+  background: var(--beyonix-surface-muted) !important;
+  background-color: var(--beyonix-surface-muted) !important;
+  border-color: var(--beyonix-border-subtle) !important;
+  color: var(--beyonix-text-muted) !important;
+}
+
+/* El diálogo de reseñas debe cubrir por completo el contenido de la página. */
+.product-reviews-dialog,
+.product-reviews-dialog-header,
+.product-reviews-dialog-body {
+  background: var(--beyonix-surface-base) !important;
+  background-color: var(--beyonix-surface-base) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  opacity: 1 !important;
+}
+
+.product-reviews-dialog {
+  isolation: isolate;
+}
+
 
 

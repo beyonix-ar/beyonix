@@ -3,7 +3,6 @@ import type { LucideIcon } from "lucide-react"
 
 import { Footer } from "@/components/footer"
 import {
-  BeyonixCard,
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
 import { cn } from "@/lib/utils"
@@ -19,19 +18,23 @@ const statusToneStyles: Record<
 > = {
   success: {
     icon: "success",
-    iconClassName: "text-emerald-100",
+    iconClassName:
+      "border-beyonix-status-success/30 bg-beyonix-status-success/10 text-beyonix-status-success",
   },
   pending: {
     icon: "default",
-    iconClassName: "text-amber-200",
+    iconClassName:
+      "border-beyonix-status-pending/30 bg-beyonix-status-pending/10 text-beyonix-status-pending",
   },
   failure: {
     icon: "danger",
-    iconClassName: "text-red-100",
+    iconClassName:
+      "border-beyonix-status-danger/30 bg-beyonix-status-danger/10 text-beyonix-status-danger",
   },
   info: {
     icon: "default",
-    iconClassName: "text-beyonix-sky",
+    iconClassName:
+      "border-beyonix-blue-500/50 bg-beyonix-blue-900 text-beyonix-blue-300",
   },
 }
 
@@ -42,8 +45,8 @@ export function CheckoutStatusShell({
 }) {
   return (
     <>
-      <main className="min-h-screen bg-[#05070A] px-4 py-6 font-heading text-white sm:py-8">
-        <div className="mx-auto w-full max-w-[1075px]">{children}</div>
+      <main className="min-h-screen bg-beyonix-page px-4 py-3 font-heading text-white sm:py-4">
+        <div className="mx-auto w-full max-w-5xl">{children}</div>
       </main>
       <Footer />
     </>
@@ -60,6 +63,10 @@ export function CheckoutStatusCard({
   children,
   footer,
   className,
+  headerClassName,
+  bodyClassName,
+  footerClassName,
+  compact = false,
 }: {
   tone: CheckoutStatusTone
   icon: LucideIcon
@@ -70,55 +77,82 @@ export function CheckoutStatusCard({
   children?: ReactNode
   footer?: ReactNode
   className?: string
+  headerClassName?: string
+  bodyClassName?: string
+  footerClassName?: string
+  compact?: boolean
 }) {
   const styles = statusToneStyles[tone]
 
   return (
-    <BeyonixCard
-      variant="elevated"
+    <div
       className={cn(
-        "overflow-hidden rounded-2xl border-beyonix-blue-light/18 bg-[#0B1118] shadow-2xl shadow-black/45",
+        "w-full min-w-0 overflow-hidden rounded-2xl border border-beyonix-gray-700 bg-beyonix-gray-900 shadow-2xl shadow-black/45",
         className,
       )}
     >
-      <div className="border-b border-beyonix-blue-light/14 px-4 py-6 text-center sm:px-6">
+      <div
+        className={cn(
+          "border-b border-beyonix-blue-500/35 px-4 py-4 text-center sm:px-6",
+          headerClassName,
+        )}
+      >
         <BeyonixIconBox
           variant={styles.icon}
-          size="lg"
+          size={compact ? "md" : "lg"}
           className={cn("mx-auto", styles.iconClassName)}
         >
           <Icon className="size-6" />
         </BeyonixIconBox>
 
-        <p className="mt-3 text-10px font-semibold uppercase tracking-[0.2em] text-beyonix-cyan/82">
+        <p
+          className={cn(
+            "text-10px font-semibold uppercase tracking-widest text-beyonix-blue-300",
+            compact ? "mt-2" : "mt-2.5",
+          )}
+        >
           {eyebrow}
         </p>
 
-        <h1 className="mx-auto mt-1.5 max-w-2xl text-2xl font-bold tracking-tight text-white sm:text-3xl">
+        <h1
+          className={cn(
+            "mx-auto mt-1.5 max-w-2xl font-bold tracking-tight text-white",
+            compact ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl",
+          )}
+        >
           {title}
         </h1>
 
         {description && (
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/62">
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-beyonix-gray-300">
             {description}
           </p>
         )}
 
         {Number.isFinite(orderId) && Number(orderId) > 0 && (
-          <p className="mt-2 text-xs font-semibold text-white/46">
+          <p className="mt-1.5 text-xs font-semibold text-beyonix-gray-500">
             Pedido #{orderId}
           </p>
         )}
       </div>
 
-      {children && <div className="px-4 py-4 sm:px-5">{children}</div>}
+      {children && (
+        <div className={cn("px-4 py-3 sm:px-5", bodyClassName)}>
+          {children}
+        </div>
+      )}
 
       {footer && (
-        <div className="border-t border-beyonix-blue-light/14 px-4 py-4 sm:px-5">
+        <div
+          className={cn(
+            "border-t border-beyonix-gray-700 px-4 py-3 sm:px-5",
+            footerClassName,
+          )}
+        >
           {footer}
         </div>
       )}
-    </BeyonixCard>
+    </div>
   )
 }
 
@@ -127,21 +161,28 @@ export function CheckoutStatusPanel({
   title,
   children,
   className,
+  titleClassName,
 }: {
   id?: string
   title: ReactNode
   children: ReactNode
   className?: string
+  titleClassName?: string
 }) {
   return (
     <section
       id={id}
       className={cn(
-        "rounded-xl border border-beyonix-blue-light/16 bg-[#10151C] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] sm:p-4",
+        "min-w-0 rounded-xl border border-beyonix-gray-700 bg-beyonix-gray-900 p-3.5 shadow-inner sm:p-4",
         className,
       )}
     >
-      <h2 className="border-l-4 border-beyonix-blue pl-3 text-lg font-bold text-white">
+      <h2
+        className={cn(
+          "border-l-4 border-beyonix-blue-700 pl-3 text-lg font-bold text-white",
+          titleClassName,
+        )}
+      >
         {title}
       </h2>
       {children}
@@ -163,12 +204,12 @@ export function CheckoutStatusNotice({
       className={cn(
         "rounded-xl border px-3.5 py-2.5 text-sm leading-5",
         tone === "failure"
-          ? "border-red-400/20 bg-red-500/10 text-red-200"
+          ? "border-beyonix-status-danger/30 bg-beyonix-gray-900 text-beyonix-status-danger"
           : tone === "pending"
-            ? "border-amber-300/22 bg-amber-300/[0.055] text-white/82"
+            ? "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-300"
             : tone === "success"
-              ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
-              : "border-beyonix-blue-light/18 bg-[#10151C] text-white/70",
+              ? "border-beyonix-status-success/30 bg-beyonix-gray-900 text-white"
+              : "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-300",
         className,
       )}
     >

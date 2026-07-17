@@ -18,10 +18,12 @@ import {
   Info,
   Landmark,
   LoaderCircle,
+  MapPin,
   MessageCircle,
   Package,
   Printer,
   RefreshCw,
+  Settings2,
   ShieldCheck,
   ShoppingCart,
   Truck,
@@ -111,6 +113,11 @@ type TrackingStatusRequest = {
   nextEstado: string
 } | null
 type ShippingModalityOption = "andreani" | "otro"
+type ShippingDetailsPayload = {
+  envio_proveedor?: string | null
+  tracking_number?: string | null
+  tracking_url?: string | null
+}
 const DEFAULT_REFUND_METHOD = "Transferencia"
 const SHIPPING_INCIDENT_STATUSES = [
   "visita_fallida",
@@ -3646,6 +3653,7 @@ function PedidoDetailModal({
   onClose,
   onOpenPaymentProof,
   onEstadoChange,
+  onShippingDetailsChange,
   onPaymentStatusChange,
   onAndreaniAction,
   onIssueInvoice,
@@ -3662,6 +3670,11 @@ function PedidoDetailModal({
   onClose: () => void
   onOpenPaymentProof: (pedidoId: number) => Promise<boolean>
   onEstadoChange: (pedido: SupabasePedido, nextEstado: string) => void
+  onShippingDetailsChange: (
+    pedidoId: number,
+    estado: string,
+    details: ShippingDetailsPayload,
+  ) => Promise<boolean>
   onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
   onAndreaniAction: (
     action: AndreaniAction,
@@ -3689,9 +3702,32 @@ function PedidoDetailModal({
   const dispatch = getDispatchAlert(pedido)
   const DispatchIcon = dispatch.label === "Entregado" ? CheckCircle2 : AlertTriangle
   const tracking = pedido.andreani_tracking || pedido.tracking_number
+  const savedShippingProvider = (
+    pedido.shipping_provider ||
+    pedido.envio_proveedor ||
+    ""
+  ).trim()
+  const hasCustomShippingProvider =
+    Boolean(savedShippingProvider) &&
+    !savedShippingProvider.toLowerCase().includes("andreani")
   const [shippingModality, setShippingModality] =
-    useState<ShippingModalityOption>("andreani")
-  const [customShippingModality, setCustomShippingModality] = useState("")
+    useState<ShippingModalityOption>(() =>
+      hasCustomShippingProvider ? "otro" : "andreani"
+    )
+  const [customShippingModality, setCustomShippingModality] = useState(() =>
+    hasCustomShippingProvider ? savedShippingProvider : ""
+  )
+  const [customShippingNumber, setCustomShippingNumber] = useState(
+    pedido.tracking_number || ""
+  )
+  const [customShippingUrl, setCustomShippingUrl] = useState(
+    pedido.tracking_url || ""
+  )
+  const [customShippingSaving, setCustomShippingSaving] = useState(false)
+  const [customShippingNotice, setCustomShippingNotice] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
   const [andreaniLoading, setAndreaniLoading] = useState<AndreaniAction | null>(
     null
   )
@@ -3771,8 +3807,19 @@ function PedidoDetailModal({
           : "pendiente_comprobante"
 
   useEffect(() => {
-    setShippingModality("andreani")
-    setCustomShippingModality("")
+    const provider = (
+      pedido.shipping_provider ||
+      pedido.envio_proveedor ||
+      ""
+    ).trim()
+    const usesCustomProvider =
+      Boolean(provider) && !provider.toLowerCase().includes("andreani")
+
+    setShippingModality(usesCustomProvider ? "otro" : "andreani")
+    setCustomShippingModality(usesCustomProvider ? provider : "")
+    setCustomShippingNumber(pedido.tracking_number || "")
+    setCustomShippingUrl(pedido.tracking_url || "")
+    setCustomShippingNotice(null)
   }, [pedido.id])
 
   useEffect(() => {
@@ -3867,6 +3914,34 @@ function PedidoDetailModal({
     const result = await onAndreaniAction(action, pedido.id)
     setAndreaniNotice(result)
     setAndreaniLoading(null)
+  }
+
+  const handleConfirmCustomShipping = async () => {
+    const provider = customShippingModality.trim()
+
+    if (!provider) {
+      setCustomShippingNotice({
+        ok: false,
+        message: "Indicá el nombre del transportista.",
+      })
+      return
+    }
+
+    setCustomShippingSaving(true)
+    setCustomShippingNotice(null)
+
+    const updated = await onShippingDetailsChange(pedido.id, pedido.estado, {
+      envio_proveedor: provider,
+      tracking_number: customShippingNumber.trim() || null,
+      tracking_url: normalizeExternalUrl(customShippingUrl),
+    })
+
+    setCustomShippingSaving(false)
+    setCustomShippingNotice(
+      updated
+        ? { ok: true, message: "Datos del transportista guardados." }
+        : { ok: false, message: "No se pudieron guardar los datos." },
+    )
   }
 
   const handleWarrantyEdit = async (item: SupabasePedidoItem) => {
@@ -4419,218 +4494,363 @@ function PedidoDetailModal({
            )}
 
           {activeView === "envio" && (
-          <section className="admin-order-shipping-panel admin-order-shipping-section mt-3 rounded-xl border p-3">
-            <div className="admin-order-shipping-header flex flex-col gap-3 border-b border-white/8 pb-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="admin-order-shipping-main-icon">
-                  <Truck className="size-6" />
+          <div className="admin-order-shipping-refined mt-3 space-y-2.5">
+            <section className="admin-order-shipping-card admin-order-shipping-overview rounded-lg border p-3">
+              <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/60 bg-beyonix-blue-900 text-white">
+                    <Truck className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-10px font-bold uppercase tracking-widest text-white">
+                      Envío
+                    </p>
+                    <h3 className="mt-0.5 text-base font-black text-white">
+                      {pedido.shipping_type === "sucursal"
+                        ? "Retiro en sucursal"
+                        : "Envío a domicilio"}
+                    </h3>
+                  </div>
+                </div>
+                <span
+                  className={cn(
+                    "admin-order-dispatch-badge inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide",
+                    dispatch.className,
+                  )}
+                >
+                  <DispatchIcon className="size-3.5" />
+                  {dispatch.label}
                 </span>
-                <div className="min-w-0">
-                  <p className="text-11px font-bold uppercase tracking-widest text-white/78">
-                    Envío
+              </header>
+            </section>
+
+            <section className="admin-order-shipping-card admin-order-shipping-progress-card rounded-lg border p-3">
+              <ShippingProgressTimeline pedido={pedido} />
+            </section>
+
+            <div className="grid gap-2.5 lg:grid-cols-5">
+              <section className="admin-order-shipping-card admin-order-shipping-destination-card rounded-lg border p-3 lg:col-span-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-white">
+                    <MapPin className="size-3.5" />
+                  </span>
+                  <div>
+                    <p className="text-9px font-bold uppercase tracking-widest text-white">
+                      Destino
+                    </p>
+                    <h3 className="mt-0.5 text-sm font-black text-white">
+                      Dirección de entrega
+                    </h3>
+                  </div>
+                </div>
+                <div className="admin-order-shipping-address-surface mt-2.5 rounded-lg border p-2.5">
+                  <ShippingAddressDetails pedido={pedido} />
+                </div>
+              </section>
+
+              <section className="admin-order-shipping-card admin-order-shipping-management-card rounded-lg border p-3 lg:col-span-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-white">
+                    <Settings2 className="size-3.5" />
+                  </span>
+                  <div>
+                    <p className="text-9px font-bold uppercase tracking-widest text-white">
+                      Administración
+                    </p>
+                    <h3 className="mt-0.5 text-sm font-black text-white">
+                      Gestión logística
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="mt-2.5 space-y-2.5">
+                  <div className="min-w-0">
+                    <p className="text-9px font-bold uppercase tracking-widest text-beyonix-gray-300">
+                      Estado operativo
+                    </p>
+                    <div className="mt-1.5">
+                      <AdminSelect
+                        compact
+                        title="Estado operativo del pedido"
+                        value={pedido.estado === "enviado" ? "en_camino" : pedido.estado}
+                        triggerClassName={`admin-order-shipping-status-select ${getOrderStatusSelectClassName(pedido.estado)}`}
+                        onChange={(value) => onEstadoChange(pedido, value)}
+                      >
+                        <option value="pendiente">Pendiente</option>
+                        <option value="pagado">Pago confirmado</option>
+                        {(isSuperAdmin || pedido.estado === "en_camino" || pedido.estado === "enviado") && (
+                          <option value="en_camino">En camino</option>
+                        )}
+                        {(isSuperAdmin || pedido.estado === "entregado") && (
+                          <option value="entregado">Entregado</option>
+                        )}
+                        <option value="visita_fallida">Visita fallida</option>
+                        <option value="en_sucursal">En sucursal</option>
+                        <option value="retiro_pendiente">Retiro pendiente</option>
+                        <option value="retiro_vencido">Retiro vencido</option>
+                        <option value="en_devolucion">En devolución</option>
+                        <option value="devuelto_beyonix">Devuelto a BEYONIX</option>
+                        <option value="cancelado">Cancelado</option>
+                      </AdminSelect>
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-9px font-bold uppercase tracking-widest text-beyonix-gray-300">
+                      Transportista
+                    </p>
+                    <div className="mt-1.5">
+                      <AdminSelect
+                        compact
+                        title="Modalidad logística"
+                        value={shippingModality}
+                        triggerClassName="admin-order-shipping-modality-select"
+                        onChange={(value) => {
+                          setShippingModality(value as ShippingModalityOption)
+                          setCustomShippingNotice(null)
+                        }}
+                      >
+                        <option value="andreani">Andreani</option>
+                        <option value="otro">Otro</option>
+                      </AdminSelect>
+                    </div>
+                    {shippingModality === "otro" && (
+                      <div className="admin-order-shipping-custom-provider mt-2 space-y-2 rounded-lg border border-beyonix-blue-500/35 bg-beyonix-gray-900 p-2.5">
+                        <label className="block">
+                          <span className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
+                            Transportista
+                          </span>
+                          <input
+                            type="text"
+                            value={customShippingModality}
+                            maxLength={100}
+                            onChange={(event) =>
+                              setCustomShippingModality(event.target.value)
+                            }
+                            placeholder="Ej: Correo Argentino"
+                            aria-label="Nombre del transportista"
+                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-white outline-none placeholder:text-beyonix-gray-500"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
+                            N.º de envío (opcional)
+                          </span>
+                          <input
+                            type="text"
+                            value={customShippingNumber}
+                            maxLength={120}
+                            onChange={(event) =>
+                              setCustomShippingNumber(event.target.value)
+                            }
+                            placeholder="Número de seguimiento"
+                            aria-label="Número de envío opcional"
+                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-white outline-none placeholder:text-beyonix-gray-500"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
+                            Página de seguimiento (opcional)
+                          </span>
+                          <input
+                            type="url"
+                            value={customShippingUrl}
+                            onChange={(event) =>
+                              setCustomShippingUrl(event.target.value)
+                            }
+                            placeholder="https://..."
+                            aria-label="Página de seguimiento opcional"
+                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-white outline-none placeholder:text-beyonix-gray-500"
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          aria-label="Confirmar datos del transportista"
+                          title="Confirmar transportista"
+                          disabled={
+                            customShippingSaving ||
+                            !customShippingModality.trim()
+                          }
+                          onClick={() => void handleConfirmCustomShipping()}
+                          className="admin-order-shipping-refined-action admin-order-shipping-refined-action--primary inline-flex h-8 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {customShippingSaving ? (
+                            <LoaderCircle className="size-3.5 animate-spin" />
+                          ) : (
+                            <Check className="size-3.5" />
+                          )}
+                          {customShippingSaving ? "Guardando..." : "Confirmar"}
+                        </button>
+
+                        {customShippingNotice && (
+                          <p
+                            role="status"
+                            className={cn(
+                              "text-10px font-bold",
+                              customShippingNotice.ok
+                                ? "text-beyonix-status-success"
+                                : "text-beyonix-status-danger",
+                            )}
+                          >
+                            {customShippingNotice.message}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <section className="admin-order-shipping-card admin-order-shipping-operation-card rounded-lg border p-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-white">
+                  <Package className="size-3.5" />
+                </span>
+                <div>
+                  <p className="text-9px font-bold uppercase tracking-widest text-white">
+                    Operación
                   </p>
-                  <h3 className="mt-1 text-base font-black text-white">
-                    {pedido.shipping_type === "sucursal"
-                      ? "Retiro en sucursal"
-                      : "Envío a domicilio"}
+                  <h3 className="mt-0.5 text-sm font-black text-white">
+                    Datos del envío
                   </h3>
                 </div>
               </div>
-              <span
-                className={cn(
-                  "admin-order-dispatch-badge inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide",
-                  dispatch.label === "Entregado"
-                    ? "!border-emerald-300 !bg-emerald-200 !text-emerald-950 shadow-[0_0_18px_rgba(134,239,172,0.2)]"
-                    : dispatch.label === "Pendiente"
-                      ? "!border-amber-300 !bg-amber-200 !text-amber-950 shadow-[0_0_18px_rgba(251,191,36,0.18)]"
-                    : dispatch.className,
-                )}
-              >
-                <DispatchIcon className="size-3.5" />
-                {dispatch.label}
-              </span>
-            </div>
 
-            <div className="admin-order-shipping-address-panel mt-3 rounded-lg border p-3">
-              <p className="text-10px font-black uppercase tracking-widest text-white/68">
-                Dirección de entrega
-              </p>
-              <div className="mt-2">
-                <ShippingAddressDetails pedido={pedido} />
-              </div>
-            </div>
-
-            <div className="admin-order-shipping-ops-panel mt-3 rounded-lg border p-3">
-              <p className="text-10px font-black uppercase tracking-widest text-white/68">
-                Resumen logístico
-              </p>
-              <div className="admin-order-shipping-ops-grid mt-2 grid gap-2 sm:grid-cols-2">
-                <div className="admin-order-shipping-mini-card admin-order-shipping-status-card rounded-lg border px-3 py-2">
-                  <p className="text-10px font-bold uppercase tracking-widest text-white/62">
-                    Estado operativo
-                  </p>
-                  <div className="mt-2">
-                    <AdminSelect
-                      title="Estado operativo del pedido"
-                      value={pedido.estado === "enviado" ? "en_camino" : pedido.estado}
-                      triggerClassName={`admin-order-shipping-status-select ${getOrderStatusSelectClassName(pedido.estado)}`}
-                      onChange={(value) => onEstadoChange(pedido, value)}
-                    >
-                      <option value="pendiente">Pendiente</option>
-                      <option value="pagado">Pago confirmado</option>
-                      {(isSuperAdmin || pedido.estado === "en_camino" || pedido.estado === "enviado") && (
-                        <option value="en_camino">En camino</option>
-                      )}
-                      {(isSuperAdmin || pedido.estado === "entregado") && (
-                        <option value="entregado">Entregado</option>
-                      )}
-                      <option value="visita_fallida">Visita fallida</option>
-                      <option value="en_sucursal">En sucursal</option>
-                      <option value="retiro_pendiente">Retiro pendiente</option>
-                      <option value="retiro_vencido">Retiro vencido</option>
-                      <option value="en_devolucion">En devolución</option>
-                      <option value="devuelto_beyonix">Devuelto a BEYONIX</option>
-                      <option value="cancelado">Cancelado</option>
-                    </AdminSelect>
-                  </div>
-                </div>
-
-                <div className="admin-order-shipping-mini-card admin-order-shipping-modality-card rounded-lg border px-3 py-2">
-                  <p className="text-10px font-bold uppercase tracking-widest text-white/62">
-                    Modalidad
-                  </p>
-                  <div className="mt-2">
-                    <AdminSelect
-                      title="Modalidad logística"
-                      value={shippingModality}
-                      triggerClassName="admin-order-shipping-modality-select"
-                      onChange={(value) => setShippingModality(value as ShippingModalityOption)}
-                    >
-                      <option value="andreani">Andreani</option>
-                      <option value="otro">Otro</option>
-                    </AdminSelect>
-                  </div>
-                  {shippingModality === "otro" && (
-                    <input
-                      value={customShippingModality}
-                      onChange={(event) => setCustomShippingModality(event.target.value)}
-                      placeholder="Indicar modalidad"
-                      className="admin-order-shipping-other-modality mt-2 h-10 w-full rounded-xl border px-3 text-sm font-bold text-white outline-none placeholder:text-white/38"
-                    />
-                  )}
-                </div>
+              <div className="admin-order-shipping-facts mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-lg border p-2.5 lg:grid-cols-4">
                 <ShippingMiniCard
-                  label="Estado del envío"
+                  label="Estado"
                   value={getAndreaniStatus(pedido)}
                   icon={<Truck className="size-3.5" />}
                 />
-                {typeof pedido.andreani_costo === "number" && (
-                  <ShippingMiniCard
-                    label="Costo"
-                    value={formatPrice(pedido.andreani_costo ?? 0)}
-                    icon={<CreditCard className="size-3.5" />}
-                  />
-                )}
-                {tracking && (
-                  <ShippingMiniCard label="Seguimiento" value={tracking} icon={<RefreshCw className="size-3.5" />} />
-                )}
-                {pedido.andreani_envio_id && (
-                  <ShippingMiniCard label="Envío ID" value={pedido.andreani_envio_id} icon={<Package className="size-3.5" />} />
-                )}
+                <ShippingMiniCard
+                  label="Costo"
+                  value={
+                    typeof pedido.andreani_costo === "number"
+                      ? formatPrice(pedido.andreani_costo)
+                      : "No informado"
+                  }
+                  icon={<CreditCard className="size-3.5" />}
+                />
+                <ShippingMiniCard
+                  label="Seguimiento"
+                  value={tracking || "Pendiente"}
+                  icon={<RefreshCw className="size-3.5" />}
+                />
+                <ShippingMiniCard
+                  label="Envío ID"
+                  value={pedido.andreani_envio_id || "Pendiente"}
+                  icon={<Package className="size-3.5" />}
+                />
               </div>
-            </div>
 
-            {pedido.andreani_error && (
-              <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-medium text-red-200">
-                {pedido.andreani_error}
-              </p>
-            )}
+              {(pedido.andreani_error || andreaniNotice) && (
+                <div className="mt-3 space-y-2">
+                  {pedido.andreani_error && (
+                    <p className="rounded-lg border border-beyonix-status-danger/30 bg-beyonix-status-danger/8 px-3 py-2 text-xs font-medium text-red-200">
+                      {pedido.andreani_error}
+                    </p>
+                  )}
+                  {andreaniNotice && (
+                    <p
+                      role="status"
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                        andreaniNotice.ok
+                          ? "border-beyonix-status-success/30 bg-beyonix-status-success/8 text-emerald-200"
+                          : "border-beyonix-status-danger/30 bg-beyonix-status-danger/8 text-red-200"
+                      }`}
+                    >
+                      {andreaniNotice.message}
+                    </p>
+                  )}
+                </div>
+              )}
 
-            {andreaniNotice && (
-              <p
-                role="status"
-                className={`mt-3 rounded-xl border px-3 py-2 text-xs font-medium ${
-                  andreaniNotice.ok
-                    ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-200"
-                    : "border-red-400/20 bg-red-400/8 text-red-200"
-                }`}
-              >
-                {andreaniNotice.message}
-              </p>
-            )}
-
-            <div className="admin-order-shipping-actions-panel mt-3 rounded-lg border p-3">
-              <p className="text-10px font-black uppercase tracking-widest text-white/68">
-                Acciones de Andreani
-              </p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-                <button
-                  type="button"
-                  aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
-                  disabled={andreaniLoading !== null}
-                  onClick={() => void handleModalAndreaniAction("crear-envio")}
-                  className="admin-order-shipping-action admin-order-shipping-action--primary inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait disabled:opacity-50"
-                >
-                  <Truck className="size-4" />
-                  Generar envío
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Consultar envío Andreani del pedido ${pedido.id}`}
-                  disabled={andreaniLoading !== null}
-                  onClick={() => void handleModalAndreaniAction("tracking")}
-                  className="admin-order-shipping-action inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait disabled:opacity-50"
-                >
-                  <RefreshCw className="size-4" />
-                  Consultar
-                </button>
-                {pedido.tracking_url ? (
-                  <ExternalLink
-                    href={normalizeExternalUrl(pedido.tracking_url) ?? "#"}
-                    label="Ver envío"
-                    ariaLabel={`Abrir seguimiento del pedido ${pedido.id}`}
-                  />
-                ) : (
+              <div className="mt-3 border-t border-beyonix-blue-500/30 pt-2.5">
+                <p className="text-10px font-black uppercase tracking-widest text-white">
+                  Acciones
+                </p>
+                <div className="admin-order-shipping-actions mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled
-                    aria-label="Seguimiento no disponible"
-                    className="admin-order-shipping-action inline-flex h-9 cursor-not-allowed items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide disabled:opacity-50"
+                    aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
+                    title="Generar envío"
+                    disabled={andreaniLoading !== null}
+                    onClick={() => void handleModalAndreaniAction("crear-envio")}
+                    className="admin-order-shipping-refined-action admin-order-shipping-refined-action--primary inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-wait disabled:opacity-50"
                   >
-                    <Eye className="size-4" />
-                    Ver envío
+                    <Truck className="size-4" />
+                    Generar envío
                   </button>
-                )}
-                {pedido.andreani_etiqueta_url ? (
-                  <ExternalLink
-                    href={pedido.andreani_etiqueta_url}
-                    label="Ver etiqueta"
-                    ariaLabel={`Abrir etiqueta del pedido ${pedido.id}`}
-                  />
-                ) : (
                   <button
                     type="button"
-                    disabled
-                    aria-label="Etiqueta no disponible"
-                    className="admin-order-shipping-action inline-flex h-9 cursor-not-allowed items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide disabled:opacity-50"
+                    aria-label={`Consultar envío Andreani del pedido ${pedido.id}`}
+                    title="Consultar envío"
+                    disabled={andreaniLoading !== null}
+                    onClick={() => void handleModalAndreaniAction("tracking")}
+                    className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-wait disabled:opacity-50"
                   >
-                    <Download className="size-4" />
-                    Ver etiqueta
+                    <RefreshCw className="size-4" />
+                    Consultar
                   </button>
-                )}
-                <button
-                  type="button"
-                  disabled={!pedido.andreani_etiqueta_url}
-                  aria-label={`Imprimir etiqueta Andreani del pedido ${pedido.id}`}
-                  onClick={() => handlePrintAndreaniLabel(pedido)}
-                  className="admin-order-shipping-action inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Printer className="size-4" />
-                  Imprimir
-                </button>
+                  {pedido.tracking_url ? (
+                    <ExternalLink
+                      href={normalizeExternalUrl(pedido.tracking_url) ?? "#"}
+                      label="Ver envío"
+                      ariaLabel={`Abrir seguimiento del pedido ${pedido.id}`}
+                      icon={<Eye className="size-4" />}
+                      className="admin-order-shipping-refined-action"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      aria-label="Seguimiento no disponible"
+                      title="Seguimiento no disponible"
+                      className="admin-order-shipping-refined-action inline-flex h-8 cursor-not-allowed items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black disabled:opacity-50"
+                    >
+                      <Eye className="size-4" />
+                      Ver envío
+                    </button>
+                  )}
+                  {pedido.andreani_etiqueta_url ? (
+                    <ExternalLink
+                      href={pedido.andreani_etiqueta_url}
+                      label="Ver etiqueta"
+                      ariaLabel={`Abrir etiqueta del pedido ${pedido.id}`}
+                      icon={<Download className="size-4" />}
+                      className="admin-order-shipping-refined-action"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      aria-label="Etiqueta no disponible"
+                      title="Etiqueta no disponible"
+                      className="admin-order-shipping-refined-action inline-flex h-8 cursor-not-allowed items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black disabled:opacity-50"
+                    >
+                      <Download className="size-4" />
+                      Ver etiqueta
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!pedido.andreani_etiqueta_url}
+                    aria-label={`Imprimir etiqueta Andreani del pedido ${pedido.id}`}
+                    title="Imprimir etiqueta"
+                    onClick={() => handlePrintAndreaniLabel(pedido)}
+                    className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Printer className="size-4" />
+                    Imprimir
+                  </button>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
           )}
             </>
           )}
@@ -4682,6 +4902,96 @@ function CancellationMiniCard({
   )
 }
 
+function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
+  const delivered = pedido.estado === "entregado" || Boolean(pedido.delivered_at)
+  const dispatched = SHIPPING_DISPATCHED_STATUSES.includes(
+    pedido.estado as (typeof SHIPPING_DISPATCHED_STATUSES)[number],
+  )
+  const activeIndex = delivered
+    ? 4
+    : dispatched
+      ? 3
+      : isOrderPaymentConfirmed(pedido)
+        ? 2
+        : 1
+  const steps = [
+    "Pedido registrado",
+    "Pago confirmado",
+    "Preparando envío",
+    "En camino",
+    "Entregado",
+  ]
+
+  return (
+    <div>
+      <p className="text-9px font-black uppercase tracking-widest text-white">
+        Estado del envío
+      </p>
+      <ol className="mt-2.5 grid grid-cols-5" aria-label="Progreso del envío">
+        {steps.map((step, index) => {
+          const done = delivered ? index <= activeIndex : index < activeIndex
+          const current = !delivered && index === activeIndex
+          const leftCompleted = index > 0 && index <= activeIndex
+          const rightCompleted = index < activeIndex
+
+          return (
+            <li
+              key={step}
+              className="flex min-w-0 flex-col items-center text-center"
+              aria-current={current ? "step" : undefined}
+            >
+              <div className="flex w-full items-center">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-px flex-1",
+                    index === 0
+                      ? "bg-transparent"
+                      : leftCompleted
+                      ? "bg-beyonix-status-success/70"
+                      : "bg-beyonix-gray-700",
+                  )}
+                />
+                <span
+                  className={cn(
+                    "flex size-7 shrink-0 items-center justify-center rounded-full border text-9px font-black",
+                    done
+                      ? "border-beyonix-status-success/70 bg-beyonix-blue-900 text-beyonix-status-success"
+                      : current
+                        ? "border-beyonix-blue-300 bg-beyonix-blue-700 text-white"
+                        : "border-beyonix-gray-700 bg-beyonix-gray-900 text-white",
+                  )}
+                >
+                  {done ? <Check className="size-3" /> : index + 1}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-px flex-1",
+                    index === steps.length - 1
+                      ? "bg-transparent"
+                      : rightCompleted
+                        ? "bg-beyonix-status-success/70"
+                        : "bg-beyonix-gray-700",
+                  )}
+                />
+              </div>
+              <span
+                className={cn(
+                  "admin-order-shipping-step-label mt-1.5 px-1 font-bold",
+                  "text-white",
+                )}
+              >
+                {step}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
 function ShippingMiniCard({
   label,
   value,
@@ -4692,19 +5002,17 @@ function ShippingMiniCard({
   icon?: ReactNode
 }) {
   return (
-    <div className="admin-order-shipping-mini-card rounded-lg border px-3 py-2">
-      <p className="text-10px font-bold uppercase tracking-widest text-white/62">
-        {label}
-      </p>
-      <div className="mt-1 flex min-w-0 items-center gap-2">
-        {icon && (
-          <span className="admin-order-shipping-mini-icon">
-            {icon}
-          </span>
-        )}
-        <p className="wrap-break-word text-sm font-black text-white/92">
-          {value}
-        </p>
+    <div className="admin-order-shipping-detail min-w-0">
+      <div className="flex min-w-0 items-center gap-2">
+        {icon && <span className="text-white">{icon}</span>}
+        <div className="min-w-0">
+          <p className="text-9px font-bold uppercase tracking-widest text-beyonix-gray-300">
+            {label}
+          </p>
+          <p className="mt-0.5 truncate text-xs font-black text-white sm:text-sm">
+            {value}
+          </p>
+        </div>
       </div>
     </div>
   )
@@ -4802,7 +5110,7 @@ function ShippingAddressDetails({ pedido }: { pedido: SupabasePedido }) {
     .join(" ")
   const unitLine = [
     parsedAddress.floor ? `Piso ${parsedAddress.floor}` : "",
-    parsedAddress.apartment ? `Depto ${parsedAddress.apartment}` : "",
+    parsedAddress.apartment ? `Dpto ${parsedAddress.apartment}` : "",
   ]
     .filter(Boolean)
     .join(" · ")
@@ -4812,18 +5120,16 @@ function ShippingAddressDetails({ pedido }: { pedido: SupabasePedido }) {
   const localityLine = [locality, pedido.provincia].filter(Boolean).join(", ")
 
   return (
-    <div className="admin-order-shipping-address-card rounded-lg border p-2.5">
-      <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-        <CompactAddressValue
-          label="Dirección"
-          value={streetLine || cleanAddress || "No informada"}
-        />
-        <CompactAddressValue label="DNI" value={pedido.cliente_dni || "-"} />
-        <CompactAddressValue label="Piso / Depto" value={unitLine || "-"} />
-        <CompactAddressValue label="Localidad / Provincia" value={localityLine || "-"} />
-        <CompactAddressValue label="Código postal" value={postalCode || "-"} />
-        <CompactAddressValue label="Referencias" value={reference || "-"} />
-      </div>
+    <div className="admin-order-shipping-address-grid grid gap-x-5 gap-y-2.5 text-sm sm:grid-cols-2">
+      <CompactAddressValue
+        label="Dirección"
+        value={streetLine || cleanAddress || "No informada"}
+      />
+      <CompactAddressValue label="DNI" value={pedido.cliente_dni || "-"} />
+      <CompactAddressValue label="Piso / Dpto" value={unitLine || "-"} />
+      <CompactAddressValue label="Localidad / Provincia" value={localityLine || "-"} />
+      <CompactAddressValue label="Código postal" value={postalCode || "-"} />
+      <CompactAddressValue label="Referencias" value={reference || "-"} />
     </div>
   )
 }
@@ -4864,10 +5170,14 @@ function ExternalLink({
   href,
   label,
   ariaLabel,
+  icon,
+  className,
 }: {
   href: string
   label: string
   ariaLabel: string
+  icon?: ReactNode
+  className?: string
 }) {
   return (
     <a
@@ -4875,8 +5185,13 @@ function ExternalLink({
       target="_blank"
       rel="noreferrer"
       aria-label={ariaLabel}
-      className="inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/35 px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:bg-beyonix-blue"
+      title={label}
+      className={cn(
+        "inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-500/50 px-3 text-11px font-black text-white transition-colors hover:bg-beyonix-blue-700",
+        className,
+      )}
     >
+      {icon}
       {label}
     </a>
   )
@@ -4918,8 +5233,7 @@ function TrackingStatusModal({
             Datos de despacho
           </p>
           <h2 className="mt-2 text-xl font-black text-white">
-            Marcar pedido #{formatPublicOrderId(request.pedido.id)} como
-            despachado
+            Cargar seguimiento del pedido #{formatPublicOrderId(request.pedido.id)}
           </h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
             El número de seguimiento se muestra en el pedido del cliente. El
@@ -4943,7 +5257,7 @@ function TrackingStatusModal({
 
           <label className="block">
             <span className="text-10px font-bold uppercase tracking-widest text-white/38">
-              Link de seguimiento opcional
+              URL de seguimiento (opcional)
             </span>
             <input
               value={trackingUrl}
@@ -4962,6 +5276,8 @@ function TrackingStatusModal({
         <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
+            aria-label="Cancelar carga de seguimiento"
+            title="Cancelar"
             onClick={onCancel}
             disabled={loading}
             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
@@ -4970,6 +5286,8 @@ function TrackingStatusModal({
           </button>
           <button
             type="button"
+            aria-label="Guardar datos de seguimiento"
+            title="Guardar seguimiento"
             onClick={() =>
               onConfirm({
                 tracking_number: trackingNumber.trim() || null,
@@ -4979,7 +5297,7 @@ function TrackingStatusModal({
             disabled={loading}
             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
           >
-            {loading ? "Guardando..." : "Guardar despacho"}
+            {loading ? "Guardando..." : "Guardar seguimiento"}
           </button>
         </div>
       </div>
@@ -5762,10 +6080,24 @@ export function AdminPedidos({
 
     if (estadoActual === nextEstado) return
 
-    if (
-      nextEstado === "en_camino" ||
-      nextEstado === "entregado"
-    ) {
+    if (nextEstado === "en_camino") {
+      if (isSuperAdmin) {
+        setTrackingStatusRequest({
+          pedido,
+          nextEstado,
+        })
+        return
+      }
+
+      setNotice({
+        type: "error",
+        message:
+          "El estado En camino se actualiza desde Andreani. Solo un superadministrador puede cambiarlo manualmente.",
+      })
+      return
+    }
+
+    if (nextEstado === "entregado") {
       if (isSuperAdmin) {
         setForcedStatusRequest({
           pedido,
@@ -5777,7 +6109,7 @@ export function AdminPedidos({
       setNotice({
         type: "error",
         message:
-          "Los estados En camino y Entregado se actualizan desde Andreani. Solo un superadministrador puede cambiarlos manualmente.",
+          "El estado Entregado se actualiza desde Andreani. Solo un superadministrador puede cambiarlo manualmente.",
       })
       return
     }
@@ -5796,7 +6128,7 @@ export function AdminPedidos({
       return
     }
 
-    if (nextEstado === "enviado" || nextEstado === "en_camino") {
+    if (nextEstado === "enviado") {
       setTrackingStatusRequest({
         pedido,
         nextEstado,
@@ -6151,6 +6483,9 @@ export function AdminPedidos({
           onClose={() => router.push("/admin?section=pedidos")}
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) => void handleEstadoChange(pedido, nextEstado)}
+          onShippingDetailsChange={(pedidoId, estado, details) =>
+            updatePedidoEstado(pedidoId, estado, details)
+          }
           onPaymentStatusChange={(pedidoId, nextStatus) =>
             void handlePaymentStatusChange(pedidoId, nextStatus)
           }
@@ -6518,6 +6853,9 @@ export function AdminPedidos({
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) =>
             void handleEstadoChange(pedido, nextEstado)
+          }
+          onShippingDetailsChange={(pedidoId, estado, details) =>
+            updatePedidoEstado(pedidoId, estado, details)
           }
           onPaymentStatusChange={(pedidoId, nextStatus) =>
             void handlePaymentStatusChange(pedidoId, nextStatus)

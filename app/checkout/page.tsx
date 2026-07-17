@@ -97,9 +97,6 @@ import {
   FIELD_LIMITS,
 } from "@/lib/validation/account-fields"
 import {
-  TRANSFER_ALIAS,
-  TRANSFER_ACCOUNT_HOLDER,
-  TRANSFER_CVU,
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotal,
 } from "@/lib/payments/transfer"
@@ -1549,7 +1546,7 @@ export default function CheckoutPage() {
                             )}
                             <span className={optionShippingCostCharged === 0 ? "text-sm font-semibold text-emerald-400" : "text-sm font-semibold text-white"}>
                               {optionShippingCoveredByBeyonix
-                                ? "A cargo de BEYONIX"
+                                ? "GRATIS"
                                 : optionShippingCostCharged === 0
                                   ? "Sin cargo"
                                   : formatPrice(optionShippingCostCharged)}
@@ -1608,49 +1605,6 @@ export default function CheckoutPage() {
                       </button>
                     ))}
                   </div>
-
-                  {isTransferPayment && (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="checkout-note rounded-lg border p-4">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
-                          Datos de transferencia
-                        </p>
-                        <p className="mt-2 text-base font-semibold text-white">
-                          Alias: <span className="uppercase text-beyonix-sky">{TRANSFER_ALIAS}</span>
-                          <br />
-                          <span className="text-sm font-medium">
-                            Titular: {TRANSFER_ACCOUNT_HOLDER}
-                          </span>
-                          <br />
-                          <span className="text-xs font-medium">
-                            CVU: {TRANSFER_CVU}
-                          </span>
-                        </p>
-                        <p className="mt-1 text-sm text-white/55">
-                          {TRANSFER_DISCOUNT_PERCENT}% OFF por transferencia bancaria.
-                        </p>
-                      </div>
-
-                      <div className="checkout-note flex items-start gap-3 rounded-lg border p-4">
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
-                          <Clock3 className="size-5" />
-                        </span>
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
-                            Confirmación del pago
-                          </p>
-                          <p className="mt-2 text-sm text-white/75">
-                            Comprobantes revisados:
-                            <br />
-                            Lunes a viernes: 7:00 a 20:00 hs
-                          </p>
-                          <p className="mt-1 text-sm text-white/55">
-                            Sábados: 8:00 a 14:00 hs
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
@@ -1966,21 +1920,25 @@ export default function CheckoutPage() {
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
-                    {customerCreditCoversShipping
-                      ? "Envío a cargo de BEYONIX"
+                    {customerCreditIncludesShippingBenefit
+                      ? "Envío"
                       : shippingBonus > 0
                         ? "Envío bonificado"
                         : "Envío"}
                   </span>
                   <span className={
-                    !selectedShippingOption
+                    customerCreditIncludesShippingBenefit
+                      ? "font-semibold text-emerald-400"
+                      : !selectedShippingOption
                       ? "text-white/45"
                       : totals.shipping === 0 &&
                           (shippingBonus > 0 || customerCreditCoversShipping)
                         ? "font-semibold text-emerald-400"
                         : "text-white"
                   }>
-                    {!selectedShippingOption
+                    {customerCreditIncludesShippingBenefit
+                      ? "GRATIS"
+                      : !selectedShippingOption
                       ? "A definir"
                       : totals.shipping === 0 &&
                           (shippingBonus > 0 || customerCreditCoversShipping)

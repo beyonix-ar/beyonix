@@ -250,6 +250,7 @@ export async function PATCH(
     estado?: unknown
     tracking_number?: unknown
     tracking_url?: unknown
+    envio_proveedor?: unknown
   }
   const estado = String(body.estado ?? "")
 
@@ -268,6 +269,27 @@ export async function PATCH(
     typeof body.tracking_number === "string"
       ? body.tracking_number.trim() || null
       : null
+  const shippingProvider =
+    typeof body.envio_proveedor === "string"
+      ? body.envio_proveedor.trim() || null
+      : null
+
+  if (
+    body.envio_proveedor !== undefined &&
+    typeof body.envio_proveedor !== "string"
+  ) {
+    return NextResponse.json(
+      { error: "El transportista informado no es válido." },
+      { status: 400 },
+    )
+  }
+
+  if (shippingProvider && shippingProvider.length > 100) {
+    return NextResponse.json(
+      { error: "El nombre del transportista es demasiado largo." },
+      { status: 400 },
+    )
+  }
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
@@ -346,6 +368,9 @@ export async function PATCH(
       : {}),
     ...(body.tracking_url !== undefined
       ? { tracking_url: normalizeExternalUrl(body.tracking_url) }
+      : {}),
+    ...(body.envio_proveedor !== undefined
+      ? { envio_proveedor: shippingProvider }
       : {}),
   }
   let { data, error } = await auth.admin

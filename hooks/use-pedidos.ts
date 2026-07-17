@@ -15,6 +15,7 @@ import {
   getPedidos,
   deletePedido,
   updatePedidoEstado,
+  type UpdatePedidoStatusDetails,
 } from "@/lib/supabase/queries/pedidos"
 import { supabase } from "@/lib/supabase/client"
 import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
@@ -155,17 +156,14 @@ export function usePedidos() {
       async (
         id: number,
         estado: string,
-        tracking?: {
-          tracking_number?: string | null
-          tracking_url?: string | null
-        }
+        details?: UpdatePedidoStatusDetails
       ) => {
         try {
           const updated =
             await updatePedidoEstado(
               id,
               estado,
-              tracking
+              details
             )
 
           setPedidos((prev) =>

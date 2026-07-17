@@ -95,13 +95,16 @@ export async function createPedidoItem(payload: CreatePedidoItemPayload) {
   return data
 }
 
+export interface UpdatePedidoStatusDetails {
+  tracking_number?: string | null
+  tracking_url?: string | null
+  envio_proveedor?: string | null
+}
+
 export async function updatePedidoEstado(
   id: number,
   estado: string,
-  tracking?: {
-    tracking_number?: string | null
-    tracking_url?: string | null
-  }
+  details?: UpdatePedidoStatusDetails
 ) {
   const {
     data: { session },
@@ -119,7 +122,7 @@ export async function updatePedidoEstado(
     },
     body: JSON.stringify({
       estado,
-      ...(tracking ?? {}),
+      ...(details ?? {}),
     }),
   })
   const data = (await response.json()) as {

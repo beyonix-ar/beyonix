@@ -6,6 +6,7 @@ import { Bell, Check, ExternalLink, Package, Sparkles, Star } from "lucide-react
 import { BeyonixButton } from "@/components/account/account-ui"
 import { supabase } from "@/lib/supabase/client"
 import { formatPublicOrderId } from "@/lib/account/account-formatters"
+import { cn } from "@/lib/utils"
 import {
   getCuentaItemImage,
   getOrderProgressSteps,
@@ -15,7 +16,62 @@ import {
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 export const DOWNLOADED_INVOICES_STORAGE_KEY = "beyonix:downloaded-invoices"
-const REVIEW_ACTION_PLACEHOLDER_CLASS = "h-[38px] w-[172px] shrink-0"
+const REVIEW_ACTION_PLACEHOLDER_CLASS =
+  "h-8 w-40 shrink-0 animate-pulse rounded-lg bg-beyonix-gray-700"
+
+function ReviewRatingSelector({
+  label,
+  selectedRating,
+  visualRating,
+  onPreview,
+  onSelect,
+}: {
+  label: string
+  selectedRating: number
+  visualRating: number
+  onPreview: (rating: number | null) => void
+  onSelect: (rating: number) => void
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      onMouseLeave={() => onPreview(null)}
+      className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-beyonix-blue-500/45 bg-beyonix-gray-900 px-2"
+    >
+      {[1, 2, 3, 4, 5].map((rating) => {
+        const active = rating <= visualRating
+
+        return (
+          <button
+            key={rating}
+            type="button"
+            aria-label={`${rating} ${rating === 1 ? "estrella" : "estrellas"}`}
+            title={`${rating} de 5 estrellas`}
+            aria-pressed={selectedRating === rating}
+            onMouseEnter={() => onPreview(rating)}
+            onFocus={() => onPreview(rating)}
+            onBlur={() => onPreview(null)}
+            onClick={() => onSelect(rating)}
+            className={cn(
+              "grid size-6 cursor-pointer place-items-center focus:outline-none focus-visible:ring-1 focus-visible:ring-white",
+              active
+                ? "text-beyonix-sky"
+                : "text-beyonix-gray-500 hover:text-white",
+            )}
+          >
+            <Star
+              className={cn(
+                "size-3.5",
+                active ? "fill-current" : "fill-transparent",
+              )}
+            />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 export function CustomerInvoiceBell() {
   return (
@@ -29,44 +85,109 @@ export function CustomerInvoiceBell() {
 
 export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
   const steps = getOrderProgressSteps(order)
-  const toneClassNames: Record<OrderProgressTone, string> = {
-    done: "border-emerald-400/35 bg-[#102A22] text-emerald-200",
-    current: "border-[#2C6CA3] bg-[#183654] text-white",
-    pending: "border-[#21476B] bg-[#13263B] text-[#9EB4C8]",
-    danger: "border-red-400/35 bg-[#2A1218] text-red-200",
-    warning: "border-amber-300/35 bg-[#2A2212] text-amber-200",
+  const circleToneClassNames: Record<OrderProgressTone, string> = {
+    done: "border-beyonix-status-success/45 bg-beyonix-status-success/12 text-beyonix-status-success",
+    current: "border-beyonix-blue-300 bg-beyonix-blue-700 text-white",
+    pending: "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-500",
+    danger: "border-beyonix-status-danger/45 bg-beyonix-status-danger/10 text-beyonix-status-danger",
+    warning: "border-beyonix-blue-300 bg-beyonix-blue-700 text-white",
+  }
+  const labelToneClassNames: Record<OrderProgressTone, string> = {
+    done: "text-white",
+    current: "text-white",
+    pending: "text-beyonix-gray-500",
+    danger: "text-white",
+    warning: "text-white",
   }
   const gridClassName =
     steps.length >= 6
       ? "md:grid-cols-6"
       : steps.length === 4
         ? "md:grid-cols-4"
-      : steps.length === 2
-        ? "md:grid-cols-2"
-        : "md:grid-cols-5"
+        : steps.length === 2
+          ? "md:grid-cols-2"
+          : "md:grid-cols-5"
 
   return (
-    <div className="rounded-xl border border-transparent bg-[#0B1118] p-1.5">
-      <p className="mb-1.5 text-10px font-black uppercase tracking-widest text-[#9EB4C8]">
+    <section className="rounded-xl border border-beyonix-blue-500/60 bg-beyonix-gray-900 px-4 py-3">
+      <p className="text-10px font-black uppercase tracking-widest text-white">
         Estado del pedido
       </p>
-      <div className={"grid gap-2 " + gridClassName}>
-        {steps.map((step, index) => (
-          <div
-            key={step.label + "-" + index}
-            className={"relative rounded-lg border px-2 py-2 " + toneClassNames[step.tone]}
-          >
-            <span className="mb-1 flex size-5 items-center justify-center rounded-full border border-current text-10px font-black">
-              {step.tone === "done" ? <Check className="size-3" /> : index + 1}
-            </span>
-            <p className="text-11px font-black text-white">{step.label}</p>
-            <p className="mt-0.5 text-10px leading-4 text-white/52">
-              {step.detail}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
+      <ol className={"mt-2 grid " + gridClassName}>
+        {steps.map((step, index) => {
+          const previousCompleted =
+            index > 0 && steps[index - 1]?.tone === "done"
+          const currentCompleted = step.tone === "done"
+          const isLastStep = index === steps.length - 1
+
+          return (
+            <li
+              key={step.label + "-" + index}
+              aria-current={
+                step.tone === "current" || step.tone === "warning"
+                  ? "step"
+                  : undefined
+              }
+              className="flex min-w-0 items-stretch gap-3 md:block"
+            >
+              <div className="flex shrink-0 flex-col items-center md:flex-row">
+                <span
+                  aria-hidden="true"
+                  className={`hidden h-px flex-1 md:block ${
+                    index === 0
+                      ? "bg-transparent"
+                      : previousCompleted
+                        ? "bg-beyonix-status-success/65"
+                        : "bg-beyonix-gray-700"
+                  }`}
+                />
+                <span
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-10px font-black ${circleToneClassNames[step.tone]}`}
+                >
+                  {currentCompleted ? (
+                    <Check className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    index + 1
+                  )}
+                </span>
+                {!isLastStep && (
+                  <span
+                    aria-hidden="true"
+                    className={`w-px flex-1 md:hidden ${
+                      currentCompleted
+                        ? "bg-beyonix-status-success/65"
+                        : "bg-beyonix-gray-700"
+                    }`}
+                  />
+                )}
+                <span
+                  aria-hidden="true"
+                  className={`hidden h-px flex-1 md:block ${
+                    isLastStep
+                      ? "bg-transparent"
+                      : currentCompleted
+                        ? "bg-beyonix-status-success/65"
+                        : "bg-beyonix-gray-700"
+                  }`}
+                />
+              </div>
+
+              <div
+                className={`min-w-0 pt-0.5 md:px-2 md:pb-0 md:pt-1.5 md:text-center ${
+                  isLastStep ? "pb-0" : "pb-3"
+                }`}
+              >
+                <p
+                  className={`text-11px font-black ${labelToneClassNames[step.tone]}`}
+                >
+                  {step.label}
+                </p>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
   )
 }
 
@@ -158,6 +279,7 @@ export function PaymentProofViewButton({
       <BeyonixButton
         type="button"
         aria-label={`Ver comprobante del pedido ${formatPublicOrderId(order.id)}`}
+        title="Ver comprobante"
         disabled={loading}
         onClick={() => void handleOpenProof()}
         size="md"
@@ -255,9 +377,22 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   }
 
   return (
-    <section className="rounded-xl border border-[#18334D] bg-[#101923] p-3">
-      <h4 className="text-sm font-black text-white">Reseña del producto</h4>
-      <div className="mt-2 space-y-2">
+    <section className="rounded-lg border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3">
+      <header className="flex items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/45 bg-beyonix-blue-900 text-white">
+          <Package className="size-3.5" />
+        </span>
+        <div>
+          <p className="text-8px font-semibold uppercase tracking-widest text-beyonix-gray-300">
+            Producto
+          </p>
+          <h4 className="mt-0.5 text-sm font-bold text-white">
+            Reseña del producto
+          </h4>
+        </div>
+      </header>
+
+      <div className="mt-3 space-y-2">
         {items.map((item) => {
           const productId = Number(item.producto_id)
           const productName = item.productos?.nombre ?? `Producto #${productId}`
@@ -265,11 +400,31 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
           const selectedRating = ratings[productId] ?? 0
           const visualRating = hoverRatings[productId] ?? selectedRating
           return (
-            <div key={item.id} className="rounded-lg border border-[#21476B] bg-[#13263B] p-2.5">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <article
+              key={item.id}
+              className="rounded-lg border border-beyonix-blue-500/35 bg-beyonix-blue-900 p-2.5"
+            >
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={productName} className="size-full object-contain" /> : <Package className="size-4 text-black/30" />}</div>
-                  <p className="truncate text-xs font-black text-white">{productName}</p>
+                  <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-beyonix-gray-700 bg-white">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={productName}
+                        className="size-full object-contain"
+                      />
+                    ) : (
+                      <Package className="size-4 text-black/30" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
+                      Tu compra
+                    </p>
+                    <p className="mt-0.5 truncate text-xs font-semibold text-white">
+                      {productName}
+                    </p>
+                  </div>
                 </div>
                 {!reviewsLoaded ? (
                   <span
@@ -277,97 +432,89 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                     aria-hidden="true"
                   />
                 ) : submitted.has(productId) ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300">
-                    <Check className="size-3.5" />
-                    Reseña enviada
+                  <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-beyonix-status-success/35 bg-beyonix-status-success/10 px-2.5 text-10px font-semibold text-beyonix-status-success">
+                    <Check className="size-3" />
+                    Enviada · {selectedRating}/5
                   </span>
                 ) : (
-                  <div
-                    className="flex items-center gap-1 rounded-lg border border-[#697684] bg-[#8794A2] px-2 py-1"
-                    aria-label={`Calificar ${productName}`}
-                    onMouseLeave={() =>
+                  <ReviewRatingSelector
+                    label={`Calificar ${productName}`}
+                    selectedRating={selectedRating}
+                    visualRating={visualRating}
+                    onPreview={(rating) =>
                       setHoverRatings((current) => {
                         const next = { ...current }
-                        delete next[productId]
+                        if (rating === null) {
+                          delete next[productId]
+                        } else {
+                          next[productId] = rating
+                        }
                         return next
                       })
                     }
-                  >
-                    {[1, 2, 3, 4, 5].map((rating) => {
-                      const active = rating <= visualRating
-                      return (
-                        <button
-                          key={rating}
-                          type="button"
-                          aria-label={`${rating} estrellas`}
-                          aria-pressed={selectedRating === rating}
-                          onMouseEnter={() =>
-                            setHoverRatings((current) => ({ ...current, [productId]: rating }))
-                          }
-                          onFocus={() =>
-                            setHoverRatings((current) => ({ ...current, [productId]: rating }))
-                          }
-                          onBlur={() =>
-                            setHoverRatings((current) => {
-                              const next = { ...current }
-                              delete next[productId]
-                              return next
-                            })
-                          }
-                          onClick={() => {
-                            setRatings((current) => ({ ...current, [productId]: rating }))
-                            setActiveProductId(productId)
-                            setFeedbackMessage("")
-                          }}
-                          className={`grid size-7 cursor-pointer place-items-center rounded-md transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7AB8FF] ${
-                            active ? "text-[#0067C9]" : "text-white"
-                          }`}
-                        >
-                          <Star
-                            className={`size-4 fill-transparent transition-all duration-150 ${
-                              active
-                                ? "drop-shadow-[0_0_4px_rgba(0,103,201,0.55)]"
-                                : "drop-shadow-none"
-                            }`}
-                          />
-                        </button>
-                      )
-                    })}
-                  </div>
+                    onSelect={(rating) => {
+                      setRatings((current) => ({ ...current, [productId]: rating }))
+                      setActiveProductId(productId)
+                      setFeedbackMessage("")
+                    }}
+                  />
                 )}
               </div>
               {reviewsLoaded && activeProductId === productId && !submitted.has(productId) && (
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <input
-                    value={comments[productId] ?? ""}
-                    maxLength={150}
-                    onChange={(event) =>
-                      setComments((current) => ({ ...current, [productId]: event.target.value }))
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" || event.nativeEvent.isComposing) return
-                      event.preventDefault()
-                      if (submitting === productId || !ratings[productId]) return
-                      void submitReview(productId)
-                    }}
-                    placeholder="Contanos brevemente tu experiencia"
-                    className="h-10 min-w-0 flex-1 rounded-lg border border-[#9AA9B8] bg-[#E7EDF3] px-3 text-xs font-semibold text-[#0B1118] outline-none placeholder:text-[#5F6B78] focus:border-[#6EC6FF] focus:ring-2 focus:ring-[#6EC6FF]/35"
-                  />
-                  <button
-                    type="button"
-                    disabled={submitting === productId}
-                    onClick={() => void submitReview(productId)}
-                    className="h-10 cursor-pointer rounded-lg border border-[#21476B] bg-[#112A43] px-4 text-xs font-black text-white transition-colors duration-150 hover:border-[#2C6CA3] hover:bg-[#183654] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {submitting === productId ? "Enviando..." : "Enviar reseña"}
-                  </button>
+                <div className="mt-3 border-t border-beyonix-blue-500/30 pt-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label
+                      htmlFor={`product-review-${order.id}-${productId}`}
+                      className="text-9px font-medium text-beyonix-gray-300"
+                    >
+                      Comentario opcional
+                    </label>
+                    <span className="text-8px font-medium text-beyonix-gray-500">
+                      {(comments[productId] ?? "").length}/150
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      id={`product-review-${order.id}-${productId}`}
+                      value={comments[productId] ?? ""}
+                      maxLength={150}
+                      onChange={(event) =>
+                        setComments((current) => ({
+                          ...current,
+                          [productId]: event.target.value,
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+                        event.preventDefault()
+                        if (submitting === productId || !ratings[productId]) return
+                        void submitReview(productId)
+                      }}
+                      placeholder="Escribí tu opinión"
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-beyonix-blue-500/40 bg-beyonix-gray-900 px-3 text-11px font-normal text-white outline-none placeholder:text-beyonix-gray-500 focus:border-beyonix-blue-300"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Enviar reseña de ${productName}`}
+                      title="Enviar reseña"
+                      disabled={submitting === productId}
+                      onClick={() => void submitReview(productId)}
+                      className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-500/55 bg-beyonix-blue-700 px-4 text-10px font-bold text-white transition-colors hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {submitting === productId ? "Enviando..." : "Enviar reseña"}
+                    </button>
+                  </div>
                 </div>
               )}
-            </div>
+            </article>
           )
         })}
       </div>
-      {feedbackMessage && <p className="mt-2 text-xs font-bold text-white/70">{feedbackMessage}</p>}
+      {feedbackMessage && (
+        <p role="status" className="mt-2 text-10px font-medium text-beyonix-gray-300">
+          {feedbackMessage}
+        </p>
+      )}
     </section>
   )
 }
@@ -490,17 +637,33 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
   const visualRating = hoverRating || rating
 
   return (
-    <section className="rounded-xl border border-[#18334D] bg-[#101923] p-3">
-      <h4 className="text-sm font-black text-white">Experiencia en BEYONIX</h4>
-      <div className="mt-2 space-y-2">
-        <div className="rounded-lg border border-[#21476B] bg-[#13263B] p-2.5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded-lg border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3">
+      <header className="flex items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/45 bg-beyonix-blue-900 text-white">
+          <Sparkles className="size-3.5" />
+        </span>
+        <div>
+          <p className="text-8px font-semibold uppercase tracking-widest text-beyonix-gray-300">
+            Servicio
+          </p>
+          <h4 className="mt-0.5 text-sm font-bold text-white">
+            Experiencia en BEYONIX
+          </h4>
+        </div>
+      </header>
+
+      <div className="mt-3">
+        <article className="rounded-lg border border-beyonix-blue-500/35 bg-beyonix-blue-900 p-2.5">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[#2C6CA3]/70 bg-[#0B2A44] text-white shadow-[0_0_18px_rgba(122,184,255,0.16)]">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/45 bg-beyonix-gray-900 text-white">
                 <Sparkles className="size-4" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-xs font-black text-white">
+                <p className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
+                  Tu experiencia
+                </p>
+                <p className="mt-0.5 truncate text-xs font-semibold text-white">
                   Compra, atención y navegación
                 </p>
               </div>
@@ -512,84 +675,74 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
                 aria-hidden="true"
               />
             ) : submittedReview ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300">
-                <Check className="size-3.5" />
-                Experiencia enviada
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-beyonix-status-success/35 bg-beyonix-status-success/10 px-2.5 text-10px font-semibold text-beyonix-status-success">
+                <Check className="size-3" />
+                Enviada · {rating}/5
               </span>
             ) : (
-              <div
-                className="flex items-center gap-1 rounded-lg border border-[#697684] bg-[#8794A2] px-2 py-1"
-                aria-label="Calificar experiencia en BEYONIX"
-                onMouseLeave={() => setHoverRating(0)}
-              >
-                {[1, 2, 3, 4, 5].map((star) => {
-                  const active = star <= visualRating
-
-                  return (
-                    <button
-                      key={star}
-                      type="button"
-                      aria-label={`${star} estrellas`}
-                      aria-pressed={rating === star}
-                      onMouseEnter={() => setHoverRating(star)}
-                      onFocus={() => setHoverRating(star)}
-                      onBlur={() => setHoverRating(0)}
-                      onClick={() => {
-                        setRating(star)
-                        setActiveExperience(true)
-                        setFeedbackMessage("")
-                      }}
-                      className={`grid size-7 cursor-pointer place-items-center rounded-md transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7AB8FF] ${
-                        active ? "text-[#0067C9]" : "text-white"
-                      }`}
-                    >
-                      <Star
-                        className={`size-4 fill-transparent transition-all duration-150 ${
-                          active
-                            ? "drop-shadow-[0_0_4px_rgba(0,103,201,0.55)]"
-                            : "drop-shadow-none"
-                        }`}
-                      />
-                    </button>
-                  )
-                })}
-              </div>
+              <ReviewRatingSelector
+                label="Calificar experiencia en BEYONIX"
+                selectedRating={rating}
+                visualRating={visualRating}
+                onPreview={(value) => setHoverRating(value ?? 0)}
+                onSelect={(value) => {
+                  setRating(value)
+                  setActiveExperience(true)
+                  setFeedbackMessage("")
+                }}
+              />
             )}
           </div>
 
           {experienceLoaded && activeExperience && !submittedReview && (
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <input
-                value={comment}
-                maxLength={150}
-                onChange={(event) => {
-                  setComment(event.target.value)
-                  setFeedbackMessage("")
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" || event.nativeEvent.isComposing) return
-                  event.preventDefault()
-                  if (submitting || !rating) return
-                  void submitExperience()
-                }}
-                placeholder="Contanos brevemente tu experiencia"
-                className="h-10 min-w-0 flex-1 rounded-lg border border-[#9AA9B8] bg-[#E7EDF3] px-3 text-xs font-semibold text-[#0B1118] outline-none placeholder:text-[#5F6B78] focus:border-[#6EC6FF] focus:ring-2 focus:ring-[#6EC6FF]/35"
-              />
-              <button
-                type="button"
-                disabled={submitting || !rating}
-                onClick={() => void submitExperience()}
-                className="h-10 cursor-pointer rounded-lg border border-[#21476B] bg-[#112A43] px-4 text-xs font-black text-white transition-colors duration-150 hover:border-[#2C6CA3] hover:bg-[#183654] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {submitting ? "Enviando..." : "Enviar experiencia"}
-              </button>
+            <div className="mt-3 border-t border-beyonix-blue-500/30 pt-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <label
+                  htmlFor={`experience-review-${order.id}`}
+                  className="text-9px font-medium text-beyonix-gray-300"
+                >
+                  Comentario opcional
+                </label>
+                <span className="text-8px font-medium text-beyonix-gray-500">
+                  {comment.length}/150
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+                <input
+                  id={`experience-review-${order.id}`}
+                  value={comment}
+                  maxLength={150}
+                  onChange={(event) => {
+                    setComment(event.target.value)
+                    setFeedbackMessage("")
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+                    event.preventDefault()
+                    if (submitting || !rating) return
+                    void submitExperience()
+                  }}
+                  placeholder="Escribí tu opinión"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-beyonix-blue-500/40 bg-beyonix-gray-900 px-3 text-11px font-normal text-white outline-none placeholder:text-beyonix-gray-500 focus:border-beyonix-blue-300"
+                />
+                <button
+                  type="button"
+                  aria-label="Enviar experiencia en BEYONIX"
+                  title="Enviar experiencia"
+                  disabled={submitting || !rating}
+                  onClick={() => void submitExperience()}
+                  className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-500/55 bg-beyonix-blue-700 px-4 text-10px font-bold text-white transition-colors hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? "Enviando..." : "Enviar experiencia"}
+                </button>
+              </div>
             </div>
           )}
-        </div>
+        </article>
       </div>
 
       {feedbackMessage && (
-        <p className="mt-2 text-xs font-bold text-white/70">
+        <p role="status" className="mt-2 text-10px font-medium text-beyonix-gray-300">
           {feedbackMessage}
         </p>
       )}

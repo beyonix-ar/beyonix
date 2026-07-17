@@ -646,6 +646,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const orderDelivered = isOrderDetailDelivered(order)
   const trackingNumber = order.andreani_tracking || order.tracking_number || ""
   const trackingUrl = normalizeTrackingUrl(order.tracking_url)
+  const rawShippingProvider = (
+    order.envio_proveedor ||
+    order.shipping_provider ||
+    ""
+  ).trim()
+  const shippingProvider =
+    rawShippingProvider.toLowerCase() === "andreani"
+      ? "Andreani"
+      : rawShippingProvider
   const showClaimHelp = canShowOrderClaimHelp(order)
   const existingClaim = orderDelivered
     ? getLatestFormalCustomerClaim(order.order_claims)
@@ -941,12 +950,12 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 
         {error && <p className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">{error}</p>}
 
-        <div className="order-detail-components-shell mt-4 grid items-start gap-4 rounded-2xl border border-[#18334D] bg-[#111418] p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
-          <div className="space-y-4">
-            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-2.5 sm:p-3">
-              <OrderProgressTimeline order={order} />
-            </section>
+        <div className="mt-3">
+          <OrderProgressTimeline order={order} />
+        </div>
 
+        <div className="order-detail-components-shell mt-3 grid items-start gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
+          <div className="space-y-4">
             <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Productos comprados</h2>
               <div className="mt-3 space-y-2">
@@ -957,13 +966,193 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   const image = getCuentaItemImage(item)
                   return <div key={item.id} className="grid gap-3 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3"><div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{name}</p><p className="mt-0.5 text-xs font-normal text-white/55">{getCuentaItemColor(item)}</p></div></div>
-                    <div><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Cantidad</p><p className="mt-0.5 text-sm font-bold text-white">{quantity}</p></div>
-                    <div><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Precio unitario</p><p className="mt-0.5 text-sm font-bold text-white">{formatCuentaPrice(unitPrice)}</p></div>
-                    <div><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Subtotal</p><p className="mt-0.5 text-sm font-bold text-white">{formatCuentaPrice(unitPrice * quantity)}</p></div>
+                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Cantidad</p><p className="mt-0.5 text-sm font-bold text-white">{quantity}</p></div>
+                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Precio unitario</p><p className="mt-0.5 text-sm font-bold text-white">{formatCuentaPrice(unitPrice)}</p></div>
+                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Subtotal</p><p className="mt-0.5 text-sm font-bold text-white">{formatCuentaPrice(unitPrice * quantity)}</p></div>
                   </div>
                 })}
               </div>
             </section>
+
+            {(showPaymentProofSection || !orderDelivered) && (
+              <section className="rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-white">
+                  Gestión del pedido
+                </h2>
+
+                <div
+                  className={cn(
+                    "mt-3 grid gap-3",
+                    showPaymentProofSection && !orderDelivered
+                      ? "sm:grid-cols-2 sm:divide-x sm:divide-beyonix-gray-700"
+                      : "grid-cols-1",
+                  )}
+                >
+                  {showPaymentProofSection && (
+                    <div
+                      className={cn(
+                        "flex min-w-0 flex-col",
+                        !orderDelivered && "sm:pr-3",
+                      )}
+                    >
+                      <p className="text-xs font-bold text-white">
+                        Comprobante
+                      </p>
+                      <p className="mt-0.5 text-xs font-medium text-beyonix-gray-500">
+                        {hasProof
+                          ? "El comprobante ya fue cargado."
+                          : "Pendiente de carga."}
+                      </p>
+                      <div className="mt-auto space-y-2 pt-3">
+                        {hasProof ? (
+                          <>
+                            <PaymentProofViewButton
+                              order={order}
+                              className="h-9 w-full"
+                            />
+                            <PaymentProofActionButton
+                              orderId={order.id}
+                              initialUploaded
+                              onUploaded={handleProofUploaded}
+                              label="Cambiar comprobante"
+                              className={cn(
+                                beyonixHoverBorder,
+                                "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500 disabled:opacity-60",
+                              )}
+                            />
+                          </>
+                        ) : (
+                          <PaymentProofActionButton
+                            orderId={order.id}
+                            onUploaded={handleProofUploaded}
+                            label="Subir comprobante"
+                            className={cn(
+                              beyonixHoverBorder,
+                              "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500 disabled:opacity-60",
+                            )}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {!orderDelivered && (
+                    <div
+                      className={cn(
+                        "flex min-w-0 flex-col",
+                        showPaymentProofSection &&
+                          "border-t border-beyonix-gray-700 pt-3 sm:border-t-0 sm:pt-0 sm:pl-3",
+                      )}
+                    >
+                      <p className="text-xs font-bold text-white">
+                        Seguimiento
+                      </p>
+                      {shippingProvider && (
+                        <p className="mt-0.5 text-xs font-semibold text-white">
+                          {shippingProvider}
+                        </p>
+                      )}
+                      <p className="mt-0.5 text-xs font-medium text-beyonix-gray-500">
+                        {trackingNumber
+                          ? `Código: ${trackingNumber}`
+                          : "Disponible después del despacho."}
+                      </p>
+                      <div className="pt-3">
+                        {trackingUrl ? (
+                          <a
+                            href={trackingUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Ver seguimiento del pedido ${formatPublicOrderId(order.id)}`}
+                            title="Ver seguimiento"
+                            className={cn(
+                              beyonixHoverBorder,
+                              "inline-flex h-9 w-full cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500",
+                            )}
+                          >
+                            Ver seguimiento
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label="Seguimiento no disponible"
+                            title="Seguimiento no disponible"
+                            disabled
+                            className="inline-flex h-9 w-full cursor-not-allowed items-center justify-center rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900 px-4 text-xs font-black text-beyonix-gray-500 opacity-75"
+                          >
+                            Seguimiento no disponible
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {showPreDeliveryHelp && (
+              <section className="rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-bold text-white">
+                      ¿Necesitás ayuda?
+                    </h2>
+                    <p className="mt-1 text-xs font-medium leading-5 text-beyonix-gray-300">
+                      {existingClaim
+                        ? "Ya recibimos tu mensaje. Podés ver el seguimiento desde acá."
+                        : "Si tuviste un problema con tu pedido, contactanos para que podamos ayudarte."}
+                    </p>
+                    {claimDetailStatus && (
+                      <div
+                        className={`mt-2 inline-flex rounded-lg border px-2.5 py-1.5 text-xs font-black ${claimDetailStatus.className}`}
+                      >
+                        {claimDetailStatus.label}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Enviar mensaje de ayuda del pedido ${formatPublicOrderId(order.id)}`}
+                    title={
+                      existingClaim
+                        ? "Ver mensaje de ayuda"
+                        : "Contactanos"
+                    }
+                    onClick={() =>
+                      router.push(`/cuenta/compras/${order.id}/ayuda`)
+                    }
+                    className={cn(
+                      beyonixHoverBorder,
+                      "inline-flex h-9 w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white transition-colors duration-200 hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500 focus-visible:ring-2 focus-visible:ring-beyonix-blue-500 sm:w-auto",
+                    )}
+                  >
+                    <MessageCircle className="size-3.5" />
+                    {existingClaim
+                      ? "Ver mensaje de ayuda"
+                      : "Contactanos"}
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {canCancelOrder && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  aria-label={`Cancelar pedido ${formatPublicOrderId(order.id)}`}
+                  title="Cancelar compra"
+                  disabled={cancellingOrder}
+                  onClick={() => {
+                    setCancelError("")
+                    setCancelModalOpen(true)
+                  }}
+                  className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-status-danger/25 bg-beyonix-status-danger/8 px-3 text-11px font-black text-beyonix-status-danger transition-colors hover:border-beyonix-status-danger/45 hover:bg-beyonix-status-danger/12 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <X className="size-3.5" />
+                  Cancelar compra
+                </button>
+              </div>
+            )}
 
             {order.estado === "entregado" && (
               <div className="space-y-3">
@@ -1007,106 +1196,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </section>
             )}
 
-            {showPaymentProofSection && (
-              <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-                <h2 className="text-sm font-bold text-white">Comprobante</h2>
-                <div className="mt-2.5 space-y-2">
-                  {hasProof ? (
-                    <>
-                      <PaymentProofViewButton order={order} className="h-9 w-full" />
-                      <PaymentProofActionButton
-                        orderId={order.id}
-                        initialUploaded
-                        onUploaded={handleProofUploaded}
-                        label="Cambiar comprobante"
-                        className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")}
-                      />
-                    </>
-                  ) : (
-                    <PaymentProofActionButton
-                      orderId={order.id}
-                      onUploaded={handleProofUploaded}
-                      label="Subir comprobante"
-                      className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white disabled:opacity-60")}
-                    />
-                  )}
-                </div>
-              </section>
-            )}
-
-            {showPreDeliveryHelp && (
-              <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-                <h2 className="text-sm font-bold text-white">¿Necesitás ayuda?</h2>
-                <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
-                  {existingClaim
-                    ? "Ya recibimos tu mensaje. Podés ver el seguimiento desde acá."
-                    : "Si tu pedido no llega o necesitás consultar algo, escribinos desde este chat."}
-                </p>
-                {claimDetailStatus && (
-                  <div className={`mt-2 rounded-xl border px-3.5 py-2.5 text-xs font-black shadow-[0_0_22px_rgba(119,230,226,0.08)] ${claimDetailStatus.className}`}>
-                    {claimDetailStatus.label}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  aria-label={`Enviar mensaje de ayuda del pedido ${formatPublicOrderId(order.id)}`}
-                  onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
-                  className={cn(
-                    beyonixHoverBorder,
-                    "mt-2.5 inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white transition-[background-color,border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-[#2C6CA3] hover:bg-[#163A5C] hover:text-white hover:shadow-[0_0_0_1px_rgba(44,108,163,0.35),0_6px_18px_rgba(17,42,67,0.28)] active:translate-y-0 active:shadow-[0_0_0_1px_rgba(44,108,163,0.25)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2C6CA3]",
-                  )}
-                >
-                  <MessageCircle className="size-3.5" />
-                  {existingClaim ? "Ver mensaje de ayuda" : "Enviar mensaje de ayuda"}
-                </button>
-              </section>
-            )}
-
-            {!orderDelivered && (
-            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-              <h2 className="text-sm font-bold text-white">Seguimiento</h2>
-              {trackingNumber || trackingUrl ? (
-                <div className="mt-2.5 space-y-2">
-                  {trackingNumber && (
-                    <p className="rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
-                      {trackingNumber}
-                    </p>
-                  )}
-                  {trackingUrl && (
-                    <a
-                      href={trackingUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={cn(beyonixHoverBorder, "inline-flex h-9 w-full cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-4 text-xs font-black text-white")}
-                    >
-                      Ver seguimiento
-                    </a>
-                  )}
-                </div>
-              ) : (
-                <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
-                  Estará disponible una vez despachado tu pedido
-                </p>
-              )}
-            </section>
-            )}
-
-            {canCancelOrder && (
-              <div className="flex justify-end pt-1">
-                <button
-                  type="button"
-                  disabled={cancellingOrder}
-                  onClick={() => {
-                    setCancelError("")
-                    setCancelModalOpen(true)
-                  }}
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-red-300/20 bg-red-500/8 px-3 text-[11px] font-black text-red-100/90 transition hover:border-red-300/35 hover:bg-red-500/12 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <X className="size-3.5" />
-                  Cancelar compra
-                </button>
-              </div>
-            )}
           </aside>
         </div>
       </div>

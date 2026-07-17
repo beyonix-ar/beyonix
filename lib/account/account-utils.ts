@@ -130,7 +130,8 @@ export function getClientOrderStatusBadge(order: SupabasePedido) {
 
   return {
     label: "Pedido registrado",
-    className: "border-amber-300/35 bg-amber-400/12 text-amber-200",
+    className:
+      "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-300",
   }
 }
 

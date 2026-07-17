@@ -5,6 +5,7 @@ import {
   FileCheck2,
   ImageUp,
   Upload,
+  X,
 } from "lucide-react"
 
 import {
@@ -16,6 +17,7 @@ interface PaymentProofUploaderProps {
   orderId: number
   initialUploaded?: boolean
   compact?: boolean
+  expand?: boolean
   onUploaded?: (order: SupabasePedido) => void
 }
 
@@ -27,10 +29,21 @@ interface PaymentProofActionButtonProps {
   label?: string
 }
 
+function formatFileSize(size: number) {
+  if (!Number.isFinite(size) || size <= 0) return "0 KB"
+
+  const sizeInMb = size / 1024 / 1024
+
+  return sizeInMb >= 1
+    ? `${sizeInMb.toFixed(2)} MB`
+    : `${Math.max(Math.round(size / 1024), 1)} KB`
+}
+
 export function PaymentProofUploader({
   orderId,
   initialUploaded = false,
   compact = false,
+  expand = false,
   onUploaded,
 }: PaymentProofUploaderProps) {
   const [file, setFile] = useState<File | null>(null)
@@ -94,11 +107,22 @@ export function PaymentProofUploader({
     void uploadFile(event.dataTransfer.files?.[0] ?? null)
   }
 
+  const clearSelectedFile = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    setFile(null)
+    setError("")
+    setUploadedFileName("")
+
+    if (inputRef.current) {
+      inputRef.current.value = ""
+    }
+  }
+
   return (
-    <div className={`border ${compact ? "rounded-xl border-[#303846] bg-[#1B2028] p-2.5 shadow-[0_0_24px_rgba(17,42,67,0.16)]" : "rounded-2xl border-[#112A43] bg-[#0B0B0B] p-4 sm:p-5"}`}>
-      <div className={compact ? "space-y-2" : "space-y-4"}>
-        <div>
-          <p className="text-11px font-black uppercase tracking-widest text-white/70">
+    <div className={`border ${expand ? "flex flex-1 flex-col" : ""} ${compact ? "rounded-xl border-beyonix-gray-700 bg-beyonix-gray-900 p-3 shadow-lg shadow-black/20" : "rounded-2xl border-beyonix-gray-700 bg-beyonix-gray-900 p-4 sm:p-5"}`}>
+      <div className={`${expand ? "flex flex-1 flex-col" : ""} ${compact ? "space-y-2" : "space-y-4"}`}>
+        <div className={expand ? "flex flex-1 flex-col" : ""}>
+          <p className="text-11px font-black uppercase tracking-widest text-beyonix-gray-300">
             {actionLabel}
           </p>
           <input
@@ -115,6 +139,7 @@ export function PaymentProofUploader({
             tabIndex={0}
             aria-label="Seleccionar o arrastrar un comprobante"
             aria-disabled={uploading}
+            aria-busy={uploading}
             onClick={() => {
               if (!uploading) inputRef.current?.click()
             }}
@@ -141,22 +166,22 @@ export function PaymentProofUploader({
               }
             }}
             onDrop={handleDrop}
-            className={`${compact ? "mt-1.5 min-h-24 px-3 py-2" : "mt-3 min-h-40 px-4 py-5"} flex flex-col items-center justify-center rounded-xl border border-dashed text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-beyonix-focus ${
+            className={`${compact ? `mt-2 ${expand ? "min-h-28 flex-1" : "min-h-28"} px-3 py-2` : "mt-3 min-h-36 px-4 py-4"} flex flex-col items-center justify-center rounded-xl border border-dashed text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-beyonix-blue-500 ${
               uploading
-                ? "cursor-wait border-beyonix-blue-light/45 bg-[#112A43]/35"
+                ? "cursor-wait border-beyonix-blue-500 bg-beyonix-blue-900"
                 : isDragging
-                  ? "border-beyonix-sky bg-[#112A43] shadow-[0_0_0_3px_rgba(79,131,173,0.12)]"
+                  ? "border-beyonix-blue-300 bg-beyonix-blue-700/40 ring-2 ring-beyonix-blue-500/30"
                   : file || hasUploadedFeedback
-                    ? "border-emerald-400/35 bg-emerald-400/5"
+                    ? "border-beyonix-status-success/35 bg-beyonix-status-success/10"
                     : compact
-                      ? "cursor-pointer border-beyonix-blue-light/28 bg-[#0B1624] hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/65"
-                      : "cursor-pointer border-beyonix-blue-light/28 bg-[#0B111A] hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/55"
+                      ? "cursor-pointer border-beyonix-gray-700 bg-beyonix-gray-900 hover:border-beyonix-blue-500 hover:bg-beyonix-blue-900"
+                      : "cursor-pointer border-beyonix-gray-700 bg-beyonix-gray-900 hover:border-beyonix-blue-500 hover:bg-beyonix-blue-900"
             }`}
           >
             <span className={`flex items-center justify-center rounded-xl border ${compact ? "size-9" : "size-12"} ${
               file || hasUploadedFeedback
-                ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
-                : "border-beyonix-blue-light/35 bg-[#112A43]/55 text-white"
+                ? "border-beyonix-status-success/30 bg-beyonix-status-success/10 text-beyonix-status-success"
+                : "border-beyonix-blue-500/60 bg-beyonix-blue-900 text-beyonix-blue-300"
             }`}>
               {file || hasUploadedFeedback ? (
                 <FileCheck2 className={compact ? "size-5" : "size-6"} />
@@ -168,55 +193,78 @@ export function PaymentProofUploader({
             {uploading ? (
               <>
                 <p className={`${compact ? "mt-1.5" : "mt-3"} max-w-full truncate text-sm font-semibold text-white`}>
-                  Subiendo comprobante...
+                  Subiendo comprobante
                 </p>
                 {file && (
-                  <p className={`mt-1 max-w-full truncate text-xs ${compact ? "text-[#9CA3AF]" : "text-white/50"}`}>
-                    {file.name}
-                  </p>
+                  <div className="mt-1 max-w-full text-center text-xs text-beyonix-gray-300">
+                    <p className="truncate">{file.name}</p>
+                    <p className="mt-0.5">{formatFileSize(file.size)}</p>
+                  </div>
                 )}
+                <div className="mt-3 w-full max-w-xs">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-beyonix-gray-700">
+                    <div className="h-full w-2/3 animate-pulse rounded-full bg-beyonix-blue-500" />
+                  </div>
+                  <p className="mt-1.5 text-10px font-semibold uppercase tracking-wider text-beyonix-blue-300">
+                    Subida en progreso
+                  </p>
+                </div>
               </>
             ) : hasUploadedFeedback ? (
               <>
-                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-emerald-200`}>
+                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-beyonix-status-success`}>
                   Comprobante subido correctamente
                 </p>
-                <p className={`mt-1 max-w-full truncate text-xs ${compact ? "text-[#9CA3AF]" : "text-white/50"}`}>
+                <p className="mt-1 max-w-full truncate text-xs text-beyonix-gray-300">
                   {uploadedFileName} · Toca para reemplazar
                 </p>
               </>
             ) : file ? (
               <>
-                <p className={`${compact ? "mt-1.5" : "mt-3"} max-w-full truncate text-sm font-semibold text-white`}>
-                  {file.name}
-                </p>
-                <p className={`mt-1 text-xs ${compact ? "text-[#9CA3AF]" : "text-white/50"}`}>
-                  {(file.size / 1024 / 1024).toFixed(2)} MB · Toca para reemplazar
-                </p>
+                <div className={`${compact ? "mt-1.5" : "mt-3"} max-w-full text-center`}>
+                  <p className="truncate text-sm font-semibold text-white">
+                    {file.name}
+                  </p>
+                  <p className="mt-1 text-xs text-beyonix-gray-300">
+                    {formatFileSize(file.size)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Quitar archivo seleccionado"
+                  title="Quitar archivo seleccionado"
+                  onClick={clearSelectedFile}
+                  className="mt-2 inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-status-danger/35 bg-beyonix-status-danger/10 px-3 text-xs font-semibold text-beyonix-status-danger transition-colors hover:border-beyonix-status-danger/60 hover:bg-beyonix-status-danger/20"
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                  Quitar
+                </button>
               </>
             ) : (
               <>
                 <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-white`}>
                   Arrastrá el comprobante aquí
                 </p>
-                <p className={`mt-1 text-xs ${compact ? "text-[#C8C8C8]" : "text-white/55"}`}>
+                <p className="mt-1 text-xs text-beyonix-gray-300">
                   o toca para elegirlo desde tu dispositivo
                 </p>
               </>
             )}
 
-            <span className={`${compact ? "mt-1.5 h-8 px-3" : "mt-3 h-9 px-4"} inline-flex items-center justify-center rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)]`}>
-              {uploading ? "Subiendo..." : "Seleccionar archivo"}
-            </span>
+            {!uploading && (
+              <span className={`${compact ? "mt-2 h-8 px-3" : "mt-3 h-9 px-4"} inline-flex items-center justify-center rounded-lg border border-beyonix-blue-500 bg-beyonix-blue-700 text-xs font-black text-white shadow-md shadow-black/20 transition-colors hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500`}>
+                {file ? "Cambiar archivo" : "Seleccionar archivo"}
+              </span>
+            )}
           </div>
 
-          <p className={`${compact ? "mt-1.5 leading-4 text-[#9CA3AF]" : "mt-2 leading-5 text-white/45"} text-center text-xs`}>
+          <p className={`${compact ? "mt-1.5 leading-4" : "mt-2 leading-5"} text-center text-xs text-beyonix-gray-500`}>
             JPG, JPEG, PNG o PDF · Máximo 5 MB
           </p>
         </div>
 
         {error && (
-          <div className="rounded-xl border border-red-500/20 bg-red-950 px-4 py-3 text-sm text-red-300">
+          <div className="rounded-xl border border-beyonix-status-danger/30 bg-beyonix-status-danger/10 px-4 py-3 text-sm text-beyonix-status-danger">
             {error}
           </div>
         )}
@@ -290,15 +338,16 @@ export function PaymentProofActionButton({
       <button
         type="button"
         aria-label={`${actionLabel} del pedido ${orderId}`}
+        title={actionLabel}
         disabled={uploading}
         onClick={() => inputRef.current?.click()}
         className={`${className} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
       >
-        <Upload className="size-4" />
+        <Upload className="size-4" aria-hidden="true" />
         {uploading ? "Subiendo..." : actionLabel}
       </button>
       {error && (
-        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-red-300 sm:text-right">
+        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-beyonix-status-danger sm:text-right">
           {error}
         </span>
       )}
