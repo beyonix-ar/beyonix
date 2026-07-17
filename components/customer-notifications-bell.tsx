@@ -322,7 +322,7 @@ export function CustomerNotificationsBell({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         onFocus={openPopover}
-        className="relative flex size-10 cursor-pointer items-center justify-center rounded-full border border-[#303846] bg-[#0D1117] text-white/80 transition-all hover:border-beyonix-blue-light hover:bg-[#141820] hover:text-white hover:shadow-[0_0_18px_rgba(17,42,67,0.55)]"
+        className="relative flex size-11 cursor-pointer items-center justify-center rounded-full border border-[#303846] bg-[#0D1117] text-white/80 transition-all hover:border-beyonix-blue-light hover:bg-[#141820] hover:text-white hover:shadow-[0_0_18px_rgba(17,42,67,0.55)]"
       >
         <Bell className="size-4.5" />
 
@@ -335,7 +335,7 @@ export function CustomerNotificationsBell({
 
       {open && (
         <div
-          className="absolute right-0 top-12 z-100 w-80 max-w-[calc(100vw-2rem)] sm:w-96"
+          className="absolute right-0 top-[52px] z-100 w-80 max-w-[calc(100vw-2rem)] sm:w-96"
           onMouseEnter={openPopover}
           onMouseLeave={scheduleClosePopover}
         >

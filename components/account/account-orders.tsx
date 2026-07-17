@@ -22,6 +22,7 @@ import { AccountViewFrame } from "@/components/account/account-view-frame"
 import {
   CustomerInvoiceBell,
   DOWNLOADED_INVOICES_STORAGE_KEY,
+  OrderExperienceFeedback,
   OrderProductFeedback,
   OrderProgressTimeline,
   OrderTrackingPanel,
@@ -368,6 +369,12 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             const items = order.orden_items ?? []
             const hasProof = Boolean(order.payment_proof_url)
             const isTransferOrder = order.payment_method_id === "transferencia"
+            const paymentMethodLabel =
+              order.payment_method_id === "customer_credit"
+                ? "Saldo a favor"
+                : isTransferOrder
+                  ? "Transferencia bancaria"
+                  : "Mercado Pago"
             const orderStatusBadge = getClientOrderStatusBadge(order)
             const activeOrderView = orderDetailViews[order.id] ?? "detalle"
             const invoiceAvailable = isInvoiceAvailable(order)
@@ -450,7 +457,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   <div className="mt-4 grid rounded-2xl border border-white/8 bg-[#090D12]/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] sm:grid-cols-3 sm:divide-x sm:divide-white/12">
                     <div className="flex items-center gap-3 py-2 sm:px-3 sm:py-0 sm:first:pl-0">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><CreditCard className="size-5 text-white" /></span>
-                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Pago</p><p className="mt-1 text-sm font-bold text-white">{isTransferOrder ? "Transferencia bancaria" : "Mercado Pago"}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{getPaymentProgressLabel(order)}</p></div>
+                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Pago</p><p className="mt-1 text-sm font-bold text-white">{paymentMethodLabel}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{getPaymentProgressLabel(order)}</p></div>
                     </div>
                     <div className="flex items-center gap-3 border-t border-white/8 py-3 sm:border-0 sm:px-3 sm:py-0">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Truck className="size-5 text-white" /></span>
@@ -636,7 +643,12 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                         )
                       })}
                     </div>
-                    {order.estado === "entregado" && <div className="mt-3"><OrderProductFeedback order={order} /></div>}
+                    {order.estado === "entregado" && (
+                      <div className="mt-3 space-y-3">
+                        <OrderProductFeedback order={order} />
+                        <OrderExperienceFeedback order={order} />
+                      </div>
+                    )}
                       </>
                     )}
                   </div>

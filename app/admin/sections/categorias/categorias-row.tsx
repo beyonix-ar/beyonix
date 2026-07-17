@@ -48,9 +48,6 @@ export function CategoriasRow({
         <p className="truncate text-base font-bold text-white">
           {categoria.nombre}
         </p>
-        <p className="mt-0.5 truncate text-xs text-white/38">
-          {categoria.slug}
-        </p>
       </div>
 
       <p className="text-center text-sm font-bold text-white">
@@ -78,27 +75,34 @@ export function CategoriasRow({
               : "Marcar categoría destacada"
           }
           onClick={() => onToggleDestacado(categoria)}
-          className={`flex size-8 cursor-pointer items-center justify-center rounded-xl border transition-all hover:-translate-y-0.5 ${
+          className={`group/star flex size-9 cursor-pointer items-center justify-center rounded-xl border transition-all duration-200 hover:-translate-y-0.5 ${
             isFeatured
-              ? "border-beyonix-blue-light/45 bg-beyonix-blue/25 text-beyonix-cyan"
-              : "border-white/8 text-white/28 hover:border-beyonix-blue-light/30 hover:text-white/55"
+              ? "border-amber-300/42 bg-amber-400/12 text-amber-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:border-amber-200/65 hover:bg-amber-400/18 hover:text-amber-100"
+              : "border-white/10 bg-[#07111B] text-white/34 hover:border-amber-300/34 hover:bg-amber-400/8 hover:text-amber-200/80"
           }`}
         >
           <Star
-            className={`size-3.5 ${isFeatured ? "fill-beyonix-cyan/70" : ""}`}
+            className={`size-4 transition-transform duration-200 group-hover/star:scale-110 ${
+              isFeatured
+                ? "fill-amber-300/72"
+                : ""
+            }`}
           />
         </button>
       </div>
 
       <div className="flex justify-center">
         {isFeatured ? (
-          <div className="w-20">
+          <div className="w-28">
             <AdminSelect
               title="Posición destacada"
               ariaLabel={`Posición destacada de ${categoria.nombre}`}
               value={String(categoria.posicion_destacada ?? "")}
               compact
               centered
+              triggerClassName="admin-category-position-trigger"
+              menuClassName="admin-category-position-menu"
+              optionClassName="admin-category-position-option justify-center"
               onChange={(value) =>
                 onPositionChange(
                   categoria,
@@ -117,7 +121,7 @@ export function CategoriasRow({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="flex items-center justify-center gap-2">
         <button
           type="button"
           aria-label="Editar categoría"

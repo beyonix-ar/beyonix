@@ -154,6 +154,10 @@ export function getPaymentProgressLabel(order: SupabasePedido) {
     return "Pedido cancelado"
   }
 
+  if (order.payment_method_id === "customer_credit") {
+    return "Pagado con saldo a favor"
+  }
+
   if (order.payment_method_id !== "transferencia") {
     if (paymentStatus === "approved" || order.estado === "pagado") {
       return "Pago aprobado"

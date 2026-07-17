@@ -5,7 +5,10 @@ import { CategoryPageLayout } from "@/components/category/layout/category-page-l
 import {
   getCategoriaBySlug,
 } from "@/lib/supabase/queries/productos"
-import { getProductosByCategoriaId } from "@/lib/supabase/queries/store"
+import {
+  getProductosByCategoriaId,
+  getStoreProductos,
+} from "@/lib/supabase/queries/store"
 
 export const dynamic = "force-dynamic"
 
@@ -36,10 +39,15 @@ export default async function Page({
     notFound()
   }
 
-  const categoryProducts =
-    await getProductosByCategoriaId(
+  const [
+    categoryProducts,
+    allProducts,
+  ] = await Promise.all([
+    getProductosByCategoriaId(
       categoria.id
-    )
+    ),
+    getStoreProductos(),
+  ])
 
   return (
     <CategoryPageLayout
@@ -50,6 +58,7 @@ export default async function Page({
       image={categoria.imagen || null}
       currentSlug={categoria.slug}
       products={categoryProducts}
+      priceRangeProducts={allProducts}
     />
   )
 }

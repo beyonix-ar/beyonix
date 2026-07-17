@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 
@@ -59,7 +60,7 @@ export async function PATCH(
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
-    .select("id, estado, total, payment_status, payment_proof_url, payment_proof_file_name, paid_at, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point")
+    .select("id, estado, total, external_amount_due, credit_balance_used, payment_status, payment_proof_url, payment_proof_file_name, paid_at, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point")
     .eq("id", pedidoId)
     .eq("payment_method_id", "transferencia")
     .maybeSingle()
@@ -121,7 +122,9 @@ export async function PATCH(
     updatePayload.order_change_extra_amount = 0
     updatePayload.payment_confirmed_by = auth.user.id
     updatePayload.payment_confirmed_at = now
-    updatePayload.payment_confirmed_amount = Number(currentOrder.total ?? 0)
+    updatePayload.payment_confirmed_amount = Number(
+      currentOrder.external_amount_due ?? currentOrder.total ?? 0
+    )
     updatePayload.payment_confirmation_observation = observation || null
 
     if (orderWasCancelled) {
@@ -164,6 +167,8 @@ export async function PATCH(
       newStatus: nextFinancialStatus,
       metadata: {
         amount: Number(currentOrder.total ?? 0),
+        externalAmount: Number(currentOrder.external_amount_due ?? currentOrder.total ?? 0),
+        creditBalanceUsed: Number(currentOrder.credit_balance_used ?? 0),
         proofUrl: currentOrder.payment_proof_url,
         proofFileName: currentOrder.payment_proof_file_name,
         observation: observation || null,
@@ -181,6 +186,14 @@ export async function PATCH(
       `,
     })
   } else if (currentOrder.payment_status !== paymentStatus) {
+    if (paymentStatus === "rechazado" && Number(currentOrder.credit_balance_used ?? 0) > 0) {
+      await reverseCustomerCreditForOrder(auth.admin, {
+        orderId: data.id,
+        description: "Reintegro de saldo por pago rechazado",
+        createdBy: auth.user.id,
+      })
+    }
+
     await appendOrderAuditEvent(auth.admin, {
       orderId: data.id,
       actorType: "admin",

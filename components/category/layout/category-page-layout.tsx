@@ -1,8 +1,6 @@
 "use client"
 
-import Image from "next/image"
 import {
-  Boxes,
   CreditCard,
   Headphones,
   ShieldCheck,
@@ -13,11 +11,11 @@ import { useCart } from "@/context/cart-context"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import { ProductDetailsModal } from "../../products/product-details-modal"
 import { GlobalSearchBar } from "@/components/global-search-bar"
-import { CategorySort } from "../category-sort"
 import { useCategoryProducts } from "../hooks/use-category-products"
 import { useProductDetails } from "../use-product-details"
-import { CategoryProductsGrid } from "./category-products-grid"
+import { ProductsGrid } from "@/components/products/products-grid"
 import { ProductsFiltersSidebar } from "@/components/products/products-filters-sidebar"
+import { ProductsToolbar } from "@/components/products/products-toolbar"
 import { SITE_SETTINGS } from "@/config/site-settings"
 import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 
@@ -27,6 +25,7 @@ interface CategoryPageLayoutProps {
   image?: string | null
   currentSlug: string
   products: SupabaseProducto[]
+  priceRangeProducts?: SupabaseProducto[]
 }
 
 const storeBenefits = [
@@ -38,9 +37,9 @@ const storeBenefits = [
 
 export function CategoryPageLayout({
   title,
-  description,
   image,
   products,
+  priceRangeProducts,
 }: CategoryPageLayoutProps) {
   const {
     addToCart,
@@ -68,7 +67,7 @@ export function CategoryPageLayout({
     setMaxPrice,
     priceRange,
     filteredProducts,
-  } = useCategoryProducts(products)
+  } = useCategoryProducts(products, priceRangeProducts)
 
   const {
     isOpen,
@@ -107,89 +106,57 @@ export function CategoryPageLayout({
   }
 
   return (
-    <section className="relative min-h-screen overflow-visible text-white">
+    <main className="relative min-h-screen overflow-visible bg-black text-white">
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-        <div className="mx-auto max-w-1400px">
-          <div className="beyonix-store-hero relative flex min-h-420px flex-col items-center justify-center overflow-hidden rounded-xl px-4 py-12 text-center sm:min-h-[500px] lg:min-h-[560px]">
-            {image ? (
-              <Image
-                fill
-                src={image}
-                alt={title}
-                sizes="(min-width: 1536px) 1400px, 100vw"
-                className="z-0 object-cover object-center opacity-25 beyonix-category-banner-image-fade"
-                priority
+        <div className="relative mx-auto flex min-h-420px w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] sm:min-h-[520px] lg:min-h-[600px]">
+          {image ? (
+            <img
+              src={image}
+              alt={title}
+              className="absolute inset-0 z-0 size-full object-cover object-center"
+            />
+          ) : null}
+
+          <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-8 sm:pb-10 lg:pb-12">
+            <div className="global-search-wrapper flex w-full justify-center">
+              <GlobalSearchBar
+                search={search}
+                className="max-w-3xl lg:max-w-4xl"
+                surfaceClassName="!border-beyonix-blue-light/38 !bg-[#0A1420]/88 !shadow-[0_0_18px_rgba(30,140,255,0.08),inset_0_1px_0_rgba(255,255,255,0.07)] hover:!border-beyonix-sky/46 focus-within:!border-beyonix-sky/58 focus-within:!shadow-[0_0_18px_rgba(30,140,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                inputClassName="placeholder:text-white/58"
+                buttonClassName="border-beyonix-blue-light/28 text-beyonix-sky/86 hover:bg-beyonix-blue/16 hover:text-white"
+                products={products.map((nextProduct) => ({
+                  id: String(nextProduct.id),
+                  nombre: nextProduct.nombre,
+                }))}
+                onSearchChange={setSearch}
               />
-            ) : (
-              <div className="absolute inset-0 z-0 flex items-center justify-center bg-beyonix-surface-3">
-                <Boxes className="size-10 text-beyonix-cyan/45" />
-              </div>
-            )}
+            </div>
 
-            <div className="pointer-events-none absolute inset-0 beyonix-category-banner-fade" />
-
-            <div className="relative z-20 mx-auto flex w-full max-w-5xl flex-col items-center">
-              <p className="beyonix-metal-title text-[60px] font-black uppercase leading-none sm:text-[104px] lg:text-[146px]">
-                BEYONIX
-              </p>
-              <p className="mt-4 text-18px font-medium text-white/84 sm:text-21px">
-                Tecnología pensada para tu{" "}
-                <span className="text-beyonix-sky">comodidad</span>
-              </p>
-              <p className="mt-3 text-11px font-semibold uppercase tracking-[0.28em] text-beyonix-cyan/80">
-                {title}
-              </p>
-
-              {description ? (
-                <p className="mt-3 max-w-[520px] text-sm leading-relaxed text-white/68 sm:text-base">
-                  {description}
-                </p>
-              ) : null}
-
-              <div className="global-search-wrapper mt-8 flex w-full justify-center">
-                <GlobalSearchBar
-                  search={search}
-                  className="max-w-3xl lg:max-w-4xl"
-                  products={products.map((nextProduct) => ({
-                    id: String(nextProduct.id),
-                    nombre: nextProduct.nombre,
-                  }))}
-                  onSearchChange={setSearch}
-                />
-              </div>
-
-              <div className="mt-6 grid w-full max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {storeBenefits.map(({ label, icon: Icon }) => (
-                  <div
-                    key={label}
-                    className="beyonix-benefit-item flex items-center gap-3 rounded-lg px-3 py-3 text-left"
-                  >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/35 bg-beyonix-blue/55 text-white shadow-[0_0_18px_rgba(30,140,255,0.18)]">
-                      <Icon className="size-4" />
-                    </span>
-                    <span className="text-13px font-semibold text-white/86">
-                      {label}
-                    </span>
-                  </div>
-                ))}
-              </div>
+            <div className="mt-6 grid w-full max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {storeBenefits.map(({ label, icon: Icon }) => (
+                <div
+                  key={label}
+                  className="beyonix-benefit-item flex items-center gap-3 rounded-lg px-3 py-3 text-left"
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/24 bg-beyonix-blue/34 text-white shadow-[0_0_8px_rgba(30,140,255,0.08)]">
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="text-13px font-semibold text-white/86">
+                    {label}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="category-products container relative z-20 mx-auto px-4 pb-16 lg:px-8 lg:pb-20">
-        <div className="beyonix-products-shell mx-auto grid max-w-1400px grid-cols-1 items-start gap-4 p-3 sm:p-4 lg:grid-cols-products-layout lg:gap-5 lg:p-5">
-          <div className="flex justify-end lg:col-span-2 lg:row-start-1">
-            <CategorySort
-              sortBy={sortBy}
-              onSortChange={setSortBy}
-            />
-          </div>
-
-          <div className="w-full lg:col-start-1 lg:row-start-2 lg:w-260px">
+      <section className="container relative z-20 mx-auto px-4 lg:px-8">
+        <div className="beyonix-products-shell mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] p-3 pb-10 sm:p-4 lg:grid-cols-products-layout lg:p-5 lg:pb-12">
+          <div className="w-full lg:w-260px">
             <ProductsFiltersSidebar
               categories={[]}
               selectedCategories={[]}
@@ -215,15 +182,21 @@ export function CategoryPageLayout({
             />
           </div>
 
-          <div className="min-w-0 lg:col-start-2 lg:row-start-2">
-            <CategoryProductsGrid
+          <div className="min-w-0">
+            <ProductsToolbar
+              total={filteredProducts.length}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+            />
+
+            <ProductsGrid
               products={filteredProducts}
               onOpenPreview={openDetails}
               onAddToCart={handleProductCardAdd}
             />
           </div>
         </div>
-      </div>
+      </section>
 
       <ProductDetailsModal
         open={isOpen}
@@ -251,6 +224,6 @@ export function CategoryPageLayout({
         isInCart={product ? isInCart(product.id, selectedColor) : false}
         cartQuantity={product ? getQuantity(product.id, selectedColor) : 0}
       />
-    </section>
+    </main>
   )
 }

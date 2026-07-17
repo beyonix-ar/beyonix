@@ -4,6 +4,7 @@ import { Montserrat, Manrope } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
 import { AuthProvider } from "@/context/auth-context"
+import { CustomerCreditProvider } from "@/context/customer-credit-context"
 import { BrowserTabTitle } from "@/components/BrowserTabTitle"
 import { BeyonixShootingStarsBackground } from "@/components/backgrounds/beyonix-shooting-stars-background"
 import { LayoutShell } from "@/components/layout-shell"
@@ -72,10 +73,12 @@ export default function RootLayout({
         <BeyonixShootingStarsBackground />
         <div className="relative z-10">
           <AuthProvider>
-            <CartProvider>
-              <LayoutShell>{children}</LayoutShell>
-              <CartWrapper />
-            </CartProvider>
+            <CustomerCreditProvider>
+              <CartProvider>
+                <LayoutShell>{children}</LayoutShell>
+                <CartWrapper />
+              </CartProvider>
+            </CustomerCreditProvider>
           </AuthProvider>
         </div>
         {process.env.NODE_ENV === "production" && <Analytics />}

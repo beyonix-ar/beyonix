@@ -7,16 +7,19 @@ import {
 } from "@/lib/products/price-range"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
-export function useCategoryProducts(products: SupabaseProducto[]) {
+export function useCategoryProducts(
+  products: SupabaseProducto[],
+  priceRangeProducts: SupabaseProducto[] = products
+) {
   const priceRange = useMemo(
     () =>
       getProductPriceRange(
-        products
+        priceRangeProducts
       ),
-    [products]
+    [priceRangeProducts]
   )
   const [search, setSearch] = useState("")
-  const [sortBy, setSortBy] = useState("default")
+  const [sortBy, setSortBy] = useState("relevance")
   const [onlyOffers, setOnlyOffers] = useState(false)
   const [onlyBestSellers, setOnlyBestSellers] = useState(false)
   const [onlyInstallments, setOnlyInstallments] = useState(false)

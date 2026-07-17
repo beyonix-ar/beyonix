@@ -10,6 +10,10 @@ import type { SupabaseCategoria } from "@/lib/supabase/types"
 import { CategoriaForm } from "./categorias-form"
 import { CategoriasTable } from "./categorias-table"
 
+type FeaturedPosition = 1 | 2 | 3
+
+const featuredPositions: FeaturedPosition[] = [1, 2, 3]
+
 interface AdminCategoriasProps {
   createSignal: number
   search: string
@@ -23,12 +27,74 @@ export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) 
   const [editando, setEditando] = useState<
     SupabaseCategoria | null | undefined
   >()
+  const [normalizingPositions, setNormalizingPositions] = useState(false)
 
   useEffect(() => {
     if (createSignal > 0) {
       setEditando(null)
     }
   }, [createSignal])
+
+  useEffect(() => {
+    if (!categorias.length || normalizingPositions) {
+      return
+    }
+
+    const usedPositions = new Set<FeaturedPosition>()
+    const updates = categorias
+      .filter(
+        (categoria) =>
+          categoria.destacado &&
+          categoria.posicion_destacada
+      )
+      .sort(
+        (a, b) =>
+          (a.posicion_destacada ?? 99) -
+            (b.posicion_destacada ?? 99) ||
+          a.nombre.localeCompare(b.nombre)
+      )
+      .flatMap((categoria) => {
+        const position = categoria.posicion_destacada
+
+        if (!position || !usedPositions.has(position)) {
+          if (position) {
+            usedPositions.add(position)
+          }
+
+          return []
+        }
+
+        const replacement =
+          featuredPositions.find(
+            (nextPosition) => !usedPositions.has(nextPosition)
+          ) ?? null
+
+        if (replacement) {
+          usedPositions.add(replacement)
+        }
+
+        return [
+          updateCategoria(categoria.id, {
+            posicion_destacada: replacement,
+          }),
+        ]
+      })
+
+    if (!updates.length) {
+      return
+    }
+
+    setNormalizingPositions(true)
+
+    Promise.all(updates)
+      .then(() => reloadCategorias())
+      .catch((error) => {
+        console.error("Error normalizando posiciones destacadas:", error)
+      })
+      .finally(() => {
+        setNormalizingPositions(false)
+      })
+  }, [categorias, normalizingPositions, reloadCategorias])
 
   const categoriasFiltradas = useMemo(
     () =>
@@ -72,7 +138,77 @@ export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) 
     return stats
   }, [productos])
 
-  const handleSaved = async () => {
+  const getReplacementFeaturedPosition = (
+    target: SupabaseCategoria,
+    occupyingCategory: SupabaseCategoria,
+    nextPosition: FeaturedPosition
+  ) => {
+    const previousPosition =
+      categorias.find((categoria) => categoria.id === target.id)
+        ?.posicion_destacada ?? null
+
+    const previousPositionIsFree =
+      previousPosition &&
+      previousPosition !== nextPosition &&
+      !categorias.some(
+        (categoria) =>
+          categoria.id !== target.id &&
+          categoria.id !== occupyingCategory.id &&
+          categoria.destacado &&
+          categoria.posicion_destacada === previousPosition
+      )
+
+    if (previousPositionIsFree) {
+      return previousPosition
+    }
+
+    return (
+      featuredPositions.find(
+        (position) =>
+          position !== nextPosition &&
+          !categorias.some(
+            (categoria) =>
+              categoria.id !== target.id &&
+              categoria.id !== occupyingCategory.id &&
+              categoria.destacado &&
+              categoria.posicion_destacada === position
+          )
+      ) ?? null
+    )
+  }
+
+  const resolveFeaturedPositionConflict = async (
+    target: SupabaseCategoria,
+    nextPosition: FeaturedPosition
+  ) => {
+    const occupyingCategory = categorias.find(
+      (categoria) =>
+        categoria.id !== target.id &&
+        categoria.destacado &&
+        categoria.posicion_destacada === nextPosition
+    )
+
+    if (!occupyingCategory) {
+      return
+    }
+
+    await updateCategoria(occupyingCategory.id, {
+      posicion_destacada: getReplacementFeaturedPosition(
+        target,
+        occupyingCategory,
+        nextPosition
+      ),
+    })
+  }
+
+  const handleSaved = async (savedCategory?: SupabaseCategoria) => {
+    if (savedCategory?.destacado && savedCategory.posicion_destacada) {
+      await resolveFeaturedPositionConflict(
+        savedCategory,
+        savedCategory.posicion_destacada
+      )
+    }
+
     await reloadCategorias()
     setEditando(undefined)
   }
@@ -90,9 +226,14 @@ export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) 
 
   const handlePositionChange = async (
     categoria: SupabaseCategoria,
-    position: 1 | 2 | 3 | null
+    position: FeaturedPosition | null
   ) => {
+    if (position) {
+      await resolveFeaturedPositionConflict(categoria, position)
+    }
+
     await updateCategoria(categoria.id, {
+      destacado: position ? true : categoria.destacado,
       posicion_destacada: position,
     })
 

@@ -192,14 +192,14 @@ export function ProductDetailsGallery({
         )}
       </div>
 
-      <div className="flex h-30px shrink-0 items-center justify-center sm:h-34px">
+      <div className="flex h-38px shrink-0 items-start justify-center pt-2 sm:h-42px sm:pt-2.5">
         <span className="rounded-full border border-white/8 bg-white/4 px-3 py-1 text-12px font-bold tabular-nums tracking-widest text-white/78">
           {safeIndex + 1} / {mediaCount || 1}
         </span>
       </div>
 
       {visibleMedia.length > 0 && (
-        <div className="flex h-62px shrink-0 items-center justify-center sm:h-70px">
+        <div className="flex h-78px shrink-0 items-start justify-center pt-3 sm:h-86px sm:pt-3.5">
           <div className="flex items-center justify-center gap-2.5">
             {visibleMedia.map((media, index) => {
               const isVideo = media.type === "video"

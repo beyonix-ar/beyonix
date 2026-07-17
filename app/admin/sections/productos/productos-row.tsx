@@ -124,6 +124,20 @@ const normalizeVariantOrder = (
     })
   )
 
+const isDarkVariantColor = (color: string) => {
+  const hex = color.trim().replace("#", "")
+
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return false
+
+  const red = parseInt(hex.slice(0, 2), 16)
+  const green = parseInt(hex.slice(2, 4), 16)
+  const blue = parseInt(hex.slice(4, 6), 16)
+  const luminance =
+    (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
+
+  return luminance < 0.12
+}
+
 const getPrincipalVariantImage = (
   variantes: SupabaseProductoVariante[]
 ) =>
@@ -666,6 +680,10 @@ export function ProductosRow({
                 stockStatus(stock)
               const isPrincipal =
                 index === 0
+              const darkColor =
+                isDarkVariantColor(
+                  variante.color_hex
+                )
 
               return (
                 <div
@@ -709,7 +727,11 @@ export function ProductosRow({
                   <div className="grid grid-cols-admin-variant-row items-center gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3">
                     <div className="flex items-center gap-3">
                     <span
-                      className="size-5 rounded-full border border-white/20"
+                      className={`size-5 rounded-full border ${
+                        darkColor
+                          ? "border-white/50 shadow-[0_0_0_2px_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(255,255,255,0.18)]"
+                          : "border-white/20"
+                      }`}
                       style={{
                         backgroundColor:
                           variante.color_hex,

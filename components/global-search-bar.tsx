@@ -85,7 +85,7 @@ export function GlobalSearchBar({
       >
         <input
           type="text"
-          placeholder="Buscá tecnología pensada para vos..."
+          placeholder="Buscá el producto hecho para vos..."
           value={search}
           onChange={(event) => {
             onSearchChange(

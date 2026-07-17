@@ -41,6 +41,7 @@ import { ColorSelector } from "./color-selector"
 import { ProductDescription } from "./product-description"
 import { ProductPurchaseBox } from "./product-purchase-box"
 import { ProductRatingSummary } from "./product-rating-summary"
+import { ProductReviewsDialog } from "./product-reviews-dialog"
 import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
@@ -140,6 +141,9 @@ export function ProductDetailsPanel({
           limitedFeatures.slice(Math.ceil(limitedFeatures.length / 2)),
         ]
       : [limitedFeatures]
+  const reviewsCount = Number(product.reviews_count)
+  const hasReviews =
+    Number.isInteger(reviewsCount) && reviewsCount > 0
 
   return (
     <aside className="flex min-h-0 flex-col bg-[#080B0F] text-white md:h-full">
@@ -156,19 +160,30 @@ export function ProductDetailsPanel({
             {product.nombre}
           </h2>
 
-          <ProductRatingSummary
-            averageRating={product.average_rating}
-            reviewsCount={product.reviews_count}
-            className="mt-3 text-sm"
-            starClassName="size-4"
-            countClassName="text-white/55"
-          />
+          {hasReviews && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <ProductRatingSummary
+                averageRating={product.average_rating}
+                reviewsCount={product.reviews_count}
+                className="text-sm"
+                starClassName="size-4"
+                countClassName="text-white/55"
+              />
+
+              <ProductReviewsDialog
+                productId={product.id}
+                productName={product.nombre}
+                averageRating={product.average_rating}
+                reviewsCount={reviewsCount}
+              />
+            </div>
+          )}
         </div>
 
         <div className="h-px bg-beyonix-blue-light/16" />
 
         <div className="custom-scrollbar flex min-h-0 flex-1 flex-col md:overflow-y-auto">
-          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
+            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
             <p className="mb-2 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
               Descripción
             </p>
@@ -189,7 +204,7 @@ export function ProductDetailsPanel({
           </section>
 
           {limitedFeatures.length > 0 && (
-            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
+          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
               <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
                 Características principales
               </p>
@@ -228,7 +243,7 @@ export function ProductDetailsPanel({
           )}
 
           {hasVariants && (
-            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
+            <section className="shrink-0 px-5 py-4 md:px-7">
               <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
                 Variante
               </p>

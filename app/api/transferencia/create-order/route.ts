@@ -4,6 +4,15 @@ import { normalizeCheckoutShipping } from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import {
+  calculateCustomerCreditApplication,
+  getPaymentComposition,
+  normalizeMoney,
+} from "@/lib/customer-credit"
+import {
+  applyCustomerCreditToOrder,
+  getCustomerCreditBalance,
+} from "@/lib/customer-credit/server"
+import {
   TRANSFER_ALIAS,
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotal,
@@ -30,6 +39,7 @@ interface CheckoutPayload {
   items?: CheckoutItemPayload[]
   reservationSessionId?: string | null
   storeBenefitId?: string | null
+  customerCreditAmount?: number | string | null
   customer?: {
     nombre?: string
     email?: string
@@ -302,10 +312,56 @@ export async function POST(request: Request) {
     )
     const transferDiscountAmount = transferPaymentTotals.discount
     const transferTotal = transferPaymentTotals.total
+    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
+    const customerCreditApplication =
+      requestedCredit > 0
+        ? calculateCustomerCreditApplication({
+            availableBalance: user
+              ? await getCustomerCreditBalance(admin, user.id)
+              : 0,
+            eligibleTotal: transferTotal,
+            requestedAmount: requestedCredit,
+          })
+        : {
+            appliedAmount: 0,
+            externalAmountDue: transferTotal,
+          }
+
+    if (requestedCredit > 0 && !user) {
+      return NextResponse.json(
+        { error: "Iniciá sesión para usar tu saldo a favor." },
+        { status: 401 },
+      )
+    }
+
+    if (
+      requestedCredit > 0 &&
+      Math.abs(customerCreditApplication.appliedAmount - requestedCredit) > 0.009
+    ) {
+      return NextResponse.json(
+        { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
+        { status: 409 },
+      )
+    }
+
+    if (customerCreditApplication.externalAmountDue <= 0) {
+      return NextResponse.json(
+        { error: "El saldo cubre el total. Confirmá la compra con saldo a favor." },
+        { status: 400 },
+      )
+    }
 
     const orderPayload = {
       usuario_id: user?.id ?? null,
       total: transferTotal,
+      original_total: transferTotal,
+      credit_balance_used: 0,
+      external_amount_due: customerCreditApplication.externalAmountDue,
+      payment_composition: getPaymentComposition({
+        paymentMethodId: "transferencia",
+        creditBalanceUsed: customerCreditApplication.appliedAmount,
+        externalAmountDue: customerCreditApplication.externalAmountDue,
+      }),
       estado: "pendiente",
       envio_proveedor: shipping.provider,
       andreani_costo: shipping.costCharged,
@@ -343,6 +399,16 @@ export async function POST(request: Request) {
     }
 
     await insertOrderItems(orderClient as never, order.id, items, productRows)
+
+    if (user && customerCreditApplication.appliedAmount > 0) {
+      await applyCustomerCreditToOrder(admin, {
+        userId: user.id,
+        orderId: order.id,
+        amount: customerCreditApplication.appliedAmount,
+        description: `Saldo a favor aplicado al pedido BX-${1000 + order.id}`,
+        sourceKey: `order:${order.id}:customer-credit:debit`,
+      })
+    }
 
     if (storeBenefit) {
       await markStoreBenefitAsUsed(admin, {

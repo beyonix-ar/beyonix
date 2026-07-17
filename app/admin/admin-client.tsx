@@ -6,6 +6,7 @@ import {
   BarChart3,
   BellRing,
   CalendarDays,
+  Coins,
   FileText,
   GripVertical,
   History,
@@ -36,6 +37,7 @@ import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
 import { AdminAccionesMasivas } from "./sections/acciones-masivas/admin-acciones-masivas"
 import { AdminBanners } from "./sections/banners/admin-banners"
 import { AdminClientes } from "./sections/clientes/admin-clientes"
+import { AdminCreditos } from "./sections/creditos/admin-creditos"
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
 import { AdminEventos } from "./sections/eventos/admin-eventos"
 import { AdminFacturacion } from "./sections/facturacion/admin-facturacion"
@@ -52,6 +54,7 @@ export type AdminSection =
   | "eventos"
   | "productos"
   | "clientes"
+  | "creditos"
   | "facturacion"
   | "pedidos"
   | "usuarios"
@@ -65,6 +68,7 @@ const ADMIN_SECTIONS: AdminSection[] = [
   "eventos",
   "productos",
   "clientes",
+  "creditos",
   "facturacion",
   "pedidos",
   "usuarios",
@@ -360,6 +364,12 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         icon: <Users className="size-4" />,
       },
       {
+        key: "creditos",
+        label: "Saldos",
+        description: "Crédito interno de clientes",
+        icon: <Coins className="size-4" />,
+      },
+      {
         key: "usuarios",
         label: "Usuarios / Roles",
         description: "Permisos de acceso",
@@ -524,6 +534,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     eventos: !isOperator ? <AdminEventos /> : null,
     productos: <AdminProductos />,
     clientes: <AdminClientes />,
+    creditos: !isOperator ? <AdminCreditos /> : null,
     facturacion: !isOperator ? <AdminFacturacion /> : null,
     pedidos: <AdminPedidos initialOrderId={initialOrderId} />,
     usuarios: !isOperator ? <AdminUsuarios /> : null,

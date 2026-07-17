@@ -270,7 +270,13 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
     return { label: "Mensaje recibido", dot: "bg-blue-300", style: base }
   }
 
-  if (claim.status === "recibido") return { label: "Reclamo recibido", dot: "bg-blue-300", style: base }
+  if (claim.status === "recibido") {
+    return {
+      label: "Reclamo recibido",
+      dot: "bg-emerald-200",
+      style: "border-emerald-200/45 bg-emerald-300/12 text-emerald-50",
+    }
+  }
   if (claim.status === "en_revision") return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }
   if (claim.status === "falta_informacion") return { label: "Esperando tu respuesta", dot: "bg-blue-300", style: base }
   if (["aprobado", "reintegro_pendiente", "cambio_pendiente", "cupon_pendiente", "reemplazo_enviado"].includes(claim.status)) {
@@ -387,20 +393,36 @@ function EvidenceUploader({
   files,
   onChange,
   disabled,
+  surface = "blue",
 }: {
   files: File[]
   onChange: (files: File[]) => void
   disabled?: boolean
+  surface?: "blue" | "neutral"
 }) {
+  const neutralSurface = surface === "neutral"
+  const labelClassName = neutralSurface
+    ? `flex min-h-11 w-full max-w-md items-center justify-start gap-2.5 rounded-xl border border-dashed border-[#344255] bg-[#1A222C] px-3 py-2 text-left transition-all duration-200 focus-within:border-[#5CA9E6] focus-within:ring-2 focus-within:ring-[#5CA9E6]/18 ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#4B6078] hover:bg-[#202A35]"}`
+    : `flex min-h-16 items-center justify-center gap-3 rounded-xl border border-dashed border-[#21476B] bg-[#2A313A] px-3 py-2 text-left transition-all duration-200 focus-within:border-[#2C6CA3] focus-within:ring-2 focus-within:ring-[#2C6CA3]/20 ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#2B5D8A] hover:bg-[#333B46]"}`
+  const iconClassName = neutralSurface
+    ? "flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#3E6C95] bg-[#112A43]"
+    : "flex size-9 shrink-0 items-center justify-center rounded-lg border border-[#21476B] bg-[#16304B]"
+  const helperClassName = neutralSurface
+    ? "mt-0.5 block text-[11px] text-[#9EB4C8]"
+    : "mt-0.5 block text-[11px] text-[#7D8FA1]"
+  const chipClassName = neutralSurface
+    ? "inline-flex max-w-64 items-center gap-1.5 rounded-lg border border-[#344255] bg-[#18212B] px-2.5 py-1.5 text-xs font-bold text-white"
+    : "inline-flex max-w-64 items-center gap-1.5 rounded-lg border border-[#21476B] bg-[#13263B] px-2.5 py-1.5 text-xs font-bold text-white"
+
   return (
     <div>
-      <label className={`flex min-h-16 items-center justify-center gap-3 rounded-xl border border-dashed border-[#21476B] bg-[#2A313A] px-3 py-2 text-left transition-all duration-200 focus-within:border-[#2C6CA3] focus-within:ring-2 focus-within:ring-[#2C6CA3]/20 ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#2B5D8A] hover:bg-[#333B46]"}`}>
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[#21476B] bg-[#16304B]">
+      <label className={labelClassName}>
+        <span className={iconClassName}>
           <Upload className="size-4 text-white" />
         </span>
         <span>
           <span className="block text-xs font-black text-white">Fotos o videos</span>
-          <span className="mt-0.5 block text-[11px] text-[#7D8FA1]">Imágenes, videos, PDF o documentos.</span>
+          <span className={helperClassName}>Imágenes, videos, PDF o documentos.</span>
         </span>
         <input
           type="file"
@@ -414,7 +436,7 @@ function EvidenceUploader({
       {files.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {files.map((file, index) => (
-            <span key={`${file.name}-${index}`} className="inline-flex max-w-64 items-center gap-1.5 rounded-lg border border-[#21476B] bg-[#13263B] px-2.5 py-1.5 text-xs font-bold text-white">
+            <span key={`${file.name}-${index}`} className={chipClassName}>
               <Paperclip className="size-3.5 shrink-0 text-white" />
               <span className="truncate">{file.name}</span>
               <button type="button" aria-label={`Quitar ${file.name}`} onClick={() => onChange(files.filter((_, itemIndex) => itemIndex !== index))}>
@@ -503,9 +525,11 @@ function CustomerClaimExperienceSkeleton() {
 export function CustomerClaimExperience({
   order,
   initialProblem,
+  claimsVerified = false,
 }: {
   order: SupabasePedido
   initialProblem?: ClaimProblemId
+  claimsVerified?: boolean
 }) {
   const router = useRouter()
   const orderItems = order.orden_items ?? []
@@ -517,8 +541,10 @@ export function CustomerClaimExperience({
   const canCreateHelpMessage = !delivered && !cancelled
   const initialProblemAllowed = POST_DELIVERY_PROBLEMS.some((item) => item.id === initialProblem)
   const defaultAffectedItems = orderItems.length === 1 ? [String(orderItems[0].id)] : []
+  const initialClaims = order.order_claims ?? []
+  const initialClaimsReady = claimsVerified || initialClaims.length > 0
 
-  const [claims, setClaims] = useState<SupabaseOrderClaim[]>(order.order_claims ?? [])
+  const [claims, setClaims] = useState<SupabaseOrderClaim[]>(initialClaims)
   const [affectedItems, setAffectedItems] = useState<string[]>(defaultAffectedItems)
   const [problem, setProblem] = useState<ClaimProblemId | null>(
     initialProblemAllowed ? initialProblem ?? null : null,
@@ -534,8 +560,8 @@ export function CustomerClaimExperience({
   const [refundBank, setRefundBank] = useState("")
   const [refundAmountConfirmed, setRefundAmountConfirmed] = useState("")
   const [justCreated, setJustCreated] = useState<SupabaseOrderClaim | null>(null)
-  const [claimsReady, setClaimsReady] = useState(false)
-  const [claimsReadyOrderId, setClaimsReadyOrderId] = useState<number | null>(null)
+  const [claimsReady, setClaimsReady] = useState(initialClaimsReady)
+  const [claimsReadyOrderId, setClaimsReadyOrderId] = useState<number | null>(order.id)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const shellRef = useRef<HTMLElement>(null)
@@ -548,8 +574,13 @@ export function CustomerClaimExperience({
   const loadClaims = useCallback(async () => {
     try {
       const response = await fetch(`/api/orders/${order.id}/claims`)
+      if (!response.ok) return
       const data = (await response.json()) as { claims?: SupabaseOrderClaim[] }
-      if (response.ok) setClaims(data.claims ?? [])
+      if (Array.isArray(data.claims)) {
+        setClaims(data.claims)
+      }
+    } catch {
+      // Keep the already loaded order claims on screen if the background refresh fails.
     } finally {
       setClaimsReadyOrderId(order.id)
       setClaimsReady(true)
@@ -557,9 +588,9 @@ export function CustomerClaimExperience({
   }, [order.id])
 
   useEffect(() => {
-    setClaimsReady(false)
-    setClaimsReadyOrderId(null)
-    setClaims(order.order_claims ?? [])
+    setClaims(initialClaims)
+    setClaimsReadyOrderId(order.id)
+    setClaimsReady(initialClaimsReady)
     void loadClaims()
     const intervalId = window.setInterval(() => void loadClaims(), 5000)
     window.addEventListener("focus", loadClaims)
@@ -567,7 +598,7 @@ export function CustomerClaimExperience({
       window.clearInterval(intervalId)
       window.removeEventListener("focus", loadClaims)
     }
-  }, [loadClaims])
+  }, [claimsVerified, initialClaims.length, loadClaims, order.id])
 
   const visibleClaims = claims.filter((claim) => claim.failure_type !== "cancelar_compra")
   const displayableClaims = canCreatePostDeliveryClaim
@@ -589,28 +620,30 @@ export function CustomerClaimExperience({
   const messageCount = claim?.order_claim_messages?.length ?? 0
   const goToOrders = () => router.push("/cuenta?tab=ordenes")
 
+  const scrollToPageTop = useCallback(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" })
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [])
+
   useLayoutEffect(() => {
     const chat = chatRef.current
     if (!chat) return
     chat.scrollTop = chat.scrollHeight
   }, [claim?.id, messageCount])
 
-  const scrollToClaimTop = () => {
-    window.requestAnimationFrame(() => {
-      if (!shellRef.current) {
-        window.scrollTo({ top: 0, behavior: "auto" })
-        return
-      }
+  useLayoutEffect(() => {
+    if (!justCreated) return
 
-      const headerOffset = 84
-      const top = Math.max(
-        0,
-        shellRef.current.getBoundingClientRect().top + window.scrollY - headerOffset,
-      )
+    scrollToPageTop()
+    const frameId = window.requestAnimationFrame(scrollToPageTop)
+    const timeoutId = window.setTimeout(scrollToPageTop, 60)
 
-      window.scrollTo({ top, behavior: "auto" })
-    })
-  }
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.clearTimeout(timeoutId)
+    }
+  }, [justCreated, scrollToPageTop])
 
   if (!claimsReady || claimsReadyOrderId !== order.id) {
     return <CustomerClaimExperienceSkeleton />
@@ -692,10 +725,9 @@ export function CustomerClaimExperience({
       }
 
       updateClaimInState(data.claim)
-      setJustCreated(data.claim)
       setDescription("")
       setFiles([])
-      scrollToClaimTop()
+      scrollToPageTop()
     } catch {
       setError("No se pudo enviar el reclamo. Intentá nuevamente.")
     } finally {
@@ -737,9 +769,8 @@ export function CustomerClaimExperience({
       }
 
       updateClaimInState(data.claim)
-      setJustCreated(data.claim)
       setDescription("")
-      scrollToClaimTop()
+      scrollToPageTop()
     } catch {
       setError("No se pudo enviar el mensaje de ayuda. Intentá nuevamente.")
     } finally {
@@ -938,7 +969,7 @@ export function CustomerClaimExperience({
     return (
       <section
         ref={shellRef}
-        className="customer-claim-followup-shell mb-1 overflow-hidden rounded-xl border border-blue-300/15"
+        className="customer-claim-followup-shell claim-chat-shell mb-1 overflow-hidden rounded-2xl border border-[#21476B]"
         style={{
           background: "#070C12",
           backgroundColor: "#070C12",
@@ -948,17 +979,21 @@ export function CustomerClaimExperience({
           WebkitBackdropFilter: "none",
         }}
       >
-        <header className="flex flex-col gap-3 border-b border-white/8 bg-[#07111B] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-[#18334D] bg-[#0B1724] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">
               {getOrderCode(order.id)} · {hideClosedHelpMetadata ? "Ayuda" : (PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo")}
             </p>
-            <h3 className="mt-1 text-base font-black text-white">
+            <h3 className="mt-1.5 text-2xl font-black leading-7 text-white">
               {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Chat de ayuda" : "Chat del reclamo"}
             </h3>
             {!hideClosedHelpMetadata && (
-              <p className="mt-1 truncate text-xs font-semibold text-white/55">
-                {cancellation ? "Pedido completo" : helpMessage ? "Consulta sobre la compra" : affectedProductLabel}
+              <p className="mt-2 max-w-3xl text-sm font-semibold leading-5 text-[#9EB4C8]">
+                {cancellation
+                  ? "Este chat reúne el seguimiento de la cancelación."
+                  : helpMessage
+                    ? "BEYONIX te responderá por este mismo chat."
+                    : `Producto afectado: ${affectedProductLabel}. BEYONIX revisará el caso y te responderá acá.`}
               </p>
             )}
           </div>
@@ -973,7 +1008,7 @@ export function CustomerClaimExperience({
               </div>
             </div>
           ) : (
-            <span className={`inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black text-white ${info.style}`}>
+            <span className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black text-white ${info.style}`}>
               <span className={`size-2 rounded-full ${info.dot}`} />
               {info.label}
             </span>
@@ -1017,29 +1052,29 @@ export function CustomerClaimExperience({
           </div>
         )}
 
-        <div ref={chatRef} className="customer-claim-chat-thread min-h-[18rem] max-h-[30rem] space-y-3 overflow-y-auto bg-[#070C12] px-3.5 py-3.5">
+        <div ref={chatRef} className="customer-claim-chat-thread min-h-[22rem] max-h-[34rem] space-y-4 overflow-y-auto bg-[#070C12] px-5 py-5">
           {visibleMessages.map((message) => {
             const customer = message.author_role === "cliente"
             return (
               <div key={message.id} className={`flex ${customer ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[84%] rounded-2xl px-3 py-2 shadow-[0_10px_28px_rgba(0,0,0,0.18)] sm:max-w-[70%] ${customer ? "rounded-br-md bg-[#112A43]" : "rounded-bl-md border border-white/8 bg-[#101820]"}`}>
-                  <p className="text-[10px] font-black uppercase tracking-wide text-blue-200/80">{customer ? "Vos" : "BEYONIX"}</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm font-semibold leading-5 text-white">
+                <div className={`max-w-[86%] rounded-2xl px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.22)] sm:max-w-[72%] ${customer ? "rounded-br-md border border-[#2C6CA3]/35 bg-[#112A43]" : "rounded-bl-md border border-white/9 bg-[#101820]"}`}>
+                  <p className="text-[11px] font-black uppercase tracking-wide text-blue-200/80">{customer ? "Tu mensaje" : "BEYONIX"}</p>
+                  <p className="mt-1.5 whitespace-pre-wrap text-[15px] font-semibold leading-6 text-white">
                     <CustomerClaimMessageBody message={message.message} />
                   </p>
-                  <p className="mt-1 text-[10px] font-semibold text-white/40">{formatDate(message.created_at)}</p>
+                  <p className="mt-2 text-[11px] font-semibold text-white/42">{formatDate(message.created_at)}</p>
                 </div>
               </div>
             )
           })}
           {visibleMessages.length === 0 && (
-            <p className="rounded-lg border border-white/8 bg-[#101820] px-3 py-2 text-xs font-semibold text-white/65">
+            <p className="rounded-xl border border-white/8 bg-[#101820] px-4 py-3 text-sm font-semibold text-white/65">
               La conversación todavía no tiene mensajes.
             </p>
           )}
         </div>
 
-        <div className="border-t border-white/8 bg-[#08111A] px-3.5 py-3">
+        <div className="border-t border-[#18334D] bg-[#0B1724] px-5 py-4">
           {evidenceSent && (
             <details className="mb-2 rounded-lg border border-white/8 bg-[#101820] px-3 py-2">
               <summary className="cursor-pointer text-xs font-black text-blue-200">
@@ -1083,8 +1118,8 @@ export function CustomerClaimExperience({
                 Datos recibidos. BEYONIX realizará el reintegro.
               </p>
             ) : customerTurnLocked ? (
-              <p className="rounded-lg border border-blue-300/15 bg-[#112A43]/30 px-3 py-2 text-xs font-bold text-blue-100">
-                Mensaje enviado. Te responderemos por este chat.
+              <p className="rounded-xl border border-[#21476B] bg-[#101820] px-4 py-3 text-sm font-bold text-[#B8D6F0]">
+                Mensaje enviado. Te vamos a responder por este chat.
               </p>
             ) : (
               <div className="space-y-2">
@@ -1095,9 +1130,9 @@ export function CustomerClaimExperience({
                     onChange={(event) => setReply(event.target.value)}
                     rows={2}
                     placeholder="Escribí tu mensaje"
-                    className="min-h-12 flex-1 resize-none rounded-lg border border-blue-300/15 bg-[#101820] px-3 py-2 text-sm leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/50 disabled:cursor-not-allowed disabled:opacity-45"
+                    className="min-h-12 flex-1 resize-none rounded-xl border border-[#21476B] bg-[#101820] px-3.5 py-2.5 text-sm leading-5 text-white outline-none placeholder:text-white/40 focus:border-blue-300/50 disabled:cursor-not-allowed disabled:opacity-45"
                   />
-                  <button type="button" disabled={loading} onClick={() => void sendReply(claim)} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white transition hover:bg-[#245985] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[#112A43]">
+                  <button type="button" disabled={loading} onClick={() => void sendReply(claim)} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/35 bg-[#112A43] px-5 text-sm font-black text-white transition hover:border-beyonix-blue-light/65 hover:bg-[#183B5E] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[#112A43]">
                     <Send className="size-3.5" />
                     {loading ? "Enviando..." : "Enviar"}
                   </button>
@@ -1223,7 +1258,7 @@ export function CustomerClaimExperience({
             </div>
           </div>
 
-          <section className="mt-4 rounded-xl border border-[#18334D] bg-[#101923] p-4 sm:p-5">
+          <div className="mt-4 rounded-xl border border-[#18334D] bg-[#101923] p-4 sm:p-5">
             <div>
               <h4 className="border-l-4 border-[#2C6CA3] py-0.5 pl-3 text-base font-bold leading-5 text-white">Contanos qué necesitás</h4>
               <p className="mt-1.5 pl-4 text-xs font-medium leading-5 text-[#9EB4C8]">
@@ -1251,7 +1286,7 @@ export function CustomerClaimExperience({
                 <CircleCheck className="mt-0.5 size-4 shrink-0 text-[#9EB4C8]" />
                 <span>Este mensaje no inicia un reclamo formal. Es un canal de ayuda para resolver consultas antes de la entrega.</span>
               </div>
-              {error && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
+              {error && <p className="mb-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
@@ -1264,27 +1299,27 @@ export function CustomerClaimExperience({
                 </button>
               </div>
             </div>
-          </section>
+          </div>
         </div>
       )}
 
       {canCreatePostDeliveryClaim && (
-        <div className="mt-3 rounded-xl border border-white/9 bg-[#141820] p-4 sm:p-5">
+        <div className="mt-3 rounded-xl border border-[#2C6CA3]/28 bg-[#0B1724] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_42px_rgba(0,0,0,0.22)] sm:p-6">
           <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
               <MessageCircle className="size-5 text-white" />
             </span>
             <div>
-              <h4 className="text-sm font-black text-white">Iniciar reclamo</h4>
-              <p className="mt-1 text-xs leading-5 text-white/65">
+              <h4 className="text-lg font-black leading-6 text-white">Iniciar reclamo</h4>
+              <p className="mt-1 text-sm leading-5 text-white/68">
                 Contanos qué problema tuvo el producto recibido. BEYONIX revisará el caso y te responderá desde este chat.
               </p>
             </div>
           </div>
 
-          <div className="mt-4">
-            <p className="text-10px font-black uppercase tracking-[0.16em] text-blue-300">Producto afectado</p>
-            <div className="mt-2 grid gap-2 md:grid-cols-2">
+          <div className="mt-5">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">Producto afectado</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               {orderItems.map((item) => {
                 const value = String(item.id)
                 const image = getItemImage(item)
@@ -1295,18 +1330,18 @@ export function CustomerClaimExperience({
                     key={item.id}
                     type="button"
                     onClick={() => toggleAffectedProduct(value)}
-                    className={`flex min-h-20 items-center gap-3 rounded-xl border p-3.5 text-left transition ${
+                    className={`flex min-h-16 min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
                       selectedItem
                         ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_18px_rgba(17,42,67,0.35)]"
                         : "border-white/9 bg-[#101820] hover:border-blue-300/30"
                     }`}
                   >
-                    <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">
+                    <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
                       {image ? <img src={image} alt={name} className="size-full object-contain" /> : <Package className="size-5 text-white" />}
                     </span>
                     <span className="min-w-0">
-                      <strong className="block text-sm text-white">{name}</strong>
-                      <span className="mt-1 block text-xs text-white/62">{getItemVariant(item)} · Cantidad: {item.cantidad}</span>
+                      <strong className="block truncate text-[15px] leading-5 text-white">{name}</strong>
+                      <span className="mt-0.5 block truncate text-[13px] text-white/62">{getItemVariant(item)} · Cantidad: {item.cantidad}</span>
                     </span>
                   </button>
                 )
@@ -1315,27 +1350,27 @@ export function CustomerClaimExperience({
                 <button
                   type="button"
                   onClick={selectWholeOrder}
-                  className={`flex min-h-20 items-center gap-3 rounded-xl border p-3.5 text-left transition ${
+                  className={`flex min-h-16 min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
                     affectedItems.includes("order")
                       ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_18px_rgba(17,42,67,0.35)]"
                       : "border-white/9 bg-[#101820] hover:border-blue-300/30"
                   }`}
                 >
-                  <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-[#1B2028]">
-                    <Truck className="size-6 text-white" />
+                  <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-[#1B2028]">
+                    <Truck className="size-5 text-white" />
                   </span>
-                  <span>
-                    <strong className="block text-sm text-white">Todo el pedido recibido</strong>
-                    <span className="mt-1 block text-xs leading-4 text-white/62">Para faltantes o problemas generales del pedido recibido.</span>
+                  <span className="min-w-0">
+                    <strong className="block text-[15px] leading-5 text-white">Todo el pedido</strong>
+                    <span className="mt-0.5 block truncate text-[13px] text-white/62">Problema general</span>
                   </span>
                 </button>
               )}
             </div>
           </div>
 
-          <div className="mt-4">
-            <p className="text-10px font-black uppercase tracking-[0.16em] text-blue-300">Motivo</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">Motivo</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {POST_DELIVERY_PROBLEMS.map((item) => {
                 const Icon = item.icon
                 return (
@@ -1346,18 +1381,18 @@ export function CustomerClaimExperience({
                       setProblem(item.id)
                       setError("")
                     }}
-                    className={`flex min-h-20 items-center gap-3 rounded-xl border p-3.5 text-left transition ${
+                    className={`flex min-h-[4.5rem] items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
                       problem === item.id
                         ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_18px_rgba(17,42,67,0.3)]"
                         : "border-white/9 bg-[#101820] hover:border-blue-300/30"
                     }`}
                   >
                     <span className="rounded-lg bg-[#1B2028] p-2">
-                      <Icon className="size-5 text-white" />
+                      <Icon className="size-4.5 text-white" />
                     </span>
-                    <span>
-                      <strong className="block text-sm text-white">{item.title}</strong>
-                      <span className="mt-0.5 block text-xs leading-4 text-white/60">{item.description}</span>
+                    <span className="min-w-0">
+                      <strong className="block text-sm leading-4 text-white">{item.title}</strong>
+                      <span className="mt-1 block text-[13px] leading-4 text-white/60">{item.description}</span>
                     </span>
                   </button>
                 )
@@ -1365,10 +1400,10 @@ export function CustomerClaimExperience({
             </div>
           </div>
 
-          <section className="mt-4 rounded-xl border border-[#18334D] bg-[#101923] p-4 sm:p-5">
+          <div className="customer-claim-solid-form-panel mt-5 rounded-xl border border-[#344255] bg-[#111820] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_16px_36px_rgba(0,0,0,0.32)] sm:p-6">
             <div>
-              <h4 className="border-l-4 border-[#2C6CA3] py-0.5 pl-3 text-base font-bold leading-5 text-white">Contanos qué pasó</h4>
-              <p className="mt-1.5 pl-4 text-xs font-medium leading-5 text-[#9EB4C8]">Describí el problema con el mayor detalle posible.</p>
+              <h4 className="border-l-4 border-[#5CA9E6] py-0.5 pl-3 text-lg font-bold leading-6 text-white">Contanos qué pasó</h4>
+              <p className="mt-1.5 pl-4 text-sm font-medium leading-5 text-[#9EB4C8]">Describí el problema con el mayor detalle posible.</p>
               <div className="mt-3">
                 <textarea
                   value={description}
@@ -1377,40 +1412,35 @@ export function CustomerClaimExperience({
                   minLength={CLAIM_DESCRIPTION_MIN_LENGTH}
                   maxLength={CLAIM_DESCRIPTION_MAX_LENGTH}
                   placeholder="Ejemplo: el producto enciende, pero se apaga después de unos segundos..."
-                  className="w-full resize-none rounded-xl border border-[#21476B] bg-[#2A313A] px-3 py-2.5 text-sm font-medium leading-6 text-white outline-none placeholder:text-[#A8B3BE] transition-all duration-200 hover:border-[#2B5D8A] hover:bg-[#333B46] focus:border-[#2C6CA3] focus:ring-2 focus:ring-[#2C6CA3]/20"
+                  className="w-full resize-none rounded-xl border border-[#344255] bg-[#1A222C] px-3.5 py-3 text-base font-medium leading-6 text-white outline-none placeholder:text-[#9AA7B5] transition-all duration-200 hover:border-[#4B6078] hover:bg-[#202A35] focus:border-[#5CA9E6] focus:ring-2 focus:ring-[#5CA9E6]/18"
                 />
                 <p className="mt-1.5 pr-1 text-right text-10px text-white/40">{description.length}/{CLAIM_DESCRIPTION_MAX_LENGTH}</p>
               </div>
             </div>
 
-            <div className="mt-5 border-t border-[#18334D]/85 pt-5">
-              <h4 className="border-l-4 border-[#2C6CA3] py-0.5 pl-3 text-base font-bold leading-5 text-white">Fotos o videos</h4>
-              <p className="mt-1.5 pl-4 text-xs font-medium leading-5 text-[#9EB4C8]">Podés adjuntar evidencia para ayudarnos a revisar el caso.</p>
+            <div className="mt-5 border-t border-[#2A3644] pt-5">
+              <h4 className="border-l-4 border-[#5CA9E6] py-0.5 pl-3 text-lg font-bold leading-6 text-white">Fotos o videos</h4>
+              <p className="mt-1.5 pl-4 text-sm font-medium leading-5 text-[#9EB4C8]">Podés adjuntar evidencia para ayudarnos a revisar el caso.</p>
               <div className="mt-3">
-                <EvidenceUploader files={files} onChange={setFiles} disabled={loading} />
+                <EvidenceUploader files={files} onChange={setFiles} disabled={loading} surface="neutral" />
               </div>
             </div>
 
-            <div className="mt-5 border-t border-[#18334D]/85 pt-5">
-              <h4 className="border-l-4 border-[#2C6CA3] py-0.5 pl-3 text-base font-bold leading-5 text-white">Enviar reclamo</h4>
-              <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 text-xs font-semibold leading-5 text-[#9EB4C8]">
-                <CircleCheck className="mt-0.5 size-4 shrink-0 text-[#9EB4C8]" />
-                <span>Revisaremos tu caso y te responderemos desde esta misma sección.</span>
-              </div>
+            <div className="mt-5 border-t border-[#2A3644] pt-5">
               {error && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
-              <div className="mt-4 flex justify-end">
+              <div className="flex justify-end">
                 <button
                   type="button"
                   aria-label="Enviar reclamo"
                   disabled={loading || description.trim().length < CLAIM_DESCRIPTION_MIN_LENGTH}
                   onClick={() => void createClaim()}
-                  className="h-10 w-full rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-5 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111820] disabled:text-white/45 disabled:shadow-none disabled:hover:border-white/10 disabled:hover:bg-[#111820] sm:w-auto"
+                  className="h-11 w-full rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-6 text-sm font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111820] disabled:text-white/45 disabled:shadow-none disabled:hover:border-white/10 disabled:hover:bg-[#111820] sm:w-auto"
                 >
                   {loading ? "Enviando..." : "Enviar reclamo"}
                 </button>
               </div>
             </div>
-          </section>
+          </div>
         </div>
       )}
 

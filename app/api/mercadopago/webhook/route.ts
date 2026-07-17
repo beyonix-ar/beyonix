@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 
+import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -23,6 +24,8 @@ interface OrderRow {
   id: number
   estado: string
   total?: number | null
+  external_amount_due?: number | null
+  credit_balance_used?: number | null
   cliente_email: string | null
   cliente_nombre: string | null
   financial_status?: string | null
@@ -155,7 +158,7 @@ async function handleWebhook(request: Request) {
 
     const { data: order, error: orderError } = await supabase
       .from("ordenes")
-      .select("id, estado, total, cliente_email, cliente_nombre, financial_status")
+      .select("id, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status")
       .eq("id", orderId)
       .single()
 
@@ -186,6 +189,16 @@ async function handleWebhook(request: Request) {
         .update(paymentPayload as never)
         .eq("id", orderId)
 
+      if (
+        ["cancelled", "rejected"].includes(payment.status) &&
+        Number(orderRow.credit_balance_used ?? 0) > 0
+      ) {
+        await reverseCustomerCreditForOrder(supabase, {
+          orderId,
+          description: "Reintegro de saldo por pago rechazado",
+        })
+      }
+
       return NextResponse.json({ ok: true })
     }
 
@@ -207,7 +220,9 @@ async function handleWebhook(request: Request) {
         estado: "pagado",
         financial_status: "payment_confirmed",
         payment_confirmed_at: payment.date_approved ?? new Date().toISOString(),
-        payment_confirmed_amount: Number(orderRow.total ?? 0),
+        payment_confirmed_amount: Number(
+          orderRow.external_amount_due ?? orderRow.total ?? 0
+        ),
       } as never)
       .eq("id", orderId)
 

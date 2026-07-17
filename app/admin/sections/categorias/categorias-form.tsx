@@ -25,7 +25,7 @@ import {
 
 interface CategoriaFormProps {
   categoria?: SupabaseCategoria | null
-  onSaved: () => void
+  onSaved: (categoria?: SupabaseCategoria) => void | Promise<void>
   onCancel: () => void
 }
 
@@ -96,17 +96,15 @@ export function CategoriaForm({
         posicion_destacada: destacado ? posicionDestacada : null,
       }
 
-      if (categoria) {
-        await updateCategoria(categoria.id, payload)
-      } else {
-        await createCategoria(payload)
-      }
+      const savedCategory = categoria
+        ? await updateCategoria(categoria.id, payload)
+        : await createCategoria(payload)
 
       if (categoria?.imagen && categoria.imagen !== nextImage) {
         await deleteCategoriaImageByUrl(categoria.imagen)
       }
 
-      onSaved()
+      await onSaved(savedCategory)
     } catch (err) {
       console.error(err)
       setError("Error guardando categoría.")
@@ -145,7 +143,7 @@ export function CategoriaForm({
         onSubmit={handleSubmit}
         className="mt-5 grid gap-5 xl:grid-cols-2"
       >
-        <section className="admin-ds-surface space-y-5 p-5">
+        <section className="admin-ds-surface min-w-0 space-y-5 p-5">
           <div>
             <div>
               <label htmlFor="categoria-nombre" className={labelClass}>
@@ -296,7 +294,7 @@ export function CategoriaForm({
           </div>
         </section>
 
-        <aside className="admin-ds-surface p-4">
+        <aside className="admin-ds-surface min-w-0 overflow-hidden p-4">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
@@ -304,6 +302,7 @@ export function CategoriaForm({
               </p>
               <p className="mt-1 text-xs font-medium text-white/42">
                 Formato horizontal para la portada de la categoría.
+                Tamaño exacto del banner: 1568 x 600 px.
               </p>
             </div>
 

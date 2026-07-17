@@ -118,7 +118,7 @@ export function AdminNotificationBell({
         onClick={() => setOpen((current) => !current)}
         onFocus={openPopover}
         className={cn(
-          "admin-ds-bell-button relative flex size-10 cursor-pointer items-center justify-center rounded-full border text-white transition-all",
+          "admin-ds-bell-button relative flex size-11 cursor-pointer items-center justify-center rounded-full border text-white transition-all",
           count > 0
             ? sensitiveTone
               ? ADMIN_SENSITIVE_DANGER.action
@@ -144,7 +144,7 @@ export function AdminNotificationBell({
       {open && (
         <div
           className={cn(
-            "admin-ds-popover-position absolute top-12 z-100 w-80 sm:w-96",
+            "admin-ds-popover-position absolute top-[52px] z-100 w-80 sm:w-96",
             align === "start" ? "left-0" : "right-0",
           )}
           onMouseEnter={openPopover}

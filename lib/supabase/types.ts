@@ -170,6 +170,19 @@ export interface SupabasePedido {
   free_shipping_applied?: boolean
   estado: string
   total: number
+  original_total?: number | null
+  credit_balance_used?: number | null
+  external_amount_due?: number | null
+  payment_composition?: {
+    credit_balance_used?: number
+    external_amount_due?: number
+    parts?: Array<{
+      type: string
+      label: string
+      amount: number
+    }>
+  } | null
+  credit_balance_movement_id?: string | null
   payment_id?: string | null
   payment_status?: string | null
   payment_method_id?: string | null
@@ -299,6 +312,33 @@ export interface SupabaseCustomerNotification {
   created_at: string
 }
 
+export type SupabaseCustomerCreditMovementType =
+  | "credit"
+  | "debit"
+  | "reversal"
+  | "adjustment"
+  | "expiration"
+
+export interface SupabaseCustomerCreditMovement {
+  id: string
+  user_id: string
+  movement_type: SupabaseCustomerCreditMovementType
+  amount: number
+  description: string
+  source_type: string
+  source_id?: string | null
+  order_id?: number | null
+  claim_id?: number | null
+  credit_note_id?: string | null
+  created_by?: string | null
+  related_movement_id?: string | null
+  expires_at?: string | null
+  created_at: string
+  metadata?: Record<string, unknown> | null
+  source_key?: string | null
+  resulting_balance?: number | null
+}
+
 export type SupabaseCustomerNotificationCampaignStatus =
   | "draft"
   | "published"
@@ -397,6 +437,7 @@ export type OrderClaimResolution =
   | "envio_unidad_faltante"
   | "reintegro_total"
   | "reintegro_parcial"
+  | "saldo_a_favor"
   | "cupon_descuento"
   | "rechazado"
   | "otro"

@@ -38,6 +38,7 @@ export async function GET(request: Request) {
     let ownReviewIds = new Set<number>()
     let eligibleReview = null
     let ownProductReviews: Array<Record<string, unknown>> = []
+    let ownExperienceReview: Record<string, unknown> | null = null
 
     if (user) {
       const [ownReviewsResult, role] = await Promise.all([
@@ -56,16 +57,30 @@ export async function GET(request: Request) {
       }
 
       if (Number.isInteger(orderId) && orderId > 0) {
-        const ownProductResult = await admin
-          .schema("public")
-          .from("reviews")
-          .select("product_id, rating, comment")
-          .eq("user_id", user.id)
-          .eq("order_id", orderId)
-          .not("product_id", "is", null)
+        const [ownProductResult, ownExperienceResult] = await Promise.all([
+          admin
+            .schema("public")
+            .from("reviews")
+            .select("product_id, rating, comment")
+            .eq("user_id", user.id)
+            .eq("order_id", orderId)
+            .not("product_id", "is", null),
+          admin
+            .schema("public")
+            .from("reviews")
+            .select("id, order_id, rating, comment, created_at")
+            .eq("user_id", user.id)
+            .eq("order_id", orderId)
+            .is("product_id", null)
+            .maybeSingle(),
+        ])
 
         if (!ownProductResult.error) {
           ownProductReviews = ownProductResult.data ?? []
+        }
+
+        if (!ownExperienceResult.error) {
+          ownExperienceReview = ownExperienceResult.data ?? null
         }
       }
 
@@ -74,7 +89,11 @@ export async function GET(request: Request) {
       }
 
       try {
-        eligibleReview = await getEligibleReview(admin, user)
+        eligibleReview = await getEligibleReview(
+          admin,
+          user,
+          Number.isInteger(orderId) && orderId > 0 ? orderId : undefined,
+        )
       } catch (eligibilityError) {
         console.error("REVIEW ELIGIBILITY ERROR:", eligibilityError)
       }
@@ -87,6 +106,7 @@ export async function GET(request: Request) {
         ),
         eligibleReview,
         ownProductReviews,
+        ownExperienceReview,
       },
       {
         headers: {
@@ -118,6 +138,7 @@ export async function POST(request: Request) {
     }
     const rating = Number(body.rating)
     const productId = Number(body.productId)
+    const orderId = Number(body.orderId)
     const hasProduct = Number.isInteger(productId) && productId > 0
     const commentValidation = validateReviewComment(body.comment)
 
@@ -135,23 +156,16 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!hasProduct && !commentValidation.comment) {
-      return Response.json(
-        { error: "Escribí una reseña breve sobre tu experiencia." },
-        { status: 400 }
-      )
-    }
-
     const eligibleReview = hasProduct
       ? await getEligibleProductReview(
           auth.admin,
           auth.user,
-          Number(body.orderId),
+          orderId,
           productId,
         )
-      : await getEligibleReview(auth.admin, auth.user)
+      : await getEligibleReview(auth.admin, auth.user, orderId)
 
-    if (!eligibleReview || eligibleReview.orderId !== Number(body.orderId)) {
+    if (!eligibleReview || eligibleReview.orderId !== orderId) {
       return Response.json(
         { error: "No encontramos una compra verificada disponible para reseñar." },
         { status: 403 }

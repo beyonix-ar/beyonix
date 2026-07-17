@@ -860,8 +860,11 @@
 }
 
 .admin-category-image-dropzone {
-  aspect-ratio: 16 / 10;
-  min-height: 22rem;
+  aspect-ratio: 1568 / 600;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
   border-color: rgba(92, 159, 215, 0.28) !important;
   border-radius: 1rem !important;
   background-color: rgba(11, 22, 34, 0.96) !important;
@@ -928,13 +931,13 @@
 
 @media (min-width: 1280px) {
   .admin-category-image-dropzone {
-    min-height: 31.25rem;
+    min-height: 0;
   }
 }
 
 @media (min-width: 1536px) {
   .admin-category-image-dropzone {
-    min-height: 36.25rem;
+    min-height: 0;
   }
 }
 
@@ -1090,6 +1093,47 @@
   color: #d7ecff !important;
 }
 
+.admin-category-position-trigger {
+  min-height: 2.75rem !important;
+  border-radius: 0.95rem !important;
+  border-color: rgba(92, 159, 215, 0.34) !important;
+  background:
+    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 0 1px rgba(30, 77, 123, 0.06) !important;
+}
+
+.admin-category-position-trigger:hover,
+.admin-category-position-trigger:focus-visible {
+  border-color: rgba(140, 200, 242, 0.58) !important;
+  background:
+    linear-gradient(145deg, rgba(17, 42, 67, 0.7), rgba(7, 17, 27, 0.98)) !important;
+  box-shadow:
+    0 0 0 2px rgba(140, 200, 242, 0.1),
+    0 0 18px rgba(96, 165, 250, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.admin-category-position-menu {
+  padding: 0.45rem !important;
+  border-color: rgba(140, 200, 242, 0.32) !important;
+}
+
+.admin-category-position-menu .admin-select-scrollbar {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0;
+}
+
+.admin-category-position-option {
+  min-height: 2.2rem;
+}
+
+.admin-category-position-option:hover {
+  background-color: rgba(17, 42, 67, 0.82) !important;
+}
+
 .admin-ds-button,
 .beyonix-admin-main :where(button, a)[class*="rounded"]:not(.admin-control-select) {
   border-radius: var(--admin-radius) !important;
@@ -1213,7 +1257,13 @@
   overflow: hidden;
 }
 
-.admin-products-table .admin-product-row::before {
+.admin-products-table .admin-product-row-grid {
+  border-radius: 0 !important;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.admin-products-table .admin-product-row-grid::before {
   background:
     linear-gradient(90deg, rgba(17, 42, 67, 0.42), rgba(7, 17, 27, 0.86));
   content: "";
@@ -1225,12 +1275,13 @@
   z-index: 0;
 }
 
-.admin-products-table .admin-product-row:hover::before {
+.admin-products-table .admin-product-row-grid:hover::before {
   opacity: 1;
 }
 
-.admin-products-table .admin-product-row-grid {
-  border-radius: 0 !important;
+.admin-products-table .admin-product-row-grid > * {
+  position: relative;
+  z-index: 1;
 }
 
 .admin-ds-skeleton {
@@ -1624,10 +1675,10 @@
 }
 
 main[class*="bg-"],
-section[class*="bg-"]:not(.checkout-form-panel),
+section[class*="bg-"]:not(.checkout-form-panel):not(.customer-claim-solid-form-panel),
 footer[class*="bg-"],
 body > div.relative.z-10 main,
-body > div.relative.z-10 section:not(.checkout-form-panel):not(.customer-claim-followup-shell),
+body > div.relative.z-10 section:not(.checkout-form-panel):not(.customer-claim-followup-shell):not(.customer-claim-solid-form-panel),
 body > div.relative.z-10 footer,
 body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   background-color: transparent !important;
@@ -3275,6 +3326,42 @@ div.claim-form-shell::after {
   margin-top: 16px;
   border-top: 1px solid rgba(24, 51, 77, 0.85);
   padding-top: 16px;
+}
+
+.customer-claim-solid-form-panel {
+  background: #111820 !important;
+  background-color: #111820 !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  isolation: isolate;
+}
+
+.customer-claim-solid-form-panel::before,
+.customer-claim-solid-form-panel::after {
+  background: none !important;
+  background-image: none !important;
+  content: none !important;
+  display: none !important;
+}
+
+.customer-claim-page-frame:has(.customer-claim-followup-shell) {
+  align-items: flex-start;
+  padding-top: 0;
+}
+
+.customer-claim-page-frame:has(.claim-chat-shell) {
+  padding-top: 0;
+}
+
+.claim-chat-shell {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 72rem;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .order-detail-solid-surface > div > header,

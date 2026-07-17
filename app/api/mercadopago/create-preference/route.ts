@@ -10,6 +10,16 @@ import {
 } from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
+import {
+  calculateCustomerCreditApplication,
+  getPaymentComposition,
+  normalizeMoney,
+} from "@/lib/customer-credit"
+import {
+  applyCustomerCreditToOrder,
+  getCustomerCreditBalance,
+  reverseCustomerCreditForOrder,
+} from "@/lib/customer-credit/server"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
@@ -29,6 +39,7 @@ interface CheckoutPayload {
   items?: CheckoutItemPayload[]
   reservationSessionId?: string | null
   storeBenefitId?: string | null
+  customerCreditAmount?: number | string | null
   customer?: {
     nombre?: string
     email?: string
@@ -221,6 +232,8 @@ function isSchemaCacheColumnError(error: { message?: string } | null) {
 }
 
 export async function POST(request: Request) {
+  let creditAppliedOrderId: number | null = null
+
   try {
     if (!mercadoPagoClient) {
       return NextResponse.json(
@@ -345,10 +358,56 @@ export async function POST(request: Request) {
     const totalAfterStoreBenefit =
       Math.max(totals.productsTotal - storeBenefitDiscountAmount, 0) +
       totals.shipping
+    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
+    const customerCreditApplication =
+      requestedCredit > 0
+        ? calculateCustomerCreditApplication({
+            availableBalance: user
+              ? await getCustomerCreditBalance(admin, user.id)
+              : 0,
+            eligibleTotal: totalAfterStoreBenefit,
+            requestedAmount: requestedCredit,
+          })
+        : {
+            appliedAmount: 0,
+            externalAmountDue: totalAfterStoreBenefit,
+          }
+
+    if (requestedCredit > 0 && !user) {
+      return NextResponse.json(
+        { error: "Iniciá sesión para usar tu saldo a favor." },
+        { status: 401 },
+      )
+    }
+
+    if (
+      requestedCredit > 0 &&
+      Math.abs(customerCreditApplication.appliedAmount - requestedCredit) > 0.009
+    ) {
+      return NextResponse.json(
+        { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
+        { status: 409 },
+      )
+    }
+
+    if (customerCreditApplication.externalAmountDue <= 0) {
+      return NextResponse.json(
+        { error: "El saldo cubre el total. Confirmá la compra con saldo a favor." },
+        { status: 400 },
+      )
+    }
 
     const orderPayload = {
       usuario_id: user?.id ?? null,
       total: totalAfterStoreBenefit,
+      original_total: totalAfterStoreBenefit,
+      credit_balance_used: 0,
+      external_amount_due: customerCreditApplication.externalAmountDue,
+      payment_composition: getPaymentComposition({
+        paymentMethodId: "mercadopago",
+        creditBalanceUsed: customerCreditApplication.appliedAmount,
+        externalAmountDue: customerCreditApplication.externalAmountDue,
+      }),
       estado: "pendiente",
       payment_method_id: "mercadopago",
       payment_status: "pending_checkout",
@@ -371,6 +430,10 @@ export async function POST(request: Request) {
       .single()
 
     if (orderError && isSchemaCacheColumnError(orderError)) {
+      if (customerCreditApplication.appliedAmount > 0) {
+        throw new Error("La base de datos todavía no reconoce el saldo a favor. Reintentá en unos segundos.")
+      }
+
       const legacyCustomer = normalizeCustomer(payload.customer)
 
       const legacyPayload = {
@@ -403,16 +466,36 @@ export async function POST(request: Request) {
 
     await insertOrderItems(orderClient as never, order.id, items, productRows)
 
+    if (user && customerCreditApplication.appliedAmount > 0) {
+      await applyCustomerCreditToOrder(admin, {
+        userId: user.id,
+        orderId: order.id,
+        amount: customerCreditApplication.appliedAmount,
+        description: `Saldo a favor aplicado al pedido BX-${1000 + order.id}`,
+        sourceKey: `order:${order.id}:customer-credit:debit`,
+      })
+      creditAppliedOrderId = order.id
+    }
+
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL ||
       request.headers.get("origin") ||
       "http://localhost:3000"
 
     const preference = new Preference(mercadoPagoClient)
+    const creditPreferenceItems = [
+      {
+        id: `order-${order.id}-external-balance`,
+        title: "Diferencia a pagar BEYONIX",
+        quantity: 1,
+        unit_price: customerCreditApplication.externalAmountDue,
+        currency_id: "ARS",
+      },
+    ]
     const result = await preference.create({
       body: {
         external_reference: String(order.id),
-        items: [
+        items: customerCreditApplication.appliedAmount > 0 ? creditPreferenceItems : [
           ...items.map((item) => {
             const product = productRows.find((row) => row.id === item.productId)!
 
@@ -471,6 +554,17 @@ export async function POST(request: Request) {
       order_id: order.id,
     })
   } catch (error) {
+    if (creditAppliedOrderId) {
+      try {
+        await reverseCustomerCreditForOrder(createAdminClient(), {
+          orderId: creditAppliedOrderId,
+          description: "Reintegro automático por error al iniciar Mercado Pago",
+        })
+      } catch (reversalError) {
+        console.error("MERCADOPAGO_CREDIT_REVERSAL_ERROR", reversalError)
+      }
+    }
+
     console.error("Error creando preferencia de Mercado Pago", error)
 
     return NextResponse.json(

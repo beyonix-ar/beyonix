@@ -19,6 +19,7 @@ import {
   Check,
   ChevronDown,
   CircleUserRound,
+  CreditCard,
   Clock3,
   Home,
   IdCard,
@@ -44,6 +45,7 @@ import {
 import {
   useCart,
 } from "@/context/cart-context"
+import { useCustomerCredit } from "@/context/customer-credit-context"
 
 import {
   Input,
@@ -102,6 +104,11 @@ import {
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotal,
 } from "@/lib/payments/transfer"
+import {
+  calculateCustomerCreditApplication,
+  getMaxApplicableCustomerCredit,
+  normalizeMoney,
+} from "@/lib/customer-credit"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseProfile } from "@/lib/supabase/types"
 
@@ -350,6 +357,7 @@ export default function CheckoutPage() {
     decreaseQuantity,
     removeFromCart,
   } = useCart()
+  const customerCredit = useCustomerCredit()
 
   const [mounted, setMounted] =
     useState(false)
@@ -358,6 +366,7 @@ export default function CheckoutPage() {
     selectedPayment,
     setSelectedPayment,
   ] = useState("")
+  const [creditInput, setCreditInput] = useState("")
 
   const [
     isProcessing,
@@ -647,9 +656,6 @@ export default function CheckoutPage() {
     0,
   )
   const isTransferPayment = selectedPayment === "transferencia"
-  const isSelectedPaymentValid = paymentMethods.some(
-    (method) => method.id === selectedPayment,
-  )
   const transferPaymentTotals = calculateTransferPaymentTotal(
     productsTotalAfterStoreBenefit,
     totals.shipping,
@@ -657,9 +663,34 @@ export default function CheckoutPage() {
   const transferDiscountAmount = isTransferPayment
     ? transferPaymentTotals.discount
     : 0
-  const finalTotal = isTransferPayment
+  const totalBeforeCustomerCredit = isTransferPayment
     ? transferPaymentTotals.total
     : productsTotalAfterStoreBenefit + totals.shipping
+  const maxApplicableCustomerCredit = getMaxApplicableCustomerCredit(
+    customerCredit.balance,
+    totalBeforeCustomerCredit,
+  )
+  const customerCreditApplication = calculateCustomerCreditApplication({
+    availableBalance: customerCredit.balance,
+    eligibleTotal: totalBeforeCustomerCredit,
+    requestedAmount: customerCredit.appliedAmount,
+  })
+  const customerCreditCoversTotal =
+    customerCreditApplication.appliedAmount > 0 &&
+    customerCreditApplication.externalAmountDue === 0
+  const isSelectedPaymentValid =
+    customerCreditCoversTotal ||
+    paymentMethods.some(
+      (method) => method.id === selectedPayment,
+    )
+  const finalTotal = customerCreditApplication.externalAmountDue
+
+  useEffect(() => {
+    if (customerCredit.appliedAmount > maxApplicableCustomerCredit) {
+      customerCredit.setAppliedAmount(maxApplicableCustomerCredit)
+      setCreditInput(String(maxApplicableCustomerCredit))
+    }
+  }, [customerCredit, maxApplicableCustomerCredit])
 
   useEffect(() => {
     const cpDestino = formData.cpDestino.trim()
@@ -989,7 +1020,9 @@ export default function CheckoutPage() {
           .join(". "),
       }
       const endpoint =
-        selectedPayment === "transferencia"
+        customerCreditCoversTotal
+          ? "/api/customer-credit/create-order"
+          : selectedPayment === "transferencia"
           ? "/api/transferencia/create-order"
           : "/api/mercadopago/create-preference"
 
@@ -1009,6 +1042,8 @@ export default function CheckoutPage() {
             freeShippingApplied,
           },
           storeBenefitId: selectedStoreBenefit?.id ?? null,
+          paymentMethodId: selectedPayment || "customer_credit",
+          customerCreditAmount: customerCreditApplication.appliedAmount,
           items: items.map((item) => ({
             productId: item.product.id,
             quantity: item.quantity,
@@ -1020,6 +1055,22 @@ export default function CheckoutPage() {
 
       const data = await response.json()
 
+      if (customerCreditCoversTotal) {
+        if (!response.ok || !data.order_id || !data.redirect_url) {
+          setCheckoutError(
+            data.error ||
+              STOCK_CHANGED_MESSAGE,
+          )
+          return
+        }
+
+        clearCart()
+        customerCredit.clearAppliedAmount()
+        await customerCredit.reload()
+        window.location.href = data.redirect_url
+        return
+      }
+
       if (selectedPayment === "transferencia") {
         if (!response.ok || !data.order_id || !data.redirect_url) {
           setCheckoutError(
@@ -1030,6 +1081,8 @@ export default function CheckoutPage() {
         }
 
         clearCart()
+        customerCredit.clearAppliedAmount()
+        await customerCredit.reload()
         window.location.href = data.redirect_url
         return
       }
@@ -1503,6 +1556,82 @@ export default function CheckoutPage() {
                     Método de pago
                   </h2>
 
+                  {(customerCredit.loading || maxApplicableCustomerCredit > 0) && (
+                    <div className="rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
+                            <CreditCard className="size-5" />
+                          </span>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-beyonix-cyan/80">
+                              Saldo a favor BEYONIX
+                            </p>
+                            {customerCredit.loading ? (
+                              <span className="mt-2 block h-4 w-32 animate-pulse rounded-full bg-white/12" />
+                            ) : (
+                              <p className="mt-1 text-sm text-white/72">
+                                Disponible: {formatPrice(customerCredit.balance)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {customerCreditApplication.appliedAmount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              customerCredit.clearAppliedAmount()
+                              setCreditInput("")
+                            }}
+                            className="h-9 cursor-pointer rounded-lg border border-white/12 px-3 text-xs font-bold text-white/72 transition hover:border-beyonix-blue-light/45 hover:text-white"
+                          >
+                            Quitar saldo
+                          </button>
+                        )}
+                      </div>
+
+                      {maxApplicableCustomerCredit > 0 && (
+                        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            aria-label="Monto de saldo a favor"
+                            value={creditInput}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setCreditInput(value)
+                              customerCredit.setAppliedAmount(
+                                Math.min(
+                                  normalizeMoney(value),
+                                  maxApplicableCustomerCredit,
+                                )
+                              )
+                            }}
+                            placeholder="Monto a usar"
+                            className="h-10 rounded-lg border border-beyonix-blue-light/18 bg-[#0B1118] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-blue-light/65"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              customerCredit.setAppliedAmount(maxApplicableCustomerCredit)
+                              setCreditInput(String(maxApplicableCustomerCredit))
+                            }}
+                            className="h-10 cursor-pointer rounded-lg border border-beyonix-blue-light/35 bg-beyonix-blue/35 px-3 text-xs font-bold text-white transition hover:border-beyonix-blue-light/70 hover:bg-beyonix-blue"
+                          >
+                            Aplicar máximo
+                          </button>
+                        </div>
+                      )}
+
+                      {customerCreditCoversTotal && (
+                        <CheckoutNotice className="mt-3">
+                          Tu saldo cubre el total. No necesitás elegir otro método de pago.
+                        </CheckoutNotice>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid gap-3">
                     {paymentMethods.map((method) => (
                       <button
@@ -1681,7 +1810,7 @@ export default function CheckoutPage() {
                         Procesando...
                       </>
                     ) : (
-                      "Pagar"
+                      customerCreditCoversTotal ? "Confirmar compra" : "Pagar"
                     )}
                   </Button>
                 )}
@@ -1918,9 +2047,23 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
+                {customerCreditApplication.appliedAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Saldo a favor
+                    </span>
+                    <span className="font-semibold text-emerald-400">
+                      -{formatPrice(customerCreditApplication.appliedAmount)}
+                    </span>
+                  </div>
+                )}
                 <Separator className="bg-beyonix-blue-light/12" />
                 <div className="flex items-end justify-between pt-0.5 font-heading text-white">
-                  <span className="font-bold">Total</span>
+                  <span className="font-bold">
+                    {customerCreditApplication.appliedAmount > 0
+                      ? "Total a pagar"
+                      : "Total"}
+                  </span>
                   <span className="text-xl font-bold">
                     {formatPrice(finalTotal)}
                   </span>

@@ -66,8 +66,8 @@ function AccountLoadingPlaceholder({ mobile = false }: { mobile?: boolean }) {
 
   return (
     <div className="flex items-center gap-2" aria-hidden="true">
-      <span className="h-10 w-32 animate-pulse rounded-full border border-beyonix-blue-light/16 bg-white/4" />
-      <span className="h-10 w-28 animate-pulse rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/35" />
+      <span className="h-11 w-32 animate-pulse rounded-full border border-beyonix-blue-light/16 bg-white/4" />
+      <span className="h-11 w-28 animate-pulse rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/35" />
     </div>
   )
 }
@@ -283,13 +283,13 @@ export function SiteHeader() {
                       setCatOpen(false)
                     }}
                     className={cn(
-                      "flex h-12 max-w-300px cursor-pointer items-center gap-2.5 rounded-full bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white hover:bg-beyonix-blue/18",
+                      "flex h-11 max-w-300px cursor-pointer items-center gap-2.5 rounded-full bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white hover:bg-beyonix-blue/18",
                       beyonixHoverBorder,
                       userOpen &&
                         "border-beyonix-blue-light/70 ring-2 ring-beyonix-blue-light/18"
                     )}
                   >
-                    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-beyonix-blue-light/45 bg-white text-black shadow-sm shadow-black/40">
+                    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-beyonix-blue-light/45 bg-white text-black shadow-sm shadow-black/40">
                       {user.avatarUrl ? (
                         <img
                           src={user.avatarUrl}
@@ -297,7 +297,7 @@ export function SiteHeader() {
                           className="size-full object-cover"
                         />
                       ) : (
-                        <CircleUserRound className="size-6" />
+                        <CircleUserRound className="size-5" />
                       )}
                     </span>
                     <span className="whitespace-nowrap text-sm font-medium uppercase text-white/86">
@@ -384,7 +384,7 @@ export function SiteHeader() {
                   <Link
                     href="/login"
                     className={cn(
-                      "flex h-10 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/78 hover:text-white",
+                      "flex h-11 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/78 hover:text-white",
                       beyonixHoverBorder
                     )}
                   >
@@ -393,7 +393,7 @@ export function SiteHeader() {
                   </Link>
                   <Link
                     href="/login?mode=register"
-                    className="flex h-10 cursor-pointer items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-sm font-semibold text-white transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
+                    className="flex h-11 cursor-pointer items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-sm font-semibold text-white transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
                   >
                     Registrarse
                   </Link>
@@ -406,7 +406,7 @@ export function SiteHeader() {
               onClick={openCart}
               aria-label="Abrir carrito"
               className={cn(
-                "relative flex h-10 cursor-pointer items-center gap-2 rounded-full bg-beyonix-blue/10 px-3 text-white hover:bg-beyonix-blue/18",
+                "relative flex h-11 cursor-pointer items-center gap-2 rounded-full bg-beyonix-blue/10 px-3 text-white hover:bg-beyonix-blue/18",
                 beyonixHoverBorder
               )}
             >

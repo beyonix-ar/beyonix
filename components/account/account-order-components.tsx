@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useEffect, useState } from "react"
-import { Bell, Check, ExternalLink, Package, Star } from "lucide-react"
+import { Bell, Check, ExternalLink, Package, Sparkles, Star } from "lucide-react"
 
 import { BeyonixButton } from "@/components/account/account-ui"
 import { supabase } from "@/lib/supabase/client"
@@ -15,6 +15,8 @@ import {
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 export const DOWNLOADED_INVOICES_STORAGE_KEY = "beyonix:downloaded-invoices"
+const REVIEW_ACTION_PLACEHOLDER_CLASS = "h-[38px] w-[172px] shrink-0"
+
 export function CustomerInvoiceBell() {
   return (
     <span
@@ -180,25 +182,38 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   const [activeProductId, setActiveProductId] = useState<number | null>(null)
   const [hoverRatings, setHoverRatings] = useState<Record<number, number>>({})
   const [submitted, setSubmitted] = useState<Set<number>>(() => new Set())
+  const [reviewsLoaded, setReviewsLoaded] = useState(false)
   const [submitting, setSubmitting] = useState<number | null>(null)
   const [feedbackMessage, setFeedbackMessage] = useState("")
 
   useEffect(() => {
     let active = true
+    setRatings({})
+    setComments({})
+    setActiveProductId(null)
+    setHoverRatings({})
+    setSubmitted(new Set())
+    setReviewsLoaded(false)
+    setFeedbackMessage("")
+
     const loadOwnReviews = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      const response = await fetch(`/api/reviews?orderId=${order.id}`, {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-        cache: "no-store",
-      })
-      const data = (await response.json()) as {
-        ownProductReviews?: Array<{ product_id: number; rating: number; comment: string }>
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const response = await fetch(`/api/reviews?orderId=${order.id}`, {
+          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+          cache: "no-store",
+        })
+        const data = (await response.json()) as {
+          ownProductReviews?: Array<{ product_id: number; rating: number; comment: string }>
+        }
+        if (!active || !response.ok) return
+        const reviews = data.ownProductReviews ?? []
+        setSubmitted(new Set(reviews.map((review) => Number(review.product_id))))
+        setRatings(Object.fromEntries(reviews.map((review) => [Number(review.product_id), Number(review.rating)])))
+        setComments(Object.fromEntries(reviews.map((review) => [Number(review.product_id), String(review.comment)])))
+      } finally {
+        if (active) setReviewsLoaded(true)
       }
-      if (!active || !response.ok) return
-      const reviews = data.ownProductReviews ?? []
-      setSubmitted(new Set(reviews.map((review) => Number(review.product_id))))
-      setRatings(Object.fromEntries(reviews.map((review) => [Number(review.product_id), Number(review.rating)])))
-      setComments(Object.fromEntries(reviews.map((review) => [Number(review.product_id), String(review.comment)])))
     }
     void loadOwnReviews()
     return () => { active = false }
@@ -256,7 +271,12 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                   <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={productName} className="size-full object-contain" /> : <Package className="size-4 text-black/30" />}</div>
                   <p className="truncate text-xs font-black text-white">{productName}</p>
                 </div>
-                {submitted.has(productId) ? (
+                {!reviewsLoaded ? (
+                  <span
+                    className={REVIEW_ACTION_PLACEHOLDER_CLASS}
+                    aria-hidden="true"
+                  />
+                ) : submitted.has(productId) ? (
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300">
                     <Check className="size-3.5" />
                     Reseña enviada
@@ -316,7 +336,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                   </div>
                 )}
               </div>
-              {activeProductId === productId && !submitted.has(productId) && (
+              {reviewsLoaded && activeProductId === productId && !submitted.has(productId) && (
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                   <input
                     value={comments[productId] ?? ""}
@@ -330,7 +350,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                       if (submitting === productId || !ratings[productId]) return
                       void submitReview(productId)
                     }}
-                    placeholder="Contanos brevemente tu experiencia (opcional)"
+                    placeholder="Contanos brevemente tu experiencia"
                     className="h-10 min-w-0 flex-1 rounded-lg border border-[#9AA9B8] bg-[#E7EDF3] px-3 text-xs font-semibold text-[#0B1118] outline-none placeholder:text-[#5F6B78] focus:border-[#6EC6FF] focus:ring-2 focus:ring-[#6EC6FF]/35"
                   />
                   <button
@@ -348,6 +368,231 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
         })}
       </div>
       {feedbackMessage && <p className="mt-2 text-xs font-bold text-white/70">{feedbackMessage}</p>}
+    </section>
+  )
+}
+
+type OwnExperienceReview = {
+  id?: number
+  rating: number
+  comment: string
+}
+
+export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
+  const [rating, setRating] = useState(0)
+  const [hoverRating, setHoverRating] = useState(0)
+  const [comment, setComment] = useState("")
+  const [submittedReview, setSubmittedReview] =
+    useState<OwnExperienceReview | null>(null)
+  const [activeExperience, setActiveExperience] = useState(false)
+  const [experienceLoaded, setExperienceLoaded] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [feedbackMessage, setFeedbackMessage] = useState("")
+
+  useEffect(() => {
+    let active = true
+    setRating(0)
+    setHoverRating(0)
+    setComment("")
+    setSubmittedReview(null)
+    setActiveExperience(false)
+    setExperienceLoaded(false)
+    setFeedbackMessage("")
+
+    const loadOwnExperience = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const response = await fetch(`/api/reviews?orderId=${order.id}`, {
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
+          cache: "no-store",
+        })
+        const data = (await response.json()) as {
+          ownExperienceReview?: OwnExperienceReview | null
+        }
+
+        if (!active) return
+
+        if (response.ok && data.ownExperienceReview) {
+          const ownReview = data.ownExperienceReview
+          setSubmittedReview({
+            id: ownReview.id,
+            rating: Number(ownReview.rating),
+            comment: String(ownReview.comment ?? ""),
+          })
+          setRating(Number(ownReview.rating))
+          setComment(String(ownReview.comment ?? ""))
+        }
+      } finally {
+        if (active) setExperienceLoaded(true)
+      }
+    }
+
+    void loadOwnExperience()
+
+    return () => {
+      active = false
+    }
+  }, [order.id])
+
+  const submitExperience = async () => {
+    const trimmedComment = comment.trim()
+
+    if (!rating) {
+      setFeedbackMessage("Elegí una puntuación para enviar tu experiencia.")
+      return
+    }
+
+    setSubmitting(true)
+    setFeedbackMessage("")
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          orderId: order.id,
+          rating,
+          comment: trimmedComment,
+        }),
+      })
+      const data = (await response.json()) as {
+        review?: OwnExperienceReview
+        error?: string
+      }
+
+      if (!response.ok || !data.review) {
+        setFeedbackMessage(data.error || "No pudimos guardar tu experiencia.")
+        return
+      }
+
+      setSubmittedReview({
+        id: data.review.id,
+        rating,
+        comment: trimmedComment,
+      })
+      setActiveExperience(false)
+      setFeedbackMessage("¡Gracias por compartir tu experiencia!")
+    } catch {
+      setFeedbackMessage("No pudimos guardar tu experiencia. Intentá nuevamente.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const visualRating = hoverRating || rating
+
+  return (
+    <section className="rounded-xl border border-[#18334D] bg-[#101923] p-3">
+      <h4 className="text-sm font-black text-white">Experiencia en BEYONIX</h4>
+      <div className="mt-2 space-y-2">
+        <div className="rounded-lg border border-[#21476B] bg-[#13263B] p-2.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[#2C6CA3]/70 bg-[#0B2A44] text-white shadow-[0_0_18px_rgba(122,184,255,0.16)]">
+                <Sparkles className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-black text-white">
+                  Compra, atención y navegación
+                </p>
+              </div>
+            </div>
+
+            {!experienceLoaded ? (
+              <span
+                className={REVIEW_ACTION_PLACEHOLDER_CLASS}
+                aria-hidden="true"
+              />
+            ) : submittedReview ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                <Check className="size-3.5" />
+                Experiencia enviada
+              </span>
+            ) : (
+              <div
+                className="flex items-center gap-1 rounded-lg border border-[#697684] bg-[#8794A2] px-2 py-1"
+                aria-label="Calificar experiencia en BEYONIX"
+                onMouseLeave={() => setHoverRating(0)}
+              >
+                {[1, 2, 3, 4, 5].map((star) => {
+                  const active = star <= visualRating
+
+                  return (
+                    <button
+                      key={star}
+                      type="button"
+                      aria-label={`${star} estrellas`}
+                      aria-pressed={rating === star}
+                      onMouseEnter={() => setHoverRating(star)}
+                      onFocus={() => setHoverRating(star)}
+                      onBlur={() => setHoverRating(0)}
+                      onClick={() => {
+                        setRating(star)
+                        setActiveExperience(true)
+                        setFeedbackMessage("")
+                      }}
+                      className={`grid size-7 cursor-pointer place-items-center rounded-md transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7AB8FF] ${
+                        active ? "text-[#0067C9]" : "text-white"
+                      }`}
+                    >
+                      <Star
+                        className={`size-4 fill-transparent transition-all duration-150 ${
+                          active
+                            ? "drop-shadow-[0_0_4px_rgba(0,103,201,0.55)]"
+                            : "drop-shadow-none"
+                        }`}
+                      />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {experienceLoaded && activeExperience && !submittedReview && (
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                value={comment}
+                maxLength={150}
+                onChange={(event) => {
+                  setComment(event.target.value)
+                  setFeedbackMessage("")
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+                  event.preventDefault()
+                  if (submitting || !rating) return
+                  void submitExperience()
+                }}
+                placeholder="Contanos brevemente tu experiencia"
+                className="h-10 min-w-0 flex-1 rounded-lg border border-[#9AA9B8] bg-[#E7EDF3] px-3 text-xs font-semibold text-[#0B1118] outline-none placeholder:text-[#5F6B78] focus:border-[#6EC6FF] focus:ring-2 focus:ring-[#6EC6FF]/35"
+              />
+              <button
+                type="button"
+                disabled={submitting || !rating}
+                onClick={() => void submitExperience()}
+                className="h-10 cursor-pointer rounded-lg border border-[#21476B] bg-[#112A43] px-4 text-xs font-black text-white transition-colors duration-150 hover:border-[#2C6CA3] hover:bg-[#183654] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? "Enviando..." : "Enviar experiencia"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {feedbackMessage && (
+        <p className="mt-2 text-xs font-bold text-white/70">
+          {feedbackMessage}
+        </p>
+      )}
     </section>
   )
 }

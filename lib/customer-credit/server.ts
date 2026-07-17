@@ -1,0 +1,201 @@
+import "server-only"
+
+import type { createAdminClient } from "@/lib/supabase/admin"
+import { roundMoney } from "@/lib/customer-credit"
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+export type CustomerCreditMovementType =
+  | "credit"
+  | "debit"
+  | "reversal"
+  | "adjustment"
+  | "expiration"
+
+export type CustomerCreditSourceType =
+  | "credit_note"
+  | "claim"
+  | "return"
+  | "exchange"
+  | "order"
+  | "admin_adjustment"
+  | "reversal"
+
+export interface CustomerCreditMovementRow {
+  id: string
+  user_id: string
+  movement_type: CustomerCreditMovementType
+  amount: number | string
+  description: string
+  source_type: string
+  source_id?: string | null
+  order_id?: number | null
+  claim_id?: number | null
+  credit_note_id?: string | null
+  created_by?: string | null
+  related_movement_id?: string | null
+  expires_at?: string | null
+  created_at: string
+  metadata?: Record<string, unknown> | null
+  source_key?: string | null
+  resulting_balance?: number | string | null
+}
+
+export async function getCustomerCreditBalance(
+  admin: AdminClient,
+  userId: string
+) {
+  const { data, error } = await admin.rpc("get_customer_credit_balance", {
+    p_user_id: userId,
+  })
+
+  if (error) {
+    throw new Error(error.message || "No se pudo consultar el saldo.")
+  }
+
+  return roundMoney(Number(data ?? 0))
+}
+
+export async function applyCustomerCreditToOrder(
+  admin: AdminClient,
+  {
+    userId,
+    orderId,
+    amount,
+    description,
+    sourceKey,
+  }: {
+    userId: string
+    orderId: number
+    amount: number
+    description?: string
+    sourceKey?: string
+  }
+) {
+  const safeAmount = roundMoney(amount)
+
+  if (safeAmount <= 0) {
+    return null
+  }
+
+  const { data, error } = await admin.rpc("apply_customer_credit_to_order", {
+    p_user_id: userId,
+    p_order_id: orderId,
+    p_amount: safeAmount,
+    p_description: description ?? "Saldo a favor aplicado a compra",
+    p_source_key: sourceKey ?? null,
+  })
+
+  if (error) {
+    throw new Error(error.message || "No se pudo aplicar el saldo a favor.")
+  }
+
+  return Array.isArray(data) ? data[0] ?? null : data
+}
+
+export async function reverseCustomerCreditForOrder(
+  admin: AdminClient,
+  {
+    orderId,
+    description,
+    createdBy,
+  }: {
+    orderId: number
+    description?: string
+    createdBy?: string | null
+  }
+) {
+  const { data, error } = await admin.rpc("reverse_customer_credit_for_order", {
+    p_order_id: orderId,
+    p_description:
+      description ?? "Reintegro de saldo a favor por cancelación",
+    p_created_by: createdBy ?? null,
+  })
+
+  if (error) {
+    throw new Error(error.message || "No se pudo reintegrar el saldo a favor.")
+  }
+
+  return Array.isArray(data) ? data[0] ?? null : data
+}
+
+export async function createCustomerCreditMovement(
+  admin: AdminClient,
+  {
+    userId,
+    movementType,
+    amount,
+    description,
+    sourceType = "admin_adjustment",
+    sourceId = null,
+    orderId = null,
+    claimId = null,
+    creditNoteId = null,
+    createdBy = null,
+    relatedMovementId = null,
+    expiresAt = null,
+    metadata = {},
+    sourceKey = null,
+  }: {
+    userId: string
+    movementType: CustomerCreditMovementType
+    amount: number
+    description: string
+    sourceType?: CustomerCreditSourceType
+    sourceId?: string | null
+    orderId?: number | null
+    claimId?: number | null
+    creditNoteId?: string | null
+    createdBy?: string | null
+    relatedMovementId?: string | null
+    expiresAt?: string | null
+    metadata?: Record<string, unknown>
+    sourceKey?: string | null
+  }
+) {
+  const safeAmount = roundMoney(amount)
+
+  if (safeAmount <= 0) {
+    throw new Error("Ingresá un monto mayor a cero.")
+  }
+
+  const { data, error } = await admin.rpc("create_customer_credit_movement", {
+    p_user_id: userId,
+    p_movement_type: movementType,
+    p_amount: safeAmount,
+    p_description: description,
+    p_source_type: sourceType,
+    p_source_id: sourceId,
+    p_order_id: orderId,
+    p_claim_id: claimId,
+    p_credit_note_id: creditNoteId,
+    p_created_by: createdBy,
+    p_related_movement_id: relatedMovementId,
+    p_expires_at: expiresAt,
+    p_metadata: metadata,
+    p_source_key: sourceKey,
+  })
+
+  if (error) {
+    throw new Error(error.message || "No se pudo registrar el movimiento.")
+  }
+
+  return Array.isArray(data) ? data[0] ?? null : data
+}
+
+export async function listCustomerCreditMovements(
+  admin: AdminClient,
+  userId: string
+) {
+  const { data, error } = await admin
+    .from("customer_credit_movements")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+
+  if (error) {
+    throw new Error(error.message || "No se pudieron cargar los movimientos.")
+  }
+
+  return (data ?? []) as CustomerCreditMovementRow[]
+}

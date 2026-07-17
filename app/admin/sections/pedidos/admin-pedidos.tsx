@@ -280,6 +280,10 @@ function getPaymentMethodLabel(pedido: SupabasePedido) {
     return "Mercado Pago"
   }
 
+  if (pedido.payment_method_id === "customer_credit") {
+    return "Saldo a favor"
+  }
+
   if (pedido.payment_method_id || pedido.payment_type_id) return "Otro"
 
   return "No informado"
@@ -351,6 +355,7 @@ function getCompactPaymentMethodLabel(pedido: SupabasePedido) {
   if (pedido.payment_method_id === "mercadopago" || pedido.payment_id) {
     return "Mercado Pago"
   }
+  if (pedido.payment_method_id === "customer_credit") return "Saldo a favor"
 
   return getPaymentMethodLabel(pedido)
 }
@@ -4361,9 +4366,11 @@ function PedidoDetailModal({
               </div>
               <span
                 className={cn(
-                  "inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide",
+                  "admin-order-dispatch-badge inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide",
                   dispatch.label === "Entregado"
                     ? "!border-emerald-300 !bg-emerald-200 !text-emerald-950 shadow-[0_0_18px_rgba(134,239,172,0.2)]"
+                    : dispatch.label === "Pendiente"
+                      ? "!border-amber-300 !bg-amber-200 !text-amber-950 shadow-[0_0_18px_rgba(251,191,36,0.18)]"
                     : dispatch.className,
                 )}
               >
@@ -5203,6 +5210,7 @@ function AdminClaimsCenterSection({
                   <option value="">Sin resolución</option>
                   <option value="reintegro_total">Reintegro total</option>
                   <option value="reintegro_parcial">Reintegro parcial</option>
+                  <option value="saldo_a_favor">Saldo a favor</option>
                   <option value="cupon_descuento">Cupón de descuento</option>
                   <option value="rechazado">Rechazado</option>
                   <option value="otro">Otra solución</option>

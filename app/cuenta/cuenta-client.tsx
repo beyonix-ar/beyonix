@@ -1,7 +1,7 @@
 ﻿"use client"
 // @refresh reset
 
-import { useEffect, useState } from "react"
+import { useEffect, useLayoutEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
@@ -27,6 +27,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { useCustomerCredit } from "@/context/customer-credit-context"
 import {
   AccountBackButton,
   AccountCard,
@@ -38,6 +39,7 @@ import { LoginForm, RegisterForm } from "@/components/account/auth-forms"
 import { MisOrdenes } from "@/components/account/account-orders"
 import { MisDatos, Seguridad } from "@/components/account/profile-sections"
 import {
+  OrderExperienceFeedback,
   OrderProductFeedback,
   OrderProgressTimeline,
   PaymentProofViewButton,
@@ -46,6 +48,7 @@ import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
 import { CustomerClaimExperience } from "@/components/claims/customer-claim-experience"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
+import { formatARS } from "@/lib/customer-credit"
 import {
   formatCuentaInvoiceNumber,
   formatCuentaPrice,
@@ -171,8 +174,77 @@ async function getOrderClaims(orderId: number) {
   }
 }
 
+function OrderPageLoadingState({ variant = "detail" }: { variant?: "detail" | "claim" }) {
+  const isClaim = variant === "claim"
+
+  return (
+    <main
+      aria-busy="true"
+      aria-label="Cargando compra"
+      className={
+        isClaim
+          ? "min-h-screen px-3 pt-24 font-heading sm:px-5 lg:px-8"
+          : "min-h-screen bg-[#05070A] px-3 pt-20 font-heading sm:px-5 lg:px-8"
+      }
+    >
+      <div
+        className={
+          isClaim
+            ? "customer-claim-page-frame w-full py-3"
+            : "customer-claim-page-frame flex min-h-[calc(100vh-5rem)] w-full items-center justify-center py-8"
+        }
+      >
+        <div className={isClaim ? "mx-auto w-full max-w-[72rem]" : "w-full max-w-6xl 2xl:max-w-7xl"}>
+          <div className="h-10 w-44 rounded-full border border-white/10 bg-[#111418]" />
+
+          {variant === "claim" ? (
+            <div className="claim-chat-shell mt-4 overflow-hidden rounded-2xl border border-[#21476B] bg-[#070C12]">
+              <div className="border-b border-[#18334D] bg-[#0B1724] px-5 py-4">
+                <div className="h-3 w-56 rounded bg-[#18334D]" />
+                <div className="mt-3 h-7 w-64 rounded bg-[#1B222B]" />
+                <div className="mt-3 h-4 max-w-2xl rounded bg-[#151B22]" />
+              </div>
+              <div className="min-h-[22rem] bg-[#070C12] px-5 py-5">
+                <div className="ml-auto h-28 max-w-3xl rounded-2xl rounded-br-md border border-[#2C6CA3]/35 bg-[#112A43]" />
+              </div>
+              <div className="border-t border-[#18334D] bg-[#0B1724] px-5 py-4">
+                <div className="h-12 rounded-xl border border-[#21476B] bg-[#101820]" />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 rounded-2xl border border-[#18334D] bg-[#0B1118] p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="h-3 w-36 rounded bg-[#15202B]" />
+                    <div className="h-7 w-52 rounded bg-[#1B222B]" />
+                    <div className="h-4 w-44 rounded bg-[#151B22]" />
+                  </div>
+                  <div className="h-16 w-full rounded-xl border border-emerald-300/20 bg-[#102A22] sm:w-48" />
+                </div>
+              </div>
+              <div className="order-detail-components-shell mt-4 grid items-start gap-4 rounded-2xl border border-[#18334D] bg-[#111418] p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
+                <div className="space-y-4">
+                  <div className="h-44 rounded-2xl border border-[#18334D] bg-[#101923]" />
+                  <div className="h-32 rounded-2xl border border-[#18334D] bg-[#101923]" />
+                  <div className="h-32 rounded-2xl border border-[#18334D] bg-[#101923]" />
+                </div>
+                <aside className="space-y-3.5">
+                  <div className="h-44 rounded-2xl border border-[#18334D] bg-[#101923]" />
+                  <div className="h-36 rounded-2xl border border-[#18334D] bg-[#101923]" />
+                </aside>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </main>
+  )
+}
+
 function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   const { user, logout, isInternal } = useAuth()
+  const customerCredit = useCustomerCredit()
   const router = useRouter()
   const [view, setView] = useState<ProfileView>(initialView)
 
@@ -220,40 +292,45 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
         className="border-transparent bg-transparent p-0 shadow-none"
       />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(280px,0.34fr)_minmax(0,0.66fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(270px,0.32fr)_minmax(0,0.68fr)]">
         <AccountCard
-          padding="lg"
-          className="flex h-full min-h-0 flex-col justify-between gap-5"
+          padding="md"
+          className="self-start"
         >
-          <div>
-            <div className="flex items-center gap-4">
-              <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/14 bg-white text-black shadow-sm shadow-black/35">
-                {user.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="" className="size-full object-cover" />
-                ) : (
-                  <User className="size-9" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-lg font-semibold text-[var(--account-text-primary)]">{user.name}</p>
-                <p className="truncate text-sm text-[var(--account-text-secondary)]">{user.email}</p>
-                <p className="mt-1 text-11px font-medium uppercase tracking-widest text-[var(--account-accent-soft)]">
-                  Cliente BEYONIX
-                </p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/14 bg-white text-black shadow-sm shadow-black/35">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" className="size-full object-cover" />
+              ) : (
+                <User className="size-8" />
+              )}
             </div>
-
-            <button
-              type="button"
-              aria-label="Ver mis datos"
-              onClick={() => goToView("datos")}
-              className="mt-5 inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-xs font-semibold text-[var(--account-text-secondary)] transition-all hover:border-[var(--account-border-strong)] hover:text-[var(--account-text-primary)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]"
-            >
-              Ver datos
-            </button>
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold text-[var(--account-text-primary)]">{user.name}</p>
+              <p className="truncate text-sm text-[var(--account-text-secondary)]">{user.email}</p>
+              <p className="mt-1 text-10px font-medium uppercase tracking-widest text-[var(--account-accent-soft)]">
+                Cliente BEYONIX
+              </p>
+            </div>
           </div>
 
-          <div className="border-t border-[var(--account-border-subtle)] pt-4">
+          <div className="mt-4 flex w-full items-center gap-3 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 py-2.5">
+            <span className="flex min-w-0 items-center gap-3">
+              <IconContainer size="sm">
+                <CreditCard className="stroke-[2.35]" />
+              </IconContainer>
+              <span className="min-w-0">
+                <span className="block text-10px font-semibold uppercase tracking-widest text-[var(--account-accent-soft)]">
+                  Saldo a favor
+                </span>
+                <span className="mt-0.5 block text-lg font-black text-white">
+                  {formatARS(customerCredit.balance)}
+                </span>
+              </span>
+            </span>
+          </div>
+
+          <div className="mt-4 border-t border-[var(--account-border-subtle)] pt-4">
             <button
               type="button"
               aria-label="Cerrar sesión"
@@ -355,7 +432,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const [refundProofOpening, setRefundProofOpening] = useState(false)
   const [refundProofError, setRefundProofError] = useState("")
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" })
   }, [orderId])
 
@@ -529,7 +606,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   }
 
   if (isLoading || loading) {
-    return <main className="flex min-h-screen items-center justify-center bg-[#05070A] pt-20"><div className="size-9 animate-spin rounded-full border-2 border-white/10 border-t-blue-300" /></main>
+    return <OrderPageLoadingState />
   }
 
   if (!order) {
@@ -542,6 +619,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     0,
   )
   const discount = Number(order.transfer_discount_amount ?? 0)
+  const creditBalanceUsed = Number(order.credit_balance_used ?? 0)
+  const externalAmountDue = Number(
+    order.external_amount_due ?? Math.max(Number(order.total ?? 0) - creditBalanceUsed, 0)
+  )
   const shipping = Number(
     order.shipping_cost_charged ?? Math.max(0, Number(order.total) + discount - productsSubtotal),
   )
@@ -874,13 +955,18 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </div>
             </section>
 
-            {order.estado === "entregado" && <OrderProductFeedback order={order} />}
+            {order.estado === "entregado" && (
+              <div className="space-y-3">
+                <OrderProductFeedback order={order} />
+                <OrderExperienceFeedback order={order} />
+              </div>
+            )}
           </div>
 
           <aside className="space-y-3.5 lg:sticky lg:top-24">
             <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Resumen de pago</h2>
-              <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-semibold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-semibold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}</dl>
+              <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-semibold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-semibold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}{creditBalanceUsed > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Saldo a favor</dt><dd className="font-semibold">− {formatCuentaPrice(creditBalanceUsed)}</dd></div>}{creditBalanceUsed > 0 && externalAmountDue > 0 && <div className="flex justify-between gap-3 text-white/65"><dt>Diferencia pagada</dt><dd className="font-semibold text-white">{formatCuentaPrice(externalAmountDue)}</dd></div>}</dl>
               <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/35 bg-[#102A22] px-3.5 py-3"><span className="text-10px font-semibold uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-base font-bold text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
             </section>
 
@@ -1068,7 +1154,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
   const [redirecting, setRedirecting] = useState(false)
   const [error, setError] = useState("")
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" })
   }, [orderId])
 
@@ -1113,7 +1199,17 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
         return
       }
 
-      setOrder(currentOrder)
+      const currentClaims =
+        currentOrder.order_claims && currentOrder.order_claims.length > 0
+          ? currentOrder.order_claims
+          : await getOrderClaims(currentOrder.id)
+
+      if (!active) return
+
+      setOrder({
+        ...currentOrder,
+        order_claims: currentClaims,
+      })
       setLoading(false)
     }
 
@@ -1122,7 +1218,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
   }, [isLoading, orderId, router, user])
 
   if (isLoading || loading || redirecting) {
-    return <main className="flex min-h-screen items-center justify-center bg-[#05070A] pt-20"><div className="size-9 animate-spin rounded-full border-2 border-white/10 border-t-blue-300" /></main>
+    return <OrderPageLoadingState variant="claim" />
   }
 
   if (!order) {
@@ -1130,17 +1226,19 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#05070A] px-3 pb-12 pt-24 font-heading sm:px-5 lg:px-8">
-      <div className="mx-auto max-w-5xl">
-        <AccountBackButton
-          type="button"
-          label="Volver a la compra"
-          onClick={() => router.push(`/cuenta/compras/${order.id}`)}
-        />
+    <main className="min-h-screen px-3 pt-24 font-heading sm:px-5 lg:px-8">
+      <div className="customer-claim-page-frame w-full py-3">
+        <div className="mx-auto w-full max-w-[72rem]">
+          <AccountBackButton
+            type="button"
+            label="Volver a la compra"
+            onClick={() => router.push(`/cuenta/compras/${order.id}`)}
+          />
 
-        <section className="customer-claim-experience mt-4">
-          <CustomerClaimExperience order={order} />
-        </section>
+          <section className="customer-claim-experience mt-4">
+            <CustomerClaimExperience order={order} claimsVerified />
+          </section>
+        </div>
       </div>
     </main>
   )

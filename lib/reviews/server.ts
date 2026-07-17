@@ -106,19 +106,19 @@ export function validateReviewComment(value: unknown) {
 
 export async function getEligibleReview(
   admin: AdminClient,
-  user: User
+  user: User,
+  orderId?: number,
 ): Promise<EligibleReview | null> {
-  const [reviewsResult, ordersResult, profileResult] = await Promise.all([
+  const requestedOrderId = Number(orderId)
+  const hasRequestedOrder =
+    Number.isInteger(requestedOrderId) && requestedOrderId > 0
+
+  const [reviewsResult, profileResult] = await Promise.all([
     admin
       .from("reviews")
       .select("order_id")
       .eq("user_id", user.id)
       .is("product_id", null),
-    admin
-      .from("ordenes")
-      .select("id, localidad, provincia, estado, payment_status, created_at")
-      .eq("usuario_id", user.id)
-      .order("created_at", { ascending: false }),
     admin
       .from("profiles")
       .select("username, direccion, codigo_postal, provincia")
@@ -127,13 +127,35 @@ export async function getEligibleReview(
   ])
 
   if (reviewsResult.error) throw reviewsResult.error
-  if (ordersResult.error) throw ordersResult.error
   if (profileResult.error) throw profileResult.error
+
+  let orders: OrderRow[] = []
+
+  if (hasRequestedOrder) {
+    const orderResult = await admin
+      .from("ordenes")
+      .select("id, localidad, provincia, estado, payment_status, created_at")
+      .eq("usuario_id", user.id)
+      .eq("id", requestedOrderId)
+      .maybeSingle()
+
+    if (orderResult.error) throw orderResult.error
+    orders = orderResult.data ? [orderResult.data as OrderRow] : []
+  } else {
+    const orderListResult = await admin
+      .from("ordenes")
+      .select("id, localidad, provincia, estado, payment_status, created_at")
+      .eq("usuario_id", user.id)
+      .order("created_at", { ascending: false })
+
+    if (orderListResult.error) throw orderListResult.error
+    orders = (orderListResult.data ?? []) as OrderRow[]
+  }
 
   const reviewedOrderIds = new Set(
     (reviewsResult.data ?? []).map((review) => Number(review.order_id))
   )
-  const order = ((ordersResult.data ?? []) as OrderRow[]).find(
+  const order = orders.find(
     (candidate) => isPaidOrder(candidate) && !reviewedOrderIds.has(candidate.id)
   )
 

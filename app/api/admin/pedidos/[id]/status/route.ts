@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
+import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { upsertCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
@@ -253,7 +254,7 @@ export async function PATCH(
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
-    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point")
+    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, credit_balance_used, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -386,6 +387,14 @@ export async function PATCH(
     await sendOrderStateEmail(data)
 
     if (estado === "cancelado") {
+      if (Number(currentOrder.credit_balance_used ?? 0) > 0) {
+        await reverseCustomerCreditForOrder(auth.admin, {
+          orderId,
+          description: "Reintegro de saldo por cancelación de compra",
+          createdBy: auth.user.id,
+        })
+      }
+
       await upsertCustomerCancelledOrderNotification(auth.admin, data)
     }
   }

@@ -69,6 +69,8 @@ interface AdminSelectProps {
   centered?: boolean
   disabled?: boolean
   triggerClassName?: string
+  menuClassName?: string
+  optionClassName?: string
   leadingIcon?: ReactNode
   onChange: (value: string) => void
 }
@@ -201,6 +203,8 @@ export function AdminSelect({
   centered = false,
   disabled = false,
   triggerClassName = "",
+  menuClassName = "",
+  optionClassName = "",
   leadingIcon,
   onChange,
 }: AdminSelectProps) {
@@ -333,7 +337,10 @@ export function AdminSelect({
             ref={menuRef}
             role="listbox"
             aria-label={ariaLabel ?? title}
-          className="admin-ds-select-menu fixed z-100 max-h-64 overflow-hidden p-1"
+            className={cn(
+              "admin-ds-select-menu fixed z-100 max-h-64 overflow-hidden p-1",
+              menuClassName
+            )}
             style={{
               left: menuPosition.left,
               top: menuPosition.top,
@@ -354,13 +361,14 @@ export function AdminSelect({
                       onChange(option.value)
                       setOpen(false)
                     }}
-                    className={`flex w-full cursor-pointer items-center justify-between rounded-xl text-left font-medium transition-colors ${
-                      compact ? "h-8 gap-2 px-2.5 text-xs" : "h-9 gap-3 px-3 text-sm"
-                    } ${
+                    className={cn(
+                      "flex w-full cursor-pointer items-center justify-between rounded-xl text-left font-medium transition-colors",
+                      compact ? "h-8 gap-2 px-2.5 text-xs" : "h-9 gap-3 px-3 text-sm",
                       selected
                         ? "admin-ds-select-option-selected"
-                        : "admin-ds-select-option"
-                    }`}
+                        : "admin-ds-select-option",
+                      optionClassName
+                    )}
                   >
                     <span className="truncate">{option.label}</span>
                     {selected && <Check className="size-3.5 text-beyonix-sky" />}

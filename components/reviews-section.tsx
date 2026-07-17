@@ -112,7 +112,7 @@ export function ReviewsSection() {
   }, [loadReviews])
 
   const handleAddReview = async () => {
-    if (!eligibleReview || !comment.trim() || isSubmitting) return
+    if (!eligibleReview || isSubmitting) return
 
     setIsSubmitting(true)
     setErrorMessage("")
@@ -234,9 +234,11 @@ export function ReviewsSection() {
           )}
         </div>
 
-        <p className="mb-5 leading-relaxed text-white/88">
-          “{review.comment}”
-        </p>
+        {review.comment.trim() && (
+          <p className="mb-5 leading-relaxed text-white/88">
+            “{review.comment}”
+          </p>
+        )}
 
         <div className="border-t border-beyonix-blue-light/14 pt-4">
           <p className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -329,7 +331,7 @@ export function ReviewsSection() {
               type="button"
               aria-label="Enviar experiencia"
               onClick={() => void handleAddReview()}
-              disabled={!comment.trim() || isSubmitting}
+              disabled={isSubmitting}
               className="w-full"
             >
               {isSubmitting ? (

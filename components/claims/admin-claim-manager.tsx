@@ -79,6 +79,10 @@ const RESOLUTION_OPTIONS: Array<{
     label: "Nota de crédito",
   },
   {
+    value: "saldo_a_favor",
+    label: "Saldo a favor",
+  },
+  {
     value: "reintegro_total",
     label: "Reembolso",
   },
@@ -555,7 +559,11 @@ export function AdminClaimManager({
     const message = decisionMessage.trim() || response.trim()
     const sent = await updateClaim(
       {
-        status: decisionResolution === "reintegro_total" ? "reintegro_pendiente" : "aprobado",
+        status:
+          decisionResolution === "reintegro_total" ||
+          decisionResolution === "saldo_a_favor"
+            ? "reintegro_pendiente"
+            : "aprobado",
         resolution: decisionResolution,
         admin_response: message || claim.admin_response || "",
         append_message: Boolean(message),
@@ -1385,6 +1393,7 @@ function ClaimActionModal({
     cambio_producto: "border-blue-300/25 hover:border-blue-300/60",
     envio_unidad_faltante: "border-sky-300/25 hover:border-sky-300/60",
     cupon_descuento: "border-amber-300/25 hover:border-amber-300/60",
+    saldo_a_favor: "border-cyan-300/25 hover:border-cyan-300/60",
     reintegro_total: "border-emerald-300/25 hover:border-emerald-300/60",
     reintegro_parcial: "border-emerald-300/25 hover:border-emerald-300/60",
     otro: "border-white/10 hover:border-white/25",

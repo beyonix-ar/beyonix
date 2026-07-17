@@ -5,6 +5,7 @@ import {
   buildCustomerCancelledOrderNotification,
   upsertCustomerCancelledOrderNotification,
 } from "@/lib/orders/customer-cancellation-notification"
+import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -28,6 +29,7 @@ type CancelableOrder = {
   payment_proof_url?: string | null
   payment_proof_uploaded_at?: string | null
   financial_status?: string | null
+  credit_balance_used?: number | null
   paid_at?: string | null
   cancelled_at?: string | null
 }
@@ -179,7 +181,7 @@ export async function POST(
   const admin = createAdminClient()
   const { data: order, error: orderError } = await admin
     .from("ordenes")
-    .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, paid_at")
+    .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -257,6 +259,13 @@ export async function POST(
   }
 
   await notifyCustomerCancellation(admin, updatedOrder)
+  if (Number(order.credit_balance_used ?? 0) > 0) {
+    await reverseCustomerCreditForOrder(admin, {
+      orderId: order.id,
+      description: "Reintegro de saldo por cancelación de compra",
+      createdBy: user.id,
+    })
+  }
   await appendOrderAuditEvent(admin, {
     orderId: order.id,
     actorType: "customer",
