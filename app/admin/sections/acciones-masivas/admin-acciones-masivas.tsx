@@ -246,7 +246,11 @@ export function AdminAccionesMasivas() {
             </AdminFormField>
 
             {isPercentAction && (
-              <AdminFormField label="Porcentaje" className="max-w-[220px]">
+              <AdminFormField
+                label="Porcentaje"
+                help="El precio resultante se redondeará al importe más cercano terminado en 000, 500 o 900."
+                className="max-w-[320px]"
+              >
                 <AdminTextInput
                   title="Porcentaje"
                   type="number"

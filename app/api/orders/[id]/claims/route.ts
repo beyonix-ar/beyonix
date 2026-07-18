@@ -333,14 +333,7 @@ export async function POST(
     const isRefundDetailsSubmission =
       Boolean(refundAccountHolder || refundAccountIdentifier || refundBank || refundAmountConfirmed)
 
-    if (claim.status === "reintegro_pendiente") {
-      if (!isRefundDetailsSubmission) {
-        return NextResponse.json(
-          { error: "Completá los datos de reintegro para continuar." },
-          { status: 409 },
-        )
-      }
-
+    if (claim.status === "reintegro_pendiente" && isRefundDetailsSubmission) {
       if (
         !refundAccountHolder ||
         !refundAccountIdentifier ||
@@ -392,7 +385,7 @@ export async function POST(
       .limit(1)
       .maybeSingle()
 
-    if (latestMessage?.author_role === "cliente") {
+    if (latestMessage?.author_role === "cliente" && files.length === 0) {
       return NextResponse.json(
         { error: "Mensaje enviado. Esperá la respuesta de BEYONIX para continuar." },
         { status: 409 },
@@ -404,20 +397,6 @@ export async function POST(
         { error: "Agregá una respuesta o nueva evidencia." },
         { status: 400 },
       )
-    }
-
-    if (files.length > 0 && claim.status !== "falta_informacion") {
-      const { count } = await admin
-        .from("order_claim_files")
-        .select("id", { count: "exact", head: true })
-        .eq("claim_id", claim.id)
-
-      if ((count ?? 0) > 0) {
-        return NextResponse.json(
-          { error: "La evidencia ya fue enviada. Podrás adjuntar más archivos si BEYONIX solicita información adicional." },
-          { status: 409 },
-        )
-      }
     }
 
     if (message.length >= 5) {
@@ -440,7 +419,7 @@ export async function POST(
     await admin
       .from("order_claims")
       .update({
-        status: "en_revision",
+        ...(claim.status === "falta_informacion" ? { status: "en_revision" } : {}),
         admin_needs_action: true,
         last_customer_message_at: new Date().toISOString(),
       })

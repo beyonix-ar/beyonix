@@ -4012,6 +4012,11 @@ div.claim-form-shell::after {
   text-shadow: 0 0 16px rgba(16, 185, 129, 0.24);
 }
 
+.admin-order-detail-scope .admin-order-summary-view .admin-order-received-card .admin-order-total-received-amount {
+  color: #fff !important;
+  text-shadow: none;
+}
+
 .admin-order-detail-scope .admin-order-summary-products-panel .admin-order-item-card {
   margin-top: 0.5rem;
   border-color: transparent !important;

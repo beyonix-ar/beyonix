@@ -19,8 +19,26 @@ function normalizeNumber(value: unknown) {
   return Number.isFinite(number) ? number : 0
 }
 
-function roundPrice(value: number) {
-  return Math.max(1, Math.round(value))
+function roundBulkPrice(value: number) {
+  const price = Math.max(1, value)
+
+  if (price < 500) return Math.round(price)
+
+  const thousand = Math.floor(price / 1000) * 1000
+  const candidates = [
+    thousand - 100,
+    thousand,
+    thousand + 500,
+    thousand + 900,
+    thousand + 1000,
+  ].filter((candidate) => candidate >= 500)
+
+  return candidates.reduce((closest, candidate) => {
+    const candidateDistance = Math.abs(candidate - price)
+    const closestDistance = Math.abs(closest - price)
+
+    return candidateDistance <= closestDistance ? candidate : closest
+  })
 }
 
 function getSlugFromUrl(url: string, prefix: string) {
@@ -120,14 +138,14 @@ export async function POST(request: Request) {
 
     if (actionKind === "discount_percent") {
       payload.precio_anterior = currentPrice
-      payload.precio = roundPrice(currentPrice * (1 - value / 100))
+      payload.precio = roundBulkPrice(currentPrice * (1 - value / 100))
       payload.descuento = Math.round(value)
     } else if (actionKind === "price_decrease_percent") {
       payload.precio_anterior = currentPrice
-      payload.precio = roundPrice(currentPrice * (1 - value / 100))
+      payload.precio = roundBulkPrice(currentPrice * (1 - value / 100))
       payload.descuento = Math.round(value)
     } else if (actionKind === "price_increase_percent") {
-      payload.precio = roundPrice(currentPrice * (1 + value / 100))
+      payload.precio = roundBulkPrice(currentPrice * (1 + value / 100))
       payload.precio_anterior = null
       payload.descuento = null
     } else if (actionKind === "installments") {

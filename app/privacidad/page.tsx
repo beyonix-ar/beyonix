@@ -1,149 +1,251 @@
+import type { Metadata } from "next"
+import Link from "next/link"
+import {
+  CheckCircle2,
+  Clock3,
+  Cookie,
+  Database,
+  Eye,
+  FileText,
+  KeyRound,
+  LockKeyhole,
+  Mail,
+  ServerCog,
+  Share2,
+  ShieldCheck,
+  UserRoundCheck,
+} from "lucide-react"
+
+import { BeyonixButton, BeyonixCard, BeyonixIconBox } from "@/components/beyonix-ui"
+import { BEYONIX_EMAIL } from "@/lib/legal-contact"
+
+export const metadata: Metadata = {
+  title: "Política de privacidad | BEYONIX",
+  description:
+    "Información sobre el tratamiento, uso, conservación y protección de datos personales en BEYONIX.",
+}
+
+const LAST_UPDATED = "17 de julio de 2026"
+
+const dataGroups = [
+  {
+    icon: UserRoundCheck,
+    title: "Identificación y contacto",
+    text: "Nombre, apellido, email, teléfono, DNI y datos necesarios para validar la cuenta o la operación.",
+  },
+  {
+    icon: Database,
+    title: "Compra y facturación",
+    text: "Carrito, productos, variantes, importes, descuentos, pedidos, comprobantes y datos fiscales.",
+  },
+  {
+    icon: Share2,
+    title: "Entrega y posventa",
+    text: "Domicilio, referencias, seguimiento, mensajes, reclamos, evidencia, devoluciones y garantías.",
+  },
+  {
+    icon: KeyRound,
+    title: "Uso y seguridad",
+    text: "Sesión, preferencias, eventos técnicos, registros de acceso y señales necesarias para prevenir fraude.",
+  },
+]
+
+function PrivacySection({
+  icon: Icon,
+  eyebrow,
+  title,
+  children,
+}: {
+  icon: typeof LockKeyhole
+  eyebrow: string
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <BeyonixCard variant="information" className="p-5 sm:p-6 lg:p-7">
+      <div className="flex items-start gap-3.5">
+        <BeyonixIconBox size="lg"><Icon className="size-5" /></BeyonixIconBox>
+        <div className="min-w-0 flex-1">
+          <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan/80">{eyebrow}</p>
+          <h2 className="mt-1.5 text-xl font-bold tracking-tight text-white sm:text-2xl">{title}</h2>
+          <div className="mt-4 space-y-3 text-sm leading-7 text-white/66">{children}</div>
+        </div>
+      </div>
+    </BeyonixCard>
+  )
+}
+
+function PrivacyItem({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2.5">
+      <CheckCircle2 className="mt-1.5 size-3.5 shrink-0 text-beyonix-cyan" />
+      <span>{children}</span>
+    </li>
+  )
+}
+
 export default function PrivacidadPage() {
   return (
-    <main className="min-h-screen bg-black text-white">
-      <section className="border-b border-white/10">
-        <div className="mx-auto max-w-4xl px-6 py-16 lg:px-8 lg:py-24">
-          <p className="mb-3 text-11px font-medium uppercase tracking-widest text-beyonix-focus">
-            BEYONIX
+    <main className="min-h-screen bg-transparent text-white">
+      <section className="relative overflow-hidden border-b border-beyonix-blue-light/14">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_8%,rgba(30,77,123,0.34),transparent_34%),radial-gradient(circle_at_84%_44%,rgba(24,91,128,0.15),transparent_31%),linear-gradient(180deg,rgba(3,8,14,0.66),rgba(0,0,0,0.9))]" />
+        <div className="relative mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Datos personales</span>
+            <span className="rounded-full border border-white/8 bg-black/25 px-3 py-1 text-10px font-medium uppercase tracking-[0.14em] text-white/48">Actualizada el {LAST_UPDATED}</span>
+          </div>
+          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">Política de privacidad</h1>
+          <p className="mt-5 max-w-3xl text-base leading-7 text-white/66 sm:text-lg sm:leading-8">
+            Explicamos qué información utiliza BEYONIX, para qué la necesita, con quién puede
+            compartirla y cómo ejercer tus derechos sobre los datos personales.
           </p>
 
-          <h1 className="text-4xl font-bold tracking-tight lg:text-5xl">
-            Política de Privacidad
-          </h1>
-
-          <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/75">
-            En BEYONIX valoramos y respetamos la privacidad de nuestros
-            usuarios. Esta política explica cómo recopilamos, utilizamos y
-            protegemos tu información personal.
-          </p>
+          <div className="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {dataGroups.map((group) => (
+              <BeyonixCard key={group.title} variant="information" className="p-4">
+                <BeyonixIconBox size="sm"><group.icon className="size-4" /></BeyonixIconBox>
+                <h2 className="mt-3 text-sm font-bold text-white">{group.title}</h2>
+                <p className="mt-1.5 text-xs leading-5 text-white/50">{group.text}</p>
+              </BeyonixCard>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section>
-        <div className="mx-auto max-w-4xl space-y-12 px-6 py-14 lg:px-8 lg:py-20">
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Información que recopilamos
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              Podemos recopilar información personal proporcionada por el
-              usuario al realizar una compra, registrarse o comunicarse con
-              nosotros.
+      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <PrivacySection icon={Eye} eyebrow="01 · Alcance" title="Responsable y origen de los datos">
+            <p>
+              BEYONIX, con base operativa en Rosario, Santa Fe, es responsable del tratamiento de
+              los datos recopilados en su sitio y canales oficiales. La información proviene de lo
+              que ingresás al crear una cuenta, comprar, pagar, solicitar un envío, comunicarte o
+              gestionar un reclamo, y de registros técnicos generados al usar el servicio.
             </p>
+            <p>
+              Los datos obligatorios se identifican en cada formulario. Si no se proporcionan,
+              puede resultar imposible crear la cuenta, emitir documentación, entregar el pedido o
+              resolver la solicitud vinculada.
+            </p>
+          </PrivacySection>
 
-            <ul className="list-disc space-y-2 pl-6 text-white/80">
-              <li>Nombre y apellido</li>
-              <li>Correo electrónico</li>
-              <li>Teléfono</li>
-              <li>Dirección de envío</li>
-              <li>Información relacionada con pedidos</li>
+          <PrivacySection icon={ServerCog} eyebrow="02 · Finalidades" title="Para qué se utiliza la información">
+            <ul className="grid gap-2">
+              <PrivacyItem>Autenticar la cuenta, mantener la sesión y recuperar el acceso.</PrivacyItem>
+              <PrivacyItem>Procesar compras, validar pagos, reservar stock y emitir comprobantes.</PrivacyItem>
+              <PrivacyItem>Preparar envíos, comunicar seguimiento y coordinar entregas.</PrivacyItem>
+              <PrivacyItem>Atender mensajes, cancelaciones, reclamos, devoluciones y garantías.</PrivacyItem>
+              <PrivacyItem>Asignar beneficios, saldo a favor y condiciones comerciales autorizadas.</PrivacyItem>
+              <PrivacyItem>Prevenir fraude, proteger el sitio, auditar acciones y cumplir obligaciones legales.</PrivacyItem>
+              <PrivacyItem>Medir rendimiento y mejorar la experiencia mediante información técnica y analítica.</PrivacyItem>
             </ul>
-          </div>
+          </PrivacySection>
 
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Uso de la información
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              La información recopilada es utilizada únicamente para:
+          <PrivacySection icon={Share2} eyebrow="03 · Proveedores" title="Destinatarios y servicios involucrados">
+            <p>
+              BEYONIX no vende bases de datos personales. Solo comunica la información necesaria a
+              proveedores que intervienen en la operación o prestan infraestructura bajo sus propias
+              condiciones de seguridad y confidencialidad.
             </p>
-
-            <ul className="list-disc space-y-2 pl-6 text-white/80">
-              <li>Procesar compras y pagos</li>
-              <li>Gestionar envíos</li>
-              <li>Brindar soporte al cliente</li>
-              <li>Enviar información relacionada con pedidos</li>
-              <li>Mejorar la experiencia del usuario</li>
+            <ul className="grid gap-2">
+              <PrivacyItem>Supabase, para autenticación, base de datos y almacenamiento seguro de archivos.</PrivacyItem>
+              <PrivacyItem>Mercado Pago y entidades financieras, para procesar, validar o reintegrar pagos.</PrivacyItem>
+              <PrivacyItem>Andreani, para cotización, despacho, seguimiento y entrega de pedidos.</PrivacyItem>
+              <PrivacyItem>ARCA y servicios de facturación, para comprobantes y obligaciones fiscales.</PrivacyItem>
+              <PrivacyItem>Servicios de email, hosting y analítica, para comunicaciones y funcionamiento técnico.</PrivacyItem>
             </ul>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Protección de datos
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              BEYONIX adopta medidas razonables de seguridad para proteger la
-              información personal de accesos no autorizados, pérdidas o usos
-              indebidos.
+            <p>
+              Algunos proveedores pueden procesar datos en otras jurisdicciones. En esos casos se
+              utilizan servicios reconocidos y medidas contractuales o técnicas razonables para
+              mantener un nivel adecuado de protección.
             </p>
+          </PrivacySection>
 
-            <p className="leading-relaxed text-white/80">
-              Las transacciones de pago son procesadas mediante plataformas
-              externas seguras como Mercado Pago.
+          <PrivacySection icon={Cookie} eyebrow="04 · Navegación" title="Cookies y almacenamiento local">
+            <p>
+              El sitio utiliza cookies y almacenamiento local o de sesión indispensables para el
+              inicio de sesión, el carrito, la seguridad, las preferencias y los beneficios asociados
+              a la cuenta. Deshabilitarlos puede impedir funciones esenciales.
             </p>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Compartir información
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              BEYONIX no vende ni comparte información personal con terceros
-              ajenos al proceso de compra, pago o envío.
+            <p>
+              En producción se emplea analítica para conocer visitas, rendimiento y errores de forma
+              agregada. BEYONIX no utiliza estos mecanismos para almacenar datos completos de tarjetas
+              ni contraseñas en texto visible.
             </p>
+          </PrivacySection>
 
-            <p className="leading-relaxed text-white/80">
-              Algunos datos pueden ser compartidos únicamente con servicios
-              logísticos o plataformas de pago para completar correctamente el
-              pedido.
+          <PrivacySection icon={Clock3} eyebrow="05 · Conservación" title="Durante cuánto tiempo se guardan">
+            <p>
+              Los datos se conservan mientras la cuenta o relación comercial permanezca activa y,
+              luego, durante los plazos necesarios para facturación, garantías, prevención de fraude,
+              auditoría, defensa de derechos y demás obligaciones legales.
             </p>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Cookies
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              Nuestro sitio puede utilizar cookies o tecnologías similares para
-              mejorar la navegación y optimizar la experiencia del usuario.
+            <p>
+              Cuando deja de existir una finalidad legítima u obligación de conservación, la
+              información se elimina, anonimiza o restringe de manera razonable. Una solicitud de
+              supresión no alcanza datos que deban conservarse por exigencias fiscales, contractuales
+              o legales.
             </p>
-          </div>
+          </PrivacySection>
 
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Derechos del usuario
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              El usuario puede solicitar la modificación o eliminación de sus
-              datos personales enviando una solicitud a nuestro correo de
-              contacto.
+          <PrivacySection icon={ShieldCheck} eyebrow="06 · Protección" title="Seguridad y confidencialidad">
+            <p>
+              BEYONIX aplica controles de acceso, permisos por rol, autenticación, trazabilidad,
+              validaciones del lado del servidor y almacenamiento restringido para reducir accesos
+              no autorizados, alteraciones, pérdidas o divulgaciones indebidas.
             </p>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Modificaciones
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              Nos reservamos el derecho de actualizar esta política de
-              privacidad en cualquier momento sin previo aviso.
+            <p>
+              Ningún sistema es infalible. Si detectás actividad extraña, no compartas contraseñas ni
+              códigos y escribí inmediatamente a {BEYONIX_EMAIL}. BEYONIX nunca solicita datos
+              completos de tarjetas por email, chat o redes sociales.
             </p>
-          </div>
+          </PrivacySection>
 
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold">
-              Contacto
-            </h2>
-
-            <p className="leading-relaxed text-white/80">
-              Para consultas relacionadas con privacidad o datos personales,
-              podés comunicarte mediante:
+          <PrivacySection icon={FileText} eyebrow="07 · Titulares" title="Acceso, rectificación y supresión">
+            <p>
+              Podés solicitar acceso a tus datos y, cuando corresponda, su rectificación,
+              actualización, confidencialidad o supresión escribiendo desde el correo asociado a la
+              cuenta. Para protegerte, BEYONIX puede requerir una verificación razonable de identidad.
             </p>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-              <p className="text-white">
-                beyonix.ar@gmail.com
-              </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4">
+                <p className="text-10px font-semibold uppercase tracking-[0.16em] text-beyonix-cyan">Solicitud de acceso</p>
+                <p className="mt-1.5 text-lg font-bold text-white">10 días corridos</p>
+              </div>
+              <div className="rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4">
+                <p className="text-10px font-semibold uppercase tracking-[0.16em] text-beyonix-cyan">Rectificación o supresión</p>
+                <p className="mt-1.5 text-lg font-bold text-white">5 días hábiles</p>
+              </div>
             </div>
-          </div>
+            <p>
+              Estos plazos se aplican según la Ley 25.326, sin perjuicio de restricciones legales de
+              conservación o de los derechos que correspondan ante la autoridad competente.
+            </p>
+          </PrivacySection>
+
+          <PrivacySection icon={LockKeyhole} eyebrow="08 · Vigencia" title="Cambios y marco aplicable">
+            <p>
+              Esta política se interpreta junto con los Términos y condiciones. Las actualizaciones
+              se publicarán con su fecha de vigencia y no reducirán retroactivamente derechos
+              reconocidos. El tratamiento se rige por la Ley 25.326 y demás normativa argentina aplicable.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <a href="https://www.argentina.gob.ar/normativa/nacional/64790/actualizacion" target="_blank" rel="noopener noreferrer" className="font-semibold text-beyonix-sky underline-offset-4 hover:text-white hover:underline">Consultar Ley 25.326</a>
+              <span className="text-white/24">·</span>
+              <Link href="/terminos" className="font-semibold text-beyonix-sky underline-offset-4 hover:text-white hover:underline">Ver Términos y condiciones</Link>
+            </div>
+          </PrivacySection>
         </div>
+
+        <section className="mt-8 rounded-2xl border border-beyonix-blue-light/26 bg-[radial-gradient(circle_at_10%_0%,rgba(44,108,163,0.22),transparent_38%),linear-gradient(145deg,rgba(17,42,67,0.42),rgba(5,9,14,0.98))] p-6 sm:p-7">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Ejercicio de derechos</p>
+              <h2 className="mt-2 text-2xl font-bold text-white">Contactá a BEYONIX por tus datos</h2>
+              <p className="mt-2 text-sm leading-6 text-white/60">Indicá el derecho que querés ejercer y escribí desde el email asociado a tu cuenta. No envíes contraseñas ni datos completos de tarjetas.</p>
+            </div>
+            <BeyonixButton asChild size="lg"><a href={`mailto:${BEYONIX_EMAIL}?subject=${encodeURIComponent("Privacidad y datos personales — BEYONIX")}`}><Mail className="size-4" />Enviar solicitud</a></BeyonixButton>
+          </div>
+        </section>
       </section>
     </main>
   )

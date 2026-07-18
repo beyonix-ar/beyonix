@@ -7,15 +7,19 @@ import {
   Truck,
 } from "lucide-react"
 
-const EMAIL = "beyonix.ar@gmail.com"
+import {
+  BEYONIX_EMAIL,
+  BEYONIX_SUPPORT_HOURS,
+} from "@/lib/legal-contact"
+
 const EMAIL_SUBJECT = "Consulta desde beyonix.com.ar"
-const GMAIL_COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(EMAIL)}&su=${encodeURIComponent(EMAIL_SUBJECT)}`
+const GMAIL_COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(BEYONIX_EMAIL)}&su=${encodeURIComponent(EMAIL_SUBJECT)}`
 
 const infoCards = [
   {
     label: "GESTIÓN DE PEDIDOS",
     value: "Validación de pagos y consultas",
-    subValue: "Dentro de horarios operativos",
+    subValue: BEYONIX_SUPPORT_HOURS,
     icon: Clock,
   },
   {
@@ -98,7 +102,7 @@ export default function ContactoPage() {
                   EMAIL
                 </p>
                 <p className="mt-1 truncate text-sm font-medium text-white/80">
-                  {EMAIL}
+                  {BEYONIX_EMAIL}
                 </p>
                 <p className="mt-2 text-xs font-medium text-beyonix-cyan">
                   Abrir Gmail

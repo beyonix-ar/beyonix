@@ -7,13 +7,16 @@ import Link from "next/link"
 import { Instagram, Mail } from "lucide-react"
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { BeyonixCard, BeyonixIconBox } from "@/components/beyonix-ui"
+import {
+  BEYONIX_EMAIL,
+  BEYONIX_WITHDRAWAL_URL,
+} from "@/lib/legal-contact"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
 import { cn } from "@/lib/utils"
 
-const EMAIL = "beyonix.ar@gmail.com"
 const EMAIL_SUBJECT = "Consulta desde beyonix.com.ar"
-const GMAIL_COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(EMAIL)}&su=${encodeURIComponent(EMAIL_SUBJECT)}`
+const GMAIL_COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(BEYONIX_EMAIL)}&su=${encodeURIComponent(EMAIL_SUBJECT)}`
 
 const infoLinks = [
   {
@@ -186,6 +189,15 @@ export function Footer() {
                   </Link>
                 </li>
               ))}
+              <li>
+                <a
+                  href={BEYONIX_WITHDRAWAL_URL}
+                  aria-label="Abrir el Botón de arrepentimiento"
+                  className="inline-flex rounded-md font-semibold text-beyonix-cyan outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+                >
+                  Botón de arrepentimiento
+                </a>
+              </li>
             </ul>
           </FooterColumn>
 

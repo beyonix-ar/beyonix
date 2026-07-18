@@ -10,6 +10,7 @@ import {
   getOrderClaimStatusLabel,
   getOrderClaimTypeLabel,
   isClaimWindowOpen,
+  WARRANTY_CLAIM_WINDOW_MONTHS,
 } from "@/lib/order-claims"
 import {
   formatCuentaOrderDate,
@@ -271,14 +272,12 @@ function ClaimHeaderCard({
           </div>
           <div className="rounded-xl border border-white/8 bg-[#181818] p-3">
             <p className="text-10px font-black uppercase tracking-widest text-white/55">
-              Tiempo estimado
+              {isTransportClaim ? "Tiempo estimado" : "Cobertura"}
             </p>
             <p className="mt-1 text-white">
               {isTransportClaim
                 ? "Respuesta antes de 48hs hábiles"
-                : `Garantía hasta ${formatClaimDeadline(
-                    getClaimDeadline(deliveredAt, "garantia_beyonix"),
-                  )}`}
+                : `Garantía BEYONIX de ${WARRANTY_CLAIM_WINDOW_MONTHS} meses`}
             </p>
           </div>
         </div>
@@ -924,7 +923,7 @@ export function ClaimsCenterPanel({ order }: { order: SupabasePedido }) {
               equipo revisará el caso y te ofrecerá una solución.
             </p>
             <p className="mt-3 text-11px font-black uppercase tracking-wide text-white">
-              Límite: {formatClaimDeadline(getClaimDeadline(deliveredAt, "garantia_beyonix"))}
+              Cobertura de {WARRANTY_CLAIM_WINDOW_MONTHS} meses desde la entrega
             </p>
           </button>
         </div>

@@ -413,6 +413,11 @@ export interface SupabasePedidoItem {
   variante_id?: number | null
   cantidad: number
   precio: number
+  return_restocked_quantity?: number | null
+  return_written_off_quantity?: number | null
+  return_inventory_note?: string | null
+  return_inventory_processed_at?: string | null
+  return_inventory_processed_by?: string | null
   warranty_started_at?: string | null
   warranty_expires_at?: string | null
   warranty_months?: number | null

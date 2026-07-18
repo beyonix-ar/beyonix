@@ -594,6 +594,19 @@ function shouldShowClaimsTab(pedido: SupabasePedido) {
   )
 }
 
+function needsReturnInventoryDecision(pedido: SupabasePedido) {
+  const productArrived =
+    pedido.estado === "devuelto_beyonix" ||
+    ["en_revision", "aprobada", "rechazada", "resuelta"].includes(
+      pedido.return_status ?? "",
+    )
+
+  return (
+    productArrived &&
+    (pedido.orden_items ?? []).some((item) => !item.return_inventory_processed_at)
+  )
+}
+
 type OrderSectionNotificationType =
   | "new"
   | "warning"
@@ -867,6 +880,16 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
     }
   }
 
+  if (needsReturnInventoryDecision(pedido)) {
+    return {
+      title: "Definir destino del producto devuelto",
+      description: "Registrá si vuelve al stock disponible o queda dado de baja como pérdida.",
+      target: "reclamos",
+      buttonLabel: "Revisar devolución",
+      tone: "urgent",
+    }
+  }
+
   if (isRefundPaymentAttentionOrder(pedido)) {
     return {
       title: "Cargar comprobante de reintegro",
@@ -932,7 +955,15 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
 
 function getOrderLatestActivity(pedido: SupabasePedido) {
   const latestClaim = (pedido.order_claims ?? [])[0]
+  const latestReturnInventoryAt = (pedido.orden_items ?? [])
+    .map((item) => item.return_inventory_processed_at)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
   const candidates = [
+    {
+      at: latestReturnInventoryAt,
+      label: "Se registró el destino del producto devuelto.",
+    },
     {
       at: latestClaim?.updated_at || latestClaim?.created_at,
       label:
@@ -1629,7 +1660,7 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       ["credit_note_registered", "credit_note_authorized"].includes(event.action),
     )?.created_at
   const productReturnedAt = findAuditEvent((event) =>
-    ["product_return_received", "return_product_received", "returned_product_received"].includes(
+    ["product_return_received", "return_product_received", "returned_product_received", "return_inventory_processed"].includes(
       event.action,
     ),
   )?.created_at
@@ -4329,6 +4360,7 @@ function PedidoDetailModal({
             pedido={pedido}
             mode="claims"
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
+            onInventoryUpdated={onWarrantyUpdated}
           />
           )}
 

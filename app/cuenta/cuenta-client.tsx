@@ -1,7 +1,7 @@
 ﻿"use client"
 // @refresh reset
 
-import { useEffect, useLayoutEffect, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
@@ -431,7 +431,11 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const authenticatedUserId = user?.id ?? ""
+  const authenticatedUserEmail = user?.email ?? ""
+  const hasAuthenticatedUser = Boolean(authenticatedUserId || authenticatedUserEmail)
   const [order, setOrder] = useState<SupabasePedido | null>(null)
+  const loadedOrderIdRef = useRef<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [downloadingInvoice, setDownloadingInvoice] = useState(false)
@@ -453,16 +457,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 
   useEffect(() => {
     if (isLoading) return
-    if (!user) {
+    if (!hasAuthenticatedUser) {
       router.replace(`/login?redirect=/cuenta/compras/${orderId}`)
       return
     }
 
-    const currentUser = user
     let active = true
 
     async function loadOrder() {
-      setLoading(true)
+      if (loadedOrderIdRef.current !== orderId) setLoading(true)
       setError("")
       const { data, error: orderError } = await supabase
         .from("ordenes")
@@ -479,7 +482,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       }
 
       const currentOrder = data as SupabasePedido
-      const userValues = [currentUser.id, currentUser.email]
+      const userValues = [authenticatedUserId, authenticatedUserEmail]
         .filter(Boolean)
         .map((value) => String(value).trim().toLowerCase())
       const orderValues = [currentOrder.usuario_id, currentOrder.cliente_email]
@@ -499,12 +502,13 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             ? currentOrder.order_claims
             : await getOrderClaims(currentOrder.id),
       })
+      loadedOrderIdRef.current = currentOrder.id
       setLoading(false)
     }
 
     void loadOrder()
     return () => { active = false }
-  }, [isLoading, orderId, router, user])
+  }, [authenticatedUserEmail, authenticatedUserId, hasAuthenticatedUser, isLoading, orderId, router])
 
   const handleProofUploaded = (updatedOrder: SupabasePedido) => {
     setOrder((current) => current ? { ...current, ...updatedOrder, orden_items: current.orden_items } : current)
@@ -615,11 +619,13 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     }
   }
 
-  if (isLoading || loading) {
+  const hasCurrentOrder = order?.id === orderId
+
+  if (!hasAuthenticatedUser || ((isLoading || loading) && !hasCurrentOrder)) {
     return <OrderPageLoadingState />
   }
 
-  if (!order) {
+  if (!order || !hasCurrentOrder) {
     return <main className="min-h-screen bg-[#05070A] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#0D1117] p-6 text-center"><p className="text-sm font-bold text-white">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a Mis compras</button></div></main>
   }
 
@@ -1248,7 +1254,11 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 export function CompraAyudaClient({ orderId }: { orderId: number }) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
+  const authenticatedUserId = user?.id ?? ""
+  const authenticatedUserEmail = user?.email ?? ""
+  const hasAuthenticatedUser = Boolean(authenticatedUserId || authenticatedUserEmail)
   const [order, setOrder] = useState<SupabasePedido | null>(null)
+  const loadedOrderIdRef = useRef<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [redirecting, setRedirecting] = useState(false)
   const [error, setError] = useState("")
@@ -1259,18 +1269,17 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
 
   useEffect(() => {
     if (isLoading) return
-    if (!user) {
+    if (!hasAuthenticatedUser) {
       setRedirecting(true)
       router.replace(`/login?redirect=/cuenta/compras/${orderId}/ayuda`)
       return
     }
 
     setRedirecting(false)
-    const currentUser = user
     let active = true
 
     async function loadOrder() {
-      setLoading(true)
+      if (loadedOrderIdRef.current !== orderId) setLoading(true)
       const { data, error: orderError } = await supabase
         .from("ordenes")
         .select(ACCOUNT_ORDER_SELECT)
@@ -1285,7 +1294,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
       }
 
       const currentOrder = data as SupabasePedido
-      const userValues = [currentUser.id, currentUser.email]
+      const userValues = [authenticatedUserId, authenticatedUserEmail]
         .filter(Boolean)
         .map((value) => String(value).trim().toLowerCase())
       const orderValues = [currentOrder.usuario_id, currentOrder.cliente_email]
@@ -1309,18 +1318,21 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
         ...currentOrder,
         order_claims: currentClaims,
       })
+      loadedOrderIdRef.current = currentOrder.id
       setLoading(false)
     }
 
     void loadOrder()
     return () => { active = false }
-  }, [isLoading, orderId, router, user])
+  }, [authenticatedUserEmail, authenticatedUserId, hasAuthenticatedUser, isLoading, orderId, router])
 
-  if (isLoading || loading || redirecting) {
+  const hasCurrentOrder = order?.id === orderId
+
+  if (!hasAuthenticatedUser || redirecting || ((isLoading || loading) && !hasCurrentOrder)) {
     return <OrderPageLoadingState variant="claim" />
   }
 
-  if (!order) {
+  if (!order || !hasCurrentOrder) {
     return <main className="min-h-screen bg-[#05070A] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#0D1117] p-6 text-center"><p className="text-sm font-bold text-white">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push(`/cuenta/compras/${orderId}`)} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a la compra</button></div></main>
   }
 

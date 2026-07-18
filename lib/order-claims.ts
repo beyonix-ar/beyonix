@@ -9,7 +9,7 @@ export const ORDER_CLAIM_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 export const ORDER_CLAIM_VIDEO_MAX_BYTES = 40 * 1024 * 1024
 export const ORDER_CLAIM_FILE_MAX_BYTES = 10 * 1024 * 1024
 export const TRANSPORT_CLAIM_WINDOW_HOURS = 48
-export const WARRANTY_CLAIM_WINDOW_DAYS = 30
+export const WARRANTY_CLAIM_WINDOW_MONTHS = 6
 
 export const ORDER_CLAIM_STATUSES: OrderClaimStatus[] = [
   "recibido",
@@ -96,7 +96,12 @@ export function getClaimDeadline(deliveredAt: string, type: OrderClaimType) {
   if (type === "transporte_48hs") {
     deadline.setHours(deadline.getHours() + TRANSPORT_CLAIM_WINDOW_HOURS)
   } else {
-    deadline.setDate(deadline.getDate() + WARRANTY_CLAIM_WINDOW_DAYS)
+    const originalDay = deadline.getDate()
+    deadline.setMonth(deadline.getMonth() + WARRANTY_CLAIM_WINDOW_MONTHS)
+
+    if (deadline.getDate() !== originalDay) {
+      deadline.setDate(0)
+    }
   }
 
   return deadline

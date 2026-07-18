@@ -140,6 +140,12 @@ function normalizeShippingOptionPrice(price: number, fallbackCost: number) {
     : fallbackCost
 }
 
+function getShippingOptionLabel(type: ShippingType) {
+  return type === "domicilio"
+    ? "Envío a domicilio"
+    : "Retiro en sucursal Andreani"
+}
+
 function getStockIndicatorClassName(status: StockStatus) {
   if (status === "low") {
     return "text-amber-200/75"
@@ -162,7 +168,7 @@ const paymentMethods = [
   {
     id: "mercadopago",
     name: "Mercado Pago",
-    description: "Pagá con tu cuenta, tarjeta o dinero disponible",
+    description: "Pagá con saldo en Mercado Pago o con tarjeta",
     icon: Smartphone,
   },
   {
@@ -710,13 +716,13 @@ export default function CheckoutPage() {
       setShippingOptions([
         {
           type: "sucursal",
-          label: "Retiro en sucursal Andreani",
+          label: getShippingOptionLabel("sucursal"),
           price: manualShippingCost,
           provider: "andreani",
         },
         {
           type: "domicilio",
-          label: "Envío a domicilio Andreani",
+          label: getShippingOptionLabel("domicilio"),
           price: manualShippingCost,
           provider: "andreani",
         },
@@ -749,7 +755,7 @@ export default function CheckoutPage() {
           setShippingOptions(
             data.options.map((option: ShippingOption) => ({
               type: option.type,
-              label: option.label,
+              label: getShippingOptionLabel(option.type),
               price: normalizeShippingOptionPrice(
                 option.price,
                 manualShippingCost,
@@ -764,13 +770,13 @@ export default function CheckoutPage() {
         setShippingOptions([
           {
             type: "sucursal",
-            label: "Retiro en sucursal Andreani",
+            label: getShippingOptionLabel("sucursal"),
             price: manualShippingCost,
             provider: "andreani",
           },
           {
             type: "domicilio",
-            label: "Envío a domicilio Andreani",
+            label: getShippingOptionLabel("domicilio"),
             price: manualShippingCost,
             provider: "andreani",
           },
@@ -787,13 +793,13 @@ export default function CheckoutPage() {
         setShippingOptions([
           {
             type: "sucursal",
-            label: "Retiro en sucursal Andreani",
+            label: getShippingOptionLabel("sucursal"),
             price: manualShippingCost,
             provider: "andreani",
           },
           {
             type: "domicilio",
-            label: "Envío a domicilio Andreani",
+            label: getShippingOptionLabel("domicilio"),
             price: manualShippingCost,
             provider: "andreani",
           },
@@ -1516,7 +1522,7 @@ export default function CheckoutPage() {
                           }}
                           className={cn(
                             checkoutOptionClassName,
-                            "items-center gap-4 px-4 py-3.5",
+                            "items-center gap-4 px-4 py-3",
                             selected
                               ? checkoutOptionSelectedClassName
                               : "border-beyonix-blue-light/16 bg-[#10151C]"
@@ -1533,9 +1539,6 @@ export default function CheckoutPage() {
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-semibold text-white">
                               {option.label}
-                            </span>
-                            <span className="mt-0.5 block text-xs text-white/42">
-                              Cotización Andreani
                             </span>
                           </span>
                           <span className="flex shrink-0 items-center gap-2 text-right">

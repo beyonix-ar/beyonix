@@ -792,7 +792,10 @@ export function CustomerClaimExperience({
   const sendReply = async (currentClaim: SupabaseOrderClaim) => {
     const currentMessages = sortUniqueMessages(currentClaim.order_claim_messages)
 
-    if (currentMessages[currentMessages.length - 1]?.author_role === "cliente") {
+    if (
+      currentMessages[currentMessages.length - 1]?.author_role === "cliente" &&
+      replyFiles.length === 0
+    ) {
       setError("Mensaje enviado. Esperá la respuesta de BEYONIX para continuar.")
       return
     }
@@ -964,7 +967,7 @@ export function CustomerClaimExperience({
     const refundProof = claimFiles.find((file) => file.file_role === "comprobante_devolucion")
     const evidenceFiles = claimFiles.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
     const evidenceSent = evidenceFiles.length > 0
-    const canUploadEvidence = !cancellation && (!evidenceSent || claim.status === "falta_informacion")
+    const canUploadEvidence = !cancellation && open
     const closedHelp = helpMessage && claim.status === "cerrado"
     const refundPending =
       claim.status === "reintegro_pendiente" &&
@@ -1110,30 +1113,30 @@ export function CustomerClaimExperience({
           {error && <p className="mb-2 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
 
           {open ? (
-            refundPending && !refundDetailsSubmitted ? (
-              <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 p-3">
-                <p className="text-xs font-black text-white">Datos para el reintegro</p>
-                <p className="mt-1 text-xs leading-5 text-white/65">Completalos para que podamos avanzar.</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <input value={refundAccountHolder} onChange={(event) => setRefundAccountHolder(event.target.value)} placeholder="Titular de la cuenta" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                  <input value={refundAccountIdentifier} onChange={(event) => setRefundAccountIdentifier(event.target.value)} placeholder="Alias o CBU/CVU" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                  <input value={refundBank} onChange={(event) => setRefundBank(event.target.value)} placeholder="Banco / billetera" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
-                  <input value={refundAmountConfirmed} onChange={(event) => setRefundAmountConfirmed(event.target.value)} placeholder="Importe a recibir" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+            <div className="space-y-2">
+              {refundPending && !refundDetailsSubmitted ? (
+                <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 p-3">
+                  <p className="text-xs font-black text-white">Datos para el reintegro</p>
+                  <p className="mt-1 text-xs leading-5 text-white/65">Completalos para que podamos avanzar.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <input value={refundAccountHolder} onChange={(event) => setRefundAccountHolder(event.target.value)} placeholder="Titular de la cuenta" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                    <input value={refundAccountIdentifier} onChange={(event) => setRefundAccountIdentifier(event.target.value)} placeholder="Alias o CBU/CVU" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                    <input value={refundBank} onChange={(event) => setRefundBank(event.target.value)} placeholder="Banco / billetera" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                    <input value={refundAmountConfirmed} onChange={(event) => setRefundAmountConfirmed(event.target.value)} placeholder="Importe a recibir" className="h-9 rounded-lg border border-white/10 bg-[#101820] px-3 text-xs text-white outline-none placeholder:text-white/40 focus:border-[#77E6E2]/45" />
+                  </div>
+                  <button type="button" disabled={loading} onClick={() => void submitRefundDetails(claim)} className="mt-3 h-9 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45">
+                    Enviar datos
+                  </button>
                 </div>
-                <button type="button" disabled={loading} onClick={() => void submitRefundDetails(claim)} className="mt-3 h-9 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45">
-                  Enviar datos
-                </button>
-              </div>
-            ) : refundPending ? (
-              <p className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2 text-xs font-bold text-[#D7FFFD]">
-                Datos recibidos. BEYONIX realizará el reintegro.
-              </p>
-            ) : customerTurnLocked ? (
-              <p className="rounded-xl border border-[#21476B] bg-[#101820] px-4 py-3 text-sm font-bold text-[#B8D6F0]">
-                Mensaje enviado. Te vamos a responder por este chat.
-              </p>
-            ) : (
-              <div className="space-y-2">
+              ) : refundPending ? (
+                <p className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2 text-xs font-bold text-[#D7FFFD]">
+                  Datos recibidos. BEYONIX realizará el reintegro.
+                </p>
+              ) : customerTurnLocked ? (
+                <p className="rounded-xl border border-[#21476B] bg-[#101820] px-4 py-3 text-sm font-bold text-[#B8D6F0]">
+                  Mensaje enviado. Te vamos a responder por este chat.
+                </p>
+              ) : (
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <textarea
                     value={reply}
@@ -1148,18 +1151,27 @@ export function CustomerClaimExperience({
                     {loading ? "Enviando..." : "Enviar"}
                   </button>
                 </div>
-                {canUploadEvidence ? (
-                  <details className="rounded-lg border border-white/8 bg-[#101820] px-3 py-2">
-                    <summary className="cursor-pointer text-xs font-black text-white/70">Adjuntar evidencia</summary>
-                    <div className="mt-2">
-                      <EvidenceUploader files={replyFiles} onChange={setReplyFiles} disabled={loading} />
-                    </div>
-                  </details>
-                ) : (
-                  <p className="text-[11px] font-semibold text-white/45">Podrás adjuntar nueva evidencia si BEYONIX solicita más información.</p>
-                )}
-              </div>
-            )
+              )}
+              {canUploadEvidence && (
+                <details className="rounded-lg border border-white/8 bg-[#101820] px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-black text-white/70">Adjuntar evidencia</summary>
+                  <div className="mt-2">
+                    <EvidenceUploader files={replyFiles} onChange={setReplyFiles} disabled={loading} />
+                    {(customerTurnLocked || refundPending) && (
+                      <button
+                        type="button"
+                        disabled={loading || replyFiles.length === 0}
+                        onClick={() => void sendReply(claim)}
+                        className="mt-2 inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/35 bg-[#112A43] px-4 text-xs font-black text-white transition hover:border-beyonix-blue-light/65 hover:bg-[#183B5E] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[#112A43]"
+                      >
+                        <Send className="size-3.5" />
+                        {loading ? "Enviando..." : "Enviar archivos"}
+                      </button>
+                    )}
+                  </div>
+                </details>
+              )}
+            </div>
           ) : (
             <div className="space-y-2">
               {closedHelp ? (

@@ -30,6 +30,7 @@ import type {
   SupabaseOrderClaimMessage,
   SupabaseOrderClaim,
   SupabasePedido,
+  SupabasePedidoItem,
 } from "@/lib/supabase/types"
 
 const PROBLEM_LABELS: Record<string, string> = {
@@ -306,14 +307,625 @@ function getDefaultDecisionResolution(claim?: SupabaseOrderClaim | null): Exclud
   return "cambio_producto"
 }
 
+type ReturnInventoryDraft = {
+  received: string
+  goodCondition: string
+  note: string
+}
+
+function getReturnInventoryDraft(item: SupabasePedidoItem): ReturnInventoryDraft {
+  const restocked = Number(item.return_restocked_quantity ?? 0)
+  const writtenOff = Number(item.return_written_off_quantity ?? 0)
+
+  return {
+    received: String(restocked + writtenOff),
+    goodCondition: String(restocked),
+    note: item.return_inventory_note ?? "",
+  }
+}
+
+function ReturnInventoryPanel({
+  pedido,
+  canManage,
+  onUpdated,
+}: {
+  pedido: SupabasePedido
+  canManage: boolean
+  onUpdated?: () => void | Promise<void>
+}) {
+  const items = pedido.orden_items ?? []
+  const [drafts, setDrafts] = useState<Record<number, ReturnInventoryDraft>>(() =>
+    Object.fromEntries(items.map((item) => [item.id, getReturnInventoryDraft(item)])),
+  )
+  const [savingItemId, setSavingItemId] = useState<number | null>(null)
+  const [confirmationItemId, setConfirmationItemId] = useState<number | null>(null)
+  const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null)
+
+  useEffect(() => {
+    setDrafts(
+      Object.fromEntries(items.map((item) => [item.id, getReturnInventoryDraft(item)])),
+    )
+    setSavingItemId(null)
+    setConfirmationItemId(null)
+    setNotice(null)
+  }, [pedido.id, pedido.orden_items])
+
+  const updateDraft = (
+    item: SupabasePedidoItem,
+    field: keyof ReturnInventoryDraft,
+    value: string,
+  ) => {
+    setDrafts((current) => ({
+      ...current,
+      [item.id]: {
+        ...(current[item.id] ?? getReturnInventoryDraft(item)),
+        [field]: value,
+      },
+    }))
+  }
+
+  const selectSingleUnitCondition = (item: SupabasePedidoItem, arrivedWell: boolean) => {
+    setDrafts((current) => ({
+      ...current,
+      [item.id]: {
+        ...(current[item.id] ?? getReturnInventoryDraft(item)),
+        received: "1",
+        goodCondition: arrivedWell ? "1" : "0",
+      },
+    }))
+  }
+
+  const saveItem = async (item: SupabasePedidoItem, confirmed = false) => {
+    const draft = drafts[item.id] ?? getReturnInventoryDraft(item)
+    const received = Number(draft.received || 0)
+    const restocked = Number(draft.goodCondition || 0)
+    const writtenOff = received - restocked
+    const soldQuantity = Number(item.cantidad ?? 0)
+    const previouslyProcessed = Boolean(item.return_inventory_processed_at)
+
+    if (previouslyProcessed) {
+      setNotice({
+        ok: false,
+        message: "Esta recepción ya fue registrada. Corregí el stock desde Productos.",
+      })
+      return
+    }
+
+    if (
+      !Number.isInteger(received) ||
+      received < 0 ||
+      !Number.isInteger(restocked) ||
+      restocked < 0
+    ) {
+      setNotice({ ok: false, message: "Ingresá cantidades enteras iguales o mayores que cero." })
+      return
+    }
+
+    if (received > soldQuantity) {
+      setNotice({
+        ok: false,
+        message: "Las unidades recibidas no pueden superar las unidades vendidas.",
+      })
+      return
+    }
+
+    if (restocked > received) {
+      setNotice({
+        ok: false,
+        message: "Las unidades en buenas condiciones no pueden superar las recibidas.",
+      })
+      return
+    }
+
+    if (!previouslyProcessed && received === 0) {
+      setNotice({
+        ok: false,
+        message: "Indicá al menos una unidad recibida para registrar la devolución.",
+      })
+      return
+    }
+
+    if (writtenOff > 0 && draft.note.trim().length < 3) {
+      setNotice({
+        ok: false,
+        message: "Indicá en la observación el motivo de la baja o pérdida.",
+      })
+      return
+    }
+
+    if (!confirmed) {
+      setConfirmationItemId(item.id)
+      return
+    }
+
+    setConfirmationItemId(null)
+    setSavingItemId(item.id)
+    setNotice(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setNotice({ ok: false, message: "La sesión administrativa venció." })
+        return
+      }
+
+      const response = await fetch(
+        `/api/admin/pedidos/${pedido.id}/return-inventory/${item.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            restockedQuantity: restocked,
+            writtenOffQuantity: writtenOff,
+            note: draft.note.trim(),
+          }),
+        },
+      )
+      const data = (await response.json()) as { error?: string }
+
+      if (!response.ok) {
+        setNotice({
+          ok: false,
+          message: data.error || "No se pudo registrar el destino del producto devuelto.",
+        })
+        return
+      }
+
+      setNotice({
+        ok: true,
+        message: "Recepción guardada y stock actualizado correctamente.",
+      })
+      notifyOrderNotificationsChanged()
+      await onUpdated?.()
+    } catch {
+      setNotice({
+        ok: false,
+        message: "No se pudo registrar el destino del producto devuelto.",
+      })
+    } finally {
+      setSavingItemId(null)
+    }
+  }
+
+  const confirmationItem = items.find((item) => item.id === confirmationItemId) ?? null
+  const confirmationDraft = confirmationItem
+    ? drafts[confirmationItem.id] ?? getReturnInventoryDraft(confirmationItem)
+    : null
+  const confirmationReceived = Number(confirmationDraft?.received || 0)
+  const confirmationRestocked = Number(confirmationDraft?.goodCondition || 0)
+  const confirmationWrittenOff = confirmationReceived - confirmationRestocked
+  const confirmationCurrentRestocked = Number(
+    confirmationItem?.return_restocked_quantity ?? 0,
+  )
+  const confirmationStockDelta = confirmationRestocked - confirmationCurrentRestocked
+  const confirmationProductStock = Number(confirmationItem?.productos?.stock ?? 0)
+  const confirmationVariantStock = Number(
+    confirmationItem?.producto_variantes?.stock ?? 0,
+  )
+  const confirmationVariantName =
+    confirmationItem?.producto_variantes?.nombre?.trim() || "Variante seleccionada"
+  const hasPendingInventory = items.some((item) => !item.return_inventory_processed_at)
+
+  return (
+    <>
+      <section className="admin-claim-card mx-3 mb-3 rounded-xl border p-3 sm:mx-4 sm:mb-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-10px font-black uppercase tracking-widest text-blue-200/75">
+            Recepción e inventario
+          </p>
+          <h4 className="mt-1 text-sm font-black text-white">Productos devueltos</h4>
+          {hasPendingInventory && (
+            <p className="mt-1 max-w-3xl text-xs font-semibold leading-5 text-white/62">
+              Registrá el destino cuando el producto vuelva físicamente a BEYONIX. Lo revendible suma stock; lo dañado queda asentado como baja o pérdida y no vuelve al stock disponible.
+            </p>
+          )}
+        </div>
+        {!canManage && hasPendingInventory && (
+          <span className="w-fit rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-10px font-black uppercase text-white/55">
+            Solo lectura
+          </span>
+        )}
+      </div>
+
+      {notice && (
+        <p
+          role="status"
+          className={`mt-3 rounded-lg border px-3 py-2 text-xs font-bold ${
+            notice.ok
+              ? "border-emerald-300/20 bg-emerald-400/8 text-emerald-100"
+              : "border-red-300/20 bg-red-500/8 text-red-100"
+          }`}
+        >
+          {notice.message}
+        </p>
+      )}
+
+      <div className="mt-3 space-y-2">
+        {items.length > 0 ? (
+          items.map((item) => {
+            const draft = drafts[item.id] ?? getReturnInventoryDraft(item)
+            const productName = item.productos?.nombre ?? `Producto #${item.producto_id}`
+            const soldQuantity = Number(item.cantidad ?? 0)
+            const receivedQuantity =
+              Number(item.return_restocked_quantity ?? 0) +
+              Number(item.return_written_off_quantity ?? 0)
+            const productStock = Number(item.productos?.stock ?? 0)
+            const variantStock = Number(item.producto_variantes?.stock ?? 0)
+            const variantName =
+              item.producto_variantes?.nombre?.trim() || "Variante seleccionada"
+            const saving = savingItemId === item.id
+            const inventoryLocked = Boolean(item.return_inventory_processed_at)
+            const draftReceived = Number(draft.received || 0)
+            const draftGoodCondition = Number(draft.goodCondition || 0)
+            const draftWrittenOff = Math.max(draftReceived - draftGoodCondition, 0)
+            const currentRestocked = Number(item.return_restocked_quantity ?? 0)
+            const pendingStockDelta = draftGoodCondition - currentRestocked
+            const nextProductStock = productStock + pendingStockDelta
+            const nextVariantStock = variantStock + pendingStockDelta
+            const singleUnitCondition =
+              soldQuantity === 1 && draftReceived === 1
+                ? draftGoodCondition === 1
+                  ? "yes"
+                  : "no"
+                : null
+
+            if (inventoryLocked) {
+              const restockedQuantity = Number(item.return_restocked_quantity ?? 0)
+              const writtenOffQuantity = Number(item.return_written_off_quantity ?? 0)
+              const onlyRestocked = restockedQuantity > 0 && writtenOffQuantity === 0
+              const onlyWrittenOff = writtenOffQuantity > 0 && restockedQuantity === 0
+              const resultLabel = onlyRestocked
+                ? soldQuantity === 1
+                  ? "Sí, volvió al stock"
+                  : `${restockedQuantity} unidades volvieron al stock`
+                : onlyWrittenOff
+                  ? soldQuantity === 1
+                    ? "No, se dio de baja"
+                    : `${writtenOffQuantity} unidades se dieron de baja`
+                  : `${restockedQuantity} al stock · ${writtenOffQuantity} de baja`
+              const impactParts = [
+                restockedQuantity > 0
+                  ? `+${restockedQuantity} ${restockedQuantity === 1 ? "unidad" : "unidades"} al stock disponible`
+                  : null,
+                writtenOffQuantity > 0
+                  ? `${writtenOffQuantity} ${writtenOffQuantity === 1 ? "unidad registrada" : "unidades registradas"} como baja o pérdida`
+                  : null,
+              ].filter((part): part is string => Boolean(part))
+              const resultTone = onlyRestocked
+                ? "border-emerald-300/24 bg-emerald-400/8 text-emerald-100"
+                : onlyWrittenOff
+                  ? "border-red-300/24 bg-red-400/8 text-red-100"
+                  : "border-blue-300/24 bg-blue-400/8 text-blue-100"
+
+              return (
+                <article
+                  key={`return-inventory-${item.id}`}
+                  className="rounded-lg border border-white/9 bg-black/20 p-3"
+                >
+                  <p className="text-sm font-black text-white">
+                    {productName}
+                    {item.variante_id && (
+                      <span className="font-semibold text-white/55"> · {variantName}</span>
+                    )}
+                  </p>
+                  <div className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2.5 ${resultTone}`}>
+                    {onlyRestocked ? (
+                      <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                    ) : onlyWrittenOff ? (
+                      <XCircle className="mt-0.5 size-4 shrink-0" />
+                    ) : (
+                      <PackageCheck className="mt-0.5 size-4 shrink-0" />
+                    )}
+                    <div>
+                      <p className="text-10px font-black uppercase tracking-wide opacity-75">
+                        Opción elegida
+                      </p>
+                      <p className="mt-0.5 text-sm font-black text-white">{resultLabel}</p>
+                      <p className="mt-1 text-11px font-semibold leading-4 text-white/64">
+                        Impacto: {impactParts.join(" · ")}.
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              )
+            }
+
+            return (
+              <article key={`return-inventory-${item.id}`} className="rounded-lg border border-white/9 bg-black/20 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-white">{productName}</p>
+                    <p className="mt-1 text-11px font-semibold text-white/55">
+                      {item.producto_variantes?.nombre?.trim() || "Sin variante"} · Vendidas: {soldQuantity}
+                    </p>
+                    <p className="mt-1 text-11px font-semibold text-blue-100/72">
+                      {item.variante_id
+                        ? `Stock general: ${productStock} · ${variantName}: ${variantStock}`
+                        : `Stock actual: ${productStock}`}
+                    </p>
+                  </div>
+                  {item.return_inventory_processed_at && (
+                    <div className="shrink-0 rounded-lg border border-emerald-300/18 bg-emerald-400/8 px-2.5 py-1.5 text-right">
+                      <p className="text-10px font-black uppercase text-emerald-100">Recepción registrada</p>
+                      <p className="mt-0.5 text-10px font-semibold text-white/58">
+                        {formatDate(item.return_inventory_processed_at)} · {receivedQuantity}/{soldQuantity} unidades
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {soldQuantity === 1 ? (
+                  <div className="mt-3">
+                    <p className="text-xs font-black text-white">
+                      ¿El producto llegó en buenas condiciones y se puede revender?
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={!canManage || saving || inventoryLocked}
+                        aria-pressed={singleUnitCondition === "yes"}
+                        onClick={() => selectSingleUnitCondition(item, true)}
+                        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                          singleUnitCondition === "yes"
+                            ? "!border-emerald-300/80 !bg-emerald-500/25 !text-emerald-50 ring-2 ring-emerald-300/25"
+                            : "border-white/12 bg-[#101820] text-white/70 hover:border-emerald-300/45"
+                        }`}
+                      >
+                        <CheckCircle2 className="size-4" />
+                        Sí, vuelve al stock
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canManage || saving || inventoryLocked}
+                        aria-pressed={singleUnitCondition === "no"}
+                        onClick={() => selectSingleUnitCondition(item, false)}
+                        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                          singleUnitCondition === "no"
+                            ? "!border-red-300/80 !bg-red-500/22 !text-red-50 ring-2 ring-red-300/25"
+                            : "border-white/12 bg-[#101820] text-white/70 hover:border-red-300/45"
+                        }`}
+                      >
+                        <XCircle className="size-4" />
+                        No, dar de baja
+                      </button>
+                    </div>
+                    {singleUnitCondition && (
+                      <div
+                        className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 ${
+                          singleUnitCondition === "yes"
+                            ? "border-emerald-300/24 bg-emerald-400/8"
+                            : "border-red-300/24 bg-red-400/8"
+                        }`}
+                      >
+                        {singleUnitCondition === "yes" ? (
+                          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-200" />
+                        ) : (
+                          <XCircle className="mt-0.5 size-4 shrink-0 text-red-200" />
+                        )}
+                        <div>
+                          <p className="text-xs font-black text-white">Opción seleccionada</p>
+                          <p className="mt-0.5 text-11px font-semibold leading-4 text-white/64">
+                            {singleUnitCondition === "yes"
+                              ? item.variante_id
+                                ? `Al guardar, el stock general pasará de ${productStock} a ${nextProductStock} y la variante ${variantName} de ${variantStock} a ${nextVariantStock}.`
+                                : `Al guardar, el stock pasará de ${productStock} a ${nextProductStock}.`
+                              : item.variante_id
+                                ? `Al guardar, la unidad quedará dada de baja. El stock general pasará de ${productStock} a ${nextProductStock} y la variante ${variantName} de ${variantStock} a ${nextVariantStock}. Completá la observación con el motivo.`
+                                : `Al guardar, la unidad quedará dada de baja y el stock pasará de ${productStock} a ${nextProductStock}. Completá la observación con el motivo.`}
+                          </p>
+                          <p className="mt-1 text-10px font-black uppercase tracking-wide text-white/45">
+                            El cambio se aplica al presionar Guardar recepción.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <p className="text-xs font-black text-white">
+                      ¿Cuántas unidades de este producto recibió BEYONIX y cuántas llegaron bien?
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-end gap-x-8 gap-y-2">
+                      <label className="block w-fit">
+                        <span className="text-10px font-black uppercase tracking-wide text-blue-200">
+                          Unidades recibidas
+                        </span>
+                        <div className="mt-1.5 w-20">
+                          <input
+                            type="number"
+                            min={0}
+                            max={soldQuantity}
+                            step={1}
+                            inputMode="numeric"
+                            value={draft.received}
+                            disabled={!canManage || saving || inventoryLocked}
+                            onChange={(event) => updateDraft(item, "received", event.target.value)}
+                            className={`${adminControlClassName} h-9 min-h-9 px-2 text-center text-xs`}
+                          />
+                        </div>
+                      </label>
+                      <label className="block w-fit">
+                        <span className="text-10px font-black uppercase tracking-wide text-emerald-200">
+                          Llegaron bien — suben stock
+                        </span>
+                        <div className="mt-1.5 w-20">
+                          <input
+                            type="number"
+                            min={0}
+                            max={draftReceived}
+                            step={1}
+                            inputMode="numeric"
+                            value={draft.goodCondition}
+                            disabled={!canManage || saving || inventoryLocked}
+                            onChange={(event) => updateDraft(item, "goodCondition", event.target.value)}
+                            className={`${adminControlClassName} h-9 min-h-9 px-2 text-center text-xs`}
+                          />
+                        </div>
+                      </label>
+                      <div className="rounded-lg border border-red-300/18 bg-red-500/7 px-3 py-2">
+                        <p className="text-10px font-black uppercase tracking-wide text-red-200">
+                          Baja o pérdida
+                        </p>
+                        <p className="mt-1 text-sm font-black text-white">{draftWrittenOff}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <label className="mt-2 block">
+                  <span className="text-10px font-black uppercase tracking-wide text-white/48">
+                    Observación interna
+                  </span>
+                  <textarea
+                    value={draft.note}
+                    disabled={!canManage || saving || inventoryLocked}
+                    maxLength={1000}
+                    rows={2}
+                    onChange={(event) => updateDraft(item, "note", event.target.value)}
+                    placeholder="Ej.: packaging completo y sin uso, golpeado, faltan accesorios..."
+                    className="mt-1.5 w-full resize-none rounded-lg border border-white/10 bg-[#101820] px-3 py-2 text-xs font-semibold text-white outline-none placeholder:text-white/35 focus:border-blue-300/45 disabled:cursor-not-allowed disabled:opacity-55"
+                  />
+                </label>
+
+                {canManage && !inventoryLocked && (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-10px font-semibold leading-4 text-white/45">
+                      Revisá los datos antes de guardar: la recepción quedará cerrada definitivamente.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={savingItemId !== null}
+                      onClick={() => void saveItem(item)}
+                      className="admin-ds-button admin-ds-button-primary h-9 px-3 text-10px font-black disabled:cursor-wait disabled:opacity-45"
+                    >
+                      {saving ? "Guardando..." : "Guardar recepción"}
+                    </button>
+                  </div>
+                )}
+                {inventoryLocked && (
+                  <div className="mt-2 rounded-lg border border-blue-300/15 bg-[#112A43]/22 px-3 py-2">
+                    <p className="text-xs font-black text-blue-100">Recepción cerrada</p>
+                    <p className="mt-1 text-11px font-semibold leading-4 text-white/58">
+                      Este registro ya no se puede modificar desde el reclamo. Si necesitás corregir una cantidad, hacelo desde Productos.
+                    </p>
+                  </div>
+                )}
+              </article>
+            )
+          })
+        ) : (
+          <p className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-xs font-semibold text-white/55">
+            Este pedido no tiene productos cargados.
+          </p>
+        )}
+      </div>
+      </section>
+
+      {confirmationItem && (
+        <div
+          className="fixed inset-0 z-120 flex items-center justify-center bg-black/82 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={() => setConfirmationItemId(null)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="return-inventory-confirmation-title"
+            className="admin-ds-surface w-full max-w-md rounded-2xl border border-blue-300/25 bg-[#0B1724] p-4 shadow-2xl shadow-black/70 sm:p-5"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-blue-300/25 bg-[#112A43] text-blue-100">
+                <PackageCheck className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-10px font-black uppercase tracking-widest text-blue-200/70">
+                  Confirmar movimiento
+                </p>
+                <h4 id="return-inventory-confirmation-title" className="mt-1 text-lg font-black text-white">
+                  Recepción de {confirmationItem.productos?.nombre ?? `Producto #${confirmationItem.producto_id}`}
+                </h4>
+                <p className="mt-1 text-xs font-semibold leading-5 text-white/58">
+                  Revisá el destino de las unidades antes de modificar el inventario.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl border border-emerald-300/20 bg-emerald-400/8 px-3 py-3">
+                <p className="text-10px font-black uppercase tracking-wide text-emerald-200">
+                  Vuelven al stock
+                </p>
+                <p className="mt-1 text-xl font-black text-white">{confirmationRestocked}</p>
+              </div>
+              <div className="rounded-xl border border-red-300/20 bg-red-400/8 px-3 py-3">
+                <p className="text-10px font-black uppercase tracking-wide text-red-200">
+                  Baja o pérdida
+                </p>
+                <p className="mt-1 text-xl font-black text-white">{confirmationWrittenOff}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-white/9 bg-black/20 px-3 py-2.5">
+              <p className="text-10px font-black uppercase tracking-wide text-white/45">
+                Stock resultante
+              </p>
+              <div className="mt-1 space-y-0.5 text-xs font-bold leading-5 text-white/75">
+                <p>
+                  Stock general del producto: {confirmationProductStock} → {confirmationProductStock + confirmationStockDelta}
+                </p>
+                {confirmationItem.variante_id && (
+                  <p>
+                    Variante {confirmationVariantName}: {confirmationVariantStock} → {confirmationVariantStock + confirmationStockDelta}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-400/8 px-3 py-2 text-11px font-bold leading-4 text-amber-100">
+              Al confirmar, esta recepción quedará cerrada y no podrá modificarse desde el reclamo.
+            </p>
+
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={savingItemId !== null}
+                onClick={() => setConfirmationItemId(null)}
+                className="admin-ds-button admin-ds-button-secondary h-10 px-4 text-xs font-black"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={savingItemId !== null}
+                onClick={() => void saveItem(confirmationItem, true)}
+                className="admin-ds-button admin-ds-button-primary inline-flex h-10 items-center justify-center gap-2 px-4 text-xs font-black"
+              >
+                <PackageCheck className="size-4" />
+                Confirmar recepción
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function AdminClaimManager({
   pedido,
   mode = "all",
   onClaimChange,
+  onInventoryUpdated,
 }: {
   pedido: SupabasePedido
   mode?: "all" | "messaging" | "claims"
   onClaimChange: (claim: SupabaseOrderClaim) => void
+  onInventoryUpdated?: () => void | Promise<void>
 }) {
   const { isAdmin } = useAuth()
   const allClaims = pedido.order_claims ?? []
@@ -836,11 +1448,20 @@ export function AdminClaimManager({
           ? "Este pedido todavía no tiene mensajes previos a la entrega."
           : "Este pedido todavía no tiene mensajes de ayuda ni reclamos."
     return (
-      <section className="admin-claim-manager admin-ds-card mt-3 p-4">
-        <h3 className="text-base font-black text-white">{title}</h3>
-        <p className="mt-1 text-sm text-white/66">{emptyDescription}</p>
-        {notice && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">{notice}</p>}
-      </section>
+      <div className="admin-claim-manager admin-ds-card mt-3 overflow-hidden">
+        <section className="p-4">
+          <h3 className="text-base font-black text-white">{title}</h3>
+          <p className="mt-1 text-sm text-white/66">{emptyDescription}</p>
+          {notice && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">{notice}</p>}
+        </section>
+        {mode === "claims" && (
+          <ReturnInventoryPanel
+            pedido={pedido}
+            canManage={isAdmin}
+            onUpdated={onInventoryUpdated}
+          />
+        )}
+      </div>
     )
   }
 
@@ -1185,6 +1806,14 @@ export function AdminClaimManager({
           )}
         </aside>
       </div>
+
+      {mode === "claims" && (
+        <ReturnInventoryPanel
+          pedido={pedido}
+          canManage={isAdmin}
+          onUpdated={onInventoryUpdated}
+        />
+      )}
 
       {notice && <p className={`mx-3 mb-3 rounded-lg border px-3 py-2 text-xs font-bold text-white sm:mx-4 sm:mb-4 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>{notice}</p>}
 
