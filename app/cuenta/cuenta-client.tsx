@@ -1,27 +1,33 @@
 ﻿"use client"
 // @refresh reset
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  Clock3,
   Coins,
+  Copy,
   CreditCard,
   Download,
   Eye,
   FileText,
+  Gift,
   Heart,
   IdCard,
+  Landmark,
   Loader2,
   LockKeyhole,
   LogOut,
   MessageCircle,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   Truck,
+  UploadCloud,
   User,
   X,
 } from "lucide-react"
@@ -67,9 +73,16 @@ import {
   TRANSFER_ACCOUNT_HOLDER,
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
+import { BEYONIX_SUPPORT_HOURS } from "@/lib/legal-contact"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
-type ProfileView = "home" | "ordenes" | "saldo" | "datos" | "seguridad"
+type ProfileView =
+  | "home"
+  | "ordenes"
+  | "saldo"
+  | "cargar-saldo"
+  | "datos"
+  | "seguridad"
 
 const ACCOUNT_ORDER_SELECT =
   "*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*, order_claim_files(*), order_claim_messages(*))"
@@ -257,26 +270,15 @@ function OrderPageLoadingState({ variant = "detail" }: { variant?: "detail" | "c
   )
 }
 
-function MiSaldo({ onBack }: { onBack: () => void }) {
-  const { user } = useAuth()
+function MiSaldo({
+  onBack,
+  onLoadBalance,
+}: {
+  onBack: () => void
+  onLoadBalance: () => void
+}) {
   const customerCredit = useCustomerCredit()
   const loadCustomerCreditMovements = customerCredit.loadMovements
-  const proofInputRef = useRef<HTMLInputElement>(null)
-  const [amount, setAmount] = useState("")
-  const [name, setName] = useState(user?.name ?? "")
-  const [dni, setDni] = useState(user?.dni ?? "")
-  const [proofFile, setProofFile] = useState<File | null>(null)
-  const [topups, setTopups] = useState<Array<{
-    id: string
-    amount: number | string
-    proof_file_name?: string | null
-    proof_signed_url?: string | null
-    status: string
-    created_at: string
-  }>>([])
-  const [topupMessage, setTopupMessage] = useState("")
-  const [topupError, setTopupError] = useState("")
-  const [topupSaving, setTopupSaving] = useState(false)
   const [giftRecipientName, setGiftRecipientName] = useState("")
   const [giftRecipientLookup, setGiftRecipientLookup] = useState("")
   const [giftAmount, setGiftAmount] = useState("")
@@ -284,11 +286,7 @@ function MiSaldo({ onBack }: { onBack: () => void }) {
   const [giftSaving, setGiftSaving] = useState(false)
   const [giftNotice, setGiftNotice] = useState("")
   const [giftError, setGiftError] = useState("")
-  const topupStatusLabels: Record<string, string> = {
-    en_revision: "En revisión",
-    acreditado: "Acreditado",
-    rechazado: "Rechazado",
-  }
+  const [showReceivedGiftCards, setShowReceivedGiftCards] = useState(false)
   const giftCardMovements = customerCredit.movements.filter((movement) => {
     const metadata = movement.metadata ?? {}
 
@@ -297,73 +295,25 @@ function MiSaldo({ onBack }: { onBack: () => void }) {
       (metadata.source_kind === "gift_card" ||
         metadata.created_from === "admin_gift_card_panel" ||
         metadata.created_from === "admin_gift_card_transfer" ||
-        movement.description.toLowerCase().includes("giftcard"))
+      movement.description.toLowerCase().includes("giftcard"))
     )
   })
+  const normalizedGiftAmount = Number(
+    giftAmount.replace(/\./g, "").replace(",", "."),
+  )
+  const previewGiftAmount =
+    Number.isFinite(normalizedGiftAmount) && normalizedGiftAmount > 0
+      ? normalizedGiftAmount
+      : 0
+  const hasAvailableBalance = customerCredit.balance > 0
+  const previewRecipientName =
+    giftRecipientName.trim() || "Nombre de la persona"
+  const previewRecipientLookup =
+    giftRecipientLookup.trim() || "Email o DNI del destinatario"
 
   useEffect(() => {
     void loadCustomerCreditMovements()
   }, [loadCustomerCreditMovements])
-
-  async function loadTopups() {
-    const response = await fetch("/api/customer-credit/topups", {
-      cache: "no-store",
-    })
-    const data = (await response.json()) as {
-      topups?: typeof topups
-      error?: string
-    }
-
-    if (response.ok) {
-      setTopups(data.topups ?? [])
-    }
-  }
-
-  useEffect(() => {
-    void loadTopups()
-  }, [])
-
-  async function submitTopupProof() {
-    setTopupMessage("")
-    setTopupError("")
-
-    if (!proofFile) {
-      setTopupError("Subí el comprobante.")
-      return
-    }
-
-    setTopupSaving(true)
-
-    try {
-      const formData = new FormData()
-      formData.set("amount", amount)
-      formData.set("customerName", name)
-      formData.set("customerDni", dni)
-      formData.set("file", proofFile)
-
-      const response = await fetch("/api/customer-credit/topups", {
-        method: "POST",
-        body: formData,
-      })
-      const data = (await response.json()) as { error?: string }
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "No se pudo enviar el comprobante.")
-      }
-
-      setAmount("")
-      setProofFile(null)
-      setTopupMessage("Comprobante enviado. Lo revisaremos para acreditar el saldo.")
-      if (proofInputRef.current) proofInputRef.current.value = ""
-      await loadTopups()
-    } catch (error) {
-      setTopupError(
-        error instanceof Error ? error.message : "No se pudo enviar el comprobante.",
-      )
-    } finally {
-      setTopupSaving(false)
-    }
-  }
 
   async function submitGiftCard() {
     setGiftNotice("")
@@ -412,201 +362,817 @@ function MiSaldo({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <AccountPageContainer className="max-w-4xl space-y-4">
-      <AccountBackButton onClick={onBack}>Volver</AccountBackButton>
-      <AccountPageHeader
-        eyebrow="Mi cuenta"
-        title="BEYONIX Gift Card"
-        description="Cargá saldo por transferencia o enviá una Gift Card a otro cliente."
+    <AccountPageContainer className="max-w-6xl space-y-3 pb-10">
+      <AccountBackButton
+        onClick={onBack}
+        label="Volver a mi cuenta"
+        className="h-10 rounded-full border-[#2A4B6C] bg-[#132033] px-4 text-xs font-medium text-white/82 shadow-sm shadow-black/25 hover:border-[#4B78A4] hover:bg-[#1A2C44] hover:text-white"
       />
 
-      <div className="grid gap-4 lg:grid-cols-[0.82fr_1.18fr]">
-        <AccountCard padding="md" className="space-y-4">
-          <p className="text-10px font-semibold uppercase tracking-widest text-[var(--account-accent-soft)]">
-            Disponible
-          </p>
-          <p className="mt-2 text-3xl font-black text-white">
-            {formatARS(customerCredit.balance)}
-          </p>
-          <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
-            Se descuenta automáticamente cuando compres.
-          </p>
-          <div className="relative overflow-hidden rounded-2xl border border-beyonix-blue-light/30 bg-[#06111d] p-4">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(70,165,255,0.28),transparent_36%),linear-gradient(135deg,rgba(14,55,96,0.9),rgba(2,6,12,0.96))]" />
-            <div className="relative">
-              <div className="flex items-start justify-between gap-4">
-                <p className="text-lg font-black tracking-wide text-white">BEYONIX</p>
-                <p className="text-10px font-semibold uppercase tracking-widest text-beyonix-cyan">
-                  Gift Card
-                </p>
-              </div>
-              <p className="mt-7 text-3xl font-black text-white">
-                {formatARS(customerCredit.balance)}
-              </p>
-              <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-white/45">
-                Código BX-GIFT
-              </p>
-            </div>
-          </div>
-        </AccountCard>
-
-        <AccountCard padding="md" className="space-y-3">
-          <h2 className="text-lg font-black text-white">Enviar giftcard</h2>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <input value={giftRecipientName} onChange={(event) => setGiftRecipientName(event.target.value)} placeholder="Nombre y apellido del destinatario" className="h-11 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 sm:col-span-2" />
-            <input value={giftRecipientLookup} onChange={(event) => setGiftRecipientLookup(event.target.value)} placeholder="Email o DNI" className="h-11 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35" />
-            <input value={giftAmount} onChange={(event) => setGiftAmount(event.target.value)} inputMode="decimal" placeholder="Monto" className="h-11 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35" />
-            <textarea value={giftMessage} onChange={(event) => setGiftMessage(event.target.value)} maxLength={240} placeholder="Mensaje (opcional)" className="min-h-[88px] resize-none rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 sm:col-span-2" />
-          </div>
-          {giftNotice ? <p className="text-xs font-semibold text-emerald-300">{giftNotice}</p> : null}
-          {giftError ? <p className="text-xs font-semibold text-red-200">{giftError}</p> : null}
+      <div className="space-y-4 rounded-2xl border border-[#172633] bg-[#070C12] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.24)] sm:p-5">
+      <header className="border-b border-[#192936] px-1 pb-4">
+        <p className="text-9px font-medium uppercase tracking-[0.18em] text-beyonix-sky/70">
+          Mi cuenta
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-white/95 sm:text-3xl">
+            BEYONIX Gift Card
+          </h1>
           <button
             type="button"
-            disabled={giftSaving}
-            onClick={() => void submitGiftCard()}
-            className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-beyonix-blue-light/40 bg-[#112A43] px-4 text-sm font-black text-white transition hover:bg-[#183B5E] disabled:opacity-50"
+            aria-pressed={showReceivedGiftCards}
+            onClick={() => setShowReceivedGiftCards((current) => !current)}
+            className={cn(
+              "group inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-semibold transition-all duration-200",
+              showReceivedGiftCards
+                ? "border-beyonix-sky/70 bg-[linear-gradient(135deg,#1C5279,#14324C)] text-white shadow-[0_0_22px_rgba(77,167,224,0.2)]"
+                : "border-[#4F82A8] bg-[linear-gradient(135deg,#183C59,#10263A)] text-white/90 shadow-[0_8px_22px_rgba(0,0,0,0.2)] hover:-translate-y-px hover:border-beyonix-sky/75 hover:text-white hover:shadow-[0_10px_28px_rgba(56,145,205,0.18)]",
+            )}
           >
-            {giftSaving ? "Enviando..." : "Enviar Gift Card"}
+            <Gift className="size-4 transition-transform duration-200 group-hover:-rotate-6 group-hover:scale-110" />
+            Tus Gift!
+            {giftCardMovements.length ? (
+              <span className="flex size-5 items-center justify-center rounded-full border border-white/15 bg-black/20 text-9px tabular-nums text-white/90">
+                {giftCardMovements.length}
+              </span>
+            ) : null}
           </button>
-          <p className="text-xs leading-5 text-[var(--account-text-muted)]">
-            Se debita de tu saldo y se acredita automáticamente al destinatario.
-          </p>
-        </AccountCard>
-      </div>
+        </div>
+        <p className="mt-1.5 max-w-2xl text-sm font-normal leading-6 text-white/48">
+          {showReceivedGiftCards
+            ? "Consultá las Gift Cards que recibiste."
+            : "Cargá saldo en tu cuenta y prepará una tarjeta personalizada para otra persona."}
+        </p>
+      </header>
 
-      <AccountCard padding="md" className="space-y-3">
-        <h2 className="text-lg font-black text-white">Cargar por transferencia</h2>
-          <p className="text-sm leading-6 text-[var(--account-text-secondary)]">
-            Para acreditar saldo en tu cuenta realizá una transferencia a:
-          </p>
-          <div className="rounded-xl border border-[var(--account-border)] bg-black/20 p-3 text-sm text-[var(--account-text-secondary)]">
-            <p><strong className="text-white">Alias:</strong> {TRANSFER_ALIAS}</p>
-            <p><strong className="text-white">Titular:</strong> {TRANSFER_ACCOUNT_HOLDER}</p>
-            <p><strong className="text-white">CVU:</strong> {TRANSFER_CVU}</p>
-          </div>
-
-          <h3 className="pt-1 text-sm font-black text-white">Enviar comprobante</h3>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="Monto" className="h-11 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35" />
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nombre y apellido" className="h-11 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35" />
-            <input value={dni} onChange={(event) => setDni(event.target.value.replace(/\D/g, "").slice(0, 8))} inputMode="numeric" placeholder="DNI" className="h-11 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35" />
-          </div>
-          <input
-            ref={proofInputRef}
-            type="file"
-            accept="image/*,.pdf"
-            className="hidden"
-            onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
-          />
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <button
-              type="button"
-              onClick={() => proofInputRef.current?.click()}
-              className="h-11 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 text-left text-sm font-semibold text-white"
-            >
-              {proofFile?.name ?? "Agregar comprobante"}
-            </button>
-            <button
-              type="button"
-              disabled={topupSaving}
-              onClick={() => void submitTopupProof()}
-              className="inline-flex h-11 min-w-[160px] items-center justify-center rounded-xl border border-beyonix-blue-light/40 bg-[#112A43] px-4 text-sm font-black text-white transition hover:bg-[#183B5E] disabled:opacity-50"
-            >
-              {topupSaving ? "Enviando..." : "Enviar"}
-            </button>
-          </div>
-          {topupMessage ? <p className="text-xs font-semibold text-emerald-300">{topupMessage}</p> : null}
-          {topupError ? <p className="text-xs font-semibold text-red-200">{topupError}</p> : null}
-          <p className="text-xs leading-5 text-[var(--account-text-muted)]">
-            Cuando validemos el pago, acreditamos el saldo en esta cuenta.
-          </p>
-      </AccountCard>
-
-      <AccountCard padding="md" className="space-y-3">
-        <h2 className="text-lg font-black text-white">Comprobantes enviados</h2>
-        {topups.length ? (
-          <div className="space-y-2">
-            {topups.map((topup) => (
-              <div key={topup.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--account-border)] bg-black/20 px-3 py-2">
-                <div>
-                  <p className="text-sm font-bold text-white">{formatARS(Number(topup.amount ?? 0))}</p>
-                  <p className="text-xs text-[var(--account-text-muted)]">
-                    {formatOrderCardDate(topup.created_at)} · {topupStatusLabels[topup.status] ?? topup.status}
-                  </p>
-                </div>
-                {topup.proof_signed_url ? (
-                  <a href={topup.proof_signed_url} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-beyonix-cyan hover:text-white">
-                    Ver comprobante
-                  </a>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="rounded-xl border border-[var(--account-border)] bg-black/20 px-3 py-4 text-sm font-semibold text-[var(--account-text-secondary)]">
-            Todavía no enviaste comprobantes de carga.
-          </p>
-        )}
-      </AccountCard>
-
-      <AccountCard padding="md" className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
+      {!showReceivedGiftCards ? (
+        <>
+      <section className="rounded-xl border border-[#294B68] bg-[#1C1C1C] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-10px font-semibold uppercase tracking-widest text-[var(--account-accent-soft)]">
-              GiftCards recibidas
+            <p className="text-9px font-medium uppercase tracking-[0.18em] text-beyonix-sky/70">
+              Antes de enviar
             </p>
-            <h2 className="mt-1 text-lg font-black text-white">Tus tarjetas</h2>
+            <h2 className="mt-1 text-base font-medium text-white/92">
+              Primero necesitás saldo validado en tu cuenta
+            </h2>
+            <p className="mt-1 max-w-2xl text-xs font-normal leading-5 text-white/62">
+              Realizá una transferencia, enviá el comprobante y esperá la validación. Cuando el saldo esté disponible, vas a poder entregar la Gift Card.
+            </p>
           </div>
-          {customerCredit.movementsLoading ? (
-            <Loader2 className="size-4 animate-spin text-white/50" />
-          ) : null}
+          <button
+            type="button"
+            onClick={onLoadBalance}
+            className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-[#5B91BB]/38 bg-[#132B40] px-4 text-xs font-medium text-white/92 transition hover:border-[#77ADD5]/52 hover:bg-[#173750]"
+          >
+            {hasAvailableBalance ? "Administrar carga" : "Cargar saldo"}
+          </button>
         </div>
 
-        {giftCardMovements.length ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {giftCardMovements.map((movement) => {
-              const message = movement.description
-                .replace(/^GiftCard recibida:\s*/i, "")
-                .replace(/^Transferencia GiftCard enviada:\s*/i, "")
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {[
+            ["1", "Transferí el dinero", "Usá los datos bancarios disponibles en Cargar saldo."],
+            ["2", "Esperá la validación", "El saldo aparecerá cuando confirmemos el comprobante."],
+            ["3", "Enviá la tarjeta", "Completá los datos de la persona y elegí el importe."],
+          ].map(([step, title, description]) => (
+            <div key={step} className="flex gap-3 rounded-lg border border-[#31506F] bg-[#282828] p-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/25 bg-beyonix-blue/24 text-10px font-medium text-beyonix-sky">
+                {step}
+              </span>
+              <div>
+                <p className="text-xs font-medium text-white/92">{title}</p>
+                <p className="mt-1 text-10px font-normal leading-4 text-white/56">
+                  {description}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-              return (
-                <div
-                  key={movement.id}
-                  className="relative overflow-hidden rounded-2xl border border-beyonix-blue-light/24 bg-[#07111D] p-4 shadow-[0_22px_50px_rgba(0,0,0,0.28)]"
-                >
-                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(30,140,255,0.24),transparent_38%),linear-gradient(135deg,rgba(17,42,67,0.92),rgba(2,6,12,0.96))]" />
-                  <div className="relative">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xl font-black tracking-wide text-white">
+      <div className="grid gap-4 lg:grid-cols-[0.96fr_1.04fr]">
+        <section className="rounded-xl border border-[#294B68] bg-[#181818] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-9px font-medium uppercase tracking-[0.18em] text-white/52">
+                Vista previa
+              </p>
+              <p className="mt-1 text-xs font-normal text-white/64">
+                La tarjeta se completa con los datos del formulario.
+              </p>
+            </div>
+            <span className="rounded-full border border-emerald-300/15 bg-emerald-400/[0.06] px-2.5 py-1 text-10px font-normal text-emerald-100/70">
+              Saldo: {formatARS(customerCredit.balance)}
+            </span>
+          </div>
+
+          <div className="relative mt-4 min-h-[270px] overflow-hidden rounded-2xl border border-[#6AA9D2]/28 bg-[#07131F] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_18px_42px_rgba(0,0,0,0.26)] sm:p-6">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(58,151,218,0.25),transparent_38%),radial-gradient(circle_at_100%_100%,rgba(24,76,114,0.2),transparent_42%),linear-gradient(135deg,#12324b_0%,#081725_48%,#040a11_100%)]" />
+            <div className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full border border-white/[0.055]" />
+            <div className="pointer-events-none absolute -right-8 -top-12 size-48 rounded-full border border-white/[0.035]" />
+            <div className="pointer-events-none absolute -bottom-16 -left-10 size-44 rounded-full bg-beyonix-blue/10 blur-2xl" />
+            <div className="pointer-events-none absolute bottom-12 right-[-4rem] h-px w-72 rotate-[-27deg] bg-gradient-to-r from-transparent via-beyonix-sky/22 to-transparent" />
+
+            <div className="relative flex min-h-[222px] flex-col justify-between">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-base font-semibold tracking-[0.1em] text-white/94">
+                  BEYONIX
+                </p>
+                <span className="rounded-md border border-white/[0.1] bg-black/15 px-2.5 py-1.5 text-8px font-medium uppercase tracking-[0.2em] text-beyonix-sky/76">
+                  Gift Card
+                </span>
+              </div>
+
+              <div>
+                <p className="text-9px font-normal uppercase tracking-[0.18em] text-white/34">
+                  Importe de la tarjeta
+                </p>
+                <p className="mt-1 text-3xl font-medium tracking-tight text-white">
+                  {formatARS(previewGiftAmount)}
+                </p>
+                <p className="mt-2 line-clamp-1 max-w-[85%] text-xs font-normal text-white/48">
+                  {giftMessage.trim() || "Un regalo especial para vos"}
+                </p>
+              </div>
+
+              <div className="flex items-end justify-between gap-5 border-t border-white/[0.07] pt-3">
+                <div className="min-w-0">
+                  <p className="text-8px font-normal uppercase tracking-[0.18em] text-white/28">
+                    Para
+                  </p>
+                  <p className="mt-1 truncate text-sm font-medium text-white/88">
+                    {previewRecipientName}
+                  </p>
+                  <p className="mt-0.5 truncate text-10px font-normal text-white/38">
+                    {previewRecipientLookup}
+                  </p>
+                </div>
+                <span className="shrink-0 text-8px font-normal uppercase tracking-[0.17em] text-white/24">
+                  BX · GIFT
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-[#294B68] bg-[#181818] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
+          <div>
+            <h2 className="text-base font-medium text-white/92">Preparar la Gift Card</h2>
+            <p className="mt-1 text-xs font-normal leading-5 text-white/62">
+              Completá los datos exactos de la persona que va a recibirla.
+            </p>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <span className="text-xs font-medium text-white/88">
+                Nombre y apellido de la persona que recibirá la tarjeta
+              </span>
+              <input
+                value={giftRecipientName}
+                onChange={(event) => setGiftRecipientName(event.target.value)}
+                placeholder="Ej.: María González"
+                className="mt-1.5 h-11 w-full rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 text-sm font-medium text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
+              />
+              <span className="mt-1 block text-10px font-normal text-white/52">
+                Este nombre aparecerá impreso en la Gift Card.
+              </span>
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-medium text-white/88">
+                Email o DNI de la persona
+              </span>
+              <input
+                value={giftRecipientLookup}
+                onChange={(event) => setGiftRecipientLookup(event.target.value)}
+                placeholder="Email o DNI"
+                className="mt-1.5 h-11 w-full rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 text-sm font-medium text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-medium text-white/88">
+                Importe que querés entregar
+              </span>
+              <input
+                value={giftAmount}
+                onChange={(event) => setGiftAmount(event.target.value)}
+                inputMode="decimal"
+                placeholder="Monto"
+                className="mt-1.5 h-11 w-full rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 text-sm font-medium text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
+              />
+            </label>
+
+            <label className="block sm:col-span-2">
+              <span className="text-xs font-medium text-white/88">
+                Mensaje para la persona <span className="font-normal text-white/52">(opcional)</span>
+              </span>
+              <textarea
+                value={giftMessage}
+                onChange={(event) => setGiftMessage(event.target.value)}
+                maxLength={240}
+                placeholder="Escribí una dedicatoria breve"
+                className="mt-1.5 min-h-[82px] w-full resize-none rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 py-3 text-sm font-medium leading-5 text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
+              />
+            </label>
+          </div>
+
+          {giftNotice ? (
+            <p className="mt-2 text-11px font-normal text-emerald-300/80">{giftNotice}</p>
+          ) : null}
+          {giftError ? (
+            <p className="mt-2 text-11px font-normal text-red-200/85">{giftError}</p>
+          ) : null}
+
+          <div className="mt-4">
+            <button
+              type="button"
+              disabled={giftSaving || !hasAvailableBalance}
+              onClick={() => void submitGiftCard()}
+              className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-[#5B91BB]/38 bg-[#12304A] px-4 text-sm font-medium text-white/94 transition hover:border-[#77ADD5]/52 hover:bg-[#173C5A] disabled:cursor-not-allowed disabled:border-[#3A3F46] disabled:bg-[#282C31] disabled:text-white/58"
+            >
+              {giftSaving
+                ? "Enviando..."
+                : hasAvailableBalance
+                  ? "Enviar Gift Card"
+                  : "Primero cargá saldo"}
+            </button>
+            <p className="mt-2 text-center text-10px font-normal leading-4 text-white/32">
+              El importe se debitará de tu saldo disponible cuando confirmes el envío.
+            </p>
+          </div>
+        </section>
+      </div>
+        </>
+      ) : null}
+
+      {showReceivedGiftCards ? (
+        <section className="overflow-hidden rounded-2xl border border-[#315B7D] bg-[#181818] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_22px_50px_rgba(0,0,0,0.2)] sm:p-6">
+          <div className="flex flex-col gap-4 border-b border-[#31506F] pb-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-[#6CB9E8]/45 bg-[linear-gradient(145deg,#1B5279,#0D2437)] text-beyonix-sky shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(26,111,166,0.2)]">
+                <Gift className="size-5" />
+              </div>
+              <div>
+                <p className="text-9px font-medium uppercase tracking-[0.2em] text-beyonix-sky/68">
+                  Tu colección
+                </p>
+                <h2 className="mt-1 text-xl font-semibold tracking-tight text-white/95">
+                  Regalos que recibiste
+                </h2>
+                <p className="mt-1 text-xs font-normal text-white/55">
+                  Cada Gift Card guarda el importe y la dedicatoria que te enviaron.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowReceivedGiftCards(false)}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-[#4F82A8] bg-[#132B40] px-4 text-xs font-medium text-white/88 transition hover:border-beyonix-sky/70 hover:bg-[#193B57] hover:text-white"
+            >
+              <Sparkles className="size-3.5" />
+              Preparar una Gift Card
+            </button>
+          </div>
+
+          {customerCredit.movementsLoading ? (
+            <div className="flex min-h-72 items-center justify-center">
+              <Loader2 className="size-6 animate-spin text-beyonix-sky/65" />
+            </div>
+          ) : giftCardMovements.length ? (
+            <div className="mt-6 grid gap-5 md:grid-cols-2">
+              {giftCardMovements.map((movement, index) => {
+                const message = movement.description
+                  .replace(/^GiftCard recibida:\s*/i, "")
+                  .replace(/^Transferencia GiftCard enviada:\s*/i, "")
+                const senderName =
+                  typeof movement.metadata?.sender_name === "string" &&
+                  movement.metadata.sender_name.trim()
+                    ? movement.metadata.sender_name.trim()
+                    : "BEYONIX"
+
+                return (
+                  <article
+                    key={movement.id}
+                    className={cn(
+                      "group relative isolate min-h-[290px] overflow-hidden rounded-2xl border p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_22px_44px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_28px_55px_rgba(0,0,0,0.34)] sm:p-6",
+                      index % 2 === 0
+                        ? "border-[#79C7F2]/55 bg-[radial-gradient(circle_at_8%_0%,rgba(63,169,245,0.4),transparent_38%),radial-gradient(circle_at_100%_100%,rgba(79,70,229,0.25),transparent_44%),linear-gradient(135deg,#123C5B_0%,#071827_55%,#050A12_100%)]"
+                        : "border-[#A99AF8]/45 bg-[radial-gradient(circle_at_10%_0%,rgba(140,96,255,0.36),transparent_38%),radial-gradient(circle_at_100%_100%,rgba(30,174,167,0.22),transparent_44%),linear-gradient(135deg,#2A1D4A_0%,#101727_58%,#070B12_100%)]",
+                    )}
+                  >
+                    <div className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full border border-white/[0.08] transition-transform duration-500 group-hover:scale-105" />
+                    <div className="pointer-events-none absolute -right-8 -top-12 size-48 rounded-full border border-white/[0.055]" />
+                    <div className="pointer-events-none absolute -right-16 top-16 h-12 w-64 rotate-45 bg-white/[0.025]" />
+                    <Sparkles className="pointer-events-none absolute right-6 top-20 size-5 text-white/22" />
+
+                    <div className="relative flex min-h-[242px] flex-col">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold tracking-[0.11em] text-white/92">
                           BEYONIX
+                        </span>
+                        <span className="rounded-full border border-white/[0.13] bg-black/20 px-3 py-1.5 text-8px font-medium uppercase tracking-[0.2em] text-white/65 backdrop-blur-sm">
+                          Gift Card
+                        </span>
+                      </div>
+
+                      <div className="mt-9">
+                        <p className="text-9px font-medium uppercase tracking-[0.2em] text-white/45">
+                          Un regalo para vos
                         </p>
-                        <p className="mt-1 text-10px font-semibold uppercase tracking-widest text-beyonix-cyan">
-                          GiftCard
+                        <p className="mt-1.5 text-4xl font-semibold tracking-tight text-white drop-shadow-sm">
+                          {formatARS(Number(movement.amount ?? 0))}
                         </p>
                       </div>
-                      <p className="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-sm font-black text-emerald-200">
-                        {formatARS(Number(movement.amount ?? 0))}
-                      </p>
-                    </div>
 
-                    <p className="mt-5 min-h-[48px] text-base font-bold leading-6 text-white">
-                      {message}
-                    </p>
-                    <p className="mt-4 text-xs text-white/45">
-                      {formatOrderCardDate(movement.created_at)}
-                    </p>
+                      <div className="mt-auto rounded-xl border border-white/[0.1] bg-black/20 p-3.5 backdrop-blur-sm">
+                        <p className="line-clamp-2 text-sm font-normal leading-5 text-white/85">
+                          “{message}”
+                        </p>
+                        <div className="mt-3 flex items-end justify-between gap-4 border-t border-white/[0.08] pt-3">
+                          <div className="min-w-0">
+                            <p className="text-8px font-medium uppercase tracking-[0.17em] text-white/38">
+                              Te la envió
+                            </p>
+                            <p className="mt-1 truncate text-xs font-medium text-white/78">
+                              {senderName}
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-9px font-normal text-white/38">
+                            {formatOrderCardDate(movement.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="mt-6 flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-[#31506F] bg-[#242424] px-6 text-center">
+              <div className="flex size-14 items-center justify-center rounded-2xl border border-[#4F82A8] bg-[#132B40] text-beyonix-sky">
+                <Gift className="size-6" />
+              </div>
+              <h3 className="mt-4 text-base font-medium text-white/88">
+                Todavía no recibiste Gift Cards
+              </h3>
+              <p className="mt-1.5 max-w-sm text-xs font-normal leading-5 text-white/50">
+                Cuando alguien te envíe un regalo, vas a encontrarlo acá con su dedicatoria.
+              </p>
+            </div>
+          )}
+        </section>
+      ) : null}
+      </div>
+    </AccountPageContainer>
+  )
+}
+
+const TOPUPS_PER_PAGE = 10
+
+function CargarSaldo({ onBack }: { onBack: () => void }) {
+  const { user } = useAuth()
+  const proofInputRef = useRef<HTMLInputElement>(null)
+  const proofDragDepthRef = useRef(0)
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const [lastSubmittedTopupId, setLastSubmittedTopupId] = useState<string | null>(null)
+  const [isDraggingProof, setIsDraggingProof] = useState(false)
+  const [copiedTransferField, setCopiedTransferField] = useState<"alias" | "cvu" | null>(null)
+  const [topups, setTopups] = useState<Array<{
+    id: string
+    amount?: number | string | null
+    proof_file_name?: string | null
+    proof_signed_url?: string | null
+    status: string
+    created_at: string
+  }>>([])
+  const [topupPage, setTopupPage] = useState(1)
+  const [topupTotal, setTopupTotal] = useState(0)
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
+  const statusLabels: Record<string, string> = {
+    en_revision: "En revisión",
+    acreditado: "Acreditado",
+    rechazado: "Rechazado",
+  }
+  const statusClasses: Record<string, string> = {
+    en_revision: "text-amber-200/82",
+    acreditado: "text-emerald-300/88",
+    rechazado: "text-red-200/82",
+  }
+  const topupTotalPages = Math.max(1, Math.ceil(topupTotal / TOPUPS_PER_PAGE))
+
+  const loadTopups = useCallback(async () => {
+    const response = await fetch(`/api/customer-credit/topups?page=${topupPage}`, {
+      cache: "no-store",
+    })
+    const data = (await response.json()) as {
+      topups?: typeof topups
+      pagination?: {
+        total?: number
+        total_pages?: number
+      }
+      error?: string
+    }
+
+    if (response.ok) {
+      setTopups(data.topups ?? [])
+      setTopupTotal(Number(data.pagination?.total ?? 0))
+    }
+  }, [topupPage])
+
+  useEffect(() => {
+    void loadTopups()
+  }, [loadTopups])
+
+  useEffect(() => {
+    if (topupPage > topupTotalPages) setTopupPage(topupTotalPages)
+  }, [topupPage, topupTotalPages])
+
+  useEffect(() => {
+    if (!user) return
+
+    const channel = supabase
+      .channel(`customer-credit-topups-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "customer_credit_topups",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => void loadTopups(),
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [loadTopups, user])
+
+  async function copyTransferValue(field: "alias" | "cvu", value: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedTransferField(field)
+      window.setTimeout(() => {
+        setCopiedTransferField((current) => current === field ? null : current)
+      }, 1800)
+    } catch {
+      setError("No pudimos copiar el dato. Seleccionalo manualmente.")
+    }
+  }
+
+  async function submitTopupProof(file: File) {
+    if (saving) return
+
+    const previousProofFile = proofFile
+    const replaceTopupId = lastSubmittedTopupId
+    setProofFile(file)
+    setError("")
+    setSaving(true)
+
+    try {
+      const formData = new FormData()
+      formData.set("file", file)
+      if (replaceTopupId) formData.set("replace_topup_id", replaceTopupId)
+
+      const response = await fetch("/api/customer-credit/topups", {
+        method: "POST",
+        body: formData,
+      })
+      const data = (await response.json()) as {
+        error?: string
+        topup?: { id?: string }
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "No se pudo enviar el comprobante.")
+      }
+
+      setLastSubmittedTopupId(data.topup?.id ?? replaceTopupId)
+      if (proofInputRef.current) proofInputRef.current.value = ""
+      if (topupPage === 1) {
+        await loadTopups()
+      } else {
+        setTopupPage(1)
+      }
+    } catch (submitError) {
+      setProofFile(previousProofFile)
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "No se pudo enviar el comprobante.",
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function selectAndUploadProof(file?: File | null) {
+    if (!file || saving) return
+    void submitTopupProof(file)
+  }
+
+  return (
+    <AccountPageContainer className="max-w-5xl space-y-4 pb-12">
+      <AccountBackButton
+        onClick={onBack}
+        label="Volver a mi cuenta"
+        className="h-10 rounded-full border-[#2A4B6C] bg-[#132033] px-4 text-xs font-medium text-white/82 shadow-sm shadow-black/25 hover:border-[#4B78A4] hover:bg-[#1A2C44] hover:text-white"
+      />
+
+      <div className="rounded-2xl border border-[#203A50] bg-[#070C12] p-4 shadow-[0_24px_64px_rgba(0,0,0,0.28)] sm:p-6">
+        <header className="border-b border-[#29455C] px-1 pb-5">
+          <p className="text-9px font-medium uppercase tracking-[0.18em] text-beyonix-sky/65">
+            Saldo de tu cuenta
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white/95 sm:text-3xl">
+            Cargar saldo
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm font-normal leading-6 text-white/56">
+            Transferí a la cuenta de BEYONIX y adjuntá el comprobante. No necesitás ingresar tu nombre, DNI ni el monto: vinculamos la solicitud automáticamente con tu cuenta.
+          </p>
+        </header>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <section className="flex h-full flex-col rounded-2xl border border-[#315B7D] bg-[#181818] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 items-center justify-center rounded-xl border border-[#4F82A8] bg-[#132B40] text-white">
+                <Landmark className="size-4.5" />
+              </span>
+              <div>
+                <p className="text-9px font-medium uppercase tracking-[0.17em] text-beyonix-sky/62">
+                  Paso 1
+                </p>
+                <h2 className="mt-0.5 text-base font-medium text-white/92">
+                  Realizá la transferencia
+                </h2>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-[#3A6283] bg-[#282828]">
+              <div className="flex items-center justify-between gap-3 border-b border-[#31506F] px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="w-12 shrink-0 text-xs font-normal text-white/58">Alias</span>
+                  <span className="truncate text-sm font-semibold text-white/90">{TRANSFER_ALIAS}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copyTransferValue("alias", TRANSFER_ALIAS)}
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[#4F82A8] bg-[#132B40] px-2.5 text-11px font-medium text-white transition hover:border-beyonix-sky/70 hover:bg-[#1A3B57]"
+                  aria-label="Copiar alias"
+                >
+                  {copiedTransferField === "alias" ? (
+                    <CheckCircle2 className="size-3.5 text-white" />
+                  ) : (
+                    <Copy className="size-3.5 text-white" />
+                  )}
+                  {copiedTransferField === "alias" ? "Copiado" : "Copiar"}
+                </button>
+              </div>
+              <div className="flex items-center gap-3 border-b border-[#31506F] px-4 py-3.5">
+                <span className="w-12 shrink-0 text-xs font-normal text-white/58">Titular</span>
+                <span className="truncate text-sm font-medium text-white/90">
+                  {TRANSFER_ACCOUNT_HOLDER}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="w-12 shrink-0 text-xs font-normal text-white/58">CVU</span>
+                  <span className="truncate text-sm font-medium tabular-nums text-white/90">
+                    {TRANSFER_CVU}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copyTransferValue("cvu", TRANSFER_CVU)}
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[#4F82A8] bg-[#132B40] px-2.5 text-11px font-medium text-white transition hover:border-beyonix-sky/70 hover:bg-[#1A3B57]"
+                  aria-label="Copiar CVU"
+                >
+                  {copiedTransferField === "cvu" ? (
+                    <CheckCircle2 className="size-3.5 text-white" />
+                  ) : (
+                    <Copy className="size-3.5 text-white" />
+                  )}
+                  {copiedTransferField === "cvu" ? "Copiado" : "Copiar"}
+                </button>
+              </div>
+            </div>
+            <p className="mt-3 text-xs font-normal leading-5 text-white/52">
+              Transferí el importe que quieras incorporar a tu saldo. El monto se confirmará al verificar el ingreso bancario.
+            </p>
+          </section>
+
+          <section className="flex h-full flex-col rounded-2xl border border-[#315B7D] bg-[#181818] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 items-center justify-center rounded-xl border border-[#4F82A8] bg-[#132B40] text-white">
+                <UploadCloud className="size-4.5" />
+              </span>
+              <div>
+                <p className="text-9px font-medium uppercase tracking-[0.17em] text-beyonix-sky/62">
+                  Paso 2
+                </p>
+                <h2 className="mt-0.5 text-base font-medium text-white/92">
+                  Enviá el comprobante
+                </h2>
+              </div>
+            </div>
+
+            <input
+              ref={proofInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(event) => selectAndUploadProof(event.target.files?.[0])}
+            />
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => proofInputRef.current?.click()}
+              onDragEnter={(event) => {
+                event.preventDefault()
+                proofDragDepthRef.current += 1
+                setIsDraggingProof(true)
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = "copy"
+              }}
+              onDragLeave={(event) => {
+                event.preventDefault()
+                proofDragDepthRef.current = Math.max(0, proofDragDepthRef.current - 1)
+                if (proofDragDepthRef.current === 0) setIsDraggingProof(false)
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                proofDragDepthRef.current = 0
+                setIsDraggingProof(false)
+                selectAndUploadProof(event.dataTransfer.files?.[0])
+              }}
+              className={cn(
+                "group mt-4 flex min-h-40 w-full flex-1 flex-col items-center justify-center rounded-xl border border-dashed bg-[#282828] px-5 text-center transition disabled:cursor-wait",
+                isDraggingProof
+                  ? "border-beyonix-sky bg-[#303A43]"
+                  : "border-[#4F82A8] hover:border-beyonix-sky/70 hover:bg-[#303030]",
+              )}
+            >
+              {saving ? (
+                <Loader2 className="size-6 animate-spin text-white" />
+              ) : lastSubmittedTopupId && proofFile ? (
+                <CheckCircle2 className="size-6 text-emerald-300" />
+              ) : (
+                <FileText className="size-6 text-white/85 transition group-hover:text-white" />
+              )}
+              <span className="mt-3 max-w-full truncate text-sm font-medium text-white/88">
+                {saving
+                  ? "Enviando comprobante..."
+                  : proofFile?.name ?? "Seleccioná o arrastrá tu comprobante"}
+              </span>
+              <span className="mt-1 text-10px font-normal text-white/45">
+                {lastSubmittedTopupId && proofFile && !saving
+                  ? "Comprobante enviado correctamente"
+                  : "JPG, PNG o PDF · Máximo 5 MB · Se enviará automáticamente"}
+              </span>
+            </button>
+
+            <div className="mt-3 flex min-h-8 items-center justify-center gap-2 text-center">
+              {lastSubmittedTopupId && !saving ? (
+                <>
+                  <span className="text-xs font-normal text-white/55">
+                    ¿Te equivocaste de archivo?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => proofInputRef.current?.click()}
+                    className="inline-flex h-7 items-center justify-center rounded-lg border border-[#4F82A8] bg-[#132B40] px-2.5 text-11px font-semibold text-white transition hover:border-beyonix-sky/70 hover:bg-[#1A3B57]"
+                  >
+                    Cambiarlo
+                  </button>
+                </>
+              ) : (
+                <span className="text-11px font-normal text-white/42">
+                  {saving ? "No cierres esta página durante el envío." : "La carga comenzará al elegir el archivo."}
+                </span>
+              )}
+            </div>
+
+            {error ? (
+              <p className="mt-1 text-center text-11px font-normal text-red-200/85">{error}</p>
+            ) : null}
+          </section>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <section className="rounded-xl border border-[#315B7D] bg-[#202020] p-4">
+            <div className="flex gap-3">
+              <Clock3 className="mt-0.5 size-4.5 shrink-0 text-white" />
+              <div>
+                <h2 className="text-sm font-medium text-white/90">Horarios de validación</h2>
+                <p className="mt-1 text-xs font-normal leading-5 text-white/62">
+                  {BEYONIX_SUPPORT_HOURS}. Los comprobantes enviados fuera de ese horario se revisan el próximo día hábil.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-amber-300/25 bg-[#24211A] p-4">
+            <div className="flex gap-3">
+              <AlertTriangle className="mt-0.5 size-4.5 shrink-0 text-white" />
+              <div>
+                <h2 className="text-sm font-medium text-amber-50/90">Importante</h2>
+                <p className="mt-1 text-xs font-normal leading-5 text-amber-50/65">
+                  Si la transferencia no ingresa a nuestra cuenta o el comprobante no es válido, el saldo no será acreditado.
+                </p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section className="mt-4 rounded-2xl border border-[#315B7D] bg-[#181818] p-5">
+          <h2 className="text-sm font-medium text-white/90">Comprobantes enviados</h2>
+
+          {topups.length ? (
+            <div className="mt-3 space-y-2">
+              {topups.map((topup) => (
+                <div
+                  key={topup.id}
+                  className="grid grid-cols-2 items-center gap-x-4 gap-y-3 rounded-lg border border-[#31506F] bg-[#282828] px-4 py-3 lg:grid-cols-4"
+                >
+                  <p className="min-w-0 text-base font-semibold text-white lg:justify-self-center lg:text-center">
+                    {topup.status === "acreditado" && Number(topup.amount ?? 0) > 0
+                      ? formatARS(Number(topup.amount))
+                      : topup.status === "rechazado"
+                        ? "Sin acreditar"
+                        : "Monto a confirmar"}
+                  </p>
+                  <p className="min-w-0 text-base font-normal text-white lg:justify-self-center lg:text-center">
+                    {formatOrderCardDate(topup.created_at)}
+                  </p>
+                  <span className={cn(
+                    "inline-flex w-fit items-center gap-1.5 justify-self-start text-base font-medium lg:justify-self-center",
+                    statusClasses[topup.status] ?? "text-white/60",
+                  )}>
+                    {topup.status === "acreditado" ? (
+                      <CheckCircle2 className="size-4" />
+                    ) : topup.status === "rechazado" ? (
+                      <X className="size-4" />
+                    ) : (
+                      <Clock3 className="size-4" />
+                    )}
+                    {statusLabels[topup.status] ?? topup.status}
+                  </span>
+                  <div className="justify-self-end lg:justify-self-center">
+                    {topup.proof_signed_url ? (
+                      <a
+                        href={topup.proof_signed_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-9 w-fit items-center justify-center gap-1.5 rounded-lg border border-[#4F82A8] bg-[#132B40] px-3 text-xs font-semibold text-white transition hover:border-beyonix-sky/70 hover:bg-[#1A3B57]"
+                      >
+                        <Eye className="size-3.5" />
+                        Comprobante
+                      </a>
+                    ) : null}
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className="rounded-xl border border-[var(--account-border)] bg-black/20 px-3 py-4 text-sm font-semibold text-[var(--account-text-secondary)]">
-            Todavía no recibiste GiftCards.
-          </p>
-        )}
-      </AccountCard>
+              ))}
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <p className="text-10px font-normal text-white/42">
+                  Página {topupPage} de {topupTotalPages} · {topupTotal} comprobante{topupTotal === 1 ? "" : "s"}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={topupPage <= 1}
+                    onClick={() => setTopupPage((current) => Math.max(1, current - 1))}
+                    aria-label="Página anterior de comprobantes"
+                    className="inline-flex size-8 items-center justify-center rounded-lg border border-[#3A6283] bg-[#132B40] text-white transition hover:border-beyonix-sky/70 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={topupPage >= topupTotalPages}
+                    onClick={() => setTopupPage((current) => Math.min(topupTotalPages, current + 1))}
+                    aria-label="Página siguiente de comprobantes"
+                    className="inline-flex size-8 items-center justify-center rounded-lg border border-[#3A6283] bg-[#132B40] text-white transition hover:border-beyonix-sky/70 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 rounded-lg border border-dashed border-[#31506F] bg-[#282828] px-3 py-5 text-center text-xs font-normal text-white/56">
+              Todavía no enviaste comprobantes.
+            </p>
+          )}
+        </section>
+      </div>
     </AccountPageContainer>
   )
 }
@@ -635,7 +1201,15 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   }
 
   if (view === "ordenes") return <MisOrdenes onBack={() => goToView("home")} />
-  if (view === "saldo") return <MiSaldo onBack={() => goToView("home")} />
+  if (view === "saldo") {
+    return (
+      <MiSaldo
+        onBack={() => goToView("home")}
+        onLoadBalance={() => goToView("cargar-saldo")}
+      />
+    )
+  }
+  if (view === "cargar-saldo") return <CargarSaldo onBack={() => goToView("home")} />
   if (view === "datos") return <MisDatos onBack={() => goToView("home")} />
   if (view === "seguridad") return <Seguridad onBack={() => goToView("home")} />
 
@@ -648,8 +1222,8 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
     view?: ProfileView
     href?: string
   }> = [
-    { icon: Coins, label: "Mis compras", sub: "Historial de compras", dollarBadge: true, view: "ordenes" as ProfileView },
-    { icon: CreditCard, label: "BEYONIX Gift Card", sub: "Enviar o cargar saldo", view: "saldo" as ProfileView },
+    { icon: ShoppingBag, label: "Mis compras", sub: "Historial de compras", view: "ordenes" as ProfileView },
+    { icon: CreditCard, label: "BEYONIX Gift Card", sub: "Enviá y recibí regalos", view: "saldo" as ProfileView },
     { icon: Heart, label: "Favoritos", sub: "Productos guardados", filled: true, href: "/cuenta/favoritos" },
     { icon: IdCard, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
     { icon: LockKeyhole, label: "Seguridad", sub: "Contraseña y acceso", view: "seguridad" as ProfileView },
@@ -687,21 +1261,26 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
 
           <button
             type="button"
-            onClick={() => goToView("saldo")}
-            className="mt-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 py-2.5 text-left transition hover:border-beyonix-blue-light/45"
+            aria-label="Ver y cargar saldo"
+            onClick={() => goToView("cargar-saldo")}
+            className="group mt-4 flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 py-2.5 text-left transition hover:border-beyonix-blue-light/45 hover:bg-[var(--account-surface-hover)]"
           >
             <span className="flex min-w-0 items-center gap-3">
-              <IconContainer size="sm">
-                <CreditCard className="stroke-[2.35]" />
+              <IconContainer size="sm" dollarBadge>
+                <Coins className="stroke-[2.35]" />
               </IconContainer>
               <span className="min-w-0">
                 <span className="block text-10px font-semibold uppercase tracking-widest text-[var(--account-accent-soft)]">
-                  Gift Card disponible
+                  Saldo disponible
                 </span>
                 <span className="mt-0.5 block text-lg font-black text-white">
                   {formatARS(customerCredit.balance)}
                 </span>
               </span>
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1 text-10px font-semibold text-beyonix-sky/75 transition group-hover:text-white">
+              Cargar saldo
+              <ChevronRight className="size-3.5" />
             </span>
           </button>
 
@@ -1729,6 +2308,7 @@ export function CuentaClient() {
   const initialView: ProfileView =
     tabParam === "ordenes" ||
     tabParam === "saldo" ||
+    tabParam === "cargar-saldo" ||
     tabParam === "datos" ||
     tabParam === "seguridad"
       ? tabParam

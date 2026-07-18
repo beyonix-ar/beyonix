@@ -51,6 +51,28 @@ export async function PATCH(
     )
   }
 
+  const { data: formalClaim, error: claimError } = await auth.admin
+    .from("order_claims")
+    .select("id")
+    .eq("order_id", orderId)
+    .not("failure_type", "in", "(cancelar_compra,consulta_pedido)")
+    .limit(1)
+    .maybeSingle()
+
+  if (claimError) {
+    return NextResponse.json(
+      { error: "No se pudo verificar el reclamo asociado al pedido." },
+      { status: 500 },
+    )
+  }
+
+  if (!formalClaim) {
+    return NextResponse.json(
+      { error: "No se puede modificar el inventario porque este pedido no tiene un reclamo formal." },
+      { status: 409 },
+    )
+  }
+
   const { data, error } = await auth.admin.rpc("process_order_item_return_inventory", {
     p_order_id: orderId,
     p_order_item_id: orderItemId,

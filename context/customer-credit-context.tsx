@@ -16,6 +16,7 @@ import {
   roundMoney,
   type CustomerCreditMovement,
 } from "@/lib/customer-credit"
+import { supabase } from "@/lib/supabase/client"
 
 const CUSTOMER_CREDIT_APPLIED_STORAGE_KEY =
   "beyonix-customer-credit-applied"
@@ -210,6 +211,28 @@ export function CustomerCreditProvider({
 
     void reload()
   }, [authLoading, reload])
+
+  useEffect(() => {
+    if (!user) return
+
+    const channel = supabase
+      .channel(`customer-credit-balance-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "customer_credit_movements",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => void reload(),
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [reload, user])
 
   const displayedBalance = user
     ? balanceUserId === user.id

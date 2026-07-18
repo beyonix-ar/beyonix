@@ -6,12 +6,16 @@ import {
 } from "@/lib/payments/transfer"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-import { normalizeMoney } from "@/lib/customer-credit"
 
 const TOPUP_PROOF_BUCKET = "customer-credit-topups"
+const TOPUPS_PER_PAGE = 10
 
-function onlyDigits(value: unknown) {
-  return String(value ?? "").replace(/\D/g, "")
+function getProofStoragePath(proofUrl?: string | null) {
+  if (!proofUrl) return null
+
+  return proofUrl.startsWith(`${TOPUP_PROOF_BUCKET}/`)
+    ? proofUrl.slice(TOPUP_PROOF_BUCKET.length + 1)
+    : proofUrl
 }
 
 async function getSignedProofUrl(
@@ -20,9 +24,8 @@ async function getSignedProofUrl(
 ) {
   if (!proofUrl) return null
 
-  const path = proofUrl.startsWith(`${TOPUP_PROOF_BUCKET}/`)
-    ? proofUrl.slice(TOPUP_PROOF_BUCKET.length + 1)
-    : proofUrl
+  const path = getProofStoragePath(proofUrl)
+  if (!path) return null
   const { data } = await admin.storage
     .from(TOPUP_PROOF_BUCKET)
     .createSignedUrl(path, 60 * 10)
@@ -30,7 +33,7 @@ async function getSignedProofUrl(
   return data?.signedUrl ?? null
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -40,13 +43,20 @@ export async function GET() {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 })
   }
 
+  const requestedPage = Number(new URL(request.url).searchParams.get("page") ?? "1")
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+  const from = (page - 1) * TOPUPS_PER_PAGE
+  const to = from + TOPUPS_PER_PAGE - 1
   const admin = createAdminClient()
-  const { data, error } = await admin
+  const { data, error, count } = await admin
     .from("customer_credit_topups")
-    .select("id, amount, customer_name, customer_dni, proof_url, proof_file_name, status, created_at")
+    .select(
+      "id, amount, customer_name, customer_dni, proof_url, proof_file_name, status, created_at",
+      { count: "exact" },
+    )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(10)
+    .range(from, to)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -59,7 +69,17 @@ export async function GET() {
     })),
   )
 
-  return NextResponse.json({ topups })
+  const total = count ?? 0
+
+  return NextResponse.json({
+    topups,
+    pagination: {
+      page,
+      page_size: TOPUPS_PER_PAGE,
+      total,
+      total_pages: Math.max(1, Math.ceil(total / TOPUPS_PER_PAGE)),
+    },
+  })
 }
 
 export async function POST(request: Request) {
@@ -73,27 +93,18 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData()
-  const amount = normalizeMoney(formData.get("amount"))
-  const customerName = String(formData.get("customerName") ?? "").trim()
-  const customerDni = onlyDigits(formData.get("customerDni"))
   const file = formData.get("file")
+  const replaceTopupIdValue = formData.get("replace_topup_id")
+  const replaceTopupId =
+    typeof replaceTopupIdValue === "string" ? replaceTopupIdValue.trim() : ""
 
-  if (amount <= 0) {
-    return NextResponse.json(
-      { error: "Ingresá un monto mayor a cero." },
-      { status: 400 },
+  if (
+    replaceTopupId &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      replaceTopupId,
     )
-  }
-
-  if (customerName.length < 3) {
-    return NextResponse.json(
-      { error: "Ingresá nombre y apellido." },
-      { status: 400 },
-    )
-  }
-
-  if (!/^\d{7,8}$/.test(customerDni)) {
-    return NextResponse.json({ error: "Ingresá un DNI válido." }, { status: 400 })
+  ) {
+    return NextResponse.json({ error: "El comprobante a reemplazar no es válido." }, { status: 400 })
   }
 
   if (!(file instanceof File)) {
@@ -124,13 +135,64 @@ export async function POST(request: Request) {
   }
 
   const storedPath = `${TOPUP_PROOF_BUCKET}/${path}`
+
+  if (replaceTopupId) {
+    const { data: previousTopup, error: previousTopupError } = await admin
+      .from("customer_credit_topups")
+      .select("id, proof_url, status")
+      .eq("id", replaceTopupId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+
+    if (previousTopupError || !previousTopup || previousTopup.status !== "en_revision") {
+      await admin.storage.from(TOPUP_PROOF_BUCKET).remove([path])
+      return NextResponse.json(
+        { error: "Este comprobante ya no se puede reemplazar." },
+        { status: 409 },
+      )
+    }
+
+    const { data: replacedTopup, error: replaceError } = await admin
+      .from("customer_credit_topups")
+      .update({
+        proof_url: storedPath,
+        proof_file_name: file.name,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", replaceTopupId)
+      .eq("user_id", user.id)
+      .eq("status", "en_revision")
+      .select("id, amount, customer_name, customer_dni, proof_url, proof_file_name, status, created_at")
+      .maybeSingle()
+
+    if (replaceError || !replacedTopup) {
+      await admin.storage.from(TOPUP_PROOF_BUCKET).remove([path])
+      return NextResponse.json(
+        { error: replaceError?.message ?? "No se pudo reemplazar el comprobante." },
+        { status: replaceError ? 500 : 409 },
+      )
+    }
+
+    const previousPath = getProofStoragePath(previousTopup.proof_url)
+    if (previousPath && previousPath !== path) {
+      await admin.storage.from(TOPUP_PROOF_BUCKET).remove([previousPath])
+    }
+
+    return NextResponse.json({
+      topup: {
+        ...replacedTopup,
+        proof_signed_url: await getSignedProofUrl(admin, replacedTopup.proof_url),
+      },
+    })
+  }
+
   const { data, error } = await admin
     .from("customer_credit_topups")
     .insert({
       user_id: user.id,
-      amount,
-      customer_name: customerName,
-      customer_dni: customerDni,
+      amount: null,
+      customer_name: null,
+      customer_dni: null,
       proof_url: storedPath,
       proof_file_name: file.name,
       status: "en_revision",

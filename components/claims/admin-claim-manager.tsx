@@ -1454,13 +1454,6 @@ export function AdminClaimManager({
           <p className="mt-1 text-sm text-white/66">{emptyDescription}</p>
           {notice && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">{notice}</p>}
         </section>
-        {mode === "claims" && (
-          <ReturnInventoryPanel
-            pedido={pedido}
-            canManage={isAdmin}
-            onUpdated={onInventoryUpdated}
-          />
-        )}
       </div>
     )
   }

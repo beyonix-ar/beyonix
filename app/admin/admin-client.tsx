@@ -300,7 +300,13 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
 
   const navigation = useMemo<NavigationItem[]>(() => {
     const giftCardNotificationCount = notificationGroups.giftcard ?? 0
-    const orderNotificationCount = Math.max(0, notificationCount - giftCardNotificationCount)
+    const clientNotificationCount = notifications.filter((notification) =>
+      notification.actionUrl.includes("section=clientes"),
+    ).length
+    const orderNotificationCount = Math.max(
+      0,
+      notificationCount - giftCardNotificationCount - clientNotificationCount,
+    )
     const operational: NavigationItem[] = [
       {
         key: "dashboard",
@@ -363,13 +369,15 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       {
         key: "clientes",
         label: "Clientes",
-        description: "Cuentas y compras",
+        description: "Cuentas, saldos y compras",
         icon: <Users className="size-4" />,
+        notificationCount: clientNotificationCount,
+        notificationTone: "payment",
       },
       {
         key: "creditos",
         label: "GiftCard",
-        description: "Cargas y envíos de saldo",
+        description: "Envíos y regalos",
         icon: <Coins className="size-4" />,
         notificationCount: giftCardNotificationCount,
         notificationTone: "giftcard",
@@ -391,7 +399,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           ]
         : []),
     ]
-  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.giftcard, notificationTone])
+  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.giftcard, notificationTone, notifications])
 
   useEffect(() => {
     if (!isSuperAdmin) {

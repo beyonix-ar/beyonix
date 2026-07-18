@@ -1,6 +1,6 @@
 import { TRANSFER_DISCOUNT } from "@/lib/store-config"
 
-export const TRANSFER_ALIAS = "beyonix"
+export const TRANSFER_ALIAS = "BEYONIX"
 export const TRANSFER_ACCOUNT_HOLDER = "Lucas Espinosa"
 export const TRANSFER_CVU = "0000003100060656803844"
 export const TRANSFER_DISCOUNT_PERCENT = TRANSFER_DISCOUNT * 100

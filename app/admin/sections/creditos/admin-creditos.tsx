@@ -33,6 +33,7 @@ type GiftCardAction = "credit" | "debit" | "transfer"
 type GiftCardListItem = {
   id: string
   kind: "topup" | "giftcard"
+  movement_type?: "credit" | "debit" | null
   created_at: string
   origin: CreditProfile | null
   destination: CreditProfile | null
@@ -494,7 +495,7 @@ export function AdminCreditos() {
             <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
               Listado
             </p>
-            <h3 className="mt-1 text-lg font-black text-white">GiftCards acreditadas</h3>
+            <h3 className="mt-1 text-lg font-black text-white">Historial de GiftCards</h3>
           </div>
           <span className="text-xs font-bold text-white/42">
             {giftCards.length} registros
@@ -535,7 +536,15 @@ export function AdminCreditos() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm font-black text-emerald-300">
+                  <p
+                    className={cn(
+                      "text-sm font-black",
+                      giftCard.movement_type === "debit"
+                        ? "text-red-300"
+                        : "text-emerald-300",
+                    )}
+                  >
+                    {giftCard.movement_type === "debit" ? "− " : ""}
                     {formatARS(Number(giftCard.amount ?? 0))}
                   </p>
                   <p className="mt-0.5 text-xs text-white/42">
@@ -587,7 +596,7 @@ export function AdminCreditos() {
               <DetailBlock title="Datos de origen" profile={selectedGiftCard.origin} fallback={selectedGiftCard.submitted_name ?? "Transferencia bancaria"} />
               <DetailBlock title="Datos de destino" profile={selectedGiftCard.destination} fallback="Sin cliente" />
               <div className="rounded-xl border border-white/8 bg-black/20 p-3">
-                <p className="text-10px font-black uppercase tracking-widest text-white/40">Monto cargado</p>
+                <p className="text-10px font-black uppercase tracking-widest text-white/40">Monto del movimiento</p>
                 <p className="mt-1 text-2xl font-black text-white">{formatARS(Number(selectedGiftCard.amount ?? 0))}</p>
                 <p className="mt-1 text-xs text-white/45">{selectedGiftCard.status}</p>
               </div>

@@ -21,6 +21,10 @@ import {
   getCustomerCreditBalance,
   reverseCustomerCreditForOrder,
 } from "@/lib/customer-credit/server"
+import {
+  decrementCheckoutInventory,
+  deleteIncompleteCheckoutOrder,
+} from "@/lib/orders/checkout-inventory"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
@@ -474,6 +478,13 @@ export async function POST(request: Request) {
 
     await insertOrderItems(orderClient as never, order.id, items, productRows)
 
+    try {
+      await decrementCheckoutInventory(admin, items)
+    } catch (inventoryError) {
+      await deleteIncompleteCheckoutOrder(admin, order.id)
+      throw inventoryError
+    }
+
     if (user && customerCreditApplication.appliedAmount > 0) {
       await applyCustomerCreditToOrder(admin, {
         userId: user.id,
@@ -574,6 +585,8 @@ export async function POST(request: Request) {
     }
 
     console.error("Error creando preferencia de Mercado Pago", error)
+    const stockConflict =
+      error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
 
     return NextResponse.json(
       {
@@ -582,7 +595,7 @@ export async function POST(request: Request) {
             ? error.message
             : "No pudimos iniciar el pago.",
       },
-      { status: 500 },
+      { status: stockConflict ? 409 : 500 },
     )
   }
 }

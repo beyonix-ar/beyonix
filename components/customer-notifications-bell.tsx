@@ -18,8 +18,9 @@ import {
 } from "lucide-react"
 
 import {
-  dismissReadCustomerNotifications,
+  dismissExpiredReadCustomerNotifications,
   getCustomerNotifications,
+  isCustomerNotificationWithinRetention,
   markAllCustomerNotificationsRead,
   markCustomerNotificationRead,
 } from "@/lib/supabase/queries/customer-notifications"
@@ -269,19 +270,24 @@ export function CustomerNotificationsBell({
     }
   }, [loadNotifications, unreadCount, userId])
 
-  const handleDismissReadNotifications = useCallback(async () => {
-    const hasVisibleReadNotifications = notifications.some(
-      (notification) => notification.is_read,
+  const handleDismissExpiredReadNotifications = useCallback(async () => {
+    const hasExpiredReadNotifications = notifications.some(
+      (notification) =>
+        notification.is_read &&
+        !isCampaignNotification(notification) &&
+        !isCustomerNotificationWithinRetention(notification.created_at),
     )
 
-    if (!hasVisibleReadNotifications) return
+    if (!hasExpiredReadNotifications) return
 
     try {
-      await dismissReadCustomerNotifications(userId)
+      await dismissExpiredReadCustomerNotifications(userId)
       setNotifications((current) =>
         current.filter(
           (notification) =>
-            !notification.is_read || isCampaignNotification(notification),
+            !notification.is_read ||
+            isCampaignNotification(notification) ||
+            isCustomerNotificationWithinRetention(notification.created_at),
         ),
       )
     } catch (dismissError) {
@@ -305,8 +311,8 @@ export function CustomerNotificationsBell({
     if (!wasOpenRef.current) return
 
     wasOpenRef.current = false
-    void handleDismissReadNotifications()
-  }, [handleDismissReadNotifications, open])
+    void handleDismissExpiredReadNotifications()
+  }, [handleDismissExpiredReadNotifications, open])
 
   return (
     <div

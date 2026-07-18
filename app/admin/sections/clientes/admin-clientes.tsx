@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react"
 import {
   Ban,
+  CheckCircle2,
   ChevronDown,
+  CircleDollarSign,
+  Eye,
   FileText,
   LockKeyhole,
   Save,
@@ -12,9 +15,13 @@ import {
   Trash2,
   UserCheck,
   Users,
+  XCircle,
 } from "lucide-react"
 
-import { useClientes } from "@/hooks/use-clientes"
+import {
+  useClientes,
+  type CustomerCreditTopupReview,
+} from "@/hooks/use-clientes"
 import type {
   BlockedClientIdentifier,
   ClientRiskStatus,
@@ -155,6 +162,201 @@ function ClientStatus({ cliente }: { cliente: SupabaseCliente }) {
   )
 }
 
+function ClientDataItem({
+  label,
+  value,
+}: {
+  label: string
+  value?: string | null
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-10px font-bold uppercase tracking-widest text-white/42">
+        {label}
+      </dt>
+      <dd className="mt-1.5 break-words text-sm font-semibold text-white/82">
+        {value?.trim() || "No cargado"}
+      </dd>
+    </div>
+  )
+}
+
+function CreditTopupsPanel({
+  topups,
+  savingId,
+  onResolve,
+}: {
+  topups: CustomerCreditTopupReview[]
+  savingId: string | null
+  onResolve: (data: {
+    topupId: string
+    action: "approve" | "reject"
+    amount?: string
+  }) => Promise<void>
+}) {
+  const [amounts, setAmounts] = useState<Record<string, string>>({})
+
+  return (
+    <section className="rounded-3xl border border-beyonix-blue-light/28 bg-black p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky">
+            <CircleDollarSign className="size-5" />
+          </span>
+          <div>
+            <p className="text-10px font-bold uppercase tracking-widest text-beyonix-sky/70">
+              Cargas de saldo
+            </p>
+            <h2 className="mt-1 text-lg font-black text-white/94">
+              Comprobantes pendientes
+            </h2>
+            <p className="mt-1 text-xs text-white/55">
+              Verificá la transferencia, ingresá el monto recibido y acreditá el saldo.
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 text-xs font-black tabular-nums text-amber-100">
+          {topups.length}
+        </span>
+      </div>
+
+      {topups.length ? (
+        <div className="mt-5 overflow-x-auto rounded-2xl border border-[#284865] bg-[#0A0F15]">
+          <table className="w-full min-w-[1050px] table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[14%]" />
+              <col className="w-[19%]" />
+              <col className="w-[11%]" />
+              <col className="w-[23%]" />
+              <col className="w-[18%]" />
+              <col className="w-[15%]" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-[#284865] bg-[#111923]">
+                {["Usuario", "Nombre y apellido", "DNI", "Email", "Monto a acreditar", "Acciones"].map((label, index) => (
+                  <th
+                    key={label}
+                    className={`px-3 py-3.5 text-xs font-black uppercase tracking-wider text-white/65 ${
+                      index > 1 ? "text-center" : "text-left"
+                    }`}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#20384D]">
+              {topups.map((topup) => {
+                const profile = topup.profile
+                const saving = savingId === topup.id
+                const amount = amounts[topup.id] ?? ""
+
+                return (
+                  <tr key={topup.id} className="bg-[#0D131A] transition hover:bg-[#111B25]">
+                    <td className="px-3 py-3">
+                      <p className="truncate text-xs font-black uppercase text-white/90">
+                        {profile?.username || "Sin usuario"}
+                      </p>
+                      <p className="mt-1 truncate text-9px text-white/36">
+                        {formatDate(topup.created_at)}
+                      </p>
+                    </td>
+                    <td className="px-3 py-3 text-xs font-semibold text-white/82">
+                      <p className="truncate">{profile?.nombre || "Sin nombre registrado"}</p>
+                    </td>
+                    <td className="px-3 py-3 text-center text-xs font-medium tabular-nums text-white/68">
+                      {profile?.dni || "—"}
+                    </td>
+                    <td className="px-3 py-3 text-center text-xs text-white/68">
+                      <p className="truncate">{profile?.email || "Sin email"}</p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="relative mx-auto max-w-[190px]">
+                        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-black text-white/48">
+                          $
+                        </span>
+                        <input
+                          value={amount}
+                          inputMode="decimal"
+                          aria-label={`Monto a acreditar para ${profile?.nombre || "el cliente"}`}
+                          placeholder="0"
+                          onChange={(event) =>
+                            setAmounts((current) => ({
+                              ...current,
+                              [topup.id]: event.target.value,
+                            }))
+                          }
+                          className="h-9 w-full rounded-lg border border-[#3A6283] bg-[#24282E] px-7 text-center text-sm font-black text-white outline-none placeholder:text-white/28 focus:border-beyonix-sky"
+                        />
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center gap-2">
+                        {topup.proof_signed_url ? (
+                          <a
+                            href={topup.proof_signed_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Ver comprobante"
+                            title="Ver comprobante"
+                            className="inline-flex size-9 items-center justify-center rounded-lg border border-[#4F82A8] bg-[#132B40] text-white transition hover:border-beyonix-sky hover:bg-[#1A3B57]"
+                          >
+                            <Eye className="size-4" />
+                          </a>
+                        ) : (
+                          <span
+                            title="Comprobante no disponible"
+                            className="inline-flex size-9 items-center justify-center rounded-lg border border-white/8 bg-white/[0.03] text-white/22"
+                          >
+                            <Eye className="size-4" />
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          disabled={saving || !amount.trim()}
+                          onClick={() =>
+                            void onResolve({
+                              topupId: topup.id,
+                              action: "approve",
+                              amount,
+                            })
+                          }
+                          aria-label="Acreditar saldo"
+                          title="Acreditar"
+                          className="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-300/10 text-emerald-100 transition hover:border-emerald-200 disabled:cursor-not-allowed disabled:opacity-35"
+                        >
+                          <CheckCircle2 className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => {
+                            if (!window.confirm("¿Rechazar este comprobante sin acreditar saldo?")) return
+                            void onResolve({ topupId: topup.id, action: "reject" })
+                          }}
+                          aria-label="Rechazar comprobante"
+                          title="Rechazar"
+                          className="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border border-red-300/25 bg-red-300/[0.08] text-red-100/85 transition hover:border-red-200 disabled:cursor-not-allowed disabled:opacity-35"
+                        >
+                          <XCircle className="size-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-[#111418] px-4 py-7 text-center text-sm text-white/48">
+          No hay comprobantes de carga pendientes.
+        </div>
+      )}
+    </section>
+  )
+}
+
 function ClientCard({
   cliente,
   saving,
@@ -215,29 +417,35 @@ function ClientCard({
           </p>
         </div>
 
-        <p className="truncate text-sm text-white/72">
+        <p className="truncate text-center text-sm text-white/72">
           {cliente.telefono || "Sin teléfono"}
         </p>
 
-        <p className="truncate text-sm text-white/72">
-          {cliente.direccion || "Sin dirección"}
-        </p>
-
-        <div>
-          <p className="text-sm font-black text-white/92">
-            {formatPrice(cliente.total_spent)}
+        <div className="text-center">
+          <p className="text-sm font-black text-beyonix-sky">
+            Saldo {formatPrice(cliente.customer_credit_balance ?? 0)}
           </p>
-          <p className="mt-1 text-xs text-white/58">{cliente.order_count} pedidos</p>
+          <p className="mt-1 text-xs text-white/58">
+            {formatPrice(cliente.total_spent)} · {cliente.order_count} pedidos
+          </p>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col items-center gap-2">
           <ClientStatus cliente={cliente} />
           <RiskBadge cliente={cliente} />
         </div>
       </summary>
 
       <div className="border-t border-white/7 px-4 py-4">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-2xl border border-beyonix-blue-light/20 bg-beyonix-blue/45 p-4">
+            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-sky/70">
+              Saldo disponible
+            </p>
+            <p className="mt-2 text-lg font-black text-white">
+              {formatPrice(cliente.customer_credit_balance ?? 0)}
+            </p>
+          </div>
           <div className="rounded-2xl border border-white/7 bg-black p-4">
             <p className="text-11px font-bold uppercase tracking-widest text-white/48">
               Registro
@@ -274,19 +482,36 @@ function ClientCard({
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-white/7 bg-black p-4">
-          <p className="text-11px font-bold uppercase tracking-widest text-white/48">
-            Envío
-          </p>
-          <p className="mt-2 text-sm text-white/72">
-            {cliente.direccion || "Sin dirección"} · CP {cliente.codigo_postal || "-"} ·{" "}
-            {cliente.provincia || "Sin provincia"}
-          </p>
-          {cliente.referencias && (
-            <p className="mt-2 text-sm text-white/62">
-              {cliente.referencias}
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <section className="rounded-2xl border border-white/7 bg-black p-4">
+            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-sky/70">
+              Datos personales
             </p>
-          )}
+            <dl className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ClientDataItem label="Usuario" value={username} />
+              <ClientDataItem label="Nombre y apellido" value={cliente.nombre} />
+              <ClientDataItem label="DNI" value={cliente.dni} />
+              <ClientDataItem label="Email" value={cliente.email} />
+              <ClientDataItem label="Teléfono" value={cliente.telefono} />
+              <ClientDataItem label="Rol" value={cliente.rol} />
+            </dl>
+          </section>
+
+          <section className="rounded-2xl border border-white/7 bg-black p-4">
+            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-sky/70">
+              Domicilio y envío
+            </p>
+            <dl className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ClientDataItem label="Calle" value={cliente.calle} />
+              <ClientDataItem label="Número" value={cliente.numero} />
+              <ClientDataItem label="Piso" value={cliente.piso} />
+              <ClientDataItem label="Departamento" value={cliente.departamento} />
+              <ClientDataItem label="Localidad" value={cliente.localidad} />
+              <ClientDataItem label="Provincia" value={cliente.provincia} />
+              <ClientDataItem label="Código postal" value={cliente.codigo_postal} />
+              <ClientDataItem label="Referencias" value={cliente.referencias} />
+            </dl>
+          </section>
         </div>
 
         <div className="mt-4 rounded-2xl border border-beyonix-blue-light/25 bg-beyonix-blue px-4 py-3 text-sm text-beyonix-sky">
@@ -603,12 +828,15 @@ export function AdminClientes({
   const {
     clientes,
     blockedIdentifiers,
+    creditTopups,
+    topupSavingId,
     loading,
     saving,
     error,
     updateClientAdminInfo,
     createBlockedIdentifier,
     removeBlockedIdentifier,
+    resolveCreditTopup,
   } = useClientes()
   const [search, setSearch] = useState("")
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>(
@@ -683,6 +911,10 @@ export function AdminClientes({
 
   const activeCount = clientes.filter((cliente) => cliente.is_active).length
   const blockedCount = clientes.filter((cliente) => cliente.blocked_at).length
+  const totalCreditBalance = clientes.reduce(
+    (total, cliente) => total + Number(cliente.customer_credit_balance ?? 0),
+    0,
+  )
   const clientsWithCart = clientes.filter(
     (cliente) => getCartItemCount(cliente.current_cart) > 0
   )
@@ -692,18 +924,25 @@ export function AdminClientes({
       <AdminPageHeader
         eyebrow="Clientes"
         title="Clientes registrados"
-        description="Base de clientes, compras, datos de envío y estado operativo."
+        description="Cuentas, saldos disponibles, comprobantes de carga, compras y estado operativo."
         actions={
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <AdminStatCard title="Total" value={clientes.length} />
             <AdminStatCard title="Activos" value={activeCount} tone="success" />
             <AdminStatCard
               title="Con compras"
               value={clientes.filter((cliente) => cliente.order_count > 0).length}
             />
+            <AdminStatCard title="Saldo clientes" value={formatPrice(totalCreditBalance)} />
             <AdminStatCard title="Bloqueados" value={blockedCount} tone="danger" />
           </div>
         }
+      />
+
+      <CreditTopupsPanel
+        topups={creditTopups}
+        savingId={topupSavingId}
+        onResolve={resolveCreditTopup}
       />
 
       <BlockedClientsPanel
@@ -813,11 +1052,13 @@ export function AdminClientes({
       ) : filteredClients.length ? (
         <div className="space-y-3">
           <div className="hidden grid-cols-admin-clients gap-4 rounded-2xl border border-white/8 bg-black/85 px-4 py-3 lg:grid">
-            {["Usuario", "Nombre", "Teléfono", "Dirección", "Compras", "Estado"].map(
-              (label) => (
+            {["Usuario", "Nombre", "Teléfono", "Saldo / compras", "Estado"].map(
+              (label, index) => (
                 <span
                   key={label}
-                  className="text-10px font-bold uppercase tracking-widest text-white/48"
+                  className={`text-xs font-black uppercase tracking-wider text-white/65 ${
+                    index > 1 ? "text-center" : "text-left"
+                  }`}
                 >
                   {label}
                 </span>

@@ -315,7 +315,7 @@
 }
 
 @utility grid-cols-admin-clients {
-  grid-template-columns: minmax(150px, 1.2fr) minmax(150px, 1.2fr) minmax(118px, 1fr) minmax(170px, 1.4fr) minmax(96px, 0.7fr) minmax(104px, 0.7fr);
+  grid-template-columns: minmax(170px, 1.25fr) minmax(170px, 1.25fr) minmax(140px, 1fr) minmax(170px, 1fr) minmax(130px, 0.85fr);
 }
 
 @utility grid-cols-admin-client-filters {

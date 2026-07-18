@@ -2,6 +2,25 @@ import { supabase } from "@/lib/supabase/client"
 import type { SupabaseCustomerNotification } from "@/lib/supabase/types"
 
 const CUSTOMER_NOTIFICATION_LIMIT = 8
+const CUSTOMER_NOTIFICATION_RETENTION_DAYS = 7
+const CUSTOMER_NOTIFICATION_RETENTION_MS =
+  CUSTOMER_NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000
+
+export function getCustomerNotificationRetentionCutoff(now = Date.now()) {
+  return new Date(now - CUSTOMER_NOTIFICATION_RETENTION_MS).toISOString()
+}
+
+export function isCustomerNotificationWithinRetention(
+  createdAt: string,
+  now = Date.now(),
+) {
+  const createdAtTime = new Date(createdAt).getTime()
+
+  return (
+    Number.isFinite(createdAtTime) &&
+    createdAtTime >= now - CUSTOMER_NOTIFICATION_RETENTION_MS
+  )
+}
 
 interface PaymentNotificationOrder {
   id: number
@@ -181,11 +200,12 @@ function removeContradictoryOrderProgressNotifications(
 
 export async function getCustomerNotifications(userId: string) {
   const now = new Date().toISOString()
+  const retentionCutoff = getCustomerNotificationRetentionCutoff()
   const { data, error } = await supabase
     .from("customer_notifications")
     .select("id, user_id, type, title, body, action_url, order_id, is_read, source_key, target_items, starts_at, ends_at, dismissed_at, created_at")
     .eq("user_id", userId)
-    .is("dismissed_at", null)
+    .or(`dismissed_at.is.null,created_at.gte.${retentionCutoff}`)
     .or(`starts_at.is.null,starts_at.lte.${now}`)
     .or(`ends_at.is.null,ends_at.gt.${now}`)
     .order("created_at", { ascending: false })
@@ -264,13 +284,15 @@ export async function markAllCustomerNotificationsRead(userId: string) {
   if (error) throw error
 }
 
-export async function dismissReadCustomerNotifications(userId: string) {
+export async function dismissExpiredReadCustomerNotifications(userId: string) {
+  const retentionCutoff = getCustomerNotificationRetentionCutoff()
   const { error } = await supabase
     .from("customer_notifications")
     .update({ dismissed_at: new Date().toISOString() })
     .eq("user_id", userId)
     .eq("is_read", true)
     .is("dismissed_at", null)
+    .lt("created_at", retentionCutoff)
     .not("source_key", "like", "campaign:%")
 
   if (error) throw error

@@ -63,7 +63,7 @@ type CreditAdminProfile = {
 type CustomerCreditTopupNotificationRow = {
   id: string
   user_id: string
-  amount: number | string
+  amount?: number | string | null
   customer_name?: string | null
   customer_dni?: string | null
   proof_file_name?: string | null
@@ -454,14 +454,14 @@ async function getCreditAdminNotifications() {
   for (const topup of topupRows) {
     const profile = profiles.get(topup.user_id)
     notifications.push({
-      id: `gift-card-topup:${topup.id}`,
-      type: "giftcard",
-      eventKey: `gift-card-topup:${topup.id}`,
+      id: `balance-topup:${topup.id}`,
+      type: "payment",
+      eventKey: `balance-topup:${topup.id}`,
       eventAt: String(topup.created_at),
-      title: "Carga de Gift Card por revisar",
-      body: `${formatARS(Number(topup.amount ?? 0))} · ${formatProfileDetails(profile)} · Datos cargados: ${topup.customer_name || "sin nombre"} · DNI ${topup.customer_dni || "sin DNI"}`,
-      actionLabel: "Ver GiftCard",
-      actionUrl: "/admin?section=creditos",
+      title: "Nuevo comprobante para cargar saldo",
+      body: `${formatProfileDetails(profile)} · Revisá la transferencia e ingresá el monto recibido${topup.proof_file_name ? ` · Archivo: ${topup.proof_file_name}` : ""}`,
+      actionLabel: "Revisar en Clientes",
+      actionUrl: "/admin?section=clientes",
       isRead: false,
     })
   }

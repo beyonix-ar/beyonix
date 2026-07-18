@@ -18,6 +18,7 @@ import {
   BeyonixCard,
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
+import { getInstallmentsLabel } from "@/lib/products/installments"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
 import { getFeaturedProductos } from "@/lib/supabase/queries/store"
@@ -80,11 +81,29 @@ export function HeroSection({ onOpenPreview }: HeroSectionProps) {
   const productImage =
     defaultVariant?.images[0] ??
     featuredProduct?.imagen_principal
-  const discount = featuredProduct ? getProductDiscount(featuredProduct.id) : 0
-  const hasSale = discount > 0
-  const finalPrice = featuredProduct
-    ? Math.round(featuredProduct.precio * (1 - discount))
+  const eventDiscount = featuredProduct
+    ? getProductDiscount(featuredProduct.id)
     : 0
+  const productOriginalPrice =
+    featuredProduct?.precio_anterior &&
+    featuredProduct.precio_anterior > featuredProduct.precio
+      ? featuredProduct.precio_anterior
+      : null
+  const finalPrice = featuredProduct
+    ? Math.round(featuredProduct.precio * (1 - eventDiscount))
+    : 0
+  const originalPrice = featuredProduct
+    ? eventDiscount > 0
+      ? featuredProduct.precio
+      : productOriginalPrice
+    : null
+  const discountPercentage = originalPrice
+    ? Math.round((1 - finalPrice / originalPrice) * 100)
+    : 0
+  const hasSale = discountPercentage > 0
+  const installmentsLabel = featuredProduct
+    ? getInstallmentsLabel(featuredProduct)
+    : null
 
   const openFeaturedProduct = () => {
     if (!featuredProduct) {
@@ -168,7 +187,7 @@ export function HeroSection({ onOpenPreview }: HeroSectionProps) {
                 {hasSale && (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/24 bg-emerald-500/12 px-2.5 py-1 text-xs font-semibold text-emerald-200">
                     <Tag className="size-3" />
-                    -{Math.round(discount * 100)}%
+                    -{discountPercentage}%
                   </span>
                 )}
               </div>
@@ -194,15 +213,31 @@ export function HeroSection({ onOpenPreview }: HeroSectionProps) {
                 </div>
               </button>
 
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="min-w-0">
                   <p className="text-2xl font-bold leading-none text-white">
                     {formatPrice(finalPrice)}
                   </p>
                   {hasSale && (
                     <p className="mt-1 text-sm text-white/42 line-through">
-                      {formatPrice(featuredProduct.precio)}
+                      {formatPrice(originalPrice ?? featuredProduct.precio)}
                     </p>
+                  )}
+
+                  {(hasSale || installmentsLabel) && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {hasSale && (
+                        <span className="inline-flex min-h-24px items-center rounded-full border border-green-500/25 bg-green-500/12 px-3 py-1.5 text-12px font-semibold leading-none text-green-400">
+                          En oferta
+                        </span>
+                      )}
+
+                      {installmentsLabel && (
+                        <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
+                          {installmentsLabel}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -210,6 +245,7 @@ export function HeroSection({ onOpenPreview }: HeroSectionProps) {
                   type="button"
                   variant="outline"
                   size="md"
+                  className="shrink-0"
                   onClick={(event) => {
                     event.stopPropagation()
                     openFeaturedProduct()

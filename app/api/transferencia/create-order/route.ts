@@ -18,6 +18,10 @@ import {
   calculateTransferPaymentTotal,
 } from "@/lib/payments/transfer"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import {
+  decrementCheckoutInventory,
+  deleteIncompleteCheckoutOrder,
+} from "@/lib/orders/checkout-inventory"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -412,6 +416,13 @@ export async function POST(request: Request) {
 
     await insertOrderItems(orderClient as never, order.id, items, productRows)
 
+    try {
+      await decrementCheckoutInventory(admin, items)
+    } catch (inventoryError) {
+      await deleteIncompleteCheckoutOrder(admin, order.id)
+      throw inventoryError
+    }
+
     if (user && customerCreditApplication.appliedAmount > 0) {
       await applyCustomerCreditToOrder(admin, {
         userId: user.id,
@@ -445,6 +456,8 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("Error creando orden por transferencia", error)
+    const stockConflict =
+      error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
 
     return NextResponse.json(
       {
@@ -453,7 +466,7 @@ export async function POST(request: Request) {
             ? error.message
             : "No pudimos registrar el pedido por transferencia.",
       },
-      { status: 500 },
+      { status: stockConflict ? 409 : 500 },
     )
   }
 }

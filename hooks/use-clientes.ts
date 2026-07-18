@@ -11,6 +11,24 @@ import { supabase } from "@/lib/supabase/client"
 import { getClientes } from "@/lib/supabase/queries/clientes"
 import type { SupabaseCliente } from "@/lib/supabase/types"
 
+export interface CustomerCreditTopupReview {
+  id: string
+  user_id: string
+  amount?: number | string | null
+  proof_file_name?: string | null
+  proof_signed_url?: string | null
+  status: "en_revision"
+  admin_notes?: string | null
+  created_at: string
+  profile?: {
+    id: string
+    nombre?: string | null
+    username?: string | null
+    dni?: string | null
+    email?: string | null
+  } | null
+}
+
 async function getAuthHeaders() {
   const {
     data: { session },
@@ -87,6 +105,8 @@ export function useClientes() {
   const [blockedIdentifiers, setBlockedIdentifiers] = useState<
     BlockedClientIdentifier[]
   >([])
+  const [creditTopups, setCreditTopups] = useState<CustomerCreditTopupReview[]>([])
+  const [topupSavingId, setTopupSavingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,24 +115,45 @@ export function useClientes() {
     try {
       setLoading(true)
       setError(null)
-      const [nextClientes, blocksResponse] = await Promise.all([
+      const [nextClientes, blocksResponse, creditResponse] = await Promise.all([
         getClientes(),
         adminFetch("/api/admin/clientes/bloqueos"),
+        adminFetch("/api/admin/clientes/saldos"),
       ])
+
+      let nextBlockedIdentifiers: BlockedClientIdentifier[] = []
+      let creditBalances = new Map<string, number>()
 
       if (blocksResponse.ok) {
         const data = (await blocksResponse.json()) as {
           blockedIdentifiers?: BlockedClientIdentifier[]
         }
-        const nextBlockedIdentifiers = data.blockedIdentifiers ?? []
-
-        setBlockedIdentifiers(nextBlockedIdentifiers)
-        setClientes(
-          applyBlockedStateToClientes(nextClientes, nextBlockedIdentifiers)
-        )
-      } else {
-        setClientes(nextClientes)
+        nextBlockedIdentifiers = data.blockedIdentifiers ?? []
       }
+
+      if (creditResponse.ok) {
+        const data = (await creditResponse.json()) as {
+          accounts?: Array<{ user_id: string; balance: number }>
+          topups?: CustomerCreditTopupReview[]
+        }
+        creditBalances = new Map(
+          (data.accounts ?? []).map((account) => [account.user_id, Number(account.balance ?? 0)]),
+        )
+        setCreditTopups(data.topups ?? [])
+      } else {
+        setCreditTopups([])
+      }
+
+      setBlockedIdentifiers(nextBlockedIdentifiers)
+      setClientes(
+        applyBlockedStateToClientes(
+          nextClientes.map((cliente) => ({
+            ...cliente,
+            customer_credit_balance: creditBalances.get(cliente.id) ?? 0,
+          })),
+          nextBlockedIdentifiers,
+        ),
+      )
     } catch (err) {
       console.error(err)
       setError("No se pudieron cargar los clientes.")
@@ -238,13 +279,80 @@ export function useClientes() {
     [loadClientes]
   )
 
+  const resolveCreditTopup = useCallback(
+    async (data: {
+      topupId: string
+      action: "approve" | "reject"
+      amount?: string
+      notes?: string
+    }) => {
+      setTopupSavingId(data.topupId)
+      setError(null)
+
+      try {
+        const response = await adminFetch("/api/admin/clientes/saldos", {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        })
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string
+        } | null
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "No se pudo resolver el comprobante.")
+        }
+
+        await loadClientes()
+      } catch (err) {
+        console.error(err)
+        setError(
+          err instanceof Error ? err.message : "No se pudo resolver el comprobante.",
+        )
+        throw err
+      } finally {
+        setTopupSavingId(null)
+      }
+    },
+    [loadClientes],
+  )
   useEffect(() => {
     void loadClientes()
+  }, [loadClientes])
+
+  useEffect(() => {
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
+    const scheduleReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null
+        void loadClientes()
+      }, 200)
+    }
+    const channel = supabase
+      .channel("admin-client-credit-updates")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "customer_credit_topups" },
+        scheduleReload,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "customer_credit_movements" },
+        scheduleReload,
+      )
+      .subscribe()
+
+    return () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      void supabase.removeChannel(channel)
+    }
   }, [loadClientes])
 
   return {
     clientes,
     blockedIdentifiers,
+    creditTopups,
+    topupSavingId,
     loading,
     saving,
     error,
@@ -252,5 +360,6 @@ export function useClientes() {
     updateClientAdminInfo,
     createBlockedIdentifier,
     removeBlockedIdentifier,
+    resolveCreditTopup,
   }
 }

@@ -19,6 +19,10 @@ import {
   markStoreBenefitAsUsed,
 } from "@/lib/customer-store-benefits"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import {
+  decrementCheckoutInventory,
+  deleteIncompleteCheckoutOrder,
+} from "@/lib/orders/checkout-inventory"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import {
   TRANSFER_ALIAS,
@@ -218,53 +222,6 @@ async function insertOrderItems(
 
   if (error) {
     throw new Error(error.message || "No se pudieron crear los ítems de la orden.")
-  }
-}
-
-async function decrementStock(
-  admin: ReturnType<typeof createAdminClient>,
-  items: NormalizedItem[]
-) {
-  for (const item of items) {
-    if (item.variantId) {
-      const { data: variant, error: variantError } = await admin
-        .from("producto_variantes")
-        .select("id, stock")
-        .eq("id", item.variantId)
-        .single()
-
-      if (variantError || !variant) {
-        throw new Error("No se pudo leer el stock de una variante.")
-      }
-
-      const { error } = await admin
-        .from("producto_variantes")
-        .update({
-          stock: Math.max(Number(variant.stock ?? 0) - item.quantity, 0),
-        })
-        .eq("id", item.variantId)
-
-      if (error) throw error
-    }
-
-    const { data: product, error: productError } = await admin
-      .from("productos")
-      .select("id, stock")
-      .eq("id", item.productId)
-      .single()
-
-    if (productError || !product) {
-      throw new Error("No se pudo leer el stock de un producto.")
-    }
-
-    const { error } = await admin
-      .from("productos")
-      .update({
-        stock: Math.max(Number(product.stock ?? 0) - item.quantity, 0),
-      })
-      .eq("id", item.productId)
-
-    if (error) throw error
   }
 }
 
@@ -473,6 +430,14 @@ export async function POST(request: Request) {
     orderId = order.id
     await insertOrderItems(admin, order.id, items, productRows)
 
+    try {
+      await decrementCheckoutInventory(admin, items)
+    } catch (inventoryError) {
+      await deleteIncompleteCheckoutOrder(admin, order.id)
+      orderId = null
+      throw inventoryError
+    }
+
     await applyCustomerCreditToOrder(admin, {
       userId: user.id,
       orderId: order.id,
@@ -481,8 +446,6 @@ export async function POST(request: Request) {
       sourceKey: `order:${order.id}:customer-credit:debit`,
     })
     creditApplied = true
-
-    await decrementStock(admin, items)
 
     const { error: updateError } = await admin
       .from("ordenes")
@@ -549,6 +512,8 @@ export async function POST(request: Request) {
     }
 
     console.error("Error creando orden con saldo a favor", error)
+    const stockConflict =
+      error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
 
     return NextResponse.json(
       {
@@ -557,7 +522,7 @@ export async function POST(request: Request) {
             ? error.message
             : "No pudimos registrar el pedido con saldo a favor.",
       },
-      { status: 500 }
+      { status: stockConflict ? 409 : 500 }
     )
   }
 }

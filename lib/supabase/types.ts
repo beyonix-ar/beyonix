@@ -550,7 +550,13 @@ export interface SupabaseCliente {
   username?: string | null
   email?: string | null
   telefono?: string | null
+  dni?: string | null
   direccion?: string | null
+  calle?: string | null
+  numero?: string | null
+  piso?: string | null
+  departamento?: string | null
+  localidad?: string | null
   codigo_postal?: string | null
   provincia?: string | null
   referencias?: string | null
@@ -568,5 +574,6 @@ export interface SupabaseCliente {
   last_order?: SupabasePedido | null
   total_spent: number
   order_count: number
+  customer_credit_balance?: number
   status: "activo" | "inactivo" | "sin_compras"
 }
