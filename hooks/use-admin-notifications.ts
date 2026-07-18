@@ -16,6 +16,7 @@ const EMPTY_GROUPS: AdminNotificationGroups = {
   order: 0,
   message: 0,
   payment: 0,
+  giftcard: 0,
   invoice: 0,
   shipping: 0,
   cancellation: 0,
@@ -33,6 +34,8 @@ const REALTIME_TABLES = [
   "order_audit_events",
   "admin_order_event_views",
   "admin_notification_reads",
+  "customer_credit_topups",
+  "customer_credit_movements",
 ] as const
 
 export function useAdminNotifications(enabled = true) {

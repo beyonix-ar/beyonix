@@ -26,6 +26,7 @@ const TYPE_LABELS: Record<AdminNotificationType, string> = {
   order: "Pedido nuevo",
   message: "Mensaje nuevo",
   payment: "Pago / reintegro",
+  giftcard: "GiftCard",
   invoice: "Factura por emitir",
   shipping: "Envío pendiente",
   cancellation: "Compra cancelada",
@@ -42,6 +43,7 @@ function getNotificationIcon(type: AdminNotificationType) {
   if (type === "order") return ShoppingCart
   if (type === "message") return MessageCircle
   if (type === "payment") return CreditCard
+  if (type === "giftcard") return CreditCard
   if (type === "invoice") return FileText
   if (type === "shipping") return Truck
   if (type === "cancellation") return XCircle

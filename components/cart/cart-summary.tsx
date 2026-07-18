@@ -8,14 +8,14 @@ import { FreeShippingBar } from "./free-shipping-bar"
 import { useCustomerCredit } from "@/context/customer-credit-context"
 import {
   ACTIVE_SALE_EVENT,
-  FREE_SHIPPING_MIN,
-  IS_FREE_SHIPPING_ENABLED,
+  hasShippingBonus,
 } from "@/lib/store-config"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
 } from "@/lib/customer-credit"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 
 interface Props {
   subtotal: number
@@ -37,10 +37,12 @@ export function CartSummary({
   onContinueShopping,
 }: Props) {
   const customerCredit = useCustomerCredit()
+  const siteSettings = useSiteSettings()
   const totals = calculateCartTotals(items)
-  const hasShippingBonus =
-    IS_FREE_SHIPPING_ENABLED &&
-    totals.productsTotal >= FREE_SHIPPING_MIN
+  const shippingHasBonus = hasShippingBonus(
+    totals.productsTotal,
+    siteSettings.shipping,
+  )
   const shippingCoveredByBeyonix = customerCredit.balance > 0
   const displayedTotal = totals.productsTotal
   const maxApplicableCredit = getMaxApplicableCustomerCredit(
@@ -80,6 +82,7 @@ export function CartSummary({
       <FreeShippingBar
         subtotal={totals.productsTotal}
         coveredByBeyonix={shippingCoveredByBeyonix}
+        settings={siteSettings.shipping}
       />
 
       <div className="rounded-xl border border-beyonix-blue-light/60 bg-beyonix-surface-3 px-3 py-2.5">
@@ -125,14 +128,14 @@ export function CartSummary({
               className={`${
                 shippingCoveredByBeyonix
                   ? "font-bold text-emerald-400"
-                  : hasShippingBonus
+                  : shippingHasBonus
                   ? "beyonix-success-glow font-semibold text-emerald-400"
                   : "text-white"
               }`}
             >
               {shippingCoveredByBeyonix
                 ? "GRATIS"
-                : hasShippingBonus
+                : shippingHasBonus
                   ? "Bonificado"
                   : "A definir"}
             </span>

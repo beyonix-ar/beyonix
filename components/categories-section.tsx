@@ -78,7 +78,7 @@ export function CategoriesSection() {
                       alt={categoria.nombre}
                       src={categoria.imagen}
                       sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
-                      className="object-cover transition-transform duration-500 group-hover:scale-[1.025]"
+                      className="object-contain object-center"
                     />
                   ) : (
                     <CategoryFallback />

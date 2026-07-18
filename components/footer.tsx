@@ -3,13 +3,14 @@
 import { useEffect, useState, type ReactNode } from "react"
 
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 import { Instagram, Mail } from "lucide-react"
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { BeyonixCard, BeyonixIconBox } from "@/components/beyonix-ui"
 import {
   BEYONIX_EMAIL,
-  BEYONIX_WITHDRAWAL_URL,
+  BEYONIX_WITHDRAWAL_PAGE_URL,
 } from "@/lib/legal-contact"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
@@ -84,6 +85,14 @@ function FooterColumn({
 export function Footer() {
   const [categorias, setCategorias] = useState<SupabaseCategoria[]>([])
   const currentYear = new Date().getFullYear()
+  const pathname = usePathname()
+
+  function handleWithdrawalClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    if (pathname !== BEYONIX_WITHDRAWAL_PAGE_URL) return
+
+    event.preventDefault()
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
 
   useEffect(() => {
     let active = true
@@ -190,13 +199,14 @@ export function Footer() {
                 </li>
               ))}
               <li>
-                <a
-                  href={BEYONIX_WITHDRAWAL_URL}
-                  aria-label="Abrir el Botón de arrepentimiento"
+                <Link
+                  href={BEYONIX_WITHDRAWAL_PAGE_URL}
+                  onClick={handleWithdrawalClick}
+                  aria-label="Solicitar la cancelación de una compra por derecho de arrepentimiento"
                   className="inline-flex rounded-md font-semibold text-beyonix-cyan outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
                 >
-                  Botón de arrepentimiento
-                </a>
+                  Cancelar compra online
+                </Link>
               </li>
             </ul>
           </FooterColumn>

@@ -1,6 +1,8 @@
 import {
   calculateCustomerShippingCost,
+  DEFAULT_SHIPPING_SETTINGS,
   SHIPPING_COST,
+  type ShippingBonusSettings,
 } from "@/lib/store-config"
 
 export type CheckoutShippingType = "sucursal" | "domicilio"
@@ -21,15 +23,26 @@ export interface NormalizedCheckoutShipping {
 export function normalizeCheckoutShipping(
   shipping: CheckoutShippingInput | null | undefined,
   productsTotal: number,
-  options: { customerCreditApplied?: boolean } = {},
+  options: {
+    customerCreditApplied?: boolean
+    settings?: Partial<ShippingBonusSettings> | null
+  } = {},
 ): NormalizedCheckoutShipping {
-  const fallbackCost = SHIPPING_COST
+  const fallbackCost =
+    Number.isFinite(options.settings?.defaultShippingCost) &&
+    Number(options.settings?.defaultShippingCost) >= 0
+      ? Number(options.settings?.defaultShippingCost)
+      : SHIPPING_COST
   const realCost = Number(shipping?.costReal)
   const costReal =
     Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
   const costCharged = options.customerCreditApplied
     ? 0
-    : calculateCustomerShippingCost(productsTotal, costReal)
+    : calculateCustomerShippingCost(
+        productsTotal,
+        costReal,
+        options.settings ?? DEFAULT_SHIPPING_SETTINGS,
+      )
   const freeShippingApplied = costReal > 0 && costCharged === 0
 
   return {

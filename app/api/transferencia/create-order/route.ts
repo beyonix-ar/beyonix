@@ -21,7 +21,11 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-import { getProductDiscount } from "@/lib/store-config"
+import {
+  getProductDiscount,
+  type ShippingBonusSettings,
+} from "@/lib/store-config"
+import { getSiteSettings } from "@/lib/site-settings"
 import {
   calculateStoreBenefitDiscount,
   findActiveStoreBenefit,
@@ -144,9 +148,11 @@ function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
   productsTotal: number,
   customerCreditApplied = false,
+  shippingSettings: ShippingBonusSettings,
 ) {
   return normalizeCheckoutShipping(shipping, productsTotal, {
     customerCreditApplied,
+    settings: shippingSettings,
   })
 }
 
@@ -288,10 +294,12 @@ export async function POST(request: Request) {
     })
     const baseTotals = calculateCartTotals(cartRows)
     const requestedCredit = normalizeMoney(payload.customerCreditAmount)
+    const siteSettings = await getSiteSettings()
     const shipping = normalizeShipping(
       payload.shipping,
       baseTotals.productsTotal,
       requestedCredit > 0,
+      siteSettings.shipping,
     )
     const totals = calculateCartTotals(cartRows, {
       shippingCost: shipping.costCharged,

@@ -31,13 +31,11 @@ import {
   BEYONIX_EMAIL,
   BEYONIX_INSTAGRAM_URL,
   BEYONIX_SUPPORT_HOURS_DETAIL,
-  BEYONIX_WITHDRAWAL_URL,
+  BEYONIX_WITHDRAWAL_PAGE_URL,
 } from "@/lib/legal-contact"
 import {
-  FREE_SHIPPING_MIN,
-  IS_FREE_SHIPPING_ENABLED,
-  SHIPPING_BONUS_MAX,
-} from "@/lib/store-config"
+  getSiteSettings,
+} from "@/lib/site-settings"
 import {
   PAYMENT_PROOF_ALLOWED_EXTENSIONS,
   PAYMENT_PROOF_MAX_SIZE,
@@ -52,6 +50,8 @@ export const metadata: Metadata = {
   description:
     "Condiciones de compra, pagos, envíos, devoluciones, reclamos, garantías y privacidad de BEYONIX.",
 }
+
+export const dynamic = "force-dynamic"
 
 const LAST_UPDATED = "17 de julio de 2026"
 const PAYMENT_PROOF_MAX_MB = PAYMENT_PROOF_MAX_SIZE / 1024 / 1024
@@ -163,9 +163,12 @@ function KeyFact({
   )
 }
 
-export default function TerminosPage() {
-  const shippingBenefitText = IS_FREE_SHIPPING_ENABLED
-    ? `Desde ${formatARS(FREE_SHIPPING_MIN)}`
+export default async function TerminosPage() {
+  const siteSettings = await getSiteSettings()
+  const shippingSettings = siteSettings.shipping
+  const isShippingBonusEnabled = shippingSettings.freeShippingMode === "full"
+  const shippingBenefitText = isShippingBonusEnabled
+    ? `Desde ${formatARS(shippingSettings.freeShippingMinAmount)}`
     : "Según promoción vigente"
 
   return (
@@ -195,12 +198,6 @@ export default function TerminosPage() {
             <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
               <BeyonixButton asChild size="lg">
                 <a href="#contenido">Consultar las condiciones</a>
-              </BeyonixButton>
-              <BeyonixButton asChild size="lg" variant="secondary">
-                <a href={BEYONIX_WITHDRAWAL_URL}>
-                  <RefreshCcw className="size-4" />
-                  Botón de arrepentimiento
-                </a>
               </BeyonixButton>
             </div>
           </div>
@@ -241,8 +238,8 @@ export default function TerminosPage() {
               label="Envío bonificado"
               value={shippingBenefitText}
               detail={
-                IS_FREE_SHIPPING_ENABLED
-                  ? `Bonificación de hasta ${formatARS(SHIPPING_BONUS_MAX)}.`
+                isShippingBonusEnabled
+                  ? `Bonificación de hasta ${formatARS(shippingSettings.shippingBonusMax)}.`
                   : "Se informa, si corresponde, antes de pagar."
               }
             />
@@ -420,11 +417,11 @@ export default function TerminosPage() {
                 <LegalListItem>Los beneficios asignados a una cuenta son personales, se validan al pagar y pueden tener condiciones o vencimiento visibles antes de utilizarlos.</LegalListItem>
                 <LegalListItem>Los errores manifiestos de publicación serán revisados antes de confirmar la operación y nunca habilitan cobros distintos de los aceptados por el cliente.</LegalListItem>
               </LegalList>
-              {IS_FREE_SHIPPING_ENABLED && (
+              {isShippingBonusEnabled && (
                 <div className="rounded-xl border border-beyonix-blue-light/18 bg-beyonix-blue/10 p-4 text-white/72">
                   <strong className="text-white">Envío bonificado vigente.</strong>{" "}
-                  Desde un subtotal de productos de {formatARS(FREE_SHIPPING_MIN)}, BEYONIX
-                  bonifica hasta {formatARS(SHIPPING_BONUS_MAX)} del costo logístico. Si el envío
+                  Desde un subtotal de productos de {formatARS(shippingSettings.freeShippingMinAmount)}, BEYONIX
+                  bonifica hasta {formatARS(shippingSettings.shippingBonusMax)} del costo logístico. Si el envío
                   supera ese tope, la diferencia queda informada antes de pagar.
                 </div>
               )}
@@ -568,10 +565,13 @@ export default function TerminosPage() {
                 </p>
               </div>
               <BeyonixButton asChild variant="success" size="lg">
-                <a href={BEYONIX_WITHDRAWAL_URL}>
+                <Link
+                  href={BEYONIX_WITHDRAWAL_PAGE_URL}
+                  aria-label="Solicitar la cancelación de una compra por derecho de arrepentimiento"
+                >
                   <RefreshCcw className="size-4" />
-                  Iniciar arrepentimiento
-                </a>
+                  Solicitar cancelación de compra
+                </Link>
               </BeyonixButton>
             </LegalSection>
 

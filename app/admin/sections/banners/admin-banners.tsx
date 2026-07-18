@@ -39,6 +39,7 @@ interface AdminBanner {
 
 const PRODUCTS_PLACEMENT = "products"
 const DEFAULT_ALT_TEXT = "Banner de productos BEYONIX"
+const BANNER_SIZE_HELP = "Recomendado: 1920 x 520 px. Se ve completa, sin zoom."
 const STORAGE_BUCKET = "site-banners"
 
 function getCleanFileName(fileName: string) {
@@ -50,7 +51,7 @@ function getCleanFileName(fileName: string) {
     .toLowerCase()
 }
 
-export function AdminBanners() {
+export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [banners, setBanners] = useState<AdminBanner[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -309,8 +310,22 @@ export function AdminBanners() {
   }
 
   return (
-    <div className={adminPageClassName}>
-      <AdminPageHeader
+    <div className={embedded ? "space-y-6 p-4" : adminPageClassName}>
+      {embedded ? (
+        <div className="flex justify-end">
+          <AdminPrimaryButton
+            title="Nuevo banner"
+            aria-label="Nuevo banner"
+            size="lg"
+            onClick={resetForm}
+            className="min-w-160px"
+          >
+            <Plus className="size-4" />
+            Nuevo banner
+          </AdminPrimaryButton>
+        </div>
+      ) : (
+        <AdminPageHeader
         eyebrow="Comunicación visual"
         title="Banners"
         description="Administrá las imágenes promocionales visibles en la tienda."
@@ -326,7 +341,8 @@ export function AdminBanners() {
             Nuevo banner
           </AdminPrimaryButton>
         }
-      />
+        />
+      )}
 
       {error ? (
         <AdminInfoBlock tone="danger">
@@ -371,6 +387,10 @@ export function AdminBanners() {
             {uploading ? "Subiendo" : "Subir imagen"}
           </AdminSecondaryButton>
 
+          <p className="text-xs font-semibold text-beyonix-cyan">
+            {BANNER_SIZE_HELP}
+          </p>
+
           <AdminTextInput
             title="URL de imagen"
             ariaLabel="URL de imagen"
@@ -379,23 +399,38 @@ export function AdminBanners() {
             icon={<ImageIcon className="size-4" />}
             onChange={setImageUrl}
           />
+          <p className="-mt-2 text-xs text-white/45">Se completa al subir imagen.</p>
 
-          <AdminTextInput
-            title="Texto alternativo"
-            ariaLabel="Texto alternativo"
-            value={altText}
-            placeholder="Descripción del banner"
-            onChange={setAltText}
-          />
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-sm font-black text-white">
+                Descripción
+              </h3>
+              <p className="mt-1 text-xs text-white/48">No se muestra en el banner.</p>
+            </div>
+            <AdminTextInput
+              title="Descripción"
+              ariaLabel="Descripción del banner"
+              value={altText}
+              placeholder="Ejemplo: Banner productos BEYONIX julio"
+              onChange={setAltText}
+            />
+          </div>
 
-          <AdminTextInput
-            title="Orden de aparición"
-            ariaLabel="Orden de aparición"
-            value={sortOrder}
-            placeholder="0"
-            inputMode="numeric"
-            onChange={setSortOrder}
-          />
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-sm font-black text-white">Orden</h3>
+              <p className="mt-1 text-xs text-white/48">0 primero, 1 segundo.</p>
+            </div>
+            <AdminTextInput
+              title="Orden"
+              ariaLabel="Orden del banner"
+              value={sortOrder}
+              placeholder="0"
+              inputMode="numeric"
+              onChange={setSortOrder}
+            />
+          </div>
 
           <AdminSecondaryButton
             title={active ? "Banner activo" : "Banner inactivo"}
@@ -439,11 +474,6 @@ export function AdminBanners() {
               <X className="size-4" />
             </AdminGhostButton>
           </div>
-
-          <p className="text-xs leading-relaxed text-white/45">
-            Podés subir una imagen, pegar una URL externa o usar una ruta local
-            como /images/banners/banner-productos.png.
-          </p>
         </AdminCard>
 
         <div className="space-y-4">
@@ -456,7 +486,7 @@ export function AdminBanners() {
                 <img
                   src={imageUrl}
                   alt={altText || DEFAULT_ALT_TEXT}
-                  className="absolute inset-0 size-full object-cover object-center opacity-80"
+                  className="absolute inset-0 size-full object-contain object-center opacity-80"
                 />
               ) : (
                 <div className="px-6 text-center">

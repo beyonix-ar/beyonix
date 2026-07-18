@@ -471,14 +471,14 @@ export function ProductsPageLayout() {
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-        <div className="relative mx-auto flex min-h-420px w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] sm:min-h-[520px] lg:min-h-[600px]">
+        <div className="relative mx-auto flex min-h-420px w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] sm:min-h-[520px] lg:aspect-[1920/520] lg:min-h-0">
           {productsBanners.map((banner, index) =>
             banner.image_url ? (
               <img
                 key={banner.id}
                 src={banner.image_url}
                 alt={banner.alt_text || "Banner de productos BEYONIX"}
-                className={`absolute inset-0 z-0 size-full object-cover object-center transition-opacity duration-700 ease-out ${
+                className={`absolute inset-0 z-0 size-full object-contain object-center transition-opacity duration-700 ease-out ${
                   index === activeBannerIndex ? "opacity-100" : "opacity-0"
                 }`}
               />

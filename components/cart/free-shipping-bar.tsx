@@ -3,14 +3,14 @@
 import { Truck } from "lucide-react"
 
 import {
-  FREE_SHIPPING_MIN,
-  IS_FREE_SHIPPING_ENABLED,
   hasShippingBonus,
+  type ShippingBonusSettings,
 } from "@/lib/store-config"
 
 interface Props {
   subtotal: number
   coveredByBeyonix?: boolean
+  settings: ShippingBonusSettings
 }
 
 const formatPrice = (price: number) =>
@@ -23,6 +23,7 @@ const formatPrice = (price: number) =>
 export function FreeShippingBar({
   subtotal,
   coveredByBeyonix = false,
+  settings,
 }: Props) {
   if (coveredByBeyonix) {
     return (
@@ -35,16 +36,16 @@ export function FreeShippingBar({
     )
   }
 
-  if (!IS_FREE_SHIPPING_ENABLED) {
+  if (settings.freeShippingMode !== "full") {
     return null
   }
 
   const progress =
-    FREE_SHIPPING_MIN <= 0
+    settings.freeShippingMinAmount <= 0
       ? 100
-      : Math.min((subtotal / FREE_SHIPPING_MIN) * 100, 100)
-  const remaining = Math.max(FREE_SHIPPING_MIN - subtotal, 0)
-  const isComplete = hasShippingBonus(subtotal)
+      : Math.min((subtotal / settings.freeShippingMinAmount) * 100, 100)
+  const remaining = Math.max(settings.freeShippingMinAmount - subtotal, 0)
+  const isComplete = hasShippingBonus(subtotal, settings)
 
   return (
     <div className="space-y-1.5">

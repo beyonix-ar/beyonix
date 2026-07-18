@@ -10,11 +10,11 @@ import {
   FileText,
   GripVertical,
   History,
-  ImageIcon,
   LogOut,
   Menu,
   Package,
   Percent,
+  Settings2,
   ShieldCheck,
   ShoppingCart,
   UserCog,
@@ -35,20 +35,20 @@ import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
 import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
 import { AdminAccionesMasivas } from "./sections/acciones-masivas/admin-acciones-masivas"
-import { AdminBanners } from "./sections/banners/admin-banners"
 import { AdminClientes } from "./sections/clientes/admin-clientes"
 import { AdminCreditos } from "./sections/creditos/admin-creditos"
 import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
 import { AdminEventos } from "./sections/eventos/admin-eventos"
 import { AdminFacturacion } from "./sections/facturacion/admin-facturacion"
 import { AdminNotificaciones } from "./sections/notificaciones/admin-notificaciones"
+import { AdminModificaciones } from "./sections/modificaciones/admin-modificaciones"
 import { AdminPedidos } from "./sections/pedidos/admin-pedidos"
 import { AdminProductos } from "./sections/productos/admin-productos"
 import { AdminUsuarios } from "./sections/usuarios/admin-usuarios"
 
 export type AdminSection =
   | "dashboard"
-  | "banners"
+  | "modificaciones"
   | "notificaciones"
   | "acciones-masivas"
   | "eventos"
@@ -62,7 +62,7 @@ export type AdminSection =
 
 const ADMIN_SECTIONS: AdminSection[] = [
   "dashboard",
-  "banners",
+  "modificaciones",
   "notificaciones",
   "acciones-masivas",
   "eventos",
@@ -181,6 +181,7 @@ function SidebarItem({
 
 function getAdminSection(value: string | null) {
   if (!value) return null
+  if (value === "banners") return "modificaciones"
 
   return ADMIN_SECTIONS.includes(value as AdminSection)
     ? (value as AdminSection)
@@ -298,6 +299,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   }, [loadInvoicePendingCount])
 
   const navigation = useMemo<NavigationItem[]>(() => {
+    const giftCardNotificationCount = notificationGroups.giftcard ?? 0
+    const orderNotificationCount = Math.max(0, notificationCount - giftCardNotificationCount)
     const operational: NavigationItem[] = [
       {
         key: "dashboard",
@@ -316,7 +319,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         label: "Pedidos",
         description: "Ventas, pagos, comprobantes y envíos",
         icon: <ShoppingCart className="size-4" />,
-        notificationCount,
+        notificationCount: orderNotificationCount,
         notificationTone,
       },
     ]
@@ -326,10 +329,10 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     return [
       ...operational,
       {
-        key: "banners",
-        label: "Banners",
-        description: "Promociones y eventos",
-        icon: <ImageIcon className="size-4" />,
+        key: "modificaciones",
+        label: "Modificaciones",
+        description: "Envío, banners y ajustes globales",
+        icon: <Settings2 className="size-4" />,
       },
       {
         key: "notificaciones",
@@ -365,9 +368,11 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       },
       {
         key: "creditos",
-        label: "Saldos",
-        description: "Crédito interno de clientes",
+        label: "GiftCard",
+        description: "Cargas y envíos de saldo",
         icon: <Coins className="size-4" />,
+        notificationCount: giftCardNotificationCount,
+        notificationTone: "giftcard",
       },
       {
         key: "usuarios",
@@ -386,7 +391,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           ]
         : []),
     ]
-  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationTone])
+  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.giftcard, notificationTone])
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -528,7 +533,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
 
   const sections: Record<AdminSection, ReactNode> = {
     dashboard: <AdminDashboard onNavigate={goToSection} />,
-    banners: !isOperator ? <AdminBanners /> : null,
+    modificaciones: !isOperator ? <AdminModificaciones /> : null,
     notificaciones: !isOperator ? <AdminNotificaciones /> : null,
     "acciones-masivas": !isOperator ? <AdminAccionesMasivas /> : null,
     eventos: !isOperator ? <AdminEventos /> : null,

@@ -84,7 +84,6 @@ import {
 import {
   calculateCustomerShippingCost,
   calculateShippingBonus,
-  SHIPPING_COST,
 } from "@/lib/store-config"
 import {
   formatDeliveryAddress,
@@ -115,6 +114,7 @@ import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
 import { Footer } from "@/components/footer"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 
 function formatPrice(
@@ -359,6 +359,7 @@ export default function CheckoutPage() {
     removeFromCart,
   } = useCart()
   const customerCredit = useCustomerCredit()
+  const siteSettings = useSiteSettings()
 
   const [mounted, setMounted] =
     useState(false)
@@ -610,7 +611,7 @@ export default function CheckoutPage() {
     0,
   )
   const packageInfo = calculateCartShippingPackage(items)
-  const manualShippingCost = SHIPPING_COST
+  const manualShippingCost = siteSettings.shipping.defaultShippingCost
   const selectedShippingOption =
     selectedShippingType
       ? shippingOptions.find(
@@ -630,7 +631,11 @@ export default function CheckoutPage() {
     selectedShippingOption
       ? customerCreditCoversShipping
         ? shippingCostReal
-        : calculateShippingBonus(baseTotals.productsTotal, shippingCostReal)
+        : calculateShippingBonus(
+            baseTotals.productsTotal,
+            shippingCostReal,
+            siteSettings.shipping,
+          )
       : 0
   const shippingCostCharged =
     selectedShippingOption
@@ -639,6 +644,7 @@ export default function CheckoutPage() {
         : calculateCustomerShippingCost(
             baseTotals.productsTotal,
             shippingCostReal,
+            siteSettings.shipping,
           )
       : 0
   const freeShippingApplied =
@@ -1510,6 +1516,7 @@ export default function CheckoutPage() {
                           : calculateCustomerShippingCost(
                               baseTotals.productsTotal,
                               option.price,
+                              siteSettings.shipping,
                             )
 
                       return (
@@ -1731,6 +1738,7 @@ export default function CheckoutPage() {
                 <FreeShippingBar
                   subtotal={baseTotals.productsTotal}
                   coveredByBeyonix={customerCreditIncludesShippingBenefit}
+                  settings={siteSettings.shipping}
                 />
               </div>
 

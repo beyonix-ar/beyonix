@@ -4,6 +4,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import {
   getProductDiscount,
+  type ShippingBonusSettings,
 } from "@/lib/store-config"
 import {
   normalizeCheckoutShipping,
@@ -27,6 +28,7 @@ import {
   findActiveStoreBenefit,
   markStoreBenefitAsUsed,
 } from "@/lib/customer-store-benefits"
+import { getSiteSettings } from "@/lib/site-settings"
 
 interface CheckoutItemPayload {
   productId?: number
@@ -151,11 +153,12 @@ function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
   productsTotal: number,
   customerCreditApplied = false,
+  shippingSettings: ShippingBonusSettings,
 ) {
   const normalizedShipping = normalizeCheckoutShipping(
     shipping,
     productsTotal,
-    { customerCreditApplied },
+    { customerCreditApplied, settings: shippingSettings },
   )
 
   return {
@@ -330,10 +333,12 @@ export async function POST(request: Request) {
       }),
     )
     const requestedCredit = normalizeMoney(payload.customerCreditAmount)
+    const siteSettings = await getSiteSettings()
     const shipping = normalizeShipping(
       payload.shipping,
       baseTotals.productsTotal,
       requestedCredit > 0,
+      siteSettings.shipping,
     )
     const totals = calculateCartTotals(
       items.map((item) => {

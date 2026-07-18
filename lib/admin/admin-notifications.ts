@@ -4,6 +4,7 @@ import {
   isAdminClaimSensitiveNotification,
   isAdminSensitiveNotification,
 } from "@/lib/admin/admin-sensitive-visuals"
+import { formatARS } from "@/lib/customer-credit"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
 
 export const ADMIN_NOTIFICATIONS_CHANGED_EVENT =
@@ -13,6 +14,7 @@ export type AdminNotificationType =
   | "order"
   | "message"
   | "payment"
+  | "giftcard"
   | "invoice"
   | "shipping"
   | "cancellation"
@@ -49,10 +51,40 @@ type AdminNotificationRead = {
   event_at: string
 }
 
+type CreditAdminProfile = {
+  id: string
+  email?: string | null
+  username?: string | null
+  nombre?: string | null
+  dni?: string | null
+  telefono?: string | null
+}
+
+type CustomerCreditTopupNotificationRow = {
+  id: string
+  user_id: string
+  amount: number | string
+  customer_name?: string | null
+  customer_dni?: string | null
+  proof_file_name?: string | null
+  status: string
+  created_at: string
+}
+
+type CustomerGiftCardMovementRow = {
+  id: string
+  user_id: string
+  amount: number | string
+  description?: string | null
+  created_at: string
+  metadata?: Record<string, unknown> | null
+}
+
 const EMPTY_GROUPS: AdminNotificationGroups = {
   order: 0,
   message: 0,
   payment: 0,
+  giftcard: 0,
   invoice: 0,
   shipping: 0,
   cancellation: 0,
@@ -322,6 +354,140 @@ function formatOrderId(orderId: number) {
   return `#BX-${1000 + orderId}`
 }
 
+function formatProfileDetails(profile?: CreditAdminProfile | null) {
+  if (!profile) return "Cliente sin perfil"
+
+  return [
+    profile.nombre || "Sin nombre",
+    profile.email ? `Email: ${profile.email}` : "Sin email",
+    profile.username ? `Usuario: ${profile.username}` : null,
+    profile.dni ? `DNI: ${profile.dni}` : null,
+    profile.telefono ? `Tel: ${profile.telefono}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+}
+
+function getMetadataText(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const value = metadata?.[key]
+  return typeof value === "string" ? value : ""
+}
+
+async function loadCreditProfiles(userIds: string[]) {
+  const uniqueUserIds = [...new Set(userIds.filter(Boolean))]
+  const profiles = new Map<string, CreditAdminProfile>()
+
+  if (uniqueUserIds.length === 0) return profiles
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, username, nombre, dni, telefono")
+    .in("id", uniqueUserIds)
+
+  if (error) {
+    console.warn(
+      "ADMIN_CREDIT_PROFILES_LOAD_ERROR",
+      getSupabaseErrorDetails(error),
+    )
+    return profiles
+  }
+
+  for (const profile of (data ?? []) as CreditAdminProfile[]) {
+    profiles.set(profile.id, profile)
+  }
+
+  return profiles
+}
+
+async function getCreditAdminNotifications() {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const notifications: AdminNotification[] = []
+  const [{ data: topups, error: topupsError }, { data: movements, error: movementsError }] =
+    await Promise.all([
+      supabase
+        .from("customer_credit_topups")
+        .select("id, user_id, amount, customer_name, customer_dni, proof_file_name, status, created_at")
+        .eq("status", "en_revision")
+        .order("created_at", { ascending: false })
+        .limit(60),
+      supabase
+        .from("customer_credit_movements")
+        .select("id, user_id, amount, description, created_at, metadata")
+        .eq("movement_type", "debit")
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(80),
+    ])
+
+  if (topupsError) {
+    console.warn(
+      "ADMIN_CREDIT_TOPUPS_LOAD_ERROR",
+      getSupabaseErrorDetails(topupsError),
+    )
+  }
+
+  if (movementsError) {
+    console.warn(
+      "ADMIN_GIFT_CARD_MOVEMENTS_LOAD_ERROR",
+      getSupabaseErrorDetails(movementsError),
+    )
+  }
+
+  const topupRows = (topups ?? []) as CustomerCreditTopupNotificationRow[]
+  const giftCardRows = ((movements ?? []) as CustomerGiftCardMovementRow[]).filter(
+    (movement) =>
+      movement.metadata?.source_kind === "gift_card" &&
+      movement.metadata?.created_from === "customer_gift_card",
+  )
+  const profileIds = [
+    ...topupRows.map((topup) => topup.user_id),
+    ...giftCardRows.map((movement) => movement.user_id),
+    ...giftCardRows
+      .map((movement) => getMetadataText(movement.metadata, "recipient_user_id"))
+      .filter(Boolean),
+  ]
+  const profiles = await loadCreditProfiles(profileIds)
+
+  for (const topup of topupRows) {
+    const profile = profiles.get(topup.user_id)
+    notifications.push({
+      id: `gift-card-topup:${topup.id}`,
+      type: "giftcard",
+      eventKey: `gift-card-topup:${topup.id}`,
+      eventAt: String(topup.created_at),
+      title: "Carga de Gift Card por revisar",
+      body: `${formatARS(Number(topup.amount ?? 0))} · ${formatProfileDetails(profile)} · Datos cargados: ${topup.customer_name || "sin nombre"} · DNI ${topup.customer_dni || "sin DNI"}`,
+      actionLabel: "Ver GiftCard",
+      actionUrl: "/admin?section=creditos",
+      isRead: false,
+    })
+  }
+
+  for (const movement of giftCardRows) {
+    const senderProfile = profiles.get(movement.user_id)
+    const recipientId = getMetadataText(movement.metadata, "recipient_user_id")
+    const recipientProfile = profiles.get(recipientId)
+    const message = getMetadataText(movement.metadata, "message")
+
+    notifications.push({
+      id: `gift-card-sent:${movement.id}`,
+      type: "giftcard",
+      eventKey: `gift-card-sent:${movement.id}`,
+      eventAt: String(movement.created_at),
+      title: "Gift Card enviada",
+      body: `${formatARS(Number(movement.amount ?? 0))} · De: ${formatProfileDetails(senderProfile)} · Para: ${formatProfileDetails(recipientProfile)}${message ? ` · Mensaje: ${message}` : ""}`,
+      actionLabel: "Ver GiftCard",
+      actionUrl: "/admin?section=creditos",
+      isRead: false,
+    })
+  }
+
+  return notifications
+}
+
 async function loadReads(
   adminId: string,
   notifications: AdminNotification[],
@@ -406,6 +572,7 @@ function dedupeNotifications(notifications: AdminNotification[]) {
 function isPendingAdminTask(notification: AdminNotification) {
   return (
     notification.type === "payment" ||
+    notification.type === "giftcard" ||
     notification.type === "shipping" ||
     notification.type === "invoice" ||
     notification.type === "cancellation" ||
@@ -416,6 +583,7 @@ function isPendingAdminTask(notification: AdminNotification) {
 function getOperationalPriority(notification: AdminNotification) {
   if (notification.type === "claim") return 5
   if (notification.type === "payment") return 4
+  if (notification.type === "giftcard") return 4
   if (notification.type === "shipping") return 3
   if (notification.type === "message") return 2
   if (notification.type === "invoice") return 1
@@ -559,9 +727,11 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
     const [
       pedidos,
       orderLastSeenAt,
+      creditNotifications,
     ] = await Promise.all([
       getPedidos(),
       getOrderLastSeenAt(adminId),
+      getCreditAdminNotifications(),
     ])
 
     const orders = pedidos.filter(isOrderVisible)
@@ -587,6 +757,8 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       .sort((a, b) => getTime(b.created_at) - getTime(a.created_at))
       .slice(0, 200)
     const notifications: AdminNotification[] = []
+
+    notifications.push(...creditNotifications)
 
     for (const order of orders) {
       const orderId = Number(order.id)

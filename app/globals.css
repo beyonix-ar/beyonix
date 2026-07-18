@@ -419,7 +419,7 @@
 }
 
 @utility aspect-category-featured {
-  aspect-ratio: 16 / 9.2;
+  aspect-ratio: 16 / 8.5;
 }
 
 @utility aspect-product-card-image {

@@ -12,7 +12,7 @@ import type { createAdminClient } from "@/lib/supabase/admin"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
-type CreditAction = "issue" | "reverse"
+type CreditAction = "issue" | "reverse" | "transfer"
 
 function normalizeAmount(value: unknown) {
   const parsed =
@@ -24,7 +24,7 @@ function normalizeAmount(value: unknown) {
 }
 
 function isCreditAction(value: unknown): value is CreditAction {
-  return value === "issue" || value === "reverse"
+  return value === "issue" || value === "reverse" || value === "transfer"
 }
 
 function isMovementType(value: unknown): value is CustomerCreditMovementType {
@@ -78,9 +78,9 @@ export async function GET(request: Request) {
       const normalizedQuery = `%${query.toLowerCase()}%`
       const { data, error } = await auth.admin
         .from("profiles")
-        .select("id, email, username, nombre, rol")
+        .select("id, email, username, nombre, dni, rol")
         .or(
-          `email.ilike.${normalizedQuery},username.ilike.${normalizedQuery},nombre.ilike.${normalizedQuery}`
+          `email.ilike.${normalizedQuery},username.ilike.${normalizedQuery},nombre.ilike.${normalizedQuery},dni.ilike.${normalizedQuery}`
         )
         .eq("rol", "cliente")
         .limit(1)
@@ -95,7 +95,7 @@ export async function GET(request: Request) {
     } else if (targetUserId) {
       const { data } = await auth.admin
         .from("profiles")
-        .select("id, email, username, nombre, rol")
+        .select("id, email, username, nombre, dni, rol")
         .eq("id", targetUserId)
         .maybeSingle()
 
@@ -144,14 +144,93 @@ export async function POST(request: Request) {
     movementType?: unknown
     amount?: unknown
     description?: unknown
-    orderId?: unknown
-    claimId?: unknown
-    creditNoteId?: unknown
+    destinationUserId?: unknown
     expiresAt?: unknown
   }
   const action = isCreditAction(body.action) ? body.action : "issue"
 
   try {
+    if (action === "transfer") {
+      const sourceUserId =
+        typeof body.userId === "string" ? body.userId.trim() : ""
+      const destinationUserId =
+        typeof body.destinationUserId === "string"
+          ? body.destinationUserId.trim()
+          : ""
+      const amount = normalizeAmount(body.amount)
+      const description =
+        typeof body.description === "string" ? body.description.trim() : ""
+
+      if (!sourceUserId || !destinationUserId) {
+        return NextResponse.json(
+          { error: "Indicá cuenta de origen y destino." },
+          { status: 400 },
+        )
+      }
+
+      if (sourceUserId === destinationUserId) {
+        return NextResponse.json(
+          { error: "La cuenta de origen y destino no puede ser la misma." },
+          { status: 400 },
+        )
+      }
+
+      if (amount <= 0) {
+        return NextResponse.json(
+          { error: "Ingresá un monto mayor a cero." },
+          { status: 400 },
+        )
+      }
+
+      if (description.length < 3) {
+        return NextResponse.json(
+          { error: "Ingresá un mensaje para la GiftCard." },
+          { status: 400 },
+        )
+      }
+
+      const transferId = crypto.randomUUID()
+
+      await createCustomerCreditMovement(auth.admin, {
+        userId: sourceUserId,
+        movementType: "debit",
+        amount,
+        description: `Transferencia GiftCard enviada: ${description}`,
+        sourceType: "admin_adjustment",
+        createdBy: auth.user.id,
+        metadata: {
+          created_from: "admin_gift_card_transfer",
+          source_kind: "gift_card",
+          transfer_id: transferId,
+          destination_user_id: destinationUserId,
+        },
+        sourceKey: `gift-card-transfer:${transferId}:debit`,
+      })
+
+      await createCustomerCreditMovement(auth.admin, {
+        userId: destinationUserId,
+        movementType: "credit",
+        amount,
+        description: `GiftCard recibida: ${description}`,
+        sourceType: "admin_adjustment",
+        createdBy: auth.user.id,
+        metadata: {
+          created_from: "admin_gift_card_transfer",
+          source_kind: "gift_card",
+          transfer_id: transferId,
+          source_user_id: sourceUserId,
+        },
+        sourceKey: `gift-card-transfer:${transferId}:credit`,
+      })
+
+      const [balance, movements] = await Promise.all([
+        getCustomerCreditBalance(auth.admin, sourceUserId),
+        listCustomerCreditMovements(auth.admin, sourceUserId),
+      ])
+
+      return NextResponse.json({ balance, movements })
+    }
+
     if (action === "reverse") {
       const movementId =
         typeof body.movementId === "string" ? body.movementId.trim() : ""
@@ -215,12 +294,6 @@ export async function POST(request: Request) {
     const movementType = isMovementType(body.movementType)
       ? body.movementType
       : "credit"
-    const orderId = Number(body.orderId)
-    const claimId = Number(body.claimId)
-    const creditNoteId =
-      typeof body.creditNoteId === "string"
-        ? body.creditNoteId.trim() || null
-        : null
     const expiresAt =
       typeof body.expiresAt === "string" && body.expiresAt.trim()
         ? body.expiresAt.trim()
@@ -252,23 +325,18 @@ export async function POST(request: Request) {
       movementType,
       amount,
       description,
-      sourceType: Number.isFinite(claimId)
-        ? "claim"
-        : creditNoteId
-          ? "credit_note"
-          : "admin_adjustment",
-      sourceId: Number.isFinite(claimId)
-        ? String(claimId)
-        : creditNoteId ?? null,
-      orderId: Number.isFinite(orderId) ? orderId : null,
-      claimId: Number.isFinite(claimId) ? claimId : null,
-      creditNoteId,
+      sourceType: "admin_adjustment",
+      sourceId: null,
+      orderId: null,
+      claimId: null,
+      creditNoteId: null,
       createdBy: auth.user.id,
       expiresAt,
       metadata: {
-        created_from: "admin_customer_credit_panel",
+        created_from: "admin_gift_card_panel",
+        source_kind: "gift_card",
       },
-      sourceKey: `admin-credit:${userId}:${crypto.randomUUID()}`,
+      sourceKey: `gift-card:${userId}:${crypto.randomUUID()}`,
     })
 
     const [balance, movements] = await Promise.all([
