@@ -58,7 +58,7 @@ export async function GET(request: Request) {
         auth.admin
           .from("profiles")
           .select("id, nombre, username, dni, email")
-          .eq("rol", "cliente")
+          .in("rol", ["cliente", "admin", "super_admin"])
           .order("created_at", { ascending: false }),
         auth.admin
           .from("customer_credit_topups")

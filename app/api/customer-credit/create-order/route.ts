@@ -27,7 +27,7 @@ import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import {
   TRANSFER_ALIAS,
   TRANSFER_DISCOUNT_PERCENT,
-  calculateTransferPaymentTotal,
+  calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -356,15 +356,23 @@ export async function POST(request: Request) {
       totals.productsTotal - storeBenefitDiscountAmount,
       0
     )
-    const transferPaymentTotals = calculateTransferPaymentTotal(
-      productsTotalAfterStoreBenefit,
-      totals.shipping
-    )
+    const balance = await getCustomerCreditBalance(admin, user.id)
+    const creditBeforeTransferDiscount = calculateCustomerCreditApplication({
+      availableBalance: balance,
+      eligibleTotal: productsTotalAfterStoreBenefit + totals.shipping,
+      requestedAmount: requestedCredit,
+    })
+    const transferPaymentTotals = calculateTransferPaymentTotalAfterCustomerCredit({
+      productsTotal: productsTotalAfterStoreBenefit,
+      shipping: totals.shipping,
+      customerCreditAmount: creditBeforeTransferDiscount.appliedAmount,
+    })
     const orderTotal =
       pricingPaymentMethod === "transferencia"
-        ? transferPaymentTotals.total
+        ? productsTotalAfterStoreBenefit +
+          totals.shipping -
+          transferPaymentTotals.discount
         : productsTotalAfterStoreBenefit + totals.shipping
-    const balance = await getCustomerCreditBalance(admin, user.id)
     const creditApplication = calculateCustomerCreditApplication({
       availableBalance: balance,
       eligibleTotal: orderTotal,

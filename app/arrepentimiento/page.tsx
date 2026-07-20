@@ -46,9 +46,9 @@ const facts = [
   {
     icon: CheckCircle2,
     label: "Respuesta",
-    value: "Confirmación del trámite",
+    value: "Código en 24 h",
     detail:
-      "Te vamos a responder por el canal usado con las instrucciones para continuar.",
+      "Te vamos a responder por el mismo canal con una identificación del trámite.",
   },
 ]
 
@@ -69,7 +69,7 @@ export default function ArrepentimientoPage() {
           <p className="mt-5 max-w-3xl text-base leading-7 text-white/66 sm:text-lg sm:leading-8">
             Este acceso sirve para pedir la cancelación de una compra realizada online dentro del
             plazo legal. No es un reclamo por falla ni un cambio por preferencia: es el derecho a
-            revocar una compra cuando corresponde.
+            revocar una compra cuando corresponde, sin iniciar sesión ni registrarte.
           </p>
 
           <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">

@@ -46,6 +46,45 @@ export function calculateTransferPaymentTotal(
   }
 }
 
+export function calculateTransferPaymentTotalAfterCustomerCredit({
+  productsTotal,
+  shipping,
+  customerCreditAmount,
+}: {
+  productsTotal: number
+  shipping: number
+  customerCreditAmount: number
+}) {
+  const safeProductsTotal = Number.isFinite(productsTotal)
+    ? Math.max(productsTotal, 0)
+    : 0
+  const safeShipping = Number.isFinite(shipping) ? Math.max(shipping, 0) : 0
+  const safeCredit = Number.isFinite(customerCreditAmount)
+    ? Math.max(customerCreditAmount, 0)
+    : 0
+  const creditAppliedToProducts = Math.min(safeCredit, safeProductsTotal)
+  const creditAppliedToShipping = Math.min(
+    Math.max(safeCredit - creditAppliedToProducts, 0),
+    safeShipping,
+  )
+  const productsPaidByTransfer = Math.max(
+    safeProductsTotal - creditAppliedToProducts,
+    0,
+  )
+  const shippingPaidExternally = Math.max(
+    safeShipping - creditAppliedToShipping,
+    0,
+  )
+  const discount = calculateTransferDiscount(productsPaidByTransfer)
+
+  return {
+    discount,
+    productsPaidByTransfer,
+    shippingPaidExternally,
+    total: Math.max(productsPaidByTransfer - discount + shippingPaidExternally, 0),
+  }
+}
+
 export function getPaymentProofValidationError(file: File | null) {
   if (!file) return "Seleccioná un archivo para subir."
 

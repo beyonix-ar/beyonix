@@ -33,13 +33,21 @@ function AccountMenuIcon({
   Icon,
   filled = false,
   dollarBadge = false,
+  danger = false,
 }: {
   Icon: LucideIcon
   filled?: boolean
   dollarBadge?: boolean
+  danger?: boolean
 }) {
   return (
-    <span className="relative flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/34 bg-[linear-gradient(135deg,rgba(17,42,67,0.86),rgba(7,18,31,0.9))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_rgba(30,140,255,0.1)] transition-all group-hover:border-beyonix-sky/58 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.11),0_0_16px_rgba(140,200,242,0.16)]">
+    <span
+      className={cn(
+        "relative flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/34 bg-[linear-gradient(135deg,rgba(17,42,67,0.86),rgba(7,18,31,0.9))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_rgba(30,140,255,0.1)] transition-all group-hover:border-beyonix-sky/58 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.11),0_0_16px_rgba(140,200,242,0.16)]",
+        danger &&
+          "group-hover:border-red-500/70 group-hover:text-red-500 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_0_16px_rgba(239,68,68,0.22)] group-focus-visible:border-red-500/70 group-focus-visible:text-red-500",
+      )}
+    >
       <Icon
         className={`size-4 stroke-[2.35] drop-shadow-[0_0_4px_rgba(255,255,255,0.18)] ${
           filled ? "fill-white" : "fill-none"
@@ -97,8 +105,8 @@ export function SiteHeader() {
     "text-white after:scale-x-100 after:opacity-100"
   const accountMenuItemClass =
     "group flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] outline-none transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)] focus-visible:bg-[rgba(17,42,67,0.75)] focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
-  const accountMenuIconClass =
-    "size-4 shrink-0 text-white/84 transition-colors duration-200 group-hover:text-beyonix-sky"
+  const accountLogoutMenuItemClass =
+    cn(accountMenuItemClass, "w-full text-left hover:text-red-500 focus-visible:text-red-500")
 
   useEffect(() => {
     let active = true
@@ -369,9 +377,9 @@ export function SiteHeader() {
                           logout()
                           setUserOpen(false)
                         }}
-                        className="group flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-sm text-[#F8FAFC] outline-none transition-all duration-200 hover:bg-red-500/10 hover:text-red-300 hover:shadow-[inset_0_0_0_1px_rgba(248,113,113,0.14)] focus-visible:bg-red-500/10 focus-visible:text-red-300 focus-visible:ring-2 focus-visible:ring-red-400/25"
+                        className={accountLogoutMenuItemClass}
                       >
-                        <LogOut className={accountMenuIconClass} strokeWidth={1.8} />
+                        <AccountMenuIcon Icon={LogOut} danger />
                         Cerrar sesión
                       </button>
                     </div>
@@ -562,8 +570,12 @@ export function SiteHeader() {
                       logout()
                       setMobileOpen(false)
                     }}
-                    className="block w-full cursor-pointer px-2 py-3 text-left text-15px font-medium text-white/60 transition-colors hover:text-red-300"
+                    className={cn(
+                      "group flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left text-15px font-medium text-white/80 hover:bg-white/4 hover:text-red-500",
+                      beyonixHoverBorder
+                    )}
                   >
+                    <AccountMenuIcon Icon={LogOut} danger />
                     Cerrar sesión
                   </button>
                 </>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import {
+  AlertTriangle,
   Ban,
   CheckCircle2,
   ChevronDown,
@@ -9,6 +10,8 @@ import {
   Eye,
   FileText,
   LockKeyhole,
+  MinusCircle,
+  PlusCircle,
   Save,
   ShieldOff,
   ShoppingBag,
@@ -22,6 +25,7 @@ import {
   useClientes,
   type CustomerCreditTopupReview,
 } from "@/hooks/use-clientes"
+import { useAuth } from "@/context/auth-context"
 import type {
   BlockedClientIdentifier,
   ClientRiskStatus,
@@ -361,6 +365,8 @@ function ClientCard({
   cliente,
   saving,
   onUpdate,
+  onAdjustBalance,
+  isSuperAdmin,
 }: {
   cliente: SupabaseCliente
   saving: boolean
@@ -373,6 +379,13 @@ function ClientCard({
       blocked_reason?: string | null
     }
   ) => Promise<void>
+  onAdjustBalance: (data: {
+    userId: string
+    operation: "credit" | "debit"
+    amount: string
+    description: string
+  }) => Promise<void>
+  isSuperAdmin: boolean
 }) {
   const username = cliente.username || cliente.nombre
   const [riskStatus, setRiskStatus] = useState<ClientRiskStatus>(
@@ -380,6 +393,12 @@ function ClientCard({
   )
   const [adminNote, setAdminNote] = useState(cliente.admin_note ?? "")
   const [blockReason, setBlockReason] = useState(cliente.blocked_reason ?? "")
+  const [balanceOperation, setBalanceOperation] = useState<"credit" | "debit">("credit")
+  const [balanceAmount, setBalanceAmount] = useState("")
+  const [balanceDescription, setBalanceDescription] = useState("")
+  const [balanceNotice, setBalanceNotice] = useState("")
+  const [balanceError, setBalanceError] = useState("")
+  const [balanceConfirmationOpen, setBalanceConfirmationOpen] = useState(false)
   const isBlocked = Boolean(cliente.blocked_at)
 
   const saveAdminInfo = () => {
@@ -396,6 +415,35 @@ function ClientCard({
     })
   }
 
+  const executeBalanceAdjustment = async () => {
+    try {
+      await onAdjustBalance({
+        userId: cliente.id,
+        operation: balanceOperation,
+        amount: balanceAmount,
+        description: balanceDescription,
+      })
+      setBalanceAmount("")
+      setBalanceDescription("")
+      setBalanceNotice(
+        balanceOperation === "credit"
+          ? "Saldo acreditado correctamente."
+          : "Saldo debitado correctamente.",
+      )
+    } catch (error) {
+      setBalanceError(
+        error instanceof Error ? error.message : "No se pudo actualizar el saldo.",
+      )
+    }
+  }
+
+  const submitBalanceAdjustment = () => {
+    setBalanceNotice("")
+    setBalanceError("")
+
+    setBalanceConfirmationOpen(true)
+  }
+
   return (
     <details className="rounded-3xl border border-white/8 bg-black">
       <summary className="grid cursor-pointer gap-4 px-4 py-4 lg:grid-cols-admin-clients lg:items-center">
@@ -406,6 +454,13 @@ function ClientCard({
           <p className="mt-1 truncate text-xs text-white/58">
             {cliente.email}
           </p>
+          <span className="mt-2 inline-flex rounded-full border border-[#4F82A8]/35 bg-[#112A43]/70 px-2 py-0.5 text-9px font-black uppercase tracking-wider text-beyonix-sky">
+            {cliente.rol === "super_admin"
+              ? "Superadmin"
+              : cliente.rol === "admin"
+                ? "Administrador"
+                : "Cliente"}
+          </span>
         </div>
 
         <div className="min-w-0">
@@ -514,6 +569,117 @@ function ClientCard({
           </section>
         </div>
 
+        <section className="mt-4 rounded-2xl border border-[#4F82A8]/35 bg-[#0A1724] p-4 sm:p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <CircleDollarSign className="size-4 text-beyonix-sky" />
+                <h3 className="text-sm font-black uppercase tracking-wide text-white/92">
+                  Administrar saldo
+                </h3>
+              </div>
+              <p className="mt-1.5 text-xs leading-5 text-white/50">
+                Acreditá o debitá saldo manualmente. Este movimiento no genera una Gift Card.
+              </p>
+            </div>
+            <p className="text-sm font-black text-beyonix-sky">
+              Disponible: {formatPrice(cliente.customer_credit_balance ?? 0)}
+            </p>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-[290px_180px_minmax(240px,1fr)_auto] md:items-end">
+            <fieldset className="block min-w-0">
+              <legend className="text-11px font-bold text-white/65">Operación</legend>
+              <div className="mt-1.5 grid h-11 grid-cols-2 gap-1 rounded-xl border border-[#4F82A8]/30 bg-black p-1 shadow-[inset_0_1px_4px_rgba(0,0,0,0.45)]">
+                <button
+                  type="button"
+                  aria-pressed={balanceOperation === "credit"}
+                  onClick={() => setBalanceOperation("credit")}
+                  className={`inline-flex min-w-0 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition-all duration-200 ${
+                    balanceOperation === "credit"
+                      ? "border border-emerald-300/35 bg-emerald-400/15 text-emerald-100 shadow-[0_4px_14px_rgba(52,211,153,0.1)]"
+                      : "border border-transparent text-white/45 hover:bg-white/[0.05] hover:text-white/75"
+                  }`}
+                >
+                  <PlusCircle className="size-3.5 shrink-0" />
+                  Acreditar
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={balanceOperation === "debit"}
+                  onClick={() => setBalanceOperation("debit")}
+                  className={`inline-flex min-w-0 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition-all duration-200 ${
+                    balanceOperation === "debit"
+                      ? "border border-red-300/35 bg-red-400/15 text-red-100 shadow-[0_4px_14px_rgba(248,113,113,0.1)]"
+                      : "border border-transparent text-white/45 hover:bg-white/[0.05] hover:text-white/75"
+                  }`}
+                >
+                  <MinusCircle className="size-3.5 shrink-0" />
+                  Debitar
+                </button>
+              </div>
+            </fieldset>
+
+            <label className="block">
+              <span className="text-11px font-bold text-white/65">Importe</span>
+              <input
+                value={balanceAmount}
+                onChange={(event) => setBalanceAmount(event.target.value)}
+                inputMode="decimal"
+                placeholder="$ 0"
+                className="mt-1.5 h-11 w-full rounded-xl border border-[#4F82A8]/35 bg-black px-3 text-sm font-semibold text-white outline-none placeholder:text-white/25 focus:border-beyonix-sky"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-11px font-bold text-white/65">
+                Motivo interno{isSuperAdmin ? " (opcional)" : ""}
+              </span>
+              <input
+                value={balanceDescription}
+                onChange={(event) => setBalanceDescription(event.target.value)}
+                maxLength={300}
+                placeholder={
+                  isSuperAdmin
+                    ? "Opcional para superadmin"
+                    : "Ej.: Ajuste por devolución o corrección administrativa"
+                }
+                className="mt-1.5 h-11 w-full rounded-xl border border-[#4F82A8]/35 bg-black px-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-beyonix-sky"
+              />
+            </label>
+
+            <button
+              type="button"
+              disabled={
+                saving ||
+                !balanceAmount.trim() ||
+                (!isSuperAdmin && balanceDescription.trim().length < 3)
+              }
+              onClick={submitBalanceAdjustment}
+              className={`inline-flex h-11 cursor-pointer items-center justify-center rounded-xl border px-5 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                balanceOperation === "credit"
+                  ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-200 hover:border-emerald-200/55"
+                  : "border-red-300/30 bg-red-400/10 text-red-200 hover:border-red-200/55"
+              }`}
+            >
+              {saving
+                ? "Guardando..."
+                : balanceOperation === "credit"
+                  ? "Acreditar"
+                  : "Debitar"}
+            </button>
+          </div>
+
+          {balanceNotice ? (
+            <p className="mt-3 text-xs font-semibold text-emerald-300">{balanceNotice}</p>
+          ) : null}
+          {balanceError ? (
+            <p className="mt-3 text-xs font-semibold text-red-200">{balanceError}</p>
+          ) : null}
+        </section>
+
+        {cliente.rol === "cliente" ? (
+          <>
         <div className="mt-4 rounded-2xl border border-beyonix-blue-light/25 bg-beyonix-blue px-4 py-3 text-sm text-beyonix-sky">
           {cliente.current_cart
             ? "Carrito actual disponible en la base de datos."
@@ -595,7 +761,139 @@ function ClientCard({
             </div>
           </div>
         </div>
+          </>
+        ) : null}
       </div>
+
+      {balanceConfirmationOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`balance-adjustment-title-${cliente.id}`}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !saving) setBalanceConfirmationOpen(false)
+          }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) {
+              setBalanceConfirmationOpen(false)
+            }
+          }}
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[#4F82A8]/45 bg-[#08131E] shadow-[0_30px_90px_rgba(0,0,0,0.65)]">
+            <div className="border-b border-[#31506F]/65 bg-[#0B1C2C] px-6 py-5">
+              <div className="flex items-start gap-4">
+                <div className={`flex size-11 shrink-0 items-center justify-center rounded-2xl border ${
+                  balanceOperation === "credit"
+                    ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-200"
+                    : "border-red-300/25 bg-red-400/10 text-red-200"
+                }`}>
+                  {balanceOperation === "credit" ? (
+                    <PlusCircle className="size-5" />
+                  ) : (
+                    <AlertTriangle className="size-5" />
+                  )}
+                </div>
+                <div>
+                  <p className={`text-9px font-black uppercase tracking-[0.2em] ${
+                    balanceOperation === "credit"
+                      ? "text-emerald-200/65"
+                      : "text-red-200/65"
+                  }`}>
+                    Ajuste de saldo
+                  </p>
+                  <h2
+                    id={`balance-adjustment-title-${cliente.id}`}
+                    className="mt-1 text-xl font-black text-white"
+                  >
+                    {balanceOperation === "credit"
+                      ? "Confirmar acreditación"
+                      : "Confirmar débito"}
+                  </h2>
+                  <p className="mt-1.5 text-sm leading-5 text-white/55">
+                    {balanceOperation === "credit"
+                      ? "Revisá los datos antes de acreditar saldo en esta cuenta."
+                      : "Revisá los datos antes de descontar saldo de esta cuenta."}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 px-6 py-5">
+              <div className={`rounded-2xl border px-5 py-4 text-center ${
+                balanceOperation === "credit"
+                  ? "border-emerald-300/15 bg-emerald-400/[0.06]"
+                  : "border-red-300/15 bg-red-400/[0.06]"
+              }`}>
+                <p className="text-10px font-bold uppercase tracking-[0.18em] text-white/45">
+                  Importe a {balanceOperation === "credit" ? "acreditar" : "debitar"}
+                </p>
+                <p className="mt-2 text-3xl font-black tracking-tight text-white">
+                  {formatPrice(
+                    Number(balanceAmount.replace(/\./g, "").replace(",", ".")) || 0,
+                  )}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-white/8 bg-black/25 p-3.5">
+                  <p className="text-9px font-bold uppercase tracking-wider text-white/38">Cuenta</p>
+                  <p className="mt-1 truncate text-sm font-black text-white/88">{username}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/25 p-3.5 text-right">
+                  <p className="text-9px font-bold uppercase tracking-wider text-white/38">Saldo actual</p>
+                  <p className="mt-1 text-sm font-black text-beyonix-sky">
+                    {formatPrice(cliente.customer_credit_balance ?? 0)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/8 bg-black/20 px-4 py-3">
+                <p className="text-9px font-bold uppercase tracking-wider text-white/38">Motivo</p>
+                <p className="mt-1.5 text-sm leading-5 text-white/72">
+                  {balanceDescription.trim() || "Autorización de superadmin sin motivo adicional."}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 border-t border-[#31506F]/55 bg-black/20 px-6 py-4">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setBalanceConfirmationOpen(false)}
+                className="inline-flex h-11 cursor-pointer items-center justify-center rounded-xl border border-white/12 bg-white/[0.04] text-sm font-black text-white/70 transition hover:border-white/25 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                autoFocus
+                disabled={saving}
+                onClick={() => {
+                  setBalanceConfirmationOpen(false)
+                  void executeBalanceAdjustment()
+                }}
+                className={`inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  balanceOperation === "credit"
+                    ? "border-emerald-300/35 bg-emerald-400/12 text-emerald-100 hover:border-emerald-200/60 hover:bg-emerald-400/20"
+                    : "border-red-300/35 bg-red-400/12 text-red-100 hover:border-red-200/60 hover:bg-red-400/20"
+                }`}
+              >
+                {balanceOperation === "credit" ? (
+                  <PlusCircle className="size-4" />
+                ) : (
+                  <MinusCircle className="size-4" />
+                )}
+                {saving
+                  ? "Procesando..."
+                  : balanceOperation === "credit"
+                    ? "Confirmar acreditación"
+                    : "Confirmar débito"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </details>
   )
 }
@@ -825,6 +1123,7 @@ export function AdminClientes({
 }: {
   initialActiveOnly?: boolean
 }) {
+  const { isSuperAdmin } = useAuth()
   const {
     clientes,
     blockedIdentifiers,
@@ -837,6 +1136,7 @@ export function AdminClientes({
     createBlockedIdentifier,
     removeBlockedIdentifier,
     resolveCreditTopup,
+    adjustCustomerBalance,
   } = useClientes()
   const [search, setSearch] = useState("")
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>(
@@ -922,9 +1222,9 @@ export function AdminClientes({
   return (
     <div className={adminPageClassName}>
       <AdminPageHeader
-        eyebrow="Clientes"
-        title="Clientes registrados"
-        description="Cuentas, saldos disponibles, comprobantes de carga, compras y estado operativo."
+        eyebrow="Cuentas"
+        title="Cuentas registradas"
+        description="Clientes y administradores, saldos disponibles, comprobantes de carga, compras y estado operativo."
         actions={
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <AdminStatCard title="Total" value={clientes.length} />
@@ -933,7 +1233,7 @@ export function AdminClientes({
               title="Con compras"
               value={clientes.filter((cliente) => cliente.order_count > 0).length}
             />
-            <AdminStatCard title="Saldo clientes" value={formatPrice(totalCreditBalance)} />
+            <AdminStatCard title="Saldo total" value={formatPrice(totalCreditBalance)} />
             <AdminStatCard title="Bloqueados" value={blockedCount} tone="danger" />
           </div>
         }
@@ -956,8 +1256,8 @@ export function AdminClientes({
       <AdminFiltersBar>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-admin-client-filters">
           <AdminSearchInput
-            title="Buscar cliente"
-            ariaLabel="Buscar cliente"
+            title="Buscar cuenta"
+            ariaLabel="Buscar cuenta"
             value={search}
             placeholder="Buscar nombre, usuario, email o teléfono"
             onChange={setSearch}
@@ -1035,10 +1335,10 @@ export function AdminClientes({
 
       <AdminInfoBlock tone="info">
         {activeCount > 0
-          ? `${activeCount} cliente${activeCount === 1 ? "" : "s"} activo${
+          ? `${activeCount} cuenta${activeCount === 1 ? "" : "s"} activa${
               activeCount === 1 ? "" : "s"
-            } detectado${activeCount === 1 ? "" : "s"} en los últimos 5 minutos.`
-          : "Sin clientes activos detectados en los últimos 5 minutos."}
+            } detectada${activeCount === 1 ? "" : "s"} en los últimos 5 minutos.`
+          : "Sin cuentas activas detectadas en los últimos 5 minutos."}
       </AdminInfoBlock>
 
       {error && (
@@ -1071,6 +1371,8 @@ export function AdminClientes({
               cliente={cliente}
               saving={saving}
               onUpdate={updateClientAdminInfo}
+              onAdjustBalance={adjustCustomerBalance}
+              isSuperAdmin={isSuperAdmin}
             />
           ))}
         </div>

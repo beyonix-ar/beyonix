@@ -92,6 +92,32 @@ const CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES = [
   "rechazado",
 ]
 
+function formatGiftCardExpiration(value?: string | null) {
+  if (!value) return null
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(date)
+}
+
+function formatGiftCardEmission(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "Fecha no disponible"
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(date)
+}
+
 function isOrderPaymentConfirmed(order: SupabasePedido) {
   const paymentStatus = (order.payment_status ?? "").toLowerCase()
 
@@ -309,7 +335,7 @@ function MiSaldo({
   const previewRecipientName =
     giftRecipientName.trim() || "Nombre de la persona"
   const previewRecipientLookup =
-    giftRecipientLookup.trim() || "Email o DNI del destinatario"
+    giftRecipientLookup.trim() || "Email del destinatario"
 
   useEffect(() => {
     void loadCustomerCreditMovements()
@@ -328,7 +354,7 @@ function MiSaldo({
         },
         body: JSON.stringify({
           recipientName: giftRecipientName,
-          recipientLookup: giftRecipientLookup,
+          recipientEmail: giftRecipientLookup,
           amount: giftAmount,
           message: giftMessage,
         }),
@@ -336,6 +362,9 @@ function MiSaldo({
       const data = (await response.json()) as {
         balance?: number
         movements?: typeof customerCredit.movements
+        emailSent?: boolean
+        emailMessage?: string
+        creditedImmediately?: boolean
         error?: string
       }
 
@@ -347,7 +376,15 @@ function MiSaldo({
       setGiftRecipientLookup("")
       setGiftAmount("")
       setGiftMessage("")
-      setGiftNotice("Gift Card enviada y acreditada.")
+      setGiftNotice(data.emailMessage || (
+        data.creditedImmediately
+          ? data.emailSent
+            ? "Gift Card acreditada. También enviamos la presentación por email."
+            : "Gift Card acreditada correctamente, pero el email quedó pendiente de reintento."
+          : data.emailSent
+            ? "Gift Card creada. Enviamos el enlace de acreditación por email."
+            : "Gift Card creada. El email quedó pendiente de reintento administrativo."
+      ))
       await Promise.all([
         customerCredit.reload(),
         loadCustomerCreditMovements(),
@@ -541,12 +578,14 @@ function MiSaldo({
 
             <label className="block">
               <span className="text-xs font-medium text-white/88">
-                Email o DNI de la persona
+                Email de la persona
               </span>
               <input
                 value={giftRecipientLookup}
                 onChange={(event) => setGiftRecipientLookup(event.target.value)}
-                placeholder="Email o DNI"
+                type="email"
+                autoComplete="email"
+                placeholder="nombre@email.com"
                 className="mt-1.5 h-11 w-full rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 text-sm font-medium text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
               />
             </label>
@@ -599,7 +638,7 @@ function MiSaldo({
                   : "Primero cargá saldo"}
             </button>
             <p className="mt-2 text-center text-10px font-normal leading-4 text-white/32">
-              El importe se debitará de tu saldo disponible cuando confirmes el envío.
+              El importe se reservará al confirmar. La persona recibirá un enlace personal para acreditarlo, tenga o no una cuenta.
             </p>
           </div>
         </section>
@@ -609,40 +648,13 @@ function MiSaldo({
 
       {showReceivedGiftCards ? (
         <section className="overflow-hidden rounded-2xl border border-[#315B7D] bg-[#181818] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_22px_50px_rgba(0,0,0,0.2)] sm:p-6">
-          <div className="flex flex-col gap-4 border-b border-[#31506F] pb-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-[#6CB9E8]/45 bg-[linear-gradient(145deg,#1B5279,#0D2437)] text-beyonix-sky shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(26,111,166,0.2)]">
-                <Gift className="size-5" />
-              </div>
-              <div>
-                <p className="text-9px font-medium uppercase tracking-[0.2em] text-beyonix-sky/68">
-                  Tu colección
-                </p>
-                <h2 className="mt-1 text-xl font-semibold tracking-tight text-white/95">
-                  Regalos que recibiste
-                </h2>
-                <p className="mt-1 text-xs font-normal text-white/55">
-                  Cada Gift Card guarda el importe y la dedicatoria que te enviaron.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowReceivedGiftCards(false)}
-              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-[#4F82A8] bg-[#132B40] px-4 text-xs font-medium text-white/88 transition hover:border-beyonix-sky/70 hover:bg-[#193B57] hover:text-white"
-            >
-              <Sparkles className="size-3.5" />
-              Preparar una Gift Card
-            </button>
-          </div>
-
           {customerCredit.movementsLoading ? (
             <div className="flex min-h-72 items-center justify-center">
               <Loader2 className="size-6 animate-spin text-beyonix-sky/65" />
             </div>
           ) : giftCardMovements.length ? (
-            <div className="mt-6 grid gap-5 md:grid-cols-2">
-              {giftCardMovements.map((movement, index) => {
+            <div className="grid gap-5">
+              {giftCardMovements.map((movement) => {
                 const message = movement.description
                   .replace(/^GiftCard recibida:\s*/i, "")
                   .replace(/^Transferencia GiftCard enviada:\s*/i, "")
@@ -651,57 +663,75 @@ function MiSaldo({
                   movement.metadata.sender_name.trim()
                     ? movement.metadata.sender_name.trim()
                     : "BEYONIX"
+                const expirationDate = formatGiftCardExpiration(
+                  movement.expires_at,
+                )
+                const emissionDate = formatGiftCardEmission(
+                  movement.created_at,
+                )
 
                 return (
                   <article
                     key={movement.id}
-                    className={cn(
-                      "group relative isolate min-h-[290px] overflow-hidden rounded-2xl border p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_22px_44px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_28px_55px_rgba(0,0,0,0.34)] sm:p-6",
-                      index % 2 === 0
-                        ? "border-[#79C7F2]/55 bg-[radial-gradient(circle_at_8%_0%,rgba(63,169,245,0.4),transparent_38%),radial-gradient(circle_at_100%_100%,rgba(79,70,229,0.25),transparent_44%),linear-gradient(135deg,#123C5B_0%,#071827_55%,#050A12_100%)]"
-                        : "border-[#A99AF8]/45 bg-[radial-gradient(circle_at_10%_0%,rgba(140,96,255,0.36),transparent_38%),radial-gradient(circle_at_100%_100%,rgba(30,174,167,0.22),transparent_44%),linear-gradient(135deg,#2A1D4A_0%,#101727_58%,#070B12_100%)]",
-                    )}
+                    className="group relative isolate w-full min-h-[340px] overflow-hidden rounded-2xl border border-[#5B91BB]/55 bg-[radial-gradient(circle_at_8%_0%,rgba(91,145,187,0.34),transparent_40%),radial-gradient(circle_at_100%_100%,rgba(17,42,67,0.88),transparent_48%),linear-gradient(135deg,#1B4565_0%,#112A43_48%,#091827_100%)] p-5 shadow-[inset_0_1px_0_rgba(143,199,235,0.14),0_22px_44px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#75B3DA]/65 hover:shadow-[inset_0_1px_0_rgba(143,199,235,0.18),0_28px_55px_rgba(0,0,0,0.34)] sm:min-h-[365px] sm:p-7"
                   >
-                    <div className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full border border-white/[0.08] transition-transform duration-500 group-hover:scale-105" />
-                    <div className="pointer-events-none absolute -right-8 -top-12 size-48 rounded-full border border-white/[0.055]" />
-                    <div className="pointer-events-none absolute -right-16 top-16 h-12 w-64 rotate-45 bg-white/[0.025]" />
-                    <Sparkles className="pointer-events-none absolute right-6 top-20 size-5 text-white/22" />
+                    <div className="pointer-events-none absolute inset-x-5 top-7 z-0 overflow-hidden text-center sm:inset-x-8 sm:top-8">
+                      <span className="font-heading block whitespace-nowrap text-[clamp(3.5rem,10vw,8.5rem)] font-black leading-none tracking-[0.11em] text-white/[0.13]">
+                        BEYONIX
+                      </span>
+                    </div>
+                    <div className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full border border-[#75B3DA]/[0.12] transition-transform duration-500 group-hover:scale-105" />
+                    <div className="pointer-events-none absolute -right-8 -top-12 size-48 rounded-full border border-[#75B3DA]/[0.08]" />
+                    <div className="pointer-events-none absolute -right-16 top-16 h-12 w-64 rotate-45 bg-[#75B3DA]/[0.035]" />
 
-                    <div className="relative flex min-h-[242px] flex-col">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold tracking-[0.11em] text-white/92">
-                          BEYONIX
-                        </span>
-                        <span className="rounded-full border border-white/[0.13] bg-black/20 px-3 py-1.5 text-8px font-medium uppercase tracking-[0.2em] text-white/65 backdrop-blur-sm">
-                          Gift Card
-                        </span>
-                      </div>
+                    <div className="relative z-10 flex min-h-[300px] flex-col sm:min-h-[309px]">
+                      <div className="mt-auto grid gap-6 pt-28 sm:grid-cols-[minmax(210px,0.72fr)_minmax(0,1.28fr)] sm:items-end sm:pt-32 lg:gap-10">
+                        <div className="self-center sm:self-end sm:pb-3">
+                          <p className="text-10px font-medium uppercase tracking-[0.2em] text-white/45">
+                            Un regalo para vos
+                          </p>
+                          <p className="mt-2 text-4xl font-semibold tracking-tight text-white drop-shadow-sm sm:text-5xl">
+                            {formatARS(Number(movement.amount ?? 0))}
+                          </p>
+                        </div>
 
-                      <div className="mt-9">
-                        <p className="text-9px font-medium uppercase tracking-[0.2em] text-white/45">
-                          Un regalo para vos
-                        </p>
-                        <p className="mt-1.5 text-4xl font-semibold tracking-tight text-white drop-shadow-sm">
-                          {formatARS(Number(movement.amount ?? 0))}
-                        </p>
-                      </div>
-
-                      <div className="mt-auto rounded-xl border border-white/[0.1] bg-black/20 p-3.5 backdrop-blur-sm">
-                        <p className="line-clamp-2 text-sm font-normal leading-5 text-white/85">
-                          “{message}”
-                        </p>
-                        <div className="mt-3 flex items-end justify-between gap-4 border-t border-white/[0.08] pt-3">
-                          <div className="min-w-0">
-                            <p className="text-8px font-medium uppercase tracking-[0.17em] text-white/38">
-                              Te la envió
+                        <div className="rounded-2xl border border-[#5B91BB]/25 bg-[#0A1D30]/90 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] backdrop-blur-md sm:p-5">
+                          <div className="border-l-2 border-beyonix-sky/65 pl-4">
+                            <p className="text-9px font-semibold uppercase tracking-[0.2em] text-beyonix-sky/70">
+                              Dedicatoria
                             </p>
-                            <p className="mt-1 truncate text-xs font-medium text-white/78">
-                              {senderName}
+                            <p className="mt-2 line-clamp-3 min-h-6 text-sm font-normal italic leading-6 text-white/90 sm:text-base">
+                              “{message}”
                             </p>
                           </div>
-                          <p className="shrink-0 text-9px font-normal text-white/38">
-                            {formatOrderCardDate(movement.created_at)}
-                          </p>
+                          <div className="mt-5 grid gap-4 border-t border-white/[0.09] pt-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end sm:gap-7">
+                            <div className="min-w-0">
+                              <p className="text-9px font-medium uppercase tracking-[0.17em] text-white/42">
+                                Te la envió
+                              </p>
+                              <p className="mt-1 truncate text-sm font-medium text-white/82">
+                                {senderName}
+                              </p>
+                            </div>
+                            <div className="sm:text-right">
+                              <p className="text-9px font-medium uppercase tracking-[0.16em] text-white/42">
+                                Emitida
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-white/82">
+                                {emissionDate}
+                              </p>
+                            </div>
+                            <div className="sm:text-right">
+                              <p className="text-9px font-medium uppercase tracking-[0.16em] text-beyonix-sky/65">
+                                Vence
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-beyonix-sky">
+                                {expirationDate
+                                  ? expirationDate
+                                  : "Sin vencimiento informado"}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1219,6 +1249,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
     sub: string
     filled?: boolean
     dollarBadge?: boolean
+    danger?: boolean
     view?: ProfileView
     href?: string
   }> = [
@@ -1227,6 +1258,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
     { icon: Heart, label: "Favoritos", sub: "Productos guardados", filled: true, href: "/cuenta/favoritos" },
     { icon: IdCard, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
     { icon: LockKeyhole, label: "Seguridad", sub: "Contraseña y acceso", view: "seguridad" as ProfileView },
+    { icon: AlertTriangle, label: "Eliminar cuenta", sub: "Acción permanente", danger: true, href: "/cuenta/eliminar" },
   ]
 
   return (
@@ -1307,7 +1339,11 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                 variant="interactive"
                 padding="sm"
                 key={item.label}
-                className="min-h-[104px] bg-[var(--account-surface-raised)]"
+                className={cn(
+                  "min-h-[104px] bg-[var(--account-surface-raised)]",
+                  item.danger &&
+                    "border-red-400/18 hover:border-red-400/45 hover:bg-red-500/8",
+                )}
               >
                 <button
                   type="button"
@@ -1324,7 +1360,14 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                   }}
                   className="group flex w-full cursor-pointer items-center gap-4 text-left"
                 >
-                  <IconContainer dollarBadge={item.dollarBadge}>
+                  <IconContainer
+                    dollarBadge={item.dollarBadge}
+                    className={
+                      item.danger
+                        ? "border-red-400/24 bg-red-500/10 text-red-300 group-hover:border-red-400/55 group-hover:text-red-400"
+                        : undefined
+                    }
+                  >
                     <item.icon
                       className={`size-5 stroke-[2.35] drop-shadow-[0_0_5px_rgba(255,255,255,0.22)] ${
                         item.filled ? "fill-white" : "fill-none"
@@ -1332,10 +1375,22 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                     />
                   </IconContainer>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-[var(--account-text-primary)]">{item.label}</p>
+                    <p
+                      className={cn(
+                        "text-sm font-semibold text-[var(--account-text-primary)]",
+                        item.danger && "text-red-200 group-hover:text-red-300",
+                      )}
+                    >
+                      {item.label}
+                    </p>
                     <p className="mt-0.5 text-xs text-[var(--account-text-secondary)]">{item.sub}</p>
                   </div>
-                  <ChevronRight className="size-4 shrink-0 text-[var(--account-text-muted)] transition-colors group-hover:text-[var(--account-text-primary)]" />
+                  <ChevronRight
+                    className={cn(
+                      "size-4 shrink-0 text-[var(--account-text-muted)] transition-colors group-hover:text-[var(--account-text-primary)]",
+                      item.danger && "group-hover:text-red-300",
+                    )}
+                  />
                 </button>
               </AccountCard>
             ))}

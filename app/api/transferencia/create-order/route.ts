@@ -15,7 +15,7 @@ import {
 import {
   TRANSFER_ALIAS,
   TRANSFER_DISCOUNT_PERCENT,
-  calculateTransferPaymentTotal,
+  calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import {
@@ -323,18 +323,31 @@ export async function POST(request: Request) {
       totals.productsTotal - storeBenefitDiscountAmount,
       0,
     )
-    const transferPaymentTotals = calculateTransferPaymentTotal(
-      productsTotalAfterStoreBenefit,
-      totals.shipping,
-    )
+    const availableCredit = user
+      ? await getCustomerCreditBalance(admin, user.id)
+      : 0
+    const creditBeforeTransferDiscount =
+      requestedCredit > 0
+        ? calculateCustomerCreditApplication({
+            availableBalance: availableCredit,
+            eligibleTotal: productsTotalAfterStoreBenefit + totals.shipping,
+            requestedAmount: requestedCredit,
+          })
+        : {
+            appliedAmount: 0,
+          }
+    const transferPaymentTotals = calculateTransferPaymentTotalAfterCustomerCredit({
+      productsTotal: productsTotalAfterStoreBenefit,
+      shipping: totals.shipping,
+      customerCreditAmount: creditBeforeTransferDiscount.appliedAmount,
+    })
     const transferDiscountAmount = transferPaymentTotals.discount
-    const transferTotal = transferPaymentTotals.total
+    const transferTotal =
+      productsTotalAfterStoreBenefit + totals.shipping - transferDiscountAmount
     const customerCreditApplication =
       requestedCredit > 0
         ? calculateCustomerCreditApplication({
-            availableBalance: user
-              ? await getCustomerCreditBalance(admin, user.id)
-              : 0,
+            availableBalance: availableCredit,
             eligibleTotal: transferTotal,
             requestedAmount: requestedCredit,
           })

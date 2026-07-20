@@ -4,7 +4,7 @@
 import { Suspense, useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { CheckCircle2, Eye, EyeOff, Loader2, RefreshCw } from "lucide-react"
+import { Check, CheckCircle2, Eye, EyeOff, Loader2, RefreshCw } from "lucide-react"
 
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { PasswordRequirements } from "@/components/password-requirements"
@@ -431,6 +431,67 @@ function LoginContent() {
     }
   }
 
+  const getRegisterDeliveryAddress = () => {
+    const hasDeliveryData = [
+      street,
+      streetNumber,
+      floor,
+      apartment,
+      locality,
+      province,
+      postalCode,
+    ].some((value) => value.trim())
+
+    if (!hasDeliveryData) return ""
+
+    return street.trim() && streetNumber.trim()
+      ? formatDeliveryAddress({
+          street,
+          streetNumber,
+          floor,
+          apartment,
+          locality,
+          region: province,
+          postalCode,
+        })
+      : [
+          street.trim(),
+          streetNumber.trim(),
+          floor.trim() ? `Piso ${floor.trim()}` : "",
+          apartment.trim() ? `Depto ${apartment.trim().toLocaleUpperCase("es-AR")}` : "",
+          locality.trim(),
+          province.trim(),
+          postalCode.trim() ? `CP ${postalCode.trim()}` : "",
+        ]
+          .filter(Boolean)
+          .join(", ")
+  }
+
+  const registerDeliveryAddress = getRegisterDeliveryAddress()
+  const registerMobilePhone = `${phoneAreaCode}${phone}`
+  const registerValidationError =
+    mode === "register"
+      ? validateRegisterPayload({
+          username,
+          name,
+          email,
+          dni,
+          address: registerDeliveryAddress,
+          street,
+          streetNumber,
+          locality,
+          province,
+          postalCode,
+          phone: registerMobilePhone,
+          password,
+          references,
+        })
+      : ""
+  const isRegisterReady =
+    mode === "register" &&
+    !registerValidationError &&
+    password === confirmPassword
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
@@ -450,41 +511,6 @@ function LoginContent() {
       return
     }
 
-    const hasDeliveryData = [
-      street,
-      streetNumber,
-      floor,
-      apartment,
-      locality,
-      province,
-      postalCode,
-    ].some((value) => value.trim())
-    const deliveryAddress = hasDeliveryData
-      ? street.trim() && streetNumber.trim()
-        ? formatDeliveryAddress({
-            street,
-            streetNumber,
-            floor,
-            apartment,
-            locality,
-            region: province,
-            postalCode,
-          })
-        : [
-            street.trim(),
-            streetNumber.trim(),
-            floor.trim() ? `Piso ${floor.trim()}` : "",
-            apartment.trim() ? `Depto ${apartment.trim()}` : "",
-            locality.trim(),
-            province.trim(),
-            postalCode.trim() ? `CP ${postalCode.trim()}` : "",
-          ]
-            .filter(Boolean)
-            .join(", ")
-      : ""
-
-    const mobilePhone = `${phoneAreaCode}${phone}`
-
     if (!meetsPasswordRequirements(password)) {
       setLoading(false)
       setError("La contraseña no cumple los requisitos.")
@@ -502,13 +528,13 @@ function LoginContent() {
       name,
       email,
       dni,
-      address: deliveryAddress,
+      address: registerDeliveryAddress,
       street,
       streetNumber,
       locality,
       province,
       postalCode,
-      phone: mobilePhone,
+      phone: registerMobilePhone,
       password,
       references,
     })
@@ -525,14 +551,14 @@ function LoginContent() {
       email,
       dni,
       password,
-      address: deliveryAddress,
+      address: registerDeliveryAddress,
       street,
       streetNumber,
       floor,
-      apartment,
+      apartment: apartment.trim().toLocaleUpperCase("es-AR"),
       locality,
       postalCode,
-      phone: mobilePhone,
+      phone: registerMobilePhone,
       province,
       references,
     })
@@ -834,7 +860,7 @@ function LoginContent() {
                 <div className="grid gap-2.5 md:grid-cols-[minmax(5.5rem,1fr)_minmax(4.75rem,0.75fr)_minmax(4.75rem,0.75fr)]">
                   <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
                   <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
-                  <Field name="apartment" label="Dpto" type="text" value={apartment} onChange={setApartment} placeholder="B" maxLength={12} autoComplete="off" required={false} />
+                  <Field name="apartment" label="DPTO" type="text" value={apartment} onChange={(value) => setApartment(value.toLocaleUpperCase("es-AR"))} placeholder="B" maxLength={12} autoComplete="off" required={false} />
                 </div>
               </div>
               <div className="grid gap-2.5 md:grid-cols-2">
@@ -926,14 +952,23 @@ function LoginContent() {
               type="submit"
               aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
               disabled={loading}
-              className={`flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/48 bg-beyonix-blue px-10 font-heading text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_34px_rgba(0,0,0,0.35)] transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-10 font-heading text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_34px_rgba(0,0,0,0.35)] transition-all focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
                 mode === "login" ? "w-full" : "min-w-44"
+              } ${
+                isRegisterReady
+                  ? "border-emerald-400/55 bg-emerald-600 text-white hover:border-emerald-300/75 hover:bg-emerald-500 focus-visible:ring-emerald-300/25"
+                  : "border-beyonix-blue-light/48 bg-beyonix-blue text-white hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:ring-beyonix-blue-light/25"
               }`}
             >
               {loading ? (
                 <Loader2 className="size-5 animate-spin" />
               ) : mode === "login" ? (
                 "Ingresar"
+              ) : isRegisterReady ? (
+                <>
+                  <Check className="size-4 stroke-[2.6]" />
+                  Crear cuenta
+                </>
               ) : (
                 "Crear cuenta"
               )}

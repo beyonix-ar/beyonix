@@ -39,7 +39,7 @@ export function parseDeliveryAddress(
     }
 
     if (/^depto\s+/i.test(part)) {
-      apartment = part.replace(/^depto\s+/i, "").trim()
+      apartment = part.replace(/^depto\s+/i, "").trim().toLocaleUpperCase("es-AR")
       continue
     }
 
@@ -67,7 +67,7 @@ export function parseDeliveryAddress(
 export function formatDeliveryAddress(fields: DeliveryAddressFields) {
   const optionalParts = [
     fields.floor?.trim() ? `Piso ${fields.floor.trim()}` : "",
-    fields.apartment?.trim() ? `Depto ${fields.apartment.trim()}` : "",
+    fields.apartment?.trim() ? `Depto ${fields.apartment.trim().toLocaleUpperCase("es-AR")}` : "",
   ].filter(Boolean)
 
   return [

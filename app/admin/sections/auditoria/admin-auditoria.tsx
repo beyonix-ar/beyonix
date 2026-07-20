@@ -1,7 +1,17 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertCircle, Filter, History, RotateCcw, ShieldCheck } from "lucide-react"
+import {
+  AlertCircle,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Filter,
+  History,
+  Mail,
+  RotateCcw,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react"
 
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
 import {
@@ -20,6 +30,7 @@ import {
 } from "@/app/admin/components/admin-controls"
 import { getAuditLogs, undoAuditLog } from "@/lib/supabase/queries/auditoria"
 import type { SupabaseAuditLog } from "@/lib/supabase/types"
+import { formatARS } from "@/lib/customer-credit"
 
 import {
   canUndoAuditLog,
@@ -93,12 +104,90 @@ function AuditDetails({ log }: { log: SupabaseAuditLog }) {
   const previewFields = useMemo(() => getPreviewFields(log), [log])
   const fields = log.action === "UPDATE" ? changedFields : previewFields
 
+  if (
+    log.table_name === "customer_credit_movements" &&
+    log.after_data?.source_kind === "balance_adjustment"
+  ) {
+    const data = log.after_data
+    const isCredit = data.movement_type === "credit"
+    const targetName = String(data.target_name ?? "Cuenta sin nombre")
+    const targetEmail = String(data.target_email ?? "Email no disponible")
+    const description = String(data.description ?? "Sin motivo informado")
+
+    return (
+      <div className="mt-4 overflow-hidden rounded-2xl border border-[#31506F]/70 bg-[#07111C]">
+        <div className={`flex items-center gap-3 border-b px-5 py-4 ${
+          isCredit
+            ? "border-emerald-300/15 bg-emerald-400/[0.06]"
+            : "border-red-300/15 bg-red-400/[0.06]"
+        }`}>
+          <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl border ${
+            isCredit
+              ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-200"
+              : "border-red-300/25 bg-red-400/10 text-red-200"
+          }`}>
+            {isCredit ? (
+              <ArrowUpCircle className="size-5" />
+            ) : (
+              <ArrowDownCircle className="size-5" />
+            )}
+          </div>
+          <div>
+            <p className={`text-9px font-black uppercase tracking-[0.18em] ${
+              isCredit ? "text-emerald-200/65" : "text-red-200/65"
+            }`}>
+              Ajuste manual de saldo
+            </p>
+            <h3 className="mt-1 text-base font-black text-white">
+              {isCredit ? "Saldo acreditado" : "Saldo debitado"}
+            </h3>
+          </div>
+        </div>
+
+        <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-white/8 bg-black/20 p-4">
+            <p className="text-9px font-bold uppercase tracking-wider text-white/38">Importe</p>
+            <p className={`mt-1.5 text-xl font-black ${
+              isCredit ? "text-emerald-200" : "text-red-200"
+            }`}>
+              {formatARS(Number(data.amount ?? 0))}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/8 bg-black/20 p-4">
+            <p className="text-9px font-bold uppercase tracking-wider text-white/38">Saldo resultante</p>
+            <p className="mt-1.5 text-xl font-black text-beyonix-sky">
+              {formatARS(Number(data.resulting_balance ?? 0))}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/8 bg-black/20 p-4">
+            <p className="flex items-center gap-1.5 text-9px font-bold uppercase tracking-wider text-white/38">
+              <UserRound className="size-3" /> Cuenta
+            </p>
+            <p className="mt-1.5 truncate text-sm font-black text-white/88">{targetName}</p>
+          </div>
+          <div className="rounded-xl border border-white/8 bg-black/20 p-4">
+            <p className="flex items-center gap-1.5 text-9px font-bold uppercase tracking-wider text-white/38">
+              <Mail className="size-3" /> Email
+            </p>
+            <p className="mt-1.5 truncate text-sm font-semibold text-white/72">{targetEmail}</p>
+          </div>
+        </div>
+
+        <div className="border-t border-white/7 px-5 py-4">
+          <p className="text-9px font-bold uppercase tracking-wider text-white/38">Motivo informado</p>
+          <p className="mt-2 text-sm leading-6 text-white/78">{description}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-white/7 bg-black">
-      <div className="grid gap-3 border-b border-white/7 px-4 py-3 text-sm lg:grid-cols-3">
-        <p className="font-bold text-white">Tabla técnica</p>
-        <p className="wrap-break-word text-white/65">{log.table_name}</p>
-        <p className="wrap-break-word text-white/80">ID: {log.record_id ?? "-"}</p>
+      <div className="flex items-center justify-between gap-4 border-b border-white/7 px-4 py-3 text-sm">
+        <p className="font-bold text-white">Detalle de la acción</p>
+        <p className="text-xs text-white/40">
+          {fields.length} dato{fields.length === 1 ? "" : "s"}
+        </p>
       </div>
 
       {fields.length === 0 ? (
@@ -109,21 +198,34 @@ function AuditDetails({ log }: { log: SupabaseAuditLog }) {
         fields.map((field) => (
           <div
             key={`${log.id}-${field}`}
-            className="grid gap-3 border-b border-white/7 px-4 py-3 last:border-b-0 lg:grid-cols-3"
+            className={`grid gap-3 border-b border-white/7 px-4 py-3 last:border-b-0 ${
+              log.action === "UPDATE" ? "lg:grid-cols-3" : "lg:grid-cols-[0.45fr_1fr]"
+            }`}
           >
             <p className="text-sm font-bold text-white">
               {getHumanFieldName(field)}
             </p>
 
-            <p className="wrap-break-word text-sm text-white/65">
-              <span className="mr-2 text-white/35">Antes:</span>
-              {formatTechnicalValue(log.before_data?.[field])}
-            </p>
-
-            <p className="wrap-break-word text-sm text-white/80">
-              <span className="mr-2 text-white/35">Después:</span>
-              {formatTechnicalValue(log.after_data?.[field])}
-            </p>
+            {log.action === "UPDATE" ? (
+              <>
+                <p className="wrap-break-word text-sm text-white/65">
+                  <span className="mr-2 text-white/35">Antes:</span>
+                  {formatTechnicalValue(log.before_data?.[field])}
+                </p>
+                <p className="wrap-break-word text-sm text-white/80">
+                  <span className="mr-2 text-white/35">Después:</span>
+                  {formatTechnicalValue(log.after_data?.[field])}
+                </p>
+              </>
+            ) : (
+              <p className="wrap-break-word text-sm text-white/80">
+                {formatTechnicalValue(
+                  log.action === "DELETE"
+                    ? log.before_data?.[field]
+                    : log.after_data?.[field],
+                )}
+              </p>
+            )}
           </div>
         ))
       )}

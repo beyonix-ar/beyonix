@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server"
 
 import { normalizeMoney } from "@/lib/customer-credit"
+import { getCustomerCreditBalance, listCustomerCreditMovements } from "@/lib/customer-credit/server"
 import {
-  createCustomerCreditMovement,
-  getCustomerCreditBalance,
-  listCustomerCreditMovements,
-} from "@/lib/customer-credit/server"
-import { sendGiftCardEmail } from "@/lib/email/send-gift-card-email"
+  createGiftCardClaimToken,
+  createGiftCardDisplayCode,
+  getGiftCardExpirationDate,
+  hashGiftCardClaimToken,
+  isValidGiftCardEmail,
+  normalizeGiftCardEmail,
+} from "@/lib/customer-gift-cards"
+import { deliverGiftCardEmail } from "@/lib/email/send-gift-card-email"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-
-function onlyDigits(value: unknown) {
-  return String(value ?? "").replace(/\D/g, "")
-}
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim()
@@ -34,14 +34,16 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     recipientName?: unknown
+    recipientEmail?: unknown
     recipientLookup?: unknown
     amount?: unknown
     message?: unknown
   }
 
-  const recipientName = cleanText(body.recipientName)
-  const recipientLookup = cleanText(body.recipientLookup).toLowerCase()
-  const recipientDni = onlyDigits(recipientLookup)
+  const recipientName = cleanText(body.recipientName).slice(0, 120)
+  const recipientEmail = normalizeGiftCardEmail(
+    body.recipientEmail ?? body.recipientLookup,
+  )
   const amount = normalizeMoney(body.amount)
   const message = cleanMessage(body.message)
 
@@ -52,23 +54,16 @@ export async function POST(request: Request) {
     )
   }
 
-  if (!recipientLookup) {
+  if (!recipientEmail) {
     return NextResponse.json(
-      { error: "Ingresá email o DNI del destinatario." },
+      { error: "Ingresá el email del destinatario." },
       { status: 400 },
     )
   }
 
-  if (recipientLookup.includes("@") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientLookup)) {
+  if (recipientEmail.length > 320 || !isValidGiftCardEmail(recipientEmail)) {
     return NextResponse.json(
       { error: "Ingresá un email válido." },
-      { status: 400 },
-    )
-  }
-
-  if (!recipientLookup.includes("@") && !/^\d{7,8}$/.test(recipientDni)) {
-    return NextResponse.json(
-      { error: "Ingresá un DNI válido." },
       { status: 400 },
     )
   }
@@ -87,15 +82,12 @@ export async function POST(request: Request) {
     .eq("id", user.id)
     .maybeSingle()
 
-  const recipientQuery = admin
+  const { data: recipientProfile, error: recipientError } = await admin
     .from("profiles")
     .select("id, email, nombre, username, dni")
-    .eq("rol", "cliente")
+    .ilike("email", recipientEmail)
     .limit(1)
-
-  const { data: recipientProfile, error: recipientError } = recipientLookup.includes("@")
-    ? await recipientQuery.eq("email", recipientLookup).maybeSingle()
-    : await recipientQuery.eq("dni", recipientDni).maybeSingle()
+    .maybeSingle()
 
   if (recipientError) {
     return NextResponse.json(
@@ -104,14 +96,7 @@ export async function POST(request: Request) {
     )
   }
 
-  if (!recipientProfile) {
-    return NextResponse.json(
-      { error: "No encontramos un cliente con ese email o DNI." },
-      { status: 404 },
-    )
-  }
-
-  if (recipientProfile.id === user.id) {
+  if (recipientProfile?.id === user.id || user.email?.toLowerCase() === recipientEmail) {
     return NextResponse.json(
       { error: "No podés enviarte una Gift Card a tu propia cuenta." },
       { status: 400 },
@@ -128,65 +113,81 @@ export async function POST(request: Request) {
       )
     }
 
-    const giftCardId = crypto.randomUUID()
-    const senderName =
+    const senderName = (
       senderProfile?.nombre ||
       senderProfile?.username ||
       user.email?.split("@")[0] ||
       "Cliente BEYONIX"
-    const recipientDisplayName = recipientProfile.nombre || recipientName
-    const visibleMessage = message || "Gift Card BEYONIX"
-
-    await createCustomerCreditMovement(admin, {
-      userId: user.id,
-      movementType: "debit",
-      amount,
-      description: `Gift Card enviada a ${recipientDisplayName}: ${visibleMessage}`,
-      sourceType: "admin_adjustment",
-      createdBy: user.id,
-      metadata: {
-        created_from: "customer_gift_card",
-        source_kind: "gift_card",
-        gift_card_id: giftCardId,
-        recipient_user_id: recipientProfile.id,
-        recipient_name: recipientDisplayName,
-        message,
+    ).trim().slice(0, 120)
+    const recipientDisplayName = recipientProfile?.nombre || recipientName
+    const claimToken = createGiftCardClaimToken()
+    const displayCode = createGiftCardDisplayCode()
+    const expiresAt = getGiftCardExpirationDate()
+    const { data: createdRows, error: createError } = await admin.rpc(
+      "create_claimable_customer_gift_card",
+      {
+        p_sender_user_id: user.id,
+        p_recipient_email: recipientEmail,
+        p_recipient_name: recipientDisplayName,
+        p_sender_name: senderName,
+        p_amount: amount,
+        p_message: message,
+        p_display_code: displayCode,
+        p_claim_token_hash: hashGiftCardClaimToken(claimToken),
+        p_expires_at: expiresAt,
       },
-      sourceKey: `customer-gift-card:${giftCardId}:debit`,
-    })
+    )
 
-    await createCustomerCreditMovement(admin, {
-      userId: recipientProfile.id,
-      movementType: "credit",
-      amount,
-      description: `GiftCard recibida: ${visibleMessage}`,
-      sourceType: "admin_adjustment",
-      createdBy: user.id,
-      metadata: {
-        created_from: "customer_gift_card",
-        source_kind: "gift_card",
-        gift_card_id: giftCardId,
-        sender_user_id: user.id,
-        sender_name: senderName,
-        message,
-      },
-      sourceKey: `customer-gift-card:${giftCardId}:credit`,
-    })
+    if (createError || !createdRows?.length) {
+      throw new Error(createError?.message || "No se pudo crear la Gift Card.")
+    }
 
-    await sendGiftCardEmail({
-      to: recipientProfile.email,
-      recipientName: recipientDisplayName,
-      senderName,
-      amount,
-      message,
-    })
+    const giftCardId = String(createdRows[0].gift_card_id)
+
+    if (recipientProfile) {
+      const { error: claimError } = await admin.rpc("claim_customer_gift_card", {
+        p_gift_card_id: giftCardId,
+        p_recipient_user_id: recipientProfile.id,
+      })
+
+      if (claimError) {
+        const { error: cancelError } = await admin.rpc(
+          "cancel_unclaimed_customer_gift_card",
+          {
+            p_gift_card_id: giftCardId,
+            p_reason: "No se pudo acreditar automáticamente la Gift Card",
+          },
+        )
+
+        if (cancelError) {
+          throw new Error(
+            "No pudimos acreditar la Gift Card y el reintegro automático quedó pendiente. Contactá a soporte.",
+          )
+        }
+
+        throw new Error(
+          "No pudimos acreditar la Gift Card. El importe fue reintegrado a tu saldo.",
+        )
+      }
+    }
+
+    const emailDelivery = await deliverGiftCardEmail(admin, giftCardId)
 
     const [balance, movements] = await Promise.all([
       getCustomerCreditBalance(admin, user.id),
       listCustomerCreditMovements(admin, user.id),
     ])
 
-    return NextResponse.json({ balance, movements })
+    return NextResponse.json({
+      balance,
+      movements,
+      emailSent: emailDelivery.ok,
+      emailStatus: emailDelivery.status,
+      emailMessage: emailDelivery.ok
+        ? "La Gift Card fue creada y el correo se envió correctamente."
+        : "La Gift Card fue creada, pero el correo quedó pendiente. Un administrador puede reintentarlo sin volver a cobrar el importe.",
+      creditedImmediately: Boolean(recipientProfile),
+    })
   } catch (error) {
     return NextResponse.json(
       {

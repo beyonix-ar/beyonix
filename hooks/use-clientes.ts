@@ -315,6 +315,51 @@ export function useClientes() {
     },
     [loadClientes],
   )
+
+  const adjustCustomerBalance = useCallback(
+    async (data: {
+      userId: string
+      operation: "credit" | "debit"
+      amount: string
+      description: string
+    }) => {
+      setSaving(true)
+      setError(null)
+
+      try {
+        const response = await adminFetch(
+          `/api/admin/clientes/${data.userId}/saldo`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              operation: data.operation,
+              amount: data.amount,
+              description: data.description,
+            }),
+          },
+        )
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string
+        } | null
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "No se pudo actualizar el saldo.")
+        }
+
+        await loadClientes()
+      } catch (err) {
+        console.error(err)
+        setError(
+          err instanceof Error ? err.message : "No se pudo actualizar el saldo.",
+        )
+        throw err
+      } finally {
+        setSaving(false)
+      }
+    },
+    [loadClientes],
+  )
+
   useEffect(() => {
     void loadClientes()
   }, [loadClientes])
@@ -361,5 +406,6 @@ export function useClientes() {
     createBlockedIdentifier,
     removeBlockedIdentifier,
     resolveCreditTopup,
+    adjustCustomerBalance,
   }
 }

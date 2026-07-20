@@ -442,10 +442,40 @@ async function getCreditAdminNotifications() {
       movement.metadata?.source_kind === "gift_card" &&
       movement.metadata?.created_from === "customer_gift_card",
   )
+  const claimableGiftCardIds = giftCardRows
+    .map((movement) => getMetadataText(movement.metadata, "gift_card_id"))
+    .filter(Boolean)
+  const cancelledGiftCardIds = new Set<string>()
+
+  if (claimableGiftCardIds.length) {
+    const { data: giftCards, error: giftCardsError } = await supabase
+      .from("customer_gift_cards")
+      .select("id, status")
+      .in("id", [...new Set(claimableGiftCardIds)])
+      .eq("status", "cancelled")
+
+    if (giftCardsError) {
+      console.warn(
+        "ADMIN_GIFT_CARDS_STATUS_LOAD_ERROR",
+        getSupabaseErrorDetails(giftCardsError),
+      )
+    } else {
+      for (const giftCard of giftCards ?? []) {
+        cancelledGiftCardIds.add(String(giftCard.id))
+      }
+    }
+  }
+
+  const deliveredGiftCardRows = giftCardRows.filter(
+    (movement) =>
+      !cancelledGiftCardIds.has(
+        getMetadataText(movement.metadata, "gift_card_id"),
+      ),
+  )
   const profileIds = [
     ...topupRows.map((topup) => topup.user_id),
-    ...giftCardRows.map((movement) => movement.user_id),
-    ...giftCardRows
+    ...deliveredGiftCardRows.map((movement) => movement.user_id),
+    ...deliveredGiftCardRows
       .map((movement) => getMetadataText(movement.metadata, "recipient_user_id"))
       .filter(Boolean),
   ]
@@ -466,7 +496,7 @@ async function getCreditAdminNotifications() {
     })
   }
 
-  for (const movement of giftCardRows) {
+  for (const movement of deliveredGiftCardRows) {
     const senderProfile = profiles.get(movement.user_id)
     const recipientId = getMetadataText(movement.metadata, "recipient_user_id")
     const recipientProfile = profiles.get(recipientId)

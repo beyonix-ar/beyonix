@@ -116,13 +116,18 @@ function clearAuthActivity() {
 function redirectToLoginWithCurrentPath() {
   if (
     typeof window === "undefined" ||
-    window.location.pathname.startsWith("/login")
+    window.location.pathname.startsWith("/login") ||
+    !requiresAuthRedirect(window.location.pathname)
   ) {
     return
   }
 
   const redirect = `${window.location.pathname}${window.location.search}`
   window.location.href = `/login?redirect=${encodeURIComponent(redirect)}`
+}
+
+function requiresAuthRedirect(pathname: string) {
+  return pathname.startsWith("/admin") || pathname.startsWith("/cuenta")
 }
 
 function isPasswordRecoveryInProgress() {
@@ -1043,7 +1048,7 @@ export function AuthProvider({
           calle: form.street?.trim() || null,
           numero: form.streetNumber?.trim() || null,
           piso: form.floor?.trim() || null,
-          departamento: form.apartment?.trim() || null,
+          departamento: form.apartment?.trim().toLocaleUpperCase("es-AR") || null,
           localidad: form.locality?.trim() || null,
           codigo_postal: form.postalCode?.trim() || null,
           provincia: form.province?.trim() || null,

@@ -14,6 +14,12 @@ type AdminClient = ReturnType<typeof createAdminClient>
 
 type CreditAction = "issue" | "reverse" | "transfer"
 
+function getGiftCardExpirationDate() {
+  const date = new Date()
+  date.setUTCFullYear(date.getUTCFullYear() + 1)
+  return date.toISOString()
+}
+
 function normalizeAmount(value: unknown) {
   const parsed =
     typeof value === "number"
@@ -220,6 +226,7 @@ export async function POST(request: Request) {
           transfer_id: transferId,
           source_user_id: sourceUserId,
         },
+        expiresAt: getGiftCardExpirationDate(),
         sourceKey: `gift-card-transfer:${transferId}:credit`,
       })
 
@@ -298,6 +305,7 @@ export async function POST(request: Request) {
       typeof body.expiresAt === "string" && body.expiresAt.trim()
         ? body.expiresAt.trim()
         : null
+    const effectiveExpiresAt = expiresAt
 
     if (!userId) {
       return NextResponse.json(
@@ -331,12 +339,12 @@ export async function POST(request: Request) {
       claimId: null,
       creditNoteId: null,
       createdBy: auth.user.id,
-      expiresAt,
+      expiresAt: effectiveExpiresAt,
       metadata: {
-        created_from: "admin_gift_card_panel",
-        source_kind: "gift_card",
+        created_from: "admin_balance_adjustment",
+        source_kind: "balance_adjustment",
       },
-      sourceKey: `gift-card:${userId}:${crypto.randomUUID()}`,
+      sourceKey: `admin-balance-adjustment:${userId}:${crypto.randomUUID()}`,
     })
 
     const [balance, movements] = await Promise.all([

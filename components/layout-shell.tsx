@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { SiteHeader } from "@/components/site-header"
 
 import { Footer } from "@/components/footer"
+import { CookieConsentAlert } from "@/components/cookie-consent-alert"
 import { useClientPresence } from "@/hooks/use-client-presence"
 import { useAuth } from "@/context/auth-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
@@ -121,6 +122,8 @@ export function LayoutShell({
       {children}
 
       <Footer />
+
+      <CookieConsentAlert />
     </>
   )
 }

@@ -6,17 +6,15 @@ import {
   Cookie,
   Database,
   Eye,
-  FileText,
   KeyRound,
   LockKeyhole,
-  Mail,
   ServerCog,
   Share2,
   ShieldCheck,
   UserRoundCheck,
 } from "lucide-react"
 
-import { BeyonixButton, BeyonixCard, BeyonixIconBox } from "@/components/beyonix-ui"
+import { BeyonixCard, BeyonixIconBox } from "@/components/beyonix-ui"
 import { BEYONIX_EMAIL } from "@/lib/legal-contact"
 
 export const metadata: Metadata = {
@@ -25,7 +23,7 @@ export const metadata: Metadata = {
     "Información sobre el tratamiento, uso, conservación y protección de datos personales en BEYONIX.",
 }
 
-const LAST_UPDATED = "17 de julio de 2026"
+const LAST_UPDATED = "20 de julio de 2026"
 
 const dataGroups = [
   {
@@ -97,7 +95,7 @@ export default function PrivacidadPage() {
           <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">Política de privacidad</h1>
           <p className="mt-5 max-w-3xl text-base leading-7 text-white/66 sm:text-lg sm:leading-8">
             Explicamos qué información utiliza BEYONIX, para qué la necesita, con quién puede
-            compartirla y cómo ejercer tus derechos sobre los datos personales.
+            compartirla y cómo protege los datos personales vinculados a la cuenta y las compras.
           </p>
 
           <div className="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -146,17 +144,10 @@ export default function PrivacidadPage() {
               proveedores que intervienen en la operación o prestan infraestructura bajo sus propias
               condiciones de seguridad y confidencialidad.
             </p>
-            <ul className="grid gap-2">
-              <PrivacyItem>Supabase, para autenticación, base de datos y almacenamiento seguro de archivos.</PrivacyItem>
-              <PrivacyItem>Mercado Pago y entidades financieras, para procesar, validar o reintegrar pagos.</PrivacyItem>
-              <PrivacyItem>Andreani, para cotización, despacho, seguimiento y entrega de pedidos.</PrivacyItem>
-              <PrivacyItem>ARCA y servicios de facturación, para comprobantes y obligaciones fiscales.</PrivacyItem>
-              <PrivacyItem>Servicios de email, hosting y analítica, para comunicaciones y funcionamiento técnico.</PrivacyItem>
-            </ul>
             <p>
-              Algunos proveedores pueden procesar datos en otras jurisdicciones. En esos casos se
-              utilizan servicios reconocidos y medidas contractuales o técnicas razonables para
-              mantener un nivel adecuado de protección.
+              Esto puede incluir servicios de pago, envío, facturación, soporte técnico, hosting,
+              email y analítica, siempre en la medida necesaria para brindar el servicio o cumplir
+              obligaciones legales.
             </p>
           </PrivacySection>
 
@@ -182,8 +173,8 @@ export default function PrivacidadPage() {
             <p>
               Cuando deja de existir una finalidad legítima u obligación de conservación, la
               información se elimina, anonimiza o restringe de manera razonable. Una solicitud de
-              supresión no alcanza datos que deban conservarse por exigencias fiscales, contractuales
-              o legales.
+              eliminación de cuenta no alcanza datos que deban conservarse por exigencias fiscales,
+              contractuales u otras obligaciones legales.
             </p>
           </PrivacySection>
 
@@ -200,29 +191,7 @@ export default function PrivacidadPage() {
             </p>
           </PrivacySection>
 
-          <PrivacySection icon={FileText} eyebrow="07 · Titulares" title="Acceso, rectificación y supresión">
-            <p>
-              Podés solicitar acceso a tus datos y, cuando corresponda, su rectificación,
-              actualización, confidencialidad o supresión escribiendo desde el correo asociado a la
-              cuenta. Para protegerte, BEYONIX puede requerir una verificación razonable de identidad.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4">
-                <p className="text-10px font-semibold uppercase tracking-[0.16em] text-beyonix-cyan">Solicitud de acceso</p>
-                <p className="mt-1.5 text-lg font-bold text-white">10 días corridos</p>
-              </div>
-              <div className="rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4">
-                <p className="text-10px font-semibold uppercase tracking-[0.16em] text-beyonix-cyan">Rectificación o supresión</p>
-                <p className="mt-1.5 text-lg font-bold text-white">5 días hábiles</p>
-              </div>
-            </div>
-            <p>
-              Estos plazos se aplican según la Ley 25.326, sin perjuicio de restricciones legales de
-              conservación o de los derechos que correspondan ante la autoridad competente.
-            </p>
-          </PrivacySection>
-
-          <PrivacySection icon={LockKeyhole} eyebrow="08 · Vigencia" title="Cambios y marco aplicable">
+          <PrivacySection icon={LockKeyhole} eyebrow="07 · Vigencia" title="Cambios y marco aplicable">
             <p>
               Esta política se interpreta junto con los Términos y condiciones. Las actualizaciones
               se publicarán con su fecha de vigencia y no reducirán retroactivamente derechos
@@ -235,17 +204,6 @@ export default function PrivacidadPage() {
             </div>
           </PrivacySection>
         </div>
-
-        <section className="mt-8 rounded-2xl border border-beyonix-blue-light/26 bg-[radial-gradient(circle_at_10%_0%,rgba(44,108,163,0.22),transparent_38%),linear-gradient(145deg,rgba(17,42,67,0.42),rgba(5,9,14,0.98))] p-6 sm:p-7">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="max-w-2xl">
-              <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Ejercicio de derechos</p>
-              <h2 className="mt-2 text-2xl font-bold text-white">Contactá a BEYONIX por tus datos</h2>
-              <p className="mt-2 text-sm leading-6 text-white/60">Indicá el derecho que querés ejercer y escribí desde el email asociado a tu cuenta. No envíes contraseñas ni datos completos de tarjetas.</p>
-            </div>
-            <BeyonixButton asChild size="lg"><a href={`mailto:${BEYONIX_EMAIL}?subject=${encodeURIComponent("Privacidad y datos personales — BEYONIX")}`}><Mail className="size-4" />Enviar solicitud</a></BeyonixButton>
-          </div>
-        </section>
       </section>
     </main>
   )

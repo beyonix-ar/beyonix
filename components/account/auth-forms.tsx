@@ -307,13 +307,14 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       return
     }
 
+    const normalizedApartment = apartment.trim().toLocaleUpperCase("es-AR")
     const deliveryAddress = formatDeliveryAddressForProfile(
       buildDeliveryAddressDraft({
         postalCode,
         street,
         streetNumber,
         floor,
-        apartment,
+        apartment: normalizedApartment,
         locality,
         province,
       })
@@ -351,7 +352,7 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       street,
       streetNumber,
       floor,
-      apartment,
+      apartment: normalizedApartment,
       locality,
       province,
       postalCode,
@@ -423,7 +424,7 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
         <InputField label="Calle" type="text" value={street} onChange={setStreet} placeholder="San Martín" icon={MapPin} maxLength={FIELD_LIMITS.street} />
         <InputField label="Número" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
         <InputField label="Piso opcional" type="text" value={floor} onChange={setFloor} placeholder="3" icon={Hash} maxLength={12} />
-        <InputField label="Departamento opcional" type="text" value={apartment} onChange={setApartment} placeholder="B" icon={Hash} maxLength={12} />
+        <InputField label="Departamento opcional" type="text" value={apartment} onChange={(value) => setApartment(value.toLocaleUpperCase("es-AR"))} placeholder="B" icon={Hash} maxLength={12} />
         <InputField label="Localidad" type="text" value={locality} onChange={setLocality} placeholder="Rosario" icon={MapPin} maxLength={60} />
       </div>
       <TextareaField

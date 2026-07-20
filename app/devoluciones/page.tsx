@@ -117,7 +117,7 @@ export default function DevolucionesPage() {
                 aria-label="Solicitar la cancelación de una compra por derecho de arrepentimiento"
               >
                 <RefreshCcw className="size-4" />
-                Cancelar compra online
+                Botón de arrepentimiento
               </Link>
             </BeyonixButton>
             <BeyonixButton asChild size="lg" variant="secondary">

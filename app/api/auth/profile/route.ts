@@ -140,7 +140,7 @@ export async function PATCH(request: Request) {
   if (optionalText(body.street) !== undefined) payload.calle = optionalText(body.street)
   if (optionalText(body.streetNumber) !== undefined) payload.numero = optionalText(body.streetNumber)
   if (optionalText(body.floor) !== undefined) payload.piso = optionalText(body.floor) || null
-  if (optionalText(body.apartment) !== undefined) payload.departamento = optionalText(body.apartment) || null
+  if (optionalText(body.apartment) !== undefined) payload.departamento = optionalText(body.apartment)?.toLocaleUpperCase("es-AR") || null
   if (optionalText(body.postalCode) !== undefined) payload.codigo_postal = optionalText(body.postalCode)
   if (optionalText(body.province) !== undefined) payload.provincia = optionalText(body.province)
   if (optionalText(body.city) !== undefined) payload.localidad = optionalText(body.city)

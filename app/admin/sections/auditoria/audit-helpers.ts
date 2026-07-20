@@ -17,10 +17,12 @@ export interface AuditLogGroup {
 
 const humanFieldNames: Record<string, string> = {
   activo: "Estado",
+  amount: "Importe",
   category_id: "Categoría",
   categoria_id: "Categoría",
   color_hex: "Color",
   description: "Descripción",
+  created_from: "Origen",
   descripcion: "Descripción",
   destacado: "Destacado",
   descuento: "Descuento",
@@ -31,6 +33,7 @@ const humanFieldNames: Record<string, string> = {
   imagenes: "Imágenes",
   name: "Nombre",
   nombre: "Nombre",
+  movement_type: "Operación",
   orden: "Orden",
   price: "Precio",
   precio: "Precio",
@@ -39,8 +42,13 @@ const humanFieldNames: Record<string, string> = {
   rol: "Permisos",
   slug: "Slug",
   status: "Estado",
+  source_kind: "Tipo de movimiento",
   stock: "Stock",
   total: "Total",
+  target_email: "Email de la cuenta",
+  target_name: "Cuenta afectada",
+  target_user_id: "ID de la cuenta",
+  resulting_balance: "Saldo resultante",
   tracking_number: "Número de seguimiento",
   tracking_url: "Link de seguimiento",
   url: "Imagen",
@@ -364,6 +372,8 @@ export function getAuditGroupUndoLogs(group: AuditLogGroup) {
 }
 
 export function getAuditSeverity(log: SupabaseAuditLog): AuditSeverity {
+  if (log.table_name === "customer_credit_movements") return "importante"
+
   const fields = getChangedFields(log)
 
   if (
@@ -394,6 +404,7 @@ export function getAuditSection(log: SupabaseAuditLog) {
 
   if (log.table_name === "categorias") return "Categorías"
   if (log.table_name === "profiles") return "Usuarios y permisos"
+  if (log.table_name === "customer_credit_movements") return "Saldos"
   if (
     log.table_name.includes("banner") ||
     log.table_name.includes("config") ||
@@ -495,6 +506,13 @@ function getEntityLabel(log: SupabaseAuditLog) {
   if (log.table_name === "producto_variantes") return "una variante del producto"
   if (log.table_name === "categorias") return `la categoría "${getRecordName(log)}"`
   if (log.table_name === "profiles") return `el usuario "${getRecordName(log)}"`
+  if (log.table_name === "customer_credit_movements") {
+    const target =
+      typeof log.after_data?.target_name === "string"
+        ? log.after_data.target_name
+        : "la cuenta seleccionada"
+    return `el ajuste de saldo de "${target}"`
+  }
 
   return `el registro "${getRecordName(log)}"`
 }

@@ -1,98 +1,139 @@
-import { formatARS } from "@/lib/customer-credit"
+import "server-only"
 
-interface SendGiftCardEmailPayload {
-  to?: string | null
-  recipientName: string
-  senderName: string
-  amount: number
-  message?: string
+import { getPublicSiteUrl, isValidGiftCardEmail } from "@/lib/customer-gift-cards"
+import { buildGiftCardEmailTemplate } from "@/lib/email/gift-card-email-template"
+
+type AdminClient = ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>
+
+type GiftCardRow = {
+  id: string
+  recipient_email: string
+  recipient_name: string
+  sender_name: string
+  initial_amount: number | string
+  message: string | null
+  display_code: string
+  status: "sent" | "claimed" | "expired" | "cancelled"
+  expires_at: string | null
+  email_status: "pending" | "sending" | "sent" | "error"
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
+export type GiftCardDeliveryResult = {
+  ok: boolean
+  status: "sent" | "pending" | "sending" | "error"
+  message: string
+  providerId?: string
 }
 
-export async function sendGiftCardEmail({
-  to,
-  recipientName,
-  senderName,
-  amount,
-  message,
-}: SendGiftCardEmailPayload) {
+function safeErrorMessage(value: unknown) {
+  const message = value instanceof Error ? value.message : String(value ?? "Error desconocido")
+  return message.replace(/re_[A-Za-z0-9_-]+/g, "[API_KEY]").slice(0, 500)
+}
+
+async function loadCard(admin: AdminClient, giftCardId: string) {
+  const { data, error } = await admin
+    .from("customer_gift_cards")
+    .select("id, recipient_email, recipient_name, sender_name, initial_amount, message, display_code, status, expires_at, email_status")
+    .eq("id", giftCardId)
+    .maybeSingle()
+
+  if (error || !data) throw new Error(error?.message || "La Gift Card no existe.")
+  return data as GiftCardRow
+}
+
+function validateCard(card: GiftCardRow) {
+  if (!isValidGiftCardEmail(card.recipient_email)) throw new Error("El email de destino no es válido.")
+  if (!card.display_code.trim()) throw new Error("La Gift Card no tiene un código válido.")
+  if (Number(card.initial_amount) <= 0) throw new Error("La Gift Card no tiene un importe válido.")
+  if (!(["sent", "claimed"] as string[]).includes(card.status)) throw new Error("La Gift Card no está disponible para enviar.")
+  if (card.expires_at && new Date(card.expires_at).getTime() <= Date.now()) throw new Error("La Gift Card está vencida.")
+}
+
+export async function buildGiftCardEmailPreview(admin: AdminClient, giftCardId: string) {
+  const card = await loadCard(admin, giftCardId)
+  validateCard(card)
+  const siteUrl = getPublicSiteUrl()
+  return buildGiftCardEmailTemplate({
+    recipientName: card.recipient_name,
+    senderName: card.sender_name,
+    amount: Number(card.initial_amount),
+    message: card.message,
+    displayCode: card.display_code,
+    expiresAt: card.expires_at,
+    actionUrl: `${siteUrl}/cuenta`,
+    siteUrl,
+    recipientHasAccount: card.status === "claimed",
+  })
+}
+
+export async function deliverGiftCardEmail(admin: AdminClient, giftCardId: string): Promise<GiftCardDeliveryResult> {
   const apiKey = process.env.RESEND_API_KEY
-  const from =
-    process.env.STORE_EMAIL_FROM ||
-    process.env.RESEND_FROM_EMAIL ||
-    process.env.RESEND_EMAIL_FROM ||
-    process.env.EMAIL_FROM
-  const configuredSiteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.VERCEL_URL ||
-    "https://beyonix.netlify.app"
-  const siteUrl = configuredSiteUrl.startsWith("http")
-    ? configuredSiteUrl
-    : `https://${configuredSiteUrl}`
+  const from = process.env.STORE_EMAIL_FROM
 
-  if (!apiKey || !from || !to) {
-    console.log("Email de Gift Card omitido: Resend no configurado o destinatario faltante")
-    return
+  let card = await loadCard(admin, giftCardId)
+  validateCard(card)
+  if (card.email_status === "sent") {
+    return { ok: true, status: "sent", message: "El correo ya había sido enviado." }
   }
 
-  const safeRecipientName = escapeHtml(recipientName || "Cliente BEYONIX")
-  const safeSenderName = escapeHtml(senderName || "BEYONIX")
-  const safeMessage = escapeHtml(message?.trim() || "Tenés una Gift Card disponible para usar en tu próxima compra.")
-  const amountText = formatARS(amount)
-  const accountUrl = `${siteUrl.replace(/\/$/, "")}/cuenta?tab=saldo`
+  const { data: reservation, error: reservationError } = await admin.rpc("reserve_customer_gift_card_email_delivery", { p_gift_card_id: giftCardId })
+  if (reservationError) throw new Error(reservationError.message || "No se pudo reservar el envío.")
+  const reserved = Array.isArray(reservation) ? reservation[0] : reservation
+  if (!reserved?.reserved) {
+    const currentStatus = String(reserved?.current_status || card.email_status)
+    return {
+      ok: currentStatus === "sent",
+      status: currentStatus === "sent" ? "sent" : "sending",
+      message: currentStatus === "sent" ? "El correo ya había sido enviado." : "Ya hay un envío en curso.",
+    }
+  }
 
-  const html = `
-    <div style="margin:0;padding:0;background:#02060c;font-family:Arial,Helvetica,sans-serif;color:#ffffff;">
-      <div style="max-width:640px;margin:0 auto;padding:32px 18px;">
-        <div style="border:1px solid #17334d;border-radius:22px;background:#07111d;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.35);">
-          <p style="margin:0 0 18px;font-size:22px;font-weight:900;letter-spacing:.04em;">BEYONIX</p>
-          <div style="overflow:hidden;border:1px solid rgba(125,205,255,.32);border-radius:18px;background:linear-gradient(135deg,#0c3156,#06101b 58%,#02060c);padding:22px;">
-            <p style="margin:0;color:#8fd3ff;font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;">Gift Card</p>
-            <p style="margin:14px 0 4px;font-size:38px;line-height:1;font-weight:900;">${amountText}</p>
-            <p style="margin:0;color:#b8c4d1;font-size:13px;">Crédito disponible para comprar en BEYONIX</p>
-            <div style="height:1px;background:linear-gradient(90deg,transparent,#75cfff,transparent);margin:22px 0;"></div>
-            <p style="margin:0 0 8px;color:#dce8f5;font-size:15px;font-weight:700;">Hola, ${safeRecipientName}</p>
-            <p style="margin:0;color:#ffffff;font-size:17px;line-height:1.55;">${safeMessage}</p>
-            <p style="margin:18px 0 0;color:#91a4b8;font-size:13px;">Enviada por ${safeSenderName}.</p>
-          </div>
-          <p style="margin:22px 0;color:#b8c4d1;font-size:14px;line-height:1.55;">
-            La Gift Card ya fue acreditada en tu cuenta. Podés usarla como saldo disponible al finalizar una compra.
-          </p>
-          <a href="${accountUrl}" style="display:inline-block;border-radius:12px;background:#113a5f;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;padding:13px 18px;">
-            Ver mi Gift Card
-          </a>
-        </div>
-      </div>
-    </div>
-  `
-
+  const actionUrl = `${getPublicSiteUrl()}/cuenta`
   try {
+    if (!apiKey || !from) throw new Error("Resend no está configurado en el servidor.")
+    card = await loadCard(admin, giftCardId)
+    const template = buildGiftCardEmailTemplate({
+      recipientName: card.recipient_name,
+      senderName: card.sender_name,
+      amount: Number(card.initial_amount),
+      message: card.message,
+      displayCode: card.display_code,
+      expiresAt: card.expires_at,
+      actionUrl,
+      siteUrl: getPublicSiteUrl(),
+      recipientHasAccount: card.status === "claimed",
+    })
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        "Idempotency-Key": `gift-card/${giftCardId}`,
       },
-      body: JSON.stringify({
-        from,
-        to,
-        subject: `Recibiste una Gift Card BEYONIX de ${senderName || "BEYONIX"}`,
-        html,
-      }),
+      body: JSON.stringify({ from, to: [card.recipient_email], subject: template.subject, html: template.html, text: template.text }),
     })
+    const responseData = (await response.json().catch(() => ({}))) as { id?: string; message?: string; name?: string }
+    if (!response.ok || !responseData.id) throw new Error(responseData.message || responseData.name || `Resend respondió ${response.status}.`)
 
-    if (!response.ok) {
-      console.log("No se pudo enviar email de Gift Card", await response.text())
+    const { error: completionError } = await admin.rpc("complete_customer_gift_card_email_delivery", {
+      p_gift_card_id: giftCardId,
+      p_success: true,
+      p_provider_id: responseData.id,
+      p_error: null,
+    })
+    if (completionError) {
+      console.error("Gift Card email tracking update failed", { giftCardId, providerId: responseData.id, error: completionError.message })
     }
+    return { ok: true, status: "sent", message: "Correo enviado correctamente.", providerId: responseData.id }
   } catch (error) {
-    console.log("Error enviando email de Gift Card", error)
+    const safeMessage = safeErrorMessage(error)
+    console.error("Gift Card email delivery failed", { giftCardId, error: safeMessage })
+    await admin.rpc("complete_customer_gift_card_email_delivery", {
+      p_gift_card_id: giftCardId,
+      p_success: false,
+      p_provider_id: null,
+      p_error: safeMessage,
+    })
+    return { ok: false, status: "error", message: safeMessage }
   }
 }

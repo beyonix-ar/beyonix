@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react"
 import {
-  ArrowDownCircle,
   ArrowRightLeft,
-  ArrowUpCircle,
   Eye,
   Loader2,
+  MailCheck,
+  RefreshCw,
+  RotateCcw,
   Search,
   X,
 } from "lucide-react"
@@ -39,11 +40,17 @@ type GiftCardListItem = {
   destination: CreditProfile | null
   amount: number
   status: string
+  expires_at?: string | null
   message?: string | null
   proof_file_name?: string | null
   proof_signed_url?: string | null
   submitted_name?: string | null
   submitted_dni?: string | null
+  email_status?: "pending" | "sending" | "sent" | "error" | null
+  email_sent_at?: string | null
+  email_last_attempt_at?: string | null
+  email_attempts?: number
+  email_last_error?: string | null
 }
 
 function getClientLabel(profile: CreditProfile | null) {
@@ -74,6 +81,16 @@ function formatMovementDate(value: string) {
   }).format(new Date(value))
 }
 
+function formatExpirationDate(value?: string | null) {
+  if (!value) return "Sin vencimiento"
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(value))
+}
+
 function movementSign(movement: CustomerCreditMovement) {
   return movement.movement_type === "debit" || movement.movement_type === "expiration"
     ? "-"
@@ -88,7 +105,7 @@ export function AdminCreditos() {
     useState<CreditProfile | null>(null)
   const [balance, setBalance] = useState(0)
   const [movements, setMovements] = useState<CustomerCreditMovement[]>([])
-  const [action, setAction] = useState<GiftCardAction>("credit")
+  const [action, setAction] = useState<GiftCardAction>("transfer")
   const [amount, setAmount] = useState("")
   const [messageText, setMessageText] = useState("")
   const [loading, setLoading] = useState<"source" | "destination" | null>(null)
@@ -97,6 +114,9 @@ export function AdminCreditos() {
   const [giftCards, setGiftCards] = useState<GiftCardListItem[]>([])
   const [giftCardsLoading, setGiftCardsLoading] = useState(true)
   const [selectedGiftCard, setSelectedGiftCard] = useState<GiftCardListItem | null>(null)
+  const [reactivatingGiftCard, setReactivatingGiftCard] = useState(false)
+  const [emailActionLoading, setEmailActionLoading] = useState<"preview" | "retry" | null>(null)
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState("")
 
   async function getAccessToken() {
     const {
@@ -288,6 +308,86 @@ export function AdminCreditos() {
     }
   }
 
+  async function reactivateGiftCard(giftCard: GiftCardListItem) {
+    if (giftCard.movement_type !== "credit") {
+      setNotice({ ok: false, text: "Solo podés reactivar GiftCards acreditadas." })
+      return
+    }
+
+    setReactivatingGiftCard(true)
+    setNotice(null)
+
+    try {
+      const token = await getAccessToken()
+      const response = await fetch("/api/admin/customer-credit/giftcards", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ movementId: giftCard.id }),
+      })
+      const data = (await response.json()) as {
+        expires_at?: string
+        error?: string
+      }
+
+      if (!response.ok || !data.expires_at) {
+        throw new Error(data.error || "No se pudo reactivar la GiftCard.")
+      }
+
+      const nextGiftCard = {
+        ...giftCard,
+        status: "acreditado",
+        expires_at: data.expires_at,
+      }
+
+      setSelectedGiftCard(nextGiftCard)
+      setGiftCards((current) =>
+        current.map((item) => (item.id === giftCard.id ? nextGiftCard : item)),
+      )
+      setNotice({ ok: true, text: "GiftCard reactivada por 12 meses." })
+      if (profile?.id === giftCard.destination?.id) await reloadSource()
+    } catch (error) {
+      setNotice({
+        ok: false,
+        text:
+          error instanceof Error
+            ? error.message
+            : "No se pudo reactivar la GiftCard.",
+      })
+    } finally {
+      setReactivatingGiftCard(false)
+    }
+  }
+
+  async function runGiftCardEmailAction(giftCard: GiftCardListItem, action: "preview" | "retry") {
+    setEmailActionLoading(action)
+    setNotice(null)
+    try {
+      const token = await getAccessToken()
+      const response = await fetch("/api/admin/customer-credit/giftcards", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ giftCardId: giftCard.id, action }),
+      })
+      const data = (await response.json()) as { html?: string; message?: string; error?: string; status?: GiftCardListItem["email_status"] }
+      if (!response.ok) throw new Error(data.error || data.message || "No se pudo procesar el correo.")
+
+      if (action === "preview" && data.html) {
+        setEmailPreviewHtml(data.html)
+      } else {
+        setNotice({ ok: true, text: data.message || "Correo enviado correctamente." })
+        await loadGiftCards()
+        setSelectedGiftCard((current) => current ? { ...current, email_status: "sent", email_sent_at: new Date().toISOString(), email_last_error: null } : current)
+      }
+    } catch (error) {
+      setNotice({ ok: false, text: error instanceof Error ? error.message : "No se pudo procesar el correo." })
+    } finally {
+      setEmailActionLoading(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <header className="rounded-2xl border border-beyonix-blue-light/16 bg-[#0B1118] p-5">
@@ -296,7 +396,7 @@ export function AdminCreditos() {
         </p>
         <h2 className="mt-1 text-2xl font-black text-white">GiftCard</h2>
         <p className="mt-2 text-sm leading-6 text-white/58">
-          Acreditá, debitá o transferí GiftCards entre clientes.
+          Transferí Gift Cards entre clientes y consultá su historial. Los ajustes manuales de saldo se realizan desde Clientes.
         </p>
       </header>
 
@@ -395,8 +495,6 @@ export function AdminCreditos() {
 
         <div className="mt-3 flex flex-wrap gap-2">
           {[
-            { value: "credit" as const, label: "Acreditar", icon: ArrowUpCircle },
-            { value: "debit" as const, label: "Debitar", icon: ArrowDownCircle },
             { value: "transfer" as const, label: "Transferir", icon: ArrowRightLeft },
           ].map((option) => (
             <button
@@ -549,7 +647,18 @@ export function AdminCreditos() {
                   </p>
                   <p className="mt-0.5 text-xs text-white/42">
                     {formatMovementDate(giftCard.created_at)} · {giftCard.status}
+                    {giftCard.expires_at
+                      ? ` · Vence ${formatExpirationDate(giftCard.expires_at)}`
+                      : ""}
                   </p>
+                  {giftCard.email_status ? (
+                    <p className={cn(
+                      "mt-1 text-10px font-black uppercase tracking-wide",
+                      giftCard.email_status === "sent" ? "text-emerald-300" : giftCard.email_status === "error" ? "text-red-300" : "text-amber-200",
+                    )}>
+                      Email: {giftCard.email_status === "sent" ? "enviado" : giftCard.email_status === "error" ? "con error" : giftCard.email_status === "sending" ? "enviando" : "pendiente"}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex justify-end">
                   <button
@@ -599,23 +708,46 @@ export function AdminCreditos() {
                 <p className="text-10px font-black uppercase tracking-widest text-white/40">Monto del movimiento</p>
                 <p className="mt-1 text-2xl font-black text-white">{formatARS(Number(selectedGiftCard.amount ?? 0))}</p>
                 <p className="mt-1 text-xs text-white/45">{selectedGiftCard.status}</p>
+                <p className="mt-1 text-xs text-white/45">
+                  Vence: {formatExpirationDate(selectedGiftCard.expires_at)}
+                </p>
+                {selectedGiftCard.movement_type === "credit" ? (
+                  <button
+                    type="button"
+                    onClick={() => void reactivateGiftCard(selectedGiftCard)}
+                    disabled={reactivatingGiftCard}
+                    className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-beyonix-blue-light/35 bg-[#112A43] px-3 text-xs font-black text-white transition hover:bg-[#183B5E] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {reactivatingGiftCard ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-4" />
+                    )}
+                    Reactivar 12 meses
+                  </button>
+                ) : null}
               </div>
               <div className="rounded-xl border border-white/8 bg-black/20 p-3">
-                <p className="text-10px font-black uppercase tracking-widest text-white/40">Comprobante subido</p>
-                {selectedGiftCard.proof_signed_url ? (
-                  <a
-                    href={selectedGiftCard.proof_signed_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 inline-flex h-9 items-center rounded-lg border border-beyonix-blue-light/35 bg-[#112A43] px-3 text-xs font-black text-white hover:bg-[#183B5E]"
-                  >
-                    Ver comprobante
-                  </a>
-                ) : (
-                  <p className="mt-2 text-sm font-semibold text-white/55">Sin comprobante.</p>
-                )}
-                {selectedGiftCard.proof_file_name ? (
-                  <p className="mt-2 truncate text-xs text-white/42">{selectedGiftCard.proof_file_name}</p>
+                <p className="text-10px font-black uppercase tracking-widest text-white/40">Entrega por email</p>
+                <p className={cn("mt-2 text-sm font-black", selectedGiftCard.email_status === "sent" ? "text-emerald-300" : selectedGiftCard.email_status === "error" ? "text-red-300" : "text-amber-200")}>
+                  {selectedGiftCard.email_status === "sent" ? "Enviado" : selectedGiftCard.email_status === "error" ? "Error de envío" : selectedGiftCard.email_status === "sending" ? "Enviando" : selectedGiftCard.email_status === "pending" ? "Pendiente" : "Sin seguimiento (registro anterior)"}
+                </p>
+                {selectedGiftCard.email_sent_at ? <p className="mt-1 text-xs text-white/55">Enviado: {formatMovementDate(selectedGiftCard.email_sent_at)}</p> : null}
+                {selectedGiftCard.email_last_attempt_at ? <p className="mt-1 text-xs text-white/45">Último intento: {formatMovementDate(selectedGiftCard.email_last_attempt_at)} · {selectedGiftCard.email_attempts ?? 0} intento(s)</p> : null}
+                {selectedGiftCard.email_last_error ? <p className="mt-2 rounded-lg border border-red-300/20 bg-red-500/10 px-2.5 py-2 text-xs leading-5 text-red-100">{selectedGiftCard.email_last_error}</p> : null}
+                {selectedGiftCard.email_status ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => void runGiftCardEmailAction(selectedGiftCard, "preview")} disabled={emailActionLoading !== null} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-beyonix-blue-light/35 bg-[#112A43] px-3 text-xs font-black text-white hover:bg-[#183B5E] disabled:cursor-not-allowed disabled:opacity-50">
+                      {emailActionLoading === "preview" ? <Loader2 className="size-4 animate-spin" /> : <MailCheck className="size-4" />}
+                      Vista previa
+                    </button>
+                    {["pending", "error"].includes(selectedGiftCard.email_status) && !["vencida", "cancelada"].includes(selectedGiftCard.status) ? (
+                      <button type="button" onClick={() => void runGiftCardEmailAction(selectedGiftCard, "retry")} disabled={emailActionLoading !== null} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-emerald-300/35 bg-emerald-400/10 px-3 text-xs font-black text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-50">
+                        {emailActionLoading === "retry" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                        Reenviar email
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
               <div className="rounded-xl border border-white/8 bg-black/20 p-3 md:col-span-2">
@@ -625,6 +757,17 @@ export function AdminCreditos() {
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {emailPreviewHtml ? (
+        <div className="fixed inset-0 z-110 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="flex h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-beyonix-blue-light/30 bg-[#0B1118] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div><p className="text-10px font-black uppercase tracking-widest text-beyonix-cyan">Sin realizar envíos</p><h3 className="text-lg font-black text-white">Vista previa del email</h3></div>
+              <button type="button" onClick={() => setEmailPreviewHtml("")} className="inline-flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/10 text-white/70 hover:text-white" aria-label="Cerrar vista previa"><X className="size-4" /></button>
+            </div>
+            <iframe title="Vista previa del email de Gift Card" srcDoc={emailPreviewHtml} sandbox="" className="min-h-0 flex-1 border-0 bg-[#050a10]" />
           </div>
         </div>
       ) : null}

@@ -443,7 +443,7 @@ export function buildDeliveryAddressDraft({
     calle: street.trim(),
     numero: streetNumber.trim(),
     piso: floor.trim() || undefined,
-    departamento: apartment.trim() || undefined,
+    departamento: apartment.trim().toLocaleUpperCase("es-AR") || undefined,
     localidad: locality.trim(),
     region: province.trim(),
     pais: "Argentina",
@@ -454,7 +454,7 @@ export function buildDeliveryAddressDraft({
 export function formatDeliveryAddressForProfile(address: DeliveryAddressDraft) {
   const optionalParts = [
     address.piso ? `Piso ${address.piso}` : "",
-    address.departamento ? `Depto ${address.departamento}` : "",
+    address.departamento ? `Depto ${address.departamento.toLocaleUpperCase("es-AR")}` : "",
   ].filter(Boolean)
 
   return [
