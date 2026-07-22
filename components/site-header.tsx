@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   ShoppingBag,
   User,
+  WalletCards,
   X,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -24,7 +25,9 @@ import { CustomerNotificationsBell } from "@/components/customer-notifications-b
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
+import { useCustomerCredit } from "@/context/customer-credit-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import { formatARS } from "@/lib/customer-credit"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
@@ -84,6 +87,7 @@ export function SiteHeader() {
   const pathname = usePathname()
   const { cart, total, openCart } = useCart()
   const { user, isLoading, isInternal, logout } = useAuth()
+  const customerCredit = useCustomerCredit()
   const adminNotifications = useOrderNotifications(isInternal)
 
   const [categories, setCategories] = useState<SupabaseCategoria[]>([])
@@ -319,7 +323,7 @@ export function SiteHeader() {
                   </button>
 
                   {userOpen && (
-                    <div className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
+                    <div className="absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
                       <Link
                         href="/cuenta"
                         onClick={() => setUserOpen(false)}
@@ -327,6 +331,19 @@ export function SiteHeader() {
                       >
                         <AccountMenuIcon Icon={CircleUserRound} />
                         Mi cuenta
+                      </Link>
+                      <Link
+                        href="/cuenta?tab=cargar-saldo"
+                        onClick={() => setUserOpen(false)}
+                        className={cn(
+                          accountMenuItemClass,
+                          "bg-[rgba(17,42,67,0.28)] font-semibold text-beyonix-sky",
+                        )}
+                      >
+                        <AccountMenuIcon Icon={WalletCards} dollarBadge />
+                        <span className="whitespace-nowrap">
+                          Mi saldo: {formatARS(customerCredit.balance)}
+                        </span>
                       </Link>
                       <Link
                         href="/cuenta?tab=datos"
@@ -505,6 +522,17 @@ export function SiteHeader() {
                   >
                     <AccountMenuIcon Icon={CircleUserRound} />
                     Mi cuenta ({userLabel.toUpperCase()})
+                  </Link>
+                  <Link
+                    href="/cuenta?tab=cargar-saldo"
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "group flex items-center gap-2.5 rounded-lg bg-[rgba(17,42,67,0.28)] px-2 py-3 text-15px font-semibold text-beyonix-sky hover:bg-white/5 hover:text-white",
+                      beyonixHoverBorder,
+                    )}
+                  >
+                    <AccountMenuIcon Icon={WalletCards} dollarBadge />
+                    Mi saldo: {formatARS(customerCredit.balance)}
                   </Link>
                   <Link
                     href="/cuenta?tab=datos"

@@ -113,6 +113,7 @@ function SidebarItem({
   const sensitiveNotificationTone =
     item.notificationTone === "claim" ||
     item.notificationTone === "cancellation"
+  const incomingPaymentTone = item.notificationTone === "payment"
 
   return (
     <div
@@ -167,7 +168,9 @@ function SidebarItem({
               className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black transition-colors group-hover/nav:text-white ${
                 sensitiveNotificationTone
                   ? `${ADMIN_SENSITIVE_DANGER.badge} admin-ds-nav-badge-danger`
-                  : "admin-ds-nav-badge"
+                  : incomingPaymentTone
+                    ? "admin-ds-nav-badge admin-ds-nav-badge-payment"
+                    : "admin-ds-nav-badge"
               }`}
             >
               {item.notificationCount}

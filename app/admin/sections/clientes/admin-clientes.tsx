@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react"
 import {
-  AlertTriangle,
   Ban,
   CheckCircle2,
   ChevronDown,
@@ -199,27 +198,48 @@ function CreditTopupsPanel({
   }) => Promise<void>
 }) {
   const [amounts, setAmounts] = useState<Record<string, string>>({})
+  const [topupToReject, setTopupToReject] = useState<CustomerCreditTopupReview | null>(null)
+  const hasPendingTopups = topups.length > 0
 
   return (
-    <section className="rounded-3xl border border-beyonix-blue-light/28 bg-black p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <>
+    <section className="overflow-hidden rounded-3xl border border-beyonix-blue-light/28 bg-black p-4 sm:p-5">
+      <div className={`-mx-4 -mt-4 flex flex-col gap-3 px-4 py-5 sm:-mx-5 sm:-mt-5 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${
+        hasPendingTopups
+          ? "bg-[#123B33] shadow-[inset_0_-1px_0_rgba(110,231,183,0.16)]"
+          : "bg-transparent"
+      }`}>
         <div className="flex items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/35 bg-beyonix-blue text-beyonix-sky">
+          <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl border ${
+            hasPendingTopups
+              ? "border-emerald-200/35 bg-black/20 text-white"
+              : "border-beyonix-blue-light/35 bg-beyonix-blue text-white"
+          }`}>
             <CircleDollarSign className="size-5" />
           </span>
           <div>
-            <p className="text-10px font-bold uppercase tracking-widest text-beyonix-sky/70">
+            <p className={`text-10px font-bold uppercase tracking-widest ${
+              hasPendingTopups ? "text-emerald-200/75" : "text-beyonix-sky/70"
+            }`}>
               Cargas de saldo
             </p>
-            <h2 className="mt-1 text-lg font-black text-white/94">
+            <h2 className={`mt-1 text-lg font-black ${
+              hasPendingTopups ? "text-white" : "text-white/94"
+            }`}>
               Comprobantes pendientes
             </h2>
-            <p className="mt-1 text-xs text-white/55">
+            <p className={`mt-1 text-xs ${
+              hasPendingTopups ? "text-emerald-100/80" : "text-white/55"
+            }`}>
               Verificá la transferencia, ingresá el monto recibido y acreditá el saldo.
             </p>
           </div>
         </div>
-        <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 text-xs font-black tabular-nums text-amber-100">
+        <span className={`inline-flex h-8 min-w-8 items-center justify-center rounded-full border px-2.5 text-xs font-black tabular-nums ${
+          hasPendingTopups
+            ? "border-emerald-200/30 bg-black/20 text-emerald-100 shadow-[0_0_14px_rgba(110,231,183,0.14)]"
+            : "border-amber-300/25 bg-amber-300/10 text-amber-100"
+        }`}>
           {topups.length}
         </span>
       </div>
@@ -334,10 +354,7 @@ function CreditTopupsPanel({
                         <button
                           type="button"
                           disabled={saving}
-                          onClick={() => {
-                            if (!window.confirm("¿Rechazar este comprobante sin acreditar saldo?")) return
-                            void onResolve({ topupId: topup.id, action: "reject" })
-                          }}
+                          onClick={() => setTopupToReject(topup)}
                           aria-label="Rechazar comprobante"
                           title="Rechazar"
                           className="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border border-red-300/25 bg-red-300/[0.08] text-red-100/85 transition hover:border-red-200 disabled:cursor-not-allowed disabled:opacity-35"
@@ -358,6 +375,69 @@ function CreditTopupsPanel({
         </div>
       )}
     </section>
+
+    {topupToReject ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reject-topup-title"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !savingId) setTopupToReject(null)
+        }}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !savingId) {
+            setTopupToReject(null)
+          }
+        }}
+        className="fixed inset-0 z-[130] flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-sm"
+      >
+        <div className="w-full max-w-sm overflow-hidden rounded-3xl border border-red-300/25 bg-[#0D1117] shadow-[0_30px_90px_rgba(0,0,0,0.7)]">
+          <div className="px-6 pb-5 pt-6 text-center">
+            <span className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-red-300/30 bg-red-400/10 text-white">
+              <XCircle className="size-5" />
+            </span>
+            <p className="mt-4 text-10px font-black uppercase tracking-[0.18em] text-red-200/65">
+              Carga de saldo
+            </p>
+            <h2 id="reject-topup-title" className="mt-1 text-lg font-black text-white">
+              Rechazar comprobante
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/58">
+              El comprobante de <strong className="font-bold text-white/88">
+                {topupToReject.profile?.nombre || topupToReject.profile?.username || "este cliente"}
+              </strong> quedará rechazado y no se acreditará saldo.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 border-t border-white/8 bg-black/20 px-5 py-4">
+            <button
+              type="button"
+              autoFocus
+              disabled={Boolean(savingId)}
+              onClick={() => setTopupToReject(null)}
+              className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/12 bg-white/[0.04] text-xs font-black text-white/72 transition hover:border-white/25 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(savingId)}
+              onClick={() => {
+                const topupId = topupToReject.id
+                void onResolve({ topupId, action: "reject" })
+                  .then(() => setTopupToReject(null))
+                  .catch(() => undefined)
+              }}
+              className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-300/35 bg-red-400/12 px-3 text-xs font-black text-red-100 transition hover:border-red-200/60 hover:bg-red-400/20 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <XCircle className="size-3.5" />
+              {savingId === topupToReject.id ? "Rechazando..." : "Rechazar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   )
 }
 
@@ -466,9 +546,6 @@ function ClientCard({
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-white/88">
             {cliente.nombre}
-          </p>
-          <p className="mt-1 truncate text-xs text-white/55">
-            {cliente.apellido || "Apellido no separado"}
           </p>
         </div>
 
@@ -789,9 +866,9 @@ function ClientCard({
                     : "border-red-300/25 bg-red-400/10 text-red-200"
                 }`}>
                   {balanceOperation === "credit" ? (
-                    <PlusCircle className="size-5" />
+                    <CheckCircle2 className="size-5" />
                   ) : (
-                    <AlertTriangle className="size-5" />
+                    <XCircle className="size-5" />
                   )}
                 </div>
                 <div>
@@ -880,15 +957,11 @@ function ClientCard({
                 }`}
               >
                 {balanceOperation === "credit" ? (
-                  <PlusCircle className="size-4" />
+                  <CheckCircle2 className="size-4" />
                 ) : (
-                  <MinusCircle className="size-4" />
+                  <XCircle className="size-4" />
                 )}
-                {saving
-                  ? "Procesando..."
-                  : balanceOperation === "credit"
-                    ? "Confirmar acreditación"
-                    : "Confirmar débito"}
+                {saving ? "Procesando..." : "Confirmar"}
               </button>
             </div>
           </div>
@@ -1209,12 +1282,9 @@ export function AdminClientes({
     search,
   ])
 
-  const activeCount = clientes.filter((cliente) => cliente.is_active).length
-  const blockedCount = clientes.filter((cliente) => cliente.blocked_at).length
-  const totalCreditBalance = clientes.reduce(
-    (total, cliente) => total + Number(cliente.customer_credit_balance ?? 0),
-    0,
-  )
+  const customerAccounts = clientes.filter((cliente) => cliente.rol === "cliente")
+  const activeCount = customerAccounts.filter((cliente) => cliente.is_active).length
+  const blockedCount = customerAccounts.filter((cliente) => cliente.blocked_at).length
   const clientsWithCart = clientes.filter(
     (cliente) => getCartItemCount(cliente.current_cart) > 0
   )
@@ -1226,15 +1296,34 @@ export function AdminClientes({
         title="Cuentas registradas"
         description="Clientes y administradores, saldos disponibles, comprobantes de carga, compras y estado operativo."
         actions={
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <AdminStatCard title="Total" value={clientes.length} />
-            <AdminStatCard title="Activos" value={activeCount} tone="success" />
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <AdminStatCard
-              title="Con compras"
-              value={clientes.filter((cliente) => cliente.order_count > 0).length}
+              title="Total clientes"
+              value={customerAccounts.length}
+              valueClassName="text-center tabular-nums"
+              className="min-h-24 min-w-40 p-4 text-center"
             />
-            <AdminStatCard title="Saldo total" value={formatPrice(totalCreditBalance)} />
-            <AdminStatCard title="Bloqueados" value={blockedCount} tone="danger" />
+            <AdminStatCard
+              title="Clientes activos"
+              value={activeCount}
+              valueClassName="text-center tabular-nums"
+              tone="success"
+              className="min-h-24 min-w-40 p-4 text-center"
+            />
+            <AdminStatCard
+              title="Bloqueados"
+              value={blockedCount}
+              valueClassName="text-center tabular-nums"
+              tone="danger"
+              className="min-h-24 min-w-40 p-4 text-center"
+            />
+            <AdminStatCard
+              title="Comprobantes pendientes"
+              value={creditTopups.length}
+              valueClassName="text-center tabular-nums"
+              tone="success"
+              className="min-h-24 min-w-40 border-emerald-300/25 bg-emerald-400/[0.06] p-4 text-center"
+            />
           </div>
         }
       />
@@ -1296,22 +1385,24 @@ export function AdminClientes({
           </AdminSelect>
 
           <input
-            type="number"
-            min="0"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             aria-label="Total gastado mínimo"
             value={minSpent}
             placeholder="Gasto mín."
-            onChange={(event) => setMinSpent(event.target.value)}
+            onChange={(event) => setMinSpent(event.target.value.replace(/\D/g, ""))}
             className="h-11 rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
 
           <input
-            type="number"
-            min="0"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             aria-label="Cantidad mínima de pedidos"
             value={minOrders}
             placeholder="Pedidos mín."
-            onChange={(event) => setMinOrders(event.target.value)}
+            onChange={(event) => setMinOrders(event.target.value.replace(/\D/g, ""))}
             className="h-11 rounded-18px border border-white/12 bg-black px-4 text-sm font-medium text-white/86 outline-none placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-blue-light"
           />
 

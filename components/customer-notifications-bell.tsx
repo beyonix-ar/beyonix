@@ -81,6 +81,10 @@ function formatRelativeDate(value: string) {
 function getNotificationActionUrl(notification: SupabaseCustomerNotification) {
   const actionUrl = notification.action_url
 
+  if (notification.type === "customer_credit" && !notification.order_id) {
+    return "/cuenta"
+  }
+
   if (!actionUrl?.startsWith("/") || !notification.order_id) return actionUrl
 
   const url = new URL(actionUrl, window.location.origin)

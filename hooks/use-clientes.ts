@@ -1,12 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import type {
   BlockedClientIdentifier,
   ClientRiskStatus,
 } from "@/lib/clients/client-blocking"
 import { normalizeBlockIdentifier } from "@/lib/clients/client-blocking"
+import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 import { supabase } from "@/lib/supabase/client"
 import { getClientes } from "@/lib/supabase/queries/clientes"
 import type { SupabaseCliente } from "@/lib/supabase/types"
@@ -101,6 +102,7 @@ function applyBlockedStateToClientes(
 }
 
 export function useClientes() {
+  const silentRefreshInFlight = useRef(false)
   const [clientes, setClientes] = useState<SupabaseCliente[]>([])
   const [blockedIdentifiers, setBlockedIdentifiers] = useState<
     BlockedClientIdentifier[]
@@ -111,10 +113,18 @@ export function useClientes() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadClientes = useCallback(async () => {
+  const loadClientes = useCallback(async (
+    { silent = false }: { silent?: boolean } = {},
+  ) => {
+    if (silent && silentRefreshInFlight.current) return
+
     try {
-      setLoading(true)
-      setError(null)
+      if (silent) {
+        silentRefreshInFlight.current = true
+      } else {
+        setLoading(true)
+        setError(null)
+      }
       const [nextClientes, blocksResponse, creditResponse] = await Promise.all([
         getClientes(),
         adminFetch("/api/admin/clientes/bloqueos"),
@@ -140,8 +150,6 @@ export function useClientes() {
           (data.accounts ?? []).map((account) => [account.user_id, Number(account.balance ?? 0)]),
         )
         setCreditTopups(data.topups ?? [])
-      } else {
-        setCreditTopups([])
       }
 
       setBlockedIdentifiers(nextBlockedIdentifiers)
@@ -154,11 +162,16 @@ export function useClientes() {
           nextBlockedIdentifiers,
         ),
       )
+      setError(null)
     } catch (err) {
       console.error(err)
-      setError("No se pudieron cargar los clientes.")
+      if (!silent) setError("No se pudieron cargar los clientes.")
     } finally {
-      setLoading(false)
+      if (silent) {
+        silentRefreshInFlight.current = false
+      } else {
+        setLoading(false)
+      }
     }
   }, [])
 
@@ -302,6 +315,7 @@ export function useClientes() {
           throw new Error(payload?.error ?? "No se pudo resolver el comprobante.")
         }
 
+        notifyAdminNotificationsChanged()
         await loadClientes()
       } catch (err) {
         console.error(err)
@@ -348,11 +362,9 @@ export function useClientes() {
 
         await loadClientes()
       } catch (err) {
-        console.error(err)
-        setError(
-          err instanceof Error ? err.message : "No se pudo actualizar el saldo.",
-        )
-        throw err
+        throw err instanceof Error
+          ? err
+          : new Error("No se pudo actualizar el saldo.")
       } finally {
         setSaving(false)
       }
@@ -370,7 +382,7 @@ export function useClientes() {
       if (reloadTimer) clearTimeout(reloadTimer)
       reloadTimer = setTimeout(() => {
         reloadTimer = null
-        void loadClientes()
+        void loadClientes({ silent: true })
       }, 200)
     }
     const channel = supabase
@@ -385,11 +397,33 @@ export function useClientes() {
         { event: "*", schema: "public", table: "customer_credit_movements" },
         scheduleReload,
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") scheduleReload()
+      })
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer)
       void supabase.removeChannel(channel)
+    }
+  }, [loadClientes])
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadClientes({ silent: true })
+      }
+    }
+    const fallbackInterval = window.setInterval(refreshIfVisible, 4_000)
+
+    window.addEventListener("focus", refreshIfVisible)
+    window.addEventListener("online", refreshIfVisible)
+    document.addEventListener("visibilitychange", refreshIfVisible)
+
+    return () => {
+      window.clearInterval(fallbackInterval)
+      window.removeEventListener("focus", refreshIfVisible)
+      window.removeEventListener("online", refreshIfVisible)
+      document.removeEventListener("visibilitychange", refreshIfVisible)
     }
   }, [loadClientes])
 

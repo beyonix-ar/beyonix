@@ -9,6 +9,8 @@ import { createClient } from "@/lib/supabase/server"
 
 const TOPUP_PROOF_BUCKET = "customer-credit-topups"
 const TOPUPS_PER_PAGE = 10
+const TOPUP_SELECT =
+  "id, amount, customer_name, customer_dni, proof_url, proof_file_name, status, payment_method, gross_amount, surcharge_percent, surcharge_amount, mercadopago_payment_id, mercadopago_status, created_at"
 
 function getProofStoragePath(proofUrl?: string | null) {
   if (!proofUrl) return null
@@ -50,10 +52,7 @@ export async function GET(request: Request) {
   const admin = createAdminClient()
   const { data, error, count } = await admin
     .from("customer_credit_topups")
-    .select(
-      "id, amount, customer_name, customer_dni, proof_url, proof_file_name, status, created_at",
-      { count: "exact" },
-    )
+    .select(TOPUP_SELECT, { count: "exact" })
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .range(from, to)
@@ -139,12 +138,17 @@ export async function POST(request: Request) {
   if (replaceTopupId) {
     const { data: previousTopup, error: previousTopupError } = await admin
       .from("customer_credit_topups")
-      .select("id, proof_url, status")
+      .select("id, proof_url, status, payment_method")
       .eq("id", replaceTopupId)
       .eq("user_id", user.id)
       .maybeSingle()
 
-    if (previousTopupError || !previousTopup || previousTopup.status !== "en_revision") {
+    if (
+      previousTopupError ||
+      !previousTopup ||
+      previousTopup.status !== "en_revision" ||
+      previousTopup.payment_method !== "transfer"
+    ) {
       await admin.storage.from(TOPUP_PROOF_BUCKET).remove([path])
       return NextResponse.json(
         { error: "Este comprobante ya no se puede reemplazar." },
@@ -162,7 +166,8 @@ export async function POST(request: Request) {
       .eq("id", replaceTopupId)
       .eq("user_id", user.id)
       .eq("status", "en_revision")
-      .select("id, amount, customer_name, customer_dni, proof_url, proof_file_name, status, created_at")
+      .eq("payment_method", "transfer")
+      .select(TOPUP_SELECT)
       .maybeSingle()
 
     if (replaceError || !replacedTopup) {
@@ -196,8 +201,9 @@ export async function POST(request: Request) {
       proof_url: storedPath,
       proof_file_name: file.name,
       status: "en_revision",
+      payment_method: "transfer",
     })
-    .select("id, amount, customer_name, customer_dni, proof_url, proof_file_name, status, created_at")
+    .select(TOPUP_SELECT)
     .single()
 
   if (error || !data) {

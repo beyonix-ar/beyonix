@@ -32,13 +32,18 @@ const REALTIME_TABLES = [
   "order_claim_files",
   "order_refund_proofs",
   "order_audit_events",
+  "admin_order_views",
   "admin_order_event_views",
   "admin_notification_reads",
   "customer_credit_topups",
   "customer_credit_movements",
+  "customer_gift_cards",
 ] as const
 
+const FALLBACK_REFRESH_INTERVAL_MS = 4_000
+
 export function useAdminNotifications(enabled = true) {
+  const requestId = useRef(0)
   const [notificationCount, setNotificationCount] = useState(0)
   const [notificationTone, setNotificationTone] =
     useState<AdminNotificationTone>("order")
@@ -52,6 +57,8 @@ export function useAdminNotifications(enabled = true) {
   )
 
   const loadNotifications = useCallback(async () => {
+    const currentRequestId = ++requestId.current
+
     if (!enabled) {
       setNotificationCount(0)
       setNotificationTone("order")
@@ -64,6 +71,7 @@ export function useAdminNotifications(enabled = true) {
 
     try {
       const summary = await getAdminNotifications()
+      if (currentRequestId !== requestId.current) return
 
       setNotificationCount(summary.count)
       setNotificationTone(summary.tone)
@@ -71,17 +79,15 @@ export function useAdminNotifications(enabled = true) {
       setNotifications(summary.notifications)
       setError("")
     } catch (loadError) {
+      if (currentRequestId !== requestId.current) return
+
       console.error(
         "ADMIN_NOTIFICATIONS_LOAD_ERROR",
         getSupabaseErrorDetails(loadError),
       )
-      setNotificationCount(0)
-      setNotificationTone("order")
-      setNotificationGroups(EMPTY_GROUPS)
-      setNotifications([])
       setError("No pudimos cargar las notificaciones.")
     } finally {
-      setLoading(false)
+      if (currentRequestId === requestId.current) setLoading(false)
     }
   }, [enabled])
 
@@ -145,11 +151,19 @@ export function useAdminNotifications(enabled = true) {
       if (document.visibilityState === "visible") void loadNotifications()
     }
 
+    const fallbackInterval = window.setInterval(
+      refreshIfVisible,
+      FALLBACK_REFRESH_INTERVAL_MS,
+    )
+
     window.addEventListener("focus", refreshIfVisible)
+    window.addEventListener("online", refreshIfVisible)
     document.addEventListener("visibilitychange", refreshIfVisible)
 
     return () => {
+      window.clearInterval(fallbackInterval)
       window.removeEventListener("focus", refreshIfVisible)
+      window.removeEventListener("online", refreshIfVisible)
       document.removeEventListener("visibilitychange", refreshIfVisible)
     }
   }, [enabled, loadNotifications])

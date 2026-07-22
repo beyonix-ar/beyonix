@@ -670,7 +670,7 @@ begin
     'customer_credit',
     v_title,
     v_body,
-    '/cuenta?tab=saldo',
+    case when new.order_id is null then '/cuenta' else '/cuenta?tab=saldo' end,
     new.order_id,
     'customer-credit:' || new.id::text
   )

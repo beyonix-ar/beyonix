@@ -38,6 +38,12 @@ const ADMIN_NEUTRAL_CARD_STYLE =
 const ADMIN_NEUTRAL_ICON_STYLE =
   "admin-ds-notification-icon"
 const ADMIN_NEUTRAL_DOT_STYLE = "admin-ds-notification-dot"
+const ADMIN_INCOMING_PAYMENT_STYLE = {
+  card: "border-emerald-300/35 bg-emerald-400/[0.07] shadow-[0_0_18px_rgba(52,211,153,0.08)] hover:border-emerald-200/55 hover:bg-emerald-400/[0.12]",
+  icon: "border-emerald-300/35 bg-emerald-400/10 text-white",
+  label: "text-emerald-200/80",
+  dot: "bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.75)]",
+} as const
 
 function getNotificationIcon(type: AdminNotificationType) {
   if (type === "order") return ShoppingCart
@@ -127,6 +133,7 @@ export function AdminNotificationsPopover({
             {notifications.map((notification) => {
               const Icon = getNotificationIcon(notification.type)
               const sensitive = isAdminSensitiveNotification(notification)
+              const incomingPayment = notification.eventKey.startsWith("balance-topup:")
               const typeLabel =
                 notification.type === "claim" &&
                 notification.title.toLowerCase().includes("mensaje de ayuda")
@@ -141,7 +148,9 @@ export function AdminNotificationsPopover({
                     "group flex w-full cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all",
                     sensitive
                       ? ADMIN_SENSITIVE_DANGER.card
-                      : ADMIN_NEUTRAL_CARD_STYLE,
+                      : incomingPayment
+                        ? ADMIN_INCOMING_PAYMENT_STYLE.card
+                        : ADMIN_NEUTRAL_CARD_STYLE,
                   )}
                 >
                   <span
@@ -149,7 +158,9 @@ export function AdminNotificationsPopover({
                       "flex size-8 shrink-0 items-center justify-center rounded-lg border",
                       sensitive
                         ? ADMIN_SENSITIVE_DANGER.icon
-                        : ADMIN_NEUTRAL_ICON_STYLE,
+                        : incomingPayment
+                          ? ADMIN_INCOMING_PAYMENT_STYLE.icon
+                          : ADMIN_NEUTRAL_ICON_STYLE,
                     )}
                   >
                     <Icon className="size-3.5" />
@@ -160,7 +171,11 @@ export function AdminNotificationsPopover({
                       <span
                         className={cn(
                           "min-w-0 flex-1 text-xs font-bold uppercase tracking-normal leading-4",
-                          sensitive ? ADMIN_SENSITIVE_DANGER.label : "text-white/64",
+                          sensitive
+                            ? ADMIN_SENSITIVE_DANGER.label
+                            : incomingPayment
+                              ? ADMIN_INCOMING_PAYMENT_STYLE.label
+                              : "text-white/64",
                         )}
                       >
                         {typeLabel}
@@ -171,7 +186,9 @@ export function AdminNotificationsPopover({
                             "mt-1 size-1.5 shrink-0 rounded-full",
                             sensitive
                               ? ADMIN_SENSITIVE_DANGER.dot
-                              : ADMIN_NEUTRAL_DOT_STYLE,
+                              : incomingPayment
+                                ? ADMIN_INCOMING_PAYMENT_STYLE.dot
+                                : ADMIN_NEUTRAL_DOT_STYLE,
                           )}
                         />
                       )}
@@ -190,7 +207,9 @@ export function AdminNotificationsPopover({
                             "font-black group-hover:text-white",
                             sensitive
                               ? ADMIN_SENSITIVE_DANGER.label
-                              : "text-beyonix-sky",
+                              : incomingPayment
+                                ? "text-emerald-300"
+                                : "text-beyonix-sky",
                           )}
                         >
                           {notification.actionLabel}

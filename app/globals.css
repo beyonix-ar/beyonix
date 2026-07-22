@@ -787,6 +787,13 @@
   box-shadow: 0 0 12px rgba(119, 230, 226, 0.12) !important;
 }
 
+.admin-ds-nav-badge.admin-ds-nav-badge-payment {
+  border-color: rgba(110, 231, 183, 0.42) !important;
+  background-color: rgba(6, 78, 59, 0.3) !important;
+  color: #a7f3d0 !important;
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.16) !important;
+}
+
 .admin-ds-nav-badge-danger {
   border-color: rgba(248, 113, 113, 0.34) !important;
   background-color: rgba(127, 29, 29, 0.2) !important;
@@ -814,11 +821,30 @@
   border-color: rgba(140, 200, 242, 0.48) !important;
 }
 
+.admin-ds-bell-button.admin-ds-bell-button-payment {
+  background-color: rgba(6, 78, 59, 0.3) !important;
+  border-color: rgba(110, 231, 183, 0.5) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.14) !important;
+}
+
+.admin-ds-bell-button.admin-ds-bell-button-payment:hover {
+  background-color: rgba(6, 95, 70, 0.4) !important;
+  border-color: rgba(167, 243, 208, 0.7) !important;
+  color: #ecfdf5 !important;
+}
+
 .admin-ds-notification-count,
 .admin-ds-notification-dot {
   background-color: #8cc8f2 !important;
   color: #02060a !important;
   box-shadow: 0 0 10px rgba(140, 200, 242, 0.38) !important;
+}
+
+.admin-ds-notification-count-payment {
+  background-color: #6ee7b7 !important;
+  color: #022c22 !important;
+  box-shadow: 0 0 12px rgba(110, 231, 183, 0.55) !important;
 }
 
 .admin-ds-popover-position {
@@ -3341,6 +3367,57 @@ div.claim-form-shell {
   z-index: 1;
   border-radius: 16px;
   padding: 24px;
+}
+
+.customer-credit-master-surface {
+  background: #101010 !important;
+  background-color: #101010 !important;
+  background-image: none !important;
+  isolation: isolate;
+}
+
+body > div.relative.z-10 section.customer-credit-topup-surface {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+section.customer-credit-info-blue {
+  background: #142b3a !important;
+  background-color: #142b3a !important;
+  background-image: none !important;
+  border: 1px solid rgba(89, 169, 222, 0.42) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(89, 169, 222, 0.06),
+    0 0 18px rgba(34, 117, 171, 0.07) !important;
+}
+
+section.customer-credit-info-warning {
+  background: #292311 !important;
+  background-color: #292311 !important;
+  background-image: none !important;
+  border: 1px solid rgba(224, 183, 63, 0.4) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(224, 183, 63, 0.05),
+    0 0 18px rgba(190, 139, 24, 0.06) !important;
+}
+
+section.customer-credit-info-blue > svg {
+  color: #8acdf5 !important;
+}
+
+section.customer-credit-info-warning > svg {
+  color: #f0cd68 !important;
+}
+
+.customer-credit-timeline-title {
+  font-size: 12px !important;
+  line-height: 15px !important;
+}
+
+.customer-credit-timeline-description {
+  font-size: 10px !important;
+  line-height: 13px !important;
 }
 
 .claim-form-content {

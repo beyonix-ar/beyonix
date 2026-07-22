@@ -1,18 +1,16 @@
+import { createHmac, timingSafeEqual } from "node:crypto"
+
 import { NextResponse } from "next/server"
 
 import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import {
+  getMercadoPagoPayment,
+  processCustomerCreditTopupPayment,
+  type MercadoPagoPayment,
+} from "@/lib/mercadopago/customer-credit-topups"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
-
-interface MercadoPagoPayment {
-  id: number
-  status: string
-  external_reference?: string | null
-  payment_method_id?: string | null
-  payment_type_id?: string | null
-  date_approved?: string | null
-}
 
 interface OrderItemRow {
   producto_id: number
@@ -59,28 +57,36 @@ function getPaymentId(url: URL, body: unknown) {
   return null
 }
 
-async function getPayment(paymentId: string): Promise<MercadoPagoPayment> {
-  const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
+function isValidWebhookSignature(request: Request, paymentId: string) {
+  const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
+  if (request.method === "GET") return true
+  if (!secret) return process.env.NODE_ENV !== "production"
 
-  if (!accessToken) {
-    throw new Error("MERCADOPAGO_ACCESS_TOKEN no configurado")
-  }
+  const signature = request.headers.get("x-signature")
+  const requestId = request.headers.get("x-request-id")
+  if (!signature || !requestId) return false
 
-  const response = await fetch(
-    `https://api.mercadopago.com/v1/payments/${paymentId}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      cache: "no-store",
-    },
+  const parts = new Map(
+    signature.split(",").map((part) => {
+      const [key, ...value] = part.trim().split("=")
+      return [key, value.join("=")]
+    }),
   )
+  const timestamp = parts.get("ts")
+  const receivedHash = parts.get("v1")
+  if (!timestamp || !receivedHash) return false
 
-  if (!response.ok) {
-    throw new Error(`Mercado Pago respondió ${response.status}`)
-  }
+  const manifest = `id:${paymentId.toLowerCase()};request-id:${requestId};ts:${timestamp};`
+  const expectedHash = createHmac("sha256", secret)
+    .update(manifest)
+    .digest("hex")
+  const expectedBuffer = Buffer.from(expectedHash)
+  const receivedBuffer = Buffer.from(receivedHash)
 
-  return response.json()
+  return (
+    expectedBuffer.length === receivedBuffer.length &&
+    timingSafeEqual(expectedBuffer, receivedBuffer)
+  )
 }
 
 async function decrementStock(orderItems: OrderItemRow[]) {
@@ -146,7 +152,20 @@ async function handleWebhook(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    const payment = await getPayment(paymentId)
+    if (!isValidWebhookSignature(request, paymentId)) {
+      return NextResponse.json(
+        { error: "Firma de webhook inválida." },
+        { status: 401 },
+      )
+    }
+
+    const payment = await getMercadoPagoPayment(paymentId)
+
+    if (payment.external_reference?.startsWith("credit-topup:")) {
+      const result = await processCustomerCreditTopupPayment(payment)
+      return NextResponse.json({ ok: true, ...result })
+    }
+
     const orderId = Number(payment.external_reference)
 
     if (!Number.isFinite(orderId)) {

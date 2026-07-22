@@ -1,6 +1,7 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import {
   getSiteSettings,
+  normalizeCustomerCreditPaymentSettings,
   normalizeShippingSettings,
 } from "@/lib/site-settings"
 
@@ -21,25 +22,37 @@ export async function PATCH(request: Request) {
 
   const body = (await request.json()) as {
     shipping?: unknown
+    customerCreditPayments?: unknown
   }
   const before = await getSiteSettings()
   const shipping = normalizeShippingSettings(body.shipping)
+  const customerCreditPayments = normalizeCustomerCreditPaymentSettings(
+    body.customerCreditPayments,
+  )
   const updatedAt = new Date().toISOString()
 
-  const { data, error } = await auth.admin
+  const { error } = await auth.admin
     .from("site_settings")
     .upsert(
-      {
-        key: "shipping",
-        value: shipping,
-        description: "Configuracion de costos y bonificacion de envio.",
-        updated_by: auth.user.id,
-        updated_at: updatedAt,
-      },
+      [
+        {
+          key: "shipping",
+          value: shipping,
+          description: "Configuración de costos y bonificación de envío.",
+          updated_by: auth.user.id,
+          updated_at: updatedAt,
+        },
+        {
+          key: "customer_credit_payments",
+          value: customerCreditPayments,
+          description: "Configuración de medios de pago para cargas de saldo.",
+          updated_by: auth.user.id,
+          updated_at: updatedAt,
+        },
+      ],
       { onConflict: "key" },
     )
     .select("key, value, updated_at")
-    .single()
 
   if (error) {
     return Response.json({ error: error.message }, { status: 500 })
@@ -52,12 +65,13 @@ export async function PATCH(request: Request) {
     actor_user_id: auth.user.id,
     actor_email: auth.user.email ?? auth.profile.email,
     before_data: before,
-    after_data: { shipping, updated_at: data.updated_at },
+    after_data: { shipping, customerCreditPayments, updated_at: updatedAt },
   })
 
   return Response.json({
     settings: {
       shipping,
+      customerCreditPayments,
     },
   })
 }

@@ -52,7 +52,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic"
 
-const LAST_UPDATED = "20 de julio de 2026"
+const LAST_UPDATED = "22 de julio de 2026"
 const PAYMENT_PROOF_MAX_MB = PAYMENT_PROOF_MAX_SIZE / 1024 / 1024
 
 const LEGAL_SECTIONS = [
@@ -165,6 +165,10 @@ function KeyFact({
 export default async function TerminosPage() {
   const siteSettings = await getSiteSettings()
   const shippingSettings = siteSettings.shipping
+  const mercadoPagoSurchargePercent =
+    siteSettings.customerCreditPayments.mercadoPagoSurchargePercent
+  const mercadoPagoMinimumAmount =
+    siteSettings.customerCreditPayments.mercadoPagoMinimumAmount
   const isShippingBonusEnabled = shippingSettings.freeShippingMode === "full"
   const shippingBenefitText = isShippingBonusEnabled
     ? `Desde ${formatARS(shippingSettings.freeShippingMinAmount)}`
@@ -441,7 +445,7 @@ export default async function TerminosPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><CreditCard className="size-4 text-beyonix-cyan" /><strong className="text-white">Mercado Pago</strong></div>
-                  <p className="mt-2 text-xs leading-6 text-white/58">Permite pagar con saldo disponible o tarjeta. La aprobación, rechazo y acreditación dependen de Mercado Pago y de la entidad emisora. BEYONIX no almacena los datos completos de la tarjeta.</p>
+                  <p className="mt-2 text-xs leading-6 text-white/58">Permite pagar con saldo disponible o tarjeta. Mercado Pago y, cuando corresponda, la entidad emisora deciden la aprobación o el rechazo; BEYONIX no interviene en esa decisión ni almacena los datos completos de la tarjeta.</p>
                 </div>
                 <div className="rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><Landmark className="size-4 text-beyonix-cyan" /><strong className="text-white">Transferencia bancaria</strong></div>
@@ -461,6 +465,10 @@ export default async function TerminosPage() {
                 indicará que debe reemplazarse. Los saldos a favor pueden cubrir total o parcialmente
                 una compra cuando estén vigentes y asociados a la cuenta.
               </p>
+              <div className="rounded-xl border border-[#49A9E8]/30 bg-[#0D2D43]/45 p-4 text-sm leading-6 text-white/68">
+                <strong className="text-white">Cargas de saldo mediante Mercado Pago.</strong>{" "}
+                El importe mínimo es de {formatARS(mercadoPagoMinimumAmount)}. Si el cliente elige este canal, se informa antes de pagar un costo de procesamiento actualmente establecido en {mercadoPagoSurchargePercent}%. Este adicional se suma al total cobrado y no forma parte del saldo acreditado en BEYONIX. Mercado Pago y, cuando corresponda, la entidad emisora deciden la aprobación o el rechazo; BEYONIX no interviene en esa decisión. La acreditación se realiza automáticamente únicamente después de que el servidor de BEYONIX verifica con Mercado Pago el estado aprobado, la referencia, la moneda y el importe exacto de la operación. El regreso del navegador a BEYONIX o una pantalla de éxito, por sí solos, no acreditan saldo. Los pagos pendientes, rechazados o cancelados no generan saldo. Ante un reintegro, contracargo o reversión posterior informado por el proveedor, BEYONIX podrá ajustar el saldo relacionado o someter el caso a revisión, sin afectar los derechos legales del cliente. El porcentaje y el mínimo aplicables serán siempre los exhibidos antes de confirmar la operación.
+              </div>
             </LegalSection>
 
             <LegalSection

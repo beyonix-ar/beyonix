@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { MIN_MERCADOPAGO_CUSTOMER_CREDIT_TOPUP } from "@/lib/customer-credit"
 import {
   DEFAULT_SHIPPING_SETTINGS,
   type FreeShippingMode,
@@ -7,6 +8,17 @@ import {
 
 export interface SiteSettings {
   shipping: ShippingBonusSettings
+  customerCreditPayments: CustomerCreditPaymentSettings
+}
+
+export interface CustomerCreditPaymentSettings {
+  mercadoPagoSurchargePercent: number
+  mercadoPagoMinimumAmount: number
+}
+
+export const DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS: CustomerCreditPaymentSettings = {
+  mercadoPagoSurchargePercent: 8,
+  mercadoPagoMinimumAmount: MIN_MERCADOPAGO_CUSTOMER_CREDIT_TOPUP,
 }
 
 function numberFromValue(value: unknown, fallback: number) {
@@ -48,9 +60,31 @@ export function normalizeShippingSettings(value: unknown): ShippingBonusSettings
   }
 }
 
+export function normalizeCustomerCreditPaymentSettings(
+  value: unknown,
+): CustomerCreditPaymentSettings {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {}
+  const parsed = Number(
+    String(source.mercadoPagoSurchargePercent ?? "").replace(",", "."),
+  )
+  const mercadoPagoSurchargePercent = Number.isFinite(parsed)
+    ? Math.min(100, Math.max(0, Math.round(parsed * 100) / 100))
+    : DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS.mercadoPagoSurchargePercent
+  const mercadoPagoMinimumAmount = numberFromValue(
+    source.mercadoPagoMinimumAmount,
+    DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS.mercadoPagoMinimumAmount,
+  )
+
+  return { mercadoPagoSurchargePercent, mercadoPagoMinimumAmount }
+}
+
 export function getFallbackSiteSettings(): SiteSettings {
   return {
     shipping: DEFAULT_SHIPPING_SETTINGS,
+    customerCreditPayments: DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
   }
 }
 
@@ -60,15 +94,21 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     const { data, error } = await admin
       .from("site_settings")
       .select("key, value")
-      .eq("key", "shipping")
-      .maybeSingle()
+      .in("key", ["shipping", "customer_credit_payments"])
 
-    if (error || !data) {
+    if (error) {
       return getFallbackSiteSettings()
     }
 
+    const settingsByKey = new Map(
+      (data ?? []).map((setting) => [setting.key, setting.value]),
+    )
+
     return {
-      shipping: normalizeShippingSettings(data.value),
+      shipping: normalizeShippingSettings(settingsByKey.get("shipping")),
+      customerCreditPayments: normalizeCustomerCreditPaymentSettings(
+        settingsByKey.get("customer_credit_payments"),
+      ),
     }
   } catch {
     return getFallbackSiteSettings()

@@ -125,6 +125,7 @@ interface AdminCardProps extends HTMLAttributes<HTMLDivElement> {
 interface AdminStatCardProps {
   title: string
   value: ReactNode
+  valueClassName?: string
   helper?: ReactNode
   icon?: ReactNode
   action?: ReactNode
@@ -577,6 +578,7 @@ export function AdminCard({
 export function AdminStatCard({
   title,
   value,
+  valueClassName,
   helper,
   icon,
   action,
@@ -587,11 +589,14 @@ export function AdminStatCard({
   const content = (
     <>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan/85">
             {title}
           </p>
-          <p className="mt-3 wrap-break-word text-2xl font-black leading-tight text-white">
+          <p className={cn(
+            "mt-3 wrap-break-word text-2xl font-black leading-tight text-white",
+            valueClassName,
+          )}>
             {value}
           </p>
           {helper && (

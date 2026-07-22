@@ -1,4 +1,5 @@
 export const CUSTOMER_CREDIT_LABEL = "Saldo a favor BEYONIX"
+export const MIN_MERCADOPAGO_CUSTOMER_CREDIT_TOPUP = 10_000
 
 export interface CreditApplicationInput {
   availableBalance: number

@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils"
 const ADMIN_NEUTRAL_BELL_STYLE =
   "admin-ds-notification-bell"
 const ADMIN_NEUTRAL_BADGE_STYLE = "admin-ds-notification-count"
+const ADMIN_INCOMING_PAYMENT_BELL_STYLE = "admin-ds-bell-button-payment"
+const ADMIN_INCOMING_PAYMENT_BADGE_STYLE = "admin-ds-notification-count-payment"
 
 interface AdminNotificationBellProps {
   count: number
@@ -103,6 +105,9 @@ export function AdminNotificationBell({
     tone === "cancellation" ||
     tone === "claim" ||
     notifications.some(isAdminSensitiveNotification)
+  const incomingPaymentTone = notifications.some((notification) =>
+    notification.eventKey.startsWith("balance-topup:"),
+  )
 
   return (
     <div
@@ -122,7 +127,9 @@ export function AdminNotificationBell({
           count > 0
             ? sensitiveTone
               ? ADMIN_SENSITIVE_DANGER.action
-              : ADMIN_NEUTRAL_BELL_STYLE
+              : incomingPaymentTone
+                ? ADMIN_INCOMING_PAYMENT_BELL_STYLE
+                : ADMIN_NEUTRAL_BELL_STYLE
             : "admin-ds-bell-button-idle",
         )}
       >
@@ -133,7 +140,9 @@ export function AdminNotificationBell({
               "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-9px font-medium leading-none",
               sensitiveTone
                 ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
-                : ADMIN_NEUTRAL_BADGE_STYLE,
+                : incomingPaymentTone
+                  ? ADMIN_INCOMING_PAYMENT_BADGE_STYLE
+                  : ADMIN_NEUTRAL_BADGE_STYLE,
             )}
           >
             {count > 99 ? "99+" : count}

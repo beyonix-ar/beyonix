@@ -251,6 +251,19 @@ export async function POST(request: Request) {
       )
     }
 
+    if (
+      process.env.NODE_ENV === "production" &&
+      !process.env.MERCADOPAGO_WEBHOOK_SECRET
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Los pagos por Mercado Pago están temporalmente deshabilitados hasta completar la configuración segura.",
+        },
+        { status: 503 },
+      )
+    }
+
     const payload = (await request.json()) as CheckoutPayload
     const items = normalizeItems(payload.items)
     const customerError = validateCustomer(payload.customer)
@@ -553,7 +566,7 @@ export async function POST(request: Request) {
           failure: `${siteUrl}/checkout/failure`,
           pending: `${siteUrl}/checkout/pending`,
         },
-        notification_url: `${siteUrl}/api/mercadopago/webhook`,
+        notification_url: `${siteUrl}/api/mercadopago/webhook?source_news=webhooks`,
       },
     })
 
