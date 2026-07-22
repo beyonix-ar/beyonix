@@ -376,7 +376,7 @@ export function AdminModificaciones() {
               Cargas por Mercado Pago
             </h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-white/58">
-              Configurá el importe mínimo permitido y el costo de procesamiento.
+              Configurá el importe mínimo permitido y la comisión de Mercado Pago.
               La transferencia bancaria continúa sin recargo.
             </p>
           </div>

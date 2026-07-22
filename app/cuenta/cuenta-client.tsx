@@ -764,6 +764,7 @@ function MiSaldo({
 }
 
 const TOPUPS_PER_PAGE = 10
+const MERCADOPAGO_ACTIVE_TOPUP_KEY = "beyonix:mercadopago-active-topup"
 
 function CargarSaldo({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
@@ -805,6 +806,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
     "idle" | "checking" | "credited" | "pending" | "error"
   >("idle")
   const reconciledReturnRef = useRef<string | null>(null)
+  const abandoningTopupRef = useRef(false)
   const [mercadoPagoDetailTopupId, setMercadoPagoDetailTopupId] = useState<string | null>(null)
   const statusLabels: Record<string, string> = {
     en_revision: "En revisión",
@@ -929,6 +931,91 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (topupPage > topupTotalPages) setTopupPage(topupTotalPages)
   }, [topupPage, topupTotalPages])
+
+  useEffect(() => {
+    function clearStoredTopup() {
+      try {
+        window.sessionStorage.removeItem(MERCADOPAGO_ACTIVE_TOPUP_KEY)
+      } catch {
+        // El almacenamiento puede estar bloqueado por la configuración del navegador.
+      }
+    }
+
+    async function restoreAfterMercadoPago() {
+      setRedirectingToMercadoPago(false)
+
+      if (mercadoPagoReturnStatus) {
+        clearStoredTopup()
+        return
+      }
+
+      let storedTopupId = ""
+      try {
+        const storedValue = window.sessionStorage.getItem(
+          MERCADOPAGO_ACTIVE_TOPUP_KEY,
+        )
+        if (storedValue) {
+          const parsed = JSON.parse(storedValue) as { topupId?: string }
+          storedTopupId = parsed.topupId?.trim() ?? ""
+        }
+      } catch {
+        clearStoredTopup()
+      }
+
+      if (!storedTopupId || abandoningTopupRef.current) return
+
+      abandoningTopupRef.current = true
+      setPaymentMethod("mercadopago")
+
+      try {
+        const response = await fetch(
+          "/api/customer-credit/mercadopago/abandon",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ topupId: storedTopupId }),
+          },
+        )
+        const data = (await response.json()) as {
+          cancelled?: boolean
+          credited?: boolean
+          error?: string
+        }
+        if (!response.ok) {
+          throw new Error(data.error ?? "No pudimos cerrar el intento de pago.")
+        }
+
+        clearStoredTopup()
+        setError(
+          data.credited
+            ? "El pago fue aprobado y el saldo se acreditó correctamente."
+            : data.cancelled
+              ? "El intento de pago se canceló. No se generó ningún cargo."
+              : "El pago quedó en verificación con Mercado Pago.",
+        )
+        await Promise.all([loadTopups(), reloadCustomerCredit()])
+      } catch (restoreError) {
+        console.error("No se pudo cerrar el checkout abandonado", restoreError)
+        setError(
+          restoreError instanceof Error
+            ? restoreError.message
+            : "No pudimos cerrar el intento de pago.",
+        )
+      } finally {
+        abandoningTopupRef.current = false
+      }
+    }
+
+    const handlePageShow = () => void restoreAfterMercadoPago()
+    window.addEventListener("pageshow", handlePageShow)
+    void restoreAfterMercadoPago()
+
+    return () => window.removeEventListener("pageshow", handlePageShow)
+  }, [
+    loadTopups,
+    mercadoPagoReturnStatus,
+    reloadCustomerCredit,
+  ])
 
   useEffect(() => {
     if (
@@ -1091,15 +1178,30 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
       )
       const data = (await response.json()) as {
         init_point?: string
+        topup_id?: string
         error?: string
       }
 
-      if (!response.ok || !data.init_point) {
+      if (!response.ok || !data.init_point || !data.topup_id) {
         throw new Error(data.error ?? "No pudimos iniciar el pago.")
+      }
+
+      try {
+        window.sessionStorage.setItem(
+          MERCADOPAGO_ACTIVE_TOPUP_KEY,
+          JSON.stringify({ topupId: data.topup_id, startedAt: Date.now() }),
+        )
+      } catch {
+        // La vuelta sigue funcionando mediante las URLs de retorno y el webhook.
       }
 
       window.location.assign(data.init_point)
     } catch (paymentError) {
+      try {
+        window.sessionStorage.removeItem(MERCADOPAGO_ACTIVE_TOPUP_KEY)
+      } catch {
+        // Sin acción adicional.
+      }
       setError(
         paymentError instanceof Error
           ? paymentError.message
@@ -1439,7 +1541,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
             <div className="grid border-b border-white/7 sm:grid-cols-3">
               {[
                 ["1", "Ingresá el saldo", "Elegí cuánto querés acreditar"],
-                ["2", "Pagá en Mercado Pago", "El total incluye el procesamiento"],
+                ["2", "Pagá en Mercado Pago", "El total incluye la comisión"],
                 ["3", "Acreditación automática", "Al recibir la aprobación"],
               ].map(([number, title, description]) => (
                 <div key={number} className="flex items-center gap-3 border-white/7 px-4 py-3 sm:border-r sm:last:border-r-0">
@@ -1503,7 +1605,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                     <dd className="font-bold text-white">{formatARS(mercadoPagoCreditAmount)}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4 text-white/58">
-                    <dt>Procesamiento Mercado Pago ({mercadoPagoSurchargePercent}%)</dt>
+                    <dt>Comisión de Mercado Pago ({mercadoPagoSurchargePercent}%)</dt>
                     <dd className="font-bold text-white">{formatARS(mercadoPagoSurchargeAmount)}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
@@ -1525,7 +1627,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                   {redirectingToMercadoPago ? "Abriendo Mercado Pago..." : "Continuar en Mercado Pago"}
                 </button>
                 <p className="mt-3 text-center text-10px leading-4 text-white/38">
-                  El adicional corresponde al costo de procesamiento de este canal y no integra el saldo acreditado por BEYONIX.
+                  La comisión corresponde al costo de este canal y no integra el saldo acreditado por BEYONIX.
                 </p>
               </div>
             </div>
@@ -1553,7 +1655,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
             <strong className="mr-2 text-amber-50/90">Importante</strong>
             {paymentMethod === "transfer"
               ? "Solo acreditamos transferencias recibidas con comprobantes válidos."
-              : `El ${mercadoPagoSurchargePercent}% adicional es el costo de procesamiento del canal Mercado Pago y no se acredita como saldo.`}
+              : `La comisión de Mercado Pago es del ${mercadoPagoSurchargePercent}% y no se acredita como saldo.`}
           </p>
         </section>
         </div>
@@ -1752,7 +1854,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                 {[
                   ["Saldo acreditado", formatARS(Number(mercadoPagoDetailTopup.amount ?? 0))],
                   [
-                    `Procesamiento (${Number(mercadoPagoDetailTopup.surcharge_percent ?? 0)}%)`,
+                    `Comisión de Mercado Pago (${Number(mercadoPagoDetailTopup.surcharge_percent ?? 0)}%)`,
                     formatARS(Number(mercadoPagoDetailTopup.surcharge_amount ?? 0)),
                   ],
                   ["Total pagado", formatARS(Number(mercadoPagoDetailTopup.gross_amount ?? 0))],

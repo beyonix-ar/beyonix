@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 
 import { MercadoPagoConfig, Preference } from "mercadopago"
 import { NextResponse } from "next/server"
@@ -17,6 +17,30 @@ interface PreferencePayload {
 function normalizeAmount(value: unknown) {
   const parsed = Number(String(value ?? "").replace(",", "."))
   return Number.isFinite(parsed) ? roundMoney(parsed) : 0
+}
+
+const MAX_ATTEMPTS_PER_HOUR = 8
+const MAX_ATTEMPTS_PER_DAY = 25
+const MAX_ATTEMPTS_PER_IP_PER_HOUR = 20
+const MAX_GLOBAL_ATTEMPTS_PER_HOUR = 150
+
+function getRequestFingerprint(request: Request) {
+  const forwardedIp =
+    request.headers.get("x-nf-client-connection-ip") ||
+    request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-real-ip") ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+
+  if (!forwardedIp) return null
+
+  const serverSalt =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.MERCADOPAGO_WEBHOOK_SECRET ||
+    "beyonix-customer-credit"
+
+  return createHash("sha256")
+    .update(`${forwardedIp}:${serverSalt}`)
+    .digest("hex")
 }
 
 export async function POST(request: Request) {
@@ -114,6 +138,98 @@ export async function POST(request: Request) {
   const topupId = randomUUID()
   const externalReference = `credit-topup:${topupId}`
   const admin = createAdminClient()
+  const requestFingerprint = getRequestFingerprint(request)
+
+  const now = Date.now()
+  const oneHourAgo = new Date(now - 60 * 60 * 1000).toISOString()
+  const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString()
+  const stalePendingCutoff = new Date(now - 60 * 60 * 1000).toISOString()
+  const oldCancelledCutoff = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  // Limpieza oportunista: evita acumular intentos sin pago sin depender de un cron.
+  await admin
+    .from("customer_credit_topups")
+    .update({
+      status: "cancelado",
+      mercadopago_status: "checkout_expired",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("payment_method", "mercadopago")
+    .eq("status", "pendiente_pago")
+    .lt("created_at", stalePendingCutoff)
+
+  await admin
+    .from("customer_credit_topups")
+    .delete()
+    .eq("payment_method", "mercadopago")
+    .eq("status", "cancelado")
+    .lt("updated_at", oldCancelledCutoff)
+
+  const ipHourlyQuery = requestFingerprint
+    ? admin
+        .from("customer_credit_topups")
+        .select("id", { count: "exact", head: true })
+        .eq("payment_method", "mercadopago")
+        .eq("request_fingerprint", requestFingerprint)
+        .gte("created_at", oneHourAgo)
+    : Promise.resolve({ count: 0 })
+
+  const [
+    { count: hourlyAttempts },
+    { count: dailyAttempts },
+    { count: ipHourlyAttempts },
+    { count: globalHourlyAttempts },
+  ] = await Promise.all([
+    admin
+      .from("customer_credit_topups")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("payment_method", "mercadopago")
+      .gte("created_at", oneHourAgo),
+    admin
+      .from("customer_credit_topups")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("payment_method", "mercadopago")
+      .gte("created_at", oneDayAgo),
+    ipHourlyQuery,
+    admin
+      .from("customer_credit_topups")
+      .select("id", { count: "exact", head: true })
+      .eq("payment_method", "mercadopago")
+      .gte("created_at", oneHourAgo),
+  ])
+
+  if (
+    Number(hourlyAttempts ?? 0) >= MAX_ATTEMPTS_PER_HOUR ||
+    Number(dailyAttempts ?? 0) >= MAX_ATTEMPTS_PER_DAY ||
+    Number(ipHourlyAttempts ?? 0) >= MAX_ATTEMPTS_PER_IP_PER_HOUR ||
+    Number(globalHourlyAttempts ?? 0) >= MAX_GLOBAL_ATTEMPTS_PER_HOUR
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Alcanzaste temporalmente el límite de intentos de pago. Esperá antes de volver a intentarlo.",
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": "3600" },
+      },
+    )
+  }
+
+  // Solo permitimos una preferencia activa por cliente. Si vuelve a empezar,
+  // la anterior queda cancelada; un webhook aprobado todavía puede acreditarla.
+  await admin
+    .from("customer_credit_topups")
+    .update({
+      status: "cancelado",
+      mercadopago_status: "replaced_by_new_checkout",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", user.id)
+    .eq("payment_method", "mercadopago")
+    .eq("status", "pendiente_pago")
 
   const { error: insertError } = await admin
     .from("customer_credit_topups")
@@ -129,10 +245,17 @@ export async function POST(request: Request) {
       surcharge_percent: surchargePercent,
       surcharge_amount: surchargeAmount,
       external_reference: externalReference,
+      request_fingerprint: requestFingerprint,
       mercadopago_status: "preference_created",
     })
 
   if (insertError) {
+    if (insertError.code === "23505") {
+      return NextResponse.json(
+        { error: "Ya tenés un intento de pago activo. Volvé a intentarlo en unos segundos." },
+        { status: 429, headers: { "Retry-After": "10" } },
+      )
+    }
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 
@@ -162,6 +285,9 @@ export async function POST(request: Request) {
           pending: `${siteUrl}/cuenta?tab=cargar-saldo&mp=pending&topup=${topupId}`,
         },
         auto_return: "approved",
+        expires: true,
+        expiration_date_from: new Date(now).toISOString(),
+        expiration_date_to: new Date(now + 30 * 60 * 1000).toISOString(),
         statement_descriptor: "BEYONIX",
         notification_url: `${siteUrl}/api/mercadopago/webhook?source_news=webhooks`,
         metadata: {
