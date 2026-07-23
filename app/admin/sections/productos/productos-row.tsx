@@ -5,8 +5,10 @@ import {
   useEffect,
   useState,
 } from "react"
+import { createPortal } from "react-dom"
 
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Eye,
@@ -60,7 +62,8 @@ const stockStatus = (stock: number, settings: StockSettings) => {
     return {
       label: "Sin stock",
       className:
-        "border-red-500/20 bg-red-500/10 text-red-400",
+        "border-red-400/35 bg-red-500/14 text-red-300 shadow-[0_0_16px_rgba(248,113,113,0.08)]",
+      dotClassName: "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]",
     }
   }
 
@@ -68,7 +71,8 @@ const stockStatus = (stock: number, settings: StockSettings) => {
     return {
       label: "Stock crítico",
       className:
-        "border-red-500/20 bg-red-500/10 text-red-400",
+        "border-red-400/35 bg-red-500/14 text-red-300 shadow-[0_0_16px_rgba(248,113,113,0.08)]",
+      dotClassName: "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]",
     }
   }
 
@@ -76,14 +80,16 @@ const stockStatus = (stock: number, settings: StockSettings) => {
     return {
       label: "Stock bajo",
       className:
-        "border-amber-500/20 bg-amber-500/10 text-amber-400",
+        "border-amber-400/35 bg-amber-500/14 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.07)]",
+      dotClassName: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.75)]",
     }
   }
 
   return {
     label: "Disponible",
     className:
-      "border-green-500/20 bg-green-500/10 text-green-400",
+      "border-emerald-400/30 bg-emerald-500/12 text-emerald-300",
+    dotClassName: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]",
   }
 }
 
@@ -124,20 +130,6 @@ const normalizeVariantOrder = (
       orden: index + 1,
     })
   )
-
-const isDarkVariantColor = (color: string) => {
-  const hex = color.trim().replace("#", "")
-
-  if (!/^[0-9a-f]{6}$/i.test(hex)) return false
-
-  const red = parseInt(hex.slice(0, 2), 16)
-  const green = parseInt(hex.slice(2, 4), 16)
-  const blue = parseInt(hex.slice(4, 6), 16)
-  const luminance =
-    (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
-
-  return luminance < 0.12
-}
 
 const getPrincipalVariantImage = (
   variantes: SupabaseProductoVariante[]
@@ -545,20 +537,20 @@ export function ProductosRow({
 
             <div className="mt-1 flex flex-wrap items-center gap-2">
               {producto.destacado && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-1.5 py-px text-8px font-semibold text-beyonix-cyan">
-                  <Star className="size-2.5 fill-beyonix-cyan/70 text-beyonix-cyan" />
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2 py-0.5 text-xs font-semibold text-beyonix-cyan">
+                  <Star className="size-3 fill-beyonix-cyan/70 text-beyonix-cyan" />
                   Destacado
                 </span>
               )}
 
               {!!variantes.length && (
-                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-10px font-semibold text-white/60">
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-semibold text-white/65">
                   {variantes.length} variantes
                 </span>
               )}
 
               <span
-                className={`text-10px font-semibold ${stockColor(
+                className={`text-xs font-semibold ${stockColor(
                   stockTotal,
                   stockSettings,
                 )}`}
@@ -569,12 +561,12 @@ export function ProductosRow({
           </div>
         </div>
 
-        <span className="truncate text-base font-bold text-white">
+        <span className="justify-self-stretch truncate text-center text-base font-bold text-white">
           {producto.categorias?.nombre ||
             "—"}
         </span>
 
-        <div>
+        <div className="justify-self-stretch text-center">
           <p className="text-base font-bold tabular-nums text-white">
             $
             {producto.precio.toLocaleString(
@@ -583,7 +575,7 @@ export function ProductosRow({
           </p>
 
           {!!producto.precio_anterior && (
-            <p className="text-10px tabular-nums text-white/40 line-through">
+            <p className="text-xs tabular-nums text-white/45 line-through">
               $
               {producto.precio_anterior.toLocaleString(
                 "es-AR"
@@ -592,14 +584,14 @@ export function ProductosRow({
           )}
 
           {!!producto.descuento && (
-            <p className="mt-0.5 text-10px font-semibold text-green-400">
+            <p className="mt-0.5 text-xs font-semibold text-green-400">
               -{producto.descuento}% OFF
             </p>
           )}
         </div>
 
         <span
-          className={`w-fit justify-self-center rounded-full border px-2.5 py-1 text-11px font-semibold ${
+          className={`w-fit justify-self-center rounded-full border px-3 py-1.5 text-xs font-semibold ${
             producto.cuotas_sin_interes
               ? "border-beyonix-blue-light/20 bg-beyonix-blue/18 text-beyonix-cyan"
               : "border-white/10 bg-white/5 text-white/45"
@@ -618,7 +610,7 @@ export function ProductosRow({
           onClick={() =>
             onToggleActivo(producto)
           }
-          className={`inline-flex w-fit justify-self-center items-center gap-1.5 rounded-full border px-2.5 py-1 text-11px font-semibold transition-colors cursor-pointer ${
+          className={`inline-flex w-fit justify-self-center items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
             producto.activo
               ? "border-green-500/20 bg-green-500/10 text-green-400"
               : "border-white/10 bg-white/5 text-white/45"
@@ -683,11 +675,6 @@ export function ProductosRow({
                 stockStatus(stock, stockSettings)
               const isPrincipal =
                 index === 0
-              const darkColor =
-                isDarkVariantColor(
-                  variante.color_hex
-                )
-
               return (
                 <div
                   key={variante.id}
@@ -727,19 +714,23 @@ export function ProductosRow({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-admin-variant-row items-center gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3">
+                  <div
+                    className={`grid items-center gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3 ${
+                      editingVariantId === variante.id
+                        ? "grid-cols-[minmax(0,1fr)_130px_170px_120px]"
+                        : "grid-cols-admin-variant-row"
+                    }`}
+                  >
                     <div className="flex items-center gap-3">
-                    <span
-                      className={`size-5 rounded-full border ${
-                        darkColor
-                          ? "border-white/50 shadow-[0_0_0_2px_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(255,255,255,0.18)]"
-                          : "border-white/20"
-                      }`}
-                      style={{
-                        backgroundColor:
-                          variante.color_hex,
-                      }}
-                    />
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/8 p-1">
+                      <span
+                        className="size-full rounded-full"
+                        style={{
+                          backgroundColor:
+                            variante.color_hex,
+                        }}
+                      />
+                    </span>
 
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -764,31 +755,41 @@ export function ProductosRow({
                   variante.id ? (
                     <>
                       <input
-                        min="0"
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         value={editStock}
+                        placeholder="Stock"
                         aria-label={`Editar stock de ${variante.nombre}`}
                         onChange={(event) =>
                           setEditStock(
-                            event.target.value
+                            event.target.value.replace(/\D/g, "")
                           )
                         }
-                        className="h-9 rounded-xl border border-white/10 bg-black px-3 text-sm text-white outline-none focus:border-blue-400"
+                        className="h-10 w-full min-w-0 max-w-full rounded-xl border border-beyonix-blue-light/16 bg-[#07111b] px-3 text-center text-sm font-black text-white outline-none transition-colors placeholder:text-white/35 hover:border-beyonix-sky/35 focus:border-beyonix-sky/55"
                       />
 
-                      <input
-                        type="color"
-                        value={editColor}
-                        aria-label={`Editar color de ${variante.nombre}`}
-                        onChange={(event) =>
-                          setEditColor(
-                            event.target.value
-                          )
-                        }
-                        className="h-9 w-14 cursor-pointer rounded-xl border border-white/10 bg-black p-1"
-                      />
+                      <label className="relative flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-beyonix-blue-light/16 bg-[#07111b] px-3 transition-colors hover:border-beyonix-sky/40 hover:bg-beyonix-blue/12 focus-within:border-beyonix-sky/55">
+                        <span
+                          className="size-5 shrink-0 rounded-md border border-white/28 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]"
+                          style={{ backgroundColor: editColor }}
+                        />
+                        <span className="text-xs font-bold uppercase text-white/68">
+                          {editColor}
+                        </span>
+                        <input
+                          type="color"
+                          value={editColor}
+                          aria-label={`Editar color de ${variante.nombre}`}
+                          onChange={(event) =>
+                            setEditColor(
+                              event.target.value
+                            )
+                          }
+                          className="absolute inset-0 size-full cursor-pointer opacity-0"
+                        />
+                      </label>
 
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end">
                         <button
                           type="button"
                           aria-label={`Guardar variante ${variante.nombre}`}
@@ -797,23 +798,12 @@ export function ProductosRow({
                               variante
                             )
                           }
-                          className="h-9 min-w-90px rounded-xl bg-white px-4 text-xs font-semibold text-black transition-colors hover:bg-white/90 cursor-pointer"
+                          className="inline-flex h-10 min-w-100px cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/38 bg-beyonix-blue/28 px-4 text-xs font-black text-white transition-colors hover:border-beyonix-sky/65 hover:bg-beyonix-blue/42"
                         >
+                          <Check className="size-4 text-emerald-300" />
                           Guardar
                         </button>
 
-                        <button
-                          type="button"
-                          aria-label="Cancelar edición"
-                          onClick={() =>
-                            setEditingVariantId(
-                              null
-                            )
-                          }
-                          className="h-9 min-w-90px rounded-xl border border-white/10 px-4 text-xs font-semibold text-white/70 transition-colors hover:text-white cursor-pointer"
-                        >
-                          Cancelar
-                        </button>
                       </div>
                     </>
                   ) : (
@@ -828,8 +818,9 @@ export function ProductosRow({
                       </span>
 
                       <span
-                        className={`w-fit rounded-full border px-2.5 py-1 text-10px font-semibold ${status.className}`}
+                        className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-3 py-1.5 text-center text-xs font-black ${status.className}`}
                       >
+                        <span className={`size-1.5 rounded-full ${status.dotClassName}`} />
                         {status.label}
                       </span>
 
@@ -890,28 +881,32 @@ export function ProductosRow({
         </div>
       )}
 
-      {viewingVariant && (
-        <VariantModal
-          producto={producto}
-          variante={viewingVariant}
-          stockSettings={stockSettings}
-          onClose={() =>
-            setViewingVariant(null)
-          }
-        />
-      )}
+      {viewingVariant &&
+        createPortal(
+          <VariantModal
+            producto={producto}
+            variante={viewingVariant}
+            stockSettings={stockSettings}
+            onClose={() =>
+              setViewingVariant(null)
+            }
+          />,
+          document.body,
+        )}
 
-      {previewOpen && (
-        <AdminProductPreviewModal
-          product={{
-            ...producto,
-            imagen_principal:
-              localPrincipalImage,
-            producto_variantes: variantes,
-          }}
-          onClose={() => setPreviewOpen(false)}
-        />
-      )}
+      {previewOpen &&
+        createPortal(
+          <AdminProductPreviewModal
+            product={{
+              ...producto,
+              imagen_principal:
+                localPrincipalImage,
+              producto_variantes: variantes,
+            }}
+            onClose={() => setPreviewOpen(false)}
+          />,
+          document.body,
+        )}
     </div>
   )
 }
@@ -929,6 +924,15 @@ function VariantModal({
   stockSettings,
   onClose,
 }: VariantModalProps) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
+
   const stock =
     variante.stock ?? 0
 
@@ -959,13 +963,15 @@ function VariantModal({
             </h2>
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span
-                className="size-6 rounded-full border border-white/20"
-                style={{
-                  backgroundColor:
-                    variante.color_hex,
-                }}
-              />
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/8 p-1">
+                <span
+                  className="size-full rounded-full"
+                  style={{
+                    backgroundColor:
+                      variante.color_hex,
+                  }}
+                />
+              </span>
 
               <span className="text-sm font-semibold text-white/70">
                 {variante.color_hex}

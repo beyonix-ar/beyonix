@@ -77,6 +77,127 @@ function isReadyToPrepare(order: SupabasePedido) {
   )
 }
 
+interface DashboardFinancialSummary {
+  webGrossSales: number
+  marketplaceGrossSales: number
+  grossSales: number
+  completedRefunds: number
+  pendingRefunds: number
+  netSales: number
+  externalCollected: number
+  customerCreditUsed: number
+  shippingCharged: number
+  shippingCost: number
+  shippingBalance: number
+  transferDiscounts: number
+  marketplaceFees: number
+  marketplaceShipping: number
+  marketplaceNet: number
+  inventoryPurchases: number
+  costOfGoodsSold: number
+  operatingExpensesPaid: number
+  operatingExpensesPending: number
+  knownOperatingResult: number
+  trueProfit: number | null
+  trueMarginPercent: number | null
+  costCoveragePercent: number
+  invoicedAmount: number
+  paidOrders: number
+  invoicedOrders: number
+  ordersWithPaymentMismatch: number
+  ordersMissingShippingCost: number
+  ordersWithoutInvoice: number
+  invoiceErrors: number
+  creditNotesPending: number
+  negativeStockItems: number
+  ordersScanned: number
+  marketplaceRowsScanned: number
+  complete: boolean
+  generatedAt: string
+  warnings: string[]
+}
+
+interface ProductCostRow {
+  product_id: number
+  variant_id: number | null
+  purchase_date: string
+  quantity: number
+  total_cost: number
+}
+
+interface ExpenseRow {
+  expense_date: string
+  amount: number
+  status: "pendiente" | "pagado"
+}
+
+interface CostLedgerPoint {
+  date: number
+  quantity: number
+  cost: number
+}
+
+function buildCostLedgers(rows: ProductCostRow[]) {
+  const grouped = new Map<string, ProductCostRow[]>()
+  rows.forEach((row) => {
+    const key = row.variant_id ? `v:${row.variant_id}` : `p:${row.product_id}`
+    const values = grouped.get(key) ?? []
+    values.push(row)
+    grouped.set(key, values)
+  })
+
+  const ledgers = new Map<string, CostLedgerPoint[]>()
+  grouped.forEach((values, key) => {
+    let quantity = 0
+    let cost = 0
+    const points = values
+      .sort((a, b) => a.purchase_date.localeCompare(b.purchase_date))
+      .map((row) => {
+        quantity += Number(row.quantity ?? 0)
+        cost += Number(row.total_cost ?? 0)
+        return {
+          date: new Date(`${row.purchase_date}T00:00:00-03:00`).getTime(),
+          quantity,
+          cost,
+        }
+      })
+    ledgers.set(key, points)
+  })
+  return ledgers
+}
+
+function getUnitCost(
+  ledgers: Map<string, CostLedgerPoint[]>,
+  productId: number,
+  variantId: number | null | undefined,
+  saleDate: string,
+) {
+  const timestamp = new Date(saleDate).getTime()
+  const keys = variantId ? [`v:${variantId}`, `p:${productId}`] : [`p:${productId}`]
+
+  for (const key of keys) {
+    const points = ledgers.get(key)
+    if (!points?.length) continue
+
+    let low = 0
+    let high = points.length - 1
+    let match: CostLedgerPoint | null = null
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2)
+      if (points[middle].date <= timestamp) {
+        match = points[middle]
+        low = middle + 1
+      } else {
+        high = middle - 1
+      }
+    }
+
+    if (match?.quantity) return match.cost / match.quantity
+  }
+
+  return null
+}
+
 function getPaymentMethodLabel(order: SupabasePedido | undefined) {
   if (!order) return "No informado"
   if (order.payment_method_id === "mercadopago" || order.payment_id) {
@@ -261,6 +382,42 @@ async function safeDashboardQuery(
   }
 }
 
+const DASHBOARD_PAGE_SIZE = 1000
+const DASHBOARD_MAX_PAGES = 100
+
+async function fetchAllDashboardRows<T>(
+  name: string,
+  getPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<SafeDashboardQueryResult>,
+) {
+  const rows: T[] = []
+  let complete = true
+
+  for (let page = 0; page < DASHBOARD_MAX_PAGES; page += 1) {
+    const from = page * DASHBOARD_PAGE_SIZE
+    const result = await safeDashboardQuery(
+      `${name}_pagina_${page + 1}`,
+      getPage(from, from + DASHBOARD_PAGE_SIZE - 1),
+      { ...EMPTY_ROWS_RESULT, statusText: "FALLBACK" },
+    )
+
+    if (result.statusText === "FALLBACK") {
+      complete = false
+      break
+    }
+
+    const pageRows = (result.data ?? []) as T[]
+    rows.push(...pageRows)
+
+    if (pageRows.length < DASHBOARD_PAGE_SIZE) break
+    if (page === DASHBOARD_MAX_PAGES - 1) complete = false
+  }
+
+  return { rows, complete }
+}
+
 function getCount(result: { count: number | null } | null | undefined) {
   return result?.count ?? 0
 }
@@ -328,6 +485,36 @@ const ORDER_ITEM_SELECT = `
   producto_variantes(nombre)
 `
 
+const FINANCIAL_ORDER_SELECT = `
+  id,
+  estado,
+  total,
+  original_total,
+  credit_balance_used,
+  external_amount_due,
+  payment_status,
+  payment_method_id,
+  paid_at,
+  financial_status,
+  payment_confirmed_amount,
+  payment_confirmed_at,
+  refund_amount,
+  refund_pending_at,
+  refunded_at,
+  shipping_provider,
+  envio_proveedor,
+  shipping_cost_real,
+  shipping_cost_charged,
+  andreani_costo,
+  transfer_discount_amount,
+  invoice_status,
+  invoice_created_at,
+  credit_note_required,
+  credit_note_status,
+  credit_note_amount,
+  created_at
+`
+
 function getAndreaniStatus(): SystemStatusItem {
   const config = getAndreaniConfig()
   if (!config.enabled) {
@@ -388,6 +575,7 @@ export async function GET(request: Request) {
     productsCountResult,
     activeProductsCountResult,
     inactiveProductsCountResult,
+    clientsCountResult,
     totalOrdersCountResult,
     recentOrdersResult,
     pendingOrdersCountResult,
@@ -424,6 +612,14 @@ export async function GET(request: Request) {
         .select("id", { count: "exact", head: true })
         .eq("activo", false),
       EMPTY_COUNT_RESULT
+    ),
+    safeDashboardQuery(
+      "clientes_total_count",
+      auth.admin
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("rol", "cliente"),
+      EMPTY_COUNT_RESULT,
     ),
     safeDashboardQuery(
       "ordenes_total_count",
@@ -567,31 +763,202 @@ export async function GET(request: Request) {
     ),
   ])
 
+  const [
+    financialOrdersScan,
+    orderItemsScan,
+    marketplaceScan,
+    negativeProductsResult,
+    negativeVariantsResult,
+    pendingDispatchCountResult,
+    pendingInvoiceCountResult,
+    pendingRefundCountResult,
+    invoiceErrorCountResult,
+    creditNotePendingCountResult,
+    productCostsScan,
+    expensesScan,
+  ] = await Promise.all([
+    sensitive
+      ? fetchAllDashboardRows<SupabasePedido>(
+          "ordenes_financieras",
+          (from, to) =>
+            auth.admin
+              .from("ordenes")
+              .select(FINANCIAL_ORDER_SELECT)
+              .order("id", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({ rows: [] as SupabasePedido[], complete: true }),
+    sensitive
+      ? fetchAllDashboardRows<SupabasePedidoItem>(
+          "items_comerciales",
+          (from, to) =>
+            auth.admin
+              .from("orden_items")
+              .select(ORDER_ITEM_SELECT)
+              .order("id", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({ rows: [] as SupabasePedidoItem[], complete: true }),
+    sensitive
+      ? fetchAllDashboardRows<Record<string, unknown>>(
+          "ventas_mercadolibre",
+          (from, to) =>
+            auth.admin
+              .from("mercadolibre_sales")
+              .select("id, sale_date, imported_at, order_id, product_name, sku, quantity, gross_amount, fee_amount, shipping_amount, net_amount")
+              .order("id", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({
+          rows: (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>,
+          complete: true,
+        }),
+    safeDashboardQuery(
+      "productos_stock_negativo",
+      auth.admin
+        .from("productos")
+        .select("id", { count: "exact", head: true })
+        .lt("stock", 0),
+      EMPTY_COUNT_RESULT,
+    ),
+    safeDashboardQuery(
+      "variantes_stock_negativo",
+      auth.admin
+        .from("producto_variantes")
+        .select("id", { count: "exact", head: true })
+        .lt("stock", 0),
+      EMPTY_COUNT_RESULT,
+    ),
+    safeDashboardQuery(
+      "pedidos_a_preparar_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .or(paidOrderFilter)
+        .not("estado", "in", "(enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado,cancelado)"),
+      EMPTY_COUNT_RESULT,
+    ),
+    safeDashboardQuery(
+      "facturas_pendientes_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .or(paidOrderFilter)
+        .or("invoice_status.is.null,invoice_status.neq.authorized"),
+      EMPTY_COUNT_RESULT,
+    ),
+    safeDashboardQuery(
+      "reintegros_pendientes_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("financial_status", "refund_pending"),
+      EMPTY_COUNT_RESULT,
+    ),
+    safeDashboardQuery(
+      "facturas_error_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("invoice_status", "error"),
+      EMPTY_COUNT_RESULT,
+    ),
+    safeDashboardQuery(
+      "notas_credito_pendientes_count",
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("credit_note_required", true)
+        .or("credit_note_status.is.null,credit_note_status.neq.authorized"),
+      EMPTY_COUNT_RESULT,
+    ),
+    sensitive
+      ? fetchAllDashboardRows<ProductCostRow>(
+          "costos_producto",
+          (from, to) =>
+            auth.admin
+              .from("product_cost_entries")
+              .select("product_id, variant_id, purchase_date, quantity, total_cost")
+              .order("purchase_date", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({ rows: [] as ProductCostRow[], complete: true }),
+    sensitive
+      ? fetchAllDashboardRows<ExpenseRow>(
+          "gastos_negocio",
+          (from, to) =>
+            auth.admin
+              .from("business_expenses")
+              .select("expense_date, amount, status")
+              .order("expense_date", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({ rows: [] as ExpenseRow[], complete: true }),
+  ])
+
   const recentOrders = (recentOrdersResult.data ?? []) as SupabasePedido[]
   const pendingDispatchOrders = (pendingDispatchResult.data ?? []) as SupabasePedido[]
   const pendingInvoiceOrders = (pendingInvoiceResult.data ?? []) as SupabasePedido[]
   const products = (searchProductsResult.data ?? []) as unknown as SupabaseProducto[]
-  const mlRows = (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>
-
-  const paidCandidateOrders = [
-    ...recentOrders.filter(isPaidOrder),
-    ...pendingDispatchOrders,
-    ...pendingInvoiceOrders,
-  ]
-  const orderIdsForItems = [...new Set(paidCandidateOrders.map((order) => order.id))]
-  const itemsResult = orderIdsForItems.length
-    ? await safeDashboardQuery(
-        "orden_items_recientes",
-        auth.admin
-          .from("orden_items")
-          .select(ORDER_ITEM_SELECT)
-          .in("orden_id", orderIdsForItems)
-          .limit(300),
-        EMPTY_ROWS_RESULT
-      )
-    : EMPTY_ROWS_RESULT
-  const items = (itemsResult.data ?? []) as unknown as SupabasePedidoItem[]
+  const mlRows = marketplaceScan.rows
+  const financialOrders = financialOrdersScan.rows
+  const paidCandidateOrders = sensitive
+    ? financialOrders.filter(isPaidOrder)
+    : [
+        ...recentOrders.filter(isPaidOrder),
+        ...pendingDispatchOrders,
+        ...pendingInvoiceOrders,
+      ]
+  const paidOrderIds = new Set(paidCandidateOrders.map((order) => order.id))
+  const paidOrdersById = new Map(
+    paidCandidateOrders.map((order) => [order.id, order] as const),
+  )
+  const items = orderItemsScan.rows.filter((item) => paidOrderIds.has(item.orden_id))
   const itemsByOrderId = groupItemsByOrder(items)
+  const webOrdersWithoutItems = paidCandidateOrders.filter(
+    (order) => !itemsByOrderId.has(order.id),
+  )
+  const costLedgers = buildCostLedgers(productCostsScan.rows)
+  const itemUnitCosts = new Map<number, number | null>()
+  let coveredUnits = 0
+  let webUnits = 0
+  let costOfGoodsSold = 0
+  items.forEach((item) => {
+    const quantity = Math.max(Number(item.cantidad ?? 0), 0)
+    const order = paidOrdersById.get(item.orden_id)
+    const unitCost = getUnitCost(
+      costLedgers,
+      item.producto_id,
+      item.variante_id,
+      order?.paid_at ?? order?.created_at ?? new Date().toISOString(),
+    )
+    webUnits += quantity
+    if (unitCost != null) {
+      coveredUnits += quantity
+      costOfGoodsSold += unitCost * quantity
+    }
+    itemUnitCosts.set(item.id, unitCost)
+  })
+  const marketplaceUnits = mlRows.reduce(
+    (total, row) => total + Math.max(Number(row.quantity ?? 0), 0),
+    0,
+  )
+  const totalCostableUnits = webUnits + marketplaceUnits
+  const costCoveragePercent = totalCostableUnits > 0
+    ? (coveredUnits / totalCostableUnits) * 100
+    : 100
+  const inventoryPurchases = productCostsScan.rows.reduce(
+    (total, row) => total + Number(row.total_cost ?? 0),
+    0,
+  )
+  const operatingExpensesPaid = expensesScan.rows.reduce(
+    (total, row) => total + (row.status === "pagado" ? Number(row.amount ?? 0) : 0),
+    0,
+  )
+  const operatingExpensesPending = expensesScan.rows.reduce(
+    (total, row) => total + (row.status === "pendiente" ? Number(row.amount ?? 0) : 0),
+    0,
+  )
   const lowStockProducts = ((lowStockProductsResult.data ?? []) as Array<{
         id: number
         nombre: string
@@ -620,21 +987,226 @@ export async function GET(request: Request) {
       }))
   const lowStock = [...lowStockProducts, ...lowStockVariants]
   const sortedLowStock = [...lowStock].sort((a, b) => a.stock - b.stock)
+  const negativeStockItems =
+    getCount(negativeProductsResult) + getCount(negativeVariantsResult)
+  const webGrossSales = paidCandidateOrders.reduce(
+    (total, order) =>
+      total + Number(order.original_total ?? order.total ?? 0),
+    0,
+  )
+  const completedRefunds = paidCandidateOrders.reduce(
+    (total, order) =>
+      total +
+      (order.financial_status === "refunded" || order.refunded_at
+        ? Number(order.refund_amount ?? order.total ?? 0)
+        : 0),
+    0,
+  )
+  const pendingRefundOrders = paidCandidateOrders.filter(
+    (order) => order.financial_status === "refund_pending",
+  )
+  const pendingRefunds = pendingRefundOrders.reduce(
+    (total, order) => total + Number(order.refund_amount ?? order.total ?? 0),
+    0,
+  )
+  const externalCollected = paidCandidateOrders.reduce(
+    (total, order) =>
+      total +
+      Number(
+        order.external_amount_due ??
+          order.payment_confirmed_amount ??
+          Math.max(
+            Number(order.total ?? 0) - Number(order.credit_balance_used ?? 0),
+            0,
+          ),
+      ),
+    0,
+  )
+  const customerCreditUsed = paidCandidateOrders.reduce(
+    (total, order) => total + Number(order.credit_balance_used ?? 0),
+    0,
+  )
+  const shippingCharged = paidCandidateOrders.reduce(
+    (total, order) => total + Number(order.shipping_cost_charged ?? 0),
+    0,
+  )
+  const shippingCost = paidCandidateOrders.reduce(
+    (total, order) =>
+      total + Number(order.shipping_cost_real ?? order.andreani_costo ?? 0),
+    0,
+  )
+  const transferDiscounts = paidCandidateOrders.reduce(
+    (total, order) => total + Number(order.transfer_discount_amount ?? 0),
+    0,
+  )
+  const marketplaceGrossSales = mlRows.reduce(
+    (total, row) => total + Number(row.gross_amount ?? 0),
+    0,
+  )
+  const marketplaceFees = mlRows.reduce(
+    (total, row) => total + Number(row.fee_amount ?? 0),
+    0,
+  )
+  const marketplaceShipping = mlRows.reduce(
+    (total, row) => total + Number(row.shipping_amount ?? 0),
+    0,
+  )
+  const marketplaceNet = mlRows.reduce((total, row) => {
+    const gross = Number(row.gross_amount ?? 0)
+    const fee = Number(row.fee_amount ?? 0)
+    const shipping = Number(row.shipping_amount ?? 0)
+    const storedNet = row.net_amount
+
+    return total + Number(storedNet ?? gross - fee - shipping)
+  }, 0)
+  const invoicedOrders = paidCandidateOrders.filter(
+    (order) => order.invoice_status === "authorized",
+  )
+  const ordersWithPaymentMismatch = paidCandidateOrders.filter((order) => {
+    if (order.payment_confirmed_amount == null) return false
+
+    const expected = Number(order.external_amount_due ?? order.total ?? 0)
+    return Math.abs(Number(order.payment_confirmed_amount) - expected) > 0.01
+  }).length
+  const ordersMissingShippingCost = paidCandidateOrders.filter(
+    (order) =>
+      Boolean(order.shipping_provider || order.envio_proveedor) &&
+      order.shipping_cost_real == null &&
+      order.andreani_costo == null,
+  ).length
+  const invoiceErrors = paidCandidateOrders.filter(
+    (order) => order.invoice_status === "error",
+  ).length
+  const creditNotesPending = paidCandidateOrders.filter(
+    (order) =>
+      order.credit_note_required && order.credit_note_status !== "authorized",
+  ).length
+  const scanComplete =
+    financialOrdersScan.complete &&
+    orderItemsScan.complete &&
+    marketplaceScan.complete &&
+    productCostsScan.complete &&
+    expensesScan.complete
+  const knownOperatingResult =
+    webGrossSales - completedRefunds - shippingCost + marketplaceNet
+  const hasFullCostCoverage =
+    scanComplete &&
+    webOrdersWithoutItems.length === 0 &&
+    costCoveragePercent >= 99.999
+  const trueProfit = hasFullCostCoverage
+    ? knownOperatingResult - costOfGoodsSold - operatingExpensesPaid
+    : null
+  const financialWarnings = [
+    ...(!scanComplete
+      ? ["La lectura histórica o las tablas de costos están incompletas. Aplicá la migración pendiente y revisá el servidor."]
+      : []),
+    ...(costCoveragePercent < 99.999
+      ? [`Los costos cubren el ${costCoveragePercent.toFixed(1)}% de las unidades vendidas. Completá las compras faltantes para obtener rentabilidad exacta.`]
+      : []),
+    ...(webOrdersWithoutItems.length > 0
+      ? [`${webOrdersWithoutItems.length} pedidos pagos no tienen detalle de artículos y no pueden costearse.`]
+      : []),
+    ...(expensesScan.rows.length === 0
+      ? ["No hay gastos generales registrados; el resultado actual considera gastos operativos por $0."]
+      : []),
+    ...(operatingExpensesPending > 0
+      ? [`Hay ${operatingExpensesPending.toLocaleString("es-AR", { style: "currency", currency: "ARS" })} en gastos pendientes de pago.`]
+      : []),
+    ...(ordersMissingShippingCost > 0
+      ? [`${ordersMissingShippingCost} pedidos pagos no tienen costo logístico real registrado.`]
+      : []),
+    ...(ordersWithPaymentMismatch > 0
+      ? [`${ordersWithPaymentMismatch} cobros confirmados no coinciden con el importe externo esperado.`]
+      : []),
+    ...(invoiceErrors > 0
+      ? [`${invoiceErrors} facturas tienen error y requieren revisión.`]
+      : []),
+    ...(creditNotesPending > 0
+      ? [`${creditNotesPending} notas de crédito requeridas todavía no están autorizadas.`]
+      : []),
+    ...(negativeStockItems > 0
+      ? [`${negativeStockItems} productos o variantes tienen stock negativo.`]
+      : []),
+  ]
+  const financialSummary: DashboardFinancialSummary = {
+    webGrossSales,
+    marketplaceGrossSales,
+    grossSales: webGrossSales + marketplaceGrossSales,
+    completedRefunds,
+    pendingRefunds,
+    netSales: webGrossSales + marketplaceGrossSales - completedRefunds,
+    externalCollected,
+    customerCreditUsed,
+    shippingCharged,
+    shippingCost,
+    shippingBalance: shippingCharged - shippingCost,
+    transferDiscounts,
+    marketplaceFees,
+    marketplaceShipping,
+    marketplaceNet,
+    inventoryPurchases,
+    costOfGoodsSold,
+    operatingExpensesPaid,
+    operatingExpensesPending,
+    knownOperatingResult,
+    trueProfit,
+    trueMarginPercent:
+      trueProfit != null && webGrossSales + marketplaceGrossSales > 0
+        ? (trueProfit / (webGrossSales + marketplaceGrossSales)) * 100
+        : null,
+    costCoveragePercent,
+    invoicedAmount: invoicedOrders.reduce(
+      (total, order) => total + Number(order.original_total ?? order.total ?? 0),
+      0,
+    ),
+    paidOrders: paidCandidateOrders.length,
+    invoicedOrders: invoicedOrders.length,
+    ordersWithPaymentMismatch,
+    ordersMissingShippingCost,
+    ordersWithoutInvoice: paidCandidateOrders.length - invoicedOrders.length,
+    invoiceErrors,
+    creditNotesPending,
+    negativeStockItems,
+    ordersScanned: financialOrders.length,
+    marketplaceRowsScanned: mlRows.length,
+    complete: scanComplete,
+    generatedAt: new Date().toISOString(),
+    warnings: financialWarnings,
+  }
+  const webItemTotalsByOrder = items.reduce((totals, item) => {
+    totals.set(
+      item.orden_id,
+      (totals.get(item.orden_id) ?? 0) +
+        Number(item.cantidad ?? 0) * Number(item.precio ?? 0),
+    )
+    return totals
+  }, new Map<number, number>())
   const commercialSales: CommercialSale[] = sensitive
     ? [
         ...items
           .map((item) => {
-            const order = paidCandidateOrders.find((row) => row.id === item.orden_id)
+            const order = paidOrdersById.get(item.orden_id)
             const product = item.productos as
               | (SupabaseProducto & { categorias?: { nombre?: string | null } })
               | null
               | undefined
             const quantity = Number(item.cantidad ?? 0)
-            const grossAmount = quantity * Number(item.precio ?? 0)
+            const rawItemAmount = quantity * Number(item.precio ?? 0)
+            const rawOrderAmount = webItemTotalsByOrder.get(item.orden_id) ?? 0
+            const orderGrossAmount = Number(
+              order?.original_total ?? order?.total ?? rawOrderAmount,
+            )
+            const grossAmount =
+              rawOrderAmount > 0
+                ? (rawItemAmount / rawOrderAmount) * orderGrossAmount
+                : rawItemAmount
+            const unitCost = itemUnitCosts.get(item.id) ?? null
+            const costAmount = unitCost == null ? null : unitCost * quantity
+            const profitAmount = costAmount == null ? null : grossAmount - costAmount
 
             return {
               id: `web-${item.id}`,
-              date: order?.created_at ?? new Date().toISOString(),
+              date: order?.paid_at ?? order?.created_at ?? new Date().toISOString(),
               channel: "BEYONIX Web" as const,
               paymentMethod: getPaymentMethodLabel(order),
               productName: product?.nombre ?? `Producto #${item.producto_id}`,
@@ -642,12 +1214,30 @@ export async function GET(request: Request) {
               sku: null,
               quantity,
               grossAmount,
-              costAmount: null,
-              profitAmount: null,
-              marginPercent: null,
+              costAmount,
+              profitAmount,
+              marginPercent:
+                profitAmount != null && grossAmount > 0
+                  ? (profitAmount / grossAmount) * 100
+                  : null,
               orderId: order ? String(order.id) : null,
             }
           }),
+        ...webOrdersWithoutItems.map((order) => ({
+          id: `web-order-${order.id}`,
+          date: order.paid_at ?? order.created_at,
+          channel: "BEYONIX Web" as const,
+          paymentMethod: getPaymentMethodLabel(order),
+          productName: `Pedido #${order.id} sin detalle`,
+          categoryName: null,
+          sku: null,
+          quantity: 0,
+          grossAmount: Number(order.original_total ?? order.total ?? 0),
+          costAmount: null,
+          profitAmount: null,
+          marginPercent: null,
+          orderId: String(order.id),
+        })),
         ...mlRows.map((row) => {
           const quantity = Number(row.quantity ?? 0)
           const grossAmount = Number(row.gross_amount ?? 0)
@@ -655,8 +1245,10 @@ export async function GET(request: Request) {
           const feeAmount = Number(row.fee_amount ?? 0)
           const shippingAmount = Number(row.shipping_amount ?? 0)
           const profitAmount =
-            netAmount || feeAmount || shippingAmount
-              ? netAmount || grossAmount - feeAmount - shippingAmount
+            row.net_amount != null || feeAmount || shippingAmount
+              ? row.net_amount != null
+                ? netAmount
+                : grossAmount - feeAmount - shippingAmount
               : null
 
           return {
@@ -816,12 +1408,12 @@ export async function GET(request: Request) {
       productosActivos: getCount(activeProductsCountResult),
       productosInactivos: getCount(inactiveProductsCountResult),
       productosBajoStock: lowStock.length,
-      totalClientes: null,
+      totalClientes: getCount(clientsCountResult),
       totalOrdenes: getCount(totalOrdersCountResult),
       pedidosPendientes: getCount(pendingOrdersCountResult),
       esperandoComprobante: getCount(waitingProofCountResult),
       pagosEnRevision: getCount(paymentReviewCountResult),
-      enviosPendientes: pendingDispatchOrders.length,
+      enviosPendientes: getCount(pendingDispatchCountResult),
       pedidosSinTracking: pendingDispatchOrders.filter(
         (order) =>
           !order.tracking_number &&
@@ -829,10 +1421,15 @@ export async function GET(request: Request) {
           !order.andreani_tracking &&
           !order.andreani_etiqueta_url,
       ).length,
-      facturasPendientes: pendingInvoiceOrders.length,
+      facturasPendientes: getCount(pendingInvoiceCountResult),
       pedidosPagados: getCount(paidOrdersCountResult),
       pedidosCancelados: getCount(cancelledOrdersCountResult),
+      reintegrosPendientes: getCount(pendingRefundCountResult),
+      facturasConError: getCount(invoiceErrorCountResult),
+      notasCreditoPendientes: getCount(creditNotePendingCountResult),
+      stockNegativo: negativeStockItems,
     },
+    financialSummary,
     lowStock: sortedLowStock.slice(0, 10),
     recentOrders: recentOrders.map((order) => ({
       ...order,

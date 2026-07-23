@@ -11,6 +11,7 @@ interface AdminDatePickerProps {
   value: string
   minDate?: string
   placeholder?: string
+  centered?: boolean
   onChange: (value: string) => void
 }
 
@@ -103,6 +104,7 @@ export function AdminDatePicker({
   value,
   minDate,
   placeholder = "dd/mm/aaaa",
+  centered = false,
   onChange,
 }: AdminDatePickerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -212,7 +214,7 @@ export function AdminDatePicker({
           spellCheck={false}
           onFocus={() => setOpen(true)}
           onChange={(event) => handleManualChange(event.target.value)}
-          className={`${adminControlClassName} pr-11`}
+          className={`${adminControlClassName} pr-11 ${centered ? "pl-11 text-center" : ""}`}
         />
 
         <AdminGhostButton

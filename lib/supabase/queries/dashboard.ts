@@ -81,6 +81,50 @@ export interface DashboardStats {
   facturasPendientes: number
   pedidosPagados: number
   pedidosCancelados: number
+  reintegrosPendientes: number
+  facturasConError: number
+  notasCreditoPendientes: number
+  stockNegativo: number
+}
+
+export interface DashboardFinancialSummary {
+  webGrossSales: number
+  marketplaceGrossSales: number
+  grossSales: number
+  completedRefunds: number
+  pendingRefunds: number
+  netSales: number
+  externalCollected: number
+  customerCreditUsed: number
+  shippingCharged: number
+  shippingCost: number
+  shippingBalance: number
+  transferDiscounts: number
+  marketplaceFees: number
+  marketplaceShipping: number
+  marketplaceNet: number
+  inventoryPurchases: number
+  costOfGoodsSold: number
+  operatingExpensesPaid: number
+  operatingExpensesPending: number
+  knownOperatingResult: number
+  trueProfit: number | null
+  trueMarginPercent: number | null
+  costCoveragePercent: number
+  invoicedAmount: number
+  paidOrders: number
+  invoicedOrders: number
+  ordersWithPaymentMismatch: number
+  ordersMissingShippingCost: number
+  ordersWithoutInvoice: number
+  invoiceErrors: number
+  creditNotesPending: number
+  negativeStockItems: number
+  ordersScanned: number
+  marketplaceRowsScanned: number
+  complete: boolean
+  generatedAt: string
+  warnings: string[]
 }
 
 export async function getDashboardData() {
@@ -124,6 +168,7 @@ export async function getDashboardData() {
   return data as {
     role: "operador" | "admin" | "super_admin"
     stats: DashboardStats
+    financialSummary: DashboardFinancialSummary
     lowStock: LowStockItem[]
     recentOrders: SupabasePedido[]
     commercialSales: DashboardCommercialSale[]

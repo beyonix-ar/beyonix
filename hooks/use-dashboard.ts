@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 import {
   getDashboardData,
   type DashboardCommercialSale,
+  type DashboardFinancialSummary,
   type DashboardRecentActivity,
   type DashboardSearchItem,
   type DashboardStats,
@@ -16,6 +17,7 @@ import type { SupabasePedido } from "@/lib/supabase/types"
 interface DashboardState {
   role: "operador" | "admin" | "super_admin" | null
   stats: DashboardStats | null
+  financialSummary: DashboardFinancialSummary | null
   lowStock: LowStockItem[]
   recentOrders: SupabasePedido[]
   commercialSales: DashboardCommercialSale[]
@@ -63,6 +65,7 @@ export function useDashboard() {
   const [data, setData] = useState<DashboardState>({
     role: null,
     stats: null,
+    financialSummary: null,
     lowStock: [],
     recentOrders: [],
     commercialSales: [],

@@ -12,7 +12,10 @@ import {
   EyeOff,
   FileUp,
   Package,
+  ReceiptText,
+  RotateCcw,
   Search,
+  ShieldAlert,
   ShoppingCart,
 } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -29,6 +32,7 @@ import { useDashboard } from "@/hooks/use-dashboard"
 import { formatPrice } from "../productos/helpers"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { AdminDatePicker } from "../../components/admin-date-picker"
+import { AdminCostsPanel } from "./admin-costs-panel"
 import {
   AdminEmptyState,
   AdminSelect,
@@ -40,7 +44,7 @@ interface AdminDashboardProps {
   onNavigate: (section: AdminSection) => void
 }
 
-type DashboardTab = "operativo" | "comercial"
+type DashboardTab = "operativo" | "comercial" | "costos"
 type SalesChannel = "todos" | "BEYONIX Web" | "MercadoLibre Marketplace"
 type SortKey =
   | "productName"
@@ -268,6 +272,74 @@ function StatCard({
         ) : null
       }
     />
+  )
+}
+
+function FinancialMetric({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string
+  value: string
+  detail: string
+  tone?: "neutral" | "positive" | "warning" | "danger"
+}) {
+  const toneClass = {
+    neutral: "text-white",
+    positive: "text-emerald-300",
+    warning: "text-amber-200",
+    danger: "text-red-300",
+  }[tone]
+
+  return (
+    <div className="min-w-0 rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+      <p className="text-10px font-black uppercase tracking-widest text-white/42">
+        {label}
+      </p>
+      <p className={`mt-1 truncate text-lg font-black tabular-nums ${toneClass}`}>
+        {value}
+      </p>
+      <p className="mt-1 truncate text-11px font-semibold text-white/42">
+        {detail}
+      </p>
+    </div>
+  )
+}
+
+function ControlIndicator({
+  label,
+  value,
+  healthy,
+  onClick,
+}: {
+  label: string
+  value: number
+  healthy: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-w-0 cursor-pointer items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+        healthy
+          ? "border-emerald-400/16 bg-emerald-400/6 hover:border-emerald-400/30"
+          : "border-red-400/22 bg-red-400/8 hover:border-red-400/40"
+      }`}
+    >
+      <span className="truncate text-xs font-bold text-white/70">{label}</span>
+      <span
+        className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black tabular-nums ${
+          healthy
+            ? "bg-emerald-400/12 text-emerald-300"
+            : "bg-red-400/12 text-red-300"
+        }`}
+      >
+        {value}
+      </span>
+    </button>
   )
 }
 
@@ -789,6 +861,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const { stock: stockSettings } = useSiteSettings()
   const {
     stats,
+    financialSummary,
     role,
     lowStock,
     recentOrders,
@@ -814,7 +887,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     return window.localStorage.getItem("beyonix-hide-dashboard-values") !== "false"
   })
 
-  if (loading || !stats) return <Skeleton />
+  if (loading || !stats || !financialSummary) return <Skeleton />
   const sensitive = role === "admin" || role === "super_admin"
   const today = new Date()
 
@@ -858,19 +931,15 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     facturacionTotalFiltrada: filteredSales.reduce((total, sale) => total + sale.grossAmount, 0),
     ventas: filteredSales.length,
     unidades: filteredSales.reduce((total, sale) => total + sale.quantity, 0),
-    ganancia: filteredSales.reduce(
-      (total, sale) => total + (sale.profitAmount ?? 0),
-      0
-    ),
   }
   const ticket =
     commercialStats.ventas > 0
       ? commercialStats.facturacionTotalFiltrada / commercialStats.ventas
       : 0
-  const margin =
-    commercialStats.facturacionTotalFiltrada > 0
-      ? (commercialStats.ganancia / commercialStats.facturacionTotalFiltrada) * 100
-      : 0
+  const invoiceCoverage =
+    financialSummary.paidOrders > 0
+      ? (financialSummary.invoicedOrders / financialSummary.paidOrders) * 100
+      : 100
   const byChannel = ["BEYONIX Web", "MercadoLibre Marketplace"].map((label) => ({
     label,
     value: filteredSales
@@ -943,6 +1012,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               {[
                 ["operativo", "Centro operativo"],
                 ["comercial", "Análisis comercial"],
+                ...(sensitive ? [["costos", "Costos reales"]] : []),
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -957,6 +1027,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 >
                   {key === "operativo" ? (
                     <ShoppingCart className="size-3.5" />
+                  ) : key === "costos" ? (
+                    <Package className="size-3.5" />
                   ) : (
                     <BarChart3 className="size-3.5" />
                   )}
@@ -974,19 +1046,59 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         </div>
       )}
 
-      {tab === "operativo" ? (
+      {tab === "costos" ? (
+        <AdminCostsPanel onChanged={() => void reloadDashboard()} />
+      ) : tab === "operativo" ? (
         <>
           <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.82),rgba(3,7,13,0.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_18px_48px_rgba(0,0,0,0.18)] sm:p-5">
             <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <SectionHeader eyebrow="Centro operativo" title="Prioridades de hoy" />
               <GlobalAdminSearch rows={searchIndex} onNavigate={onNavigate} />
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
               <StatCard title="Pagos en revisión" value={stats.pagosEnRevision} helper={`${stats.esperandoComprobante} esperan comprobante`} icon={<CreditCard className="size-5" />} onClick={() => onNavigate("pedidos")} />
               <StatCard title="Pedidos a preparar" value={stats.enviosPendientes} helper={`${stats.pedidosSinTracking} sin tracking o etiqueta`} icon={<ShoppingCart className="size-5" />} onClick={() => onNavigate("pedidos")} />
               <StatCard title="Facturas pendientes" value={stats.facturasPendientes} helper="Pedidos pagados sin factura emitida" icon={<FileUp className="size-5" />} onClick={() => onNavigate("facturacion")} />
+              <StatCard title="Facturas con error" value={stats.facturasConError} helper="Requieren corrección" icon={<ShieldAlert className="size-5" />} onClick={() => onNavigate("facturacion")} />
+              <StatCard title="Reintegros pendientes" value={stats.reintegrosPendientes} helper="Dinero por devolver" icon={<RotateCcw className="size-5" />} onClick={() => onNavigate("pedidos")} />
+              <StatCard title="Notas de crédito" value={stats.notasCreditoPendientes} helper="Pendientes de autorizar" icon={<ReceiptText className="size-5" />} onClick={() => onNavigate("facturacion")} />
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+              <FinancialMetric label="Pedidos totales" value={String(stats.totalOrdenes)} detail="Histórico" />
+              <FinancialMetric label="Pedidos pagos" value={String(stats.pedidosPagados)} detail="Cobro confirmado" tone="positive" />
+              <FinancialMetric label="Pendientes" value={String(stats.pedidosPendientes)} detail="Sin completar" tone={stats.pedidosPendientes > 0 ? "warning" : "neutral"} />
+              <FinancialMetric label="Cancelados" value={String(stats.pedidosCancelados)} detail="Histórico" />
+              <FinancialMetric label="Clientes" value={stats.totalClientes == null ? "—" : String(stats.totalClientes)} detail="Cuentas cliente" />
+              <FinancialMetric label="Productos activos" value={String(stats.productosActivos)} detail={`${stats.productosBajoStock} con stock bajo`} tone={stats.productosBajoStock > 0 ? "warning" : "positive"} />
             </div>
           </section>
+
+          {sensitive && (
+            <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                    Conciliación
+                  </p>
+                  <h2 className="mt-1 text-base font-black text-white">
+                    Controles críticos
+                  </h2>
+                </div>
+                <p className="text-11px font-semibold text-white/38">
+                  {financialSummary.complete
+                    ? `${financialSummary.ordersScanned} pedidos verificados`
+                    : "Lectura incompleta"}
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <ControlIndicator label="Cobros distintos" value={financialSummary.ordersWithPaymentMismatch} healthy={financialSummary.ordersWithPaymentMismatch === 0} onClick={() => onNavigate("pedidos")} />
+                <ControlIndicator label="Envíos sin costo" value={financialSummary.ordersMissingShippingCost} healthy={financialSummary.ordersMissingShippingCost === 0} onClick={() => onNavigate("pedidos")} />
+                <ControlIndicator label="Facturas con error" value={financialSummary.invoiceErrors} healthy={financialSummary.invoiceErrors === 0} onClick={() => onNavigate("facturacion")} />
+                <ControlIndicator label="Notas pendientes" value={financialSummary.creditNotesPending} healthy={financialSummary.creditNotesPending === 0} onClick={() => onNavigate("facturacion")} />
+                <ControlIndicator label="Stock negativo" value={financialSummary.negativeStockItems} healthy={financialSummary.negativeStockItems === 0} onClick={() => onNavigate("productos")} />
+              </div>
+            </section>
+          )}
 
           <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -1022,7 +1134,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             </section>
             <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-              <SectionHeader eyebrow="Actividad" title="Actividad reciente" />
+              <SectionHeader eyebrow="Actividad" title="Actividad reciente" action={<button type="button" onClick={() => onNavigate("auditoria")} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/14 px-3 text-xs font-black text-white/68 transition hover:border-beyonix-sky/38 hover:text-white">Ver auditoría <ArrowRight className="size-3.5" /></button>} />
               <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
                 {recentActivity.length ? recentActivity.map((item) => <ActivityItem key={item.id} item={item} />) : <EmptyState icon={<Clock className="size-5" />} title="No hay actividad reciente" description="Los movimientos operativos se mostrarán en este panel." />}
               </div>
@@ -1180,6 +1292,59 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 </div>
               </section>
 
+              <section className="rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.88),rgba(3,7,13,0.96))] p-4 sm:p-5">
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                      Control financiero
+                    </p>
+                    <h2 className="mt-1 text-xl font-black text-white">
+                      Caja y obligaciones
+                    </h2>
+                  </div>
+                  <p className="text-right text-11px font-semibold text-white/38">
+                    Corte: {formatDate(financialSummary.generatedAt)}<br />
+                    {financialSummary.ordersScanned} pedidos · {financialSummary.marketplaceRowsScanned} ventas marketplace
+                  </p>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                  <FinancialMetric label="Ventas brutas" value={maskAmount(formatPrice(financialSummary.grossSales), hiddenValues)} detail="Web + marketplace" />
+                  <FinancialMetric label="Ventas netas" value={maskAmount(formatPrice(financialSummary.netSales), hiddenValues)} detail="Luego de reintegros" tone="positive" />
+                  <FinancialMetric label="Cobro externo" value={maskAmount(formatPrice(financialSummary.externalCollected), hiddenValues)} detail="Dinero por pasarelas" />
+                  <FinancialMetric label="Saldo aplicado" value={maskAmount(formatPrice(financialSummary.customerCreditUsed), hiddenValues)} detail="Saldo interno usado" />
+                  <FinancialMetric label="Reintegrado" value={maskAmount(formatPrice(financialSummary.completedRefunds), hiddenValues)} detail={`${financialSummary.paidOrders} pedidos pagos`} tone={financialSummary.completedRefunds > 0 ? "danger" : "neutral"} />
+                  <FinancialMetric label="Facturado ARCA" value={maskAmount(formatPrice(financialSummary.invoicedAmount), hiddenValues)} detail={`${financialSummary.invoicedOrders} comprobantes`} />
+                </div>
+
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                  <FinancialMetric label="Envíos cobrados" value={maskAmount(formatPrice(financialSummary.shippingCharged), hiddenValues)} detail="Cobrado al cliente" />
+                  <FinancialMetric label="Costo logístico" value={maskAmount(formatPrice(financialSummary.shippingCost), hiddenValues)} detail="Costo real registrado" tone={financialSummary.shippingCost > financialSummary.shippingCharged ? "warning" : "neutral"} />
+                  <FinancialMetric label="Resultado envíos" value={maskAmount(formatPrice(financialSummary.shippingBalance), hiddenValues)} detail="Cobrado menos costo" tone={financialSummary.shippingBalance >= 0 ? "positive" : "danger"} />
+                  <FinancialMetric label="Comisiones" value={maskAmount(formatPrice(financialSummary.marketplaceFees), hiddenValues)} detail="Marketplace" tone={financialSummary.marketplaceFees > 0 ? "warning" : "neutral"} />
+                  <FinancialMetric label="Descuentos" value={maskAmount(formatPrice(financialSummary.transferDiscounts), hiddenValues)} detail="Transferencias" />
+                  <FinancialMetric label="Resultado conocido" value={maskAmount(formatPrice(financialSummary.knownOperatingResult), hiddenValues)} detail="Antes de mercadería e impuestos" tone={financialSummary.knownOperatingResult >= 0 ? "positive" : "danger"} />
+                </div>
+
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                  <FinancialMetric label="Compras mercadería" value={maskAmount(formatPrice(financialSummary.inventoryPurchases), hiddenValues)} detail="Capital comprado" />
+                  <FinancialMetric label="Costo vendido" value={maskAmount(formatPrice(financialSummary.costOfGoodsSold), hiddenValues)} detail={`${financialSummary.costCoveragePercent.toFixed(1)}% cubierto`} />
+                  <FinancialMetric label="Gastos pagados" value={maskAmount(formatPrice(financialSummary.operatingExpensesPaid), hiddenValues)} detail="Operación e impuestos" tone={financialSummary.operatingExpensesPaid > 0 ? "warning" : "neutral"} />
+                  <FinancialMetric label="Gastos pendientes" value={maskAmount(formatPrice(financialSummary.operatingExpensesPending), hiddenValues)} detail="Obligaciones abiertas" tone={financialSummary.operatingExpensesPending > 0 ? "danger" : "neutral"} />
+                  <FinancialMetric label="Ganancia real" value={financialSummary.trueProfit == null ? "Pendiente" : maskAmount(formatPrice(financialSummary.trueProfit), hiddenValues)} detail="Con costos y gastos" tone={financialSummary.trueProfit == null ? "warning" : financialSummary.trueProfit >= 0 ? "positive" : "danger"} />
+                  <FinancialMetric label="Margen real" value={financialSummary.trueMarginPercent == null ? "Pendiente" : hiddenValues ? "****" : `${financialSummary.trueMarginPercent.toFixed(1)}%`} detail="Rentabilidad final" tone={financialSummary.trueMarginPercent == null ? "warning" : financialSummary.trueMarginPercent >= 0 ? "positive" : "danger"} />
+                </div>
+
+                <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                  {financialSummary.warnings.map((warning) => (
+                    <div key={warning} className="flex items-start gap-2 rounded-xl border border-amber-400/18 bg-amber-400/7 px-3 py-2.5 text-xs font-semibold leading-5 text-amber-100/80">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-300" />
+                      <span>{warning}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
                 <StatCard title="Facturación diaria" value={maskAmount(formatPrice(commercialStats.facturacionDiaria), hiddenValues)} icon={<BarChart3 className="size-5" />} />
                 <StatCard title="Facturación mensual" value={maskAmount(formatPrice(commercialStats.facturacionMensual), hiddenValues)} icon={<BarChart3 className="size-5" />} />
@@ -1187,8 +1352,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 <StatCard title="Ticket promedio" value={maskAmount(formatPrice(ticket), hiddenValues)} icon={<CreditCard className="size-5" />} />
                 <StatCard title="Cantidad de ventas" value={commercialStats.ventas} icon={<ShoppingCart className="size-5" />} />
                 <StatCard title="Unidades vendidas" value={commercialStats.unidades} icon={<Package className="size-5" />} />
-                <StatCard title="Ganancia estimada" value={maskAmount(formatPrice(commercialStats.ganancia), hiddenValues)} helper="Según neto recibido o costo disponible" icon={<BarChart3 className="size-5" />} />
-                <StatCard title="Margen estimado" value={hiddenValues ? "****" : `${margin.toFixed(1)}%`} icon={<BarChart3 className="size-5" />} />
+                <StatCard title="Reintegro pendiente" value={maskAmount(formatPrice(financialSummary.pendingRefunds), hiddenValues)} helper={`${stats.reintegrosPendientes} operaciones`} icon={<RotateCcw className="size-5" />} />
+                <StatCard title="Cobertura ARCA" value={`${invoiceCoverage.toFixed(1)}%`} helper={`${financialSummary.ordersWithoutInvoice} pedidos sin factura`} icon={<ReceiptText className="size-5" />} />
               </div>
 
               <div className="grid gap-6 xl:grid-cols-3">
@@ -1222,9 +1387,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           ["paymentMethod", "Método pago"],
                           ["quantity", "Cantidad vendida"],
                           ["grossAmount", "Facturación"],
-                          ["costAmount", "Costo estimado"],
-                          ["profitAmount", "Ganancia estimada"],
-                          ["marginPercent", "Margen %"],
+                          ["costAmount", "Costo mercadería"],
+                          ["profitAmount", "Resultado bruto"],
+                          ["marginPercent", "Margen bruto %"],
                           ["ticket", "Ticket promedio"],
                         ].map(([key, label]) => (
                           <th key={key} className="px-4 py-3">

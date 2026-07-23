@@ -65,18 +65,11 @@ export function ProductosTable({
           "Cuotas",
           "Estado",
           "Acciones",
-        ].map((label) => (
+        ].map((label, index) => (
           <span
             key={label}
             className={`text-10px font-semibold uppercase tracking-widest text-white/45 ${
-              label ===
-              "Cuotas" ||
-              label ===
-              "Estado" ||
-              label ===
-              "Acciones"
-                ? "text-center"
-                : ""
+              index > 0 ? "text-center" : ""
             }`}
           >
             {label}
