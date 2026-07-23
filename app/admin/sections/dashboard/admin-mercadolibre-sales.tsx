@@ -517,10 +517,10 @@ export function AdminMercadoLibreSales() {
           <SummaryCard label="Cargos por venta" value={formatPrice(Math.abs(summary.saleFees))} helper={`Suma aplicada en ${summary.salesWithSaleFee} operaciones`} icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
           <SummaryCard label="Costo fijo" value={formatPrice(Math.abs(summary.fixedCosts))} helper="Cargos fijos" icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
           <SummaryCard label="Costo por cuotas" value={formatPrice(Math.abs(summary.installmentCosts))} helper="Financiación" icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
-          <SummaryCard label="Ingresos por envío" value={formatPrice(summary.shippingIncome)} helper={`${formatPrice(summary.shippingIncomeOnEffectiveSales)} efectivas · ${formatPrice(summary.shippingIncomeOnReturns)} devueltas`} icon={<Truck className="size-3.5" />} />
-          <SummaryCard label="Costos de envío" value={formatPrice(Math.abs(summary.shippingCosts + summary.declaredShippingCosts))} helper="Costo informado" icon={<Truck className="size-3.5" />} tone="warning" />
+          <SummaryCard label="Envío acreditado por ML" value={formatPrice(summary.shippingIncome)} helper={`${formatPrice(summary.shippingIncomeOnEffectiveSales)} en ventas · ${formatPrice(summary.shippingIncomeOnReturns)} en devoluciones`} icon={<Truck className="size-3.5" />} />
+          <SummaryCard label="Envío descontado por ML" value={formatPrice(Math.abs(summary.shippingCosts + summary.declaredShippingCosts))} helper="Costo logístico total descontado" icon={<Truck className="size-3.5" />} tone="warning" />
           <SummaryCard label="Reembolsos" value={formatPrice(Math.abs(summary.cancellationsRefunds))} helper={`${summary.returnSales} devoluciones`} icon={<RotateCcw className="size-3.5" />} tone={summary.returnSales ? "danger" : "neutral"} />
-          <SummaryCard label="Costo envío en operación devuelta" value={formatPrice(summary.returnShippingCosts)} helper="No identifica el flete de regreso" icon={<RotateCcw className="size-3.5" />} tone={summary.returnShippingCosts ? "danger" : "neutral"} />
+          <SummaryCard label="Envío descontado en devoluciones" value={formatPrice(summary.returnShippingCosts)} helper="Ya incluido arriba; no es un cargo adicional" icon={<RotateCcw className="size-3.5" />} tone={summary.returnShippingCosts ? "danger" : "neutral"} />
           <SummaryCard label="Reclamos" value={String(summary.claims)} helper="Con unidades o mediación" icon={<AlertTriangle className="size-3.5" />} tone={summary.claims ? "warning" : "neutral"} />
         </div>
       </section>
@@ -683,7 +683,7 @@ export function AdminMercadoLibreSales() {
             <table className="min-w-[1250px] w-full text-center text-xs">
               <thead className="bg-beyonix-blue/18 text-9px font-black uppercase tracking-widest text-white/42">
                 <tr>
-                  {["Venta", "Fecha", "Estado", "Producto", "Unidades", "Ingreso productos", "Cargos", "Envío", "Reembolsos", "Total"].map((label) => (
+                  {["Venta", "Fecha", "Estado", "Producto", "Unidades", "Ingreso productos", "Cargos", "Envío descontado", "Reembolsos", "Total"].map((label) => (
                     <th key={label} className="px-3 py-3">{label}</th>
                   ))}
                 </tr>
@@ -745,7 +745,7 @@ export function AdminMercadoLibreSales() {
             <table className="min-w-[1720px] w-full text-center text-xs">
               <thead className="bg-beyonix-blue/18 text-9px font-black uppercase tracking-widest text-white/42">
                 <tr>
-                  {["Venta", "Fecha", "Estado", "Producto / SKU", "Unidades", "Ingreso productos", "Cargos ML", "Costo envío", "Reembolsos", "Total ML", "Costo mercadería", "Ganancia", "Comprador", "Acciones"].map((label) => (
+                  {["Venta", "Fecha", "Estado", "Producto / SKU", "Unidades", "Ingreso productos", "Cargos ML", "Envío descontado", "Reembolsos", "Total ML", "Costo mercadería", "Ganancia", "Comprador", "Acciones"].map((label) => (
                     <th key={label} className="px-3 py-3">{label}</th>
                   ))}
                 </tr>
