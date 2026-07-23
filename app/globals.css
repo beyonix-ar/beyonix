@@ -2052,6 +2052,17 @@ button.sales-ledger-product-trigger:hover {
   color: #ffffff !important;
 }
 
+.admin-ds-select-menu button.sales-ledger-fee-option {
+  font-size: 0.875rem !important;
+  font-weight: 800 !important;
+}
+
+.admin-ds-select-menu button.sales-ledger-fee-option:hover {
+  background: rgba(45, 95, 145, 0.72) !important;
+  box-shadow: inset 0 0 0 1px rgba(111, 182, 232, 0.35) !important;
+  color: #ffffff !important;
+}
+
 .admin-order-data-panel {
   background-color: #151515 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);

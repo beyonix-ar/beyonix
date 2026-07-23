@@ -264,7 +264,7 @@ export function AdminDatePicker({
           onFocus={() => setOpen(true)}
           onChange={(event) => handleManualChange(event.target.value)}
           className={`${adminControlClassName} ${
-            compact ? "!h-10 !px-9 !text-xs font-bold" : "pr-11"
+            compact ? "!h-11 !pl-3 !pr-11 !text-sm font-bold" : "pr-11"
           } ${centered ? `${compact ? "" : "pl-11"} text-center` : ""}`}
         />
 
@@ -275,11 +275,9 @@ export function AdminDatePicker({
           aria-expanded={open}
           tabIndex={compact ? -1 : undefined}
           onClick={() => setOpen((current) => !current)}
-          className={`absolute top-1/2 flex -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg bg-beyonix-blue/18 text-beyonix-sky transition hover:bg-beyonix-blue/45 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60 ${
-            compact ? "right-1 size-7" : "right-1.5 size-8"
-          }`}
+          className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg bg-beyonix-blue/18 text-beyonix-sky transition hover:bg-beyonix-blue/45 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
         >
-          <CalendarDays className={compact ? "size-3" : "size-3.5"} />
+          <CalendarDays className="size-3.5" />
         </button>
       </div>
 

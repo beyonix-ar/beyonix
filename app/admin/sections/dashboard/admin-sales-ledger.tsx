@@ -540,8 +540,8 @@ export function AdminSalesLedger({
                   <MoneyInput value={form.shippingAmount} onChange={(value) => update("shippingAmount", value)} ariaLabel="Envío pagado" />
                 </td>
                 <td className="p-2">
-                  <div className="flex min-w-44 items-center gap-1.5">
-                    <div data-sales-nav-field className="w-14 shrink-0">
+                  <div className="flex min-w-[182px] items-center gap-1.5">
+                    <div data-sales-nav-field className="w-16 shrink-0">
                     <AdminSelect
                       title="Tipo de comisión"
                       ariaLabel="Tipo de comisión"
@@ -552,11 +552,9 @@ export function AdminSalesLedger({
                           value === "percent" ? "percent" : "amount",
                         )
                       }
-                      compact
-                      centered
-                      triggerClassName="!h-11 !w-14 !min-w-14"
-                      menuClassName="!w-24"
-                      optionClassName="justify-center text-center"
+                      triggerClassName="!w-16 !min-w-16 !gap-2 !px-3 !text-sm font-bold"
+                      menuClassName="!w-16"
+                      optionClassName="sales-ledger-fee-option justify-center text-center font-bold [&>svg]:hidden"
                     >
                       <option value="amount">$</option>
                       <option value="percent">%</option>
