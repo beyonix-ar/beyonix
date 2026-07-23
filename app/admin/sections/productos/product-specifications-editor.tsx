@@ -46,6 +46,9 @@ interface ProductSpecificationsEditorProps {
   onDraftSpecificationsChange?: (
     specifications: DraftProductoEspecificacion[]
   ) => void
+  onPersistedSpecificationsChange?: (
+    specifications: SupabaseProductoEspecificacion[]
+  ) => void
 }
 
 type EditingSpecification =
@@ -102,6 +105,7 @@ export function ProductSpecificationsEditor({
   productoId,
   draftSpecifications = [],
   onDraftSpecificationsChange,
+  onPersistedSpecificationsChange,
 }: ProductSpecificationsEditorProps) {
   const [specifications, setSpecifications] =
     useState<SupabaseProductoEspecificacion[]>([])
@@ -143,6 +147,17 @@ export function ProductSpecificationsEditor({
   useEffect(() => {
     loadSpecifications()
   }, [loadSpecifications])
+
+  useEffect(() => {
+    if (productoId && !loading) {
+      onPersistedSpecificationsChange?.(specifications)
+    }
+  }, [
+    loading,
+    onPersistedSpecificationsChange,
+    productoId,
+    specifications,
+  ])
 
   const resetFields = () => {
     setIcono("")

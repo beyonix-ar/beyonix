@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   ArrowRight,
@@ -17,6 +17,10 @@ import {
   Search,
   ShieldAlert,
   ShoppingCart,
+  Store,
+  Tags,
+  UserRound,
+  X,
 } from "lucide-react"
 import * as XLSX from "xlsx"
 
@@ -33,6 +37,8 @@ import { formatPrice } from "../productos/helpers"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 import { AdminCostsPanel } from "./admin-costs-panel"
+import { AdminSalesLedger } from "./admin-sales-ledger"
+import { AdminMercadoLibreSales } from "./admin-mercadolibre-sales"
 import {
   AdminEmptyState,
   AdminSelect,
@@ -44,7 +50,7 @@ interface AdminDashboardProps {
   onNavigate: (section: AdminSection) => void
 }
 
-type DashboardTab = "operativo" | "comercial" | "costos"
+type DashboardTab = "operativo" | "comercial" | "externas" | "ml" | "costos"
 type SalesChannel = "todos" | "BEYONIX Web" | "MercadoLibre Marketplace"
 type SortKey =
   | "productName"
@@ -422,6 +428,25 @@ function normalizeSearch(value: string) {
     .toLowerCase()
 }
 
+function searchScore(row: DashboardSearchItem, normalizedQuery: string) {
+  const title = normalizeSearch(row.title)
+  const detail = normalizeSearch(row.detail)
+  const haystack = normalizeSearch(`${row.title} ${row.detail} ${row.keywords}`)
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean)
+  if (!tokens.every((token) => haystack.includes(token))) return -1
+
+  let score = 0
+  if (title === normalizedQuery) score += 100
+  if (title.startsWith(normalizedQuery)) score += 60
+  if (title.includes(normalizedQuery)) score += 35
+  if (detail.startsWith(normalizedQuery)) score += 20
+  if (row.type === "pedido" && row.keywords.split(/\s+/).includes(normalizedQuery)) {
+    score += 45
+  }
+  score += Math.max(0, 12 - title.length / 10)
+  return score
+}
+
 function GlobalAdminSearch({
   rows,
   onNavigate,
@@ -430,60 +455,182 @@ function GlobalAdminSearch({
   onNavigate: (section: AdminSection) => void
 }) {
   const [query, setQuery] = useState("")
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const results = useMemo(() => {
     const normalized = normalizeSearch(query.trim())
     if (normalized.length < 2) return []
 
     return rows
-      .filter((row) =>
-        normalizeSearch(`${row.title} ${row.detail} ${row.keywords}`).includes(
-          normalized,
-        ),
-      )
-      .slice(0, 6)
+      .map((row) => ({ row, score: searchScore(row, normalized) }))
+      .filter((result) => result.score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map((result) => result.row)
   }, [query, rows])
 
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [query])
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault()
+        inputRef.current?.focus()
+        setOpen(true)
+      }
+    }
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+
+    document.addEventListener("keydown", handleShortcut)
+    document.addEventListener("mousedown", handleOutsideClick)
+    return () => {
+      document.removeEventListener("keydown", handleShortcut)
+      document.removeEventListener("mousedown", handleOutsideClick)
+    }
+  }, [])
+
+  const chooseResult = (row: DashboardSearchItem) => {
+    setQuery("")
+    setOpen(false)
+    onNavigate(row.section)
+  }
+
+  const showResults = open && query.trim().length >= 2
+
   return (
-    <div className="relative w-full max-w-2xl">
-      <div className="flex h-12 items-center gap-3 rounded-2xl border border-beyonix-blue-light/22 bg-[rgba(3,7,13,0.72)] px-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition focus-within:border-beyonix-sky/40 focus-within:shadow-[0_0_18px_rgba(96,165,250,0.08)]">
-        <Search className="size-4 shrink-0 text-beyonix-sky" />
+    <div ref={rootRef} className="relative w-full max-w-3xl">
+      <div
+        className={`admin-dashboard-search flex h-12 items-center gap-3 rounded-2xl border bg-[linear-gradient(135deg,rgba(9,23,36,0.94),rgba(3,8,14,0.96))] px-3 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition ${
+          open
+            ? "border-beyonix-sky/55 shadow-[0_0_24px_rgba(56,189,248,0.1)]"
+            : "border-beyonix-blue-light/22 hover:border-beyonix-sky/36"
+        }`}
+      >
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/18 bg-beyonix-blue/25 text-beyonix-sky">
+          <Search className="size-4" />
+        </span>
         <input
+          ref={inputRef}
+          type="search"
+          aria-label="Buscar en el panel administrativo"
+          aria-expanded={showResults}
+          aria-controls="dashboard-search-results"
+          autoComplete="off"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Buscar pedido, cliente o producto..."
-          className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/38"
+          onFocus={() => setOpen(true)}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setOpen(true)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" && results.length) {
+              event.preventDefault()
+              setActiveIndex((current) => (current + 1) % results.length)
+            } else if (event.key === "ArrowUp" && results.length) {
+              event.preventDefault()
+              setActiveIndex(
+                (current) => (current - 1 + results.length) % results.length,
+              )
+            } else if (event.key === "Enter" && results[activeIndex]) {
+              event.preventDefault()
+              chooseResult(results[activeIndex])
+            } else if (event.key === "Escape") {
+              setOpen(false)
+              inputRef.current?.blur()
+            }
+          }}
+          placeholder="Buscar pedido, cliente, DNI o producto..."
+          className="admin-dashboard-search-input min-w-0 flex-1 text-sm font-semibold text-white outline-none placeholder:text-white/35"
         />
+        {query ? (
+          <button
+            type="button"
+            aria-label="Limpiar búsqueda"
+            title="Limpiar búsqueda"
+            onClick={() => {
+              setQuery("")
+              inputRef.current?.focus()
+            }}
+            className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-white/38 transition hover:bg-white/7 hover:text-white"
+          >
+            <X className="size-4" />
+          </button>
+        ) : (
+          <kbd className="hidden shrink-0 rounded-lg border border-white/9 bg-black/28 px-2 py-1 text-10px font-black text-white/38 sm:inline-flex">
+            Ctrl K
+          </kbd>
+        )}
       </div>
-      {query.trim().length >= 2 && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-beyonix-blue-light/20 bg-[#071018] shadow-2xl shadow-black/50">
+      {showResults && (
+        <div
+          id="dashboard-search-results"
+          className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-beyonix-sky/24 bg-[#071018]/98 shadow-2xl shadow-black/65 backdrop-blur-xl"
+        >
           {results.length ? (
-            results.map((row) => (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => {
-                  setQuery("")
-                  onNavigate(row.section)
-                }}
-                className="flex w-full cursor-pointer items-center justify-between gap-3 border-b border-white/6 px-4 py-3 text-left transition last:border-b-0 hover:bg-beyonix-blue/24"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-black text-white">
-                    {row.title}
-                  </span>
-                  <span className="mt-1 block truncate text-xs text-white/48">
-                    {row.detail}
-                  </span>
+            <>
+              <div className="flex items-center justify-between border-b border-white/7 px-4 py-2.5">
+                <span className="text-10px font-black uppercase tracking-widest text-white/35">
+                  {results.length} {results.length === 1 ? "resultado" : "resultados"}
                 </span>
-                <span className="shrink-0 rounded-full border border-white/8 bg-black px-2.5 py-1 text-10px font-black uppercase tracking-widest text-white/45">
-                  {row.type}
+                <span className="text-10px font-semibold text-white/28">
+                  ↑↓ navegar · Enter abrir
                 </span>
-              </button>
-            ))
+              </div>
+              {results.map((row, index) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => chooseResult(row)}
+                  className={`flex w-full cursor-pointer items-center gap-3 border-b border-white/6 px-3 py-3 text-left transition last:border-b-0 ${
+                    activeIndex === index
+                      ? "bg-beyonix-blue/32"
+                      : "hover:bg-beyonix-blue/20"
+                  }`}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/16 bg-beyonix-blue/20 text-beyonix-sky">
+                    {row.type === "pedido" ? (
+                      <ShoppingCart className="size-4" />
+                    ) : row.type === "cliente" ? (
+                      <UserRound className="size-4" />
+                    ) : (
+                      <Package className="size-4" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-black text-white">
+                      {row.title}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-white/48">
+                      {row.detail}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full border border-white/8 bg-black/32 px-2.5 py-1 text-10px font-black uppercase tracking-widest text-white/42">
+                    {row.type}
+                  </span>
+                  <ArrowRight
+                    className={`size-3.5 shrink-0 text-beyonix-sky transition ${
+                      activeIndex === index ? "translate-x-0" : "-translate-x-1 opacity-0"
+                    }`}
+                  />
+                </button>
+              ))}
+            </>
           ) : (
-            <p className="px-4 py-4 text-sm text-white/48">
-              No hay resultados para esa búsqueda.
-            </p>
+            <div className="px-4 py-5 text-center">
+              <p className="text-sm font-black text-white/62">
+                No encontramos coincidencias
+              </p>
+              <p className="mt-1 text-xs text-white/38">
+                Probá con otro nombre, número de pedido, DNI o producto.
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -1008,11 +1155,17 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-2xl border border-beyonix-blue-light/24 bg-black/30 p-1 shadow-inner shadow-black/40">
+            <div className="inline-flex flex-wrap rounded-2xl border border-beyonix-blue-light/24 bg-black/30 p-1 shadow-inner shadow-black/40">
               {[
                 ["operativo", "Centro operativo"],
                 ["comercial", "Análisis comercial"],
-                ...(sensitive ? [["costos", "Costos reales"]] : []),
+                ...(sensitive
+                  ? [
+                      ["externas", "Ventas externas"],
+                      ["ml", "Ventas ML"],
+                      ["costos", "Costos reales"],
+                    ]
+                  : []),
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -1027,6 +1180,10 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 >
                   {key === "operativo" ? (
                     <ShoppingCart className="size-3.5" />
+                  ) : key === "externas" ? (
+                    <Store className="size-3.5" />
+                  ) : key === "ml" ? (
+                    <Tags className="size-3.5" />
                   ) : key === "costos" ? (
                     <Package className="size-3.5" />
                   ) : (
@@ -1048,6 +1205,10 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       {tab === "costos" ? (
         <AdminCostsPanel onChanged={() => void reloadDashboard()} />
+      ) : tab === "externas" ? (
+        <AdminSalesLedger channel="external" />
+      ) : tab === "ml" ? (
+        <AdminMercadoLibreSales />
       ) : tab === "operativo" ? (
         <>
           <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.82),rgba(3,7,13,0.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_18px_48px_rgba(0,0,0,0.18)] sm:p-5">
@@ -1368,11 +1529,10 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
 
               <div className="grid gap-6 xl:grid-cols-2">
-                <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+                <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
                   <SectionHeader eyebrow="Productos" title="Más vendidos" />
                   <BarList rows={byProduct} valueKey="value" />
                 </section>
-                <MercadoLibreImporter onImported={() => void reloadDashboard()} />
               </div>
 
               <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">

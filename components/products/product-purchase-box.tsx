@@ -73,7 +73,7 @@ export function ProductPurchaseBox({
       : null
 
   return (
-    <div className="bg-[#070A0E] px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
+    <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
       <div className="mb-3 flex flex-wrap items-end gap-2.5">
         <span className="text-[28px] font-black leading-none tracking-tight text-white md:text-[32px]">
           {formatPrice(price)}

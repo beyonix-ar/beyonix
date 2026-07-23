@@ -17,11 +17,13 @@ import {
 interface AdminProductPreviewModalProps {
   product: SupabaseProducto
   onClose: () => void
+  readOnly?: boolean
 }
 
 export function AdminProductPreviewModal({
   product,
   onClose,
+  readOnly = false,
 }: AdminProductPreviewModalProps) {
   const [selectedColor, setSelectedColor] = useState(() =>
     getDefaultVariantValue(product)
@@ -51,7 +53,7 @@ export function AdminProductPreviewModal({
     ) || product.imagen_principal
   const mediaCount =
     safeImages.length + (isPlayableProductVideo(product.video_url) ? 1 : 0)
-  const cartQuantity = getQuantity(product.id, selectedColor)
+  const cartQuantity = readOnly ? 0 : getQuantity(product.id, selectedColor)
 
   const handleColorChange = (value: string) => {
     setSelectedColor(value)
@@ -85,16 +87,21 @@ export function AdminProductPreviewModal({
       onSelectImage={setSelectedImage}
       onColorChange={handleColorChange}
       onAddToCart={() => {
+        if (readOnly) return
         addToCart(product, selectedColor, currentImage || undefined)
       }}
       onDecreaseCart={() => {
+        if (readOnly) return
         decreaseQuantity(product.id, selectedColor)
       }}
       onRemoveFromCart={() => {
+        if (readOnly) return
         removeFromCart(product.id, selectedColor)
       }}
-      onViewCart={openCart}
-      isInCart={isInCart(product.id, selectedColor)}
+      onViewCart={() => {
+        if (!readOnly) openCart()
+      }}
+      isInCart={!readOnly && isInCart(product.id, selectedColor)}
       cartQuantity={cartQuantity}
     />
   )

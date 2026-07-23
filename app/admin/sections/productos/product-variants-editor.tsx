@@ -50,6 +50,9 @@ interface ProductVariantsEditorProps {
   onDraftVariantsChange?: (
     variants: DraftProductoVariante[]
   ) => void
+  onPersistedVariantsChange?: (
+    variants: SupabaseProductoVariante[]
+  ) => void
 }
 
 const inputCls =
@@ -81,6 +84,7 @@ export function ProductVariantsEditor({
   productoId,
   draftVariants = [],
   onDraftVariantsChange,
+  onPersistedVariantsChange,
 }: ProductVariantsEditorProps) {
   const [variantes, setVariantes] =
     useState<SupabaseProductoVariante[]>([])
@@ -145,6 +149,12 @@ export function ProductVariantsEditor({
   useEffect(() => {
     loadVariantes()
   }, [loadVariantes])
+
+  useEffect(() => {
+    if (productoId && !loading) {
+      onPersistedVariantsChange?.(variantes)
+    }
+  }, [loading, onPersistedVariantsChange, productoId, variantes])
 
   const resetFields = () => {
     setNombre("")

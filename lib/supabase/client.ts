@@ -83,6 +83,21 @@ export function isInvalidRefreshTokenError(error: unknown) {
   )
 }
 
+export function isMissingAuthSessionError(error: unknown) {
+  if (!error || typeof error !== "object") return false
+
+  const authError = error as {
+    name?: string
+    message?: string
+  }
+  const message = authError.message?.toLowerCase() ?? ""
+
+  return (
+    authError.name === "AuthSessionMissingError" ||
+    message.includes("auth session missing")
+  )
+}
+
 function installSupabaseAuthConsoleErrorFilter() {
   if (typeof window === "undefined") return
 

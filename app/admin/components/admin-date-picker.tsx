@@ -1,9 +1,10 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react"
 
-import { adminControlClassName, AdminGhostButton, AdminSecondaryButton } from "./admin-controls"
+import { adminControlClassName, AdminSecondaryButton } from "./admin-controls"
 
 interface AdminDatePickerProps {
   title: string
@@ -12,6 +13,7 @@ interface AdminDatePickerProps {
   minDate?: string
   placeholder?: string
   centered?: boolean
+  compact?: boolean
   onChange: (value: string) => void
 }
 
@@ -105,15 +107,22 @@ export function AdminDatePicker({
   minDate,
   placeholder = "dd/mm/aaaa",
   centered = false,
+  compact = false,
   onChange,
 }: AdminDatePickerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
   const selectedDate = value ? new Date(`${value}T00:00:00`) : null
   const today = new Date()
 
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const [textValue, setTextValue] = useState(toDisplayDate(value))
   const [visibleMonth, setVisibleMonth] = useState(selectedDate || today)
+  const [popoverPosition, setPopoverPosition] = useState({
+    left: 0,
+    top: 0,
+  })
 
   const calendarDays = useMemo(
     () => getCalendarDays(visibleMonth),
@@ -129,10 +138,14 @@ export function AdminDatePicker({
   }, [value])
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(event.target as Node)
+        !wrapperRef.current?.contains(event.target as Node) &&
+        !popoverRef.current?.contains(event.target as Node)
       ) {
         setOpen(false)
       }
@@ -152,6 +165,42 @@ export function AdminDatePicker({
       document.removeEventListener("keydown", handleEscape)
     }
   }, [])
+
+  useEffect(() => {
+    if (!open) return
+
+    function updatePopoverPosition() {
+      const rect = wrapperRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      const width = 320
+      const estimatedHeight = 408
+      const spaceBelow = window.innerHeight - rect.bottom
+      const openAbove = spaceBelow < estimatedHeight && rect.top > estimatedHeight
+
+      setPopoverPosition({
+        left: Math.min(
+          Math.max(8, rect.left),
+          Math.max(8, window.innerWidth - width - 8),
+        ),
+        top: openAbove
+          ? Math.max(8, rect.top - estimatedHeight - 4)
+          : Math.min(
+              Math.max(8, window.innerHeight - estimatedHeight - 8),
+              rect.bottom + 4,
+            ),
+      })
+    }
+
+    updatePopoverPosition()
+    window.addEventListener("resize", updatePopoverPosition)
+    window.addEventListener("scroll", updatePopoverPosition, true)
+
+    return () => {
+      window.removeEventListener("resize", updatePopoverPosition)
+      window.removeEventListener("scroll", updatePopoverPosition, true)
+    }
+  }, [open])
 
   const changeMonth = (direction: number) => {
     setVisibleMonth((current) => {
@@ -214,22 +263,37 @@ export function AdminDatePicker({
           spellCheck={false}
           onFocus={() => setOpen(true)}
           onChange={(event) => handleManualChange(event.target.value)}
-          className={`${adminControlClassName} pr-11 ${centered ? "pl-11 text-center" : ""}`}
+          className={`${adminControlClassName} ${
+            compact ? "!h-10 !px-9 !text-xs font-bold" : "pr-11"
+          } ${centered ? `${compact ? "" : "pl-11"} text-center` : ""}`}
         />
 
-        <AdminGhostButton
+        <button
+          type="button"
           title="Abrir calendario"
           aria-label="Abrir calendario"
-          size="icon"
+          aria-expanded={open}
+          tabIndex={compact ? -1 : undefined}
           onClick={() => setOpen((current) => !current)}
-          className="absolute right-2 top-1/2 size-8 min-h-0 -translate-y-1/2"
+          className={`absolute top-1/2 flex -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg bg-beyonix-blue/18 text-beyonix-sky transition hover:bg-beyonix-blue/45 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60 ${
+            compact ? "right-1 size-7" : "right-1.5 size-8"
+          }`}
         >
-          <CalendarDays className="size-4" />
-        </AdminGhostButton>
+          <CalendarDays className={compact ? "size-3" : "size-3.5"} />
+        </button>
       </div>
 
-      {open && (
-        <div className="admin-ds-datepicker-popover absolute right-0 top-14 z-50 w-80 overflow-hidden">
+      {mounted &&
+        open &&
+        createPortal(
+        <div
+          ref={popoverRef}
+          className="admin-ds-datepicker-popover fixed z-100 w-80 overflow-hidden"
+          style={{
+            left: popoverPosition.left,
+            top: popoverPosition.top,
+          }}
+        >
           <div
             className="admin-ds-datepicker-header border-b px-4 py-4"
           >
@@ -336,7 +400,8 @@ export function AdminDatePicker({
               </AdminSecondaryButton>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

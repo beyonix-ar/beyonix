@@ -1,4 +1,10 @@
-import { supabase } from "@/lib/supabase/client"
+import {
+  clearSupabaseBrowserSession,
+  getSafeSupabaseSession,
+  isInvalidRefreshTokenError,
+  isMissingAuthSessionError,
+  supabase,
+} from "@/lib/supabase/client"
 import {
   isAdminCancellationSensitiveNotification,
   isAdminClaimSensitiveNotification,
@@ -170,12 +176,23 @@ export function getSupabaseErrorDetails(error: unknown) {
 }
 
 async function getCurrentAdminId() {
+  const session = await getSafeSupabaseSession()
+  if (!session) return null
+
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser()
 
   if (error) {
+    if (
+      isMissingAuthSessionError(error) ||
+      isInvalidRefreshTokenError(error)
+    ) {
+      clearSupabaseBrowserSession()
+      return null
+    }
+
     console.error(
       "ADMIN_NOTIFICATIONS_AUTH_ERROR",
       getSupabaseErrorDetails(error),

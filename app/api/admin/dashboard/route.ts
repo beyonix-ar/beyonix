@@ -588,6 +588,8 @@ export async function GET(request: Request) {
     lowStockProductsResult,
     lowStockVariantsResult,
     searchProductsResult,
+    searchOrdersResult,
+    searchClientsResult,
     mercadoLibreResult,
     mercadoPagoStatus,
     arcaStatus,
@@ -703,22 +705,22 @@ export async function GET(request: Request) {
       "productos_bajo_stock",
       auth.admin
         .from("productos")
-        .select("id, nombre, stock, activo")
+        .select("id, nombre, stock, activo, producto_variantes(id, activo)")
         .eq("activo", true)
         .lte("stock", stockSettings.lowStockThreshold)
         .order("stock", { ascending: true })
-        .limit(10),
+        .limit(100),
       EMPTY_ROWS_RESULT
     ),
     safeDashboardQuery(
       "variantes_bajo_stock",
       auth.admin
         .from("producto_variantes")
-        .select("id, nombre, stock, activo, color_hex, productos(nombre)")
+        .select("id, producto_id, nombre, stock, activo, color_hex, productos(nombre)")
         .eq("activo", true)
         .lte("stock", stockSettings.lowStockThreshold)
         .order("stock", { ascending: true })
-        .limit(10),
+        .limit(100),
       EMPTY_ROWS_RESULT
     ),
     safeDashboardQuery(
@@ -728,6 +730,25 @@ export async function GET(request: Request) {
         .select(PRODUCT_SEARCH_SELECT)
         .order("id", { ascending: false })
         .limit(80),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "ordenes_busqueda",
+      auth.admin
+        .from("ordenes")
+        .select(ORDER_SELECT)
+        .order("created_at", { ascending: false })
+        .limit(150),
+      EMPTY_ROWS_RESULT
+    ),
+    safeDashboardQuery(
+      "clientes_busqueda",
+      auth.admin
+        .from("profiles")
+        .select("id, nombre, email, username, telefono, dni")
+        .eq("rol", "cliente")
+        .order("created_at", { ascending: false })
+        .limit(150),
       EMPTY_ROWS_RESULT
     ),
     safeDashboardQuery(
@@ -963,7 +984,18 @@ export async function GET(request: Request) {
         id: number
         nombre: string
         stock: number | null
-      }>).map((product) => ({
+        producto_variantes?: Array<{
+          id: number
+          activo: boolean | null
+        }> | null
+      }>)
+    .filter(
+      (product) =>
+        !(product.producto_variantes ?? []).some(
+          (variant) => variant.activo !== false,
+        ),
+    )
+    .map((product) => ({
         id: `producto-${product.id}`,
         nombre: product.nombre,
         stock: product.stock ?? 0,
@@ -972,6 +1004,7 @@ export async function GET(request: Request) {
       }))
   const lowStockVariants = ((lowStockVariantsResult.data ?? []) as Array<{
         id: number
+        producto_id: number
         nombre: string
         stock: number | null
         color_hex?: string | null
@@ -1364,8 +1397,17 @@ export async function GET(request: Request) {
     getAndreaniStatus(),
     arcaStatus as SystemStatusItem,
   ]
+  const searchOrders = (searchOrdersResult.data ?? []) as unknown as SupabasePedido[]
+  const searchClients = (searchClientsResult.data ?? []) as Array<{
+    id: string
+    nombre?: string | null
+    email?: string | null
+    username?: string | null
+    telefono?: string | null
+    dni?: string | null
+  }>
   const searchIndex = [
-    ...recentOrders.map((order) => {
+    ...searchOrders.map((order) => {
       const orderItems = itemsByOrderId.get(order.id) ?? []
 
       return {
@@ -1385,6 +1427,26 @@ export async function GET(request: Request) {
         section: "pedidos" as const,
       }
     }),
+    ...searchClients.map((client) => ({
+      id: `cliente-${client.id}`,
+      type: "cliente" as const,
+      title:
+        client.nombre ||
+        client.username ||
+        client.email ||
+        "Cliente sin nombre",
+      detail: client.email || client.telefono || "Cuenta de cliente",
+      keywords: [
+        client.nombre,
+        client.email,
+        client.username,
+        client.telefono,
+        client.dni,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      section: "clientes" as const,
+    })),
     ...products.slice(0, 80).map((product) => ({
       id: `producto-${product.id}`,
       type: "producto" as const,

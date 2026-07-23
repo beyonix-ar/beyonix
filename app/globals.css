@@ -1220,7 +1220,7 @@
 }
 
 .admin-ds-badge,
-.beyonix-admin-main :where(span, button)[class*="rounded-full"][class*="border"] {
+.beyonix-admin-main :where(span, button):not([style*="background"])[class*="rounded-full"][class*="border"] {
   border-radius: 9999px !important;
   border-color: var(--admin-border) !important;
   background-color: rgba(17, 42, 67, 0.22) !important;
@@ -1600,6 +1600,24 @@
   background-color: var(--admin-surface-raised);
 }
 
+.beyonix-admin-main input.admin-dashboard-search-input,
+.beyonix-admin-main input.admin-dashboard-search-input:hover,
+.beyonix-admin-main input.admin-dashboard-search-input:focus,
+.beyonix-admin-main input.admin-dashboard-search-input:focus-visible {
+  min-height: 0 !important;
+  height: 100% !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.beyonix-admin-main input.admin-dashboard-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
 .beyonix-admin-main .admin-modifications-status-select:hover {
   background-color: rgba(17, 72, 112, 0.32) !important;
   border-color: rgba(113, 196, 255, 0.62) !important;
@@ -1971,6 +1989,67 @@ section.checkout-panel.checkout-form-panel::after {
 
 .admin-select-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #6fb6e8;
+}
+
+.sales-ledger-scrollbar {
+  scrollbar-color: #2d5f91 #07111b;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+
+.sales-ledger-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.sales-ledger-scrollbar::-webkit-scrollbar-track {
+  margin: 3px 8px;
+  border: 1px solid rgba(92, 159, 215, 0.12);
+  border-radius: 9999px;
+  background: #07111b;
+}
+
+.sales-ledger-scrollbar::-webkit-scrollbar-thumb {
+  min-width: 80px;
+  border: 2px solid #07111b;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #112a43, #2d5f91, #112a43);
+}
+
+.sales-ledger-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #1b3a5a, #6fb6e8, #1b3a5a);
+}
+
+.sales-ledger-scrollbar::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.sales-ledger-product-option {
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease !important;
+}
+
+.admin-ds-select-menu button.sales-ledger-product-option:hover {
+  background:
+    linear-gradient(90deg, rgba(17, 42, 67, 0.72), rgba(45, 95, 145, 0.82), rgba(17, 42, 67, 0.72)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(111, 182, 232, 0.34),
+    0 5px 16px rgba(0, 0, 0, 0.2) !important;
+  color: #ffffff !important;
+}
+
+button.sales-ledger-product-trigger:hover {
+  border-color: rgba(111, 182, 232, 0.72) !important;
+  background:
+    linear-gradient(145deg, rgba(17, 42, 67, 0.78), rgba(7, 21, 35, 0.98)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(111, 182, 232, 0.16),
+    0 0 18px rgba(45, 95, 145, 0.16) !important;
+  color: #ffffff !important;
 }
 
 .admin-order-data-panel {

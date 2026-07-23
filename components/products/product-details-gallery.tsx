@@ -123,11 +123,11 @@ export function ProductDetailsGallery({
   }, [safeIndex])
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden bg-[#090D12] px-3 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4 md:h-full">
-      <div className="relative flex min-h-290px flex-1 items-center justify-center rounded-2xl border border-beyonix-blue-light/18 bg-[#0D1118] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_46px_rgba(0,0,0,0.28)] sm:min-h-380px sm:p-3 md:min-h-0">
+    <div className="flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5 md:h-full">
+      <div className="relative flex min-h-290px flex-1 items-center justify-center sm:min-h-380px md:min-h-0">
         <div className="flex h-full min-h-0 w-full items-center justify-center">
           <div
-            className="relative flex aspect-square h-auto w-full max-w-[min(100%,660px)] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.24),0_24px_60px_rgba(0,0,0,0.32)] md:max-h-[660px]"
+            className="relative flex aspect-square h-auto w-full max-w-[min(100%,660px)] items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[0_22px_58px_rgba(0,0,0,0.3)] md:max-h-[660px]"
           >
             {isVideoSelected && playableVideo ? (
               <ProductVideoPlayer
@@ -188,18 +188,18 @@ export function ProductDetailsGallery({
         </div>
 
         {!isLoaded && (
-          <div className="pointer-events-none absolute inset-0 animate-pulse bg-white/5" />
+          <div className="pointer-events-none absolute inset-0 animate-pulse rounded-2xl bg-white/4" />
         )}
       </div>
 
-      <div className="flex h-38px shrink-0 items-start justify-center pt-2 sm:h-42px sm:pt-2.5">
-        <span className="rounded-full border border-white/8 bg-white/4 px-3 py-1 text-12px font-bold tabular-nums tracking-widest text-white/78">
+      <div className="flex h-34px shrink-0 items-end justify-center pt-2">
+        <span className="text-11px font-bold tabular-nums tracking-widest text-white/40">
           {safeIndex + 1} / {mediaCount || 1}
         </span>
       </div>
 
       {visibleMedia.length > 0 && (
-        <div className="flex h-78px shrink-0 items-start justify-center pt-3 sm:h-86px sm:pt-3.5">
+        <div className="flex h-78px shrink-0 items-end justify-center pt-2 sm:h-86px">
           <div className="flex items-center justify-center gap-2.5">
             {visibleMedia.map((media, index) => {
               const isVideo = media.type === "video"
@@ -301,10 +301,10 @@ function ProductMediaThumbnail({
       type="button"
       aria-label={label}
       onClick={() => onSelectImage(index)}
-      className={`group relative size-16 cursor-pointer overflow-hidden rounded-xl border transition-all duration-200 sm:size-[72px] ${
+      className={`group relative size-16 cursor-pointer overflow-hidden rounded-xl transition-all duration-200 sm:size-[72px] ${
         isActive
-          ? "scale-105 border-beyonix-sky shadow-[0_0_0_3px_rgba(30,140,255,0.16),0_10px_24px_rgba(0,0,0,0.35)]"
-          : "border-white/14 hover:scale-105 hover:border-beyonix-blue-light/65"
+          ? "scale-105 ring-2 ring-beyonix-sky ring-offset-2 ring-offset-[#080D13] shadow-[0_10px_24px_rgba(0,0,0,0.35)]"
+          : "opacity-78 ring-1 ring-white/10 hover:scale-105 hover:opacity-100 hover:ring-beyonix-blue-light/55"
       } ${isVideo ? "bg-black" : "bg-white"}`}
     >
       {isVideo ? (

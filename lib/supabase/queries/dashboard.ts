@@ -59,11 +59,11 @@ export interface DashboardSystemStatus {
 
 export interface DashboardSearchItem {
   id: string
-  type: "pedido" | "producto"
+  type: "pedido" | "cliente" | "producto"
   title: string
   detail: string
   keywords: string
-  section: "pedidos" | "productos"
+  section: "pedidos" | "clientes" | "productos"
 }
 
 export interface DashboardStats {

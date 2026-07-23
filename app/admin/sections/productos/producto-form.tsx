@@ -1,9 +1,20 @@
 "use client"
 
-import { useState } from "react"
-import { ArrowLeft, Loader2, Play, ToggleLeft, ToggleRight } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import {
+  ArrowLeft,
+  Eye,
+  Loader2,
+  Play,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react"
 
-import type { SupabaseProducto } from "@/lib/supabase/types"
+import type {
+  SupabaseProducto,
+  SupabaseProductoEspecificacion,
+  SupabaseProductoVariante,
+} from "@/lib/supabase/types"
 
 import type {
   DraftProductoEspecificacion,
@@ -11,6 +22,7 @@ import type {
 } from "./types"
 import { ProductSpecificationsEditor } from "./product-specifications-editor"
 import { ProductVariantsEditor } from "./product-variants-editor"
+import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { useProductoForm } from "./use-producto-form"
 import {
   adminControlClassName,
@@ -41,6 +53,15 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
     draftSpecifications,
     setDraftSpecifications,
   ] = useState<DraftProductoEspecificacion[]>([])
+  const [persistedVariants, setPersistedVariants] = useState<
+    SupabaseProductoVariante[]
+  >(producto?.producto_variantes ?? [])
+  const [persistedSpecifications, setPersistedSpecifications] = useState<
+    SupabaseProductoEspecificacion[]
+  >(producto?.producto_especificaciones ?? [])
+  const [previewProduct, setPreviewProduct] =
+    useState<SupabaseProducto | null>(null)
+  const previewObjectUrls = useRef<string[]>([])
 
   const {
     form,
@@ -61,6 +82,121 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
   const videoSource = getProductVideoSource(form.video_url)
   const canPreviewVideo =
     videoSource && videoSource.kind !== "unsupported"
+
+  const releasePreviewObjectUrls = () => {
+    previewObjectUrls.current.forEach((url) => URL.revokeObjectURL(url))
+    previewObjectUrls.current = []
+  }
+
+  useEffect(
+    () => () => {
+      previewObjectUrls.current.forEach((url) => URL.revokeObjectURL(url))
+    },
+    [],
+  )
+
+  const openProductPreview = () => {
+    releasePreviewObjectUrls()
+
+    const now = new Date().toISOString()
+    const previewId = producto?.id ?? 2_000_000_000
+    const price = Number(form.precio)
+    const previousPrice = form.precio_anterior
+      ? Number(form.precio_anterior)
+      : null
+    const safePrice = Number.isFinite(price) ? Math.max(0, price) : 0
+    const safePreviousPrice =
+      previousPrice != null && Number.isFinite(previousPrice)
+        ? Math.max(0, previousPrice)
+        : null
+    const selectedCategory = categorias.find(
+      (category) => String(category.id) === form.categoria_id,
+    )
+
+    const previewVariants: SupabaseProductoVariante[] = currentProductoId
+      ? persistedVariants
+      : draftVariants.map((variant, index) => {
+          const images = variant.imagenes.map((file) => {
+            const url = URL.createObjectURL(file)
+            previewObjectUrls.current.push(url)
+            return url
+          })
+
+          return {
+            id: 2_000_000_000 + index + 1,
+            producto_id: previewId,
+            nombre: variant.nombre.trim() || `Variante ${index + 1}`,
+            color_hex: variant.color_hex || "#000000",
+            stock: Number(variant.stock) || 0,
+            imagenes: images,
+            activo: true,
+            orden: index + 1,
+            created_at: now,
+          }
+        })
+
+    const previewSpecifications: SupabaseProductoEspecificacion[] =
+      currentProductoId
+        ? persistedSpecifications
+        : draftSpecifications.map((specification, index) => ({
+            id: 2_000_000_000 + index + 1,
+            producto_id: previewId,
+            icono: specification.icono,
+            texto: specification.texto,
+            orden: specification.orden,
+            activo: specification.activo,
+            created_at: now,
+          }))
+    const principalImage =
+      [...previewVariants]
+        .sort((a, b) => a.orden - b.orden)
+        .flatMap((variant) => variant.imagenes ?? [])[0] ??
+      producto?.imagen_principal ??
+      null
+    const stock = previewVariants.length
+      ? previewVariants.reduce(
+          (total, variant) => total + Number(variant.stock ?? 0),
+          0,
+        )
+      : Number(form.stock) || 0
+
+    setPreviewProduct({
+      ...(producto ?? {
+        id: previewId,
+        created_at: now,
+      }),
+      id: previewId,
+      nombre: form.nombre.trim() || "Producto sin nombre",
+      slug: form.slug.trim() || "producto-sin-nombre",
+      descripcion: form.descripcion.trim() || null,
+      video_url: form.video_url.trim() || null,
+      precio: safePrice,
+      precio_anterior: safePreviousPrice,
+      descuento:
+        safePreviousPrice && safePreviousPrice > safePrice
+          ? Math.round(
+              ((safePreviousPrice - safePrice) / safePreviousPrice) * 100,
+            )
+          : null,
+      cuotas_sin_interes: form.cuotas !== "sin_cuotas",
+      cuotas_maximas:
+        form.cuotas === "3" ? 3 : form.cuotas === "6" ? 6 : null,
+      stock,
+      categoria_id: form.categoria_id ? Number(form.categoria_id) : null,
+      destacado: form.destacado,
+      activo: form.activo,
+      imagen_principal: principalImage,
+      categorias: selectedCategory ?? null,
+      producto_variantes: previewVariants,
+      producto_especificaciones: previewSpecifications,
+    })
+  }
+
+  const closeProductPreview = () => {
+    setPreviewProduct(null)
+    releasePreviewObjectUrls()
+  }
+
   return (
     <div className={adminPageClassName}>
       <div className="w-full">
@@ -297,6 +433,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   productoId={currentProductoId || undefined}
                   draftVariants={draftVariants}
                   onDraftVariantsChange={setDraftVariants}
+                  onPersistedVariantsChange={setPersistedVariants}
                 />
               </div>
             </section>
@@ -308,6 +445,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   productoId={currentProductoId || undefined}
                   draftSpecifications={draftSpecifications}
                   onDraftSpecificationsChange={setDraftSpecifications}
+                  onPersistedSpecificationsChange={setPersistedSpecifications}
                 />
               </div>
             </section>
@@ -323,6 +461,17 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             )}
 
             <div className="flex flex-col gap-3 border-t border-white/7 pt-4 sm:flex-row sm:justify-end">
+              <AdminSecondaryButton
+                title="Vista previa del producto"
+                aria-label="Vista previa del producto"
+                onClick={openProductPreview}
+                disabled={saving}
+                className="w-full border-beyonix-sky/30 bg-beyonix-blue/22 text-white sm:w-auto sm:min-w-180px"
+              >
+                <Eye className="size-4 text-beyonix-sky" />
+                Vista previa
+              </AdminSecondaryButton>
+
               <AdminPrimaryButton
                 type="submit"
                 disabled={saving}
@@ -353,6 +502,14 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
           </div>
         </form>
       </div>
+
+      {previewProduct && (
+        <AdminProductPreviewModal
+          product={previewProduct}
+          readOnly
+          onClose={closeProductPreview}
+        />
+      )}
     </div>
   )
 }

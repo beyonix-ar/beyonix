@@ -146,11 +146,11 @@ export function ProductDetailsPanel({
     Number.isInteger(reviewsCount) && reviewsCount > 0
 
   return (
-    <aside className="flex min-h-0 flex-col bg-[#080B0F] text-white md:h-full">
+    <aside className="flex min-h-0 flex-col bg-[#080D13] text-white md:h-full md:border-l md:border-white/7">
       <div className="flex min-h-0 flex-1 flex-col md:overflow-hidden">
         <div className="shrink-0 px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
           {product.categorias?.nombre && (
-            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
+            <span className="mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
               <Sparkles className="size-3.5" />
               {product.categorias.nombre}
             </span>
@@ -180,10 +180,9 @@ export function ProductDetailsPanel({
           )}
         </div>
 
-        <div className="h-px bg-beyonix-blue-light/16" />
-
-        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col md:overflow-y-auto">
-            <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
+        <div className="custom-scrollbar min-h-0 flex-1 border-t border-white/7 px-5 py-5 md:overflow-y-auto md:px-7">
+          <div className="space-y-7">
+            <section>
             <p className="mb-2 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
               Descripción
             </p>
@@ -201,10 +200,10 @@ export function ProductDetailsPanel({
                 </p>
               )}
             </div>
-          </section>
+            </section>
 
-          {limitedFeatures.length > 0 && (
-          <section className="shrink-0 border-b border-beyonix-blue-light/12 px-5 py-4 md:px-7">
+            {limitedFeatures.length > 0 && (
+            <section>
               <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
                 Características principales
               </p>
@@ -239,11 +238,11 @@ export function ProductDetailsPanel({
                   ))}
                 </div>
               </div>
-            </section>
-          )}
+              </section>
+            )}
 
-          {hasVariants && (
-            <section className="shrink-0 px-5 py-4 md:px-7">
+            {hasVariants && (
+            <section>
               <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
                 Variante
               </p>
@@ -258,12 +257,13 @@ export function ProductDetailsPanel({
                 onSelect={onColorChange}
                 showLabels
               />
-            </section>
-          )}
+              </section>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-beyonix-blue-light/16 bg-[#070A0E]">
+      <div className="shrink-0 border-t border-white/7">
         <ProductPurchaseBox
           price={product.precio}
           originalPrice={product.precio_anterior || undefined}
