@@ -27,7 +27,7 @@ import {
 } from "@/lib/supabase/queries/dashboard"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { formatPrice } from "../productos/helpers"
-import { SITE_SETTINGS } from "@/config/site-settings"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 import {
   AdminEmptyState,
@@ -786,6 +786,7 @@ function MercadoLibreImporter({ onImported }: { onImported: () => void }) {
 }
 
 export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
+  const { stock: stockSettings } = useSiteSettings()
   const {
     stats,
     role,
@@ -1034,8 +1035,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               {lowStock.length ? lowStock.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
                   <div className="flex items-start justify-between gap-3">
-                    <span className="min-w-0"><span className="block truncate text-sm font-bold text-white">{item.producto_nombre || item.nombre}</span><span className="mt-1 flex items-center gap-2 truncate text-xs text-white/45">{item.color_hex && <span className="size-3 rounded-full border border-white/20" style={{ backgroundColor: item.color_hex }} />}{item.tipo === "variante" ? item.nombre : "Producto"}</span><span className="mt-2 block text-11px font-bold uppercase tracking-widest text-white/35">Umbral mínimo: {item.threshold}</span></span>
-                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${item.stock <= SITE_SETTINGS.stock.criticalStockThreshold ? "border-red-400/25 bg-red-400/10 text-red-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>Stock {item.stock}</span>
+                    <span className="min-w-0"><span className="block truncate text-sm font-bold text-white">{item.producto_nombre || item.nombre}</span><span className="mt-1 flex items-center gap-2 truncate text-xs text-white/45">{item.color_hex && <span className="size-3 rounded-full border border-white/20" style={{ backgroundColor: item.color_hex }} />}{item.tipo === "variante" ? item.nombre : "Producto"}</span><span className="mt-2 block text-11px font-bold uppercase tracking-widest text-white/35">Stock bajo hasta: {item.threshold}</span></span>
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${item.stock <= stockSettings.criticalStockThreshold ? "border-red-400/25 bg-red-400/10 text-red-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>Stock {item.stock}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-beyonix-blue-light/18 bg-beyonix-blue/12 px-3 text-xs font-black text-white/70 transition hover:border-beyonix-sky/38 hover:text-white">Editar producto</button>

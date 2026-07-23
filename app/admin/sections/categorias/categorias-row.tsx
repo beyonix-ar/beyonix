@@ -3,8 +3,8 @@
 import { Pencil, Star, Trash2 } from "lucide-react"
 
 import { AdminSelect } from "@/app/admin/components/admin-controls"
-import { SITE_SETTINGS } from "@/config/site-settings"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
+import type { StockSettings } from "@/lib/site-settings"
 
 interface CategoriasRowProps {
   categoria: SupabaseCategoria
@@ -12,6 +12,7 @@ interface CategoriasRowProps {
     articulos: number
     stock: number
   }
+  stockSettings: StockSettings
 
   isLast?: boolean
 
@@ -30,6 +31,7 @@ interface CategoriasRowProps {
 export function CategoriasRow({
   categoria,
   stats,
+  stockSettings,
   isLast,
   onEdit,
   onToggleDestacado,
@@ -56,9 +58,9 @@ export function CategoriasRow({
 
       <p
         className={`text-center text-sm font-bold ${
-          stats.stock <= SITE_SETTINGS.stock.criticalStockThreshold
+          stats.stock <= stockSettings.criticalStockThreshold
             ? "text-red-400"
-            : stats.stock <= SITE_SETTINGS.stock.lowStockThreshold
+            : stats.stock <= stockSettings.lowStockThreshold
             ? "text-amber-400"
             : "text-green-400"
         }`}

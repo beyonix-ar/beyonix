@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 
-import { SITE_SETTINGS } from "@/config/site-settings"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 import { useProductos } from "@/hooks/use-productos"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -25,6 +25,7 @@ function getStockTotal(producto: SupabaseProducto) {
 }
 
 export function AdminProductos() {
+  const { stock: stockSettings } = useSiteSettings()
   const {
     productos,
     loading,
@@ -78,9 +79,9 @@ export function AdminProductos() {
         (stockFilter === "sin_stock" && stock <= 0) ||
         (stockFilter === "bajo_stock" &&
           stock > 0 &&
-          stock <= SITE_SETTINGS.stock.lowStockThreshold) ||
+          stock <= stockSettings.lowStockThreshold) ||
         (stockFilter === "disponible" &&
-          stock > SITE_SETTINGS.stock.lowStockThreshold)
+          stock >= stockSettings.availableStockThreshold)
       const matchesActive =
         activeFilter === "todos" ||
         (activeFilter === "activos" && producto.activo) ||
@@ -105,6 +106,7 @@ export function AdminProductos() {
     productos,
     search,
     stockFilter,
+    stockSettings,
   ])
 
   const handleDelete = async (id: number) => {
@@ -165,6 +167,7 @@ export function AdminProductos() {
 
           <ProductosTable
             productos={productosFiltrados}
+            stockSettings={stockSettings}
             loading={loading}
             onEdit={(producto) => setEditando(producto)}
             onDelete={handleDelete}

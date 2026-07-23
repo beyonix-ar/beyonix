@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { useCategorias } from "@/hooks/use-categorias"
 import { useProductos } from "@/hooks/use-productos"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 import { updateCategoria } from "@/lib/supabase/queries/categorias"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
 
@@ -20,6 +21,7 @@ interface AdminCategoriasProps {
 }
 
 export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) {
+  const { stock: stockSettings } = useSiteSettings()
   const { categorias, loading, deleteCategoria, reloadCategorias } =
     useCategorias()
   const { productos } = useProductos()
@@ -255,6 +257,7 @@ export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) 
       <CategoriasTable
         categorias={categoriasFiltradas}
         categoryStats={categoryStats}
+        stockSettings={stockSettings}
         loading={loading}
         onEdit={setEditando}
         onToggleDestacado={handleToggleDestacado}

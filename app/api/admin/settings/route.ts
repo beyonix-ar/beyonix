@@ -3,6 +3,7 @@ import {
   getSiteSettings,
   normalizeCustomerCreditPaymentSettings,
   normalizeShippingSettings,
+  normalizeStockSettings,
 } from "@/lib/site-settings"
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
@@ -23,12 +24,14 @@ export async function PATCH(request: Request) {
   const body = (await request.json()) as {
     shipping?: unknown
     customerCreditPayments?: unknown
+    stock?: unknown
   }
   const before = await getSiteSettings()
   const shipping = normalizeShippingSettings(body.shipping)
   const customerCreditPayments = normalizeCustomerCreditPaymentSettings(
     body.customerCreditPayments,
   )
+  const stock = normalizeStockSettings(body.stock)
   const updatedAt = new Date().toISOString()
 
   const { error } = await auth.admin
@@ -39,6 +42,13 @@ export async function PATCH(request: Request) {
           key: "shipping",
           value: shipping,
           description: "Configuración de costos y bonificación de envío.",
+          updated_by: auth.user.id,
+          updated_at: updatedAt,
+        },
+        {
+          key: "stock",
+          value: stock,
+          description: "Umbrales de color para el estado del stock.",
           updated_by: auth.user.id,
           updated_at: updatedAt,
         },
@@ -65,13 +75,14 @@ export async function PATCH(request: Request) {
     actor_user_id: auth.user.id,
     actor_email: auth.user.email ?? auth.profile.email,
     before_data: before,
-    after_data: { shipping, customerCreditPayments, updated_at: updatedAt },
+    after_data: { shipping, customerCreditPayments, stock, updated_at: updatedAt },
   })
 
   return Response.json({
     settings: {
       shipping,
       customerCreditPayments,
+      stock,
     },
   })
 }

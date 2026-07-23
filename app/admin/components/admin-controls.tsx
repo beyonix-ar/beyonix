@@ -84,6 +84,7 @@ interface AdminTextInputProps {
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"]
   type?: InputHTMLAttributes<HTMLInputElement>["type"]
   disabled?: boolean
+  maxLength?: number
   className?: string
   onChange: (value: string) => void
 }
@@ -393,6 +394,7 @@ export function AdminTextInput({
   inputMode,
   type = "text",
   disabled = false,
+  maxLength,
   className,
   onChange,
 }: AdminTextInputProps) {
@@ -410,6 +412,7 @@ export function AdminTextInput({
         placeholder={placeholder}
         inputMode={inputMode}
         disabled={disabled}
+        maxLength={maxLength}
         onChange={(event) => onChange(event.target.value)}
         className={cn(adminControlClassName, icon && "pl-11", className)}
       />

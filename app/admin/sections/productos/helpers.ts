@@ -87,7 +87,7 @@ export function getStockLabel(
   }
 
   if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) {
-    return "Stock critico"
+    return "Stock crítico"
   }
 
   if (stock <= SITE_SETTINGS.stock.lowStockThreshold) {

@@ -5,10 +5,18 @@ import {
   type FreeShippingMode,
   type ShippingBonusSettings,
 } from "@/lib/store-config"
+import { SITE_SETTINGS } from "@/config/site-settings"
 
 export interface SiteSettings {
   shipping: ShippingBonusSettings
   customerCreditPayments: CustomerCreditPaymentSettings
+  stock: StockSettings
+}
+
+export interface StockSettings {
+  criticalStockThreshold: number
+  lowStockThreshold: number
+  availableStockThreshold: number
 }
 
 export interface CustomerCreditPaymentSettings {
@@ -19,6 +27,12 @@ export interface CustomerCreditPaymentSettings {
 export const DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS: CustomerCreditPaymentSettings = {
   mercadoPagoSurchargePercent: 8,
   mercadoPagoMinimumAmount: MIN_MERCADOPAGO_CUSTOMER_CREDIT_TOPUP,
+}
+
+export const DEFAULT_STOCK_SETTINGS: StockSettings = {
+  criticalStockThreshold: SITE_SETTINGS.stock.criticalStockThreshold,
+  lowStockThreshold: SITE_SETTINGS.stock.lowStockThreshold,
+  availableStockThreshold: SITE_SETTINGS.stock.lowStockThreshold + 1,
 }
 
 function numberFromValue(value: unknown, fallback: number) {
@@ -81,10 +95,41 @@ export function normalizeCustomerCreditPaymentSettings(
   return { mercadoPagoSurchargePercent, mercadoPagoMinimumAmount }
 }
 
+export function normalizeStockSettings(value: unknown): StockSettings {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {}
+  const criticalStockThreshold = Math.min(
+    97,
+    numberFromValue(
+      source.criticalStockThreshold,
+      DEFAULT_STOCK_SETTINGS.criticalStockThreshold,
+    ),
+  )
+  const lowStockThreshold = Math.min(
+    98,
+    Math.max(
+      criticalStockThreshold + 1,
+      numberFromValue(
+        source.lowStockThreshold,
+        DEFAULT_STOCK_SETTINGS.lowStockThreshold,
+      ),
+    ),
+  )
+
+  return {
+    criticalStockThreshold,
+    lowStockThreshold,
+    availableStockThreshold: lowStockThreshold + 1,
+  }
+}
+
 export function getFallbackSiteSettings(): SiteSettings {
   return {
     shipping: DEFAULT_SHIPPING_SETTINGS,
     customerCreditPayments: DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
+    stock: DEFAULT_STOCK_SETTINGS,
   }
 }
 
@@ -94,7 +139,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     const { data, error } = await admin
       .from("site_settings")
       .select("key, value")
-      .in("key", ["shipping", "customer_credit_payments"])
+      .in("key", ["shipping", "customer_credit_payments", "stock"])
 
     if (error) {
       return getFallbackSiteSettings()
@@ -109,6 +154,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
       customerCreditPayments: normalizeCustomerCreditPaymentSettings(
         settingsByKey.get("customer_credit_payments"),
       ),
+      stock: normalizeStockSettings(settingsByKey.get("stock")),
     }
   } catch {
     return getFallbackSiteSettings()

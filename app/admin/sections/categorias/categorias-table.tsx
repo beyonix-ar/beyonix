@@ -3,6 +3,7 @@
 import { FolderOpen } from "lucide-react"
 
 import type { SupabaseCategoria } from "@/lib/supabase/types"
+import type { StockSettings } from "@/lib/site-settings"
 
 import { CategoriasRow } from "./categorias-row"
 
@@ -16,6 +17,7 @@ interface CategoriasTableProps {
       stock: number
     }
   >
+  stockSettings: StockSettings
 
   loading: boolean
 
@@ -43,6 +45,7 @@ const headers = [
 export function CategoriasTable({
   categorias,
   categoryStats,
+  stockSettings,
   loading,
   onEdit,
   onToggleDestacado,
@@ -104,6 +107,7 @@ export function CategoriasTable({
                 stock: 0,
               }
             }
+            stockSettings={stockSettings}
             isLast={index === categorias.length - 1}
             onEdit={onEdit}
             onToggleDestacado={onToggleDestacado}

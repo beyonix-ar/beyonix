@@ -5,6 +5,7 @@ import { Package } from "lucide-react"
 import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
+import type { StockSettings } from "@/lib/site-settings"
 
 import {
   AdminEmptyState,
@@ -15,6 +16,7 @@ import { ProductosRow } from "./productos-row"
 
 interface ProductosTableProps {
   productos: SupabaseProducto[]
+  stockSettings: StockSettings
 
   loading: boolean
 
@@ -33,6 +35,7 @@ interface ProductosTableProps {
 
 export function ProductosTable({
   productos,
+  stockSettings,
   loading,
   onEdit,
   onDelete,
@@ -86,6 +89,7 @@ export function ProductosTable({
           <ProductosRow
             key={producto.id}
             producto={producto}
+            stockSettings={stockSettings}
             isLast={
               index ===
               productos.length -

@@ -2,7 +2,7 @@ import { requireInternalUser } from "@/lib/auth/admin-api"
 import { canViewSensitiveNumbers } from "@/lib/auth/roles"
 import { getAndreaniConfig, isAndreaniReady } from "@/lib/andreani/client"
 import { getWsfeHealth } from "@/lib/arca/wsfe"
-import { SITE_SETTINGS } from "@/config/site-settings"
+import { getSiteSettings } from "@/lib/site-settings"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -380,6 +380,7 @@ export async function GET(request: Request) {
   if ("error" in auth) return auth.error
 
   const sensitive = canViewSensitiveNumbers(auth.profile.rol)
+  const { stock: stockSettings } = await getSiteSettings()
   const paidOrderFilter =
     "estado.in.(pagado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado,approved),payment_status.eq.approved"
 
@@ -508,7 +509,7 @@ export async function GET(request: Request) {
         .from("productos")
         .select("id, nombre, stock, activo")
         .eq("activo", true)
-        .lte("stock", SITE_SETTINGS.stock.lowStockThreshold)
+        .lte("stock", stockSettings.lowStockThreshold)
         .order("stock", { ascending: true })
         .limit(10),
       EMPTY_ROWS_RESULT
@@ -519,7 +520,7 @@ export async function GET(request: Request) {
         .from("producto_variantes")
         .select("id, nombre, stock, activo, color_hex, productos(nombre)")
         .eq("activo", true)
-        .lte("stock", SITE_SETTINGS.stock.lowStockThreshold)
+        .lte("stock", stockSettings.lowStockThreshold)
         .order("stock", { ascending: true })
         .limit(10),
       EMPTY_ROWS_RESULT
@@ -599,7 +600,7 @@ export async function GET(request: Request) {
         id: `producto-${product.id}`,
         nombre: product.nombre,
         stock: product.stock ?? 0,
-        threshold: SITE_SETTINGS.stock.lowStockThreshold,
+        threshold: stockSettings.lowStockThreshold,
         tipo: "producto" as const,
       }))
   const lowStockVariants = ((lowStockVariantsResult.data ?? []) as Array<{
@@ -613,7 +614,7 @@ export async function GET(request: Request) {
         nombre: variant.nombre,
         producto_nombre: variant.productos?.nombre ?? "Producto",
         stock: variant.stock ?? 0,
-        threshold: SITE_SETTINGS.stock.lowStockThreshold,
+        threshold: stockSettings.lowStockThreshold,
         tipo: "variante" as const,
         color_hex: variant.color_hex ?? undefined,
       }))

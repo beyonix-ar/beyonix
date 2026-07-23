@@ -22,6 +22,7 @@ import type {
   SupabaseProductoVariante,
   SupabaseProducto,
 } from "@/lib/supabase/types"
+import type { StockSettings } from "@/lib/site-settings"
 
 import {
   deleteProductoVariante,
@@ -33,10 +34,10 @@ import {
 } from "@/lib/supabase/queries/productos"
 
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
-import { SITE_SETTINGS } from "@/config/site-settings"
 
 interface ProductosRowProps {
   producto: SupabaseProducto
+  stockSettings: StockSettings
   isLast?: boolean
   onEdit: (
     producto: SupabaseProducto
@@ -47,14 +48,14 @@ interface ProductosRowProps {
   ) => void
 }
 
-const stockColor = (stock: number) => {
+const stockColor = (stock: number, settings: StockSettings) => {
   if (stock <= 0) return "text-red-400"
-  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) return "text-red-400"
-  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) return "text-amber-400"
+  if (stock <= settings.criticalStockThreshold) return "text-red-400"
+  if (stock <= settings.lowStockThreshold) return "text-amber-400"
   return "text-green-400"
 }
 
-const stockStatus = (stock: number) => {
+const stockStatus = (stock: number, settings: StockSettings) => {
   if (stock <= 0) {
     return {
       label: "Sin stock",
@@ -63,15 +64,15 @@ const stockStatus = (stock: number) => {
     }
   }
 
-  if (stock <= SITE_SETTINGS.stock.criticalStockThreshold) {
+  if (stock <= settings.criticalStockThreshold) {
     return {
-      label: "Stock critico",
+      label: "Stock crítico",
       className:
         "border-red-500/20 bg-red-500/10 text-red-400",
     }
   }
 
-  if (stock <= SITE_SETTINGS.stock.lowStockThreshold) {
+  if (stock <= settings.lowStockThreshold) {
     return {
       label: "Stock bajo",
       className:
@@ -167,6 +168,7 @@ const getInstallmentsLabel = (
 
 export function ProductosRow({
   producto,
+  stockSettings,
   isLast,
   onEdit,
   onDelete,
@@ -557,7 +559,8 @@ export function ProductosRow({
 
               <span
                 className={`text-10px font-semibold ${stockColor(
-                  stockTotal
+                  stockTotal,
+                  stockSettings,
                 )}`}
               >
                 Stock: {stockTotal}
@@ -677,7 +680,7 @@ export function ProductosRow({
                 variante.stock ?? 0
 
               const status =
-                stockStatus(stock)
+                stockStatus(stock, stockSettings)
               const isPrincipal =
                 index === 0
               const darkColor =
@@ -817,7 +820,8 @@ export function ProductosRow({
                     <>
                       <span
                         className={`text-sm font-semibold ${stockColor(
-                          stock
+                          stock,
+                          stockSettings,
                         )}`}
                       >
                         Stock: {stock}
@@ -890,6 +894,7 @@ export function ProductosRow({
         <VariantModal
           producto={producto}
           variante={viewingVariant}
+          stockSettings={stockSettings}
           onClose={() =>
             setViewingVariant(null)
           }
@@ -914,19 +919,21 @@ export function ProductosRow({
 interface VariantModalProps {
   producto: SupabaseProducto
   variante: SupabaseProductoVariante
+  stockSettings: StockSettings
   onClose: () => void
 }
 
 function VariantModal({
   producto,
   variante,
+  stockSettings,
   onClose,
 }: VariantModalProps) {
   const stock =
     variante.stock ?? 0
 
   const status =
-    stockStatus(stock)
+    stockStatus(stock, stockSettings)
 
   const imagenes =
     variante.imagenes || []
@@ -972,7 +979,8 @@ function VariantModal({
 
               <span
                 className={`text-sm font-semibold ${stockColor(
-                  stock
+                  stock,
+                  stockSettings,
                 )}`}
               >
                 Stock: {stock}
