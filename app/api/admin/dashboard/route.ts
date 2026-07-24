@@ -118,7 +118,7 @@ interface DashboardFinancialSummary {
 }
 
 interface ProductCostRow {
-  product_id: number
+  product_id: number | null
   variant_id: number | null
   purchase_date: string
   quantity: number
@@ -140,6 +140,7 @@ interface CostLedgerPoint {
 function buildCostLedgers(rows: ProductCostRow[]) {
   const grouped = new Map<string, ProductCostRow[]>()
   rows.forEach((row) => {
+    if (row.product_id == null) return
     const key = row.variant_id ? `v:${row.variant_id}` : `p:${row.product_id}`
     const values = grouped.get(key) ?? []
     values.push(row)
@@ -468,6 +469,7 @@ const PRODUCT_SEARCH_SELECT = `
   id,
   nombre,
   slug,
+  sku,
   activo,
   stock,
   categorias(nombre),
@@ -1455,6 +1457,7 @@ export async function GET(request: Request) {
       keywords: [
         product.nombre,
         product.slug,
+        product.sku,
         ...(product.producto_variantes ?? []).map((variant) => variant.nombre),
       ]
         .filter(Boolean)

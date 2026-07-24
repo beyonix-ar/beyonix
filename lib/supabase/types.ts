@@ -79,6 +79,8 @@ export interface SupabaseProducto {
 
   imagen_principal: string | null
   video_url: string | null
+  sku?: string | null
+  created_from_costs?: boolean
 
   created_at: string
 

@@ -5,6 +5,12 @@ import {
   getHistoricalUnitCost,
   type ProductCostLedgerRow,
 } from "@/lib/business/product-costs"
+import {
+  buildStandaloneCostItems,
+  getStandaloneHistoricalUnitCost,
+  standaloneCostKey,
+  type StandaloneCostRow,
+} from "@/lib/business/standalone-cost-items"
 
 const SELECT = [
   "id",
@@ -26,8 +32,9 @@ const SELECT = [
 ].join(", ")
 
 interface CostMapping {
-  product_id: number
+  product_id: number | null
   variant_id: number | null
+  standalone_key: string | null
   match_key: string
 }
 
@@ -53,14 +60,22 @@ function rawObject(value: unknown) {
 function getCostMapping(row: Record<string, unknown>): CostMapping | null {
   const raw = rawObject(row.raw_data)
   const storedMapping = rawObject(raw.beyonix_cost_mapping)
+  const standaloneKey =
+    typeof storedMapping.standalone_key === "string"
+      ? storedMapping.standalone_key
+      : null
   const productId = number(storedMapping.product_id || row.product_id)
-  if (!Number.isInteger(productId) || productId <= 0) return null
+  const validProductId = Number.isInteger(productId) && productId > 0
+    ? productId
+    : null
+  if (!validProductId && !standaloneKey) return null
 
   const variantId = number(storedMapping.variant_id)
   return {
-    product_id: productId,
+    product_id: validProductId,
     variant_id:
-      Number.isInteger(variantId) && variantId > 0 ? variantId : null,
+      validProductId && Number.isInteger(variantId) && variantId > 0 ? variantId : null,
+    standalone_key: standaloneKey,
     match_key:
       typeof storedMapping.match_key === "string"
         ? storedMapping.match_key
@@ -133,38 +148,49 @@ export async function GET(request: Request) {
   const [catalogResult, productCostsResult] = await Promise.all([
     auth.admin
       .from("productos")
-      .select("id, nombre, activo, producto_variantes(id, nombre, activo)")
+      .select("id, nombre, sku, activo, producto_variantes(id, nombre, activo)")
       .order("nombre", { ascending: true }),
     auth.admin
       .from("product_cost_entries")
-      .select("product_id, variant_id, purchase_date, quantity, total_cost")
+      .select("id, product_id, variant_id, article_name, sku, purchase_date, quantity, total_cost, created_at")
       .order("purchase_date", { ascending: true })
       .limit(10000),
   ])
 
   if (catalogResult.error) {
     return Response.json(
-      { error: "No se pudo cargar el catálogo de productos." },
-      { status: 500 },
+      {
+        error: /sku|created_from_costs|schema cache/i.test(catalogResult.error.message)
+          ? "Falta aplicar la migración 085_cost_items_shared_catalog.sql en Supabase."
+          : "No se pudo cargar el catálogo de productos.",
+      },
+      { status: /sku|created_from_costs|schema cache/i.test(catalogResult.error.message) ? 503 : 500 },
     )
   }
 
-  const costRows = productCostsResult.error
+  const allCostRows = productCostsResult.error
     ? []
-    : ((productCostsResult.data ?? []) as ProductCostLedgerRow[])
-  const costLedgers = buildProductCostLedgers(costRows)
+    : ((productCostsResult.data ?? []) as (ProductCostLedgerRow & StandaloneCostRow)[])
+  const costLedgers = buildProductCostLedgers(allCostRows)
   const costedRows = rows.map((row) => {
     const mapping = getCostMapping(row)
     const costableUnits = getCostableUnits(row)
-    const unitCost =
-      mapping && row.sale_date
-        ? getHistoricalUnitCost(
-            costLedgers,
-            mapping.product_id,
-            mapping.variant_id,
+    const unitCost = mapping && row.sale_date
+      ? mapping.standalone_key
+        ? getStandaloneHistoricalUnitCost(
+            allCostRows,
+            mapping.standalone_key,
             String(row.sale_date),
           )
-        : null
+        : mapping.product_id
+          ? getHistoricalUnitCost(
+              costLedgers,
+              mapping.product_id,
+              mapping.variant_id,
+              String(row.sale_date),
+            )
+          : null
+      : null
 
     return {
       ...row,
@@ -174,6 +200,7 @@ export async function GET(request: Request) {
           : `product:${String(row.product_name ?? "")}`,
         product_id: mapping?.product_id ?? null,
         variant_id: mapping?.variant_id ?? null,
+        standalone_key: mapping?.standalone_key ?? null,
         costable_units: costableUnits,
         unit_cost: unitCost,
         merchandise_cost:
@@ -186,9 +213,32 @@ export async function GET(request: Request) {
     }
   })
 
+  const standaloneCatalog = buildStandaloneCostItems(allCostRows).map((item) => ({
+    id: `cost:${item.key}`,
+    nombre: item.nombre,
+    sku: item.sku,
+    activo: true,
+    standalone_key: item.key,
+    producto_variantes: [],
+  }))
+  const latestSkuByProduct = new Map<number, string>()
+  allCostRows.forEach((row) => {
+    if (row.product_id != null && row.sku?.trim()) {
+      latestSkuByProduct.set(row.product_id, row.sku.trim())
+    }
+  })
+  const catalog = [
+    ...(catalogResult.data ?? []).map((product) => ({
+      ...product,
+      sku: product.sku ?? latestSkuByProduct.get(Number(product.id)) ?? null,
+      standalone_key: null,
+    })),
+    ...standaloneCatalog,
+  ].sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }))
+
   return Response.json({
     rows: costedRows,
-    catalog: catalogResult.data ?? [],
+    catalog,
     costingError: productCostsResult.error
       ? "No se pudieron consultar los costos históricos de los productos."
       : null,
@@ -203,11 +253,13 @@ export async function PATCH(request: Request) {
     matchKey?: string
     productId?: number | null
     variantId?: number | null
+    standaloneKey?: string | null
   } | null
   const matchKey = body?.matchKey?.trim() ?? ""
   const productId = Number(body?.productId ?? 0)
   const variantId = Number(body?.variantId ?? 0)
-  const clearMapping = !productId
+  const standaloneKey = body?.standaloneKey?.trim() || null
+  const clearMapping = !productId && !standaloneKey
 
   const separator = matchKey.indexOf(":")
   const matchType = matchKey.slice(0, separator)
@@ -216,7 +268,8 @@ export async function PATCH(request: Request) {
     separator < 1 ||
     !matchValue ||
     (matchType !== "sku" && matchType !== "product") ||
-    (!clearMapping && (!Number.isInteger(productId) || productId <= 0)) ||
+    (!clearMapping && !standaloneKey && (!Number.isInteger(productId) || productId <= 0)) ||
+    (standaloneKey != null && !/^(sku|name):.+/.test(standaloneKey)) ||
     (variantId && (!Number.isInteger(variantId) || variantId <= 0))
   ) {
     return Response.json(
@@ -225,7 +278,7 @@ export async function PATCH(request: Request) {
     )
   }
 
-  if (!clearMapping) {
+  if (!clearMapping && !standaloneKey) {
     const { data: product, error: productError } = await auth.admin
       .from("productos")
       .select("id")
@@ -276,14 +329,19 @@ export async function PATCH(request: Request) {
     )
   }
 
+  let productCostsQuery = auth.admin
+    .from("product_cost_entries")
+    .select("id, product_id, variant_id, article_name, sku, purchase_date, quantity, total_cost, created_at")
+    .order("purchase_date", { ascending: true })
+    .limit(10000)
+  if (standaloneKey) {
+    productCostsQuery = productCostsQuery.is("product_id", null)
+  } else if (productId) {
+    productCostsQuery = productCostsQuery.eq("product_id", productId)
+  }
   const { data: productCosts, error: productCostsError } = clearMapping
     ? { data: [] as ProductCostLedgerRow[], error: null }
-    : await auth.admin
-        .from("product_cost_entries")
-        .select("product_id, variant_id, purchase_date, quantity, total_cost")
-        .eq("product_id", productId)
-        .order("purchase_date", { ascending: true })
-        .limit(10000)
+    : await productCostsQuery
   if (productCostsError) {
     return Response.json(
       { error: "No se pudieron consultar los costos del producto." },
@@ -291,9 +349,16 @@ export async function PATCH(request: Request) {
     )
   }
 
-  const ledgers = buildProductCostLedgers(
-    (productCosts ?? []) as ProductCostLedgerRow[],
-  )
+  const selectedCostRows = (
+    (productCosts ?? []) as unknown as (ProductCostLedgerRow & StandaloneCostRow)[]
+  ).filter((row) => !standaloneKey || standaloneCostKey(row) === standaloneKey)
+  if (!clearMapping && standaloneKey && !selectedCostRows.length) {
+    return Response.json(
+      { error: "El artículo de Costos reales seleccionado ya no está disponible." },
+      { status: 400 },
+    )
+  }
+  const ledgers = buildProductCostLedgers(selectedCostRows)
   for (const row of matchedRows) {
     const raw = { ...rawObject(row.raw_data) }
     let unitCost = 0
@@ -302,25 +367,31 @@ export async function PATCH(request: Request) {
       delete raw.beyonix_cost_mapping
     } else {
       raw.beyonix_cost_mapping = {
-        product_id: productId,
+        product_id: standaloneKey ? null : productId,
         variant_id: variantId || null,
+        standalone_key: standaloneKey,
         match_key: matchKey,
         mapped_at: new Date().toISOString(),
         mapped_by: auth.user.id,
       }
-      unitCost =
-        getHistoricalUnitCost(
-          ledgers,
-          productId,
-          variantId || null,
-          String(row.sale_date ?? ""),
-        ) ?? 0
+      unitCost = standaloneKey
+        ? getStandaloneHistoricalUnitCost(
+            selectedCostRows,
+            standaloneKey,
+            String(row.sale_date ?? ""),
+          ) ?? 0
+        : getHistoricalUnitCost(
+            ledgers,
+            productId,
+            variantId || null,
+            String(row.sale_date ?? ""),
+          ) ?? 0
     }
 
     const { error: updateError } = await auth.admin
       .from("mercadolibre_sales")
       .update({
-        product_id: clearMapping ? null : productId,
+        product_id: clearMapping || standaloneKey ? null : productId,
         unit_cost: Math.round(unitCost * 100) / 100,
         raw_data: raw,
       })

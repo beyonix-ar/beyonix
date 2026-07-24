@@ -72,6 +72,8 @@ interface AdminSelectProps {
   menuClassName?: string
   optionClassName?: string
   leadingIcon?: ReactNode
+  searchable?: boolean
+  searchPlaceholder?: string
   onChange: (value: string) => void
 }
 
@@ -208,11 +210,14 @@ export function AdminSelect({
   menuClassName = "",
   optionClassName = "",
   leadingIcon,
+  searchable = false,
+  searchPlaceholder = "Buscar...",
   onChange,
 }: AdminSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
   const [mounted, setMounted] = useState(false)
   const [menuPosition, setMenuPosition] = useState({
     left: 0,
@@ -225,13 +230,33 @@ export function AdminSelect({
       const props = child.props as {
         value?: string | number
         children?: React.ReactNode
+        "data-search"?: string
+        "data-meta"?: string
+        "data-selected-label"?: string
       }
 
       return {
         value: String(props.value ?? ""),
         label: props.children,
+        searchText: props["data-search"] ?? String(props.children ?? ""),
+        meta: props["data-meta"],
+        selectedLabel: props["data-selected-label"] ?? props.children,
       }
     })
+  const normalizedSearch = search
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("es")
+  const filteredOptions = normalizedSearch
+    ? options.filter((option) =>
+        option.searchText
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLocaleLowerCase("es")
+          .includes(normalizedSearch),
+      )
+    : options
 
   const selectedOption = options.find((option) => option.value === value)
 
@@ -254,6 +279,7 @@ export function AdminSelect({
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false)
+        setSearch("")
       }
     }
 
@@ -273,10 +299,16 @@ export function AdminSelect({
       const rect = wrapperRef.current?.getBoundingClientRect()
       if (!rect) return
 
-      const menuHeight = Math.min(options.length * 36 + 10, 256)
+      const menuHeight = Math.min(
+        filteredOptions.length * 36 + (searchable ? 58 : 10),
+        304,
+      )
       const spaceBelow = window.innerHeight - rect.bottom
       const openAbove = spaceBelow < menuHeight && rect.top > menuHeight
-      const width = Math.max(rect.width, compact ? 144 : rect.width)
+      const width = Math.min(
+        Math.max(rect.width, searchable ? 300 : compact ? 144 : rect.width),
+        window.innerWidth - 16,
+      )
       const left = Math.min(
         Math.max(8, rect.left),
         Math.max(8, window.innerWidth - width - 8)
@@ -299,7 +331,7 @@ export function AdminSelect({
       window.removeEventListener("resize", updateMenuPosition)
       window.removeEventListener("scroll", updateMenuPosition, true)
     }
-  }, [compact, open, options.length])
+  }, [compact, filteredOptions.length, open, searchable])
 
   return (
     <div
@@ -312,7 +344,10 @@ export function AdminSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setOpen((current) => !current)
+          if (open) setSearch("")
+        }}
         className={`admin-control-select admin-ds-control relative flex cursor-pointer items-center font-medium outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${triggerClassName} ${
           centered ? "justify-center" : "justify-between"
         } ${
@@ -323,7 +358,7 @@ export function AdminSelect({
       >
         <span className={`flex min-w-0 items-center gap-2 truncate ${centered ? "px-4 text-center" : ""}`}>
           {leadingIcon && <span className="shrink-0">{leadingIcon}</span>}
-          <span className="truncate">{selectedOption?.label}</span>
+          <span className="truncate">{selectedOption?.selectedLabel}</span>
         </span>
         <ChevronDown
           className={`size-4 shrink-0 text-beyonix-sky/75 transition-transform ${
@@ -340,7 +375,8 @@ export function AdminSelect({
             role="listbox"
             aria-label={ariaLabel ?? title}
             className={cn(
-              "admin-ds-select-menu fixed z-100 max-h-64 overflow-hidden p-1",
+              "admin-ds-select-menu fixed z-100 max-h-[304px] overflow-hidden",
+              searchable ? "admin-ds-select-menu-searchable p-2" : "p-1",
               menuClassName
             )}
             style={{
@@ -349,8 +385,33 @@ export function AdminSelect({
               width: menuPosition.width,
             }}
           >
-            <div className={`admin-select-scrollbar overflow-y-auto py-1 pr-1 ${compact ? "max-h-48" : "max-h-60"}`}>
-              {options.map((option) => {
+            {searchable && (
+              <label className="admin-ds-select-search relative mb-2 block">
+                <span className="admin-ds-select-search-icon pointer-events-none absolute left-2.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-lg">
+                  <Search className="size-3.5" />
+                </span>
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  placeholder={searchPlaceholder}
+                  className="admin-ds-select-search-input h-11 w-full pl-11 pr-10 text-xs font-semibold text-white outline-none placeholder:text-white/35"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    aria-label="Limpiar búsqueda"
+                    onClick={() => setSearch("")}
+                    className="admin-ds-select-search-clear absolute right-2.5 top-1/2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </label>
+            )}
+            <div className={`admin-select-scrollbar space-y-1 overflow-y-auto py-0.5 pr-1 ${compact ? "max-h-48" : "max-h-60"}`}>
+              {filteredOptions.map((option) => {
                 const selected = option.value === value
 
                 return (
@@ -362,21 +423,34 @@ export function AdminSelect({
                     onClick={() => {
                       onChange(option.value)
                       setOpen(false)
+                      setSearch("")
                     }}
                     className={cn(
-                      "flex w-full cursor-pointer items-center justify-between rounded-xl text-left font-medium transition-colors",
-                      compact ? "h-8 gap-2 px-2.5 text-xs" : "h-9 gap-3 px-3 text-sm",
+                      "flex w-full cursor-pointer items-center justify-between rounded-xl text-left font-medium transition-all duration-150",
+                      compact ? "h-8 gap-2 px-2.5 text-xs" : "min-h-10 gap-3 px-3.5 py-2 text-sm",
                       selected
                         ? "admin-ds-select-option-selected"
                         : "admin-ds-select-option",
                       optionClassName
                     )}
                   >
-                    <span className="truncate">{option.label}</span>
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="truncate">{option.label}</span>
+                      {option.meta && (
+                        <span className="shrink-0 rounded-lg border border-beyonix-sky/16 bg-beyonix-blue/16 px-1.5 py-0.5 text-9px font-black uppercase tracking-wide text-beyonix-sky/65">
+                          {option.meta}
+                        </span>
+                      )}
+                    </span>
                     {selected && <Check className="size-3.5 text-beyonix-sky" />}
                   </button>
                 )
               })}
+              {!filteredOptions.length && (
+                <p className="px-3 py-5 text-center text-xs font-semibold text-white/40">
+                  No se encontraron opciones.
+                </p>
+              )}
             </div>
           </div>,
           document.body

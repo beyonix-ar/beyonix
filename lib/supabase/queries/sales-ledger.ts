@@ -3,11 +3,13 @@ import { supabase } from "@/lib/supabase/client"
 export type SalesLedgerChannel = "external" | "ml"
 
 export interface SalesLedgerCatalogProduct {
-  id: number
+  id: number | string
   nombre: string
+  sku: string | null
   precio: number
   unit_cost: number | null
   activo: boolean
+  standalone_key: string | null
   producto_variantes?: Array<{
     id: number
     nombre: string

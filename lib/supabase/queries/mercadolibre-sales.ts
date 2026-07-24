@@ -22,6 +22,7 @@ export interface StoredMercadoLibreSale {
     match_key: string
     product_id: number | null
     variant_id: number | null
+    standalone_key: string | null
     costable_units: number
     unit_cost: number | null
     merchandise_cost: number | null
@@ -35,9 +36,11 @@ export interface MercadoLibreCostCatalogVariant {
 }
 
 export interface MercadoLibreCostCatalogProduct {
-  id: number
+  id: number | string
   nombre: string
   activo: boolean
+  sku?: string | null
+  standalone_key?: string | null
   producto_variantes?: MercadoLibreCostCatalogVariant[]
 }
 
@@ -112,9 +115,10 @@ export async function saveMercadoLibreCostMapping(
   matchKey: string,
   productId: number | null,
   variantId: number | null,
+  standaloneKey: string | null = null,
 ) {
   return request("/api/admin/mercadolibre-sales", {
     method: "PATCH",
-    body: JSON.stringify({ matchKey, productId, variantId }),
+    body: JSON.stringify({ matchKey, productId, variantId, standaloneKey }),
   })
 }

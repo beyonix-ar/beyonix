@@ -222,6 +222,7 @@ export function AdminSalesLedger({
       ...current,
       productName: product?.nombre ?? current.productName,
       productId,
+      sku: product?.sku ?? "",
       unitPrice:
         product && current.productId !== productId
           ? String(product.precio)
@@ -304,11 +305,15 @@ export function AdminSalesLedger({
     setError("")
     setSuccess("")
     try {
+      const selectedProduct = catalog.find(
+        (product) => String(product.id) === form.productId,
+      )
       await saveSalesLedgerRow(
         {
           channel,
           ...form,
-          productId: form.productId ? Number(form.productId) : null,
+          productId:
+            typeof selectedProduct?.id === "number" ? selectedProduct.id : null,
           quantity: Number(form.quantity),
           unitPrice: number(form.unitPrice),
           unitCost: number(form.unitCost),
@@ -332,6 +337,15 @@ export function AdminSalesLedger({
   const edit = (row: SalesLedgerRow) => {
     setEditingId(row.id)
     const nextForm = formFromRow(row)
+    if (!row.product_id) {
+      const matchingStandalone = catalog.find(
+        (product) =>
+          typeof product.id === "string" &&
+          product.nombre.localeCompare(row.product_name, "es", { sensitivity: "base" }) === 0 &&
+          (!row.sku || product.sku?.localeCompare(row.sku, "es", { sensitivity: "base" }) === 0),
+      )
+      if (matchingStandalone) nextForm.productId = String(matchingStandalone.id)
+    }
     const catalogUnitCost =
       catalog.find((product) => product.id === row.product_id)?.unit_cost ?? null
     if (number(row.unit_cost) === 0 && catalogUnitCost != null) {
@@ -500,12 +514,20 @@ export function AdminSalesLedger({
                     value={form.productId}
                     onChange={selectProduct}
                     centered
+                    searchable
+                    searchPlaceholder="Buscar por nombre o SKU..."
                     triggerClassName="sales-ledger-product-trigger min-w-56"
                     optionClassName="sales-ledger-product-option justify-center text-center"
                   >
                     <option value="">Seleccionar producto</option>
                     {catalog.map((product) => (
-                      <option key={product.id} value={String(product.id)}>
+                      <option
+                        key={product.id}
+                        value={String(product.id)}
+                        data-search={`${product.nombre} ${product.sku ?? ""}`}
+                        data-meta={product.sku ?? undefined}
+                        data-selected-label={product.nombre}
+                      >
                         {product.nombre}
                       </option>
                     ))}

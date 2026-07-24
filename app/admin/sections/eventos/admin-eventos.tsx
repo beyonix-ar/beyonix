@@ -12,6 +12,7 @@ import {
   Play,
   RotateCcw,
   Save,
+  Search,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -49,7 +50,7 @@ type TargetItem = {
 }
 
 type CategoryOption = Pick<SupabaseCategoria, "id" | "nombre" | "slug">
-type ProductOption = Pick<SupabaseProducto, "id" | "nombre" | "slug" | "activo">
+type ProductOption = Pick<SupabaseProducto, "id" | "nombre" | "slug" | "activo" | "sku">
 
 type EventForm = {
   id: string
@@ -187,6 +188,7 @@ export function AdminEventos() {
   const [form, setForm] = useState<EventForm>(EMPTY_FORM)
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
+  const [productSearch, setProductSearch] = useState("")
   const [events, setEvents] = useState<SupabaseProductBulkEvent[]>([])
   const [saving, setSaving] = useState(false)
   const [activatingId, setActivatingId] = useState("")
@@ -198,6 +200,18 @@ export function AdminEventos() {
   const selectedAction = ACTION_OPTIONS.find((item) => item.value === form.actionKind)
   const isPercentAction = PERCENT_ACTIONS.includes(form.actionKind)
   const todayInputDate = getTodayInputDate()
+  const normalizedProductSearch = productSearch
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("es")
+  const filteredProducts = products.filter((product) =>
+    `${product.nombre} ${product.sku ?? ""}`
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("es")
+      .includes(normalizedProductSearch),
+  )
 
   useEffect(() => {
     let active = true
@@ -205,7 +219,7 @@ export function AdminEventos() {
     async function loadCatalog() {
       const [categoriesResult, productsResult] = await Promise.all([
         supabase.from("categorias").select("id, nombre, slug").order("nombre"),
-        supabase.from("productos").select("id, nombre, slug, activo").order("nombre"),
+        supabase.from("productos").select("id, nombre, slug, activo, sku").order("nombre"),
       ])
 
       if (!active) return
@@ -709,8 +723,17 @@ export function AdminEventos() {
                   <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
                     Productos
                   </p>
+                  <AdminTextInput
+                    title="Buscar productos"
+                    ariaLabel="Buscar productos por nombre o SKU"
+                    value={productSearch}
+                    onChange={setProductSearch}
+                    placeholder="Buscar por nombre o SKU..."
+                    icon={<Search className="size-4" />}
+                    className="mb-2 h-9 text-xs"
+                  />
                   <div className="beyonix-product-picker-scroll h-72 overflow-y-scroll rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-1.5 pr-2">
-                    {products.map((product) => {
+                    {filteredProducts.map((product) => {
                       const item = getProductTargetItem(product)
                       const checked = form.targetItems.some((target) => target.url === item.url)
 
@@ -734,6 +757,11 @@ export function AdminEventos() {
                             <span className="block truncate text-xs font-medium text-white/86">
                               {product.nombre}
                             </span>
+                            {product.sku && (
+                              <span className="block truncate text-10px text-white/40">
+                                SKU: {product.sku}
+                              </span>
+                            )}
                             {!product.activo && (
                               <span className="mt-0.5 block text-11px text-amber-200/70">
                                 Producto inactivo
@@ -743,6 +771,11 @@ export function AdminEventos() {
                         </button>
                       )
                     })}
+                    {!filteredProducts.length && (
+                      <div className="px-3 py-3 text-sm text-white/45">
+                        No se encontraron productos.
+                      </div>
+                    )}
                   </div>
                 </>
               )}

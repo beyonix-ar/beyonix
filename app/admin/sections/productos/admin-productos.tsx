@@ -66,6 +66,7 @@ export function AdminProductos() {
       const matchesSearch = [
         producto.nombre,
         producto.slug,
+        producto.sku ?? "",
         producto.categorias?.nombre ?? "",
       ]
         .join(" ")

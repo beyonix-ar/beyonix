@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   Plus,
+  Search,
   Send,
   Sparkles,
   Tag,
@@ -70,7 +71,7 @@ type CampaignTargetItem = {
 
 type NotificationCategory = Pick<SupabaseCategoria, "id" | "nombre" | "slug">
 
-type NotificationProduct = Pick<SupabaseProducto, "id" | "nombre" | "slug" | "activo">
+type NotificationProduct = Pick<SupabaseProducto, "id" | "nombre" | "slug" | "activo" | "sku">
 
 const EMPTY_FORM: CampaignForm = {
   id: "",
@@ -350,6 +351,7 @@ export function AdminNotificaciones() {
     useState<SupabaseCustomerNotificationCampaign | null>(null)
   const [categories, setCategories] = useState<NotificationCategory[]>([])
   const [products, setProducts] = useState<NotificationProduct[]>([])
+  const [productSearch, setProductSearch] = useState("")
   const [categoryToAdd, setCategoryToAdd] = useState("")
   const [feedback, setFeedback] = useState("")
   const [error, setError] = useState("")
@@ -377,6 +379,18 @@ export function AdminNotificaciones() {
   const PreviewIcon = getCampaignIcon(form.type)
   const editing = Boolean(form.id)
   const todayInputDate = getTodayInputDate()
+  const normalizedProductSearch = productSearch
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("es")
+  const filteredProducts = products.filter((product) =>
+    `${product.nombre} ${product.sku ?? ""}`
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("es")
+      .includes(normalizedProductSearch),
+  )
 
   const stats = useMemo(() => {
     const published = campaigns.filter((campaign) => campaign.status === "published").length
@@ -442,7 +456,7 @@ export function AdminNotificaciones() {
         supabase.from("categorias").select("id, nombre, slug").order("nombre"),
         supabase
           .from("productos")
-          .select("id, nombre, slug, activo")
+          .select("id, nombre, slug, activo, sku")
           .order("nombre"),
       ])
 
@@ -914,13 +928,22 @@ export function AdminNotificaciones() {
                 <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
                   Productos alcanzados
                 </p>
+                <AdminTextInput
+                  title="Buscar productos"
+                  ariaLabel="Buscar productos por nombre o SKU"
+                  value={productSearch}
+                  onChange={setProductSearch}
+                  placeholder="Buscar por nombre o SKU..."
+                  icon={<Search className="size-4" />}
+                  className="mb-2 h-9 max-w-[520px] text-xs"
+                />
                 <div className="custom-scrollbar max-h-36 max-w-[520px] overflow-y-auto rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-1.5">
-                  {products.length === 0 ? (
+                  {filteredProducts.length === 0 ? (
                     <div className="px-3 py-3 text-xs text-white/45">
-                      No hay productos disponibles para seleccionar.
+                      No se encontraron productos.
                     </div>
                   ) : (
-                    products.map((product) => {
+                    filteredProducts.map((product) => {
                       const item = getProductTargetItem(product)
                       const checked = form.target_items.some((target) => target.url === item.url)
 
@@ -944,6 +967,11 @@ export function AdminNotificaciones() {
                             <span className="block truncate text-xs font-medium text-white/86">
                               {product.nombre}
                             </span>
+                            {product.sku && (
+                              <span className="block truncate text-10px text-white/40">
+                                SKU: {product.sku}
+                              </span>
+                            )}
                             {!product.activo && (
                               <span className="mt-0.5 block text-11px text-amber-200/70">
                                 Producto inactivo

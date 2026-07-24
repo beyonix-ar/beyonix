@@ -8,17 +8,21 @@ export interface BusinessCostCatalogVariant {
 }
 
 export interface BusinessCostCatalogProduct {
-  id: number
+  id: number | string
   nombre: string
   activo: boolean
   stock: number | null
+  sku?: string | null
+  standalone_key?: string | null
   producto_variantes?: BusinessCostCatalogVariant[]
 }
 
 export interface ProductCostEntry {
   id: string
-  product_id: number
+  product_id: number | null
   variant_id: number | null
+  article_name: string | null
+  sku: string | null
   purchase_date: string
   quantity: number
   unit_cost: number
@@ -94,6 +98,13 @@ export async function getBusinessCosts() {
 export async function createBusinessCost(payload: Record<string, unknown>) {
   return request("/api/admin/costs", {
     method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateBusinessCost(payload: Record<string, unknown>) {
+  return request("/api/admin/costs", {
+    method: "PATCH",
     body: JSON.stringify(payload),
   })
 }

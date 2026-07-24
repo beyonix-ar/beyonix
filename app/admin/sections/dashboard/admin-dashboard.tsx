@@ -545,7 +545,7 @@ function GlobalAdminSearch({
               inputRef.current?.blur()
             }
           }}
-          placeholder="Buscar pedido, cliente, DNI o producto..."
+          placeholder="Buscar pedido, cliente, producto o SKU..."
           className="admin-dashboard-search-input min-w-0 flex-1 text-sm font-semibold text-white outline-none placeholder:text-white/35"
         />
         {query ? (

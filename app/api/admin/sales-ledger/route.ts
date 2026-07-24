@@ -1,5 +1,9 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import { canViewSensitiveNumbers } from "@/lib/auth/roles"
+import {
+  buildStandaloneCostItems,
+  type StandaloneCostRow,
+} from "@/lib/business/standalone-cost-items"
 
 type SalesChannel = "external" | "ml"
 
@@ -214,8 +218,10 @@ function databaseError(message: string) {
     message,
   )
   return errorResponse(
-    missingMigration
-      ? "Falta aplicar la migración 081_external_and_manual_sales.sql en Supabase."
+    /sku|created_from_costs/i.test(message)
+      ? "Falta aplicar la migración 085_cost_items_shared_catalog.sql en Supabase."
+      : missingMigration
+        ? "Falta aplicar la migración 081_external_and_manual_sales.sql en Supabase."
       : "No se pudo completar la operación con las ventas.",
     missingMigration ? 503 : 500,
   )
@@ -228,11 +234,11 @@ export async function GET(request: Request) {
   const [catalogResult, productCostsResult, externalResult, mlResult] = await Promise.all([
     auth.admin
       .from("productos")
-      .select("id, nombre, precio, activo, producto_variantes(id, nombre, activo)")
+      .select("id, nombre, sku, precio, activo, producto_variantes(id, nombre, activo)")
       .order("nombre", { ascending: true }),
     auth.admin
       .from("product_cost_entries")
-      .select("product_id, quantity, total_cost, purchase_date, created_at")
+      .select("id, product_id, article_name, sku, quantity, total_cost, purchase_date, created_at")
       .order("purchase_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(5000),
@@ -273,12 +279,28 @@ export async function GET(request: Request) {
   if (error) return databaseError(error.message)
 
   const latestUnitCostByProduct = new Map<number, number>()
+  const latestSkuByProduct = new Map<number, string>()
+  const costRows = productCostsResult.error
+    ? []
+    : (productCostsResult.data ?? []) as StandaloneCostRow[]
   if (!productCostsResult.error) {
-    for (const row of productCostsResult.data ?? []) {
+    for (const row of costRows) {
       const productId = Number(row.product_id)
       const quantity = Number(row.quantity)
       const totalCost = Number(row.total_cost)
       if (
+        row.product_id != null &&
+        Number.isInteger(productId) &&
+        productId > 0 &&
+        row.sku?.trim() &&
+        !latestSkuByProduct.has(productId)
+      ) {
+        latestSkuByProduct.set(productId, row.sku.trim())
+      }
+      if (
+        row.product_id != null &&
+        Number.isInteger(productId) &&
+        productId > 0 &&
         !latestUnitCostByProduct.has(productId) &&
         Number.isFinite(quantity) &&
         quantity > 0 &&
@@ -292,11 +314,27 @@ export async function GET(request: Request) {
     }
   }
 
+  const storeCatalog = (catalogResult.data ?? []).map((product) => ({
+    ...product,
+    sku: product.sku ?? latestSkuByProduct.get(Number(product.id)) ?? null,
+    unit_cost: latestUnitCostByProduct.get(Number(product.id)) ?? null,
+    standalone_key: null,
+  }))
+  const standaloneCatalog = buildStandaloneCostItems(costRows).map((item) => ({
+    id: `cost:${item.key}`,
+    nombre: item.nombre,
+    sku: item.sku,
+    precio: 0,
+    unit_cost: item.unit_cost,
+    activo: true,
+    standalone_key: item.key,
+    producto_variantes: [],
+  }))
+
   return Response.json({
-    catalog: (catalogResult.data ?? []).map((product) => ({
-      ...product,
-      unit_cost: latestUnitCostByProduct.get(Number(product.id)) ?? null,
-    })),
+    catalog: [...storeCatalog, ...standaloneCatalog].sort((a, b) =>
+      a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
+    ),
     externalSales: ((resolvedExternalResult.data ?? []) as unknown as Record<string, unknown>[]).map(normalizeResponseRow),
     mlSales: ((resolvedMlResult.data ?? []) as unknown as Record<string, unknown>[]).map(normalizeResponseRow),
   })

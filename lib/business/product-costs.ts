@@ -1,5 +1,5 @@
 export interface ProductCostLedgerRow {
-  product_id: number
+  product_id: number | null
   variant_id: number | null
   purchase_date: string
   quantity: number
@@ -18,6 +18,7 @@ export function buildProductCostLedgers(rows: ProductCostLedgerRow[]) {
   const grouped = new Map<string, ProductCostLedgerRow[]>()
 
   rows.forEach((row) => {
+    if (row.product_id == null) return
     const key = row.variant_id ? `v:${row.variant_id}` : `p:${row.product_id}`
     const values = grouped.get(key) ?? []
     values.push(row)

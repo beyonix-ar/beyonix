@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Package,
   RotateCcw,
+  Search,
   TrendingDown,
   TrendingUp,
   X,
@@ -41,7 +42,7 @@ type TargetItem = {
 }
 
 type CategoryOption = Pick<SupabaseCategoria, "id" | "nombre" | "slug">
-type ProductOption = Pick<SupabaseProducto, "id" | "nombre" | "slug" | "activo">
+type ProductOption = Pick<SupabaseProducto, "id" | "nombre" | "slug" | "activo" | "sku">
 
 const ACTION_OPTIONS: Array<{
   value: BulkActionKind
@@ -96,6 +97,7 @@ export function AdminAccionesMasivas() {
   const [installments, setInstallments] = useState("3")
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
+  const [productSearch, setProductSearch] = useState("")
   const [targetItems, setTargetItems] = useState<TargetItem[]>([])
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState("")
@@ -103,6 +105,18 @@ export function AdminAccionesMasivas() {
 
   const selectedAction = ACTION_OPTIONS.find((item) => item.value === actionKind)
   const isPercentAction = PERCENT_ACTIONS.includes(actionKind)
+  const normalizedProductSearch = productSearch
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("es")
+  const filteredProducts = products.filter((product) =>
+    `${product.nombre} ${product.sku ?? ""}`
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("es")
+      .includes(normalizedProductSearch),
+  )
 
   useEffect(() => {
     let active = true
@@ -110,7 +124,7 @@ export function AdminAccionesMasivas() {
     async function loadCatalog() {
       const [categoriesResult, productsResult] = await Promise.all([
         supabase.from("categorias").select("id, nombre, slug").order("nombre"),
-        supabase.from("productos").select("id, nombre, slug, activo").order("nombre"),
+        supabase.from("productos").select("id, nombre, slug, activo, sku").order("nombre"),
       ])
 
       if (!active) return
@@ -353,13 +367,22 @@ export function AdminAccionesMasivas() {
                 <p className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">
                   Productos
                 </p>
+                <AdminTextInput
+                  title="Buscar productos"
+                  ariaLabel="Buscar productos por nombre o SKU"
+                  value={productSearch}
+                  onChange={setProductSearch}
+                  placeholder="Buscar por nombre o SKU..."
+                  icon={<Search className="size-4" />}
+                  className="mb-2 h-9 text-xs"
+                />
                 <div className="beyonix-product-picker-scroll min-h-0 flex-1 overflow-y-scroll rounded-xl border border-beyonix-blue-light/14 bg-black/18 p-1.5 pr-2">
-                  {products.length === 0 ? (
+                  {filteredProducts.length === 0 ? (
                     <div className="px-3 py-3 text-sm text-white/45">
-                      No hay productos disponibles para seleccionar.
+                      No se encontraron productos.
                     </div>
                   ) : (
-                    products.map((product) => {
+                    filteredProducts.map((product) => {
                       const item = getProductTargetItem(product)
                       const checked = targetItems.some((target) => target.url === item.url)
 
@@ -383,6 +406,11 @@ export function AdminAccionesMasivas() {
                             <span className="block truncate text-xs font-medium text-white/86">
                               {product.nombre}
                             </span>
+                            {product.sku && (
+                              <span className="block truncate text-10px text-white/40">
+                                SKU: {product.sku}
+                              </span>
+                            )}
                             {!product.activo && (
                               <span className="mt-0.5 block text-11px text-amber-200/70">
                                 Producto inactivo

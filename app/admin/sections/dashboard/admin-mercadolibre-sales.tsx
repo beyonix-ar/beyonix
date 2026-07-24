@@ -282,6 +282,7 @@ export function AdminMercadoLibreSales() {
         productName: string
         productId: number | null
         variantId: number | null
+        standaloneKey: string | null
         costableUnits: number
         coveredUnits: number
         sales: number
@@ -298,6 +299,7 @@ export function AdminMercadoLibreSales() {
         productName: row.product_name,
         productId: row.costing?.product_id ?? null,
         variantId: row.costing?.variant_id ?? null,
+        standaloneKey: row.costing?.standalone_key ?? null,
         costableUnits: 0,
         coveredUnits: 0,
         sales: 0,
@@ -319,12 +321,18 @@ export function AdminMercadoLibreSales() {
     () =>
       catalog.flatMap((product) => [
         {
-          value: `p:${product.id}`,
+          value: product.standalone_key
+            ? `c:${product.standalone_key}`
+            : `p:${product.id}`,
           label: product.nombre,
+          sku: product.sku ?? null,
+          searchText: `${product.nombre} ${product.sku ?? ""}`,
         },
-        ...(product.producto_variantes ?? []).map((variant) => ({
+        ...(!product.standalone_key ? product.producto_variantes ?? [] : []).map((variant) => ({
           value: `v:${product.id}:${variant.id}`,
           label: `${product.nombre} · ${variant.nombre}`,
+          sku: product.sku ?? null,
+          searchText: `${product.nombre} ${variant.nombre} ${product.sku ?? ""}`,
         })),
       ]),
     [catalog],
@@ -334,15 +342,21 @@ export function AdminMercadoLibreSales() {
     const [kind, productText, variantText] = value.split(":")
     const productId = kind === "p" || kind === "v" ? Number(productText) : null
     const variantId = kind === "v" ? Number(variantText) : null
+    const standaloneKey = kind === "c" ? value.slice(2) : null
 
     setSavingMappingKey(matchKey)
     setError("")
     setSuccess("")
     try {
-      await saveMercadoLibreCostMapping(matchKey, productId, variantId)
+      await saveMercadoLibreCostMapping(
+        matchKey,
+        productId,
+        variantId,
+        standaloneKey,
+      )
       await load()
       setSuccess(
-        productId
+        productId || standaloneKey
           ? "Publicación vinculada al costo del producto."
           : "Vinculación de costos eliminada.",
       )
@@ -551,11 +565,13 @@ export function AdminMercadoLibreSales() {
 
           <div className="mt-3 grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
             {mappingGroups.map((group) => {
-              const selectedValue = group.productId
-                ? group.variantId
-                  ? `v:${group.productId}:${group.variantId}`
-                  : `p:${group.productId}`
-                : ""
+              const selectedValue = group.standaloneKey
+                ? `c:${group.standaloneKey}`
+                : group.productId
+                  ? group.variantId
+                    ? `v:${group.productId}:${group.variantId}`
+                    : `p:${group.productId}`
+                  : ""
               const fullyCosted =
                 group.costableUnits === 0 ||
                 group.coveredUnits >= group.costableUnits
@@ -584,7 +600,7 @@ export function AdminMercadoLibreSales() {
                         ? "Sin unidades netas para costear"
                         : fullyCosted
                           ? `${group.coveredUnits} unidades con costo`
-                          : group.productId
+                          : group.productId || group.standaloneKey
                             ? "Falta un costo con fecha anterior a la venta"
                             : `${group.costableUnits} unidades pendientes de costo`}
                     </p>
@@ -595,13 +611,21 @@ export function AdminMercadoLibreSales() {
                     value={selectedValue}
                     disabled={savingMappingKey === group.key}
                     centered
+                    searchable
+                    searchPlaceholder="Buscar por nombre o SKU..."
                     onChange={(value) =>
                       void updateCostMapping(group.key, value)
                     }
                   >
                     <option value="">Sin vincular</option>
                     {mappingOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
+                      <option
+                        key={option.value}
+                        value={option.value}
+                        data-search={option.searchText}
+                        data-meta={option.sku ?? undefined}
+                        data-selected-label={option.label}
+                      >
                         {option.label}
                       </option>
                     ))}
