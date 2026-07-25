@@ -51,7 +51,11 @@ interface AdminDashboardProps {
 }
 
 type DashboardTab = "operativo" | "comercial" | "externas" | "ml" | "costos"
-type SalesChannel = "todos" | "BEYONIX Web" | "MercadoLibre Marketplace"
+type SalesChannel =
+  | "todos"
+  | "BEYONIX Web"
+  | "MercadoLibre Marketplace"
+  | "Ventas externas"
 type SortKey =
   | "productName"
   | "channel"
@@ -677,52 +681,856 @@ function Skeleton() {
   return <AdminSkeleton rows={7} className="p-4 sm:p-6 lg:p-8" />
 }
 
+type EvolutionGrouping = "month" | "day"
+
+interface EvolutionPoint {
+  key: string
+  label: string
+  value: number
+}
+
+interface EvolutionComparisonRange {
+  id: number
+  from: string
+  to: string
+}
+
+const EVOLUTION_COMPARISON_COLORS = [
+  "#a78bfa",
+  "#f59e0b",
+  "#34d399",
+  "#f472b6",
+  "#fb7185",
+]
+
+const MAX_EVOLUTION_COMPARISONS = 5
+const EVOLUTION_SELECTION_LABELS = [
+  "Primera selección",
+  "Segunda selección",
+  "Tercera selección",
+  "Cuarta selección",
+  "Quinta selección",
+  "Sexta selección",
+]
+
+function formatEvolutionPeriod(key: string, grouping: EvolutionGrouping) {
+  const [year, month, day] = key.split("-").map(Number)
+  const date = new Date(year, Math.max(0, month - 1), day || 1)
+
+  return new Intl.DateTimeFormat("es-AR", {
+    month: "short",
+    ...(grouping === "day" ? { day: "2-digit" as const } : {}),
+    ...(grouping === "month" ? { year: "2-digit" as const } : {}),
+  })
+    .format(date)
+    .replace(".", "")
+}
+
+function groupEvolutionSales(
+  rows: DashboardCommercialSale[],
+  grouping: EvolutionGrouping,
+) {
+  const totals = new Map<string, number>()
+
+  rows.forEach((row) => {
+    const dateKey = row.date.slice(0, 10)
+    const key = grouping === "month" ? dateKey.slice(0, 7) : dateKey
+
+    if (!/^\d{4}-\d{2}(?:-\d{2})?$/.test(key)) return
+
+    totals.set(key, (totals.get(key) ?? 0) + row.grossAmount)
+  })
+
+  return [...totals.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map<EvolutionPoint>(([key, value]) => ({
+      key,
+      label: formatEvolutionPeriod(key, grouping),
+      value,
+    }))
+}
+
+function formatEvolutionAxisAmount(value: number, hidden: boolean) {
+  if (hidden) return "$••••"
+
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
 function MiniLineChart({
   rows,
+  channelRows,
   hidden,
 }: {
   rows: DashboardCommercialSale[]
+  channelRows: { label: string; value: number; amount?: number }[]
   hidden: boolean
 }) {
-  const points = useMemo(() => {
-    const byDate = new Map<string, number>()
-    rows.forEach((row) => {
-      const key = row.date.slice(0, 10)
-      byDate.set(key, (byDate.get(key) ?? 0) + row.grossAmount)
+  const [chartFrom, setChartFrom] = useState("")
+  const [chartTo, setChartTo] = useState("")
+  const [comparisonRanges, setComparisonRanges] = useState<
+    EvolutionComparisonRange[]
+  >([{ id: 1, from: "", to: "" }])
+  const nextComparisonId = useRef(2)
+  const [grouping, setGrouping] = useState<EvolutionGrouping>("month")
+  const [showComparison, setShowComparison] = useState(false)
+  const [activePoint, setActivePoint] = useState<{
+    x: number
+    y: number
+    selection: string
+    period: string
+    value: number
+    color: string
+  } | null>(null)
+  const invalidRange = Boolean(chartFrom && chartTo && chartFrom > chartTo)
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        const date = new Date(row.date)
+
+        return (
+          (!chartFrom || date >= new Date(`${chartFrom}T00:00:00`)) &&
+          (!chartTo || date <= new Date(`${chartTo}T23:59:59`))
+        )
+      }),
+    [chartFrom, chartTo, rows],
+  )
+  const points = useMemo(
+    () => groupEvolutionSales(filteredRows, grouping),
+    [filteredRows, grouping],
+  )
+  const comparisonSeries = useMemo(
+    () =>
+      comparisonRanges.map((range, index) => {
+        const valid = Boolean(range.from && range.to && range.from <= range.to)
+        const rangeRows = valid
+          ? rows.filter((row) => {
+              const date = new Date(row.date)
+
+              return (
+                date >= new Date(`${range.from}T00:00:00`) &&
+                date <= new Date(`${range.to}T23:59:59`)
+              )
+            })
+          : []
+
+        return {
+          ...range,
+          valid,
+          color: EVOLUTION_COMPARISON_COLORS[index],
+          rows: rangeRows,
+          points: groupEvolutionSales(rangeRows, grouping),
+          total: rangeRows.reduce(
+            (total, row) => total + row.grossAmount,
+            0,
+          ),
+        }
+      }),
+    [comparisonRanges, grouping, rows],
+  )
+  const visibleComparisonSeries = showComparison
+    ? comparisonSeries.filter((series) => series.valid)
+    : []
+  const chartPoints = [
+    ...points,
+    ...visibleComparisonSeries.flatMap((series) => series.points),
+  ]
+  const maxValue = Math.max(...chartPoints.map((point) => point.value), 1)
+  const currentTotal = filteredRows.reduce(
+    (total, row) => total + row.grossAmount,
+    0,
+  )
+  const width = 760
+  const height = 280
+  const padding = {
+    top: 22,
+    right: 24,
+    bottom: 52,
+    left: 86,
+  }
+  const plotWidth = width - padding.left - padding.right
+  const plotHeight = height - padding.top - padding.bottom
+  const yTicks = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4
+
+    return {
+      value: maxValue * (1 - ratio),
+      y: padding.top + plotHeight * ratio,
+    }
+  })
+  const makePath = (series: EvolutionPoint[]) => {
+    if (series.length === 1) {
+      const y =
+        padding.top + plotHeight - (series[0].value / maxValue) * plotHeight
+
+      return `M ${padding.left} ${y} L ${width - padding.right} ${y}`
+    }
+
+    return series
+      .map((point, index) => {
+        const x =
+          series.length <= 1
+            ? padding.left + plotWidth / 2
+            : padding.left + (index / (series.length - 1)) * plotWidth
+        const y =
+          padding.top + plotHeight - (point.value / maxValue) * plotHeight
+
+        return `${index === 0 ? "M" : "L"} ${x} ${y}`
+      })
+      .join(" ")
+  }
+  const pointCoordinates = (series: EvolutionPoint[]) =>
+    series.map((point, index) => ({
+      ...point,
+      x:
+        series.length <= 1
+          ? padding.left + plotWidth / 2
+          : padding.left + (index / (series.length - 1)) * plotWidth,
+      y: padding.top + plotHeight - (point.value / maxValue) * plotHeight,
+    }))
+  const xLabelIndexes = Array.from(
+    new Set(
+      [0, 0.25, 0.5, 0.75, 1].map((ratio) =>
+        Math.round((points.length - 1) * ratio),
+      ),
+    ),
+  ).filter((index) => index >= 0)
+  const currentRangeLabel =
+    chartFrom && chartTo
+      ? `${chartFrom.split("-").reverse().join("/")} – ${chartTo
+          .split("-")
+          .reverse()
+          .join("/")}`
+      : chartFrom
+        ? `Desde el ${chartFrom.split("-").reverse().join("/")}`
+        : chartTo
+          ? `Hasta el ${chartTo.split("-").reverse().join("/")}`
+          : "Todas las fechas disponibles"
+  const clearChartDates = () => {
+    setChartFrom("")
+    setChartTo("")
+  }
+  const updateComparisonRange = (
+    id: number,
+    field: "from" | "to",
+    value: string,
+  ) => {
+    setComparisonRanges((current) =>
+      current.map((range) =>
+        range.id === id ? { ...range, [field]: value } : range,
+      ),
+    )
+  }
+  const selectComparisonRange = (
+    id: number,
+    range: { from: string; to: string },
+  ) => {
+    setComparisonRanges((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...range } : item)),
+    )
+  }
+  const addComparisonRange = () => {
+    setComparisonRanges((current) => {
+      if (current.length >= MAX_EVOLUTION_COMPARISONS) return current
+
+      return [
+        ...current,
+        {
+          id: nextComparisonId.current++,
+          from: "",
+          to: "",
+        },
+      ]
     })
-    return [...byDate.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-24)
-  }, [rows])
-  const max = Math.max(...points.map(([, value]) => value), 1)
-  const path = points
-    .map(([_, value], index) => {
-      const x = points.length <= 1 ? 0 : (index / (points.length - 1)) * 100
-      const y = 100 - (value / max) * 86 - 7
-      return `${index === 0 ? "M" : "L"} ${x} ${y}`
-    })
-    .join(" ")
+  }
+  const removeComparisonRange = (id: number) => {
+    setComparisonRanges((current) =>
+      current.length === 1
+        ? [{ ...current[0], from: "", to: "" }]
+        : current.filter((range) => range.id !== id),
+    )
+  }
 
   return (
-    <div className="h-56 rounded-3xl border border-white/7 bg-black p-4">
-      {points.length ? (
+    <div className="grid gap-6 xl:grid-cols-3 xl:items-start">
+      <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
+        <SectionHeader eyebrow="Facturación" title="Evolución" />
+        <div className="rounded-3xl border border-white/7 bg-black p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-black text-white">Facturación por período</p>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-white/45">
+              Las fechas se filtran únicamente en este gráfico. Los filtros
+              superiores de Canal, Producto y Categoría también se aplican acá.
+            </p>
+            <p className="mt-1 text-11px font-semibold text-beyonix-sky/75">
+              {currentRangeLabel}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.025] p-2.5">
+          <p className="mb-2 text-10px font-black uppercase tracking-widest text-white/38">
+            Fechas de este gráfico
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-[150px]">
+              <FilterField label="Desde">
+                <AdminDatePicker
+                  title="Desde — Evolución"
+                  ariaLabel="Fecha inicial del gráfico de evolución"
+                  value={chartFrom}
+                  placeholder="Desde"
+                  compact
+                  onSelectMonth={({ from, to }) => {
+                    setChartFrom(from)
+                    setChartTo(to)
+                  }}
+                  onSelectYear={({ from, to }) => {
+                    setChartFrom(from)
+                    setChartTo(to)
+                  }}
+                  onChange={setChartFrom}
+                />
+              </FilterField>
+            </div>
+
+            <div className="w-[150px]">
+              <FilterField label="Hasta">
+                <AdminDatePicker
+                  title="Hasta — Evolución"
+                  ariaLabel="Fecha final del gráfico de evolución"
+                  value={chartTo}
+                  placeholder="Hasta"
+                  compact
+                  onSelectMonth={({ from, to }) => {
+                    setChartFrom(from)
+                    setChartTo(to)
+                  }}
+                  onSelectYear={({ from, to }) => {
+                    setChartFrom(from)
+                    setChartTo(to)
+                  }}
+                  onChange={setChartTo}
+                />
+              </FilterField>
+            </div>
+
+            <div className="w-[104px] shrink-0">
+              <FilterField label="Agrupar">
+                <div className="grid h-11 grid-cols-2 overflow-hidden rounded-xl border border-white/10 bg-black/25">
+                  {([
+                    ["month", "Mes"],
+                    ["day", "Día"],
+                  ] as const).map(([value, label], index) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={grouping === value}
+                      onClick={() => setGrouping(value)}
+                      className={`flex h-full cursor-pointer items-center justify-center text-11px font-black transition ${
+                        index > 0 ? "border-l border-white/8" : ""
+                      } ${
+                        grouping === value
+                          ? "bg-beyonix-blue text-white"
+                          : "text-white/48 hover:bg-white/[0.04] hover:text-white"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </FilterField>
+            </div>
+
+            <button
+              type="button"
+              aria-pressed={showComparison}
+              onClick={() => setShowComparison((current) => !current)}
+              className={`h-11 rounded-xl border px-3 text-11px font-black transition ${
+                showComparison
+                  ? "cursor-pointer border-violet-400/35 bg-violet-400/12 text-violet-200"
+                  : "cursor-pointer border-white/10 text-white/58 hover:border-violet-400/30 hover:text-white"
+              }`}
+            >
+              {showComparison ? "Cerrar comparación" : "Comparar"}
+            </button>
+
+            <button
+              type="button"
+              onClick={clearChartDates}
+              disabled={!chartFrom && !chartTo}
+              className="h-11 cursor-pointer rounded-xl border border-white/8 px-3 text-11px font-black text-white/45 transition hover:border-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              Limpiar fechas
+            </button>
+
+          </div>
+
+          {showComparison && (
+            <div className="mt-2.5 rounded-2xl border border-violet-400/18 bg-violet-400/[0.045] p-2.5">
+              <p className="mb-2 text-10px font-black uppercase tracking-widest text-violet-300/65">
+                Fechas para comparar
+              </p>
+              <div className="space-y-2">
+                {comparisonRanges.map((range, index) => {
+                  const color = EVOLUTION_COMPARISON_COLORS[index]
+                  const invalid = Boolean(
+                    range.from && range.to && range.from > range.to,
+                  )
+
+                  return (
+                    <div
+                      key={range.id}
+                      className="rounded-xl border border-white/6 bg-black/15 p-2"
+                    >
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[150px_150px_auto_auto] xl:items-end xl:justify-start">
+                        <FilterField label="Desde">
+                          <AdminDatePicker
+                            title={`Desde — Comparación ${index + 1}`}
+                            ariaLabel={`Fecha inicial de la comparación ${index + 1}`}
+                            value={range.from}
+                            placeholder="Desde"
+                            compact
+                            onSelectMonth={(selectedRange) =>
+                              selectComparisonRange(range.id, selectedRange)
+                            }
+                            onSelectYear={(selectedRange) =>
+                              selectComparisonRange(range.id, selectedRange)
+                            }
+                            onChange={(value) =>
+                              updateComparisonRange(range.id, "from", value)
+                            }
+                          />
+                        </FilterField>
+
+                        <FilterField label="Hasta">
+                          <AdminDatePicker
+                            title={`Hasta — Comparación ${index + 1}`}
+                            ariaLabel={`Fecha final de la comparación ${index + 1}`}
+                            value={range.to}
+                            placeholder="Hasta"
+                            compact
+                            onSelectMonth={(selectedRange) =>
+                              selectComparisonRange(range.id, selectedRange)
+                            }
+                            onSelectYear={(selectedRange) =>
+                              selectComparisonRange(range.id, selectedRange)
+                            }
+                            onChange={(value) =>
+                              updateComparisonRange(range.id, "to", value)
+                            }
+                          />
+                        </FilterField>
+
+                        {index === 0 ? (
+                          <button
+                            type="button"
+                            onClick={addComparisonRange}
+                            disabled={
+                              comparisonRanges.length >=
+                              MAX_EVOLUTION_COMPARISONS
+                            }
+                            className="h-11 cursor-pointer rounded-xl border border-violet-400/25 bg-violet-400/8 px-3 text-11px font-black text-violet-200 transition hover:border-violet-400/45 hover:bg-violet-400/14 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            Agregar
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => removeComparisonRange(range.id)}
+                            className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-xl border border-white/8 px-3 text-11px font-black text-white/45 transition hover:border-red-400/25 hover:text-red-200"
+                          >
+                            <X className="size-3.5" />
+                            Quitar
+                          </button>
+                        )}
+
+                        <span
+                          className="mb-2.5 hidden size-2.5 rounded-full xl:block"
+                          style={{ backgroundColor: color }}
+                          aria-hidden="true"
+                        />
+                      </div>
+
+                      {invalid && (
+                        <p className="mt-2 text-xs font-semibold text-red-300">
+                          “Desde” no puede ser posterior a “Hasta”.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {invalidRange && (
+            <p className="mt-3 text-xs font-semibold text-red-300">
+              La fecha “Desde” no puede ser posterior a “Hasta”.
+            </p>
+          )}
+        </div>
+
+      {chartPoints.length ? (
         <>
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-40 w-full">
-            <path d={path} fill="none" stroke="#38bdf8" strokeWidth="2.4" />
-          </svg>
-          <div className="mt-3 flex items-center justify-between text-xs text-white/45">
-            <span>{points[0]?.[0]}</span>
-            <span className="font-bold text-white/70">
-              {hidden ? HIDDEN_AMOUNT : formatPrice(max)}
+          <div className="mt-4 overflow-x-auto">
+            <svg
+              viewBox={`0 0 ${width} ${height}`}
+              role="img"
+              aria-label="Evolución de la facturación por período"
+              className="min-w-680px w-full"
+            >
+              {yTicks.map((tick) => (
+                <g key={tick.y}>
+                  <line
+                    x1={padding.left}
+                    y1={tick.y}
+                    x2={width - padding.right}
+                    y2={tick.y}
+                    stroke="rgba(255,255,255,0.09)"
+                    strokeDasharray="4 5"
+                  />
+                  <text
+                    x={padding.left - 12}
+                    y={tick.y + 4}
+                    textAnchor="end"
+                    fill="rgba(255,255,255,0.42)"
+                    fontSize="11"
+                  >
+                    {formatEvolutionAxisAmount(tick.value, hidden)}
+                  </text>
+                </g>
+              ))}
+
+              <line
+                x1={padding.left}
+                y1={padding.top}
+                x2={padding.left}
+                y2={height - padding.bottom}
+                stroke="rgba(255,255,255,0.2)"
+              />
+              <line
+                x1={padding.left}
+                y1={height - padding.bottom}
+                x2={width - padding.right}
+                y2={height - padding.bottom}
+                stroke="rgba(255,255,255,0.2)"
+              />
+
+              {visibleComparisonSeries.map((series) => (
+                <path
+                  key={`comparison-line-${series.id}`}
+                  d={makePath(series.points)}
+                  fill="none"
+                  stroke={series.color}
+                  strokeWidth="2.5"
+                  strokeDasharray="7 6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
+              <path
+                d={makePath(points)}
+                fill="none"
+                stroke="#38bdf8"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+
+              {visibleComparisonSeries.flatMap((series, seriesIndex) =>
+                pointCoordinates(series.points).map((point) => (
+                  <circle
+                    key={`comparison-${series.id}-${point.key}`}
+                    cx={point.x}
+                    cy={point.y}
+                    r="3"
+                    fill={series.color}
+                    tabIndex={0}
+                    className="cursor-pointer outline-none"
+                    onMouseEnter={() =>
+                      setActivePoint({
+                        x: point.x,
+                        y: point.y,
+                        selection:
+                          EVOLUTION_SELECTION_LABELS[seriesIndex + 1] ??
+                          `Selección ${seriesIndex + 2}`,
+                        period: point.label,
+                        value: point.value,
+                        color: series.color,
+                      })
+                    }
+                    onMouseLeave={() => setActivePoint(null)}
+                    onFocus={() =>
+                      setActivePoint({
+                        x: point.x,
+                        y: point.y,
+                        selection:
+                          EVOLUTION_SELECTION_LABELS[seriesIndex + 1] ??
+                          `Selección ${seriesIndex + 2}`,
+                        period: point.label,
+                        value: point.value,
+                        color: series.color,
+                      })
+                    }
+                    onBlur={() => setActivePoint(null)}
+                    onClick={() =>
+                      setActivePoint({
+                        x: point.x,
+                        y: point.y,
+                        selection:
+                          EVOLUTION_SELECTION_LABELS[seriesIndex + 1] ??
+                          `Selección ${seriesIndex + 2}`,
+                        period: point.label,
+                        value: point.value,
+                        color: series.color,
+                      })
+                    }
+                  >
+                    <title>
+                      Comparación {seriesIndex + 1} · {point.label}:{" "}
+                      {hidden ? HIDDEN_AMOUNT : formatPrice(point.value)}
+                    </title>
+                  </circle>
+                )),
+              )}
+              {pointCoordinates(points).map((point) => (
+                <circle
+                  key={point.key}
+                  cx={point.x}
+                  cy={point.y}
+                  r="4"
+                  fill="#38bdf8"
+                  stroke="#020617"
+                  strokeWidth="2"
+                  tabIndex={0}
+                  className="cursor-pointer outline-none"
+                  onMouseEnter={() =>
+                    setActivePoint({
+                      x: point.x,
+                      y: point.y,
+                      selection: EVOLUTION_SELECTION_LABELS[0],
+                      period: point.label,
+                      value: point.value,
+                      color: "#38bdf8",
+                    })
+                  }
+                  onMouseLeave={() => setActivePoint(null)}
+                  onFocus={() =>
+                    setActivePoint({
+                      x: point.x,
+                      y: point.y,
+                      selection: EVOLUTION_SELECTION_LABELS[0],
+                      period: point.label,
+                      value: point.value,
+                      color: "#38bdf8",
+                    })
+                  }
+                  onBlur={() => setActivePoint(null)}
+                  onClick={() =>
+                    setActivePoint({
+                      x: point.x,
+                      y: point.y,
+                      selection: EVOLUTION_SELECTION_LABELS[0],
+                      period: point.label,
+                      value: point.value,
+                      color: "#38bdf8",
+                    })
+                  }
+                >
+                  <title>
+                    {point.label}:{" "}
+                    {hidden ? HIDDEN_AMOUNT : formatPrice(point.value)}
+                  </title>
+                </circle>
+              ))}
+
+              {xLabelIndexes.map((index) => {
+                const point = points[index]
+                const x =
+                  points.length <= 1
+                    ? padding.left + plotWidth / 2
+                    : padding.left + (index / (points.length - 1)) * plotWidth
+
+                return point ? (
+                  <text
+                    key={`${point.key}-${index}`}
+                    x={x}
+                    y={height - 20}
+                    textAnchor={
+                      index === 0
+                        ? "start"
+                        : index === points.length - 1
+                          ? "end"
+                          : "middle"
+                    }
+                    fill="rgba(255,255,255,0.5)"
+                    fontSize="11"
+                  >
+                    {point.label}
+                  </text>
+                ) : null
+              })}
+
+              {activePoint && (
+                <g
+                  pointerEvents="none"
+                  transform={`translate(${Math.min(
+                    Math.max(activePoint.x, 100),
+                    width - 100,
+                  )}, ${
+                    activePoint.y < 72
+                      ? activePoint.y + 18
+                      : activePoint.y - 58
+                  })`}
+                >
+                  <rect
+                    x="-92"
+                    y="0"
+                    width="184"
+                    height="48"
+                    rx="10"
+                    fill="#07111d"
+                    stroke={activePoint.color}
+                    strokeOpacity="0.55"
+                  />
+                  <text
+                    x="0"
+                    y="18"
+                    textAnchor="middle"
+                    fill={activePoint.color}
+                    fontSize="10"
+                    fontWeight="700"
+                  >
+                    {activePoint.selection} · {activePoint.period}
+                  </text>
+                  <text
+                    x="0"
+                    y="36"
+                    textAnchor="middle"
+                    fill="white"
+                    fontSize="12"
+                    fontWeight="800"
+                  >
+                    {hidden
+                      ? HIDDEN_AMOUNT
+                      : formatPrice(activePoint.value)}
+                  </text>
+                </g>
+              )}
+            </svg>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-11px">
+            <div className="flex flex-wrap gap-4 text-white/48">
+              <span className="inline-flex items-center gap-2">
+                <span className="h-0.5 w-5 bg-sky-400" />
+                Primera selección
+              </span>
+              {visibleComparisonSeries.map((series, index) => (
+                <span
+                  key={`comparison-legend-${series.id}`}
+                  className="inline-flex items-center gap-2"
+                >
+                  <span
+                    className="h-0.5 w-5 border-t-2 border-dashed"
+                    style={{ borderColor: series.color }}
+                  />
+                  {EVOLUTION_SELECTION_LABELS[index + 1]}
+                </span>
+              ))}
+            </div>
+            <span className="font-semibold text-white/35">
+              Pasá el cursor o tocá un punto para ver el monto exacto.
             </span>
-            <span>{points.at(-1)?.[0]}</span>
           </div>
         </>
       ) : (
-        <p className="flex h-full items-center justify-center text-sm text-white/45">
-          No hay datos para graficar.
+        <p className="flex min-h-280px items-center justify-center text-sm text-white/45">
+          No hay datos para graficar con los filtros seleccionados.
         </p>
       )}
+        </div>
+      </section>
+
+      <div className="space-y-4">
+        <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+          <SectionHeader eyebrow="Canales" title="Ventas por canal" />
+          <BarList rows={channelRows} valueKey="amount" hidden={hidden} />
+        </section>
+
+        <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+          <SectionHeader eyebrow="Períodos" title="Facturación por selección" />
+          <div className="space-y-2">
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] px-4 py-3">
+              <p className="flex items-center gap-2 text-10px font-black uppercase tracking-widest text-sky-300/70">
+                <span className="size-2 rounded-full bg-sky-400" />
+                Primera selección
+              </p>
+              <p className="mt-1 text-11px font-semibold text-white/42">
+                {currentRangeLabel}
+              </p>
+              <p className="mt-1 text-lg font-black text-white">
+                {hidden ? HIDDEN_AMOUNT : formatPrice(currentTotal)}
+              </p>
+            </div>
+
+            {visibleComparisonSeries.map((series, index) => {
+              const variation =
+                currentTotal > 0
+                  ? ((series.total - currentTotal) / currentTotal) * 100
+                  : null
+              const rangeLabel = `${series.from
+                .split("-")
+                .reverse()
+                .join("/")} – ${series.to
+                .split("-")
+                .reverse()
+                .join("/")}`
+
+              return (
+                <div
+                  key={series.id}
+                  className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3"
+                >
+                  <p
+                    className="flex items-center gap-2 text-10px font-black uppercase tracking-widest"
+                    style={{ color: series.color }}
+                  >
+                    <span
+                      className="size-2 rounded-full"
+                      style={{ backgroundColor: series.color }}
+                    />
+                    {EVOLUTION_SELECTION_LABELS[index + 1]}
+                  </p>
+                  <p className="mt-1 text-11px font-semibold text-white/42">
+                    {rangeLabel}
+                  </p>
+                  <p className="mt-1 text-lg font-black text-white">
+                    {hidden ? HIDDEN_AMOUNT : formatPrice(series.total)}
+                  </p>
+                  {variation != null && (
+                    <p
+                      className={`mt-1 text-xs font-bold ${
+                        variation >= 0 ? "text-emerald-300" : "text-red-300"
+                      }`}
+                    >
+                      {hidden
+                        ? "Variación: ****"
+                        : `${variation >= 0 ? "+" : ""}${variation.toFixed(1)}% respecto de la primera selección`}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      </div>
     </div>
   )
 }
@@ -1037,19 +1845,26 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   if (loading || !stats || !financialSummary) return <Skeleton />
   const sensitive = role === "admin" || role === "super_admin"
   const today = new Date()
+  const hasCustomDateFilter = Boolean(from || to)
 
   const filteredSales = commercialSales.filter((sale) => {
     const date = new Date(sale.date)
     return (
       (!from || date >= new Date(`${from}T00:00:00`)) &&
       (!to || date <= new Date(`${to}T23:59:59`)) &&
-      (!month || date.getMonth() === Number(month)) &&
-      (!year || date.getFullYear() === Number(year)) &&
+      (hasCustomDateFilter || !month || date.getMonth() === Number(month)) &&
+      (hasCustomDateFilter || !year || date.getFullYear() === Number(year)) &&
       (channel === "todos" || sale.channel === channel) &&
       (!product || sale.productName === product) &&
       (!category || sale.categoryName === category)
     )
   })
+  const evolutionSales = commercialSales.filter(
+    (sale) =>
+      (channel === "todos" || sale.channel === channel) &&
+      (!product || sale.productName === product) &&
+      (!category || sale.categoryName === category),
+  )
   const productOptions = Array.from(
     new Set(commercialSales.map((sale) => sale.productName))
   ).sort()
@@ -1087,7 +1902,11 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     financialSummary.paidOrders > 0
       ? (financialSummary.invoicedOrders / financialSummary.paidOrders) * 100
       : 100
-  const byChannel = ["BEYONIX Web", "MercadoLibre Marketplace"].map((label) => ({
+  const byChannel = [
+    "BEYONIX Web",
+    "MercadoLibre Marketplace",
+    "Ventas externas",
+  ].map((label) => ({
     label,
     value: filteredSales
       .filter((sale) => sale.channel === label)
@@ -1417,6 +2236,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                         <option value="MercadoLibre Marketplace">
                           MercadoLibre Marketplace
                         </option>
+                        <option value="Ventas externas">Ventas externas</option>
                       </AdminSelect>
                     </FilterField>
 
@@ -1517,16 +2337,11 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 <StatCard title="Cobertura ARCA" value={`${invoiceCoverage.toFixed(1)}%`} helper={`${financialSummary.ordersWithoutInvoice} pedidos sin factura`} icon={<ReceiptText className="size-5" />} />
               </div>
 
-              <div className="grid gap-6 xl:grid-cols-3">
-                <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
-                  <SectionHeader eyebrow="Facturación" title="Evolución" />
-                  <MiniLineChart rows={filteredSales} hidden={hiddenValues} />
-                </section>
-                <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
-                  <SectionHeader eyebrow="Canales" title="Ventas por canal" />
-                  <BarList rows={byChannel} valueKey="amount" hidden={hiddenValues} />
-                </section>
-              </div>
+              <MiniLineChart
+                rows={evolutionSales}
+                channelRows={byChannel}
+                hidden={hiddenValues}
+              />
 
               <div className="grid gap-6 xl:grid-cols-2">
                 <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
@@ -1552,7 +2367,14 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           ["marginPercent", "Margen bruto %"],
                           ["ticket", "Ticket promedio"],
                         ].map(([key, label]) => (
-                          <th key={key} className="px-4 py-3">
+                          <th
+                            key={key}
+                            className={`px-4 py-3 ${
+                              key === "productName" || key === "channel"
+                                ? "text-left"
+                                : "text-center"
+                            }`}
+                          >
                             <button
                               type="button"
                               onClick={() => setSortKey(key as SortKey)}
@@ -1571,13 +2393,13 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           <tr key={sale.id} className="border-t border-white/6">
                             <td className="px-4 py-3 font-bold text-white">{sale.productName}</td>
                             <td className="px-4 py-3 text-white/62">{sale.channel}</td>
-                            <td className="px-4 py-3 text-white/62">{sale.paymentMethod}</td>
-                            <td className="px-4 py-3 text-white/62">{sale.quantity}</td>
-                            <td className="px-4 py-3 text-white/62">{maskAmount(formatPrice(sale.grossAmount), hiddenValues)}</td>
-                            <td className="px-4 py-3 text-white/62">{sale.costAmount == null ? "-" : maskAmount(formatPrice(sale.costAmount), hiddenValues)}</td>
-                            <td className="px-4 py-3 text-white/62">{sale.profitAmount == null ? "-" : maskAmount(formatPrice(sale.profitAmount), hiddenValues)}</td>
-                            <td className="px-4 py-3 text-white/62">{sale.marginPercent == null || hiddenValues ? (hiddenValues ? "****" : "-") : `${sale.marginPercent.toFixed(1)}%`}</td>
-                            <td className="px-4 py-3 text-white/62">{maskAmount(formatPrice(rowTicket), hiddenValues)}</td>
+                            <td className="px-4 py-3 text-center text-white/62">{sale.paymentMethod}</td>
+                            <td className="px-4 py-3 text-center text-white/62">{sale.quantity}</td>
+                            <td className="px-4 py-3 text-center text-white/62">{maskAmount(formatPrice(sale.grossAmount), hiddenValues)}</td>
+                            <td className="px-4 py-3 text-center text-white/62">{sale.costAmount == null ? "-" : maskAmount(formatPrice(sale.costAmount), hiddenValues)}</td>
+                            <td className="px-4 py-3 text-center text-white/62">{sale.profitAmount == null ? "-" : maskAmount(formatPrice(sale.profitAmount), hiddenValues)}</td>
+                            <td className="px-4 py-3 text-center text-white/62">{sale.marginPercent == null || hiddenValues ? (hiddenValues ? "****" : "-") : `${sale.marginPercent.toFixed(1)}%`}</td>
+                            <td className="px-4 py-3 text-center text-white/62">{maskAmount(formatPrice(rowTicket), hiddenValues)}</td>
                           </tr>
                         )
                       })}

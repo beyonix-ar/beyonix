@@ -27,7 +27,7 @@ export interface LowStockItem {
 export interface DashboardCommercialSale {
   id: string
   date: string
-  channel: "BEYONIX Web" | "MercadoLibre Marketplace"
+  channel: "BEYONIX Web" | "MercadoLibre Marketplace" | "Ventas externas"
   paymentMethod: string
   productName: string
   categoryName: string | null

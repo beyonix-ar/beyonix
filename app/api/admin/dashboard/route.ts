@@ -36,7 +36,7 @@ interface DashboardLowStockItem {
 interface CommercialSale {
   id: string
   date: string
-  channel: "BEYONIX Web" | "MercadoLibre Marketplace"
+  channel: "BEYONIX Web" | "MercadoLibre Marketplace" | "Ventas externas"
   paymentMethod: string
   productName: string
   categoryName: string | null
@@ -790,6 +790,7 @@ export async function GET(request: Request) {
     financialOrdersScan,
     orderItemsScan,
     marketplaceScan,
+    externalSalesScan,
     negativeProductsResult,
     negativeVariantsResult,
     pendingDispatchCountResult,
@@ -834,6 +835,20 @@ export async function GET(request: Request) {
         )
       : Promise.resolve({
           rows: (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>,
+          complete: true,
+        }),
+    sensitive
+      ? fetchAllDashboardRows<Record<string, unknown>>(
+          "ventas_externas",
+          (from, to) =>
+            auth.admin
+              .from("external_sales")
+              .select("id, sale_date, product_name, sku, quantity, unit_cost, gross_amount, net_amount, payment_method, reference")
+              .order("id", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({
+          rows: [] as Array<Record<string, unknown>>,
           complete: true,
         }),
     safeDashboardQuery(
@@ -924,6 +939,7 @@ export async function GET(request: Request) {
   const pendingInvoiceOrders = (pendingInvoiceResult.data ?? []) as SupabasePedido[]
   const products = (searchProductsResult.data ?? []) as unknown as SupabaseProducto[]
   const mlRows = marketplaceScan.rows
+  const externalRows = externalSalesScan.rows
   const financialOrders = financialOrdersScan.rows
   const paidCandidateOrders = sensitive
     ? financialOrders.filter(isPaidOrder)
@@ -1305,6 +1321,31 @@ export async function GET(request: Request) {
                 ? (profitAmount / grossAmount) * 100
                 : null,
             orderId: row.order_id ? String(row.order_id) : null,
+          }
+        }),
+        ...externalRows.map((row) => {
+          const quantity = Number(row.quantity ?? 0)
+          const grossAmount = Number(row.gross_amount ?? 0)
+          const costAmount = Number(row.unit_cost ?? 0) * quantity
+          const netAmount = Number(row.net_amount ?? grossAmount - costAmount)
+          const profitAmount =
+            row.net_amount != null ? netAmount : grossAmount - costAmount
+
+          return {
+            id: `external-${String(row.id)}`,
+            date: String(row.sale_date ?? new Date().toISOString()),
+            channel: "Ventas externas" as const,
+            paymentMethod: String(row.payment_method ?? "Venta externa"),
+            productName: String(row.product_name ?? "Venta externa"),
+            categoryName: null,
+            sku: row.sku ? String(row.sku) : null,
+            quantity,
+            grossAmount,
+            costAmount,
+            profitAmount,
+            marginPercent:
+              grossAmount > 0 ? (profitAmount / grossAmount) * 100 : null,
+            orderId: row.reference ? String(row.reference) : null,
           }
         }),
       ]

@@ -16,7 +16,11 @@ import { ProductsSection } from "@/components/products-section"
 import { ReviewsSection } from "@/components/reviews-section"
 import { WhatsAppButton } from "@/components/whatsapp-button"
 
-export function HomeClient() {
+interface HomeClientProps {
+  featuredProduct: SupabaseProducto | null
+}
+
+export function HomeClient({ featuredProduct }: HomeClientProps) {
   const {
     addToCart,
     removeFromCart,
@@ -57,7 +61,10 @@ export function HomeClient() {
   return (
     <>
       <section id="inicio">
-        <HeroSection onOpenPreview={openDetails} />
+        <HeroSection
+          featuredProduct={featuredProduct}
+          onOpenPreview={openDetails}
+        />
       </section>
 
       <section id="categorias">

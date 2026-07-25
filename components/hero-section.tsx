@@ -1,7 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
-
 import Image from "next/image"
 import Link from "next/link"
 import {
@@ -21,7 +19,6 @@ import {
 import { getInstallmentsLabel } from "@/lib/products/installments"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
-import { getFeaturedProductos } from "@/lib/supabase/queries/store"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
 const trustItems = [
@@ -50,31 +47,14 @@ const formatPrice = (price: number) =>
   }).format(price)
 
 interface HeroSectionProps {
+  featuredProduct: SupabaseProducto | null
   onOpenPreview: (product: SupabaseProducto) => void
 }
 
-export function HeroSection({ onOpenPreview }: HeroSectionProps) {
-  const [featuredProduct, setFeaturedProduct] =
-    useState<SupabaseProducto | null>(null)
-
-  useEffect(() => {
-    let active = true
-
-    getFeaturedProductos()
-      .then((products) => {
-        if (active) {
-          setFeaturedProduct(products[0] ?? null)
-        }
-      })
-      .catch((error) => {
-        console.error("Error cargando producto destacado del hero:", error)
-      })
-
-    return () => {
-      active = false
-    }
-  }, [])
-
+export function HeroSection({
+  featuredProduct,
+  onOpenPreview,
+}: HeroSectionProps) {
   const defaultVariant = featuredProduct
     ? getDefaultVariantOption(featuredProduct)
     : null

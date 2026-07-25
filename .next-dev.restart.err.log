@@ -1,0 +1,1078 @@
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+⨯ ./app/admin/sections/dashboard/admin-dashboard.tsx:1507:1
+Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  [90m1505 |[0m     </div>
+  [90m1506 |[0m   )
+[31m[1m>[0m [90m1507 |[0m }
+  [90m     |[0m [31m[1m^[0m
+  [90m1508 |[0m
+  [90m1509 |[0m [36mfunction[0m [33mBarList[0m({
+  [90m1510 |[0m   rows,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+
+⨯ ./app/admin/sections/dashboard/admin-dashboard.tsx:1507:1
+Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  [90m1505 |[0m     </div>
+  [90m1506 |[0m   )
+[31m[1m>[0m [90m1507 |[0m }
+  [90m     |[0m [31m[1m^[0m
+  [90m1508 |[0m
+  [90m1509 |[0m [36mfunction[0m [33mBarList[0m({
+  [90m1510 |[0m   rows,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+
+[browser] Uncaught Error: ./app/admin/sections/dashboard/admin-dashboard.tsx:1507:1
+Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  1505 |     </div>
+  1506 |   )
+> 1507 | }
+       | ^
+  1508 |
+  1509 | function BarList({
+  1510 |   rows,
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./app/admin/sections/dashboard/admin-dashboard.tsx:1507:1)
+    at <unknown> (Error: (./app/admin/sections/dashboard/admin-dashboard.tsx:1507:1)
+⨯ ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15
+Expected '</', got 'jsx text'
+  [90m1456 |[0m         </p>
+  [90m1457 |[0m       )}
+[31m[1m>[0m [90m1458 |[0m         </div>
+  [90m     |[0m               [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[31m[1m>[0m [90m1459 |[0m       </section>
+  [90m     |[0m [31m[1m^^^^^^[0m
+  [90m1460 |[0m
+  [90m1461 |[0m       <div className=[32m"space-y-4"[0m>
+  [90m1462 |[0m         <section className=[32m"rounded-3xl border border-white/8 bg-[#141414] p-5"[0m>
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+
+[browser] Uncaught Error: ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15
+Expected '</', got 'jsx text'
+  1456 |         </p>
+  1457 |       )}
+> 1458 |         </div>
+       |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1459 |       </section>
+       | ^^^^^^
+  1460 |
+  1461 |       <div className="space-y-4">
+  1462 |         <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15)
+    at <unknown> (Error: (./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15)
+[browser] ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15
+Expected '</', got 'jsx text'
+  1456 |         </p>
+  1457 |       )}
+> 1458 |         </div>
+       |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1459 |       </section>
+       | ^^^^^^
+  1460 |
+  1461 |       <div className="space-y-4">
+  1462 |         <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component] 
+[browser] ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15
+Expected '</', got 'jsx text'
+  1456 |         </p>
+  1457 |       )}
+> 1458 |         </div>
+       |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1459 |       </section>
+       | ^^^^^^
+  1460 |
+  1461 |       <div className="space-y-4">
+  1462 |         <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component] 
+[browser] ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15
+Expected '</', got 'jsx text'
+  1456 |         </p>
+  1457 |       )}
+> 1458 |         </div>
+       |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1459 |       </section>
+       | ^^^^^^
+  1460 |
+  1461 |       <div className="space-y-4">
+  1462 |         <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component] 
+[browser] ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15
+Expected '</', got 'jsx text'
+  1456 |         </p>
+  1457 |       )}
+> 1458 |         </div>
+       |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1459 |       </section>
+       | ^^^^^^
+  1460 |
+  1461 |       <div className="space-y-4">
+  1462 |         <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component] 
+[browser] ./app/admin/sections/dashboard/admin-dashboard.tsx:1458:15
+Expected '</', got 'jsx text'
+  1456 |         </p>
+  1457 |       )}
+> 1458 |         </div>
+       |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 1459 |       </section>
+       | ^^^^^^
+  1460 |
+  1461 |       <div className="space-y-4">
+  1462 |         <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Client Component Browser]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/sections/dashboard/admin-dashboard.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Client Component SSR]
+    ./app/admin/admin-client.tsx [Server Component]
+    ./app/admin/page.tsx [Server Component] 
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}

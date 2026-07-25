@@ -15,6 +15,8 @@ interface AdminDatePickerProps {
   centered?: boolean
   compact?: boolean
   onChange: (value: string) => void
+  onSelectMonth?: (range: { from: string; to: string }) => void
+  onSelectYear?: (range: { from: string; to: string }) => void
 }
 
 const MONTHS = [
@@ -109,6 +111,8 @@ export function AdminDatePicker({
   centered = false,
   compact = false,
   onChange,
+  onSelectMonth,
+  onSelectYear,
 }: AdminDatePickerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -244,6 +248,33 @@ export function AdminDatePicker({
     setOpen(false)
   }
 
+  const handleSelectVisibleMonth = () => {
+    if (!onSelectMonth) return
+
+    const year = visibleMonth.getFullYear()
+    const month = visibleMonth.getMonth()
+    const firstDay = toInputDate(new Date(year, month, 1))
+    const lastDay = toInputDate(new Date(year, month + 1, 0))
+
+    onSelectMonth({
+      from: firstDay,
+      to: lastDay,
+    })
+    setOpen(false)
+  }
+
+  const handleSelectVisibleYear = () => {
+    if (!onSelectYear) return
+
+    const year = visibleMonth.getFullYear()
+
+    onSelectYear({
+      from: toInputDate(new Date(year, 0, 1)),
+      to: toInputDate(new Date(year, 11, 31)),
+    })
+    setOpen(false)
+  }
+
   const inputName = `beyonix-admin-date-${title
     .replaceAll(" ", "-")
     .toLowerCase()}`
@@ -301,10 +332,37 @@ export function AdminDatePicker({
                   Seleccionar fecha
                 </p>
 
-                <p className="mt-1 text-sm font-black capitalize text-white/92">
-                  {MONTHS[visibleMonth.getMonth()]}{" "}
-                  {visibleMonth.getFullYear()}
-                </p>
+                {onSelectMonth || onSelectYear ? (
+                  <div className="-ml-2 mt-1 flex items-center gap-1">
+                    {onSelectMonth && (
+                      <button
+                        type="button"
+                        title="Seleccionar el mes completo"
+                        aria-label={`Seleccionar todo ${MONTHS[visibleMonth.getMonth()]} de ${visibleMonth.getFullYear()}`}
+                        onClick={handleSelectVisibleMonth}
+                        className="cursor-pointer rounded-lg px-2 py-1 text-sm font-black capitalize text-white/92 transition hover:bg-beyonix-blue/28 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
+                      >
+                        {MONTHS[visibleMonth.getMonth()]}
+                      </button>
+                    )}
+                    {onSelectYear && (
+                      <button
+                        type="button"
+                        title="Seleccionar el año completo"
+                        aria-label={`Seleccionar todo el año ${visibleMonth.getFullYear()}`}
+                        onClick={handleSelectVisibleYear}
+                        className="cursor-pointer rounded-lg px-2 py-1 text-sm font-black text-white/92 transition hover:bg-beyonix-blue/28 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
+                      >
+                        {visibleMonth.getFullYear()}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm font-black capitalize text-white/92">
+                    {MONTHS[visibleMonth.getMonth()]}{" "}
+                    {visibleMonth.getFullYear()}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
