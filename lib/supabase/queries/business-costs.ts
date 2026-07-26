@@ -43,6 +43,14 @@ export interface BusinessExpense {
   id: string
   expense_date: string
   category: string
+  category_detail: string | null
+  recipient: string | null
+  expense_type: "money" | "product"
+  product_id: number | null
+  variant_id: number | null
+  product_name: string | null
+  product_sku: string | null
+  quantity: number | null
   description: string | null
   amount: number
   recurrence: "unico" | "mensual" | "bimestral" | "trimestral" | "semestral" | "anual"

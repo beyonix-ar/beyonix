@@ -18,7 +18,6 @@ import {
   type UpdatePedidoStatusDetails,
 } from "@/lib/supabase/queries/pedidos"
 import { supabase } from "@/lib/supabase/client"
-import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 
 const REALTIME_PEDIDOS_TABLES = [
   "ordenes",
@@ -41,13 +40,15 @@ function dedupePedidos(pedidos: SupabasePedido[]) {
 // Hook
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function usePedidos() {
+export function usePedidos({ orderId }: { orderId?: number } = {}) {
   const requestIdRef = useRef(0)
   const channelNameRef = useRef(
     `admin-pedidos-live-${Math.random().toString(36).slice(2)}`,
   )
   const [pedidos, setPedidos] =
     useState<SupabasePedido[]>([])
+  const [total, setTotal] = useState(0)
+  const [visibleLimit, setVisibleLimit] = useState(orderId ? 1 : 50)
 
   const [loading, setLoading] =
     useState(true)
@@ -65,12 +66,15 @@ export function usePedidos() {
       try {
         if (!silent) setLoading(true)
 
-        const data =
-          await getPedidos()
+        const data = await getPedidos({
+          limit: visibleLimit,
+          orderId,
+        })
 
         if (requestId !== requestIdRef.current) return
 
-        setPedidos(dedupePedidos(data))
+        setPedidos(dedupePedidos(data.pedidos))
+        setTotal(data.total)
 
         setError(null)
       } catch (err) {
@@ -84,7 +88,7 @@ export function usePedidos() {
       } finally {
         if (requestId === requestIdRef.current) setLoading(false)
       }
-    }, [])
+    }, [orderId, visibleLimit])
 
   // ───────────────────────────────────────────────────────────────────────────
   // First load
@@ -101,7 +105,6 @@ export function usePedidos() {
       reloadTimer = setTimeout(() => {
         reloadTimer = null
         void loadPedidos({ silent: true })
-        notifyAdminNotificationsChanged()
       }, 180)
     }
 
@@ -195,6 +198,9 @@ export function usePedidos() {
 
   return {
     pedidos,
+    total,
+    hasMore: !orderId && pedidos.length < total,
+    loadMore: () => setVisibleLimit((current) => Math.min(current + 50, total)),
     loading,
     error,
 

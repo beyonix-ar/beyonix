@@ -40,7 +40,7 @@ const REALTIME_TABLES = [
   "customer_gift_cards",
 ] as const
 
-const FALLBACK_REFRESH_INTERVAL_MS = 4_000
+const FALLBACK_REFRESH_INTERVAL_MS = 60_000
 
 export function useAdminNotifications(enabled = true) {
   const requestId = useRef(0)
@@ -134,9 +134,7 @@ export function useAdminNotifications(enabled = true) {
       )
     }
 
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") scheduleReload()
-    })
+    channel.subscribe()
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer)

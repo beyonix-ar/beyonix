@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   AlertTriangle,
   ArrowRight,
@@ -8,9 +9,11 @@ import {
   CheckCircle2,
   Clock,
   CreditCard,
+  Download,
   Eye,
   EyeOff,
   FileUp,
+  ImageDown,
   Package,
   ReceiptText,
   RotateCcw,
@@ -682,36 +685,31 @@ function Skeleton() {
 }
 
 type EvolutionGrouping = "month" | "day"
+type EvolutionMode = "evolution" | "comparison"
 
 interface EvolutionPoint {
   key: string
   label: string
-  value: number
+  value: number | null
 }
 
 interface EvolutionComparisonRange {
   id: number
   from: string
   to: string
+  color: string
 }
 
-const EVOLUTION_COMPARISON_COLORS = [
-  "#a78bfa",
-  "#f59e0b",
-  "#34d399",
-  "#f472b6",
-  "#fb7185",
-]
-
-const MAX_EVOLUTION_COMPARISONS = 5
-const EVOLUTION_SELECTION_LABELS = [
-  "Primera selección",
-  "Segunda selección",
-  "Tercera selección",
-  "Cuarta selección",
-  "Quinta selección",
-  "Sexta selección",
-]
+interface EvolutionChartSeries {
+  id: string | number
+  label: string
+  color: string
+  from: string
+  to: string
+  points: EvolutionPoint[]
+  total: number
+  averageDaily: number
+}
 
 function formatEvolutionPeriod(key: string, grouping: EvolutionGrouping) {
   const [year, month, day] = key.split("-").map(Number)
@@ -750,6 +748,495 @@ function groupEvolutionSales(
     }))
 }
 
+function getEvolutionPeriodKeys(
+  from: string,
+  to: string,
+  grouping: EvolutionGrouping,
+) {
+  if (!from || !to || from > to) return []
+
+  if (grouping === "month") {
+    const [fromYear, fromMonth] = from.split("-").map(Number)
+    const [toYear, toMonth] = to.split("-").map(Number)
+
+    if (!fromYear || !fromMonth || !toYear || !toMonth) return []
+
+    const keys: string[] = []
+    let year = fromYear
+    let month = fromMonth
+
+    while (year < toYear || (year === toYear && month <= toMonth)) {
+      keys.push(`${year}-${String(month).padStart(2, "0")}`)
+      month += 1
+
+      if (month > 12) {
+        month = 1
+        year += 1
+      }
+    }
+
+    return keys
+  }
+
+  const keys: string[] = []
+  const cursor = new Date(`${from}T00:00:00Z`)
+  const lastDate = new Date(`${to}T00:00:00Z`)
+
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(lastDate.getTime())) {
+    return []
+  }
+
+  while (cursor <= lastDate) {
+    keys.push(cursor.toISOString().slice(0, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+
+  return keys
+}
+
+function alignEvolutionPeriods(
+  points: EvolutionPoint[],
+  periodKeys: string[],
+  from: string,
+  to: string,
+  grouping: EvolutionGrouping,
+) {
+  const values = new Map(points.map((point) => [point.key, point.value]))
+
+  return periodKeys.map<EvolutionPoint>((key) => ({
+    key,
+    label: formatEvolutionPeriod(key, grouping),
+    value: key >= from && key <= to ? (values.get(key) ?? 0) : null,
+  }))
+}
+
+function alignRelativeEvolutionPeriods(
+  points: EvolutionPoint[],
+  from: string,
+  to: string,
+  length: number,
+) {
+  const periodKeys = getEvolutionPeriodKeys(from, to, "day")
+  const values = new Map(points.map((point) => [point.key, point.value]))
+
+  return Array.from({ length }, (_, index): EvolutionPoint => {
+    const key = periodKeys[index]
+
+    return key
+      ? {
+          key,
+          label: formatEvolutionPeriod(key, "day"),
+          value: values.get(key) ?? 0,
+        }
+      : {
+          key: `relative-${index + 1}`,
+          label: `Día ${index + 1}`,
+          value: null,
+        }
+  })
+}
+
+function formatEvolutionTooltipDate(key: string) {
+  if (/^\d{4}-\d{2}$/.test(key)) {
+    const [year, month] = key.split("-").map(Number)
+
+    return new Intl.DateTimeFormat("es-AR", {
+      month: "long",
+      year: "numeric",
+    }).format(new Date(year, month - 1, 1))
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return key
+
+  const [year, month, day] = key.split("-").map(Number)
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+    .format(new Date(year, month - 1, day))
+    .replace(".", "")
+}
+
+interface HsvColor {
+  h: number
+  s: number
+  v: number
+}
+
+function normalizeHexColor(value: string) {
+  const trimmed = value.trim().replace(/^#/, "")
+  const expanded =
+    trimmed.length === 3
+      ? trimmed
+          .split("")
+          .map((character) => `${character}${character}`)
+          .join("")
+      : trimmed
+
+  return /^[\da-f]{6}$/i.test(expanded) ? `#${expanded.toUpperCase()}` : null
+}
+
+function hexToHsv(value: string): HsvColor {
+  const normalized = normalizeHexColor(value) ?? "#38BDF8"
+  const red = Number.parseInt(normalized.slice(1, 3), 16) / 255
+  const green = Number.parseInt(normalized.slice(3, 5), 16) / 255
+  const blue = Number.parseInt(normalized.slice(5, 7), 16) / 255
+  const maximum = Math.max(red, green, blue)
+  const minimum = Math.min(red, green, blue)
+  const delta = maximum - minimum
+  let hue = 0
+
+  if (delta !== 0) {
+    if (maximum === red) hue = 60 * (((green - blue) / delta) % 6)
+    else if (maximum === green) hue = 60 * ((blue - red) / delta + 2)
+    else hue = 60 * ((red - green) / delta + 4)
+  }
+
+  if (hue < 0) hue += 360
+
+  return {
+    h: hue,
+    s: maximum === 0 ? 0 : (delta / maximum) * 100,
+    v: maximum * 100,
+  }
+}
+
+function hsvToHex({ h, s, v }: HsvColor) {
+  const saturation = Math.max(0, Math.min(100, s)) / 100
+  const brightness = Math.max(0, Math.min(100, v)) / 100
+  const chroma = brightness * saturation
+  const hueSection = ((h % 360) + 360) % 360 / 60
+  const secondary = chroma * (1 - Math.abs((hueSection % 2) - 1))
+  const offset = brightness - chroma
+  let channels = [0, 0, 0]
+
+  if (hueSection < 1) channels = [chroma, secondary, 0]
+  else if (hueSection < 2) channels = [secondary, chroma, 0]
+  else if (hueSection < 3) channels = [0, chroma, secondary]
+  else if (hueSection < 4) channels = [0, secondary, chroma]
+  else if (hueSection < 5) channels = [secondary, 0, chroma]
+  else channels = [chroma, 0, secondary]
+
+  return `#${channels
+    .map((channel) =>
+      Math.round((channel + offset) * 255)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")
+    .toUpperCase()}`
+}
+
+function getDarkBackgroundContrast(value: string) {
+  const normalized = normalizeHexColor(value) ?? "#000000"
+  const channels = [1, 3, 5].map((start) => {
+    const channel = Number.parseInt(normalized.slice(start, start + 2), 16) / 255
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4
+  })
+  const foreground =
+    channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+  const background = 0.004
+
+  return (foreground + 0.05) / (background + 0.05)
+}
+
+function EvolutionColorPicker({
+  value,
+  label,
+  defaultColor,
+  onChange,
+}: {
+  value: string
+  label: string
+  defaultColor?: string
+  disabledColors?: string[]
+  onChange: (value: string) => void
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [hsv, setHsv] = useState(() => hexToHsv(value))
+  const [hexInput, setHexInput] = useState(
+    () => normalizeHexColor(value) ?? "#38BDF8",
+  )
+  const [position, setPosition] = useState({ left: 8, top: 8, width: 320 })
+  const normalizedValue = normalizeHexColor(value) ?? "#38BDF8"
+  const restoredColor =
+    normalizeHexColor(defaultColor ?? "") ??
+    (label.toLocaleLowerCase("es").includes("segunda")
+      ? "#A78BFA"
+      : "#38BDF8")
+  const lowContrast = getDarkBackgroundContrast(normalizedValue) < 2.2
+
+  useEffect(() => {
+    const normalized = normalizeHexColor(value)
+    if (!normalized) return
+    setHsv(hexToHsv(normalized))
+    setHexInput(normalized)
+  }, [value])
+
+  useEffect(() => {
+    if (!open) return
+
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      const width = Math.min(320, window.innerWidth - 16)
+      const estimatedHeight = 356
+      const left = Math.min(
+        Math.max(8, rect.left),
+        Math.max(8, window.innerWidth - width - 8),
+      )
+      const openAbove =
+        window.innerHeight - rect.bottom < estimatedHeight &&
+        rect.top > estimatedHeight
+
+      setPosition({
+        left,
+        top: openAbove
+          ? Math.max(8, rect.top - estimatedHeight - 6)
+          : Math.min(
+              Math.max(8, rect.bottom + 6),
+              window.innerHeight - estimatedHeight - 8,
+            ),
+        width,
+      })
+    }
+    const closeOutside = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (
+        !triggerRef.current?.contains(target) &&
+        !popoverRef.current?.contains(target)
+      ) {
+        setOpen(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+
+    updatePosition()
+    document.addEventListener("mousedown", closeOutside)
+    document.addEventListener("keydown", closeOnEscape)
+    window.addEventListener("resize", updatePosition)
+    window.addEventListener("scroll", updatePosition, true)
+
+    return () => {
+      document.removeEventListener("mousedown", closeOutside)
+      document.removeEventListener("keydown", closeOnEscape)
+      window.removeEventListener("resize", updatePosition)
+      window.removeEventListener("scroll", updatePosition, true)
+    }
+  }, [open])
+
+  const commitHsv = (next: HsvColor) => {
+    const normalized = {
+      h: Math.max(0, Math.min(359, next.h)),
+      s: Math.max(0, Math.min(100, next.s)),
+      v: Math.max(0, Math.min(100, next.v)),
+    }
+    const hex = hsvToHex(normalized)
+    setHsv(normalized)
+    setHexInput(hex)
+    onChange(hex)
+  }
+  const updateSaturationAndBrightness = (
+    clientX: number,
+    clientY: number,
+    element: HTMLElement,
+  ) => {
+    const rect = element.getBoundingClientRect()
+    commitHsv({
+      ...hsv,
+      s: ((clientX - rect.left) / rect.width) * 100,
+      v: 100 - ((clientY - rect.top) / rect.height) * 100,
+    })
+  }
+
+  return (
+    <div>
+      <p className="mb-1.5 text-10px font-black uppercase tracking-widest text-white/38">
+        {label}
+      </p>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={`Cambiar color del período. Color actual ${normalizedValue}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="Cambiar color del período"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-11 min-w-[118px] cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-2.5 text-11px font-black text-white/72 outline-none transition hover:border-white/20 focus-visible:ring-2 focus-visible:ring-beyonix-sky/65"
+      >
+        <span
+          className="size-6 shrink-0 rounded-lg border border-white/30 shadow-sm"
+          style={{ backgroundColor: normalizedValue }}
+        />
+        <span className="font-mono">{normalizedValue}</span>
+      </button>
+
+      {open &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            role="dialog"
+            aria-label={`Cambiar color de ${label}`}
+            className="fixed z-110 max-h-[calc(100vh-16px)] overflow-y-auto rounded-2xl border border-white/12 bg-[#0a111a] p-3 shadow-2xl shadow-black/70"
+            style={position}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-white">
+                  Color del período
+                </p>
+                <p className="mt-0.5 text-10px text-white/42">
+                  Saturación y luminosidad
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar selector de color"
+                onClick={() => {
+                  setOpen(false)
+                  triggerRef.current?.focus()
+                }}
+                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-white/45 outline-none transition hover:bg-white/8 hover:text-white focus-visible:ring-2 focus-visible:ring-beyonix-sky/65"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div
+              role="slider"
+              tabIndex={0}
+              aria-label="Saturación y luminosidad"
+              aria-valuetext={`Saturación ${Math.round(hsv.s)}%, luminosidad ${Math.round(hsv.v)}%`}
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId)
+                updateSaturationAndBrightness(
+                  event.clientX,
+                  event.clientY,
+                  event.currentTarget,
+                )
+              }}
+              onPointerMove={(event) => {
+                if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  return
+                }
+                updateSaturationAndBrightness(
+                  event.clientX,
+                  event.clientY,
+                  event.currentTarget,
+                )
+              }}
+              onKeyDown={(event) => {
+                const step = event.shiftKey ? 10 : 2
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault()
+                  commitHsv({ ...hsv, s: hsv.s - step })
+                } else if (event.key === "ArrowRight") {
+                  event.preventDefault()
+                  commitHsv({ ...hsv, s: hsv.s + step })
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault()
+                  commitHsv({ ...hsv, v: hsv.v + step })
+                } else if (event.key === "ArrowDown") {
+                  event.preventDefault()
+                  commitHsv({ ...hsv, v: hsv.v - step })
+                }
+              }}
+              className="relative h-36 cursor-crosshair touch-none overflow-hidden rounded-xl outline-none ring-offset-2 ring-offset-[#0a111a] focus-visible:ring-2 focus-visible:ring-beyonix-sky/70"
+              style={{
+                backgroundColor: hsvToHex({ h: hsv.h, s: 100, v: 100 }),
+                backgroundImage:
+                  "linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)",
+              }}
+            >
+              <span
+                className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.65)]"
+                style={{ left: `${hsv.s}%`, top: `${100 - hsv.v}%` }}
+              />
+            </div>
+
+            <label className="mt-3 block text-10px font-black uppercase tracking-widest text-white/40">
+              Tono
+              <input
+                type="range"
+                min="0"
+                max="359"
+                value={Math.round(hsv.h)}
+                aria-label="Tono del color"
+                onChange={(event) =>
+                  commitHsv({ ...hsv, h: Number(event.target.value) })
+                }
+                className="mt-2 h-3 w-full cursor-pointer appearance-none rounded-full border border-white/10 bg-[linear-gradient(to_right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)] outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/70 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-transparent"
+              />
+            </label>
+
+            <div className="mt-3 flex items-end gap-2">
+              <span
+                className="size-10 shrink-0 rounded-xl border border-white/20"
+                style={{ backgroundColor: normalizedValue }}
+                aria-label={`Vista previa ${normalizedValue}`}
+              />
+              <label className="min-w-0 flex-1 text-10px font-black uppercase tracking-widest text-white/40">
+                HEX
+                <input
+                  value={hexInput}
+                  maxLength={7}
+                  spellCheck={false}
+                  aria-invalid={!normalizeHexColor(hexInput)}
+                  onChange={(event) => {
+                    const next = event.target.value.toUpperCase()
+                    setHexInput(next)
+                    const normalized = normalizeHexColor(next)
+                    if (normalized) {
+                      setHsv(hexToHsv(normalized))
+                      onChange(normalized)
+                    }
+                  }}
+                  className={`mt-1 h-10 w-full rounded-xl border bg-black/30 px-3 font-mono text-xs font-bold text-white outline-none ${
+                    normalizeHexColor(hexInput)
+                      ? "border-white/10 focus:border-beyonix-sky/60"
+                      : "border-red-400/50 focus:border-red-400"
+                  }`}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => commitHsv(hexToHsv(restoredColor))}
+                className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 px-3 text-10px font-black text-white/52 outline-none transition hover:border-white/20 hover:text-white focus-visible:ring-2 focus-visible:ring-beyonix-sky/65"
+              >
+                <RotateCcw className="size-3.5" />
+                Restaurar
+              </button>
+            </div>
+
+            {!normalizeHexColor(hexInput) && (
+              <p className="mt-2 text-10px font-semibold text-red-300">
+                Ingresá un HEX válido, por ejemplo #38BDF8.
+              </p>
+            )}
+            {lowContrast && (
+              <p className="mt-2 rounded-lg border border-amber-400/15 bg-amber-400/7 px-2.5 py-2 text-10px font-semibold leading-4 text-amber-200/80">
+                Este color tiene poco contraste sobre el fondo del gráfico.
+              </p>
+            )}
+          </div>,
+          document.body,
+        )}
+    </div>
+  )
+}
+
 function formatEvolutionAxisAmount(value: number, hidden: boolean) {
   if (hidden) return "$••••"
 
@@ -761,7 +1248,306 @@ function formatEvolutionAxisAmount(value: number, hidden: boolean) {
   }).format(value)
 }
 
-function MiniLineChart({
+function getEvolutionTickIndexes(
+  length: number,
+  mode: EvolutionMode,
+  grouping: EvolutionGrouping,
+  maxLabels: number,
+) {
+  if (length <= 0) return []
+
+  let step = 1
+
+  if (mode === "comparison" || grouping === "day") {
+    if (length <= 14) step = 1
+    else if (length <= 60) step = 7
+    else if (length <= 180) step = 14
+    else if (length <= 730) step = 30
+    else step = 365
+  } else if (length <= 18) step = 1
+  else if (length <= 60) step = 3
+  else if (length <= 120) step = 6
+  else step = 12
+
+  step = Math.max(step, Math.ceil((length - 1) / Math.max(1, maxLabels - 1)))
+
+  const indexes = Array.from(
+    { length: Math.ceil(length / step) },
+    (_, index) => index * step,
+  ).filter((index) => index < length)
+
+  if (indexes.at(-1) !== length - 1) indexes.push(length - 1)
+
+  return indexes
+}
+
+function formatEvolutionAxisLabel(
+  point: EvolutionPoint,
+  mode: EvolutionMode,
+  grouping: EvolutionGrouping,
+  visiblePointCount: number,
+  relativeDay: number,
+) {
+  if (mode === "comparison") return `Día ${relativeDay}`
+
+  const [year, month, day] = point.key.split("-").map(Number)
+  const date = new Date(year, Math.max(0, month - 1), day || 1)
+
+  if (grouping === "month" || visiblePointCount > 180) {
+    return new Intl.DateTimeFormat("es-AR", {
+      month: visiblePointCount > 730 ? undefined : "short",
+      year: "numeric",
+    })
+      .format(date)
+      .replace(".", "")
+  }
+
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "short",
+  })
+    .format(date)
+    .replace(".", "")
+}
+
+function TemporalBrush({
+  value,
+  label,
+  disabled = false,
+  onChange,
+}: {
+  value: { from: number; to: number }
+  label: string
+  disabled?: boolean
+  onChange: (value: { from: number; to: number }) => void
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{
+    type: "start" | "end" | "move"
+    clientX: number
+    from: number
+    to: number
+  } | null>(null)
+  const [dragging, setDragging] = useState<
+    "start" | "end" | "move" | null
+  >(null)
+
+  useEffect(() => {
+    if (!dragging) return
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const initial = dragRef.current
+      const width = trackRef.current?.getBoundingClientRect().width ?? 0
+      if (!initial || width <= 0) return
+
+      const delta = ((event.clientX - initial.clientX) / width) * 100
+
+      if (initial.type === "start") {
+        onChange({
+          from: Math.max(0, Math.min(initial.to - 1, initial.from + delta)),
+          to: initial.to,
+        })
+      } else if (initial.type === "end") {
+        onChange({
+          from: initial.from,
+          to: Math.min(100, Math.max(initial.from + 1, initial.to + delta)),
+        })
+      } else {
+        const rangeWidth = initial.to - initial.from
+        const nextFrom = Math.max(
+          0,
+          Math.min(100 - rangeWidth, initial.from + delta),
+        )
+        onChange({ from: nextFrom, to: nextFrom + rangeWidth })
+      }
+    }
+    const stopDragging = () => {
+      dragRef.current = null
+      setDragging(null)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", stopDragging)
+    window.addEventListener("pointercancel", stopDragging)
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", stopDragging)
+      window.removeEventListener("pointercancel", stopDragging)
+    }
+  }, [dragging, onChange])
+
+  const startDragging = (
+    type: "start" | "end" | "move",
+    clientX: number,
+  ) => {
+    if (disabled) return
+    dragRef.current = {
+      type,
+      clientX,
+      from: value.from,
+      to: value.to,
+    }
+    setDragging(type)
+  }
+  const moveWindowWithKeyboard = (direction: -1 | 1, large: boolean) => {
+    const step = large ? 5 : 1
+    const width = value.to - value.from
+    const nextFrom = Math.max(
+      0,
+      Math.min(100 - width, value.from + direction * step),
+    )
+    onChange({ from: nextFrom, to: nextFrom + width })
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-10px font-black uppercase tracking-widest text-white/38">
+          Navegador temporal
+        </p>
+        <p className="truncate text-11px font-semibold text-white/58">{label}</p>
+      </div>
+      <div
+        ref={trackRef}
+        role="group"
+        aria-label="Zoom temporal"
+        onPointerDown={(event) => {
+          if (
+            disabled ||
+            event.target !== event.currentTarget ||
+            !trackRef.current
+          ) {
+            return
+          }
+
+          const rect = trackRef.current.getBoundingClientRect()
+          const click = ((event.clientX - rect.left) / rect.width) * 100
+          const width = value.to - value.from
+          const from = Math.max(0, Math.min(100 - width, click - width / 2))
+          onChange({ from, to: from + width })
+        }}
+        className={`relative mt-3 h-12 touch-none rounded-xl border border-white/9 bg-[#070b10] px-2 ${
+          disabled ? "opacity-40" : ""
+        }`}
+      >
+        <div className="pointer-events-none absolute inset-x-3 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-white/7">
+          <span
+            className="absolute inset-y-0 rounded-full bg-white/18"
+            style={{ left: `${value.from}%`, right: `${100 - value.to}%` }}
+          />
+        </div>
+
+        <div
+          role="slider"
+          tabIndex={disabled ? -1 : 0}
+          aria-label="Mover ventana temporal"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuetext={label}
+          onPointerDown={(event) => {
+            event.stopPropagation()
+            startDragging("move", event.clientX)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+              event.preventDefault()
+              moveWindowWithKeyboard(
+                event.key === "ArrowLeft" ? -1 : 1,
+                event.shiftKey,
+              )
+            }
+          }}
+          className={`absolute inset-y-2 rounded-lg border border-white/24 bg-white/8 outline-none transition focus-visible:ring-2 focus-visible:ring-beyonix-sky/65 ${
+            dragging === "move"
+              ? "cursor-grabbing bg-white/12"
+              : "cursor-grab hover:bg-white/10"
+          }`}
+          style={{
+            left: `calc(${value.from}% + 8px)`,
+            right: `calc(${100 - value.to}% + 8px)`,
+          }}
+        >
+          <span className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 gap-1">
+            <span className="h-3 w-px rounded-full bg-white/24" />
+            <span className="h-3 w-px rounded-full bg-white/24" />
+            <span className="h-3 w-px rounded-full bg-white/24" />
+          </span>
+
+          <button
+            type="button"
+            aria-label="Ajustar inicio de la ventana temporal"
+            aria-valuemin={0}
+            aria-valuemax={Math.max(0, value.to - 1)}
+            aria-valuenow={Math.round(value.from)}
+            disabled={disabled}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+              startDragging("start", event.clientX)
+            }}
+            onKeyDown={(event) => {
+              const step = event.shiftKey ? 5 : 1
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault()
+                onChange({
+                  from: Math.max(
+                    0,
+                    Math.min(
+                      value.to - 1,
+                      value.from +
+                        (event.key === "ArrowLeft" ? -step : step),
+                    ),
+                  ),
+                  to: value.to,
+                })
+              }
+            }}
+            className={`absolute inset-y-0 left-0 w-4 -translate-x-1/2 cursor-ew-resize rounded-md border border-white/45 bg-[#141b23] outline-none transition hover:bg-[#202a35] focus-visible:ring-2 focus-visible:ring-beyonix-sky/75 ${
+              dragging === "start" ? "bg-[#273341]" : ""
+            }`}
+          />
+          <button
+            type="button"
+            aria-label="Ajustar fin de la ventana temporal"
+            aria-valuemin={Math.min(100, value.from + 1)}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(value.to)}
+            disabled={disabled}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+              startDragging("end", event.clientX)
+            }}
+            onKeyDown={(event) => {
+              const step = event.shiftKey ? 5 : 1
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault()
+                onChange({
+                  from: value.from,
+                  to: Math.min(
+                    100,
+                    Math.max(
+                      value.from + 1,
+                      value.to +
+                        (event.key === "ArrowLeft" ? -step : step),
+                    ),
+                  ),
+                })
+              }
+            }}
+            className={`absolute inset-y-0 right-0 w-4 translate-x-1/2 cursor-ew-resize rounded-md border border-white/45 bg-[#141b23] outline-none transition hover:bg-[#202a35] focus-visible:ring-2 focus-visible:ring-beyonix-sky/75 ${
+              dragging === "end" ? "bg-[#273341]" : ""
+            }`}
+          />
+        </div>
+      </div>
+      <p className="mt-2 text-10px leading-4 text-white/32">
+        Arrastrá la ventana para explorar. Usá los bordes para acercar o alejar.
+      </p>
+    </div>
+  )
+}
+
+function EnhancedMiniLineChart({
   rows,
   channelRows,
   hidden,
@@ -770,691 +1556,1201 @@ function MiniLineChart({
   channelRows: { label: string; value: number; amount?: number }[]
   hidden: boolean
 }) {
+  const [mode, setMode] = useState<EvolutionMode>("evolution")
+  const [grouping, setGrouping] = useState<EvolutionGrouping>("month")
   const [chartFrom, setChartFrom] = useState("")
   const [chartTo, setChartTo] = useState("")
-  const [comparisonRanges, setComparisonRanges] = useState<
-    EvolutionComparisonRange[]
-  >([{ id: 1, from: "", to: "" }])
-  const nextComparisonId = useRef(2)
-  const [grouping, setGrouping] = useState<EvolutionGrouping>("month")
-  const [showComparison, setShowComparison] = useState(false)
+  const [comparisonRange, setComparisonRange] =
+    useState<EvolutionComparisonRange>({
+      id: 1,
+      from: "",
+      to: "",
+      color: "#a78bfa",
+    })
+  const [primaryColor, setPrimaryColor] = useState("#38bdf8")
+  const [chartChannel, setChartChannel] = useState<SalesChannel>("todos")
+  const [showAverage, setShowAverage] = useState(false)
+  const [visibleRange, setVisibleRange] = useState({ from: 0, to: 100 })
   const [activePoint, setActivePoint] = useState<{
+    index: number
     x: number
     y: number
-    selection: string
-    period: string
-    value: number
     color: string
   } | null>(null)
-  const invalidRange = Boolean(chartFrom && chartTo && chartFrom > chartTo)
-  const filteredRows = useMemo(
-    () =>
-      rows.filter((row) => {
-        const date = new Date(row.date)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const chartViewportRef = useRef<HTMLDivElement>(null)
+  const [chartViewportWidth, setChartViewportWidth] = useState(760)
 
+  useEffect(() => {
+    const element = chartViewportRef.current
+    if (!element) return
+
+    const updateWidth = () => setChartViewportWidth(element.clientWidth)
+    if (typeof ResizeObserver === "undefined") {
+      updateWidth()
+      return
+    }
+    const observer = new ResizeObserver(updateWidth)
+    updateWidth()
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [])
+
+  const availableChannels = useMemo(
+    () => Array.from(new Set(rows.map((row) => row.channel))).sort(),
+    [rows],
+  )
+  const chartRows = useMemo(
+    () =>
+      chartChannel === "todos"
+        ? rows
+        : rows.filter((row) => row.channel === chartChannel),
+    [chartChannel, rows],
+  )
+  const availableBounds = useMemo(() => {
+    const keys = chartRows
+      .map((row) => row.date.slice(0, 10))
+      .filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key))
+      .sort()
+
+    return { from: keys[0] ?? "", to: keys.at(-1) ?? "" }
+  }, [chartRows])
+  const primaryFrom = chartFrom || availableBounds.from
+  const primaryTo = chartTo || availableBounds.to
+  const invalidPrimaryRange = Boolean(
+    chartFrom && chartTo && chartFrom > chartTo,
+  )
+  const validComparison = Boolean(
+    comparisonRange.from &&
+      comparisonRange.to &&
+      comparisonRange.from <= comparisonRange.to,
+  )
+  const invalidComparisonRange = Boolean(
+    comparisonRange.from &&
+      comparisonRange.to &&
+      comparisonRange.from > comparisonRange.to,
+  )
+  const repeatedSeriesColor =
+    normalizeHexColor(primaryColor) ===
+    normalizeHexColor(comparisonRange.color)
+  const primaryRows = useMemo(
+    () =>
+      chartRows.filter((row) => {
+        const key = row.date.slice(0, 10)
         return (
-          (!chartFrom || date >= new Date(`${chartFrom}T00:00:00`)) &&
-          (!chartTo || date <= new Date(`${chartTo}T23:59:59`))
+          (!primaryFrom || key >= primaryFrom) &&
+          (!primaryTo || key <= primaryTo)
         )
       }),
-    [chartFrom, chartTo, rows],
+    [chartRows, primaryFrom, primaryTo],
   )
-  const points = useMemo(
-    () => groupEvolutionSales(filteredRows, grouping),
-    [filteredRows, grouping],
-  )
-  const comparisonSeries = useMemo(
+  const secondaryRows = useMemo(
     () =>
-      comparisonRanges.map((range, index) => {
-        const valid = Boolean(range.from && range.to && range.from <= range.to)
-        const rangeRows = valid
-          ? rows.filter((row) => {
-              const date = new Date(row.date)
+      validComparison
+        ? chartRows.filter((row) => {
+            const key = row.date.slice(0, 10)
+            return key >= comparisonRange.from && key <= comparisonRange.to
+          })
+        : [],
+    [
+      chartRows,
+      comparisonRange.from,
+      comparisonRange.to,
+      validComparison,
+    ],
+  )
+  const primaryTotal = useMemo(
+    () => primaryRows.reduce((sum, row) => sum + row.grossAmount, 0),
+    [primaryRows],
+  )
+  const secondaryTotal = useMemo(
+    () => secondaryRows.reduce((sum, row) => sum + row.grossAmount, 0),
+    [secondaryRows],
+  )
+  const primaryDayCount = useMemo(
+    () => getEvolutionPeriodKeys(primaryFrom, primaryTo, "day").length,
+    [primaryFrom, primaryTo],
+  )
+  const secondaryDayCount = useMemo(
+    () =>
+      validComparison
+        ? getEvolutionPeriodKeys(
+            comparisonRange.from,
+            comparisonRange.to,
+            "day",
+          ).length
+        : 0,
+    [comparisonRange.from, comparisonRange.to, validComparison],
+  )
+  const fullSeries = useMemo<EvolutionChartSeries[]>(() => {
+    if (!primaryFrom || !primaryTo || primaryFrom > primaryTo) return []
 
-              return (
-                date >= new Date(`${range.from}T00:00:00`) &&
-                date <= new Date(`${range.to}T23:59:59`)
-              )
-            })
-          : []
+    if (mode === "evolution") {
+      const fromKey =
+        grouping === "month" ? primaryFrom.slice(0, 7) : primaryFrom
+      const toKey = grouping === "month" ? primaryTo.slice(0, 7) : primaryTo
+      const keys = getEvolutionPeriodKeys(fromKey, toKey, grouping)
 
-        return {
-          ...range,
-          valid,
-          color: EVOLUTION_COMPARISON_COLORS[index],
-          rows: rangeRows,
-          points: groupEvolutionSales(rangeRows, grouping),
-          total: rangeRows.reduce(
-            (total, row) => total + row.grossAmount,
-            0,
+      return [
+        {
+          id: "primary",
+          label: "Primera selección",
+          color: primaryColor,
+          from: primaryFrom,
+          to: primaryTo,
+          points: alignEvolutionPeriods(
+            groupEvolutionSales(primaryRows, grouping),
+            keys,
+            fromKey,
+            toKey,
+            grouping,
           ),
-        }
-      }),
-    [comparisonRanges, grouping, rows],
-  )
-  const visibleComparisonSeries = showComparison
-    ? comparisonSeries.filter((series) => series.valid)
-    : []
-  const chartPoints = [
-    ...points,
-    ...visibleComparisonSeries.flatMap((series) => series.points),
-  ]
-  const maxValue = Math.max(...chartPoints.map((point) => point.value), 1)
-  const currentTotal = filteredRows.reduce(
-    (total, row) => total + row.grossAmount,
-    0,
-  )
-  const width = 760
-  const height = 280
-  const padding = {
-    top: 22,
-    right: 24,
-    bottom: 52,
-    left: 86,
-  }
-  const plotWidth = width - padding.left - padding.right
-  const plotHeight = height - padding.top - padding.bottom
-  const yTicks = Array.from({ length: 5 }, (_, index) => {
-    const ratio = index / 4
-
-    return {
-      value: maxValue * (1 - ratio),
-      y: padding.top + plotHeight * ratio,
+          total: primaryTotal,
+          averageDaily:
+            primaryDayCount > 0 ? primaryTotal / primaryDayCount : 0,
+        },
+      ]
     }
-  })
-  const makePath = (series: EvolutionPoint[]) => {
-    if (series.length === 1) {
-      const y =
-        padding.top + plotHeight - (series[0].value / maxValue) * plotHeight
 
-      return `M ${padding.left} ${y} L ${width - padding.right} ${y}`
+    const relativeLength = Math.max(primaryDayCount, secondaryDayCount, 1)
+    const series: EvolutionChartSeries[] = [
+      {
+        id: "primary",
+        label: "Primera selección",
+        color: primaryColor,
+        from: primaryFrom,
+        to: primaryTo,
+        points: alignRelativeEvolutionPeriods(
+          groupEvolutionSales(primaryRows, "day"),
+          primaryFrom,
+          primaryTo,
+          relativeLength,
+        ),
+        total: primaryTotal,
+        averageDaily:
+          primaryDayCount > 0 ? primaryTotal / primaryDayCount : 0,
+      },
+    ]
+
+    if (validComparison) {
+      series.push({
+        id: comparisonRange.id,
+        label: "Segunda selección",
+        color: comparisonRange.color,
+        from: comparisonRange.from,
+        to: comparisonRange.to,
+        points: alignRelativeEvolutionPeriods(
+          groupEvolutionSales(secondaryRows, "day"),
+          comparisonRange.from,
+          comparisonRange.to,
+          relativeLength,
+        ),
+        total: secondaryTotal,
+        averageDaily:
+          secondaryDayCount > 0 ? secondaryTotal / secondaryDayCount : 0,
+      })
     }
 
     return series
-      .map((point, index) => {
-        const x =
-          series.length <= 1
-            ? padding.left + plotWidth / 2
-            : padding.left + (index / (series.length - 1)) * plotWidth
-        const y =
-          padding.top + plotHeight - (point.value / maxValue) * plotHeight
+  }, [
+    comparisonRange.color,
+    comparisonRange.from,
+    comparisonRange.id,
+    comparisonRange.to,
+    grouping,
+    mode,
+    primaryColor,
+    primaryDayCount,
+    primaryFrom,
+    primaryRows,
+    primaryTo,
+    primaryTotal,
+    secondaryDayCount,
+    secondaryRows,
+    secondaryTotal,
+    validComparison,
+  ])
+  const domainLength = fullSeries[0]?.points.length ?? 0
+  const windowStartIndex =
+    domainLength > 1
+      ? Math.min(
+          domainLength - 1,
+          Math.floor((visibleRange.from / 100) * (domainLength - 1)),
+        )
+      : 0
+  const windowEndIndex =
+    domainLength > 1
+      ? Math.max(
+          windowStartIndex,
+          Math.ceil((visibleRange.to / 100) * (domainLength - 1)),
+        )
+      : 0
+  const visibleSeries = useMemo(
+    () =>
+      fullSeries.map((series) => ({
+        ...series,
+        points: series.points.slice(windowStartIndex, windowEndIndex + 1),
+      })),
+    [fullSeries, windowEndIndex, windowStartIndex],
+  )
+  const chartPoints = useMemo(
+    () =>
+      visibleSeries
+        .flatMap((series) => series.points)
+        .filter(
+          (point): point is EvolutionPoint & { value: number } =>
+            point.value !== null,
+        ),
+    [visibleSeries],
+  )
+  const peakValues = useMemo(
+    () =>
+      new Map(
+        fullSeries.map((series) => {
+          const values = series.points
+            .map((point) => point.value)
+            .filter((value): value is number => value !== null)
 
-        return `${index === 0 ? "M" : "L"} ${x} ${y}`
-      })
-      .join(" ")
-  }
-  const pointCoordinates = (series: EvolutionPoint[]) =>
-    series.map((point, index) => ({
-      ...point,
-      x:
-        series.length <= 1
-          ? padding.left + plotWidth / 2
-          : padding.left + (index / (series.length - 1)) * plotWidth,
-      y: padding.top + plotHeight - (point.value / maxValue) * plotHeight,
-    }))
-  const xLabelIndexes = Array.from(
-    new Set(
-      [0, 0.25, 0.5, 0.75, 1].map((ratio) =>
-        Math.round((points.length - 1) * ratio),
+          return [series.id, values.length ? Math.max(...values) : null]
+        }),
       ),
-    ),
-  ).filter((index) => index >= 0)
+    [fullSeries],
+  )
+  const maxValue = Math.max(...chartPoints.map((point) => point.value), 1)
+  const difference = validComparison
+    ? secondaryTotal - primaryTotal
+    : null
+  const absoluteDifference =
+    difference === null ? null : Math.abs(difference)
+  const variation =
+    difference !== null && primaryTotal !== 0
+      ? (difference / primaryTotal) * 100
+      : null
+  const visiblePointCount = visibleSeries[0]?.points.length ?? 0
+  const width =
+    mode === "evolution" && grouping === "month"
+      ? Math.max(760, visiblePointCount * 64 + 110)
+      : 760
+  const height = 320
+  const padding = { top: 30, right: 24, bottom: 58, left: 86 }
+  const plotWidth = width - padding.left - padding.right
+  const plotHeight = height - padding.top - padding.bottom
+  const yTicks = useMemo(
+    () =>
+      Array.from({ length: 5 }, (_, index) => {
+        const ratio = index / 4
+        return {
+          value: maxValue * (1 - ratio),
+          y: padding.top + plotHeight * ratio,
+        }
+      }),
+    [maxValue, padding.top, plotHeight],
+  )
+  const makePath = useCallback(
+    (points: EvolutionPoint[]) => {
+      let drawing = false
+
+      return points
+        .map((point, index) => {
+          if (point.value === null) {
+            drawing = false
+            return ""
+          }
+
+          const x =
+            points.length <= 1
+              ? padding.left + plotWidth / 2
+              : padding.left + (index / (points.length - 1)) * plotWidth
+          const y =
+            padding.top +
+            plotHeight -
+            (point.value / maxValue) * plotHeight
+          const command = drawing ? "L" : "M"
+          drawing = true
+          return `${command} ${x} ${y}`
+        })
+        .filter(Boolean)
+        .join(" ")
+    },
+    [maxValue, padding.left, padding.top, plotHeight, plotWidth],
+  )
+  const pointCoordinates = useCallback(
+    (points: EvolutionPoint[]) =>
+      points.flatMap((point, index) =>
+        point.value === null
+          ? []
+          : [
+              {
+                ...point,
+                value: point.value,
+                index,
+                x:
+                  points.length <= 1
+                    ? padding.left + plotWidth / 2
+                    : padding.left +
+                      (index / (points.length - 1)) * plotWidth,
+                y:
+                  padding.top +
+                  plotHeight -
+                  (point.value / maxValue) * plotHeight,
+              },
+            ],
+      ),
+    [maxValue, padding.left, padding.top, plotHeight, plotWidth],
+  )
+  const xLabelIndexes = useMemo(
+    () =>
+      getEvolutionTickIndexes(
+        visiblePointCount,
+        mode,
+        grouping,
+        chartViewportWidth < 480 ? 4 : chartViewportWidth < 720 ? 6 : 10,
+      ),
+    [chartViewportWidth, grouping, mode, visiblePointCount],
+  )
   const currentRangeLabel =
     chartFrom && chartTo
       ? `${chartFrom.split("-").reverse().join("/")} – ${chartTo
           .split("-")
           .reverse()
           .join("/")}`
-      : chartFrom
-        ? `Desde el ${chartFrom.split("-").reverse().join("/")}`
-        : chartTo
-          ? `Hasta el ${chartTo.split("-").reverse().join("/")}`
-          : "Todas las fechas disponibles"
-  const clearChartDates = () => {
-    setChartFrom("")
-    setChartTo("")
-  }
-  const updateComparisonRange = (
-    id: number,
-    field: "from" | "to",
-    value: string,
-  ) => {
-    setComparisonRanges((current) =>
-      current.map((range) =>
-        range.id === id ? { ...range, [field]: value } : range,
-      ),
-    )
-  }
-  const selectComparisonRange = (
-    id: number,
-    range: { from: string; to: string },
-  ) => {
-    setComparisonRanges((current) =>
-      current.map((item) => (item.id === id ? { ...item, ...range } : item)),
-    )
-  }
-  const addComparisonRange = () => {
-    setComparisonRanges((current) => {
-      if (current.length >= MAX_EVOLUTION_COMPARISONS) return current
+      : "Todas las fechas disponibles"
+  const visibleRangeLabel = useMemo(() => {
+    if (domainLength === 0) return "Sin ventana disponible"
+    if (mode === "comparison") {
+      return `Día ${windowStartIndex + 1} – Día ${windowEndIndex + 1}`
+    }
 
-      return [
-        ...current,
-        {
-          id: nextComparisonId.current++,
-          from: "",
-          to: "",
-        },
-      ]
+    const first = fullSeries[0]?.points[windowStartIndex]
+    const last = fullSeries[0]?.points[windowEndIndex]
+    return first && last
+      ? `${formatEvolutionTooltipDate(first.key)} — ${formatEvolutionTooltipDate(last.key)}`
+      : "Ventana completa"
+  }, [
+    domainLength,
+    fullSeries,
+    mode,
+    windowEndIndex,
+    windowStartIndex,
+  ])
+  const tooltipEntries = activePoint
+    ? visibleSeries.flatMap((series) => {
+        const point = series.points[activePoint.index]
+        const peak = peakValues.get(series.id)
+
+        return !point || point.value === null
+          ? []
+          : [{ series, point, peak: peak !== null && point.value === peak }]
+      })
+    : []
+  const tooltipDifference =
+    tooltipEntries.length === 2
+      ? tooltipEntries[1].point.value! - tooltipEntries[0].point.value!
+      : null
+  const tooltipHeight =
+    34 + tooltipEntries.length * 20 + (tooltipDifference !== null ? 24 : 0)
+
+  const selectPrimaryRange = (range: { from: string; to: string }) => {
+    setChartFrom(range.from)
+    setChartTo(range.to)
+    setVisibleRange({ from: 0, to: 100 })
+  }
+  const exportCsv = useCallback(() => {
+    if (!fullSeries.length) return
+
+    const headers = [
+      mode === "comparison" ? "Día relativo" : "Período",
+      ...fullSeries.flatMap((series) => [
+        `Fecha ${series.label}`,
+        `Facturación ${series.label}`,
+      ]),
+    ]
+    const data = Array.from({ length: domainLength }, (_, index) => [
+      mode === "comparison"
+        ? `Día ${index + 1}`
+        : fullSeries[0]?.points[index]?.label ?? "",
+      ...fullSeries.flatMap((series) => {
+        const point = series.points[index]
+        return [
+          point && /^\d{4}-\d{2}(?:-\d{2})?$/.test(point.key)
+            ? point.key
+            : "",
+          point?.value ?? "",
+        ]
+      }),
+    ])
+    const escapeCell = (value: string | number) =>
+      `"${String(value).replaceAll('"', '""')}"`
+    const csv = [headers, ...data]
+      .map((row) => row.map(escapeCell).join(","))
+      .join("\r\n")
+    const blob = new Blob([`\uFEFF${csv}`], {
+      type: "text/csv;charset=utf-8",
     })
-  }
-  const removeComparisonRange = (id: number) => {
-    setComparisonRanges((current) =>
-      current.length === 1
-        ? [{ ...current[0], from: "", to: "" }]
-        : current.filter((range) => range.id !== id),
-    )
-  }
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `facturacion-${mode}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [domainLength, fullSeries, mode])
+  const downloadChart = useCallback(() => {
+    const svg = svgRef.current
+    if (!svg) return
+
+    const clone = svg.cloneNode(true) as SVGSVGElement
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+    const source = new XMLSerializer().serializeToString(clone)
+    const blob = new Blob([source], {
+      type: "image/svg+xml;charset=utf-8",
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `facturacion-${mode}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.svg`
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [mode])
 
   return (
     <div className="grid gap-6 xl:grid-cols-3 xl:items-start">
       <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
-        <SectionHeader eyebrow="Facturación" title="Evolución" />
+        <SectionHeader
+          eyebrow="Facturación"
+          title={mode === "evolution" ? "Evolución" : "Comparación"}
+        />
         <div className="rounded-3xl border border-white/7 bg-black p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-black text-white">Facturación por período</p>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-white/45">
-              Las fechas se filtran únicamente en este gráfico. Los filtros
-              superiores de Canal, Producto y Categoría también se aplican acá.
-            </p>
-            <p className="mt-1 text-11px font-semibold text-beyonix-sky/75">
-              {currentRangeLabel}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.025] p-2.5">
-          <p className="mb-2 text-10px font-black uppercase tracking-widest text-white/38">
-            Fechas de este gráfico
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="w-[150px]">
-              <FilterField label="Desde">
-                <AdminDatePicker
-                  title="Desde — Evolución"
-                  ariaLabel="Fecha inicial del gráfico de evolución"
-                  value={chartFrom}
-                  placeholder="Desde"
-                  compact
-                  onSelectMonth={({ from, to }) => {
-                    setChartFrom(from)
-                    setChartTo(to)
-                  }}
-                  onSelectYear={({ from, to }) => {
-                    setChartFrom(from)
-                    setChartTo(to)
-                  }}
-                  onChange={setChartFrom}
-                />
-              </FilterField>
-            </div>
-
-            <div className="w-[150px]">
-              <FilterField label="Hasta">
-                <AdminDatePicker
-                  title="Hasta — Evolución"
-                  ariaLabel="Fecha final del gráfico de evolución"
-                  value={chartTo}
-                  placeholder="Hasta"
-                  compact
-                  onSelectMonth={({ from, to }) => {
-                    setChartFrom(from)
-                    setChartTo(to)
-                  }}
-                  onSelectYear={({ from, to }) => {
-                    setChartFrom(from)
-                    setChartTo(to)
-                  }}
-                  onChange={setChartTo}
-                />
-              </FilterField>
-            </div>
-
-            <div className="w-[104px] shrink-0">
-              <FilterField label="Agrupar">
-                <div className="grid h-11 grid-cols-2 overflow-hidden rounded-xl border border-white/10 bg-black/25">
-                  {([
-                    ["month", "Mes"],
-                    ["day", "Día"],
-                  ] as const).map(([value, label], index) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={grouping === value}
-                      onClick={() => setGrouping(value)}
-                      className={`flex h-full cursor-pointer items-center justify-center text-11px font-black transition ${
-                        index > 0 ? "border-l border-white/8" : ""
-                      } ${
-                        grouping === value
-                          ? "bg-beyonix-blue text-white"
-                          : "text-white/48 hover:bg-white/[0.04] hover:text-white"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </FilterField>
-            </div>
-
-            <button
-              type="button"
-              aria-pressed={showComparison}
-              onClick={() => setShowComparison((current) => !current)}
-              className={`h-11 rounded-xl border px-3 text-11px font-black transition ${
-                showComparison
-                  ? "cursor-pointer border-violet-400/35 bg-violet-400/12 text-violet-200"
-                  : "cursor-pointer border-white/10 text-white/58 hover:border-violet-400/30 hover:text-white"
-              }`}
-            >
-              {showComparison ? "Cerrar comparación" : "Comparar"}
-            </button>
-
-            <button
-              type="button"
-              onClick={clearChartDates}
-              disabled={!chartFrom && !chartTo}
-              className="h-11 cursor-pointer rounded-xl border border-white/8 px-3 text-11px font-black text-white/45 transition hover:border-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              Limpiar fechas
-            </button>
-
-          </div>
-
-          {showComparison && (
-            <div className="mt-2.5 rounded-2xl border border-violet-400/18 bg-violet-400/[0.045] p-2.5">
-              <p className="mb-2 text-10px font-black uppercase tracking-widest text-violet-300/65">
-                Fechas para comparar
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-black text-white">
+                Facturación por período
               </p>
-              <div className="space-y-2">
-                {comparisonRanges.map((range, index) => {
-                  const color = EVOLUTION_COMPARISON_COLORS[index]
-                  const invalid = Boolean(
-                    range.from && range.to && range.from > range.to,
-                  )
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">
+                {mode === "evolution"
+                  ? "Línea temporal continua sobre el calendario real."
+                  : "Períodos alineados desde su primer día para comparar la evolución relativa."}
+              </p>
+              <p className="mt-1 text-11px font-semibold text-beyonix-sky/75">
+                {currentRangeLabel}
+              </p>
+            </div>
 
-                  return (
-                    <div
-                      key={range.id}
-                      className="rounded-xl border border-white/6 bg-black/15 p-2"
-                    >
-                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[150px_150px_auto_auto] xl:items-end xl:justify-start">
-                        <FilterField label="Desde">
-                          <AdminDatePicker
-                            title={`Desde — Comparación ${index + 1}`}
-                            ariaLabel={`Fecha inicial de la comparación ${index + 1}`}
-                            value={range.from}
-                            placeholder="Desde"
-                            compact
-                            onSelectMonth={(selectedRange) =>
-                              selectComparisonRange(range.id, selectedRange)
-                            }
-                            onSelectYear={(selectedRange) =>
-                              selectComparisonRange(range.id, selectedRange)
-                            }
-                            onChange={(value) =>
-                              updateComparisonRange(range.id, "from", value)
-                            }
-                          />
-                        </FilterField>
+            <div className="grid w-full grid-cols-2 rounded-xl border border-white/10 bg-white/[0.025] p-1 sm:w-[310px]">
+              {([
+                ["evolution", "Evolución"],
+                ["comparison", "Comparación"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={mode === value}
+                  onClick={() => {
+                    setMode(value)
+                    setActivePoint(null)
+                    setVisibleRange({ from: 0, to: 100 })
+                  }}
+                  className={`h-9 cursor-pointer rounded-lg text-xs font-black transition ${
+                    mode === value
+                      ? value === "comparison"
+                        ? "bg-violet-500/20 text-violet-100"
+                        : "bg-sky-500/20 text-sky-100"
+                      : "text-white/45 hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                        <FilterField label="Hasta">
-                          <AdminDatePicker
-                            title={`Hasta — Comparación ${index + 1}`}
-                            ariaLabel={`Fecha final de la comparación ${index + 1}`}
-                            value={range.to}
-                            placeholder="Hasta"
-                            compact
-                            onSelectMonth={(selectedRange) =>
-                              selectComparisonRange(range.id, selectedRange)
-                            }
-                            onSelectYear={(selectedRange) =>
-                              selectComparisonRange(range.id, selectedRange)
-                            }
-                            onChange={(value) =>
-                              updateComparisonRange(range.id, "to", value)
-                            }
-                          />
-                        </FilterField>
+          <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.025] p-2.5">
+            <p className="mb-2 text-10px font-black uppercase tracking-widest text-white/38">
+              Primera selección
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-[150px]">
+                <FilterField label="Desde">
+                  <AdminDatePicker
+                    title="Desde — Primera selección"
+                    ariaLabel="Fecha inicial de la primera selección"
+                    value={chartFrom}
+                    placeholder="Desde"
+                    compact
+                    onSelectMonth={selectPrimaryRange}
+                    onSelectYear={selectPrimaryRange}
+                    onChange={setChartFrom}
+                  />
+                </FilterField>
+              </div>
+              <div className="w-[150px]">
+                <FilterField label="Hasta">
+                  <AdminDatePicker
+                    title="Hasta — Primera selección"
+                    ariaLabel="Fecha final de la primera selección"
+                    value={chartTo}
+                    placeholder="Hasta"
+                    compact
+                    onSelectMonth={selectPrimaryRange}
+                    onSelectYear={selectPrimaryRange}
+                    onChange={setChartTo}
+                  />
+                </FilterField>
+              </div>
 
-                        {index === 0 ? (
-                          <button
-                            type="button"
-                            onClick={addComparisonRange}
-                            disabled={
-                              comparisonRanges.length >=
-                              MAX_EVOLUTION_COMPARISONS
-                            }
-                            className="h-11 cursor-pointer rounded-xl border border-violet-400/25 bg-violet-400/8 px-3 text-11px font-black text-violet-200 transition hover:border-violet-400/45 hover:bg-violet-400/14 disabled:cursor-not-allowed disabled:opacity-35"
-                          >
-                            Agregar
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => removeComparisonRange(range.id)}
-                            className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-xl border border-white/8 px-3 text-11px font-black text-white/45 transition hover:border-red-400/25 hover:text-red-200"
-                          >
-                            <X className="size-3.5" />
-                            Quitar
-                          </button>
-                        )}
-
-                        <span
-                          className="mb-2.5 hidden size-2.5 rounded-full xl:block"
-                          style={{ backgroundColor: color }}
-                          aria-hidden="true"
-                        />
-                      </div>
-
-                      {invalid && (
-                        <p className="mt-2 text-xs font-semibold text-red-300">
-                          “Desde” no puede ser posterior a “Hasta”.
-                        </p>
-                      )}
+              {mode === "evolution" ? (
+                <div className="w-[104px] shrink-0">
+                  <FilterField label="Agrupar">
+                    <div className="grid h-11 grid-cols-2 overflow-hidden rounded-xl border border-white/10 bg-black/25">
+                      {([
+                        ["month", "Mes"],
+                        ["day", "Día"],
+                      ] as const).map(([value, label], index) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={grouping === value}
+                          onClick={() => {
+                            setGrouping(value)
+                            setVisibleRange({ from: 0, to: 100 })
+                          }}
+                          className={`text-11px font-black transition ${
+                            index ? "border-l border-white/8" : ""
+                          } ${
+                            grouping === value
+                              ? "bg-beyonix-blue text-white"
+                              : "text-white/48 hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                  )
-                })}
+                  </FilterField>
+                </div>
+              ) : (
+                <div>
+                  <p className="mb-1.5 text-10px font-black uppercase tracking-widest text-white/38">
+                    Alineación
+                  </p>
+                  <span className="inline-flex h-11 items-center rounded-xl border border-violet-400/20 bg-violet-400/8 px-3 text-11px font-black text-violet-200">
+                    Día relativo
+                  </span>
+                </div>
+              )}
+
+              <EvolutionColorPicker
+                value={primaryColor}
+                label="Color 1"
+                defaultColor="#38BDF8"
+                onChange={setPrimaryColor}
+              />
+
+              {availableChannels.length > 1 && (
+                <div className="min-w-[180px]">
+                  <FilterField label="Canal">
+                    <AdminSelect
+                      title="Canal de venta"
+                      ariaLabel="Filtrar gráfico por canal de venta"
+                      value={chartChannel}
+                      leadingIcon={<Store className="size-4 text-beyonix-sky/70" />}
+                      searchable={availableChannels.length > 7}
+                      searchPlaceholder="Buscar canal..."
+                      triggerClassName="min-w-0 max-w-[240px]"
+                      onChange={(value) => {
+                        setChartChannel(value as SalesChannel)
+                        setVisibleRange({ from: 0, to: 100 })
+                      }}
+                    >
+                      <option value="todos">Todos los canales</option>
+                      {availableChannels.map((channel) => (
+                        <option key={channel} value={channel}>
+                          {channel}
+                        </option>
+                      ))}
+                    </AdminSelect>
+                  </FilterField>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setChartFrom("")
+                  setChartTo("")
+                  setVisibleRange({ from: 0, to: 100 })
+                }}
+                disabled={!chartFrom && !chartTo}
+                className="h-11 cursor-pointer rounded-xl border border-white/8 px-3 text-11px font-black text-white/45 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                Limpiar fechas
+              </button>
+            </div>
+
+            {mode === "comparison" && (
+              <div className="mt-2.5 rounded-2xl border border-violet-400/18 bg-violet-400/[0.045] p-2.5">
+                <p className="mb-2 text-10px font-black uppercase tracking-widest text-violet-300/65">
+                  Segunda selección
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="w-[150px]">
+                    <FilterField label="Desde">
+                      <AdminDatePicker
+                        title="Desde — Segunda selección"
+                        ariaLabel="Fecha inicial de la segunda selección"
+                        value={comparisonRange.from}
+                        placeholder="Desde"
+                        compact
+                        onSelectMonth={(range) =>
+                          setComparisonRange((current) => ({
+                            ...current,
+                            ...range,
+                          }))
+                        }
+                        onSelectYear={(range) =>
+                          setComparisonRange((current) => ({
+                            ...current,
+                            ...range,
+                          }))
+                        }
+                        onChange={(from) =>
+                          setComparisonRange((current) => ({
+                            ...current,
+                            from,
+                          }))
+                        }
+                      />
+                    </FilterField>
+                  </div>
+                  <div className="w-[150px]">
+                    <FilterField label="Hasta">
+                      <AdminDatePicker
+                        title="Hasta — Segunda selección"
+                        ariaLabel="Fecha final de la segunda selección"
+                        value={comparisonRange.to}
+                        placeholder="Hasta"
+                        compact
+                        onSelectMonth={(range) =>
+                          setComparisonRange((current) => ({
+                            ...current,
+                            ...range,
+                          }))
+                        }
+                        onSelectYear={(range) =>
+                          setComparisonRange((current) => ({
+                            ...current,
+                            ...range,
+                          }))
+                        }
+                        onChange={(to) =>
+                          setComparisonRange((current) => ({
+                            ...current,
+                            to,
+                          }))
+                        }
+                      />
+                    </FilterField>
+                  </div>
+                  <EvolutionColorPicker
+                    value={comparisonRange.color}
+                    label="Color 2"
+                    defaultColor="#A78BFA"
+                    onChange={(color) =>
+                      setComparisonRange((current) => ({
+                        ...current,
+                        color,
+                      }))
+                    }
+                  />
+                </div>
+                {invalidComparisonRange && (
+                  <p className="mt-2 text-xs font-semibold text-red-300">
+                    “Desde” no puede ser posterior a “Hasta”.
+                  </p>
+                )}
+                {repeatedSeriesColor && (
+                  <p className="mt-2 text-xs font-semibold text-amber-200/75">
+                    Elegí colores diferentes para distinguir mejor los
+                    períodos.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {invalidPrimaryRange && (
+              <p className="mt-3 text-xs font-semibold text-red-300">
+                La fecha “Desde” no puede ser posterior a “Hasta”.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <EvolutionMetric
+              label="Total por período"
+              lines={[
+                {
+                  color: primaryColor,
+                  value: hidden ? HIDDEN_AMOUNT : formatPrice(primaryTotal),
+                },
+                {
+                  color: validComparison
+                    ? comparisonRange.color
+                    : "rgba(255,255,255,.28)",
+                  value: validComparison
+                    ? hidden
+                      ? HIDDEN_AMOUNT
+                      : formatPrice(secondaryTotal)
+                    : "—",
+                },
+              ]}
+            />
+            <EvolutionMetric
+              label="Diferencia absoluta"
+              value={
+                absoluteDifference === null
+                  ? "—"
+                  : hidden
+                    ? HIDDEN_AMOUNT
+                    : formatPrice(absoluteDifference)
+              }
+              helper="Magnitud entre períodos"
+            />
+            <EvolutionMetric
+              label="Variación"
+              value={
+                variation === null
+                  ? "—"
+                  : hidden
+                    ? "****"
+                    : `${variation >= 0 ? "+" : ""}${variation.toFixed(1)}%`
+              }
+              tone={
+                variation === null
+                  ? "neutral"
+                  : variation >= 0
+                    ? "positive"
+                    : "negative"
+              }
+              helper="Segunda respecto de primera"
+            />
+            <EvolutionMetric
+              label="Promedio diario"
+              lines={[
+                {
+                  color: primaryColor,
+                  value: hidden
+                    ? HIDDEN_AMOUNT
+                    : formatPrice(
+                        primaryDayCount > 0
+                          ? primaryTotal / primaryDayCount
+                          : 0,
+                      ),
+                },
+                {
+                  color: validComparison
+                    ? comparisonRange.color
+                    : "rgba(255,255,255,.28)",
+                  value: validComparison
+                    ? hidden
+                      ? HIDDEN_AMOUNT
+                      : formatPrice(
+                          secondaryDayCount > 0
+                            ? secondaryTotal / secondaryDayCount
+                            : 0,
+                        )
+                    : "—",
+                },
+              ]}
+            />
+          </div>
+
+          <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  aria-pressed={showAverage}
+                  onClick={() => setShowAverage((current) => !current)}
+                  className={`h-9 cursor-pointer rounded-xl border px-3 text-11px font-black ${
+                    showAverage
+                      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                      : "border-white/8 text-white/45 hover:text-white"
+                  }`}
+                >
+                  Línea de promedio
+                </button>
+                <button
+                  type="button"
+                  onClick={exportCsv}
+                  disabled={!chartPoints.length || hidden}
+                  title={
+                    hidden
+                      ? "Mostrá los valores para exportar"
+                      : "Exportar períodos completos a CSV"
+                  }
+                  className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-white/8 px-3 text-11px font-black text-white/48 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <Download className="size-3.5" />
+                  CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadChart}
+                  disabled={!chartPoints.length || hidden}
+                  title={hidden ? "Mostrá los valores para descargar" : "Descargar imagen SVG"}
+                  className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-white/8 px-3 text-11px font-black text-white/48 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <ImageDown className="size-3.5" />
+                  SVG
+                </button>
               </div>
             </div>
-          )}
 
-          {invalidRange && (
-            <p className="mt-3 text-xs font-semibold text-red-300">
-              La fecha “Desde” no puede ser posterior a “Hasta”.
-            </p>
-          )}
-        </div>
+            <div className="mt-3">
+              <TemporalBrush
+                value={visibleRange}
+                label={`Vista: ${visibleRangeLabel}`}
+                disabled={domainLength <= 1}
+                onChange={setVisibleRange}
+              />
+            </div>
+          </div>
 
-      {chartPoints.length ? (
-        <>
-          <div className="mt-4 overflow-x-auto">
-            <svg
-              viewBox={`0 0 ${width} ${height}`}
-              role="img"
-              aria-label="Evolución de la facturación por período"
-              className="min-w-680px w-full"
-            >
-              {yTicks.map((tick) => (
-                <g key={tick.y}>
+          {chartPoints.length ? (
+            <>
+              <div ref={chartViewportRef} className="mt-4 overflow-x-auto">
+                <svg
+                  ref={svgRef}
+                  viewBox={`0 0 ${width} ${height}`}
+                  role="img"
+                  aria-label={
+                    mode === "evolution"
+                      ? "Evolución temporal de la facturación"
+                      : "Comparación relativa de la facturación"
+                  }
+                  className="min-w-680px w-full"
+                >
+                  {yTicks.map((tick) => (
+                    <g key={tick.y}>
+                      <line
+                        x1={padding.left}
+                        y1={tick.y}
+                        x2={width - padding.right}
+                        y2={tick.y}
+                        stroke="rgba(255,255,255,0.09)"
+                        strokeDasharray="4 5"
+                      />
+                      <text
+                        x={padding.left - 12}
+                        y={tick.y + 4}
+                        textAnchor="end"
+                        fill="rgba(255,255,255,0.42)"
+                        fontSize="11"
+                      >
+                        {formatEvolutionAxisAmount(tick.value, hidden)}
+                      </text>
+                    </g>
+                  ))}
                   <line
                     x1={padding.left}
-                    y1={tick.y}
+                    y1={padding.top}
+                    x2={padding.left}
+                    y2={height - padding.bottom}
+                    stroke="rgba(255,255,255,0.2)"
+                  />
+                  <line
+                    x1={padding.left}
+                    y1={height - padding.bottom}
                     x2={width - padding.right}
-                    y2={tick.y}
-                    stroke="rgba(255,255,255,0.09)"
-                    strokeDasharray="4 5"
+                    y2={height - padding.bottom}
+                    stroke="rgba(255,255,255,0.2)"
                   />
-                  <text
-                    x={padding.left - 12}
-                    y={tick.y + 4}
-                    textAnchor="end"
-                    fill="rgba(255,255,255,0.42)"
-                    fontSize="11"
-                  >
-                    {formatEvolutionAxisAmount(tick.value, hidden)}
-                  </text>
-                </g>
-              ))}
 
-              <line
-                x1={padding.left}
-                y1={padding.top}
-                x2={padding.left}
-                y2={height - padding.bottom}
-                stroke="rgba(255,255,255,0.2)"
-              />
-              <line
-                x1={padding.left}
-                y1={height - padding.bottom}
-                x2={width - padding.right}
-                y2={height - padding.bottom}
-                stroke="rgba(255,255,255,0.2)"
-              />
+                  {showAverage &&
+                    visibleSeries.map((series) => {
+                      const values = series.points
+                        .map((point) => point.value)
+                        .filter((value): value is number => value !== null)
+                      const average =
+                        values.reduce((sum, value) => sum + value, 0) /
+                        Math.max(values.length, 1)
+                      const y =
+                        padding.top +
+                        plotHeight -
+                        (average / maxValue) * plotHeight
 
-              {visibleComparisonSeries.map((series) => (
-                <path
-                  key={`comparison-line-${series.id}`}
-                  d={makePath(series.points)}
-                  fill="none"
-                  stroke={series.color}
-                  strokeWidth="2.5"
-                  strokeDasharray="7 6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              ))}
-              <path
-                d={makePath(points)}
-                fill="none"
-                stroke="#38bdf8"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+                      return (
+                        <g key={`average-${series.id}`}>
+                          <line
+                            x1={padding.left}
+                            y1={y}
+                            x2={width - padding.right}
+                            y2={y}
+                            stroke={series.color}
+                            strokeWidth="1.5"
+                            strokeOpacity="0.42"
+                          />
+                          <text
+                            x={width - padding.right}
+                            y={Math.max(padding.top + 10, y - 5)}
+                            textAnchor="end"
+                            fill={series.color}
+                            fillOpacity="0.72"
+                            fontSize="9"
+                            fontWeight="700"
+                          >
+                            Prom.
+                          </text>
+                        </g>
+                      )
+                    })}
 
-              {visibleComparisonSeries.flatMap((series, seriesIndex) =>
-                pointCoordinates(series.points).map((point) => (
-                  <circle
-                    key={`comparison-${series.id}-${point.key}`}
-                    cx={point.x}
-                    cy={point.y}
-                    r="3"
-                    fill={series.color}
-                    tabIndex={0}
-                    className="cursor-pointer outline-none"
-                    onMouseEnter={() =>
-                      setActivePoint({
-                        x: point.x,
-                        y: point.y,
-                        selection:
-                          EVOLUTION_SELECTION_LABELS[seriesIndex + 1] ??
-                          `Selección ${seriesIndex + 2}`,
-                        period: point.label,
-                        value: point.value,
-                        color: series.color,
-                      })
-                    }
-                    onMouseLeave={() => setActivePoint(null)}
-                    onFocus={() =>
-                      setActivePoint({
-                        x: point.x,
-                        y: point.y,
-                        selection:
-                          EVOLUTION_SELECTION_LABELS[seriesIndex + 1] ??
-                          `Selección ${seriesIndex + 2}`,
-                        period: point.label,
-                        value: point.value,
-                        color: series.color,
-                      })
-                    }
-                    onBlur={() => setActivePoint(null)}
-                    onClick={() =>
-                      setActivePoint({
-                        x: point.x,
-                        y: point.y,
-                        selection:
-                          EVOLUTION_SELECTION_LABELS[seriesIndex + 1] ??
-                          `Selección ${seriesIndex + 2}`,
-                        period: point.label,
-                        value: point.value,
-                        color: series.color,
-                      })
-                    }
-                  >
-                    <title>
-                      Comparación {seriesIndex + 1} · {point.label}:{" "}
-                      {hidden ? HIDDEN_AMOUNT : formatPrice(point.value)}
-                    </title>
-                  </circle>
-                )),
-              )}
-              {pointCoordinates(points).map((point) => (
-                <circle
-                  key={point.key}
-                  cx={point.x}
-                  cy={point.y}
-                  r="4"
-                  fill="#38bdf8"
-                  stroke="#020617"
-                  strokeWidth="2"
-                  tabIndex={0}
-                  className="cursor-pointer outline-none"
-                  onMouseEnter={() =>
-                    setActivePoint({
-                      x: point.x,
-                      y: point.y,
-                      selection: EVOLUTION_SELECTION_LABELS[0],
-                      period: point.label,
-                      value: point.value,
-                      color: "#38bdf8",
+                  {visibleSeries.map((series) => (
+                    <path
+                      key={`line-${series.id}`}
+                      d={makePath(series.points)}
+                      fill="none"
+                      stroke={series.color}
+                      strokeWidth={series.id === "primary" ? "3" : "2.5"}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+
+                  {visibleSeries.flatMap((series) => {
+                    const peak = peakValues.get(series.id)
+
+                    return pointCoordinates(series.points).map((point) => {
+                      const isPeak = peak !== null && point.value === peak
+                      const showMarker = isPeak || visiblePointCount <= 60
+                      return (
+                        <circle
+                          key={`${series.id}-${point.key}`}
+                          cx={point.x}
+                          cy={point.y}
+                          r={
+                            isPeak && peak > 0
+                              ? "4.5"
+                              : showMarker
+                                ? "2.5"
+                                : "6"
+                          }
+                          fill={series.color}
+                          fillOpacity={showMarker ? "1" : "0"}
+                          stroke={isPeak && peak > 0 ? "#ffffff" : "#020617"}
+                          strokeWidth={
+                            isPeak && peak > 0
+                              ? "1.75"
+                              : showMarker
+                                ? "1"
+                                : "0"
+                          }
+                          tabIndex={showMarker ? 0 : -1}
+                          className="cursor-pointer outline-none"
+                          onMouseEnter={() =>
+                            setActivePoint({
+                              index: point.index,
+                              x: point.x,
+                              y: point.y,
+                              color: series.color,
+                            })
+                          }
+                          onMouseLeave={() => setActivePoint(null)}
+                          onFocus={() =>
+                            setActivePoint({
+                              index: point.index,
+                              x: point.x,
+                              y: point.y,
+                              color: series.color,
+                            })
+                          }
+                          onBlur={() => setActivePoint(null)}
+                          onClick={() =>
+                            setActivePoint({
+                              index: point.index,
+                              x: point.x,
+                              y: point.y,
+                              color: series.color,
+                            })
+                          }
+                        >
+                          <title>
+                            {series.label} ·{" "}
+                            {formatEvolutionTooltipDate(point.key)}:{" "}
+                            {hidden ? HIDDEN_AMOUNT : formatPrice(point.value)}
+                          </title>
+                        </circle>
+                      )
                     })
-                  }
-                  onMouseLeave={() => setActivePoint(null)}
-                  onFocus={() =>
-                    setActivePoint({
-                      x: point.x,
-                      y: point.y,
-                      selection: EVOLUTION_SELECTION_LABELS[0],
-                      period: point.label,
-                      value: point.value,
-                      color: "#38bdf8",
-                    })
-                  }
-                  onBlur={() => setActivePoint(null)}
-                  onClick={() =>
-                    setActivePoint({
-                      x: point.x,
-                      y: point.y,
-                      selection: EVOLUTION_SELECTION_LABELS[0],
-                      period: point.label,
-                      value: point.value,
-                      color: "#38bdf8",
-                    })
-                  }
-                >
-                  <title>
-                    {point.label}:{" "}
-                    {hidden ? HIDDEN_AMOUNT : formatPrice(point.value)}
-                  </title>
-                </circle>
-              ))}
+                  })}
 
-              {xLabelIndexes.map((index) => {
-                const point = points[index]
-                const x =
-                  points.length <= 1
-                    ? padding.left + plotWidth / 2
-                    : padding.left + (index / (points.length - 1)) * plotWidth
+                  {xLabelIndexes.map((index) => {
+                    const point = visibleSeries[0]?.points[index]
+                    const x =
+                      visiblePointCount <= 1
+                        ? padding.left + plotWidth / 2
+                        : padding.left +
+                          (index / (visiblePointCount - 1)) * plotWidth
 
-                return point ? (
-                  <text
-                    key={`${point.key}-${index}`}
-                    x={x}
-                    y={height - 20}
-                    textAnchor={
-                      index === 0
-                        ? "start"
-                        : index === points.length - 1
-                          ? "end"
-                          : "middle"
-                    }
-                    fill="rgba(255,255,255,0.5)"
-                    fontSize="11"
-                  >
-                    {point.label}
-                  </text>
-                ) : null
-              })}
+                    return point ? (
+                      <text
+                        key={`${point.key}-${index}`}
+                        x={x}
+                        y={height - 22}
+                        textAnchor={
+                          index === 0
+                            ? "start"
+                            : index === visiblePointCount - 1
+                              ? "end"
+                              : "middle"
+                        }
+                        fill="rgba(255,255,255,0.5)"
+                        fontSize="11"
+                      >
+                        {formatEvolutionAxisLabel(
+                          point,
+                          mode,
+                          grouping,
+                          visiblePointCount,
+                          windowStartIndex + index + 1,
+                        )}
+                      </text>
+                    ) : null
+                  })}
 
-              {activePoint && (
-                <g
-                  pointerEvents="none"
-                  transform={`translate(${Math.min(
-                    Math.max(activePoint.x, 100),
-                    width - 100,
-                  )}, ${
-                    activePoint.y < 72
-                      ? activePoint.y + 18
-                      : activePoint.y - 58
-                  })`}
-                >
-                  <rect
-                    x="-92"
-                    y="0"
-                    width="184"
-                    height="48"
-                    rx="10"
-                    fill="#07111d"
-                    stroke={activePoint.color}
-                    strokeOpacity="0.55"
-                  />
-                  <text
-                    x="0"
-                    y="18"
-                    textAnchor="middle"
-                    fill={activePoint.color}
-                    fontSize="10"
-                    fontWeight="700"
-                  >
-                    {activePoint.selection} · {activePoint.period}
-                  </text>
-                  <text
-                    x="0"
-                    y="36"
-                    textAnchor="middle"
-                    fill="white"
-                    fontSize="12"
-                    fontWeight="800"
-                  >
-                    {hidden
-                      ? HIDDEN_AMOUNT
-                      : formatPrice(activePoint.value)}
-                  </text>
-                </g>
-              )}
-            </svg>
-          </div>
+                  {activePoint && tooltipEntries.length > 0 && (
+                    <g
+                      pointerEvents="none"
+                      transform={`translate(${Math.min(
+                        Math.max(activePoint.x, 166),
+                        width - 166,
+                      )}, ${Math.min(
+                        Math.max(
+                          activePoint.y < height / 2
+                            ? activePoint.y + 14
+                            : activePoint.y - tooltipHeight - 12,
+                          8,
+                        ),
+                        height - tooltipHeight - 8,
+                      )})`}
+                    >
+                      <rect
+                        x="-158"
+                        y="0"
+                        width="316"
+                        height={tooltipHeight}
+                        rx="12"
+                        fill="#07111d"
+                        stroke={activePoint.color}
+                        strokeOpacity="0.65"
+                      />
+                      <text
+                        x="-142"
+                        y="20"
+                        fill="rgba(255,255,255,0.58)"
+                        fontSize="10"
+                        fontWeight="700"
+                      >
+                        {mode === "comparison"
+                          ? `Día relativo ${windowStartIndex + activePoint.index + 1}`
+                          : tooltipEntries[0].point.label}
+                      </text>
+                      {tooltipEntries.map((entry, index) => (
+                        <g
+                          key={`tooltip-${entry.series.id}`}
+                          transform={`translate(0, ${34 + index * 20})`}
+                        >
+                          <circle
+                            cx="-142"
+                            cy="-3"
+                            r="3.5"
+                            fill={entry.series.color}
+                          />
+                          <text
+                            x="-132"
+                            y="0"
+                            fill={entry.series.color}
+                            fontSize="10"
+                            fontWeight="700"
+                          >
+                            {entry.series.label}
+                          </text>
+                          <text
+                            x="-20"
+                            y="0"
+                            textAnchor="middle"
+                            fill="rgba(255,255,255,0.62)"
+                            fontSize="10"
+                          >
+                            {formatEvolutionTooltipDate(entry.point.key)}
+                          </text>
+                          <text
+                            x="142"
+                            y="0"
+                            textAnchor="end"
+                            fill="white"
+                            fontSize="11"
+                            fontWeight="800"
+                          >
+                            {hidden
+                              ? HIDDEN_AMOUNT
+                              : formatPrice(entry.point.value!)}
+                            {entry.peak ? " · Pico" : ""}
+                          </text>
+                        </g>
+                      ))}
+                      {tooltipDifference !== null && (
+                        <text
+                          x="-142"
+                          y={tooltipHeight - 10}
+                          fill={
+                            tooltipDifference >= 0 ? "#6ee7b7" : "#fca5a5"
+                          }
+                          fontSize="10"
+                          fontWeight="800"
+                        >
+                          Diferencia:{" "}
+                          {hidden
+                            ? HIDDEN_AMOUNT
+                            : `${tooltipDifference >= 0 ? "+" : ""}${formatPrice(
+                                tooltipDifference,
+                              )}`}
+                        </text>
+                      )}
+                    </g>
+                  )}
+                </svg>
+              </div>
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-11px">
-            <div className="flex flex-wrap gap-4 text-white/48">
-              <span className="inline-flex items-center gap-2">
-                <span className="h-0.5 w-5 bg-sky-400" />
-                Primera selección
-              </span>
-              {visibleComparisonSeries.map((series, index) => (
-                <span
-                  key={`comparison-legend-${series.id}`}
-                  className="inline-flex items-center gap-2"
-                >
-                  <span
-                    className="h-0.5 w-5 border-t-2 border-dashed"
-                    style={{ borderColor: series.color }}
-                  />
-                  {EVOLUTION_SELECTION_LABELS[index + 1]}
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-11px">
+                <div className="flex flex-wrap gap-4 text-white/48">
+                  {visibleSeries.map((series) => (
+                    <span
+                      key={`legend-${series.id}`}
+                      className="inline-flex items-center gap-2"
+                    >
+                      <span
+                        className="h-0.5 w-5"
+                        style={{ backgroundColor: series.color }}
+                      />
+                      {series.label}
+                    </span>
+                  ))}
+                </div>
+                <span className="font-semibold text-white/35">
+                  El borde blanco resalta el pico de cada período.
                 </span>
-              ))}
-            </div>
-            <span className="font-semibold text-white/35">
-              Pasá el cursor o tocá un punto para ver el monto exacto.
-            </span>
-          </div>
-        </>
-      ) : (
-        <p className="flex min-h-280px items-center justify-center text-sm text-white/45">
-          No hay datos para graficar con los filtros seleccionados.
-        </p>
-      )}
+              </div>
+            </>
+          ) : (
+            <p className="flex min-h-280px items-center justify-center text-sm text-white/45">
+              No hay datos para graficar con los filtros seleccionados.
+            </p>
+          )}
         </div>
       </section>
 
@@ -1463,74 +2759,134 @@ function MiniLineChart({
           <SectionHeader eyebrow="Canales" title="Ventas por canal" />
           <BarList rows={channelRows} valueKey="amount" hidden={hidden} />
         </section>
-
         <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
           <SectionHeader eyebrow="Períodos" title="Facturación por selección" />
           <div className="space-y-2">
-            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] px-4 py-3">
-              <p className="flex items-center gap-2 text-10px font-black uppercase tracking-widest text-sky-300/70">
-                <span className="size-2 rounded-full bg-sky-400" />
-                Primera selección
-              </p>
-              <p className="mt-1 text-11px font-semibold text-white/42">
-                {currentRangeLabel}
-              </p>
-              <p className="mt-1 text-lg font-black text-white">
-                {hidden ? HIDDEN_AMOUNT : formatPrice(currentTotal)}
-              </p>
-            </div>
-
-            {visibleComparisonSeries.map((series, index) => {
-              const variation =
-                currentTotal > 0
-                  ? ((series.total - currentTotal) / currentTotal) * 100
-                  : null
-              const rangeLabel = `${series.from
+            <EvolutionPeriodTotal
+              label="Primera selección"
+              color={primaryColor}
+              range={`${primaryFrom.split("-").reverse().join("/")} – ${primaryTo
                 .split("-")
                 .reverse()
-                .join("/")} – ${series.to
-                .split("-")
-                .reverse()
-                .join("/")}`
-
-              return (
-                <div
-                  key={series.id}
-                  className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3"
-                >
-                  <p
-                    className="flex items-center gap-2 text-10px font-black uppercase tracking-widest"
-                    style={{ color: series.color }}
-                  >
-                    <span
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: series.color }}
-                    />
-                    {EVOLUTION_SELECTION_LABELS[index + 1]}
-                  </p>
-                  <p className="mt-1 text-11px font-semibold text-white/42">
-                    {rangeLabel}
-                  </p>
-                  <p className="mt-1 text-lg font-black text-white">
-                    {hidden ? HIDDEN_AMOUNT : formatPrice(series.total)}
-                  </p>
-                  {variation != null && (
-                    <p
-                      className={`mt-1 text-xs font-bold ${
-                        variation >= 0 ? "text-emerald-300" : "text-red-300"
-                      }`}
-                    >
-                      {hidden
-                        ? "Variación: ****"
-                        : `${variation >= 0 ? "+" : ""}${variation.toFixed(1)}% respecto de la primera selección`}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
+                .join("/")}`}
+              total={primaryTotal}
+              hidden={hidden}
+            />
+            {mode === "comparison" && validComparison && (
+              <EvolutionPeriodTotal
+                label="Segunda selección"
+                color={comparisonRange.color}
+                range={`${comparisonRange.from
+                  .split("-")
+                  .reverse()
+                  .join("/")} – ${comparisonRange.to
+                  .split("-")
+                  .reverse()
+                  .join("/")}`}
+                total={secondaryTotal}
+                hidden={hidden}
+                variation={variation}
+              />
+            )}
           </div>
         </section>
       </div>
+    </div>
+  )
+}
+
+function EvolutionMetric({
+  label,
+  value,
+  helper,
+  tone = "neutral",
+  lines,
+}: {
+  label: string
+  value?: string
+  helper?: string
+  tone?: "neutral" | "positive" | "negative"
+  lines?: { color: string; value: string }[]
+}) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+      <p className="text-10px font-black uppercase tracking-widest text-white/38">
+        {label}
+      </p>
+      {lines ? (
+        <div className="mt-2 space-y-1">
+          {lines.map((line, index) => (
+            <p
+              key={`${line.color}-${index}`}
+              className="text-sm font-black"
+              style={{ color: line.color }}
+            >
+              {index + 1}. {line.value}
+            </p>
+          ))}
+        </div>
+      ) : (
+        <p
+          className={`mt-2 text-base font-black ${
+            tone === "positive"
+              ? "text-emerald-300"
+              : tone === "negative"
+                ? "text-red-300"
+                : "text-white"
+          }`}
+        >
+          {value}
+        </p>
+      )}
+      {helper && (
+        <p className="mt-1 text-10px font-semibold text-white/35">{helper}</p>
+      )}
+    </div>
+  )
+}
+
+function EvolutionPeriodTotal({
+  label,
+  color,
+  range,
+  total,
+  hidden,
+  variation,
+}: {
+  label: string
+  color: string
+  range: string
+  total: number
+  hidden: boolean
+  variation?: number | null
+}) {
+  return (
+    <div
+      className="rounded-2xl border bg-white/[0.035] px-4 py-3"
+      style={{ borderColor: `${color}33` }}
+    >
+      <p
+        className="flex items-center gap-2 text-10px font-black uppercase tracking-widest"
+        style={{ color }}
+      >
+        <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
+        {label}
+      </p>
+      <p className="mt-1 text-11px font-semibold text-white/42">{range}</p>
+      <p className="mt-1 text-lg font-black text-white">
+        {hidden ? HIDDEN_AMOUNT : formatPrice(total)}
+      </p>
+      {variation != null && (
+        <p
+          className={`mt-1 text-xs font-bold ${
+            variation >= 0 ? "text-emerald-300" : "text-red-300"
+          }`}
+        >
+          {hidden
+            ? "Variación: ****"
+            : `${variation >= 0 ? "+" : ""}${variation.toFixed(1)}% respecto de la primera selección`}
+        </p>
+      )}
     </div>
   )
 }
@@ -2337,7 +3693,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 <StatCard title="Cobertura ARCA" value={`${invoiceCoverage.toFixed(1)}%`} helper={`${financialSummary.ordersWithoutInvoice} pedidos sin factura`} icon={<ReceiptText className="size-5" />} />
               </div>
 
-              <MiniLineChart
+              <EnhancedMiniLineChart
                 rows={evolutionSales}
                 channelRows={byChannel}
                 hidden={hiddenValues}

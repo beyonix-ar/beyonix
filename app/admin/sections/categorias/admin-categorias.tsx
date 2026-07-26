@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from "react"
 
 import { useCategorias } from "@/hooks/use-categorias"
-import { useProductos } from "@/hooks/use-productos"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { updateCategoria } from "@/lib/supabase/queries/categorias"
+import {
+  getCategoryProductStats,
+  type CategoryProductStats,
+} from "@/lib/supabase/queries/productos"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
 
 import { CategoriaForm } from "./categorias-form"
@@ -24,7 +27,9 @@ export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) 
   const { stock: stockSettings } = useSiteSettings()
   const { categorias, loading, deleteCategoria, reloadCategorias } =
     useCategorias()
-  const { productos } = useProductos()
+  const [categoryStats, setCategoryStats] = useState<Map<number, CategoryProductStats>>(
+    new Map(),
+  )
 
   const [editando, setEditando] = useState<
     SupabaseCategoria | null | undefined
@@ -36,6 +41,22 @@ export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) 
       setEditando(null)
     }
   }, [createSignal])
+
+  useEffect(() => {
+    let cancelled = false
+
+    void getCategoryProductStats()
+      .then((stats) => {
+        if (!cancelled) setCategoryStats(stats)
+      })
+      .catch((error) => {
+        console.error("Error cargando estadísticas de categorías:", error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!categorias.length || normalizingPositions) {
@@ -105,40 +126,6 @@ export function AdminCategorias({ createSignal, search }: AdminCategoriasProps) 
       ),
     [categorias, search]
   )
-
-  const categoryStats = useMemo(() => {
-    const stats = new Map<
-      number,
-      {
-        articulos: number
-        stock: number
-      }
-    >()
-
-    productos.forEach((producto) => {
-      if (!producto.categoria_id) return
-
-      const current = stats.get(producto.categoria_id) || {
-        articulos: 0,
-        stock: 0,
-      }
-
-      const variantes = producto.producto_variantes || []
-      const stock = variantes.length
-        ? variantes.reduce(
-            (total, variante) => total + (variante.stock ?? 0),
-            0
-          )
-        : producto.stock
-
-      stats.set(producto.categoria_id, {
-        articulos: current.articulos + 1,
-        stock: current.stock + stock,
-      })
-    })
-
-    return stats
-  }, [productos])
 
   const getReplacementFeaturedPosition = (
     target: SupabaseCategoria,

@@ -115,7 +115,7 @@ export function ProductosToolbar({
               title="Buscar producto"
               ariaLabel="Buscar producto"
               value={search}
-              placeholder="Buscar por nombre, SKU o categoría"
+              placeholder="Buscar por nombre, SKU o slug"
               icon={<Search className="size-4" />}
               onChange={onSearchChange}
             />

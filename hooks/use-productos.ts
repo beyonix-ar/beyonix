@@ -7,14 +7,27 @@ import type {
 } from "@/lib/supabase/types"
 
 import {
-  getProductos,
+  getProductosPage,
   deleteProducto,
   toggleProductoActivo,
+  type ProductosPageOptions,
 } from "@/lib/supabase/queries/productos"
 
-export function useProductos() {
+export function useProductos({
+  enabled = true,
+  page = 1,
+  pageSize = 25,
+  search = "",
+  categoryId = null,
+  stockFilter = "todos",
+  activeFilter = "todos",
+  featuredFilter = "todos",
+  lowStockThreshold = 5,
+  availableStockThreshold = 6,
+}: ProductosPageOptions & { enabled?: boolean } = {}) {
   const [productos, setProductos] =
     useState<SupabaseProducto[]>([])
+  const [total, setTotal] = useState(0)
 
   const [loading, setLoading] =
     useState(true)
@@ -24,13 +37,28 @@ export function useProductos() {
 
   const loadProductos =
     useCallback(async () => {
+      if (!enabled) {
+        setLoading(false)
+        return
+      }
+
       try {
         setLoading(true)
 
-        setProductos(
-          await getProductos()
-        )
+        const result = await getProductosPage({
+          page,
+          pageSize,
+          search,
+          categoryId,
+          stockFilter,
+          activeFilter,
+          featuredFilter,
+          lowStockThreshold,
+          availableStockThreshold,
+        })
 
+        setProductos(result.productos)
+        setTotal(result.total)
         setError(null)
       } catch (err) {
         console.error(err)
@@ -41,10 +69,21 @@ export function useProductos() {
       } finally {
         setLoading(false)
       }
-    }, [])
+    }, [
+      activeFilter,
+      availableStockThreshold,
+      categoryId,
+      enabled,
+      featuredFilter,
+      lowStockThreshold,
+      page,
+      pageSize,
+      search,
+      stockFilter,
+    ])
 
   useEffect(() => {
-    loadProductos()
+    void loadProductos()
   }, [loadProductos])
 
   const handleDelete =
@@ -57,6 +96,7 @@ export function useProductos() {
             (p) => p.id !== id
           )
         )
+        setTotal((current) => Math.max(0, current - 1))
 
         return true
       } catch (err) {
@@ -99,6 +139,9 @@ export function useProductos() {
 
   return {
     productos,
+    total,
+    page,
+    pageSize,
     loading,
     error,
 

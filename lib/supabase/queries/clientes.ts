@@ -40,7 +40,7 @@ export async function getClientes() {
     supabase.rpc("admin_get_client_profiles"),
     supabase
       .from("ordenes")
-      .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*))")
+      .select("id, usuario_id, cliente_email, total, estado, payment_status, created_at")
       .order("created_at", { ascending: false }),
     supabase.rpc("admin_get_client_presence"),
     supabase.rpc("admin_get_client_carts"),
@@ -60,14 +60,35 @@ export async function getClientes() {
   const activeSince = Date.now() - 5 * 60 * 1000
   const presenceByUser = new Map(presenceRows.map((row) => [row.user_id, row]))
   const cartsByUser = new Map(cartRows.map((row) => [row.user_id, row.payload]))
+  const ordersByUserId = new Map<string, SupabasePedido[]>()
+  const ordersByEmail = new Map<string, SupabasePedido[]>()
+
+  for (const order of orders) {
+    if (order.usuario_id) {
+      const current = ordersByUserId.get(order.usuario_id) ?? []
+      current.push(order)
+      ordersByUserId.set(order.usuario_id, current)
+    }
+    const email = order.cliente_email?.trim().toLocaleLowerCase("es")
+    if (email) {
+      const current = ordersByEmail.get(email) ?? []
+      current.push(order)
+      ordersByEmail.set(email, current)
+    }
+  }
 
   return profiles.map<SupabaseCliente>((profile) => {
     const presence = presenceByUser.get(profile.id)
-    const clientOrders = orders.filter(
-      (order) =>
-        order.usuario_id === profile.id ||
-        Boolean(profile.email && order.cliente_email === profile.email)
-    )
+    const ordersById = ordersByUserId.get(profile.id) ?? []
+    const profileEmail = profile.email?.trim().toLocaleLowerCase("es")
+    const ordersByProfileEmail = profileEmail
+      ? ordersByEmail.get(profileEmail) ?? []
+      : []
+    const clientOrders = [
+      ...new Map(
+        [...ordersById, ...ordersByProfileEmail].map((order) => [order.id, order]),
+      ).values(),
+    ]
     const paidOrders = clientOrders.filter(isPaidOrder)
     const lastOrder = clientOrders[0] ?? null
     const totalSpent = paidOrders.reduce(

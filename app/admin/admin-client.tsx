@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react"
+import dynamic from "next/dynamic"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
@@ -33,18 +34,68 @@ import {
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 
-import { AdminAuditoria } from "./sections/auditoria/admin-auditoria"
-import { AdminAccionesMasivas } from "./sections/acciones-masivas/admin-acciones-masivas"
-import { AdminClientes } from "./sections/clientes/admin-clientes"
-import { AdminCreditos } from "./sections/creditos/admin-creditos"
-import { AdminDashboard } from "./sections/dashboard/admin-dashboard"
-import { AdminEventos } from "./sections/eventos/admin-eventos"
-import { AdminFacturacion } from "./sections/facturacion/admin-facturacion"
-import { AdminNotificaciones } from "./sections/notificaciones/admin-notificaciones"
-import { AdminModificaciones } from "./sections/modificaciones/admin-modificaciones"
-import { AdminPedidos } from "./sections/pedidos/admin-pedidos"
-import { AdminProductos } from "./sections/productos/admin-productos"
-import { AdminUsuarios } from "./sections/usuarios/admin-usuarios"
+function AdminSectionLoading() {
+  return (
+    <div className="mx-auto w-full max-w-1600px space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="h-28 animate-pulse rounded-3xl border border-white/8 bg-white/3" />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="h-32 animate-pulse rounded-3xl border border-white/8 bg-white/3" />
+        <div className="h-32 animate-pulse rounded-3xl border border-white/8 bg-white/3" />
+        <div className="h-32 animate-pulse rounded-3xl border border-white/8 bg-white/3" />
+      </div>
+      <div className="h-80 animate-pulse rounded-3xl border border-white/8 bg-white/3" />
+    </div>
+  )
+}
+
+const AdminAuditoria = dynamic(
+  () => import("./sections/auditoria/admin-auditoria").then((module) => module.AdminAuditoria),
+  { loading: AdminSectionLoading },
+)
+const AdminAccionesMasivas = dynamic(
+  () => import("./sections/acciones-masivas/admin-acciones-masivas").then((module) => module.AdminAccionesMasivas),
+  { loading: AdminSectionLoading },
+)
+const AdminClientes = dynamic(
+  () => import("./sections/clientes/admin-clientes").then((module) => module.AdminClientes),
+  { loading: AdminSectionLoading },
+)
+const AdminCreditos = dynamic(
+  () => import("./sections/creditos/admin-creditos").then((module) => module.AdminCreditos),
+  { loading: AdminSectionLoading },
+)
+const AdminDashboard = dynamic(
+  () => import("./sections/dashboard/admin-dashboard").then((module) => module.AdminDashboard),
+  { loading: AdminSectionLoading },
+)
+const AdminEventos = dynamic(
+  () => import("./sections/eventos/admin-eventos").then((module) => module.AdminEventos),
+  { loading: AdminSectionLoading },
+)
+const AdminFacturacion = dynamic(
+  () => import("./sections/facturacion/admin-facturacion").then((module) => module.AdminFacturacion),
+  { loading: AdminSectionLoading },
+)
+const AdminNotificaciones = dynamic(
+  () => import("./sections/notificaciones/admin-notificaciones").then((module) => module.AdminNotificaciones),
+  { loading: AdminSectionLoading },
+)
+const AdminModificaciones = dynamic(
+  () => import("./sections/modificaciones/admin-modificaciones").then((module) => module.AdminModificaciones),
+  { loading: AdminSectionLoading },
+)
+const AdminPedidos = dynamic(
+  () => import("./sections/pedidos/admin-pedidos").then((module) => module.AdminPedidos),
+  { loading: AdminSectionLoading },
+)
+const AdminProductos = dynamic(
+  () => import("./sections/productos/admin-productos").then((module) => module.AdminProductos),
+  { loading: AdminSectionLoading },
+)
+const AdminUsuarios = dynamic(
+  () => import("./sections/usuarios/admin-usuarios").then((module) => module.AdminUsuarios),
+  { loading: AdminSectionLoading },
+)
 
 export type AdminSection =
   | "dashboard"
@@ -257,10 +308,11 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       return
     }
 
-    const response = await fetch("/api/admin/facturacion", {
+    const response = await fetch("/api/admin/facturacion?summary=1", {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
+      cache: "no-store",
     })
 
     if (!response.ok) {
@@ -269,17 +321,10 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     }
 
     const data = (await response.json()) as {
-      orders?: Array<{ invoice_status?: string | null }>
+      count?: number
     }
 
-    setInvoicePendingCount(
-      (data.orders ?? []).filter(
-        (order) =>
-          order.invoice_status == null ||
-          order.invoice_status === "pending" ||
-          order.invoice_status === "error",
-      ).length,
-    )
+    setInvoicePendingCount(Number(data.count ?? 0))
   }, [isInternal, isOperator])
 
   useEffect(() => {
@@ -514,8 +559,28 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-black">
-        <div className="size-10 animate-spin rounded-full border-2 border-white/10 border-t-beyonix-sky" />
+      <div className="min-h-screen bg-black text-white lg:grid lg:grid-cols-[254px_minmax(0,1fr)]">
+        <aside className="hidden border-r border-beyonix-blue-light/18 bg-[#050B12] p-5 lg:block">
+          <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+            Panel administrativo
+          </p>
+          <p className="mt-2 text-2xl font-black">BEYONIX</p>
+          <div className="mt-8 h-24 animate-pulse rounded-2xl bg-white/4" />
+          <div className="mt-7 space-y-3">
+            {Array.from({ length: 7 }, (_, index) => (
+              <div key={index} className="h-14 animate-pulse rounded-2xl bg-white/4" />
+            ))}
+          </div>
+        </aside>
+        <main className="p-5 sm:p-7">
+          <div className="mx-auto max-w-1600px space-y-5">
+            <div className="flex items-center gap-3 text-sm font-bold text-white/60">
+              <div className="size-5 animate-spin rounded-full border-2 border-white/10 border-t-beyonix-sky" />
+              Validando acceso administrativo…
+            </div>
+            <AdminSectionLoading />
+          </div>
+        </main>
       </div>
     )
   }

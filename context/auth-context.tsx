@@ -421,15 +421,28 @@ export function AuthProvider({
   const hasAuthenticatedSession = useRef(false)
   const lastActivityWrite = useRef(0)
   const currentRoleRef = useRef<BeyonixUser["rol"] | null>(null)
+  const profileLoadInFlight = useRef<Promise<void> | null>(null)
+  const lastProfileLoad = useRef<{ userId: string; at: number } | null>(null)
   const [adminInactivityWarning, setAdminInactivityWarning] = useState(false)
   // Load profile
 
   const loadProfile =
     useCallback(
-      async (
+      (
         supabaseUser: User,
         accessToken: string
       ) => {
+        if (profileLoadInFlight.current) {
+          return profileLoadInFlight.current
+        }
+        if (
+          lastProfileLoad.current?.userId === supabaseUser.id &&
+          Date.now() - lastProfileLoad.current.at < 2_000
+        ) {
+          return Promise.resolve()
+        }
+
+        const request = (async () => {
         let profile: SupabaseProfile | undefined
 
         try {
@@ -509,6 +522,20 @@ export function AuthProvider({
         }
 
         setUser(nextUser)
+        })()
+
+        profileLoadInFlight.current = request
+        void request.finally(() => {
+          lastProfileLoad.current = {
+            userId: supabaseUser.id,
+            at: Date.now(),
+          }
+          if (profileLoadInFlight.current === request) {
+            profileLoadInFlight.current = null
+          }
+        })
+
+        return request
       },
       []
     )

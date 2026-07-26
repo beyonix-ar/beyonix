@@ -46,8 +46,12 @@ const EXPENSE_CATEGORIES = [
   "Mantenimiento",
   "Insumos",
   "Seguros",
+  "Donación/Regalo",
+  "Sorteo/Evento",
   "Otros",
 ]
+
+const PRODUCT_EXPENSE_CATEGORIES = new Set(["Donación/Regalo", "Sorteo/Evento"])
 
 function today() {
   return new Intl.DateTimeFormat("sv-SE", {
@@ -113,10 +117,12 @@ function ProductSelect({
   value,
   products,
   onChange,
+  inventoryMode = false,
 }: {
   value: string
   products: BusinessCostsData["catalog"]
   onChange: (value: string) => void
+  inventoryMode?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -137,6 +143,7 @@ function ProductSelect({
     .trim()
     .toLocaleLowerCase("es")
   const filteredProducts = products.filter((product) =>
+    (!inventoryMode || !product.standalone_key) &&
     `${product.nombre} ${product.sku ?? ""}`
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
@@ -187,62 +194,80 @@ function ProductSelect({
               className="h-9 w-full rounded-xl border border-beyonix-blue-light/18 bg-black/20 pl-9 pr-3 text-xs font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-sky/50"
             />
           </label>
-          <button
-            type="button"
-            role="option"
-            aria-selected={isUncatalogued}
-            onClick={() => {
-              onChange("custom")
-              setOpen(false)
-              setSearch("")
-            }}
-            className={`mb-1 flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm font-bold transition ${isUncatalogued ? "border-beyonix-sky/45 bg-beyonix-blue/55 text-white" : "border-beyonix-sky/20 text-beyonix-sky hover:bg-beyonix-blue/24"}`}
-          >
-            <span className="truncate">Artículo no catalogado</span>
-            <Plus className="size-4 shrink-0" />
-          </button>
+          {!inventoryMode && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={isUncatalogued}
+              onClick={() => {
+                onChange("custom")
+                setOpen(false)
+                setSearch("")
+              }}
+              className={`mb-1 flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm font-bold transition ${isUncatalogued ? "border-beyonix-sky/45 bg-beyonix-blue/55 text-white" : "border-beyonix-sky/20 text-beyonix-sky hover:bg-beyonix-blue/24"}`}
+            >
+              <span className="truncate">Artículo no catalogado</span>
+              <Plus className="size-4 shrink-0" />
+            </button>
+          )}
           {filteredProducts.map((product) => {
             const productValue = optionValue(product)
             const active = productValue === value
+            const hasVariants = Boolean(product.producto_variantes?.length)
+            const availableStock = Number(product.stock ?? 0)
+            const productDisabled =
+              inventoryMode && (hasVariants || availableStock <= 0)
             return (
               <div key={product.id}>
                 <button
                   type="button"
                   role="option"
                   aria-selected={active}
+                  aria-disabled={productDisabled}
+                  disabled={productDisabled}
                   onClick={() => {
                     onChange(productValue)
                     setOpen(false)
                     setSearch("")
                   }}
-                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${active ? "bg-beyonix-blue/55 text-white" : "text-white/68 hover:bg-beyonix-blue/24 hover:text-white"}`}
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${productDisabled ? "cursor-not-allowed text-white/28" : active ? "cursor-pointer bg-beyonix-blue/55 text-white" : "cursor-pointer text-white/68 hover:bg-beyonix-blue/24 hover:text-white"}`}
                 >
                   <span className="min-w-0 truncate">
                     {product.nombre}
                     {product.sku && <span className="ml-2 text-10px text-white/38">{product.sku}</span>}
                   </span>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-10px font-black ${product.activo ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-300" : "border-white/10 bg-white/5 text-white/38"}`}>
-                    {product.activo ? "Activo" : "Inactivo"}
+                    {inventoryMode
+                      ? hasVariants
+                        ? "Elegí una variante"
+                        : `${availableStock} disponibles`
+                      : product.activo ? "Activo" : "Inactivo"}
                   </span>
                 </button>
                 {!product.standalone_key && product.producto_variantes?.map((variant) => {
                   const variantValue = `v:${product.id}:${variant.id}`
                   const variantActive = variantValue === value
+                  const variantStock = Number(variant.stock ?? 0)
+                  const variantDisabled = inventoryMode && variantStock <= 0
                   return (
                     <button
                       key={variant.id}
                       type="button"
                       role="option"
                       aria-selected={variantActive}
+                      aria-disabled={variantDisabled}
+                      disabled={variantDisabled}
                       onClick={() => {
                         onChange(variantValue)
                         setOpen(false)
                         setSearch("")
                       }}
-                      className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl py-2 pl-7 pr-3 text-left text-xs font-bold transition ${variantActive ? "bg-beyonix-blue/55 text-white" : "text-white/52 hover:bg-beyonix-blue/24 hover:text-white"}`}
+                      className={`flex w-full items-center justify-between gap-3 rounded-xl py-2 pl-7 pr-3 text-left text-xs font-bold transition ${variantDisabled ? "cursor-not-allowed text-white/25" : variantActive ? "cursor-pointer bg-beyonix-blue/55 text-white" : "cursor-pointer text-white/52 hover:bg-beyonix-blue/24 hover:text-white"}`}
                     >
                       <span className="truncate">↳ {variant.nombre}</span>
-                      <span className="text-10px text-white/35">Variante</span>
+                      <span className="text-10px text-white/35">
+                        {inventoryMode ? `${variantStock} disponibles` : "Variante"}
+                      </span>
                     </button>
                   )
                 })}
@@ -344,6 +369,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
   const [productNotes, setProductNotes] = useState("")
   const [expenseDate, setExpenseDate] = useState(today)
   const [expenseCategory, setExpenseCategory] = useState("Monotributo")
+  const [expenseType, setExpenseType] = useState<"money" | "product">("money")
+  const [expenseProduct, setExpenseProduct] = useState("")
+  const [expenseProductQuantity, setExpenseProductQuantity] = useState("")
+  const [expenseCategoryDetail, setExpenseCategoryDetail] = useState("")
+  const [expenseRecipient, setExpenseRecipient] = useState("")
   const [expenseDescription, setExpenseDescription] = useState("")
   const [expenseAmount, setExpenseAmount] = useState("")
   const [expenseRecurrence, setExpenseRecurrence] = useState("mensual")
@@ -509,10 +539,39 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
   }
 
   const saveExpense = async () => {
-    if (!expenseDate || !expenseCategory || !expenseAmount) {
-      setError("Completá fecha, categoría e importe.")
+    if (!expenseDate || !expenseCategory) {
+      setError("Completá fecha y categoría.")
       return
     }
+
+    if (expenseCategory === "Donación/Regalo" && !expenseRecipient.trim()) {
+      setError("Indicá a quién fue dirigida la donación o el regalo.")
+      return
+    }
+
+    if (expenseType === "money" && !expenseAmount) {
+      setError("Completá el importe.")
+      return
+    }
+
+    const productParts = expenseProduct.split(":")
+    const expenseProductId =
+      productParts[0] === "p" || productParts[0] === "v"
+        ? productParts[1]
+        : null
+    const expenseVariantId = productParts[0] === "v" ? productParts[2] : null
+
+    if (
+      expenseType === "product" &&
+      (!expenseProductId || !expenseProductQuantity)
+    ) {
+      setError("Seleccioná un artículo y la cantidad que salió del stock.")
+      return
+    }
+
+    const selectedExpenseProduct = data?.catalog.find(
+      (product) => String(product.id) === expenseProductId,
+    )
 
     try {
       setSaving(true)
@@ -522,10 +581,17 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
         kind: "expense",
         expenseDate,
         category: expenseCategory,
+        expenseType,
+        productId: expenseProductId,
+        variantId: expenseVariantId,
+        productSku: selectedExpenseProduct?.sku ?? "",
+        quantity: expenseProductQuantity,
+        categoryDetail: expenseCategoryDetail,
+        recipient: expenseRecipient,
         description: expenseDescription,
-        amount: expenseAmount,
-        recurrence: expenseRecurrence,
-        status: expenseStatus,
+        amount: expenseType === "product" ? "0" : expenseAmount,
+        recurrence: expenseType === "product" ? "unico" : expenseRecurrence,
+        status: expenseType === "product" ? "pagado" : expenseStatus,
         supplier: expenseSupplier,
         paymentMethod: expensePaymentMethod,
         documentType: expenseDocumentType,
@@ -534,6 +600,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
         notes: expenseNotes,
       })
       setExpenseDescription("")
+      setExpenseCategoryDetail("")
+      setExpenseRecipient("")
+      setExpenseType("money")
+      setExpenseProduct("")
+      setExpenseProductQuantity("")
       setExpenseAmount("")
       setExpenseNotes("")
       setMessage("Gasto guardado correctamente.")
@@ -547,7 +618,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
   }
 
   const remove = async (kind: CostMode, id: string) => {
-    if (!window.confirm("¿Querés eliminar este movimiento?")) return
+    const restoresInventory =
+      kind === "expense" &&
+      data?.expenses.some((item) => item.id === id && item.expense_type === "product")
+    const confirmation = restoresInventory
+      ? "¿Querés eliminar esta salida? Las unidades se reintegrarán al stock."
+      : "¿Querés eliminar este movimiento?"
+    if (!window.confirm(confirmation)) return
     try {
       setError("")
       await deleteBusinessCost(kind, id)
@@ -682,17 +759,108 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
             <div className="mb-4 flex items-center gap-2"><Plus className="size-4 text-beyonix-sky" /><h3 className="text-base font-black text-white">Nuevo gasto</h3></div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <Field label="Fecha gasto"><AdminDatePicker title="Fecha gasto" ariaLabel="Fecha del gasto" value={expenseDate} onChange={setExpenseDate} centered /></Field>
-              <Field label="Categoría"><ModernSelect value={expenseCategory} onChange={setExpenseCategory} options={EXPENSE_CATEGORIES.map((category) => ({ value: category, label: category }))} /></Field>
-              <Field label="Importe"><MoneyInput value={expenseAmount} onChange={setExpenseAmount} /></Field>
-              <Field label="Estado"><ModernSelect value={expenseStatus} onChange={setExpenseStatus} options={[{ value: "pagado", label: "Pagado" }, { value: "pendiente", label: "Pendiente" }]} /></Field>
-              <Field label="Frecuencia"><ModernSelect value={expenseRecurrence} onChange={setExpenseRecurrence} options={[{ value: "unico", label: "Único" }, { value: "mensual", label: "Mensual" }, { value: "bimestral", label: "Bimestral" }, { value: "trimestral", label: "Trimestral" }, { value: "semestral", label: "Semestral" }, { value: "anual", label: "Anual" }]} /></Field>
-              <Field label="Descripción" className="xl:col-span-2"><input value={expenseDescription} onChange={(event) => setExpenseDescription(event.target.value)} className={inputClass} placeholder="Ej. cuota mensual" /></Field>
-              <Field label="Proveedor"><input value={expenseSupplier} onChange={(event) => setExpenseSupplier(event.target.value)} className={inputClass} placeholder="ARCA, contador..." /></Field>
-              <Field label="Medio pago"><input value={expensePaymentMethod} onChange={(event) => setExpensePaymentMethod(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
-              <Field label="Comprobante"><input value={expenseDocumentType} onChange={(event) => setExpenseDocumentType(event.target.value)} className={inputClass} placeholder="Factura, recibo" /></Field>
-              <Field label="Número"><input value={expenseDocumentNumber} onChange={(event) => setExpenseDocumentNumber(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
-              <Field label="Notas" className="xl:col-span-3"><input value={expenseNotes} onChange={(event) => setExpenseNotes(event.target.value)} className={inputClass} placeholder="Detalle adicional" /></Field>
-              <label className="flex h-10 cursor-pointer items-center justify-center gap-2 self-end rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-xs font-black text-white/65"><input type="checkbox" checked={expenseTaxDeductible} onChange={(event) => setExpenseTaxDeductible(event.target.checked)} className="size-4 accent-blue-500" /> Computable fiscal</label>
+              <Field label="Categoría"><ModernSelect value={expenseCategory} onChange={(category) => {
+                setExpenseCategory(category)
+                if (category !== "Otros") setExpenseCategoryDetail("")
+                if (category !== "Donación/Regalo") setExpenseRecipient("")
+                if (!PRODUCT_EXPENSE_CATEGORIES.has(category)) {
+                  setExpenseType("money")
+                  setExpenseProduct("")
+                  setExpenseProductQuantity("")
+                }
+              }} options={EXPENSE_CATEGORIES.map((category) => ({ value: category, label: category }))} /></Field>
+              {PRODUCT_EXPENSE_CATEGORIES.has(expenseCategory) && (
+                <Field label="Tipo de entrega">
+                  <ModernSelect
+                    value={expenseType}
+                    onChange={(value) => {
+                      const nextType = value === "product" ? "product" : "money"
+                      setExpenseType(nextType)
+                      if (nextType === "money") {
+                        setExpenseProduct("")
+                        setExpenseProductQuantity("")
+                      } else {
+                        setExpenseAmount("")
+                      }
+                    }}
+                    options={[
+                      { value: "money", label: "Dinero" },
+                      { value: "product", label: "Productos" },
+                    ]}
+                  />
+                </Field>
+              )}
+              {expenseCategory === "Donación/Regalo" && (
+                <Field label="Dirigido a">
+                  <input
+                    value={expenseRecipient}
+                    onChange={(event) => setExpenseRecipient(event.target.value)}
+                    className={inputClass}
+                    placeholder="Nombre del destinatario"
+                    maxLength={180}
+                    autoFocus
+                  />
+                </Field>
+              )}
+              {expenseCategory === "Otros" && (
+                <Field label="Especificar (opcional)">
+                  <input
+                    value={expenseCategoryDetail}
+                    onChange={(event) => setExpenseCategoryDetail(event.target.value)}
+                    className={inputClass}
+                    placeholder="Ej. capacitación"
+                    maxLength={240}
+                    autoFocus
+                  />
+                </Field>
+              )}
+              {expenseType === "product" ? (
+                <>
+                  <Field label="Artículo" className="md:col-span-2 xl:col-span-2">
+                    <ProductSelect
+                      value={expenseProduct}
+                      products={data?.catalog ?? []}
+                      onChange={setExpenseProduct}
+                      inventoryMode
+                    />
+                  </Field>
+                  <Field label="Cantidad">
+                    <input
+                      value={expenseProductQuantity}
+                      inputMode="numeric"
+                      onChange={(event) =>
+                        setExpenseProductQuantity(event.target.value.replace(/\D/g, ""))
+                      }
+                      className={inputClass}
+                      placeholder="Unidades"
+                    />
+                  </Field>
+                  <Field label="Descripción" className="md:col-span-2 xl:col-span-2">
+                    <input
+                      value={expenseDescription}
+                      onChange={(event) => setExpenseDescription(event.target.value)}
+                      className={inputClass}
+                      placeholder="Motivo o detalle de la entrega"
+                    />
+                  </Field>
+                  <Field label="Notas" className="md:col-span-2 xl:col-span-3">
+                    <input value={expenseNotes} onChange={(event) => setExpenseNotes(event.target.value)} className={inputClass} placeholder="Detalle adicional" />
+                  </Field>
+                </>
+              ) : (
+                <>
+                  <Field label="Importe"><MoneyInput value={expenseAmount} onChange={setExpenseAmount} /></Field>
+                  <Field label="Estado"><ModernSelect value={expenseStatus} onChange={setExpenseStatus} options={[{ value: "pagado", label: "Pagado" }, { value: "pendiente", label: "Pendiente" }]} /></Field>
+                  <Field label="Frecuencia"><ModernSelect value={expenseRecurrence} onChange={setExpenseRecurrence} options={[{ value: "unico", label: "Único" }, { value: "mensual", label: "Mensual" }, { value: "bimestral", label: "Bimestral" }, { value: "trimestral", label: "Trimestral" }, { value: "semestral", label: "Semestral" }, { value: "anual", label: "Anual" }]} /></Field>
+                  <Field label="Descripción" className="xl:col-span-2"><input value={expenseDescription} onChange={(event) => setExpenseDescription(event.target.value)} className={inputClass} placeholder="Ej. cuota mensual" /></Field>
+                  <Field label="Proveedor"><input value={expenseSupplier} onChange={(event) => setExpenseSupplier(event.target.value)} className={inputClass} placeholder="ARCA, contador..." /></Field>
+                  <Field label="Medio pago"><input value={expensePaymentMethod} onChange={(event) => setExpensePaymentMethod(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
+                  <Field label="Comprobante"><input value={expenseDocumentType} onChange={(event) => setExpenseDocumentType(event.target.value)} className={inputClass} placeholder="Factura, recibo" /></Field>
+                  <Field label="Número"><input value={expenseDocumentNumber} onChange={(event) => setExpenseDocumentNumber(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
+                  <Field label="Notas" className="xl:col-span-3"><input value={expenseNotes} onChange={(event) => setExpenseNotes(event.target.value)} className={inputClass} placeholder="Detalle adicional" /></Field>
+                  <label className="flex h-10 cursor-pointer items-center justify-center gap-2 self-end rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-xs font-black text-white/65"><input type="checkbox" checked={expenseTaxDeductible} onChange={(event) => setExpenseTaxDeductible(event.target.checked)} className="size-4 accent-blue-500" /> Computable fiscal</label>
+                </>
+              )}
             </div>
             <div className="mt-4 flex justify-end"><button type="button" disabled={saving} onClick={() => void saveExpense()} className="inline-flex h-10 min-w-130px cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/38 px-5 text-sm font-black text-white transition hover:border-beyonix-sky/60 hover:bg-beyonix-blue/55 disabled:cursor-wait disabled:opacity-50">{saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Guardar</button></div>
           </section>
@@ -701,7 +869,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
             <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-black text-white">Historial de gastos</h3><span className="text-xs font-bold text-white/38">{data?.expenses.length ?? 0} registros</span></div>
             <div className="overflow-x-auto rounded-2xl border border-white/7">
               <table className="w-full min-w-1000px text-sm"><thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42"><tr><th className="px-3 py-2.5 text-left">Fecha</th><th className="px-3 py-2.5 text-left">Categoría</th><th className="px-3 py-2.5 text-left">Descripción</th><th className="px-3 py-2.5 text-right">Importe</th><th className="px-3 py-2.5 text-center">Estado</th><th className="px-3 py-2.5 text-center">Frecuencia</th><th className="px-3 py-2.5 text-left">Proveedor</th><th className="px-3 py-2.5 text-center">Acción</th></tr></thead>
-                <tbody>{data?.expenses.map((item) => <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.expense_date}</td><td className="px-3 py-3 font-bold text-white">{item.category}</td><td className="px-3 py-3">{item.description || "—"}</td><td className="px-3 py-3 text-right font-black tabular-nums text-white">{formatPrice(Number(item.amount))}</td><td className="px-3 py-3 text-center"><span className={`rounded-full border px-2.5 py-1 text-xs font-black ${item.status === "pagado" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>{item.status === "pagado" ? "Pagado" : "Pendiente"}</span></td><td className="px-3 py-3 text-center capitalize">{item.recurrence}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3 text-center"><button type="button" aria-label="Eliminar gasto" onClick={() => void remove("expense", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></td></tr>)}</tbody>
+                <tbody>{data?.expenses.map((item) => <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.expense_date}</td><td className="px-3 py-3"><span className="font-bold text-white">{item.category}</span>{item.recipient && <span className="mt-0.5 block text-xs text-white/48">Dirigido a: {item.recipient}</span>}{item.category_detail && <span className="mt-0.5 block text-xs text-white/48">{item.category_detail}</span>}{item.expense_type === "product" && <span className="mt-1 block text-xs font-bold text-beyonix-sky">{item.quantity} × {item.product_name}{item.product_sku ? ` · ${item.product_sku}` : ""}</span>}</td><td className="px-3 py-3">{item.description || "—"}</td><td className="px-3 py-3 text-right font-black tabular-nums text-white">{item.expense_type === "product" ? <span className="text-xs text-beyonix-sky">Salida de stock</span> : formatPrice(Number(item.amount))}</td><td className="px-3 py-3 text-center"><span className={`rounded-full border px-2.5 py-1 text-xs font-black ${item.status === "pagado" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>{item.expense_type === "product" ? "Registrado" : item.status === "pagado" ? "Pagado" : "Pendiente"}</span></td><td className="px-3 py-3 text-center capitalize">{item.recurrence}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3 text-center"><button type="button" aria-label="Eliminar gasto" onClick={() => void remove("expense", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></td></tr>)}</tbody>
               </table>
               {!data?.expenses.length && <p className="px-4 py-8 text-center text-sm text-white/42">Todavía no registraste gastos.</p>}
             </div>

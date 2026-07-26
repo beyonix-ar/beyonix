@@ -215,6 +215,7 @@ export function AdminSelect({
   onChange,
 }: AdminSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -339,6 +340,7 @@ export function AdminSelect({
       className="relative block w-full"
     >
       <button
+        ref={triggerRef}
         type="button"
         aria-label={ariaLabel ?? title}
         aria-haspopup="listbox"
@@ -347,6 +349,27 @@ export function AdminSelect({
         onClick={() => {
           setOpen((current) => !current)
           if (open) setSearch("")
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+
+          event.preventDefault()
+          setOpen(true)
+          window.setTimeout(() => {
+            const optionButtons = Array.from(
+              menuRef.current?.querySelectorAll<HTMLButtonElement>(
+                '[role="option"]',
+              ) ?? [],
+            )
+            const target =
+              event.key === "ArrowUp"
+                ? optionButtons.at(-1)
+                : optionButtons.find(
+                    (option) =>
+                      option.getAttribute("aria-selected") === "true",
+                  ) ?? optionButtons[0]
+            target?.focus()
+          }, 0)
         }}
         className={`admin-control-select admin-ds-control relative flex cursor-pointer items-center font-medium outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${triggerClassName} ${
           centered ? "justify-center" : "justify-between"
@@ -424,6 +447,40 @@ export function AdminSelect({
                       onChange(option.value)
                       setOpen(false)
                       setSearch("")
+                      triggerRef.current?.focus()
+                    }}
+                    onKeyDown={(event) => {
+                      const optionButtons = Array.from(
+                        menuRef.current?.querySelectorAll<HTMLButtonElement>(
+                          '[role="option"]',
+                        ) ?? [],
+                      )
+                      const currentIndex = optionButtons.indexOf(
+                        event.currentTarget,
+                      )
+
+                      if (
+                        event.key === "ArrowDown" ||
+                        event.key === "ArrowUp"
+                      ) {
+                        event.preventDefault()
+                        const direction = event.key === "ArrowDown" ? 1 : -1
+                        const nextIndex =
+                          (currentIndex + direction + optionButtons.length) %
+                          optionButtons.length
+                        optionButtons[nextIndex]?.focus()
+                      } else if (event.key === "Home") {
+                        event.preventDefault()
+                        optionButtons[0]?.focus()
+                      } else if (event.key === "End") {
+                        event.preventDefault()
+                        optionButtons.at(-1)?.focus()
+                      } else if (event.key === "Escape") {
+                        event.preventDefault()
+                        setOpen(false)
+                        setSearch("")
+                        triggerRef.current?.focus()
+                      }
                     }}
                     className={cn(
                       "flex w-full cursor-pointer items-center justify-between rounded-xl text-left font-medium transition-all duration-150",

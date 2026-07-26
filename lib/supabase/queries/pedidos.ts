@@ -5,7 +5,17 @@ import type {
   SupabasePedidoItem,
 } from "@/lib/supabase/types"
 
-export async function getPedidos() {
+export async function getPedidos({
+  notificationView = false,
+  limit = 50,
+  offset = 0,
+  orderId,
+}: {
+  notificationView?: boolean
+  limit?: number
+  offset?: number
+  orderId?: number
+} = {}) {
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -14,13 +24,27 @@ export async function getPedidos() {
     throw new Error("La sesión administrativa venció.")
   }
 
-  const response = await fetch("/api/admin/pedidos", {
+  const params = new URLSearchParams()
+  if (notificationView) {
+    params.set("view", "notifications")
+  } else if (orderId) {
+    params.set("id", String(orderId))
+  } else {
+    params.set("limit", String(limit))
+    params.set("offset", String(offset))
+  }
+
+  const response = await fetch(
+    `/api/admin/pedidos?${params.toString()}`,
+    {
     headers: {
       Authorization: `Bearer ${session.access_token}`,
     },
+    cache: "no-store",
   })
   const data = (await response.json()) as {
     pedidos?: SupabasePedido[]
+    total?: number
     error?: string
   }
 
@@ -28,7 +52,10 @@ export async function getPedidos() {
     throw new Error(data.error || "No se pudieron cargar los pedidos.")
   }
 
-  return data.pedidos ?? []
+  return {
+    pedidos: data.pedidos ?? [],
+    total: Number(data.total ?? data.pedidos?.length ?? 0),
+  }
 }
 
 export async function getPedido(id: number) {

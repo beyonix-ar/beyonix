@@ -1,9 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 
+import { useCategorias } from "@/hooks/use-categorias"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { useProductos } from "@/hooks/use-productos"
+import { getProductoById } from "@/lib/supabase/queries/productos"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
 import { adminPageClassName, AdminInfoBlock } from "../../components/admin-controls"
@@ -17,24 +19,13 @@ type ActiveFilter = "todos" | "activos" | "inactivos"
 type FeaturedFilter = "todos" | "destacados" | "normales"
 type ProductView = "productos" | "categorias"
 
-function getStockTotal(producto: SupabaseProducto) {
-  const variantes = producto.producto_variantes ?? []
-  if (!variantes.length) return producto.stock ?? 0
-
-  return variantes.reduce((total, variante) => total + (variante.stock ?? 0), 0)
-}
-
 export function AdminProductos() {
   const { stock: stockSettings } = useSiteSettings()
-  const {
-    productos,
-    loading,
-    error,
-    deleteProducto,
-    toggleProductoActivo,
-    reloadProductos,
-  } = useProductos()
-
+  const { categorias } = useCategorias()
+  const [page, setPage] = useState(1)
+  const [debouncedSearch, setDebouncedSearch] = useState("")
+  const [loadingProductId, setLoadingProductId] = useState<number | null>(null)
+  const pageSize = 25
   const [search, setSearch] = useState("")
   const [categorySearch, setCategorySearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("todos")
@@ -42,73 +33,46 @@ export function AdminProductos() {
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("todos")
   const [featuredFilter, setFeaturedFilter] = useState<FeaturedFilter>("todos")
   const [view, setView] = useState<ProductView>("productos")
+  const {
+    productos,
+    total,
+    loading,
+    error,
+    deleteProducto,
+    toggleProductoActivo,
+    reloadProductos,
+  } = useProductos({
+    enabled: view === "productos",
+    page,
+    pageSize,
+    search: debouncedSearch,
+    categoryId: categoryFilter === "todos" ? null : Number(categoryFilter),
+    stockFilter,
+    activeFilter,
+    featuredFilter,
+    lowStockThreshold: stockSettings.lowStockThreshold,
+    availableStockThreshold: stockSettings.availableStockThreshold,
+  })
+
   const [createCategorySignal, setCreateCategorySignal] = useState(0)
   const [editando, setEditando] = useState<SupabaseProducto | null | undefined>(
     undefined
   )
 
-  const categorias = useMemo(() => {
-    const byId = new Map<number, string>()
-    productos.forEach((producto) => {
-      if (producto.categoria_id && producto.categorias?.nombre) {
-        byId.set(producto.categoria_id, producto.categorias.nombre)
-      }
-    })
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
-    return Array.from(byId.entries()).map(([id, nombre]) => ({ id, nombre }))
-  }, [productos])
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 300)
 
-  const productosFiltrados = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase()
+    return () => window.clearTimeout(timer)
+  }, [search])
 
-    return productos.filter((producto) => {
-      const stock = getStockTotal(producto)
-      const matchesSearch = [
-        producto.nombre,
-        producto.slug,
-        producto.sku ?? "",
-        producto.categorias?.nombre ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedSearch)
-      const matchesCategory =
-        categoryFilter === "todos" ||
-        String(producto.categoria_id) === categoryFilter
-      const matchesStock =
-        stockFilter === "todos" ||
-        (stockFilter === "sin_stock" && stock <= 0) ||
-        (stockFilter === "bajo_stock" &&
-          stock > 0 &&
-          stock <= stockSettings.lowStockThreshold) ||
-        (stockFilter === "disponible" &&
-          stock >= stockSettings.availableStockThreshold)
-      const matchesActive =
-        activeFilter === "todos" ||
-        (activeFilter === "activos" && producto.activo) ||
-        (activeFilter === "inactivos" && !producto.activo)
-      const matchesFeatured =
-        featuredFilter === "todos" ||
-        (featuredFilter === "destacados" && producto.destacado) ||
-        (featuredFilter === "normales" && !producto.destacado)
-
-      return (
-        matchesSearch &&
-        matchesCategory &&
-        matchesStock &&
-        matchesActive &&
-        matchesFeatured
-      )
-    })
-  }, [
-    activeFilter,
-    categoryFilter,
-    featuredFilter,
-    productos,
-    search,
-    stockFilter,
-    stockSettings,
-  ])
+  useEffect(() => {
+    setPage(1)
+  }, [activeFilter, categoryFilter, featuredFilter, stockFilter])
 
   const handleDelete = async (id: number) => {
     const ok = confirm("¿Eliminar este producto?")
@@ -119,6 +83,17 @@ export function AdminProductos() {
   const handleSaved = async () => {
     await reloadProductos()
     setEditando(undefined)
+  }
+
+  const handleEdit = async (producto: SupabaseProducto) => {
+    try {
+      setLoadingProductId(producto.id)
+      setEditando(await getProductoById(producto.id))
+    } catch (loadError) {
+      console.error("No se pudo cargar el producto completo.", loadError)
+    } finally {
+      setLoadingProductId(null)
+    }
   }
 
   if (editando !== undefined) {
@@ -165,15 +140,48 @@ export function AdminProductos() {
               {error}
             </AdminInfoBlock>
           )}
+          {loadingProductId !== null && (
+            <AdminInfoBlock>
+              Cargando el detalle del producto seleccionado…
+            </AdminInfoBlock>
+          )}
 
           <ProductosTable
-            productos={productosFiltrados}
+            productos={productos}
             stockSettings={stockSettings}
             loading={loading}
-            onEdit={(producto) => setEditando(producto)}
+            onEdit={(producto) => void handleEdit(producto)}
             onDelete={handleDelete}
             onToggleActivo={toggleProductoActivo}
           />
+          {!loading && total > 0 && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-white/8 bg-black/30 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="font-semibold text-white/55">
+                Mostrando {productos.length} de {total} productos
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  className="h-9 cursor-pointer rounded-xl border border-white/12 px-4 text-xs font-black text-white transition hover:border-beyonix-sky/35 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  Anterior
+                </button>
+                <span className="min-w-24 text-center text-xs font-black text-white/65">
+                  Página {page} de {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  className="h-9 cursor-pointer rounded-xl border border-white/12 px-4 text-xs font-black text-white transition hover:border-beyonix-sky/35 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

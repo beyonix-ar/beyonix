@@ -66,6 +66,30 @@ const PRODUCTO_SELECT = `
   producto_especificaciones(*)
 `
 
+export interface ProductosPageOptions {
+  page?: number
+  pageSize?: number
+  search?: string
+  categoryId?: number | null
+  stockFilter?: "todos" | "sin_stock" | "bajo_stock" | "disponible"
+  activeFilter?: "todos" | "activos" | "inactivos"
+  featuredFilter?: "todos" | "destacados" | "normales"
+  lowStockThreshold?: number
+  availableStockThreshold?: number
+}
+
+export interface ProductosPage {
+  productos: SupabaseProducto[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface CategoryProductStats {
+  articulos: number
+  stock: number
+}
+
 function normalizeSlug(
   value: string | null | undefined
 ) {
@@ -142,6 +166,86 @@ export async function getProductos() {
         producto.id
       ] || [],
   })))
+}
+
+export async function getProductosPage({
+  page = 1,
+  pageSize = 25,
+  search = "",
+  categoryId = null,
+  stockFilter = "todos",
+  activeFilter = "todos",
+  featuredFilter = "todos",
+  lowStockThreshold = 5,
+  availableStockThreshold = 6,
+}: ProductosPageOptions = {}): Promise<ProductosPage> {
+  const safePage = Math.max(1, Math.floor(page))
+  const safePageSize = Math.min(100, Math.max(10, Math.floor(pageSize)))
+  const from = (safePage - 1) * safePageSize
+  const to = from + safePageSize - 1
+  let query = supabase
+    .from("productos")
+    .select(PRODUCTO_SELECT, { count: "exact" })
+
+  const normalizedSearch = search.trim().replace(/[%(),]/g, " ")
+  if (normalizedSearch) {
+    query = query.or(
+      `nombre.ilike.%${normalizedSearch}%,slug.ilike.%${normalizedSearch}%,sku.ilike.%${normalizedSearch}%`,
+    )
+  }
+  if (categoryId) query = query.eq("categoria_id", categoryId)
+  if (activeFilter === "activos") query = query.eq("activo", true)
+  if (activeFilter === "inactivos") query = query.eq("activo", false)
+  if (featuredFilter === "destacados") query = query.eq("destacado", true)
+  if (featuredFilter === "normales") query = query.eq("destacado", false)
+  if (stockFilter === "sin_stock") query = query.lte("stock", 0)
+  if (stockFilter === "bajo_stock") {
+    query = query.gt("stock", 0).lte("stock", lowStockThreshold)
+  }
+  if (stockFilter === "disponible") {
+    query = query.gte("stock", availableStockThreshold)
+  }
+
+  const { data, error, count } = await query
+    .order("id", { ascending: false })
+    .range(from, to)
+
+  if (error) throw error
+
+  const productos = await attachProductReviewSummaries(
+    ((data ?? []) as SupabaseProducto[]).map((producto) => ({
+      ...producto,
+      producto_variantes: [...(producto.producto_variantes ?? [])].sort(
+        (a, b) => a.orden - b.orden || a.id - b.id,
+      ),
+    })),
+  )
+
+  return {
+    productos,
+    total: count ?? 0,
+    page: safePage,
+    pageSize: safePageSize,
+  }
+}
+
+export async function getCategoryProductStats() {
+  const { data, error } = await supabase.rpc("get_admin_category_product_stats")
+  if (error) throw error
+
+  return new Map<number, CategoryProductStats>(
+    ((data ?? []) as Array<{
+      category_id: number
+      product_count: number
+      stock_total: number
+    }>).map((row) => [
+      Number(row.category_id),
+      {
+        articulos: Number(row.product_count ?? 0),
+        stock: Number(row.stock_total ?? 0),
+      },
+    ]),
+  )
 }
 
 export async function getProductoById(

@@ -397,9 +397,7 @@ export function useClientes() {
         { event: "*", schema: "public", table: "customer_credit_movements" },
         scheduleReload,
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") scheduleReload()
-      })
+      .subscribe()
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer)
@@ -413,7 +411,7 @@ export function useClientes() {
         void loadClientes({ silent: true })
       }
     }
-    const fallbackInterval = window.setInterval(refreshIfVisible, 4_000)
+    const fallbackInterval = window.setInterval(refreshIfVisible, 60_000)
 
     window.addEventListener("focus", refreshIfVisible)
     window.addEventListener("online", refreshIfVisible)

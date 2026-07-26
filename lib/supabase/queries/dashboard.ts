@@ -127,13 +127,44 @@ export interface DashboardFinancialSummary {
   warnings: string[]
 }
 
-export async function getDashboardData() {
+export interface DashboardDataResponse {
+  role: "operador" | "admin" | "super_admin"
+  stats: DashboardStats
+  financialSummary: DashboardFinancialSummary
+  lowStock: LowStockItem[]
+  recentOrders: SupabasePedido[]
+  commercialSales: DashboardCommercialSale[]
+  recentActivity: DashboardRecentActivity[]
+  systemStatus: DashboardSystemStatus[]
+  searchIndex: DashboardSearchItem[]
+}
+
+let dashboardCache: {
+  sessionKey: string
+  data: DashboardDataResponse
+  expiresAt: number
+} | null = null
+
+export async function getDashboardData({
+  force = false,
+}: {
+  force?: boolean
+} = {}) {
   const {
     data: { session },
   } = await supabase.auth.getSession()
 
   if (!session?.access_token) {
     throw new Error("La sesión administrativa venció.")
+  }
+
+  const sessionKey = session.access_token
+  if (
+    !force &&
+    dashboardCache?.sessionKey === sessionKey &&
+    dashboardCache.expiresAt > Date.now()
+  ) {
+    return dashboardCache.data
   }
 
   const response = await fetch("/api/admin/dashboard", {
@@ -165,15 +196,11 @@ export async function getDashboardData() {
     throw new DashboardDataError(message, response.status, data)
   }
 
-  return data as {
-    role: "operador" | "admin" | "super_admin"
-    stats: DashboardStats
-    financialSummary: DashboardFinancialSummary
-    lowStock: LowStockItem[]
-    recentOrders: SupabasePedido[]
-    commercialSales: DashboardCommercialSale[]
-    recentActivity: DashboardRecentActivity[]
-    systemStatus: DashboardSystemStatus[]
-    searchIndex: DashboardSearchItem[]
+  const result = data as DashboardDataResponse
+  dashboardCache = {
+    sessionKey,
+    data: result,
+    expiresAt: Date.now() + 30_000,
   }
+  return result
 }

@@ -229,6 +229,9 @@ export async function POST(request: Request) {
   if (kind === "expense") {
     const expenseDate = date(body?.expenseDate)
     const category = text(body?.category, 100)
+    const categoryDetail = category === "Otros" ? text(body?.categoryDetail, 240) : null
+    const recipient = category === "Donación/Regalo" ? text(body?.recipient, 180) : null
+    const expenseType = body?.expenseType === "product" ? "product" : "money"
     const expenseAmount = amount(body?.amount)
     const recurrence = text(body?.recurrence, 20) ?? "unico"
     const status = body?.status === "pendiente" ? "pendiente" : "pagado"
@@ -240,8 +243,100 @@ export async function POST(request: Request) {
       )
     }
 
+    if (category === "Donación/Regalo" && !recipient) {
+      return Response.json(
+        { error: "Indicá a quién fue dirigida la donación o el regalo." },
+        { status: 400 },
+      )
+    }
+
     if (!new Set(["unico", "mensual", "bimestral", "trimestral", "semestral", "anual"]).has(recurrence)) {
       return Response.json({ error: "La recurrencia no es válida." }, { status: 400 })
+    }
+
+    if (expenseType === "product") {
+      const productId = positiveInteger(body?.productId)
+      const variantId = body?.variantId ? positiveInteger(body.variantId) : null
+      const quantity = positiveInteger(body?.quantity)
+
+      if (
+        !new Set(["Donación/Regalo", "Sorteo/Evento"]).has(category) ||
+        !productId ||
+        !quantity
+      ) {
+        return Response.json(
+          { error: "Seleccioná un producto y una cantidad válida." },
+          { status: 400 },
+        )
+      }
+
+      const { data: product, error: productError } = await auth.admin
+        .from("productos")
+        .select("id, nombre, sku, producto_variantes(id, nombre, producto_id)")
+        .eq("id", productId)
+        .maybeSingle()
+
+      if (productError || !product) {
+        return Response.json({ error: "El producto seleccionado no existe." }, { status: 400 })
+      }
+
+      const variants = product.producto_variantes ?? []
+      const variant = variantId
+        ? variants.find((item) => Number(item.id) === variantId)
+        : null
+
+      if ((variants.length > 0 && !variantId) || (variantId && !variant)) {
+        return Response.json(
+          {
+            error: variants.length > 0
+              ? "Seleccioná una variante del producto."
+              : "La variante seleccionada no pertenece al producto.",
+          },
+          { status: 400 },
+        )
+      }
+
+      const productName = variant
+        ? `${product.nombre} · ${variant.nombre}`
+        : product.nombre
+      const { data: inserted, error } = await auth.admin.rpc(
+        "create_product_business_expense",
+        {
+          p_expense_date: expenseDate,
+          p_category: category,
+          p_recipient: recipient,
+          p_category_detail: categoryDetail,
+          p_description: text(body?.description, 240),
+          p_product_id: productId,
+          p_variant_id: variantId,
+          p_product_name: productName,
+          p_product_sku: text(body?.productSku, 120) ?? product.sku,
+          p_quantity: quantity,
+          p_notes: text(body?.notes, 1000),
+          p_created_by: auth.user.id,
+        },
+      )
+
+      if (error) {
+        const missingMigration = /expense_type|schema cache|PGRST202/i.test(
+          error.message,
+        )
+        const insufficientStock = /PRODUCT_EXPENSE_STOCK_INSUFFICIENT/i.test(error.message)
+        return Response.json(
+          {
+            error: missingMigration
+              ? "Falta aplicar la migración 087_product_business_expenses.sql en Supabase."
+              : insufficientStock
+                ? "No hay stock suficiente para registrar esta salida."
+                : /PRODUCT_EXPENSE_VARIANT_REQUIRED/i.test(error.message)
+                  ? "Seleccioná una variante del producto."
+                  : "No se pudo registrar la salida de productos.",
+          },
+          { status: missingMigration ? 503 : insufficientStock ? 409 : 400 },
+        )
+      }
+
+      return Response.json({ item: inserted }, { status: 201 })
     }
 
     const { data: inserted, error } = await auth.admin
@@ -249,6 +344,8 @@ export async function POST(request: Request) {
       .insert({
         expense_date: expenseDate,
         category,
+        category_detail: categoryDetail,
+        recipient,
         description: text(body?.description, 240),
         amount: expenseAmount,
         recurrence,
@@ -259,13 +356,25 @@ export async function POST(request: Request) {
         document_number: text(body?.documentNumber, 120),
         tax_deductible: body?.taxDeductible === true,
         notes: text(body?.notes, 1000),
+        expense_type: "money",
         created_by: auth.user.id,
       })
       .select("*")
       .single()
 
     if (error) {
-      return Response.json({ error: "No se pudo guardar el gasto." }, { status: 500 })
+      const missingProductMigration = /expense_type|schema cache/i.test(error.message)
+      const missingMigration = /category_detail|recipient/i.test(error.message)
+      return Response.json(
+        {
+          error: missingProductMigration
+            ? "Falta aplicar la migración 087_product_business_expenses.sql en Supabase."
+            : missingMigration
+              ? "Falta aplicar la migración 086_business_expense_details.sql en Supabase."
+              : "No se pudo guardar el gasto.",
+        },
+        { status: missingProductMigration || missingMigration ? 503 : 500 },
+      )
     }
     return Response.json({ item: inserted }, { status: 201 })
   }
@@ -365,17 +474,37 @@ export async function DELETE(request: Request) {
   const url = new URL(request.url)
   const kind = url.searchParams.get("kind") as CostKind | null
   const id = url.searchParams.get("id")
-  const table = kind === "product"
-    ? "product_cost_entries"
-    : kind === "expense"
-      ? "business_expenses"
-      : null
+  const table = kind === "product" ? "product_cost_entries" : null
 
-  if (!table || !id) {
+  if ((!table && kind !== "expense") || !id) {
     return Response.json({ error: "Movimiento inválido." }, { status: 400 })
   }
 
-  const { error } = await auth.admin.from(table).delete().eq("id", id)
+  if (kind === "expense") {
+    const { data: deleted, error } = await auth.admin.rpc(
+      "delete_business_expense_with_inventory",
+      { p_expense_id: id },
+    )
+    if (error) {
+      const missingMigration = /schema cache|PGRST202/i.test(
+        error.message,
+      )
+      return Response.json(
+        {
+          error: missingMigration
+            ? "Falta aplicar la migración 087_product_business_expenses.sql en Supabase."
+            : "No se pudo eliminar el gasto ni actualizar su stock.",
+        },
+        { status: missingMigration ? 503 : 500 },
+      )
+    }
+    if (!deleted) {
+      return Response.json({ error: "El gasto ya no existe." }, { status: 404 })
+    }
+    return Response.json({ success: true })
+  }
+
+  const { error } = await auth.admin.from(table!).delete().eq("id", id)
   if (error) {
     return Response.json({ error: "No se pudo eliminar el movimiento." }, { status: 500 })
   }

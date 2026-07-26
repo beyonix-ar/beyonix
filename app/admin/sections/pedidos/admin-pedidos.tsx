@@ -5764,8 +5764,16 @@ export function AdminPedidos({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAdmin, isSuperAdmin } = useAuth()
-  const { pedidos, loading, error, updatePedidoEstado, reloadPedidos } =
-    usePedidos()
+  const {
+    pedidos,
+    total,
+    hasMore,
+    loadMore,
+    loading,
+    error,
+    updatePedidoEstado,
+    reloadPedidos,
+  } = usePedidos({ orderId: initialOrderId })
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [attentionFilter, setAttentionFilter] =
@@ -6640,10 +6648,23 @@ export function AdminPedidos({
       {loading ? (
         <AdminSkeleton rows={7} />
       ) : pedidosFiltrados.length === 0 ? (
-        <AdminEmptyState
-          icon={<ShoppingCart className="size-5" />}
-          title="No hay pedidos para los filtros seleccionados."
-        />
+        <div className="space-y-3">
+          <AdminEmptyState
+            icon={<ShoppingCart className="size-5" />}
+            title="No hay pedidos para los filtros seleccionados."
+          />
+          {hasMore && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={loadMore}
+                className="h-10 cursor-pointer rounded-xl border border-beyonix-sky/30 bg-beyonix-blue/25 px-5 text-xs font-black text-white transition hover:border-beyonix-sky/55 hover:bg-beyonix-blue/45"
+              >
+                Buscar también en 50 pedidos anteriores
+              </button>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="w-full min-w-0 space-y-3">
             <div className="admin-orders-table-header hidden grid-cols-admin-orders-pro gap-3 rounded-2xl border bg-black/90 px-4 py-3 2xl:grid">
@@ -6874,6 +6895,20 @@ export function AdminPedidos({
                   </article>
                 )
               })}
+              {hasMore && (
+                <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/8 bg-black/35 px-4 py-5">
+                  <p className="text-xs font-semibold text-white/48">
+                    Mostrando {pedidos.length} de {total} pedidos
+                  </p>
+                  <button
+                    type="button"
+                    onClick={loadMore}
+                    className="h-10 cursor-pointer rounded-xl border border-beyonix-sky/30 bg-beyonix-blue/25 px-5 text-xs font-black text-white transition hover:border-beyonix-sky/55 hover:bg-beyonix-blue/45"
+                  >
+                    Cargar 50 pedidos más
+                  </button>
+                </div>
+              )}
             </div>
       )}
       {previewPedido && (

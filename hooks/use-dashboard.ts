@@ -76,11 +76,11 @@ export function useDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (force = false) => {
     try {
       setLoading(true)
       setError(null)
-      setData(await getDashboardData())
+      setData(await getDashboardData({ force }))
     } catch (err) {
       console.warn("DASHBOARD_LOAD_WARNING", getDashboardErrorDetails(err))
       setError("No se pudo cargar el dashboard.")
@@ -97,6 +97,6 @@ export function useDashboard() {
     ...data,
     loading,
     error,
-    reloadDashboard: loadDashboard,
+    reloadDashboard: () => loadDashboard(true),
   }
 }

@@ -20,19 +20,96 @@ export async function GET(request: Request) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
 
-  await expireOverdueTransferOrders(auth.admin)
+  const notificationView =
+    new URL(request.url).searchParams.get("view") === "notifications"
+  const url = new URL(request.url)
+  const requestedLimit = Number(url.searchParams.get("limit") ?? 50)
+  const requestedOffset = Number(url.searchParams.get("offset") ?? 0)
+  const orderId = Number(url.searchParams.get("id"))
+  const limit = Math.min(100, Math.max(10, Math.floor(requestedLimit)))
+  const offset = Math.max(0, Math.floor(requestedOffset))
+  const notificationColumns = [
+    "id",
+    "created_at",
+    "estado",
+    "financial_status",
+    "payment_status",
+    "paid_at",
+    "payment_confirmed_amount",
+    "total",
+    "payment_proof_url",
+    "payment_proof_uploaded_at",
+    "invoice_status",
+    "invoice_cae",
+    "invoice_created_at",
+    "cancelled_at",
+    "cancellation_requested_at",
+    "refund_pending_at",
+  ].join(", ")
 
-  const { data: orderRows, error: ordersError } = await auth.admin
+  if (!notificationView) {
+    await expireOverdueTransferOrders(auth.admin)
+  }
+
+  let ordersQuery = auth.admin
     .from("ordenes")
-    .select("*")
+    .select(notificationView ? notificationColumns : "*", {
+      count: notificationView ? undefined : "exact",
+    })
     .order("created_at", { ascending: false })
+
+  if (notificationView) {
+    ordersQuery = ordersQuery.limit(500)
+  } else if (Number.isInteger(orderId) && orderId > 0) {
+    ordersQuery = ordersQuery.eq("id", orderId)
+  } else {
+    ordersQuery = ordersQuery.range(offset, offset + limit - 1)
+  }
+
+  const { data: orderRows, error: ordersError, count } = await ordersQuery
 
   if (ordersError) {
     return Response.json({ error: ordersError.message }, { status: 500 })
   }
 
-  const pedidos = (orderRows ?? []) as SupabasePedido[]
-  if (!pedidos.length) return Response.json({ pedidos })
+  const pedidos = (orderRows ?? []) as unknown as SupabasePedido[]
+  if (!pedidos.length) {
+    return Response.json({ pedidos, total: notificationView ? 0 : count ?? 0 })
+  }
+
+  if (notificationView) {
+    const { data: claims, error: claimsError } = await auth.admin
+      .from("order_claims")
+      .select("*, order_claim_messages(*)")
+      .in(
+        "order_id",
+        pedidos.map((pedido) => pedido.id),
+      )
+      .order("created_at", { ascending: false })
+
+    if (claimsError) {
+      return Response.json({ error: claimsError.message }, { status: 500 })
+    }
+
+    const claimsByOrder = new Map<number, typeof claims>()
+    for (const claim of claims ?? []) {
+      const current = claimsByOrder.get(claim.order_id) ?? []
+      current.push(claim)
+      claimsByOrder.set(claim.order_id, current)
+    }
+
+    return Response.json({
+      pedidos: pedidos.map((pedido) => ({
+        ...pedido,
+        total: auth.profile.rol === "operador" ? 0 : pedido.total,
+        order_claims: claimsByOrder.get(pedido.id) ?? [],
+        orden_items: [],
+        order_refund_proofs: [],
+        order_audit_events: [],
+      })),
+      total: pedidos.length,
+    })
+  }
 
   const userIds = [
     ...new Set(
@@ -236,5 +313,6 @@ export async function GET(request: Request) {
       order_refund_proofs: refundProofsByOrder.get(pedido.id) ?? [],
       order_audit_events: auditEventsByOrder.get(pedido.id) ?? [],
     })),
+    total: count ?? pedidos.length,
   })
 }

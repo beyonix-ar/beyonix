@@ -776,12 +776,12 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       orderLastSeenAt,
       creditNotifications,
     ] = await Promise.all([
-      getPedidos(),
+      getPedidos({ notificationView: true }),
       getOrderLastSeenAt(adminId),
       getCreditAdminNotifications(),
     ])
 
-    const orders = pedidos.filter(isOrderVisible)
+    const orders = pedidos.pedidos.filter(isOrderVisible)
     const orderIds = new Set(orders.map((order) => Number(order.id)))
     const rawClaims = orders.flatMap((order) =>
       (order.order_claims ?? []).map((claim) => ({
