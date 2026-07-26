@@ -593,7 +593,7 @@ export function AdminAuditoria() {
         >
           <div className="rounded-2xl border border-white/8 bg-black/30 px-4 py-4">
             <p className="text-sm font-bold leading-6 text-white">
-              ¿Está seguro de deshacer "{formatAuditGroupDescription(pendingUndoGroup).lines[0] ?? formatAuditGroupDescription(pendingUndoGroup).title}"?
+              ¿Está seguro de deshacer “{formatAuditGroupDescription(pendingUndoGroup).lines[0] ?? formatAuditGroupDescription(pendingUndoGroup).title}”?
             </p>
             <div className="mt-3 space-y-1 text-sm leading-6 text-white/55">
               <p>{formatAuditGroupDescription(pendingUndoGroup).title}</p>

@@ -1,9 +1,19 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react"
 import { createPortal } from "react-dom"
 import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react"
 
+import {
+  formatAdminDateInput,
+  parseAdminDateInput,
+} from "@/lib/admin/admin-date-input"
 import { adminControlClassName, AdminSecondaryButton } from "./admin-controls"
 
 interface AdminDatePickerProps {
@@ -36,6 +46,32 @@ const MONTHS = [
 
 const WEEK_DAYS = ["L", "M", "X", "J", "V", "S", "D"]
 
+function isValidDate(date: Date) {
+  return Number.isFinite(date.getTime())
+}
+
+function parseInputDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return null
+
+  const [, yearValue, monthValue, dayValue] = match
+  const year = Number(yearValue)
+  const month = Number(monthValue)
+  const day = Number(dayValue)
+  const date = new Date(year, month - 1, day)
+
+  if (
+    !isValidDate(date) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null
+  }
+
+  return date
+}
+
 function toInputDate(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -53,32 +89,6 @@ function toDisplayDate(value: string) {
   return `${day}/${month}/${year}`
 }
 
-function parseManualDate(value: string) {
-  const clean = value.trim()
-  if (!clean) return ""
-
-  const parts = clean.includes("/")
-    ? clean.split("/")
-    : clean.includes("-")
-      ? clean.split("-").reverse()
-      : []
-
-  if (parts.length !== 3) return null
-
-  const [day, month, year] = parts.map((part) => Number(part))
-  if (!day || !month || !year) return null
-
-  const date = new Date(year, month - 1, day)
-  const valid =
-    date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
-    date.getDate() === day
-
-  if (!valid) return null
-
-  return toInputDate(date)
-}
-
 function isSameDay(a: Date, b: Date) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -88,8 +98,9 @@ function isSameDay(a: Date, b: Date) {
 }
 
 function getCalendarDays(monthDate: Date) {
-  const year = monthDate.getFullYear()
-  const month = monthDate.getMonth()
+  const safeMonthDate = isValidDate(monthDate) ? monthDate : new Date()
+  const year = safeMonthDate.getFullYear()
+  const month = safeMonthDate.getMonth()
 
   const firstDay = new Date(year, month, 1)
   const firstWeekDay = (firstDay.getDay() + 6) % 7
@@ -116,28 +127,30 @@ export function AdminDatePicker({
 }: AdminDatePickerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
-  const selectedDate = value ? new Date(`${value}T00:00:00`) : null
+  const selectedDate = parseInputDate(value)
   const today = new Date()
 
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [textValue, setTextValue] = useState(toDisplayDate(value))
-  const [visibleMonth, setVisibleMonth] = useState(selectedDate || today)
+  const [visibleMonth, setVisibleMonth] = useState(() => selectedDate ?? today)
   const [popoverPosition, setPopoverPosition] = useState({
     left: 0,
     top: 0,
   })
+  const safeVisibleMonth = isValidDate(visibleMonth) ? visibleMonth : today
 
   const calendarDays = useMemo(
-    () => getCalendarDays(visibleMonth),
-    [visibleMonth]
+    () => getCalendarDays(safeVisibleMonth),
+    [safeVisibleMonth],
   )
 
   useEffect(() => {
     setTextValue(toDisplayDate(value))
 
-    if (value) {
-      setVisibleMonth(new Date(`${value}T00:00:00`))
+    const nextDate = parseInputDate(value)
+    if (nextDate) {
+      setVisibleMonth(nextDate)
     }
   }, [value])
 
@@ -156,17 +169,33 @@ export function AdminDatePicker({
     }
 
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      const key = typeof event.key === "string" ? event.key : ""
+      if (
+        key === "Escape" ||
+        key === "Tab" ||
+        key.startsWith("Arrow")
+      ) {
+        setOpen(false)
+      }
+    }
+
+    function handleFocusOutside(event: FocusEvent) {
+      if (
+        !wrapperRef.current?.contains(event.target as Node) &&
+        !popoverRef.current?.contains(event.target as Node)
+      ) {
         setOpen(false)
       }
     }
 
     document.addEventListener("mousedown", handleClickOutside)
     document.addEventListener("keydown", handleEscape)
+    document.addEventListener("focusin", handleFocusOutside)
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside)
       document.removeEventListener("keydown", handleEscape)
+      document.removeEventListener("focusin", handleFocusOutside)
     }
   }, [])
 
@@ -208,16 +237,18 @@ export function AdminDatePicker({
 
   const changeMonth = (direction: number) => {
     setVisibleMonth((current) => {
-      const next = new Date(current)
-      next.setMonth(current.getMonth() + direction)
+      const safeCurrent = isValidDate(current) ? current : new Date()
+      const next = new Date(safeCurrent)
+      next.setMonth(safeCurrent.getMonth() + direction)
       return next
     })
   }
 
   const handleManualChange = (manualValue: string) => {
-    setTextValue(manualValue)
+    const formattedValue = formatAdminDateInput(manualValue)
+    setTextValue(formattedValue)
 
-    const parsed = parseManualDate(manualValue)
+    const parsed = parseAdminDateInput(formattedValue)
 
     if (parsed === "") {
       onChange("")
@@ -230,6 +261,26 @@ export function AdminDatePicker({
       }
 
       onChange(parsed)
+    }
+  }
+
+  const handleManualBlur = () => {
+    if (parseAdminDateInput(textValue) === null) {
+      setTextValue(toDisplayDate(value))
+    }
+  }
+
+  const handleManualKeyDown = (
+    event: ReactKeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (
+      event.key === "Backspace" &&
+      textValue.endsWith("/") &&
+      event.currentTarget.selectionStart === textValue.length &&
+      event.currentTarget.selectionEnd === textValue.length
+    ) {
+      event.preventDefault()
+      setTextValue(textValue.slice(0, -1))
     }
   }
 
@@ -251,8 +302,8 @@ export function AdminDatePicker({
   const handleSelectVisibleMonth = () => {
     if (!onSelectMonth) return
 
-    const year = visibleMonth.getFullYear()
-    const month = visibleMonth.getMonth()
+    const year = safeVisibleMonth.getFullYear()
+    const month = safeVisibleMonth.getMonth()
     const firstDay = toInputDate(new Date(year, month, 1))
     const lastDay = toInputDate(new Date(year, month + 1, 0))
 
@@ -266,7 +317,7 @@ export function AdminDatePicker({
   const handleSelectVisibleYear = () => {
     if (!onSelectYear) return
 
-    const year = visibleMonth.getFullYear()
+    const year = safeVisibleMonth.getFullYear()
 
     onSelectYear({
       from: toInputDate(new Date(year, 0, 1)),
@@ -294,6 +345,9 @@ export function AdminDatePicker({
           spellCheck={false}
           onFocus={() => setOpen(true)}
           onChange={(event) => handleManualChange(event.target.value)}
+          onBlur={handleManualBlur}
+          onKeyDown={handleManualKeyDown}
+          maxLength={10}
           className={`${adminControlClassName} ${
             compact ? "!h-11 !pl-3 !pr-11 !text-sm font-bold" : "pr-11"
           } ${centered ? `${compact ? "" : "pl-11"} text-center` : ""}`}
@@ -338,29 +392,29 @@ export function AdminDatePicker({
                       <button
                         type="button"
                         title="Seleccionar el mes completo"
-                        aria-label={`Seleccionar todo ${MONTHS[visibleMonth.getMonth()]} de ${visibleMonth.getFullYear()}`}
+                        aria-label={`Seleccionar todo ${MONTHS[safeVisibleMonth.getMonth()]} de ${safeVisibleMonth.getFullYear()}`}
                         onClick={handleSelectVisibleMonth}
                         className="cursor-pointer rounded-lg px-2 py-1 text-sm font-black capitalize text-white/92 transition hover:bg-beyonix-blue/28 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
                       >
-                        {MONTHS[visibleMonth.getMonth()]}
+                        {MONTHS[safeVisibleMonth.getMonth()]}
                       </button>
                     )}
                     {onSelectYear && (
                       <button
                         type="button"
                         title="Seleccionar el año completo"
-                        aria-label={`Seleccionar todo el año ${visibleMonth.getFullYear()}`}
+                        aria-label={`Seleccionar todo el año ${safeVisibleMonth.getFullYear()}`}
                         onClick={handleSelectVisibleYear}
                         className="cursor-pointer rounded-lg px-2 py-1 text-sm font-black text-white/92 transition hover:bg-beyonix-blue/28 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
                       >
-                        {visibleMonth.getFullYear()}
+                        {safeVisibleMonth.getFullYear()}
                       </button>
                     )}
                   </div>
                 ) : (
                   <p className="mt-1 text-sm font-black capitalize text-white/92">
-                    {MONTHS[visibleMonth.getMonth()]}{" "}
-                    {visibleMonth.getFullYear()}
+                    {MONTHS[safeVisibleMonth.getMonth()]}{" "}
+                    {safeVisibleMonth.getFullYear()}
                   </p>
                 )}
               </div>
@@ -402,7 +456,7 @@ export function AdminDatePicker({
             <div className="grid grid-cols-7 gap-1">
               {calendarDays.map((date) => {
                 const currentMonth =
-                  date.getMonth() === visibleMonth.getMonth()
+                  date.getMonth() === safeVisibleMonth.getMonth()
                 const selected = selectedDate
                   ? isSameDay(date, selectedDate)
                   : false
@@ -412,7 +466,7 @@ export function AdminDatePicker({
 
                 return (
                   <button
-                    key={date.toISOString()}
+                    key={dateValue}
                     type="button"
                     aria-label={toDisplayDate(dateValue)}
                     disabled={disabled}

@@ -2,6 +2,7 @@
 // @refresh reset
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
@@ -78,6 +79,7 @@ import {
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
 import { BEYONIX_SUPPORT_HOURS } from "@/lib/legal-contact"
+import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
 type ProfileView =
@@ -2082,10 +2084,9 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
               padding="sm"
               className="border-[var(--account-border-highlight)] bg-[rgba(9,21,34,0.92)] hover:bg-[rgba(17,42,67,0.74)]"
             >
-              <button
-                type="button"
+              <Link
+                href={ADMIN_ROUTES.dashboard}
                 aria-label="Ir al panel admin"
-                onClick={() => router.push("/admin")}
                 className="group flex min-h-[82px] w-full cursor-pointer items-center gap-4 text-left"
               >
                 <IconContainer>
@@ -2096,7 +2097,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                   <p className="text-xs text-white/55">Gestión de tienda</p>
                 </div>
                 <ChevronRight className="size-4 shrink-0 text-white/25 transition-colors group-hover:text-white/70" />
-              </button>
+              </Link>
             </AccountCard>
           )}
         </div>

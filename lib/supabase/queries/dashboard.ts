@@ -90,6 +90,7 @@ export interface DashboardStats {
 export interface DashboardFinancialSummary {
   webGrossSales: number
   marketplaceGrossSales: number
+  externalGrossSales: number
   grossSales: number
   completedRefunds: number
   pendingRefunds: number
@@ -101,8 +102,10 @@ export interface DashboardFinancialSummary {
   shippingBalance: number
   transferDiscounts: number
   marketplaceFees: number
+  salesFees: number
   marketplaceShipping: number
   marketplaceNet: number
+  externalNet: number
   inventoryPurchases: number
   costOfGoodsSold: number
   operatingExpensesPaid: number
@@ -122,6 +125,7 @@ export interface DashboardFinancialSummary {
   negativeStockItems: number
   ordersScanned: number
   marketplaceRowsScanned: number
+  externalRowsScanned: number
   complete: boolean
   generatedAt: string
   warnings: string[]
@@ -143,6 +147,11 @@ let dashboardCache: {
   sessionKey: string
   data: DashboardDataResponse
   expiresAt: number
+} | null = null
+
+let dashboardRequest: {
+  sessionKey: string
+  promise: Promise<DashboardDataResponse>
 } | null = null
 
 export async function getDashboardData({
@@ -167,40 +176,59 @@ export async function getDashboardData({
     return dashboardCache.data
   }
 
-  const response = await fetch("/api/admin/dashboard", {
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    cache: "no-store",
-  })
-  const text = await response.text()
-  let data: unknown = null
+  if (!force && dashboardRequest?.sessionKey === sessionKey) {
+    return dashboardRequest.promise
+  }
 
-  if (text) {
-    try {
-      data = JSON.parse(text)
-    } catch {
-      data = { raw: text }
+  const promise = (async () => {
+    const response = await fetch("/api/admin/dashboard", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      cache: "no-store",
+    })
+    const text = await response.text()
+    let data: unknown = null
+
+    if (text) {
+      try {
+        data = JSON.parse(text)
+      } catch {
+        data = { raw: text }
+      }
+    }
+
+    if (!response.ok) {
+      const message =
+        data &&
+        typeof data === "object" &&
+        "error" in data &&
+        typeof data.error === "string"
+          ? data.error
+          : `No se pudo cargar el dashboard. HTTP ${response.status}`
+
+      throw new DashboardDataError(message, response.status, data)
+    }
+
+    const result = data as DashboardDataResponse
+    dashboardCache = {
+      sessionKey,
+      data: result,
+      expiresAt: Date.now() + 30_000,
+    }
+    return result
+  })()
+
+  dashboardRequest = {
+    sessionKey,
+    promise,
+  }
+
+  try {
+    return await promise
+  } finally {
+    if (dashboardRequest?.promise === promise) {
+      dashboardRequest = null
     }
   }
-
-  if (!response.ok) {
-    const message =
-      data &&
-      typeof data === "object" &&
-      "error" in data &&
-      typeof data.error === "string"
-        ? data.error
-        : `No se pudo cargar el dashboard. HTTP ${response.status}`
-
-    throw new DashboardDataError(message, response.status, data)
-  }
-
-  const result = data as DashboardDataResponse
-  dashboardCache = {
-    sessionKey,
-    data: result,
-    expiresAt: Date.now() + 30_000,
-  }
-  return result
 }

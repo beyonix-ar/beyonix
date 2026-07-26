@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+import {
+  ADMIN_ROUTES,
+  canAccessAdminRoute,
+  getAdminRouteKeyFromPathname,
+} from "@/lib/admin/admin-routes"
+import { isInternalRole, isUserRole } from "@/lib/auth/roles"
+
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
   const pathname = request.nextUrl.pathname
@@ -48,6 +55,21 @@ export async function proxy(request: NextRequest) {
     .select("rol")
     .eq("id", user.id)
     .single()
+
+  if (
+    !profile ||
+    !isUserRole(profile.rol) ||
+    !isInternalRole(profile.rol)
+  ) {
+    return NextResponse.redirect(new URL("/", request.url))
+  }
+
+  const routeKey = getAdminRouteKeyFromPathname(pathname)
+  if (!canAccessAdminRoute(profile.rol, routeKey)) {
+    return NextResponse.redirect(
+      new URL(ADMIN_ROUTES.dashboard, request.url),
+    )
+  }
 
   return response
 }

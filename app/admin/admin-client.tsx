@@ -1,8 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react"
-import dynamic from "next/dynamic"
-import { useRouter, useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 import {
   BarChart3,
   BellRing,
@@ -28,11 +28,17 @@ import { useAdminNotifications } from "@/hooks/use-admin-notifications"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { supabase } from "@/lib/supabase/client"
 import {
-  markAdminOrderNewNotificationRead,
   type AdminNotificationTone,
 } from "@/lib/admin/admin-notifications"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
+import {
+  ADMIN_ROUTES,
+  canAccessAdminRoute,
+  getAdminRouteKeyFromPathname,
+  normalizeAdminRouteKey,
+  type AdminRouteKey,
+} from "@/lib/admin/admin-routes"
 
 function AdminSectionLoading() {
   return (
@@ -48,89 +54,10 @@ function AdminSectionLoading() {
   )
 }
 
-const AdminAuditoria = dynamic(
-  () => import("./sections/auditoria/admin-auditoria").then((module) => module.AdminAuditoria),
-  { loading: AdminSectionLoading },
-)
-const AdminAccionesMasivas = dynamic(
-  () => import("./sections/acciones-masivas/admin-acciones-masivas").then((module) => module.AdminAccionesMasivas),
-  { loading: AdminSectionLoading },
-)
-const AdminClientes = dynamic(
-  () => import("./sections/clientes/admin-clientes").then((module) => module.AdminClientes),
-  { loading: AdminSectionLoading },
-)
-const AdminCreditos = dynamic(
-  () => import("./sections/creditos/admin-creditos").then((module) => module.AdminCreditos),
-  { loading: AdminSectionLoading },
-)
-const AdminDashboard = dynamic(
-  () => import("./sections/dashboard/admin-dashboard").then((module) => module.AdminDashboard),
-  { loading: AdminSectionLoading },
-)
-const AdminEventos = dynamic(
-  () => import("./sections/eventos/admin-eventos").then((module) => module.AdminEventos),
-  { loading: AdminSectionLoading },
-)
-const AdminFacturacion = dynamic(
-  () => import("./sections/facturacion/admin-facturacion").then((module) => module.AdminFacturacion),
-  { loading: AdminSectionLoading },
-)
-const AdminNotificaciones = dynamic(
-  () => import("./sections/notificaciones/admin-notificaciones").then((module) => module.AdminNotificaciones),
-  { loading: AdminSectionLoading },
-)
-const AdminModificaciones = dynamic(
-  () => import("./sections/modificaciones/admin-modificaciones").then((module) => module.AdminModificaciones),
-  { loading: AdminSectionLoading },
-)
-const AdminPedidos = dynamic(
-  () => import("./sections/pedidos/admin-pedidos").then((module) => module.AdminPedidos),
-  { loading: AdminSectionLoading },
-)
-const AdminProductos = dynamic(
-  () => import("./sections/productos/admin-productos").then((module) => module.AdminProductos),
-  { loading: AdminSectionLoading },
-)
-const AdminUsuarios = dynamic(
-  () => import("./sections/usuarios/admin-usuarios").then((module) => module.AdminUsuarios),
-  { loading: AdminSectionLoading },
-)
-
-export type AdminSection =
-  | "dashboard"
-  | "modificaciones"
-  | "notificaciones"
-  | "acciones-masivas"
-  | "eventos"
-  | "productos"
-  | "clientes"
-  | "creditos"
-  | "facturacion"
-  | "pedidos"
-  | "usuarios"
-  | "auditoria"
-
-const ADMIN_SECTIONS: AdminSection[] = [
-  "dashboard",
-  "modificaciones",
-  "notificaciones",
-  "acciones-masivas",
-  "eventos",
-  "productos",
-  "clientes",
-  "creditos",
-  "facturacion",
-  "pedidos",
-  "usuarios",
-  "auditoria",
-]
-
-const ADMIN_SECTION_STORAGE_KEY = "beyonix-admin-section"
 const ADMIN_NAV_ORDER_STORAGE_KEY = "beyonix-admin-nav-order"
 
 interface NavigationItem {
-  key: AdminSection
+  key: AdminRouteKey
   label: string
   description: string
   icon: ReactNode
@@ -189,8 +116,10 @@ function SidebarItem({
           <GripVertical className="size-3.5" strokeWidth={2.2} />
         </button>
       )}
-      <button
-        type="button"
+      <Link
+        href={ADMIN_ROUTES[item.key]}
+        prefetch={false}
+        draggable={false}
         aria-label={item.label}
         onClick={onClick}
         className={`admin-ds-nav-item flex min-h-48px min-w-0 cursor-pointer items-center gap-3 px-4 py-3 text-left transition-all ${
@@ -228,27 +157,12 @@ function SidebarItem({
             </span>
           ) : null}
         </span>
-      </button>
+      </Link>
     </div>
   )
 }
 
-function getAdminSection(value: string | null) {
-  if (!value) return null
-  if (value === "banners") return "modificaciones"
-
-  return ADMIN_SECTIONS.includes(value as AdminSection)
-    ? (value as AdminSection)
-    : null
-}
-
-function getStoredAdminSection() {
-  if (typeof window === "undefined") return null
-
-  return getAdminSection(window.localStorage.getItem(ADMIN_SECTION_STORAGE_KEY))
-}
-
-function getStoredNavigationOrder(allowedSections: AdminSection[]) {
+function getStoredNavigationOrder(allowedSections: AdminRouteKey[]) {
   if (typeof window === "undefined") return []
 
   try {
@@ -258,17 +172,22 @@ function getStoredNavigationOrder(allowedSections: AdminSection[]) {
 
     if (!Array.isArray(parsed)) return []
 
-    return parsed.filter((item): item is AdminSection =>
-      allowedSections.includes(item as AdminSection),
-    )
+    return parsed
+      .map((item) =>
+        typeof item === "string" ? normalizeAdminRouteKey(item) : null,
+      )
+      .filter(
+        (item): item is AdminRouteKey =>
+          Boolean(item && allowedSections.includes(item)),
+      )
   } catch {
     return []
   }
 }
 
-export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}) {
+export function AdminClient({ children }: { children: ReactNode }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
+  const pathname = usePathname()
   const { user, isLoading, isInternal, isOperator, isSuperAdmin, logout } =
     useAuth()
   const {
@@ -280,18 +199,11 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     error: notificationsError,
     reloadNotifications,
   } = useAdminNotifications(isInternal)
-  const [section, setSection] = useState<AdminSection>(
-    () =>
-      (initialOrderId ? "pedidos" : null) ||
-      getAdminSection(searchParams.get("section")) ||
-      getStoredAdminSection() ||
-      "dashboard"
-  )
   const [mobileOpen, setMobileOpen] = useState(false)
   const [invoicePendingCount, setInvoicePendingCount] = useState(0)
-  const [navigationOrder, setNavigationOrder] = useState<AdminSection[]>([])
-  const [draggedSection, setDraggedSection] = useState<AdminSection | null>(null)
-  const [dragOverSection, setDragOverSection] = useState<AdminSection | null>(null)
+  const [navigationOrder, setNavigationOrder] = useState<AdminRouteKey[]>([])
+  const [draggedSection, setDraggedSection] = useState<AdminRouteKey | null>(null)
+  const [dragOverSection, setDragOverSection] = useState<AdminRouteKey | null>(null)
 
   const loadInvoicePendingCount = useCallback(async () => {
     if (!isInternal || isOperator) {
@@ -299,32 +211,37 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
       return
     }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-    if (!session?.access_token) {
+      if (!session?.access_token) {
+        setInvoicePendingCount(0)
+        return
+      }
+
+      const response = await fetch("/api/admin/facturacion?summary=1", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      })
+
+      if (!response.ok) {
+        setInvoicePendingCount(0)
+        return
+      }
+
+      const data = (await response.json()) as {
+        count?: number
+      }
+
+      setInvoicePendingCount(Number(data.count ?? 0))
+    } catch {
       setInvoicePendingCount(0)
-      return
     }
-
-    const response = await fetch("/api/admin/facturacion?summary=1", {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      cache: "no-store",
-    })
-
-    if (!response.ok) {
-      setInvoicePendingCount(0)
-      return
-    }
-
-    const data = (await response.json()) as {
-      count?: number
-    }
-
-    setInvoicePendingCount(Number(data.count ?? 0))
   }, [isInternal, isOperator])
 
   useEffect(() => {
@@ -349,7 +266,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
   const navigation = useMemo<NavigationItem[]>(() => {
     const giftCardNotificationCount = notificationGroups.giftcard ?? 0
     const clientNotificationCount = notifications.filter((notification) =>
-      notification.actionUrl.includes("section=clientes"),
+      notification.actionUrl === ADMIN_ROUTES.clientes ||
+      notification.actionUrl.startsWith(`${ADMIN_ROUTES.clientes}?`),
     ).length
     const orderNotificationCount = Math.max(
       0,
@@ -395,7 +313,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         icon: <BellRing className="size-4" />,
       },
       {
-        key: "acciones-masivas",
+        key: "editor-masivo",
         label: "Editor masivo",
         description: "Ofertas, precios y cuotas",
         icon: <Percent className="size-4" />,
@@ -423,7 +341,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         notificationTone: "payment",
       },
       {
-        key: "creditos",
+        key: "giftcard",
         label: "GiftCard",
         description: "Envíos y regalos",
         icon: <Coins className="size-4" />,
@@ -431,7 +349,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
         notificationTone: "giftcard",
       },
       {
-        key: "usuarios",
+        key: "usuarios-roles",
         label: "Usuarios / Roles",
         description: "Permisos de acceso",
         icon: <UserCog className="size-4" />,
@@ -470,7 +388,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     return [...ordered, ...missing]
   }, [isSuperAdmin, navigation, navigationOrder])
 
-  const moveNavigationItem = (source: AdminSection, target: AdminSection) => {
+  const moveNavigationItem = (source: AdminRouteKey, target: AdminRouteKey) => {
     if (source === target) return
 
     const currentOrder = orderedNavigation.map((item) => item.key)
@@ -487,70 +405,15 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     window.localStorage.setItem(ADMIN_NAV_ORDER_STORAGE_KEY, JSON.stringify(nextOrder))
   }
 
-  useEffect(() => {
-    if (initialOrderId) {
-      setSection("pedidos")
-      return
-    }
-    const nextSection = getAdminSection(searchParams.get("section"))
-
-    if (!nextSection) {
-      const storedSection = getStoredAdminSection()
-
-      if (!storedSection) {
-        if (searchParams.has("section")) {
-          router.replace("/admin?section=dashboard", {
-            scroll: false,
-          })
-        }
-        return
-      }
-      if (!navigation.some((item) => item.key === storedSection)) return
-
-      setSection(storedSection)
-      router.replace(`/admin?section=${storedSection}`, {
-        scroll: false,
-      })
-      return
-    }
-
-    if (!navigation.some((item) => item.key === nextSection)) return
-
-    setSection(nextSection)
-    window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, nextSection)
-  }, [searchParams, navigation, router, initialOrderId])
+  const activeSection = getAdminRouteKeyFromPathname(pathname)
+  const routeDenied =
+    Boolean(activeSection) &&
+    !canAccessAdminRoute(user?.rol as UserRole | undefined, activeSection)
 
   useEffect(() => {
-    if (isLoading) return
-    if (navigation.some((item) => item.key === section)) return
-
-    setSection("dashboard")
-    window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, "dashboard")
-    router.replace("/admin?section=dashboard", {
-      scroll: false,
-    })
-  }, [section, isLoading, navigation, router])
-
-  const goToSection = (nextSection: AdminSection) => {
-    setSection(nextSection)
-    setMobileOpen(false)
-    window.localStorage.setItem(ADMIN_SECTION_STORAGE_KEY, nextSection)
-
-    const nextParams = new URLSearchParams(searchParams.toString())
-    nextParams.set("section", nextSection)
-    nextParams.delete("attention")
-
-    router.replace(`/admin?${nextParams.toString()}`, {
-      scroll: false,
-    })
-  }
-
-  useEffect(() => {
-    if (isLoading || !user || !isInternal) return
-    if (!initialOrderId) return
-
-    void markAdminOrderNewNotificationRead(initialOrderId)
-  }, [initialOrderId, isInternal, isLoading, user])
+    if (isLoading || !user || !isInternal || !routeDenied) return
+    router.replace(ADMIN_ROUTES.dashboard)
+  }, [isInternal, isLoading, routeDenied, router, user])
 
   const handleLogout = async () => {
     await logout()
@@ -607,28 +470,12 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
     )
   }
 
-  const sections: Record<AdminSection, ReactNode> = {
-    dashboard: <AdminDashboard onNavigate={goToSection} />,
-    modificaciones: !isOperator ? <AdminModificaciones /> : null,
-    notificaciones: !isOperator ? <AdminNotificaciones /> : null,
-    "acciones-masivas": !isOperator ? <AdminAccionesMasivas /> : null,
-    eventos: !isOperator ? <AdminEventos /> : null,
-    productos: <AdminProductos />,
-    clientes: <AdminClientes />,
-    creditos: !isOperator ? <AdminCreditos /> : null,
-    facturacion: !isOperator ? <AdminFacturacion /> : null,
-    pedidos: <AdminPedidos initialOrderId={initialOrderId} />,
-    usuarios: !isOperator ? <AdminUsuarios /> : null,
-    auditoria: isSuperAdmin ? <AdminAuditoria /> : null,
-  }
-
   const sidebar = (
     <aside className="beyonix-admin-sidebar admin-ds-sidebar flex h-full flex-col border-r">
       <div className="flex items-start justify-between gap-3 border-b border-beyonix-blue-light/20 px-5 py-5">
-        <button
-          type="button"
+        <Link
+          href="/"
           aria-label="Ir al inicio"
-          onClick={() => router.push("/")}
           className="group cursor-pointer text-left"
         >
           <p className="mb-1 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
@@ -637,7 +484,7 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           <h1 className="text-2xl font-black text-white transition-colors duration-150 group-hover:text-beyonix-sky">
             BEYONIX
           </h1>
-        </button>
+        </Link>
         <AdminNotificationsBell
           count={notificationCount}
           tone={notificationTone}
@@ -670,11 +517,14 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
           <SidebarItem
             key={item.key}
             item={item}
-            active={section === item.key}
+            active={
+              pathname === ADMIN_ROUTES[item.key] ||
+              pathname.startsWith(`${ADMIN_ROUTES[item.key]}/`)
+            }
             reorderable={isSuperAdmin}
             dragging={draggedSection === item.key}
             dragOver={dragOverSection === item.key && draggedSection !== item.key}
-            onClick={() => goToSection(item.key)}
+            onClick={() => setMobileOpen(false)}
             onDragStart={(event) => {
               setDraggedSection(item.key)
               event.dataTransfer.effectAllowed = "move"
@@ -689,7 +539,8 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
             onDrop={(event) => {
               event.preventDefault()
               const source =
-                getAdminSection(event.dataTransfer.getData("text/plain")) ?? draggedSection
+                normalizeAdminRouteKey(event.dataTransfer.getData("text/plain")) ??
+                draggedSection
 
               if (isSuperAdmin && source) {
                 moveNavigationItem(source, item.key)
@@ -763,10 +614,10 @@ export function AdminClient({ initialOrderId }: { initialOrderId?: number } = {}
 
       <main
         className={`beyonix-admin-main min-w-0 flex-1 bg-beyonix-page ${
-          section === "dashboard" ? "" : "admin-solid-surface"
+          pathname === ADMIN_ROUTES.dashboard ? "" : "admin-solid-surface"
         }`}
       >
-        {sections[section]}
+        {routeDenied ? <AdminSectionLoading /> : children}
       </main>
     </div>
   )

@@ -56,7 +56,10 @@ import {
   markAdminOrderSummarySeen,
   markAdminPaymentProofSeen,
 } from "@/lib/admin/order-event-views"
-import { markAdminClaimNotificationsRead } from "@/lib/admin/admin-notifications"
+import {
+  markAdminClaimNotificationsRead,
+  markAdminOrderNewNotificationRead,
+} from "@/lib/admin/admin-notifications"
 import {
   ADMIN_SENSITIVE_DANGER,
   isAdminSensitiveStatus,
@@ -5762,6 +5765,7 @@ export function AdminPedidos({
   initialOrderId?: number
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const { isAdmin, isSuperAdmin } = useAuth()
   const {
@@ -5991,6 +5995,11 @@ export function AdminPedidos({
     const pedido = pedidos.find((item) => item.id === initialOrderId) ?? null
     setPreviewPedido(pedido)
   }, [initialOrderId, loading, pedidos])
+
+  useEffect(() => {
+    if (!initialOrderId) return
+    void markAdminOrderNewNotificationRead(initialOrderId)
+  }, [initialOrderId])
 
   useEffect(() => {
     if (loading) return
@@ -6510,7 +6519,7 @@ export function AdminPedidos({
     }
 
     if (!previewPedido) {
-      return <div className="p-6"><button type="button" onClick={() => router.push("/admin?section=pedidos")} className="cursor-pointer text-sm font-bold text-beyonix-sky">← Volver a pedidos</button><p className="mt-4 text-sm text-white/60">No encontramos este pedido.</p></div>
+      return <div className="p-6"><button type="button" onClick={() => router.push("/admin/pedidos")} className="cursor-pointer text-sm font-bold text-beyonix-sky">← Volver a pedidos</button><p className="mt-4 text-sm text-white/60">No encontramos este pedido.</p></div>
     }
 
     return (
@@ -6520,7 +6529,7 @@ export function AdminPedidos({
           pedido={previewPedido}
           isSuperAdmin={isSuperAdmin}
           canEditRefundAmount={isAdmin || isSuperAdmin}
-          onClose={() => router.push("/admin?section=pedidos")}
+          onClose={() => router.push("/admin/pedidos")}
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) => void handleEstadoChange(pedido, nextEstado)}
           onShippingDetailsChange={(pedidoId, estado, details) =>
@@ -6613,7 +6622,8 @@ export function AdminPedidos({
                 setAttentionFilter("all")
                 const nextParams = new URLSearchParams(searchParams.toString())
                 nextParams.delete("attention")
-                router.replace(`/admin?${nextParams.toString()}`, { scroll: false })
+                const query = nextParams.toString()
+                router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
               }}
               className="cursor-pointer font-black text-beyonix-sky hover:text-white"
             >

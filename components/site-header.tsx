@@ -27,6 +27,7 @@ import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
 import { useCustomerCredit } from "@/context/customer-credit-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
+import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { formatARS } from "@/lib/customer-credit"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
@@ -379,7 +380,7 @@ export function SiteHeader() {
                       </Link>
                       {isInternal && (
                         <Link
-                          href="/admin"
+                          href={ADMIN_ROUTES.dashboard}
                           onClick={() => setUserOpen(false)}
                           className={`${accountMenuItemClass} font-semibold`}
                         >
@@ -580,7 +581,7 @@ export function SiteHeader() {
                   </Link>
                   {isInternal && (
                     <Link
-                      href="/admin"
+                      href={ADMIN_ROUTES.dashboard}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
                         "group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-semibold text-beyonix-cyan hover:bg-white/4 hover:text-white",

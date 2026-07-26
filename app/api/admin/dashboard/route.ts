@@ -3,6 +3,15 @@ import { canViewSensitiveNumbers } from "@/lib/auth/roles"
 import { getAndreaniConfig, isAndreaniReady } from "@/lib/andreani/client"
 import { getWsfeHealth } from "@/lib/arca/wsfe"
 import { getSiteSettings } from "@/lib/site-settings"
+import {
+  getStandaloneHistoricalUnitCost,
+  type StandaloneCostRow,
+} from "@/lib/business/standalone-cost-items"
+import {
+  getMercadoLibreCostableUnits,
+  getMercadoLibreCostMapping,
+  getMercadoLibreRefundAmount,
+} from "@/lib/mercadolibre/sale-costing"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -80,6 +89,7 @@ function isReadyToPrepare(order: SupabasePedido) {
 interface DashboardFinancialSummary {
   webGrossSales: number
   marketplaceGrossSales: number
+  externalGrossSales: number
   grossSales: number
   completedRefunds: number
   pendingRefunds: number
@@ -91,8 +101,10 @@ interface DashboardFinancialSummary {
   shippingBalance: number
   transferDiscounts: number
   marketplaceFees: number
+  salesFees: number
   marketplaceShipping: number
   marketplaceNet: number
+  externalNet: number
   inventoryPurchases: number
   costOfGoodsSold: number
   operatingExpensesPaid: number
@@ -112,17 +124,14 @@ interface DashboardFinancialSummary {
   negativeStockItems: number
   ordersScanned: number
   marketplaceRowsScanned: number
+  externalRowsScanned: number
   complete: boolean
   generatedAt: string
   warnings: string[]
 }
 
-interface ProductCostRow {
-  product_id: number | null
+interface ProductCostRow extends StandaloneCostRow {
   variant_id: number | null
-  purchase_date: string
-  quantity: number
-  total_cost: number
 }
 
 interface ExpenseRow {
@@ -829,7 +838,7 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("mercadolibre_sales")
-              .select("id, sale_date, imported_at, order_id, product_name, sku, quantity, gross_amount, fee_amount, shipping_amount, net_amount")
+              .select("id, sale_date, imported_at, order_id, product_id, product_name, sku, quantity, gross_amount, fee_amount, shipping_amount, net_amount, raw_data")
               .order("id", { ascending: true })
               .range(from, to),
         )
@@ -843,7 +852,7 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("external_sales")
-              .select("id, sale_date, product_name, sku, quantity, unit_cost, gross_amount, net_amount, payment_method, reference")
+              .select("id, sale_date, product_name, sku, quantity, unit_cost, gross_amount, fee_amount, shipping_amount, other_expense_amount, net_amount, payment_method, reference")
               .order("id", { ascending: true })
               .range(from, to),
         )
@@ -916,7 +925,7 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("product_cost_entries")
-              .select("product_id, variant_id, purchase_date, quantity, total_cost")
+              .select("id, product_id, variant_id, article_name, sku, purchase_date, quantity, total_cost, created_at")
               .order("purchase_date", { ascending: true })
               .range(from, to),
         )
@@ -959,6 +968,7 @@ export async function GET(request: Request) {
   )
   const costLedgers = buildCostLedgers(productCostsScan.rows)
   const itemUnitCosts = new Map<number, number | null>()
+  const marketplaceMerchandiseCosts = new Map<string, number | null>()
   let coveredUnits = 0
   let webUnits = 0
   let costOfGoodsSold = 0
@@ -978,11 +988,56 @@ export async function GET(request: Request) {
     }
     itemUnitCosts.set(item.id, unitCost)
   })
-  const marketplaceUnits = mlRows.reduce(
-    (total, row) => total + Math.max(Number(row.quantity ?? 0), 0),
-    0,
-  )
-  const totalCostableUnits = webUnits + marketplaceUnits
+
+  let marketplaceCostableUnits = 0
+  mlRows.forEach((row) => {
+    const costableUnits = getMercadoLibreCostableUnits(row)
+    const mapping = getMercadoLibreCostMapping(row)
+    const saleDate = String(row.sale_date ?? row.imported_at ?? "")
+    const unitCost =
+      mapping && saleDate
+        ? mapping.standalone_key
+          ? getStandaloneHistoricalUnitCost(
+              productCostsScan.rows,
+              mapping.standalone_key,
+              saleDate,
+            )
+          : mapping.product_id
+            ? getUnitCost(
+                costLedgers,
+                mapping.product_id,
+                mapping.variant_id,
+                saleDate,
+              )
+            : null
+        : null
+    const merchandiseCost =
+      costableUnits === 0
+        ? 0
+        : unitCost == null
+          ? null
+          : unitCost * costableUnits
+
+    marketplaceCostableUnits += costableUnits
+    if (merchandiseCost != null) {
+      coveredUnits += costableUnits
+      costOfGoodsSold += merchandiseCost
+    }
+    marketplaceMerchandiseCosts.set(String(row.id), merchandiseCost)
+  })
+
+  let externalUnits = 0
+  externalRows.forEach((row) => {
+    const quantity = Math.max(Number(row.quantity ?? 0), 0)
+    externalUnits += quantity
+    if (row.unit_cost != null) {
+      coveredUnits += quantity
+      costOfGoodsSold += Number(row.unit_cost) * quantity
+    }
+  })
+
+  const totalCostableUnits =
+    webUnits + marketplaceCostableUnits + externalUnits
   const costCoveragePercent = totalCostableUnits > 0
     ? (coveredUnits / totalCostableUnits) * 100
     : 100
@@ -1045,7 +1100,7 @@ export async function GET(request: Request) {
       total + Number(order.original_total ?? order.total ?? 0),
     0,
   )
-  const completedRefunds = paidCandidateOrders.reduce(
+  const webCompletedRefunds = paidCandidateOrders.reduce(
     (total, order) =>
       total +
       (order.financial_status === "refunded" || order.refunded_at
@@ -1081,7 +1136,7 @@ export async function GET(request: Request) {
     (total, order) => total + Number(order.shipping_cost_charged ?? 0),
     0,
   )
-  const shippingCost = paidCandidateOrders.reduce(
+  const webShippingCost = paidCandidateOrders.reduce(
     (total, order) =>
       total + Number(order.shipping_cost_real ?? order.andreani_costo ?? 0),
     0,
@@ -1110,6 +1165,36 @@ export async function GET(request: Request) {
 
     return total + Number(storedNet ?? gross - fee - shipping)
   }, 0)
+  const marketplaceRefunds = mlRows.reduce(
+    (total, row) => total + getMercadoLibreRefundAmount(row),
+    0,
+  )
+  const externalGrossSales = externalRows.reduce(
+    (total, row) => total + Number(row.gross_amount ?? 0),
+    0,
+  )
+  const externalFees = externalRows.reduce(
+    (total, row) => total + Number(row.fee_amount ?? 0),
+    0,
+  )
+  const externalShipping = externalRows.reduce(
+    (total, row) => total + Number(row.shipping_amount ?? 0),
+    0,
+  )
+  const externalOtherExpenses = externalRows.reduce(
+    (total, row) => total + Number(row.other_expense_amount ?? 0),
+    0,
+  )
+  const externalNet =
+    externalGrossSales -
+    externalFees -
+    externalShipping -
+    externalOtherExpenses
+  const webNetSales =
+    webGrossSales - webCompletedRefunds - transferDiscounts
+  const grossSales =
+    webGrossSales + marketplaceGrossSales + externalGrossSales
+  const netSales = webNetSales + marketplaceNet + externalNet
   const invoicedOrders = paidCandidateOrders.filter(
     (order) => order.invoice_status === "authorized",
   )
@@ -1136,10 +1221,10 @@ export async function GET(request: Request) {
     financialOrdersScan.complete &&
     orderItemsScan.complete &&
     marketplaceScan.complete &&
+    externalSalesScan.complete &&
     productCostsScan.complete &&
     expensesScan.complete
-  const knownOperatingResult =
-    webGrossSales - completedRefunds - shippingCost + marketplaceNet
+  const knownOperatingResult = netSales - webShippingCost
   const hasFullCostCoverage =
     scanComplete &&
     webOrdersWithoutItems.length === 0 &&
@@ -1182,19 +1267,22 @@ export async function GET(request: Request) {
   const financialSummary: DashboardFinancialSummary = {
     webGrossSales,
     marketplaceGrossSales,
-    grossSales: webGrossSales + marketplaceGrossSales,
-    completedRefunds,
+    externalGrossSales,
+    grossSales,
+    completedRefunds: webCompletedRefunds + marketplaceRefunds,
     pendingRefunds,
-    netSales: webGrossSales + marketplaceGrossSales - completedRefunds,
+    netSales,
     externalCollected,
     customerCreditUsed,
     shippingCharged,
-    shippingCost,
-    shippingBalance: shippingCharged - shippingCost,
+    shippingCost: webShippingCost + marketplaceShipping + externalShipping,
+    shippingBalance: shippingCharged - webShippingCost,
     transferDiscounts,
     marketplaceFees,
+    salesFees: marketplaceFees + externalFees,
     marketplaceShipping,
     marketplaceNet,
+    externalNet,
     inventoryPurchases,
     costOfGoodsSold,
     operatingExpensesPaid,
@@ -1202,8 +1290,8 @@ export async function GET(request: Request) {
     knownOperatingResult,
     trueProfit,
     trueMarginPercent:
-      trueProfit != null && webGrossSales + marketplaceGrossSales > 0
-        ? (trueProfit / (webGrossSales + marketplaceGrossSales)) * 100
+      trueProfit != null && grossSales > 0
+        ? (trueProfit / grossSales) * 100
         : null,
     costCoveragePercent,
     invoicedAmount: invoicedOrders.reduce(
@@ -1220,6 +1308,7 @@ export async function GET(request: Request) {
     negativeStockItems,
     ordersScanned: financialOrders.length,
     marketplaceRowsScanned: mlRows.length,
+    externalRowsScanned: externalRows.length,
     complete: scanComplete,
     generatedAt: new Date().toISOString(),
     warnings: financialWarnings,
@@ -1295,12 +1384,14 @@ export async function GET(request: Request) {
           const netAmount = Number(row.net_amount ?? grossAmount)
           const feeAmount = Number(row.fee_amount ?? 0)
           const shippingAmount = Number(row.shipping_amount ?? 0)
+          const marketplaceResult =
+            row.net_amount != null
+              ? netAmount
+              : grossAmount - feeAmount - shippingAmount
+          const costAmount =
+            marketplaceMerchandiseCosts.get(String(row.id)) ?? null
           const profitAmount =
-            row.net_amount != null || feeAmount || shippingAmount
-              ? row.net_amount != null
-                ? netAmount
-                : grossAmount - feeAmount - shippingAmount
-              : null
+            costAmount == null ? null : marketplaceResult - costAmount
 
           return {
             id: `ml-${String(row.id)}`,
@@ -1314,7 +1405,7 @@ export async function GET(request: Request) {
             sku: row.sku ? String(row.sku) : null,
             quantity,
             grossAmount,
-            costAmount: null,
+            costAmount,
             profitAmount,
             marginPercent:
               profitAmount !== null && grossAmount > 0

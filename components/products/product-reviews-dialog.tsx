@@ -435,7 +435,7 @@ export function ProductReviewsDialog({
 
                         {review.comment.trim() ? (
                           <p className="mt-3 text-15px leading-6 text-white/84">
-                            "{review.comment}"
+                            “{review.comment}”
                           </p>
                         ) : (
                           <p className="mt-3 text-15px font-semibold text-white/55">

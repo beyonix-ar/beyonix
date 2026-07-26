@@ -95,7 +95,7 @@ export function ProductReviews({ productId }: { productId: number }) {
 
             {review.comment.trim() ? (
               <p className="mt-3 text-sm leading-6 text-white/85">
-                "{review.comment}"
+                “{review.comment}”
               </p>
             ) : (
               <p className="mt-3 text-sm font-semibold text-white/55">

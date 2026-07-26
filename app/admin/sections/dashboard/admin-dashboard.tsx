@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import dynamic from "next/dynamic"
+import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   ArrowRight,
@@ -25,10 +27,7 @@ import {
   UserRound,
   X,
 } from "lucide-react"
-import * as XLSX from "xlsx"
 
-import type { AdminSection } from "../../admin-client"
-import { supabase } from "@/lib/supabase/client"
 import {
   type DashboardSearchItem,
   type DashboardSystemStatus,
@@ -39,19 +38,44 @@ import { useDashboard } from "@/hooks/use-dashboard"
 import { formatPrice } from "../productos/helpers"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { AdminDatePicker } from "../../components/admin-date-picker"
-import { AdminCostsPanel } from "./admin-costs-panel"
-import { AdminSalesLedger } from "./admin-sales-ledger"
-import { AdminMercadoLibreSales } from "./admin-mercadolibre-sales"
 import {
   AdminEmptyState,
   AdminSelect,
   AdminSkeleton,
   AdminStatCard,
 } from "../../components/admin-controls"
+import {
+  ADMIN_ROUTES,
+  type AdminRouteKey,
+} from "@/lib/admin/admin-routes"
 
-interface AdminDashboardProps {
-  onNavigate: (section: AdminSection) => void
+function DashboardPanelLoading() {
+  return (
+    <section
+      aria-busy="true"
+      aria-label="Cargando panel"
+      className="rounded-3xl border border-beyonix-blue-light/16 bg-black/20 p-5"
+    >
+      <AdminSkeleton rows={4} />
+    </section>
+  )
 }
+
+const AdminCostsPanel = dynamic(
+  () => import("./admin-costs-panel").then((module) => module.AdminCostsPanel),
+  { loading: DashboardPanelLoading, ssr: false },
+)
+const AdminSalesLedger = dynamic(
+  () => import("./admin-sales-ledger").then((module) => module.AdminSalesLedger),
+  { loading: DashboardPanelLoading, ssr: false },
+)
+const AdminMercadoLibreSales = dynamic(
+  () =>
+    import("./admin-mercadolibre-sales").then(
+      (module) => module.AdminMercadoLibreSales,
+    ),
+  { loading: DashboardPanelLoading, ssr: false },
+)
 
 type DashboardTab = "operativo" | "comercial" | "externas" | "ml" | "costos"
 type SalesChannel =
@@ -69,20 +93,6 @@ type SortKey =
   | "profitAmount"
   | "marginPercent"
   | "ticket"
-
-interface ImportedSale {
-  sale_date: string | null
-  operation_id: string | null
-  order_id: string | null
-  product_name: string
-  sku: string | null
-  quantity: number
-  gross_amount: number
-  fee_amount: number | null
-  shipping_amount: number | null
-  net_amount: number | null
-  raw_data: Record<string, unknown>
-}
 
 const HIDDEN_AMOUNT = "$******"
 const MONTHS = [
@@ -145,71 +155,6 @@ function matchesMetricYear(date: Date, selectedYear: string, today: Date) {
   const metricYear = selectedYear ? Number(selectedYear) : today.getFullYear()
 
   return date.getFullYear() === metricYear
-}
-
-function normalizeKey(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-}
-
-function pickValue(row: Record<string, unknown>, aliases: string[]) {
-  const byKey = new Map(
-    Object.keys(row).map((key) => [normalizeKey(key), row[key]])
-  )
-
-  for (const alias of aliases) {
-    const direct = byKey.get(normalizeKey(alias))
-    if (direct != null && String(direct).trim() !== "") return direct
-  }
-
-  for (const [key, value] of byKey) {
-    if (aliases.some((alias) => key.includes(normalizeKey(alias)))) {
-      if (value != null && String(value).trim() !== "") return value
-    }
-  }
-
-  return null
-}
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null
-  if (value == null) return null
-
-  const normalized = String(value)
-    .replace(/\$/g, "")
-    .replace(/\s/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-  const number = Number(normalized)
-  return Number.isFinite(number) ? number : null
-}
-
-function toDateString(value: unknown) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString()
-  }
-  if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value)
-    if (parsed) {
-      return new Date(
-        parsed.y,
-        parsed.m - 1,
-        parsed.d,
-        parsed.H,
-        parsed.M,
-        Math.floor(parsed.S)
-      ).toISOString()
-    }
-  }
-  if (value) {
-    const parsed = new Date(String(value))
-    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString()
-  }
-  return null
 }
 
 function maskAmount(value: string, hidden: boolean) {
@@ -459,7 +404,7 @@ function GlobalAdminSearch({
   onNavigate,
 }: {
   rows: DashboardSearchItem[]
-  onNavigate: (section: AdminSection) => void
+  onNavigate: (section: AdminRouteKey) => void
 }) {
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
@@ -2940,235 +2885,12 @@ function BarList({
   )
 }
 
-function parseMercadoLibreRows(rows: Record<string, unknown>[]) {
-  const warnings = new Set<string>()
-  const parsed = rows
-    .map<ImportedSale | null>((row) => {
-      const date = toDateString(
-        pickValue(row, ["Fecha", "Fecha de venta", "Fecha operación"])
-      )
-      const product =
-        pickValue(row, ["Producto", "Publicación", "Título", "Item"]) ?? ""
-      const quantity = toNumber(pickValue(row, ["Cantidad", "Unidades"])) ?? 1
-      const unitPrice = toNumber(
-        pickValue(row, ["Precio unitario", "Precio"])
-      )
-      const gross =
-        toNumber(
-          pickValue(row, ["Precio total", "Total", "Importe", "Monto"])
-        ) ??
-        (unitPrice !== null ? unitPrice * quantity : 0)
-      const fee = toNumber(
-        pickValue(row, ["Cargo por venta", "Comisión", "Comision"])
-      )
-      const shipping = toNumber(pickValue(row, ["Envío", "Envio"]))
-      const net = toNumber(
-        pickValue(row, ["Total recibido", "Neto recibido", "Dinero recibido"])
-      )
-
-      if (!date) warnings.add("No se detectó fecha en algunas filas.")
-      if (!product) warnings.add("No se detectó producto en algunas filas.")
-      if (!gross) warnings.add("No se detectó importe total en algunas filas.")
-
-      if (!product && !gross) return null
-
-      return {
-        sale_date: date,
-        operation_id:
-          String(pickValue(row, ["Operación", "Operacion"]) ?? "") || null,
-        order_id:
-          String(pickValue(row, ["Número de venta", "Venta", "Orden"]) ?? "") ||
-          null,
-        product_name: String(product || "Venta MercadoLibre"),
-        sku: String(pickValue(row, ["SKU", "Código", "Codigo"]) ?? "") || null,
-        quantity: Math.max(1, Math.trunc(quantity)),
-        gross_amount: gross,
-        fee_amount: fee,
-        shipping_amount: shipping,
-        net_amount: net,
-        raw_data: row,
-      }
-    })
-    .filter(Boolean) as ImportedSale[]
-
-  return {
-    rows: parsed,
-    warnings: [...warnings],
-  }
-}
-
-function MercadoLibreImporter({ onImported }: { onImported: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [fileName, setFileName] = useState("")
-  const [rows, setRows] = useState<ImportedSale[]>([])
-  const [warnings, setWarnings] = useState<string[]>([])
-  const [error, setError] = useState("")
-  const [saving, setSaving] = useState(false)
-
-  const handleFile = async (file: File) => {
-    setError("")
-    setRows([])
-    setWarnings([])
-    setFileName(file.name)
-
-    try {
-      const buffer = await file.arrayBuffer()
-      const workbook = XLSX.read(buffer, { type: "array", cellDates: true })
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const jsonRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-        defval: "",
-      })
-      const result = parseMercadoLibreRows(jsonRows)
-
-      if (!result.rows.length) {
-        setError("No se detectaron ventas importables en el archivo.")
-        return
-      }
-
-      setRows(result.rows)
-      setWarnings(result.warnings)
-    } catch {
-      setError("No se pudo leer el archivo. Revisá que sea .xlsx o .csv válido.")
-    }
-  }
-
-  const confirmImport = async () => {
-    setSaving(true)
-    setError("")
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      const response = await fetch("/api/admin/mercadolibre-sales/import", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? ""}`,
-        },
-        body: JSON.stringify({
-          sourceFileName: fileName,
-          rows,
-        }),
-      })
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || "No se pudo importar el archivo.")
-      }
-
-      setRows([])
-      setWarnings([])
-      setFileName("")
-      onImported()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo importar.")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
-      <SectionHeader
-        eyebrow="MercadoLibre"
-        title="Importar ventas"
-        action={
-          <>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".xlsx,.csv"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void handleFile(file)
-              }}
-            />
-            <button
-              type="button"
-              aria-label="Importar ventas MercadoLibre"
-              onClick={() => inputRef.current?.click()}
-              className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-white/90"
-            >
-              <FileUp className="size-4" />
-              Importar ventas MercadoLibre
-            </button>
-          </>
-        }
-      />
-
-      {error && (
-        <p className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </p>
-      )}
-
-      {warnings.length > 0 && (
-        <div className="space-y-1 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-          {warnings.map((warning) => (
-            <p key={warning}>{warning}</p>
-          ))}
-        </div>
-      )}
-
-      {rows.length > 0 && (
-        <div className="mt-4 space-y-4">
-          <p className="text-sm text-white/58">
-            Previsualización de {rows.length} ventas desde {fileName}.
-          </p>
-          <div className="overflow-x-auto rounded-2xl border border-white/7 bg-black">
-            <table className="min-w-720px w-full text-left text-sm">
-              <thead className="text-11px uppercase tracking-widest text-white/45">
-                <tr>
-                  {["Fecha", "Producto", "SKU", "Cantidad", "Total", "Neto"].map(
-                    (header) => (
-                      <th key={header} className="px-4 py-3 font-black">
-                        {header}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 6).map((row, index) => (
-                  <tr key={`${row.product_name}-${index}`} className="border-t border-white/6">
-                    <td className="px-4 py-3 text-white/60">
-                      {row.sale_date ? formatDate(row.sale_date) : "Sin fecha"}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-white">
-                      {row.product_name}
-                    </td>
-                    <td className="px-4 py-3 text-white/60">{row.sku || "-"}</td>
-                    <td className="px-4 py-3 text-white/60">{row.quantity}</td>
-                    <td className="px-4 py-3 text-white/60">
-                      {formatPrice(row.gross_amount)}
-                    </td>
-                    <td className="px-4 py-3 text-white/60">
-                      {row.net_amount != null ? formatPrice(row.net_amount) : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <button
-            type="button"
-            aria-label="Confirmar importación"
-            disabled={saving}
-            onClick={() => void confirmImport()}
-            className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-beyonix-blue px-5 text-sm font-black text-white transition hover:bg-[#112A43] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Confirmar importación
-          </button>
-        </div>
-      )}
-    </section>
+export function AdminDashboard() {
+  const router = useRouter()
+  const onNavigate = useCallback(
+    (section: AdminRouteKey) => router.push(ADMIN_ROUTES[section]),
+    [router],
   )
-}
-
-export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const { stock: stockSettings } = useSiteSettings()
   const {
     stats,
@@ -3641,24 +3363,24 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   </div>
                   <p className="text-right text-11px font-semibold text-white/38">
                     Corte: {formatDate(financialSummary.generatedAt)}<br />
-                    {financialSummary.ordersScanned} pedidos · {financialSummary.marketplaceRowsScanned} ventas marketplace
+                    {financialSummary.ordersScanned} web · {financialSummary.externalRowsScanned} externas · {financialSummary.marketplaceRowsScanned} ML
                   </p>
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-                  <FinancialMetric label="Ventas brutas" value={maskAmount(formatPrice(financialSummary.grossSales), hiddenValues)} detail="Web + marketplace" />
-                  <FinancialMetric label="Ventas netas" value={maskAmount(formatPrice(financialSummary.netSales), hiddenValues)} detail="Luego de reintegros" tone="positive" />
-                  <FinancialMetric label="Cobro externo" value={maskAmount(formatPrice(financialSummary.externalCollected), hiddenValues)} detail="Dinero por pasarelas" />
+                  <FinancialMetric label="Ventas brutas" value={maskAmount(formatPrice(financialSummary.grossSales), hiddenValues)} detail="Web + externas + Mercado Libre" />
+                  <FinancialMetric label="Ventas netas" value={maskAmount(formatPrice(financialSummary.netSales), hiddenValues)} detail="Luego de cargos, descuentos y reintegros" tone="positive" />
+                  <FinancialMetric label="Cobros web" value={maskAmount(formatPrice(financialSummary.externalCollected), hiddenValues)} detail="Dinero cobrado por pasarelas" />
                   <FinancialMetric label="Saldo aplicado" value={maskAmount(formatPrice(financialSummary.customerCreditUsed), hiddenValues)} detail="Saldo interno usado" />
-                  <FinancialMetric label="Reintegrado" value={maskAmount(formatPrice(financialSummary.completedRefunds), hiddenValues)} detail={`${financialSummary.paidOrders} pedidos pagos`} tone={financialSummary.completedRefunds > 0 ? "danger" : "neutral"} />
+                  <FinancialMetric label="Reintegrado" value={maskAmount(formatPrice(financialSummary.completedRefunds), hiddenValues)} detail="Web + Mercado Libre" tone={financialSummary.completedRefunds > 0 ? "danger" : "neutral"} />
                   <FinancialMetric label="Facturado ARCA" value={maskAmount(formatPrice(financialSummary.invoicedAmount), hiddenValues)} detail={`${financialSummary.invoicedOrders} comprobantes`} />
                 </div>
 
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                   <FinancialMetric label="Envíos cobrados" value={maskAmount(formatPrice(financialSummary.shippingCharged), hiddenValues)} detail="Cobrado al cliente" />
-                  <FinancialMetric label="Costo logístico" value={maskAmount(formatPrice(financialSummary.shippingCost), hiddenValues)} detail="Costo real registrado" tone={financialSummary.shippingCost > financialSummary.shippingCharged ? "warning" : "neutral"} />
-                  <FinancialMetric label="Resultado envíos" value={maskAmount(formatPrice(financialSummary.shippingBalance), hiddenValues)} detail="Cobrado menos costo" tone={financialSummary.shippingBalance >= 0 ? "positive" : "danger"} />
-                  <FinancialMetric label="Comisiones" value={maskAmount(formatPrice(financialSummary.marketplaceFees), hiddenValues)} detail="Marketplace" tone={financialSummary.marketplaceFees > 0 ? "warning" : "neutral"} />
+                  <FinancialMetric label="Costo logístico" value={maskAmount(formatPrice(financialSummary.shippingCost), hiddenValues)} detail="Web + externas + Mercado Libre" tone={financialSummary.shippingCost > 0 ? "warning" : "neutral"} />
+                  <FinancialMetric label="Resultado envíos web" value={maskAmount(formatPrice(financialSummary.shippingBalance), hiddenValues)} detail="Cobrado menos costo web" tone={financialSummary.shippingBalance >= 0 ? "positive" : "danger"} />
+                  <FinancialMetric label="Comisiones" value={maskAmount(formatPrice(financialSummary.salesFees), hiddenValues)} detail="Externas + Mercado Libre" tone={financialSummary.salesFees > 0 ? "warning" : "neutral"} />
                   <FinancialMetric label="Descuentos" value={maskAmount(formatPrice(financialSummary.transferDiscounts), hiddenValues)} detail="Transferencias" />
                   <FinancialMetric label="Resultado conocido" value={maskAmount(formatPrice(financialSummary.knownOperatingResult), hiddenValues)} detail="Antes de mercadería e impuestos" tone={financialSummary.knownOperatingResult >= 0 ? "positive" : "danger"} />
                 </div>

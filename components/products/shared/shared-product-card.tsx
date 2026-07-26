@@ -74,16 +74,16 @@ export default function SharedProductCard({
   const defaultVariant =
     getDefaultVariantOption(product)
 
-  if (!defaultVariant) return null
-
   const image =
-    defaultVariant.images[0]
+    defaultVariant?.images[0]
 
   const quantity =
-    getQuantity(
-      product.id,
-      defaultVariant.value
-    )
+    defaultVariant
+      ? getQuantity(
+          product.id,
+          defaultVariant.value
+        )
+      : 0
 
   const discountPercentage =
     product.precio_anterior &&
@@ -141,6 +141,8 @@ export default function SharedProductCard({
       }
     }
   }, [])
+
+  if (!defaultVariant) return null
 
   const showFavoriteFeedback = (message: string) => {
     setFavoriteFeedback(message)

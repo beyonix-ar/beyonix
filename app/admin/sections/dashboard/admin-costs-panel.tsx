@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import {
   AlertTriangle,
   Boxes,
@@ -23,10 +30,22 @@ import {
   type ProductCostEntry,
   updateBusinessCost,
 } from "@/lib/supabase/queries/business-costs"
+import {
+  uniqueAutocompleteValues,
+  withoutTrailingProductColor,
+} from "@/lib/admin/product-name-autocomplete"
 import { formatPrice } from "../productos/helpers"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 
 type CostMode = "product" | "expense"
+type PurchaseSortKey =
+  | "product"
+  | "unitCost"
+  | "subtotal"
+  | "supplier"
+  | "date"
+  | "quantity"
+type PurchaseSortDirection = "asc" | "desc"
 
 const inputClass =
   "h-10 min-w-0 w-full rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-center text-sm font-bold text-white outline-none transition placeholder:text-white/28 hover:border-beyonix-sky/30 focus:border-beyonix-sky/55"
@@ -96,6 +115,46 @@ function MoneyInput({ value, onChange, placeholder = "0" }: {
         className={`${inputClass} pl-7`}
       />
     </div>
+  )
+}
+
+function HistoryAutocompleteInput({
+  value,
+  suggestions,
+  onChange,
+  placeholder,
+  maxLength,
+  autoFocus = false,
+}: {
+  value: string
+  suggestions: string[]
+  onChange: (value: string) => void
+  placeholder: string
+  maxLength?: number
+  autoFocus?: boolean
+}) {
+  const listId = useId()
+
+  return (
+    <>
+      <input
+        value={value}
+        list={suggestions.length ? listId : undefined}
+        onChange={(event) => onChange(event.target.value)}
+        className={inputClass}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        autoFocus={autoFocus}
+        autoComplete="off"
+      />
+      {suggestions.length > 0 && (
+        <datalist id={listId}>
+          {suggestions.map((suggestion) => (
+            <option key={suggestion} value={suggestion} />
+          ))}
+        </datalist>
+      )}
+    </>
   )
 }
 
@@ -285,10 +344,16 @@ function ModernSelect({
   value,
   options,
   onChange,
+  ariaLabel,
+  compact = false,
+  centered = false,
 }: {
   value: string
   options: Array<{ value: string; label: string }>
   onChange: (value: string) => void
+  ariaLabel?: string
+  compact?: boolean
+  centered?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -307,13 +372,16 @@ function ModernSelect({
     <div ref={rootRef} className="relative">
       <button
         type="button"
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`${inputClass} flex cursor-pointer items-center justify-between gap-3 px-4 hover:bg-beyonix-blue/12`}
+        className={`${inputClass} flex cursor-pointer items-center justify-between gap-3 hover:bg-beyonix-blue/12 ${compact ? "!h-8 !rounded-lg !px-3 !text-xs" : "px-4"}`}
       >
         <span className="w-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{selected?.label ?? "Seleccionar"}</span>
+        <span className={`min-w-0 flex-1 truncate ${centered ? "text-center" : ""}`}>
+          {selected?.label ?? "Seleccionar"}
+        </span>
         <ChevronDown className={`size-4 shrink-0 text-beyonix-sky transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
@@ -330,10 +398,14 @@ function ModernSelect({
                   onChange(option.value)
                   setOpen(false)
                 }}
-                className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${active ? "bg-beyonix-blue/55 text-white" : "text-white/68 hover:bg-beyonix-blue/24 hover:text-white"}`}
+                className={`relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${centered ? "justify-center text-center" : "justify-between"} ${active ? "bg-beyonix-blue/55 text-white" : "text-white/68 hover:bg-beyonix-blue/24 hover:text-white"}`}
               >
                 <span>{option.label}</span>
-                {active && <Check className="size-4 text-emerald-300" />}
+                {active && (
+                  <Check
+                    className={`size-4 text-emerald-300 ${centered ? "absolute right-3" : ""}`}
+                  />
+                )}
               </button>
             )
           })}
@@ -343,7 +415,7 @@ function ModernSelect({
   )
 }
 
-export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
+export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const productFormRef = useRef<HTMLElement>(null)
   const [data, setData] = useState<BusinessCostsData | null>(null)
   const [mode, setMode] = useState<CostMode>("product")
@@ -351,6 +423,9 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
+  const [purchaseSort, setPurchaseSort] = useState<PurchaseSortKey>("date")
+  const [purchaseSortDirection, setPurchaseSortDirection] =
+    useState<PurchaseSortDirection>("desc")
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [article, setArticle] = useState("")
   const [customArticleName, setCustomArticleName] = useState("")
@@ -411,6 +486,143 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
     })
     return names
   }, [data])
+
+  const getProductCostName = useCallback(
+    (item: ProductCostEntry) => {
+      const key =
+        item.product_id == null
+          ? ""
+          : item.variant_id
+            ? `v:${item.product_id}:${item.variant_id}`
+            : `p:${item.product_id}`
+
+      return (
+        item.article_name ||
+        productNames.get(key) ||
+        (item.product_id == null
+          ? "Artículo no catalogado"
+          : `Producto #${item.product_id}`)
+      )
+    },
+    [productNames],
+  )
+
+  const historicalArticleNames = useMemo(
+    () => (data?.productCosts ?? []).map(getProductCostName),
+    [data?.productCosts, getProductCostName],
+  )
+
+  const articleNameSuggestions = useMemo(
+    () =>
+      uniqueAutocompleteValues([
+        ...historicalArticleNames.map(withoutTrailingProductColor),
+        ...(data?.catalog ?? []).map((product) =>
+          withoutTrailingProductColor(product.nombre),
+        ),
+      ]),
+    [data?.catalog, historicalArticleNames],
+  )
+
+  const latestArticleBase =
+    withoutTrailingProductColor(historicalArticleNames[0] ?? "")
+
+  const supplierSuggestions = useMemo(
+    () =>
+      uniqueAutocompleteValues([
+        ...(data?.productCosts ?? []).map((item) => item.supplier),
+        ...(data?.expenses ?? []).map((item) => item.supplier),
+      ]),
+    [data?.expenses, data?.productCosts],
+  )
+
+  const paymentMethodSuggestions = useMemo(
+    () =>
+      uniqueAutocompleteValues([
+        ...(data?.productCosts ?? []).map((item) => item.payment_method),
+        ...(data?.expenses ?? []).map((item) => item.payment_method),
+      ]),
+    [data?.expenses, data?.productCosts],
+  )
+
+  const notesSuggestions = useMemo(
+    () =>
+      uniqueAutocompleteValues([
+        ...(data?.productCosts ?? []).map((item) => item.notes),
+        ...(data?.expenses ?? []).map((item) => item.notes),
+      ]),
+    [data?.expenses, data?.productCosts],
+  )
+
+  const sortedProductCosts = useMemo(() => {
+    const rows = [...(data?.productCosts ?? [])]
+    const compareText = (left: string, right: string) =>
+      left.localeCompare(right, "es", {
+        sensitivity: "base",
+        numeric: true,
+      })
+
+    rows.sort((left, right) => {
+      let comparison = 0
+
+      switch (purchaseSort) {
+        case "product":
+          comparison = compareText(
+            getProductCostName(left),
+            getProductCostName(right),
+          )
+          break
+        case "unitCost":
+          comparison = Number(left.unit_cost) - Number(right.unit_cost)
+          break
+        case "subtotal":
+          comparison = Number(left.total_cost) - Number(right.total_cost)
+          break
+        case "supplier": {
+          const leftSupplier = left.supplier?.trim()
+          const rightSupplier = right.supplier?.trim()
+          if (!leftSupplier && !rightSupplier) return 0
+          if (!leftSupplier) return 1
+          if (!rightSupplier) return -1
+          comparison = compareText(leftSupplier, rightSupplier)
+          break
+        }
+        case "quantity":
+          comparison = Number(left.quantity) - Number(right.quantity)
+          break
+        case "date":
+        default: {
+          comparison = left.purchase_date.localeCompare(
+            right.purchase_date,
+          )
+          comparison ||= left.created_at.localeCompare(right.created_at)
+          break
+        }
+      }
+
+      return purchaseSortDirection === "desc" ? -comparison : comparison
+    })
+
+    return rows
+  }, [
+    data?.productCosts,
+    getProductCostName,
+    purchaseSort,
+    purchaseSortDirection,
+  ])
+
+  const purchaseSortDirectionOptions = useMemo(
+    () =>
+      purchaseSort === "product" || purchaseSort === "supplier"
+        ? [
+            { value: "desc", label: "Mayor a menor (Z–A)" },
+            { value: "asc", label: "Menor a mayor (A–Z)" },
+          ]
+        : [
+            { value: "desc", label: "Mayor a menor" },
+            { value: "asc", label: "Menor a mayor" },
+          ],
+    [purchaseSort],
+  )
 
   const productInvestment = data?.productCosts.reduce(
     (total, item) => total + Number(item.total_cost),
@@ -530,7 +742,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
       resetProductForm()
       setMessage(successMessage)
       await load()
-      onChanged()
+      onChanged?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo guardar la compra.")
     } finally {
@@ -609,7 +821,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
       setExpenseNotes("")
       setMessage("Gasto guardado correctamente.")
       await load()
-      onChanged()
+      onChanged?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo guardar el gasto.")
     } finally {
@@ -630,7 +842,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
       await deleteBusinessCost(kind, id)
       if (kind === "product" && editingProductId === id) resetProductForm()
       await load()
-      onChanged()
+      onChanged?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo eliminar el movimiento.")
     }
@@ -687,7 +899,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
                   products={data?.catalog ?? []}
                   onChange={(value) => {
                     setArticle(value)
-                    if (value !== "custom") setCustomArticleName("")
+                    if (value === "custom") {
+                      setCustomArticleName(latestArticleBase)
+                    } else {
+                      setCustomArticleName("")
+                    }
                     const selectedProduct = data?.catalog.find(
                       (product) =>
                         value ===
@@ -701,10 +917,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
               </Field>
               {article === "custom" && (
                 <Field label="Nombre del artículo" className="md:col-span-2 xl:col-span-2">
-                  <input
+                  <HistoryAutocompleteInput
                     value={customArticleName}
-                    onChange={(event) => setCustomArticleName(event.target.value)}
-                    className={inputClass}
+                    suggestions={articleNameSuggestions}
+                    onChange={setCustomArticleName}
                     placeholder="Ej. cajas para envíos"
                     maxLength={180}
                     autoFocus
@@ -723,15 +939,15 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
               <Field label="Fecha compra"><AdminDatePicker title="Fecha compra" ariaLabel="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} centered /></Field>
               <Field label="Cantidad"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
               <Field label="Costo unitario"><MoneyInput value={unitCost} onChange={setUnitCost} /></Field>
-              <Field label="Proveedor"><input value={productSupplier} onChange={(event) => setProductSupplier(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
+              <Field label="Proveedor"><HistoryAutocompleteInput value={productSupplier} suggestions={supplierSuggestions} onChange={setProductSupplier} placeholder="Opcional" /></Field>
               <Field label="Flete"><MoneyInput value={freightCost} onChange={setFreightCost} /></Field>
               <Field label="Impuestos"><MoneyInput value={taxCost} onChange={setTaxCost} /></Field>
               <Field label="Comisiones"><MoneyInput value={commissionCost} onChange={setCommissionCost} /></Field>
               <Field label="Otros costos"><MoneyInput value={otherCost} onChange={setOtherCost} /></Field>
               <Field label="Comprobante"><input value={productDocumentType} onChange={(event) => setProductDocumentType(event.target.value)} className={inputClass} placeholder="Factura, recibo" /></Field>
               <Field label="Número"><input value={productDocumentNumber} onChange={(event) => setProductDocumentNumber(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
-              <Field label="Medio pago"><input value={productPaymentMethod} onChange={(event) => setProductPaymentMethod(event.target.value)} className={inputClass} placeholder="Transferencia" /></Field>
-              <Field label="Notas" className="xl:col-span-2"><input value={productNotes} onChange={(event) => setProductNotes(event.target.value)} className={inputClass} placeholder="Detalle adicional" /></Field>
+              <Field label="Medio pago"><HistoryAutocompleteInput value={productPaymentMethod} suggestions={paymentMethodSuggestions} onChange={setProductPaymentMethod} placeholder="Transferencia" /></Field>
+              <Field label="Notas" className="xl:col-span-2"><HistoryAutocompleteInput value={productNotes} suggestions={notesSuggestions} onChange={setProductNotes} placeholder="Detalle adicional" /></Field>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               {editingProductId && (
@@ -744,10 +960,62 @@ export function AdminCostsPanel({ onChanged }: { onChanged: () => void }) {
           </section>
 
           <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[#071018] p-4 sm:p-5">
-            <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-black text-white">Historial de compras</h3><span className="text-xs font-bold text-white/38">{data?.productCosts.length ?? 0} registros</span></div>
+            <div className="mb-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center">
+              <h3 className="text-base font-black text-white">
+                Historial de compras
+              </h3>
+              <div className="flex flex-wrap items-center justify-center gap-2 justify-self-center">
+                <div className="flex items-center rounded-xl border border-beyonix-blue-light/18 bg-black/22 p-1.5 pl-2.5">
+                  <span className="mr-2 whitespace-nowrap text-10px font-black uppercase tracking-wider text-white/42">
+                    Ordenar por:
+                  </span>
+                  <div className="w-180px">
+                    <ModernSelect
+                      ariaLabel="Ordenar historial de compras por"
+                      value={purchaseSort}
+                      onChange={(value) =>
+                        setPurchaseSort(value as PurchaseSortKey)
+                      }
+                      options={[
+                        { value: "product", label: "Producto" },
+                        { value: "unitCost", label: "Precio unitario" },
+                        { value: "subtotal", label: "Subtotal" },
+                        { value: "supplier", label: "Proveedor" },
+                        { value: "date", label: "Fecha" },
+                        { value: "quantity", label: "Cantidad" },
+                      ]}
+                      compact
+                      centered
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center rounded-xl border border-beyonix-blue-light/18 bg-black/22 p-1.5 pl-2.5">
+                  <span className="mr-2 whitespace-nowrap text-10px font-black uppercase tracking-wider text-white/42">
+                    Dirección:
+                  </span>
+                  <div className="w-190px">
+                    <ModernSelect
+                      ariaLabel="Dirección del orden del historial de compras"
+                      value={purchaseSortDirection}
+                      onChange={(value) =>
+                        setPurchaseSortDirection(
+                          value === "asc" ? "asc" : "desc",
+                        )
+                      }
+                      options={purchaseSortDirectionOptions}
+                      compact
+                      centered
+                    />
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs font-bold text-white/38 md:justify-self-end">
+                {data?.productCosts.length ?? 0} registros
+              </span>
+            </div>
             <div className="overflow-x-auto rounded-2xl border border-white/7">
               <table className="w-full min-w-1100px text-sm"><thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42"><tr><th className="px-3 py-2.5 text-center">Fecha</th><th className="px-3 py-2.5 text-left">Artículo</th><th className="px-3 py-2.5 text-center">SKU</th><th className="px-3 py-2.5 text-center">Cantidad</th><th className="px-3 py-2.5 text-center">Unitario</th><th className="px-3 py-2.5 text-center">Extras</th><th className="px-3 py-2.5 text-center">Total</th><th className="px-3 py-2.5 text-center">Proveedor</th><th className="px-3 py-2.5 text-center">Acción</th></tr></thead>
-                <tbody>{data?.productCosts.map((item) => { const key = item.product_id == null ? "" : item.variant_id ? `v:${item.product_id}:${item.variant_id}` : `p:${item.product_id}`; const articleLabel = item.article_name || productNames.get(key) || (item.product_id == null ? "Artículo no catalogado" : `Producto #${item.product_id}`); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3 text-center">{item.purchase_date}</td><td className="px-3 py-3 text-left font-bold text-white">{articleLabel}</td><td className="px-3 py-3 text-center font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 text-center tabular-nums">{item.quantity}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(Number(item.unit_cost))}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 text-center font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3 text-center">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
+                <tbody>{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3 text-center">{item.purchase_date}</td><td className="px-3 py-3 text-left font-bold text-white">{articleLabel}</td><td className="px-3 py-3 text-center font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 text-center tabular-nums">{item.quantity}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(Number(item.unit_cost))}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 text-center font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3 text-center">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
               </table>
               {!data?.productCosts.length && <p className="px-4 py-8 text-center text-sm text-white/42">Todavía no registraste compras.</p>}
             </div>

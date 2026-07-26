@@ -10,6 +10,7 @@ import {
   isAdminClaimSensitiveNotification,
   isAdminSensitiveNotification,
 } from "@/lib/admin/admin-sensitive-visuals"
+import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { formatARS } from "@/lib/customer-credit"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
 
@@ -508,7 +509,7 @@ async function getCreditAdminNotifications() {
       title: "Nuevo comprobante para cargar saldo",
       body: `${formatProfileDetails(profile)} · Revisá la transferencia e ingresá el monto recibido${topup.proof_file_name ? ` · Archivo: ${topup.proof_file_name}` : ""}`,
       actionLabel: "Revisar en Clientes",
-      actionUrl: "/admin?section=clientes",
+      actionUrl: ADMIN_ROUTES.clientes,
       isRead: false,
     })
   }
@@ -527,7 +528,7 @@ async function getCreditAdminNotifications() {
       title: "Gift Card enviada",
       body: `${formatARS(Number(movement.amount ?? 0))} · De: ${formatProfileDetails(senderProfile)} · Para: ${formatProfileDetails(recipientProfile)}${message ? ` · Mensaje: ${message}` : ""}`,
       actionLabel: "Ver GiftCard",
-      actionUrl: "/admin?section=creditos",
+      actionUrl: ADMIN_ROUTES.giftcard,
       isRead: false,
     })
   }
@@ -819,7 +820,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           eventAt: createdAt,
           title: "Pedido nuevo",
           body: `Ingresó el pedido ${formatOrderId(orderId)}.`,
-          actionUrl: `/admin/pedidos/${orderId}`,
+          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}`,
           orderId,
           isRead: false,
         })
@@ -840,7 +841,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           title: "Nuevo comprobante recibido",
           body: `Pedido ${formatOrderId(orderId)}`,
           actionLabel: "Ver comprobante",
-          actionUrl: `/admin/pedidos/${orderId}?tab=pago`,
+          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=pago`,
           orderId,
           isRead: false,
         })
@@ -862,7 +863,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           eventAt: String(order.paid_at || order.created_at),
           title: "Factura por emitir",
           body: `El pedido ${formatOrderId(orderId)} está listo para facturar.`,
-          actionUrl: `/admin/pedidos/${orderId}?tab=facturacion`,
+          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=facturacion`,
           orderId,
           isRead: false,
         })
@@ -879,7 +880,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           title: "Envío pendiente",
           body: `El pedido ${formatOrderId(orderId)} ya está facturado y listo para preparar/enviar.`,
           actionLabel: "Ver envío",
-          actionUrl: `/admin/pedidos/${orderId}?tab=envio`,
+          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=envio`,
           orderId,
           isRead: false,
         })
@@ -923,7 +924,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           title: cancellationContent.title,
           body: cancellationContent.body,
           actionLabel: "Ver cancelación",
-          actionUrl: `/admin/pedidos/${orderId}?tab=cancelacion`,
+          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=cancelacion`,
           orderId,
           isRead: false,
           priority: cancellationContent.priority,
@@ -947,7 +948,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         body: helpMessage
           ? `El mensaje de ayuda del pedido ${formatOrderId(orderId)} requiere atención.`
           : `El reclamo del pedido ${formatOrderId(orderId)} requiere atención.`,
-        actionUrl: `/admin/pedidos/${orderId}?tab=reclamos`,
+        actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=reclamos`,
         orderId,
         isRead: false,
       })
@@ -972,7 +973,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         eventAt: String(message.created_at),
         title: "Mensaje nuevo",
         body: body.length > 110 ? `${body.slice(0, 107)}...` : body,
-        actionUrl: `/admin/pedidos/${orderId}?tab=reclamos`,
+        actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=reclamos`,
         orderId,
         isRead: false,
       })

@@ -1,13 +1,15 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import { usePathname } from "next/navigation"
 
-const DEFAULT_TITLE = "BEYONIX | Tecnología para tu comodidad"
 const AWAY_TITLE = "💙 Seguimos conectados..."
 const TITLE_INTERVAL_MS = 1500
 
 export function BrowserTabTitle() {
+  const pathname = usePathname()
   const intervalRef = useRef<number | null>(null)
+  const visibleTitleRef = useRef("BEYONIX | Tecnología para tu comodidad")
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -23,14 +25,15 @@ export function BrowserTabTitle() {
 
     const restoreTitle = () => {
       clearTitleInterval()
-      document.title = DEFAULT_TITLE
+      document.title = visibleTitleRef.current
     }
 
     const startTitleInterval = () => {
       clearTitleInterval()
       document.title = AWAY_TITLE
       intervalRef.current = window.setInterval(() => {
-        document.title = document.title === AWAY_TITLE ? DEFAULT_TITLE : AWAY_TITLE
+        document.title =
+          document.title === AWAY_TITLE ? visibleTitleRef.current : AWAY_TITLE
       }, TITLE_INTERVAL_MS)
     }
 
@@ -43,14 +46,15 @@ export function BrowserTabTitle() {
       restoreTitle()
     }
 
+    visibleTitleRef.current = document.title
     restoreTitle()
     document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange)
-      restoreTitle()
+      clearTitleInterval()
     }
-  }, [])
+  }, [pathname])
 
   return null
 }
