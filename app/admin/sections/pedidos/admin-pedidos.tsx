@@ -21,6 +21,7 @@ import {
   MapPin,
   MessageCircle,
   Package,
+  Pencil,
   Printer,
   RefreshCw,
   Settings2,
@@ -52,7 +53,6 @@ import {
 import { supabase } from "@/lib/supabase/client"
 import {
   isAdminOrderSummarySeen,
-  isAdminPaymentProofSeen,
   markAdminOrderSummarySeen,
   markAdminPaymentProofSeen,
 } from "@/lib/admin/order-event-views"
@@ -114,6 +114,7 @@ type ForcedStatusRequest = {
 type TrackingStatusRequest = {
   pedido: SupabasePedido
   nextEstado: string
+  mode?: "status-change" | "edit"
 } | null
 type ShippingModalityOption = "andreani" | "otro"
 type ShippingDetailsPayload = {
@@ -716,7 +717,7 @@ type RecommendedAction = {
   title: string
   description: string
   target: AdminOrderDetailView
-  buttonLabel: string
+  buttonLabel: string | null
   tone: "urgent" | "warning" | "info" | "success"
 }
 
@@ -951,7 +952,7 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
     title: "Pedido cerrado, sin acciones pendientes",
     description: "No hay tareas críticas pendientes para este pedido.",
     target: "resumen",
-    buttonLabel: "Ver resumen",
+    buttonLabel: null,
     tone: "success",
   }
 }
@@ -2987,13 +2988,15 @@ function AdminOrderSummaryDashboard({
             <div className="min-w-0">
               <p className="truncate text-sm font-black text-white">{action.title}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => onGoToView(action.target)}
-              className="admin-ds-button admin-ds-button-primary mt-2 inline-flex h-8 cursor-pointer items-center justify-center px-3 text-10px font-black uppercase tracking-wide transition"
-            >
-              {action.buttonLabel}
-            </button>
+            {action.buttonLabel && (
+              <button
+                type="button"
+                onClick={() => onGoToView(action.target)}
+                className="admin-ds-button admin-ds-button-primary mt-2 inline-flex h-8 cursor-pointer items-center justify-center px-3 text-10px font-black uppercase tracking-wide transition"
+              >
+                {action.buttonLabel}
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -3687,6 +3690,7 @@ function PedidoDetailModal({
   onClose,
   onOpenPaymentProof,
   onEstadoChange,
+  onEditTracking,
   onShippingDetailsChange,
   onPaymentStatusChange,
   onAndreaniAction,
@@ -3704,6 +3708,7 @@ function PedidoDetailModal({
   onClose: () => void
   onOpenPaymentProof: (pedidoId: number) => Promise<boolean>
   onEstadoChange: (pedido: SupabasePedido, nextEstado: string) => void
+  onEditTracking: (pedido: SupabasePedido) => void
   onShippingDetailsChange: (
     pedidoId: number,
     estado: string,
@@ -3771,7 +3776,6 @@ function PedidoDetailModal({
   } | null>(null)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [invoiceDownloading, setInvoiceDownloading] = useState(false)
-  const [paymentProofSeen, setPaymentProofSeen] = useState(true)
   const [orderSummarySeen, setOrderSummarySeen] = useState(true)
   const [invoiceNotice, setInvoiceNotice] = useState<{
     ok: boolean
@@ -3789,9 +3793,9 @@ function PedidoDetailModal({
   const [detailMenuCollapsed, setDetailMenuCollapsed] = useState(false)
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
-    pedido.payment_status === "en_revision" &&
     Boolean(pedido.payment_proof_url) &&
-    !paymentProofSeen
+    !isOrderPaymentConfirmed(pedido) &&
+    !isRejectedPayment(pedido.payment_status)
   const pendingClaim = (pedido.order_claims ?? []).find(
     (claim) =>
       claim.admin_needs_action ||
@@ -3889,40 +3893,6 @@ function PedidoDetailModal({
     pedido.created_at,
     pedido.id,
     showOrderSummaryIndicator,
-  ])
-
-  useEffect(() => {
-    let active = true
-    setPaymentProofSeen(true)
-
-    if (!pedido.payment_proof_url || !pedido.payment_proof_uploaded_at) return
-
-    void isAdminPaymentProofSeen(
-      pedido.id,
-      pedido.payment_proof_uploaded_at,
-    ).then((seen) => {
-      if (active) setPaymentProofSeen(seen)
-    })
-
-    return () => {
-      active = false
-    }
-  }, [pedido.id, pedido.payment_proof_uploaded_at, pedido.payment_proof_url])
-
-  useEffect(() => {
-    if (activeView !== "pago") return
-    if (!showPaymentProofIndicator) return
-
-    setPaymentProofSeen(true)
-    void markAdminPaymentProofSeen(
-      pedido.id,
-      pedido.payment_proof_uploaded_at,
-    )
-  }, [
-    activeView,
-    pedido.id,
-    pedido.payment_proof_uploaded_at,
-    showPaymentProofIndicator,
   ])
 
   useEffect(() => {
@@ -4118,8 +4088,7 @@ function PedidoDetailModal({
   }
 
   const handleViewPaymentProof = async () => {
-    const opened = await onOpenPaymentProof(pedido.id)
-    if (opened) setPaymentProofSeen(true)
+    await onOpenPaymentProof(pedido.id)
   }
 
   return (
@@ -4261,11 +4230,11 @@ function PedidoDetailModal({
                         </div>
                       </div>
                     </div>
-                    <div className="admin-order-received-card rounded-lg border px-3 py-3">
+                    <div className="admin-order-received-card flex flex-col items-center justify-center rounded-lg border px-3 py-3 text-center">
                       <p className="text-10px font-bold uppercase tracking-widest text-white/68">
                         Total recibido
                       </p>
-                      <p className="admin-order-total-received-amount mt-0.5 text-lg font-black text-emerald-100">
+                      <p className="admin-order-total-received-amount mt-0.5 text-xl font-black text-white">
                         {formatPrice(pedido.total)}
                       </p>
                     </div>
@@ -4314,11 +4283,11 @@ function PedidoDetailModal({
                     label="Fecha de acreditación"
                     value={formatOptionalOrderDate(pedido.paid_at)}
                   />
-                  <div className="admin-order-total-card rounded-lg border px-3 py-2">
+                  <div className="admin-order-total-card flex flex-col items-center justify-center rounded-lg border px-3 py-2 text-center">
                     <p className="text-10px font-bold uppercase tracking-widest text-emerald-100/78">
                       Total recibido
                     </p>
-                    <p className="mt-0.5 text-lg font-black text-emerald-100">
+                    <p className="admin-order-total-received-amount mt-0.5 text-xl font-black text-white">
                       {formatPrice(pedido.total)}
                     </p>
                   </div>
@@ -4809,6 +4778,20 @@ function PedidoDetailModal({
                   Acciones
                 </p>
                 <div className="admin-order-shipping-actions mt-2 flex flex-wrap gap-2">
+                  {SHIPPING_DISPATCHED_STATUSES.includes(
+                    pedido.estado as (typeof SHIPPING_DISPATCHED_STATUSES)[number],
+                  ) && (
+                    <button
+                      type="button"
+                      aria-label={`Editar seguimiento del pedido ${pedido.id}`}
+                      title="Editar seguimiento"
+                      onClick={() => onEditTracking(pedido)}
+                      className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors"
+                    >
+                      <Pencil className="size-3.5" />
+                      Editar seguimiento
+                    </button>
+                  )}
                   <button
                     type="button"
                     aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
@@ -5124,10 +5107,10 @@ function CustomerAddressDetails({ pedido }: { pedido: SupabasePedido }) {
     <div className="sm:col-span-2 rounded-lg border border-white/8 bg-[#111827] p-2.5">
       <div className="grid gap-2 text-sm sm:grid-cols-2">
         <CompactAddressValue label="Dirección" value={streetLine || cleanAddress || "No informada"} />
-        <CompactAddressValue label="Piso / Depto" value={unitLine || "Sin piso/departamento"} />
+        <CompactAddressValue label="Piso / Depto" value={unitLine || "-"} />
         <CompactAddressValue label="Localidad / Provincia" value={localityLine || "Localidad no informada"} />
         <CompactAddressValue label="Código postal" value={postalCode || "No informado"} />
-        <CompactAddressValue label="Referencias" value={reference || "Sin referencias"} wide />
+        <CompactAddressValue label="Referencias" value={reference || "-"} wide />
       </div>
     </div>
   )
@@ -5259,6 +5242,7 @@ function TrackingStatusModal({
   }, [request?.pedido.id])
 
   if (!request) return null
+  const isEditing = request.mode === "edit"
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
@@ -5268,7 +5252,8 @@ function TrackingStatusModal({
             Datos de despacho
           </p>
           <h2 className="mt-2 text-xl font-black text-white">
-            Cargar seguimiento del pedido #{formatPublicOrderId(request.pedido.id)}
+            {isEditing ? "Editar" : "Cargar"} seguimiento del pedido #
+            {formatPublicOrderId(request.pedido.id)}
           </h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
             El número de seguimiento se muestra en el pedido del cliente. El
@@ -5332,7 +5317,11 @@ function TrackingStatusModal({
             disabled={loading}
             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
           >
-            {loading ? "Guardando..." : "Guardar seguimiento"}
+            {loading
+              ? "Guardando..."
+              : isEditing
+                ? "Guardar cambios"
+                : "Guardar seguimiento"}
           </button>
         </div>
       </div>
@@ -6134,6 +6123,7 @@ export function AdminPedidos({
         setTrackingStatusRequest({
           pedido,
           nextEstado,
+          mode: "status-change",
         })
         return
       }
@@ -6181,6 +6171,7 @@ export function AdminPedidos({
       setTrackingStatusRequest({
         pedido,
         nextEstado,
+        mode: "status-change",
       })
       return
     }
@@ -6200,6 +6191,7 @@ export function AdminPedidos({
   }) => {
     if (!trackingStatusRequest) return
 
+    const isEditing = trackingStatusRequest.mode === "edit"
     setTrackingStatusLoading(true)
     const updated = await updatePedidoEstado(
       trackingStatusRequest.pedido.id,
@@ -6209,7 +6201,12 @@ export function AdminPedidos({
     setTrackingStatusLoading(false)
 
     if (updated) {
-      setNotice({ type: "ok", message: "Estado del pedido actualizado." })
+      setNotice({
+        type: "ok",
+        message: isEditing
+          ? "Datos de seguimiento actualizados."
+          : "Estado del pedido actualizado.",
+      })
       setTrackingStatusRequest(null)
       notifyOrderNotificationsChanged()
       return
@@ -6532,6 +6529,13 @@ export function AdminPedidos({
           onClose={() => router.push("/admin/pedidos")}
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) => void handleEstadoChange(pedido, nextEstado)}
+          onEditTracking={(pedido) =>
+            setTrackingStatusRequest({
+              pedido,
+              nextEstado: pedido.estado,
+              mode: "edit",
+            })
+          }
           onShippingDetailsChange={(pedidoId, estado, details) =>
             updatePedidoEstado(pedidoId, estado, details)
           }
@@ -6930,6 +6934,13 @@ export function AdminPedidos({
           onOpenPaymentProof={handleOpenPaymentProof}
           onEstadoChange={(pedido, nextEstado) =>
             void handleEstadoChange(pedido, nextEstado)
+          }
+          onEditTracking={(pedido) =>
+            setTrackingStatusRequest({
+              pedido,
+              nextEstado: pedido.estado,
+              mode: "edit",
+            })
           }
           onShippingDetailsChange={(pedidoId, estado, details) =>
             updatePedidoEstado(pedidoId, estado, details)

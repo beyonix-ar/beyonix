@@ -15,10 +15,12 @@ export async function PATCH(
   const orderId = Number(id)
   const orderItemId = Number(itemId)
   const body = (await request.json()) as {
+    claimId?: unknown
     restockedQuantity?: unknown
     writtenOffQuantity?: unknown
     note?: unknown
   }
+  const claimId = Number(body.claimId)
   const restockedQuantity = Number(body.restockedQuantity)
   const writtenOffQuantity = Number(body.writtenOffQuantity)
   const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : ""
@@ -27,7 +29,9 @@ export async function PATCH(
     !Number.isInteger(orderId) ||
     orderId <= 0 ||
     !Number.isInteger(orderItemId) ||
-    orderItemId <= 0
+    orderItemId <= 0 ||
+    !Number.isInteger(claimId) ||
+    claimId <= 0
   ) {
     return NextResponse.json({ error: "Pedido o producto inválido." }, { status: 400 })
   }
@@ -53,10 +57,10 @@ export async function PATCH(
 
   const { data: formalClaim, error: claimError } = await auth.admin
     .from("order_claims")
-    .select("id")
+    .select("id, affected_items")
+    .eq("id", claimId)
     .eq("order_id", orderId)
     .not("failure_type", "in", "(cancelar_compra,consulta_pedido)")
-    .limit(1)
     .maybeSingle()
 
   if (claimError) {
@@ -70,6 +74,34 @@ export async function PATCH(
     return NextResponse.json(
       { error: "No se puede modificar el inventario porque este pedido no tiene un reclamo formal." },
       { status: 409 },
+    )
+  }
+
+  const claimedItem = Array.isArray(formalClaim.affected_items)
+    ? formalClaim.affected_items.find(
+        (item: { order_item_id?: unknown }) =>
+          Number(item.order_item_id) === orderItemId,
+      )
+    : null
+  const claimedQuantity = Number(
+    (claimedItem as { quantity?: unknown } | null)?.quantity,
+  )
+  const processedQuantity = restockedQuantity + writtenOffQuantity
+
+  if (!claimedItem || !Number.isInteger(claimedQuantity) || claimedQuantity <= 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Este producto no forma parte del reclamo. Corregí los productos reclamados antes de registrar la recepción.",
+      },
+      { status: 409 },
+    )
+  }
+
+  if (processedQuantity > claimedQuantity) {
+    return NextResponse.json(
+      { error: "La recepción no puede superar la cantidad incluida en el reclamo." },
+      { status: 400 },
     )
   }
 

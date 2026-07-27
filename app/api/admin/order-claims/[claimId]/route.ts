@@ -377,6 +377,147 @@ export async function PATCH(
     return attachSignedUrls(auth.admin, updatedClaim ?? fallback)
   }
 
+  if (body.action === "mark_credit_note_issued") {
+    if (!["admin", "super_admin"].includes(auth.profile.rol)) {
+      return NextResponse.json(
+        { error: "No tenés permisos para confirmar una nota de crédito." },
+        { status: 403 },
+      )
+    }
+
+    const { data: currentClaim, error: currentClaimError } = await auth.admin
+      .from("order_claims")
+      .select("id, order_id, user_id, status, resolution, admin_response, last_admin_response_at, closed_at, admin_needs_action")
+      .eq("id", id)
+      .single()
+
+    if (currentClaimError || !currentClaim) {
+      return NextResponse.json(
+        { error: currentClaimError?.message || "No encontramos el reclamo." },
+        { status: 404 },
+      )
+    }
+
+    if (currentClaim.resolution !== "cupon_descuento") {
+      return NextResponse.json(
+        { error: "Este reclamo no tiene una nota de crédito como resolución." },
+        { status: 409 },
+      )
+    }
+
+    const { data: order, error: orderError } = await auth.admin
+      .from("ordenes")
+      .select("id, credit_note_issued, credit_note_status, credit_note_cae, credit_note_number")
+      .eq("id", currentClaim.order_id)
+      .single()
+
+    if (orderError || !order) {
+      return NextResponse.json(
+        { error: "No encontramos el pedido asociado." },
+        { status: 404 },
+      )
+    }
+
+    const creditNoteWasIssued =
+      order.credit_note_issued === true &&
+      order.credit_note_status === "authorized" &&
+      Boolean(order.credit_note_cae) &&
+      Boolean(order.credit_note_number)
+
+    if (!creditNoteWasIssued) {
+      return NextResponse.json(
+        {
+          error:
+            "La nota de crédito todavía no fue emitida y autorizada por ARCA.",
+        },
+        { status: 409 },
+      )
+    }
+
+    if (["cerrado", "rechazado"].includes(currentClaim.status)) {
+      return NextResponse.json(
+        { error: "El reclamo ya está finalizado." },
+        { status: 409 },
+      )
+    }
+
+    const customerMessage = [
+      "Estimado cliente:",
+      "",
+      "Se generó correctamente una nota de crédito y el saldo a favor ya fue acreditado en su cuenta. Podés verificarlo ingresando en Mi cuenta > Saldos.",
+      "",
+      "Ante cualquier duda, podés contactarnos a través de nuestras redes sociales.",
+      "",
+      "Saludos,",
+      "BEYONIX",
+    ].join("\n")
+    const nowIso = new Date().toISOString()
+    const { data: updatedClaim, error: updateError } = await auth.admin
+      .from("order_claims")
+      .update({
+        status: "cerrado",
+        resolution: "cupon_descuento",
+        admin_response: customerMessage,
+        last_admin_response_at: nowIso,
+        closed_at: nowIso,
+        admin_needs_action: false,
+      })
+      .eq("id", id)
+      .select("*, order_claim_files(*), order_claim_messages(*)")
+      .single()
+
+    if (updateError || !updatedClaim) {
+      return NextResponse.json(
+        { error: updateError?.message || "No se pudo confirmar la nota de crédito." },
+        { status: 500 },
+      )
+    }
+
+    const { error: messageError } = await auth.admin
+      .from("order_claim_messages")
+      .insert({
+        claim_id: id,
+        author_user_id: auth.user.id,
+        author_role: auth.profile.rol,
+        message: customerMessage,
+      })
+
+    if (messageError) {
+      await auth.admin
+        .from("order_claims")
+        .update({
+          status: currentClaim.status,
+          admin_response: currentClaim.admin_response,
+          last_admin_response_at: currentClaim.last_admin_response_at,
+          closed_at: currentClaim.closed_at,
+          admin_needs_action: currentClaim.admin_needs_action,
+        })
+        .eq("id", id)
+
+      return NextResponse.json(
+        { error: "No se pudo enviar el mensaje de confirmación al cliente." },
+        { status: 500 },
+      )
+    }
+
+    await notifyCustomer(auth.admin, {
+      userId: currentClaim.user_id,
+      type: "claim_credit_note_issued",
+      title: "Nota de crédito emitida",
+      body: `El saldo a favor del pedido ${getOrderCode(currentClaim.order_id)} ya está disponible en Mi cuenta > Saldos.`,
+      orderId: currentClaim.order_id,
+      sourceKey: `claim:${id}:credit-note-issued`,
+    })
+
+    await sendClaimUpdateEmail(auth.admin, {
+      orderId: currentClaim.order_id,
+      title: "Nota de crédito emitida",
+      message: customerMessage.replace(/\n/g, "<br />"),
+    })
+
+    return NextResponse.json({ claim: await getUpdatedClaim(updatedClaim) })
+  }
+
   if (body.action === "approve_cancellation") {
     const { data: currentClaim, error: currentClaimError } = await auth.admin
       .from("order_claims")
@@ -1000,6 +1141,37 @@ export async function PATCH(
     body.offered_resolutions === undefined
       ? currentClaim.offered_resolutions ?? []
       : offeredResolutions
+
+  if (effectiveResolution === "cupon_descuento" && status === "cupon_pendiente") {
+    if (!["admin", "super_admin"].includes(auth.profile.rol)) {
+      return NextResponse.json(
+        { error: "No tenés permisos para confirmar una nota de crédito." },
+        { status: 403 },
+      )
+    }
+
+    const { data: order } = await auth.admin
+      .from("ordenes")
+      .select("credit_note_issued, credit_note_status, credit_note_cae, credit_note_number")
+      .eq("id", currentClaim.order_id)
+      .maybeSingle()
+
+    const creditNoteWasIssued =
+      order?.credit_note_issued === true &&
+      order.credit_note_status === "authorized" &&
+      Boolean(order.credit_note_cae) &&
+      Boolean(order.credit_note_number)
+
+    if (!creditNoteWasIssued) {
+      return NextResponse.json(
+        {
+          error:
+            "La nota de crédito todavía no fue emitida y autorizada por ARCA.",
+        },
+        { status: 409 },
+      )
+    }
+  }
 
   if (
     offeredResolutions.some(

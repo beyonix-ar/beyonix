@@ -10,6 +10,7 @@ import {
   CloudUpload,
   Copy,
   CreditCard,
+  Clock3,
   LogIn,
   Truck,
   type LucideIcon,
@@ -31,6 +32,7 @@ import {
   TRANSFER_ALIAS,
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
+import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const formatPrice = (price: number) =>
@@ -38,6 +40,12 @@ const formatPrice = (price: number) =>
     style: "currency",
     currency: "ARS",
     minimumFractionDigits: 0,
+  }).format(Number.isFinite(price) ? price : 0)
+
+const formatPriceNumber = (price: number) =>
+  new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(Number.isFinite(price) ? price : 0)
 
 const TRANSFER_PAYMENT_WINDOW_MS = 48 * 60 * 60 * 1000
@@ -610,6 +618,13 @@ function CheckoutSuccessContent() {
                       </p>
                     </div>
 
+                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-beyonix-blue-500/30 bg-beyonix-blue-700/30 px-2.5 py-2">
+                      <Clock3 className="mt-0.5 size-3.5 shrink-0 text-white" aria-hidden="true" />
+                      <p className="text-[11px] font-medium leading-4 text-beyonix-gray-300">
+                        Validamos comprobantes {BEYONIX_SUPPORT_HOURS_DETAIL.toLocaleLowerCase("es-AR")}
+                      </p>
+                    </div>
+
                     <div className="mt-1">
                       <CopyablePaymentField
                         label="Alias"
@@ -642,11 +657,18 @@ function CheckoutSuccessContent() {
                         <p className="text-xs font-bold uppercase tracking-wider text-beyonix-status-success">
                           Total a transferir
                         </p>
-                        <p className="mt-1 inline-flex min-h-9 items-center rounded-md border border-beyonix-status-success/35 bg-beyonix-status-success/12 px-3 py-1 text-lg font-bold tracking-normal text-beyonix-status-success">
+                        <p className="mt-1 inline-flex min-h-9 items-center gap-1 rounded-md border border-beyonix-status-success/35 bg-beyonix-status-success/12 px-3 py-1 text-lg font-bold tracking-normal text-beyonix-status-success">
                           {orderLoading
                             ? "Cargando..."
                             : order
-                              ? formatPrice(Number(order.total))
+                              ? (
+                                  <>
+                                    <span>$</span>
+                                    <span className="text-white">
+                                      {formatPriceNumber(Number(order.total))}
+                                    </span>
+                                  </>
+                                )
                               : "-"}
                         </p>
                       </div>

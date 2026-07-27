@@ -1076,3 +1076,273 @@ DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
   status: null,
   statusText: null
 }
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:pedidos_a_preparar {
+  query: 'pedidos_a_preparar',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_busqueda {
+  query: 'ordenes_busqueda',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:facturas_pendientes {
+  query: 'facturas_pendientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_recientes {
+  query: 'ordenes_recientes',
+  message: 'column ordenes.cliente_username does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}
+DASHBOARD_QUERY_FALLBACK:ordenes_financieras_pagina_1 {
+  query: 'ordenes_financieras_pagina_1',
+  message: 'column ordenes.shipping_provider does not exist',
+  details: null,
+  hint: null,
+  code: '42703',
+  status: null,
+  statusText: null
+}

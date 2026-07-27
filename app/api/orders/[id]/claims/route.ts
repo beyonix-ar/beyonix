@@ -431,10 +431,11 @@ export async function POST(
   const claimType = String(formData.get("claimType") ?? "") as OrderClaimType
   const problemType = String(formData.get("problemType") ?? "").trim()
   const startedAt = String(formData.get("startedAt") ?? "").trim()
-  const affectedItemIds = String(formData.get("affectedItemIds") ?? "")
+  const affectedItemIds = [...new Set(String(formData.get("affectedItemIds") ?? "")
     .split(",")
     .map((item) => Number(item.trim()))
-    .filter((item) => Number.isFinite(item) && item > 0)
+    .filter((item) => Number.isFinite(item) && item > 0))]
+  const affectedWholeOrder = String(formData.get("affectedWholeOrder") ?? "") === "true"
   const delivered = isOrderDelivered(order)
   const cancelled = (order.estado ?? "").toLowerCase() === "cancelado"
   const helpMessage = problemType === HELP_MESSAGE_PROBLEM_TYPE
@@ -536,14 +537,32 @@ export async function POST(
     )
   }
 
-  if (affectedItemIds.length > 0) {
-    const { count, error: itemError } = await admin
-      .from("orden_items")
-      .select("id", { count: "exact", head: true })
-      .eq("orden_id", orderId)
-      .in("id", affectedItemIds)
+  if (!helpMessage && !affectedWholeOrder && affectedItemIds.length === 0) {
+    return NextResponse.json(
+      { error: "Elegí al menos un producto afectado." },
+      { status: 400 },
+    )
+  }
 
-    if (itemError || (count ?? 0) !== affectedItemIds.length) {
+  let affectedOrderItems: Array<{ id: number; cantidad: number }> = []
+  if (!helpMessage) {
+    let affectedItemsQuery = admin
+      .from("orden_items")
+      .select("id, cantidad")
+      .eq("orden_id", orderId)
+
+    if (!affectedWholeOrder) {
+      affectedItemsQuery = affectedItemsQuery.in("id", affectedItemIds)
+    }
+
+    const { data: selectedItems, error: itemError } = await affectedItemsQuery
+    affectedOrderItems = (selectedItems ?? []) as Array<{ id: number; cantidad: number }>
+
+    if (
+      itemError ||
+      affectedOrderItems.length === 0 ||
+      (!affectedWholeOrder && affectedOrderItems.length !== affectedItemIds.length)
+    ) {
       return NextResponse.json(
         { error: "El producto seleccionado no pertenece al pedido." },
         { status: 400 },
@@ -566,6 +585,10 @@ export async function POST(
       offered_resolutions: [],
       admin_needs_action: true,
       last_customer_message_at: now,
+      affected_items: affectedOrderItems.map((item) => ({
+        order_item_id: item.id,
+        quantity: Number(item.cantidad),
+      })),
     })
     .select()
     .single()

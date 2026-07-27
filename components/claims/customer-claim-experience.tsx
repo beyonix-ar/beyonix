@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Check,
   CircleCheck,
+  Clock3,
   FileText,
   MessageCircle,
   Package,
@@ -16,6 +17,7 @@ import {
   X,
 } from "lucide-react"
 
+import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
 import { getClaimFileValidationError, getOrderClaimResolutionLabel } from "@/lib/order-claims"
 import { beyonixHoverBorder } from "@/lib/utils"
 import type {
@@ -52,6 +54,8 @@ type ClaimProblemOption = {
 
 const CLAIM_DESCRIPTION_MIN_LENGTH = 10
 const CLAIM_DESCRIPTION_MAX_LENGTH = 600
+const CANCELLATION_REASON_MIN_LENGTH = 5
+const CANCELLATION_REASON_MAX_LENGTH = 600
 const HELP_MESSAGE_PROBLEM_TYPE: ClaimProblemId = "consulta_pedido"
 const SUPPORT_EMAIL = "beyonix.ar@gmail.com"
 const SUPPORT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(SUPPORT_EMAIL)}`
@@ -59,29 +63,29 @@ const SUPPORT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encod
 const POST_DELIVERY_PROBLEMS: ClaimProblemOption[] = [
   {
     id: "incorrecto",
-    title: "Recibí un producto incorrecto",
-    description: "BEYONIX envió algo distinto a lo comprado.",
+    title: "Producto incorrecto",
+    description: "Recibí otro producto.",
     icon: Package,
     claimType: "transporte_48hs",
   },
   {
     id: "danado",
-    title: "Llegó roto o dañado",
-    description: "El producto o el paquete llegó con daño visible.",
+    title: "Producto dañado",
+    description: "Llegó roto o dañado.",
     icon: AlertTriangle,
     claimType: "transporte_48hs",
   },
   {
     id: "faltante",
-    title: "Faltó un producto",
+    title: "Producto faltante",
     description: "El pedido llegó incompleto.",
     icon: Package,
     claimType: "transporte_48hs",
   },
   {
     id: "otro",
-    title: "Otro problema con el pedido recibido",
-    description: "Algo no coincide con lo recibido.",
+    title: "Otro problema",
+    description: "Algo no coincide.",
     icon: MessageCircle,
     claimType: "garantia_beyonix",
   },
@@ -413,16 +417,16 @@ function EvidenceUploader({
 }) {
   const neutralSurface = surface === "neutral"
   const labelClassName = neutralSurface
-    ? `flex min-h-11 w-full max-w-md items-center justify-start gap-2.5 rounded-xl border border-dashed border-[#344255] bg-[#1A222C] px-3 py-2 text-left transition-all duration-200 focus-within:border-[#5CA9E6] focus-within:ring-2 focus-within:ring-[#5CA9E6]/18 ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#4B6078] hover:bg-[#202A35]"}`
+    ? `customer-claim-evidence-dropzone flex min-h-[140px] w-full flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-[#3B4E63] bg-[#151E28] px-4 py-4 text-center transition-all duration-200 focus-within:border-[#5CA9E6] focus-within:ring-2 focus-within:ring-[#5CA9E6]/18 ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#5CA9E6]/70 hover:bg-[#192633]"}`
     : `flex min-h-16 items-center justify-center gap-3 rounded-xl border border-dashed border-[#21476B] bg-[#2A313A] px-3 py-2 text-left transition-all duration-200 focus-within:border-[#2C6CA3] focus-within:ring-2 focus-within:ring-[#2C6CA3]/20 ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-[#2B5D8A] hover:bg-[#333B46]"}`
   const iconClassName = neutralSurface
-    ? "flex size-8 shrink-0 items-center justify-center rounded-lg border border-[#3E6C95] bg-[#112A43]"
+    ? "flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#5CA9E6]/35 bg-[#112A43]"
     : "flex size-9 shrink-0 items-center justify-center rounded-lg border border-[#21476B] bg-[#16304B]"
   const helperClassName = neutralSurface
-    ? "mt-0.5 block text-[11px] text-[#9EB4C8]"
+    ? "mt-1 block text-xs leading-5 text-[#A9BACB]"
     : "mt-0.5 block text-[11px] text-[#7D8FA1]"
   const chipClassName = neutralSurface
-    ? "inline-flex max-w-64 items-center gap-1.5 rounded-lg border border-[#344255] bg-[#18212B] px-2.5 py-1.5 text-xs font-bold text-white"
+    ? "inline-flex min-w-0 items-center gap-2 rounded-lg border border-[#34485C] bg-[#151F2A] px-3 py-2 text-xs font-bold text-white"
     : "inline-flex max-w-64 items-center gap-1.5 rounded-lg border border-[#21476B] bg-[#13263B] px-2.5 py-1.5 text-xs font-bold text-white"
 
   return (
@@ -432,7 +436,9 @@ function EvidenceUploader({
           <Upload className="size-4 text-white" />
         </span>
         <span>
-          <span className="block text-xs font-black text-white">Fotos o videos</span>
+          <span className={neutralSurface ? "block text-sm font-black text-white" : "block text-xs font-black text-white"}>
+            Fotos o videos
+          </span>
           <span className={helperClassName}>Imágenes, videos, PDF o documentos.</span>
         </span>
         <input
@@ -445,12 +451,17 @@ function EvidenceUploader({
         />
       </label>
       {files.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className={neutralSurface ? "mt-2 grid gap-1.5" : "mt-2 flex flex-wrap gap-1.5"}>
           {files.map((file, index) => (
             <span key={`${file.name}-${index}`} className={chipClassName}>
               <Paperclip className="size-3.5 shrink-0 text-white" />
               <span className="truncate">{file.name}</span>
-              <button type="button" aria-label={`Quitar ${file.name}`} onClick={() => onChange(files.filter((_, itemIndex) => itemIndex !== index))}>
+              <button
+                type="button"
+                aria-label={`Quitar ${file.name}`}
+                onClick={() => onChange(files.filter((_, itemIndex) => itemIndex !== index))}
+                className="ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/8 hover:text-white"
+              >
                 <X className="size-3.5" />
               </button>
             </span>
@@ -537,19 +548,23 @@ export function CustomerClaimExperience({
   order,
   initialProblem,
   claimsVerified = false,
+  onOrderCancelled,
 }: {
   order: SupabasePedido
   initialProblem?: ClaimProblemId
   claimsVerified?: boolean
+  onOrderCancelled?: () => void
 }) {
   const router = useRouter()
   const orderItems = order.orden_items ?? []
   const delivered = isOrderDelivered(order)
   const dispatched = isOrderDispatched(order)
   const cancelled = isOrderCancelled(order)
-  const canCancel = false
-  const canCreatePostDeliveryClaim = delivered && !cancelled
-  const canCreateHelpMessage = !delivered && !cancelled
+  const [orderCancelled, setOrderCancelled] = useState(cancelled)
+  const effectiveCancelled = cancelled || orderCancelled
+  const canCancel = !delivered && !dispatched && !effectiveCancelled
+  const canCreatePostDeliveryClaim = delivered && !effectiveCancelled
+  const canCreateHelpMessage = !delivered && !effectiveCancelled
   const initialProblemAllowed = POST_DELIVERY_PROBLEMS.some((item) => item.id === initialProblem)
   const defaultAffectedItems = orderItems.length === 1 ? [String(orderItems[0].id)] : []
   const initialClaims = order.order_claims ?? []
@@ -563,7 +578,9 @@ export function CustomerClaimExperience({
   const [description, setDescription] = useState("")
   const [files, setFiles] = useState<File[]>([])
   const [cancellationSuccess, setCancellationSuccess] = useState(false)
-  const [orderCancelled, setOrderCancelled] = useState(cancelled)
+  const [cancellationReason, setCancellationReason] = useState("")
+  const [cancellingOrder, setCancellingOrder] = useState(false)
+  const [cancellationError, setCancellationError] = useState("")
   const [reply, setReply] = useState("")
   const [replyFiles, setReplyFiles] = useState<File[]>([])
   const [refundAccountHolder, setRefundAccountHolder] = useState("")
@@ -721,6 +738,7 @@ export function CustomerClaimExperience({
       formData.set("claimType", selectedProblem.claimType)
       formData.set("problemType", selectedProblem.id)
       formData.set("affectedItemIds", affectedItems.filter((item) => item !== "order").join(","))
+      formData.set("affectedWholeOrder", String(affectedItems.includes("order")))
       formData.set("description", `Producto afectado: ${affectedLabel}\n\n${trimmedDescription}`)
       appendFiles(formData, files, "evidencia_inicial")
 
@@ -786,6 +804,50 @@ export function CustomerClaimExperience({
       setError("No se pudo enviar el mensaje de ayuda. Intentá nuevamente.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const cancelOrder = async () => {
+    const trimmedReason = cancellationReason.trim()
+
+    if (!canCancel) {
+      setCancellationError("Esta compra ya no se puede cancelar desde tu cuenta.")
+      return
+    }
+
+    if (trimmedReason.length < CANCELLATION_REASON_MIN_LENGTH) {
+      setCancellationError("Contanos el motivo con al menos 5 caracteres.")
+      return
+    }
+
+    setCancellingOrder(true)
+    setCancellationError("")
+
+    try {
+      const response = await fetch(`/api/orders/${order.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: trimmedReason }),
+      })
+      const data = (await response.json()) as {
+        order?: SupabasePedido
+        error?: string
+      }
+
+      if (!response.ok || !data.order) {
+        setCancellationError(data.error || "No se pudo cancelar la compra.")
+        return
+      }
+
+      setOrderCancelled(true)
+      setCancellationSuccess(true)
+      setCancellationReason("")
+      onOrderCancelled?.()
+      scrollToPageTop()
+    } catch {
+      setCancellationError("No se pudo cancelar la compra. Intentá nuevamente.")
+    } finally {
+      setCancellingOrder(false)
     }
   }
 
@@ -993,7 +1055,7 @@ export function CustomerClaimExperience({
           WebkitBackdropFilter: "none",
         }}
       >
-        <header className="flex flex-col gap-4 border-b border-[#18334D] bg-[#0B1724] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <header className="customer-claim-chat-header flex flex-col gap-4 border-b border-[#18334D] bg-[#0B1724] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">
               {getOrderCode(order.id)} · {hideClosedHelpMetadata ? "Ayuda" : (PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo")}
@@ -1071,12 +1133,12 @@ export function CustomerClaimExperience({
             const customer = message.author_role === "cliente"
             return (
               <div key={message.id} className={`flex ${customer ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[86%] rounded-2xl px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.22)] sm:max-w-[72%] ${customer ? "rounded-br-md border border-[#2C6CA3]/35 bg-[#112A43]" : "rounded-bl-md border border-white/9 bg-[#101820]"}`}>
-                  <p className="text-[11px] font-black uppercase tracking-wide text-blue-200/80">{customer ? "Tu mensaje" : "BEYONIX"}</p>
-                  <p className="mt-1.5 whitespace-pre-wrap text-[15px] font-semibold leading-6 text-white">
+                <div className={`customer-claim-chat-message max-w-[86%] rounded-2xl px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.22)] sm:max-w-[72%] ${customer ? "rounded-br-md border border-[#2C6CA3]/35 bg-[#112A43]" : "rounded-bl-md border border-white/9 bg-[#101820]"}`}>
+                  <p className="customer-claim-chat-author text-[11px] font-black uppercase tracking-wide text-blue-200/80">{customer ? "Tu mensaje" : "BEYONIX"}</p>
+                  <p className="customer-claim-chat-message-body mt-1.5 whitespace-pre-wrap text-[15px] font-semibold leading-6 text-white">
                     <CustomerClaimMessageBody message={message.message} />
                   </p>
-                  <p className="mt-2 text-[11px] font-semibold text-white/42">{formatDate(message.created_at)}</p>
+                  <p className="customer-claim-chat-timestamp mt-2 text-[11px] font-semibold text-white/42">{formatDate(message.created_at)}</p>
                 </div>
               </div>
             )
@@ -1088,7 +1150,7 @@ export function CustomerClaimExperience({
           )}
         </div>
 
-        <div className="border-t border-[#18334D] bg-[#0B1724] px-5 py-4">
+        <div className="customer-claim-chat-composer border-t border-[#18334D] bg-[#0B1724] px-5 py-4">
           {evidenceSent && (
             <details className="mb-2 rounded-lg border border-white/8 bg-[#101820] px-3 py-2">
               <summary className="cursor-pointer text-xs font-black text-blue-200">
@@ -1133,8 +1195,8 @@ export function CustomerClaimExperience({
                   Datos recibidos. BEYONIX realizará el reintegro.
                 </p>
               ) : customerTurnLocked ? (
-                <p className="rounded-xl border border-[#21476B] bg-[#101820] px-4 py-3 text-sm font-bold text-[#B8D6F0]">
-                  Mensaje enviado. Te vamos a responder por este chat.
+                <p className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-bold text-emerald-200">
+                  Mensaje enviado con éxito!
                 </p>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -1264,11 +1326,12 @@ export function CustomerClaimExperience({
               )}
             </div>
           </div>
+
         </div>
       )}
 
       {canCreateHelpMessage && (
-        <div className="mt-3 rounded-xl border border-white/9 bg-[#141820] p-4 sm:p-5">
+        <div className="customer-help-create-panel mt-3 rounded-xl border border-white/9 bg-[#141820] p-4 sm:p-5">
           <div className="flex items-start gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
               <MessageCircle className="size-5 text-white" />
@@ -1281,7 +1344,7 @@ export function CustomerClaimExperience({
             </div>
           </div>
 
-          <div className="mt-4 rounded-xl border border-[#18334D] bg-[#101923] p-4 sm:p-5">
+          <div className="customer-help-form-panel mt-4 rounded-xl border border-[#18334D] bg-[#101923] p-4 sm:p-5">
             <div>
               <h4 className="border-l-4 border-[#2C6CA3] py-0.5 pl-3 text-base font-bold leading-5 text-white">Contanos qué necesitás</h4>
               <p className="mt-1.5 pl-4 text-xs font-medium leading-5 text-[#9EB4C8]">
@@ -1298,19 +1361,27 @@ export function CustomerClaimExperience({
                   minLength={CLAIM_DESCRIPTION_MIN_LENGTH}
                   maxLength={CLAIM_DESCRIPTION_MAX_LENGTH}
                   placeholder="Ejemplo: mi pedido figura enviado, pero todavía no llegó y necesito ayuda con el seguimiento..."
-                  className="w-full resize-none rounded-xl border border-[#21476B] bg-[#2A313A] px-3 py-2.5 text-sm font-medium leading-6 text-white outline-none placeholder:text-[#A8B3BE] transition-all duration-200 hover:border-[#2B5D8A] hover:bg-[#333B46] focus:border-[#2C6CA3] focus:ring-2 focus:ring-[#2C6CA3]/20"
+                  className="customer-help-textarea w-full resize-none rounded-xl border border-[#21476B] bg-[#2A313A] px-3 py-2.5 text-sm font-medium leading-6 text-white outline-none placeholder:text-[#A8B3BE] transition-all duration-200 hover:border-[#2B5D8A] hover:bg-[#333B46] focus:border-[#2C6CA3] focus:ring-2 focus:ring-[#2C6CA3]/20"
                 />
                 <p className="mt-1.5 pr-1 text-right text-10px text-white/40">{description.length}/{CLAIM_DESCRIPTION_MAX_LENGTH}</p>
               </div>
             </div>
 
-            <div className="mt-5 border-t border-[#18334D]/85 pt-5">
-              <div className="flex items-start gap-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 text-xs font-semibold leading-5 text-[#9EB4C8]">
-                <CircleCheck className="mt-0.5 size-4 shrink-0 text-[#9EB4C8]" />
-                <span>Este mensaje no inicia un reclamo formal. Es un canal de ayuda para resolver consultas antes de la entrega.</span>
+            <div className="customer-help-footer mt-5 border-t border-[#18334D]/85 pt-5">
+              <div className="customer-help-notices grid gap-2.5 lg:grid-cols-2">
+                <div className="flex items-start gap-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 text-xs font-semibold leading-5 text-[#9EB4C8]">
+                  <CircleCheck className="mt-0.5 size-4 shrink-0 text-[#9EB4C8]" />
+                  <span>Este mensaje no inicia un reclamo formal. Es un canal de ayuda para resolver consultas antes de la entrega.</span>
+                </div>
+                <div className="flex items-start gap-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 text-xs font-semibold leading-5 text-[#9EB4C8]">
+                  <Clock3 className="mt-0.5 size-4 shrink-0 text-white" />
+                  <span>
+                    Recordá que la validación de pagos por transferencia se realiza de {BEYONIX_SUPPORT_HOURS_DETAIL.toLocaleLowerCase("es-AR")}
+                  </span>
+                </div>
               </div>
               {error && <p className="mb-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
-              <div className="mt-4 flex justify-end">
+              <div className="customer-help-submit mt-4 flex justify-end">
                 <button
                   type="button"
                   aria-label="Enviar mensaje de ayuda"
@@ -1323,26 +1394,82 @@ export function CustomerClaimExperience({
               </div>
             </div>
           </div>
+
+          {canCancel && (
+            <div className="mt-3 max-w-xl rounded-lg border border-red-300/15 bg-red-500/[0.04] px-3 py-2.5">
+              <h4 className="text-xs font-medium text-white">
+                ¿Necesitás cancelar tu compra?
+              </h4>
+              <label
+                htmlFor={`cancellation-reason-${order.id}`}
+                className="mt-0.5 block text-11px font-normal text-white/55"
+              >
+                Contanos el motivo para habilitar la cancelación.
+              </label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  id={`cancellation-reason-${order.id}`}
+                  type="text"
+                  value={cancellationReason}
+                  onChange={(event) => {
+                    setCancellationReason(event.target.value)
+                    setCancellationError("")
+                  }}
+                  minLength={CANCELLATION_REASON_MIN_LENGTH}
+                  maxLength={CANCELLATION_REASON_MAX_LENGTH}
+                  placeholder="Motivo de la cancelación..."
+                  className="h-8 min-w-0 flex-1 rounded-md border border-white/12 bg-[#0D1117] px-2.5 text-xs font-normal text-white outline-none placeholder:text-white/35 transition-colors hover:border-red-300/25 focus:border-red-300/45 focus:ring-2 focus:ring-red-400/10"
+                />
+                <button
+                  type="button"
+                  aria-label="Cancelar compra"
+                  disabled={
+                    cancellingOrder ||
+                    cancellationReason.trim().length < CANCELLATION_REASON_MIN_LENGTH
+                  }
+                  onClick={() => void cancelOrder()}
+                  className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-red-300/30 bg-red-500/10 px-3 text-11px font-normal text-red-100 transition-colors hover:border-red-300/50 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111820] disabled:text-white/35"
+                >
+                  {cancellingOrder ? "Cancelando..." : "Cancelar compra"}
+                </button>
+              </div>
+              {cancellationError && (
+                <p className="mt-2 text-11px font-normal text-red-200">
+                  {cancellationError}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {canCreatePostDeliveryClaim && (
-        <div className="mt-3 rounded-xl border border-[#2C6CA3]/28 bg-[#0B1724] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_42px_rgba(0,0,0,0.22)] sm:p-6">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
-              <MessageCircle className="size-5 text-white" />
+        <div className="customer-claim-create-form mt-3 space-y-3.5 [&_svg]:text-white">
+          <div className="customer-claim-create-header flex items-center gap-3 border-l-2 border-[#5CA9E6]/70 px-3 py-1.5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-[#5CA9E6]/30 bg-[#101923]">
+              <MessageCircle className="size-4.5 text-white" />
             </span>
-            <div>
-              <h4 className="text-lg font-black leading-6 text-white">Iniciar reclamo</h4>
-              <p className="mt-1 text-sm leading-5 text-white/68">
-                Contanos qué problema tuvo el producto recibido. BEYONIX revisará el caso y te responderá desde este chat.
+            <div className="min-w-0">
+              <h1 className="text-xl font-black leading-6 tracking-tight text-white">
+                Iniciar reclamo
+              </h1>
+              <p className="mt-0.5 max-w-3xl text-[13px] leading-5 text-[#A9BACB]">
+                Contanos qué problema tuvo el producto recibido. BEYONIX revisará el caso.
               </p>
             </div>
           </div>
 
-          <div className="mt-5">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">Producto afectado</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="customer-claim-step-panel rounded-xl border border-[#2A3037]/80 bg-[#080A0D] p-3.5 sm:p-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#5CA9E6]/35 bg-[#112A43] text-[11px] font-black text-white">
+                1
+              </span>
+              <div>
+                <h2 className="text-base font-black text-white">Producto afectado</h2>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {orderItems.map((item) => {
                 const value = String(item.id)
                 const image = getItemImage(item)
@@ -1353,18 +1480,23 @@ export function CustomerClaimExperience({
                     key={item.id}
                     type="button"
                     onClick={() => toggleAffectedProduct(value)}
-                    className={`flex min-h-16 min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
+                    className={`customer-claim-product-option relative flex min-h-[68px] min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200 ${
                       selectedItem
-                        ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_18px_rgba(17,42,67,0.35)]"
-                        : "border-white/9 bg-[#101820] hover:border-blue-300/30"
+                        ? "border-[#69B8F3]/70 bg-[#112A43]"
+                        : "border-[#2A3A4B] bg-[#121B24] hover:border-[#5CA9E6]/50 hover:bg-[#16222D]"
                     }`}
                   >
-                    <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+                    {selectedItem && (
+                      <span className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full border border-[#A9D9FA]/50 bg-[#2C6CA3]">
+                        <Check className="size-3 text-white" />
+                      </span>
+                    )}
+                    <span className={`flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 ${image ? "bg-white" : "bg-[#172635]"}`}>
                       {image ? <img src={image} alt={name} className="size-full object-contain" /> : <Package className="size-5 text-white" />}
                     </span>
-                    <span className="min-w-0">
-                      <strong className="block truncate text-[15px] leading-5 text-white">{name}</strong>
-                      <span className="mt-0.5 block truncate text-[13px] text-white/62">{getItemVariant(item)} · Cantidad: {item.cantidad}</span>
+                    <span className="min-w-0 pr-5">
+                      <strong className="block truncate text-sm font-black leading-5 text-white">{name}</strong>
+                      <span className="mt-0.5 block truncate text-xs leading-4 text-[#A9BACB]">{getItemVariant(item)} · Cantidad: {item.cantidad}</span>
                     </span>
                   </button>
                 )
@@ -1373,29 +1505,43 @@ export function CustomerClaimExperience({
                 <button
                   type="button"
                   onClick={selectWholeOrder}
-                  className={`flex min-h-16 min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
+                  className={`customer-claim-product-option relative flex min-h-[68px] min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200 ${
                     affectedItems.includes("order")
-                      ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_18px_rgba(17,42,67,0.35)]"
-                      : "border-white/9 bg-[#101820] hover:border-blue-300/30"
+                      ? "border-[#69B8F3]/70 bg-[#112A43]"
+                      : "border-[#2A3A4B] bg-[#121B24] hover:border-[#5CA9E6]/50 hover:bg-[#16222D]"
                   }`}
                 >
-                  <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-[#1B2028]">
-                    <Truck className="size-5 text-white" />
+                  {affectedItems.includes("order") && (
+                    <span className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full border border-[#A9D9FA]/50 bg-[#2C6CA3]">
+                      <Check className="size-3 text-white" />
+                    </span>
+                  )}
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[#36516A] bg-[#172635]">
+                    <Truck className="size-5 text-[#B9DEFA]" />
                   </span>
-                  <span className="min-w-0">
-                    <strong className="block text-[15px] leading-5 text-white">Todo el pedido</strong>
-                    <span className="mt-0.5 block truncate text-[13px] text-white/62">Problema general</span>
+                  <span className="min-w-0 pr-5">
+                    <strong className="block text-sm font-black leading-5 text-white">Todo el pedido</strong>
+                    <span className="mt-0.5 block truncate text-xs leading-4 text-[#A9BACB]">Problema general</span>
                   </span>
                 </button>
               )}
             </div>
           </div>
 
-          <div className="mt-5">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">Motivo</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="customer-claim-step-panel rounded-xl border border-[#2A3037]/80 bg-[#080A0D] p-3.5 sm:p-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#5CA9E6]/35 bg-[#112A43] text-[11px] font-black text-white">
+                2
+              </span>
+              <div>
+                <h2 className="text-base font-black text-white">Motivo del reclamo</h2>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {POST_DELIVERY_PROBLEMS.map((item) => {
                 const Icon = item.icon
+                const selectedProblem = problem === item.id
                 return (
                   <button
                     key={item.id}
@@ -1404,18 +1550,27 @@ export function CustomerClaimExperience({
                       setProblem(item.id)
                       setError("")
                     }}
-                    className={`flex min-h-[4.5rem] items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
-                      problem === item.id
-                        ? "border-blue-300/55 bg-[#112A43] shadow-[0_0_18px_rgba(17,42,67,0.3)]"
-                        : "border-white/9 bg-[#101820] hover:border-blue-300/30"
+                    className={`customer-claim-problem-option relative flex min-h-[72px] items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all duration-200 ${
+                      selectedProblem
+                        ? "border-[#69B8F3]/70 bg-[#112A43]"
+                        : "border-[#2A3A4B] bg-[#121B24] hover:border-[#5CA9E6]/50 hover:bg-[#16222D]"
                     }`}
                   >
-                    <span className="rounded-lg bg-[#1B2028] p-2">
-                      <Icon className="size-4.5 text-white" />
+                    {selectedProblem && (
+                      <span className="absolute right-3 top-3 flex size-5 items-center justify-center rounded-full border border-[#A9D9FA]/50 bg-[#2C6CA3]">
+                        <Check className="size-3 text-white" />
+                      </span>
+                    )}
+                    <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg border ${
+                      selectedProblem
+                        ? "border-[#5CA9E6]/45 bg-[#183B5E]"
+                        : "border-white/8 bg-[#1B2530]"
+                    }`}>
+                      <Icon className="size-4 text-white" />
                     </span>
-                    <span className="min-w-0">
-                      <strong className="block text-sm leading-4 text-white">{item.title}</strong>
-                      <span className="mt-1 block text-[13px] leading-4 text-white/60">{item.description}</span>
+                    <span className="min-w-0 pr-6">
+                      <strong className="block text-sm font-black leading-5 text-white">{item.title}</strong>
+                      <span className="mt-0.5 block text-xs leading-4 text-[#A9BACB]">{item.description}</span>
                     </span>
                   </button>
                 )
@@ -1423,47 +1578,66 @@ export function CustomerClaimExperience({
             </div>
           </div>
 
-          <div className="customer-claim-solid-form-panel mt-5 rounded-xl border border-[#344255] bg-[#111820] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_16px_36px_rgba(0,0,0,0.32)] sm:p-6">
-            <div>
-              <h4 className="border-l-4 border-[#5CA9E6] py-0.5 pl-3 text-lg font-bold leading-6 text-white">Contanos qué pasó</h4>
-              <p className="mt-1.5 pl-4 text-sm font-medium leading-5 text-[#9EB4C8]">Describí el problema con el mayor detalle posible.</p>
-              <div className="mt-3">
-                <textarea
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  rows={4}
-                  minLength={CLAIM_DESCRIPTION_MIN_LENGTH}
-                  maxLength={CLAIM_DESCRIPTION_MAX_LENGTH}
-                  placeholder="Ejemplo: el producto enciende, pero se apaga después de unos segundos..."
-                  className="w-full resize-none rounded-xl border border-[#344255] bg-[#1A222C] px-3.5 py-3 text-base font-medium leading-6 text-white outline-none placeholder:text-[#9AA7B5] transition-all duration-200 hover:border-[#4B6078] hover:bg-[#202A35] focus:border-[#5CA9E6] focus:ring-2 focus:ring-[#5CA9E6]/18"
-                />
-                <p className="mt-1.5 pr-1 text-right text-10px text-white/40">{description.length}/{CLAIM_DESCRIPTION_MAX_LENGTH}</p>
+          <div className="customer-claim-step-panel rounded-xl border border-[#2A3037]/80 bg-[#080A0D] p-3.5 sm:p-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#5CA9E6]/35 bg-[#112A43] text-[11px] font-black text-white">
+                3
+              </span>
+              <div>
+                <h2 className="text-base font-black text-white">Detalles y evidencia</h2>
               </div>
             </div>
 
-            <div className="mt-5 border-t border-[#2A3644] pt-5">
-              <h4 className="border-l-4 border-[#5CA9E6] py-0.5 pl-3 text-lg font-bold leading-6 text-white">Fotos o videos</h4>
-              <p className="mt-1.5 pl-4 text-sm font-medium leading-5 text-[#9EB4C8]">Podés adjuntar evidencia para ayudarnos a revisar el caso.</p>
-              <div className="mt-3">
-                <EvidenceUploader files={files} onChange={setFiles} disabled={loading} surface="neutral" />
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="customer-claim-details-column rounded-xl bg-[#111B25] p-3">
+                <h3 className="text-sm font-black leading-5 text-white">Contanos qué pasó</h3>
+                <p className="mt-0.5 text-xs font-medium leading-4 text-[#A9BACB]">
+                  Describí el problema con el mayor detalle posible.
+                </p>
+                <div className="relative mt-2.5">
+                  <textarea
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    rows={6}
+                    minLength={CLAIM_DESCRIPTION_MIN_LENGTH}
+                    maxLength={CLAIM_DESCRIPTION_MAX_LENGTH}
+                    placeholder="Ejemplo: el producto enciende, pero se apaga después de unos segundos..."
+                    className="customer-claim-description min-h-[140px] w-full resize-none rounded-xl border border-[#34485C] bg-[#151E28] px-3 pb-7 pt-2.5 text-sm font-medium leading-5 text-white outline-none placeholder:text-[#8FA1B2] transition-all duration-200 hover:border-[#4B6078] focus:border-[#5CA9E6] focus:ring-2 focus:ring-[#5CA9E6]/18"
+                  />
+                  <p className="pointer-events-none absolute bottom-2.5 right-3 text-[11px] font-semibold text-white/45">
+                    {description.length}/{CLAIM_DESCRIPTION_MAX_LENGTH}
+                  </p>
+                </div>
+              </div>
+
+              <div className="customer-claim-details-column rounded-xl bg-[#111B25] p-3">
+                <h3 className="text-sm font-black leading-5 text-white">Fotos o videos</h3>
+                <p className="mt-0.5 text-xs font-medium leading-4 text-[#A9BACB]">
+                  Podés adjuntar evidencia para ayudarnos a revisar el caso.
+                </p>
+                <div className="mt-2.5">
+                  <EvidenceUploader files={files} onChange={setFiles} disabled={loading} surface="neutral" />
+                </div>
               </div>
             </div>
 
-            <div className="mt-5 border-t border-[#2A3644] pt-5">
-              {error && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
-              <div className="flex justify-end">
+            <div className="customer-claim-submit-row mt-3 border-t border-[#294157]/65 pt-3">
+              {error && <p className="mb-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{error}</p>}
+              <div className="flex justify-center">
                 <button
                   type="button"
                   aria-label="Enviar reclamo"
                   disabled={loading || description.trim().length < CLAIM_DESCRIPTION_MIN_LENGTH}
                   onClick={() => void createClaim()}
-                  className="h-11 w-full rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-6 text-sm font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111820] disabled:text-white/45 disabled:shadow-none disabled:hover:border-white/10 disabled:hover:bg-[#111820] sm:w-auto"
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-6 text-sm font-black text-white transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] active:bg-[#0E2338] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111820] disabled:text-white/45 sm:w-auto"
                 >
+                  <Send className="size-4" />
                   {loading ? "Enviando..." : "Enviar reclamo"}
                 </button>
               </div>
             </div>
           </div>
+
         </div>
       )}
 

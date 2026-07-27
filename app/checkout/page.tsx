@@ -100,6 +100,7 @@ import {
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
+import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
 import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
@@ -1193,8 +1194,8 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <main className="min-h-screen bg-[#05070A] font-heading text-white">
-      <header className="sticky top-0 z-50 border-b border-beyonix-blue-light/14 bg-[#05070A]/95 backdrop-blur">
+      <main className="checkout-page min-h-screen bg-[#05070A] font-heading text-white">
+      <header className="checkout-header sticky top-0 z-50 border-b border-beyonix-blue-light/14 bg-[#05070A]/95 backdrop-blur">
         <div className="container mx-auto px-4 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
             <button
@@ -1340,7 +1341,7 @@ export default function CheckoutPage() {
 
       <div className="beyonix-checkout-container py-5 lg:py-7">
         <div className="mx-auto max-w-none">
-          <div className="mb-4 flex items-end justify-between gap-4">
+          <div className="checkout-heading-row mb-4 flex items-end justify-between gap-4">
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.2em] text-beyonix-cyan/75">
                 Compra segura
@@ -1355,7 +1356,7 @@ export default function CheckoutPage() {
             </span>
           </div>
 
-          <div className="mb-3 grid grid-cols-3 gap-2 lg:gap-3" aria-label="Progreso del checkout">
+          <div className="checkout-progress mb-3 grid grid-cols-3 gap-2 lg:gap-3" aria-label="Progreso del checkout">
             {checkoutSteps.map((step) => {
               const active =
                 currentStep === step.id
@@ -1401,11 +1402,11 @@ export default function CheckoutPage() {
           <form
             id="checkout-form"
             onSubmit={handleSubmit}
-            className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(22rem,0.85fr)] lg:gap-4 2xl:gap-5"
+            className="checkout-layout grid items-stretch gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(22rem,0.85fr)] lg:gap-4 2xl:gap-5"
           >
-            <section className={cn(checkoutFormPanelClassName, "flex min-h-[clamp(440px,52vh,560px)] flex-col px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5")}>
+            <section className={cn(checkoutFormPanelClassName, "checkout-main-panel flex min-h-[clamp(440px,52vh,560px)] flex-col px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5")}>
               {currentStep === 1 && (
-                <div className="animate-in fade-in slide-in-from-right-2 space-y-3 duration-300 [&_label]:text-[13px]">
+                <div className="checkout-receiver-step animate-in fade-in slide-in-from-right-2 space-y-3 duration-300 [&_label]:text-[13px]">
                   <h2 className={checkoutSectionHeadingClassName}>
                     Datos de quien recibe
                   </h2>
@@ -1648,6 +1649,13 @@ export default function CheckoutPage() {
                     ))}
                   </div>
 
+                  {selectedPayment === "transferencia" && (
+                    <CheckoutNotice tone="warning">
+                      <strong className="text-white">Horario de validación de comprobantes:</strong>{" "}
+                      {BEYONIX_SUPPORT_HOURS_DETAIL}
+                    </CheckoutNotice>
+                  )}
+
                   <div className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
                       ¿Necesitás ayuda con tu pago?
@@ -1689,7 +1697,7 @@ export default function CheckoutPage() {
 
               <div
                 className={cn(
-                  "mt-auto flex items-center gap-3 pt-3",
+                  "checkout-actions mt-auto flex items-center gap-3 pt-3",
                   currentStep === 1 ? "justify-end" : "justify-between",
                 )}
               >
@@ -1755,7 +1763,7 @@ export default function CheckoutPage() {
               </div>
             </section>
 
-            <aside className={cn(checkoutPanelClassName, "h-fit self-start px-4 py-3 lg:sticky lg:top-24")}>
+            <aside className={cn(checkoutPanelClassName, "checkout-summary h-fit self-start px-4 py-3 lg:sticky lg:top-24")}>
               <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-beyonix-blue-light/75 to-transparent" />
               <div className="flex items-center justify-between gap-3">
                 <h2 className={checkoutSectionHeadingClassName}>
@@ -1799,7 +1807,10 @@ export default function CheckoutPage() {
                     <div className="flex min-w-0 flex-col justify-between py-0.5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="line-clamp-2 text-sm font-bold text-foreground">
+                          <p
+                            title={item.product.nombre}
+                            className="truncate whitespace-nowrap text-sm font-bold text-foreground"
+                          >
                             {item.product.nombre}
                           </p>
                           <div className="mt-1 flex min-w-0 flex-col items-start gap-0.5">

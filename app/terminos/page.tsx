@@ -52,7 +52,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic"
 
-const LAST_UPDATED = "22 de julio de 2026"
+const LAST_UPDATED = "27 de julio de 2026"
 const PAYMENT_PROOF_MAX_MB = PAYMENT_PROOF_MAX_SIZE / 1024 / 1024
 
 const LEGAL_SECTIONS = [
@@ -464,6 +464,14 @@ export default async function TerminosPage() {
                 destino y acreditación antes de aprobarlo. Si fuera rechazado, el estado del pedido
                 indicará que debe reemplazarse. Los saldos a favor pueden cubrir total o parcialmente
                 una compra cuando estén vigentes y asociados a la cuenta.
+              </p>
+              <p>
+                La validación manual de comprobantes de transferencia se realiza{" "}
+                <strong className="font-bold text-white">
+                  {BEYONIX_SUPPORT_HOURS_DETAIL.toLocaleLowerCase("es-AR")}
+                </strong>{" "}
+                Los comprobantes pueden cargarse en cualquier momento y, si se envían fuera de ese horario,
+                serán revisados durante la siguiente jornada de atención.
               </p>
               <div className="rounded-xl border border-[#49A9E8]/30 bg-[#0D2D43]/45 p-4 text-sm leading-6 text-white/68">
                 <strong className="text-white">Cargas de saldo mediante Mercado Pago.</strong>{" "}

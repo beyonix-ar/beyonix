@@ -2119,9 +2119,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const [error, setError] = useState("")
   const [downloadingInvoice, setDownloadingInvoice] = useState(false)
   const [downloadingCreditNote, setDownloadingCreditNote] = useState(false)
-  const [cancelModalOpen, setCancelModalOpen] = useState(false)
-  const [cancellingOrder, setCancellingOrder] = useState(false)
-  const [cancelError, setCancelError] = useState("")
   const [refundProofOpening, setRefundProofOpening] = useState(false)
   const [refundProofError, setRefundProofError] = useState("")
 
@@ -2234,35 +2231,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     }
   }
 
-  const handleCancelOrder = async () => {
-    if (!order || cancellingOrder) return
-
-    setCancellingOrder(true)
-    setCancelError("")
-    try {
-      const response = await fetch(`/api/orders/${order.id}/cancel`, {
-        method: "POST",
-      })
-      const data = (await response.json()) as { order?: SupabasePedido; error?: string }
-
-      if (!response.ok || !data.order) {
-        setCancelError(data.error || "No se pudo cancelar la compra.")
-        return
-      }
-
-      setOrder((current) =>
-        current
-          ? { ...current, ...data.order, orden_items: current.orden_items }
-          : data.order ?? current,
-      )
-      setCancelModalOpen(false)
-    } catch {
-      setCancelError("No se pudo cancelar la compra. Intentá nuevamente.")
-    } finally {
-      setCancellingOrder(false)
-    }
-  }
-
   const handleOpenRefundProof = async () => {
     if (!order || refundProofOpening) return
 
@@ -2357,10 +2325,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       : `Ver reclamo del pedido ${formatPublicOrderId(order.id)}`
     : `Iniciar reclamo del pedido ${formatPublicOrderId(order.id)}`
   const claimDetailStatus = getCustomerClaimDetailStatus(existingClaim)
-  const canCancelOrder =
-    !isCancelled &&
-    !orderDelivered &&
-    !isOrderDetailDispatched(order)
   const showPaymentProofSection =
     isTransferPayment &&
     !paymentConfirmed &&
@@ -2598,11 +2562,11 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   }
 
   return (
-    <main className="order-detail-solid-surface min-h-screen bg-[#05070A] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
-      <div className="mx-auto max-w-[1200px]">
-        <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a Mis compras</button>
+    <main className="customer-order-detail-page order-detail-solid-surface min-h-screen bg-[#05070A] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
+      <div className="customer-order-detail-container mx-auto max-w-[1200px]">
+        <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="customer-order-detail-back inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a Mis compras</button>
 
-        <header className="mt-4 rounded-2xl border border-[#18334D] bg-[#0B1118] p-3.5 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-4">
+        <header className="customer-order-detail-header mt-4 rounded-2xl border border-[#18334D] bg-[#0B1118] p-3.5 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
@@ -2635,13 +2599,13 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 
         {error && <p className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">{error}</p>}
 
-        <div className="mt-3">
+        <div className="customer-order-detail-timeline mt-3">
           <OrderProgressTimeline order={order} />
         </div>
 
         <div className="order-detail-components-shell mt-3 grid items-start gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
-          <div className="space-y-4">
-            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
+          <div className="customer-order-detail-main space-y-4">
+            <section className="customer-order-products rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Productos comprados</h2>
               <div className="mt-3 space-y-2">
                 {items.map((item) => {
@@ -2660,7 +2624,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             </section>
 
             {(showPaymentProofSection || !orderDelivered) && (
-              <section className="rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
+              <section className="customer-order-management rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
                 <h2 className="text-sm font-bold text-white">
                   Gestión del pedido
                 </h2>
@@ -2776,7 +2740,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             )}
 
             {showPreDeliveryHelp && (
-              <section className="rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
+              <section className="customer-order-help rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <h2 className="text-sm font-bold text-white">
@@ -2820,25 +2784,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </section>
             )}
 
-            {canCancelOrder && (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  aria-label={`Cancelar pedido ${formatPublicOrderId(order.id)}`}
-                  title="Cancelar compra"
-                  disabled={cancellingOrder}
-                  onClick={() => {
-                    setCancelError("")
-                    setCancelModalOpen(true)
-                  }}
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-status-danger/25 bg-beyonix-status-danger/8 px-3 text-11px font-black text-beyonix-status-danger transition-colors hover:border-beyonix-status-danger/45 hover:bg-beyonix-status-danger/12 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <X className="size-3.5" />
-                  Cancelar compra
-                </button>
-              </div>
-            )}
-
             {order.estado === "entregado" && (
               <div className="space-y-3">
                 <OrderProductFeedback order={order} />
@@ -2847,8 +2792,8 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             )}
           </div>
 
-          <aside className="space-y-3.5 lg:sticky lg:top-24">
-            <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
+          <aside className="customer-order-detail-aside space-y-3.5 lg:sticky lg:top-24">
+            <section className="customer-order-payment-summary rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-white">Resumen de pago</h2>
               <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-semibold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-semibold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}{creditBalanceUsed > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Saldo a favor</dt><dd className="font-semibold">− {formatCuentaPrice(creditBalanceUsed)}</dd></div>}{creditBalanceUsed > 0 && externalAmountDue > 0 && <div className="flex justify-between gap-3 text-white/65"><dt>Diferencia pagada</dt><dd className="font-semibold text-white">{formatCuentaPrice(externalAmountDue)}</dd></div>}</dl>
               <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/35 bg-[#102A22] px-3.5 py-3"><span className="text-10px font-semibold uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-base font-bold text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
@@ -2885,47 +2830,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
         </div>
       </div>
 
-      {cancelModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="cancel-order-title">
-          <div className="w-full max-w-lg rounded-2xl border border-blue-300/16 bg-[#0D1117] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.5)]">
-            <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-red-300/20 bg-red-500/12">
-                <AlertTriangle className="size-5 text-red-200" />
-              </span>
-              <div>
-                <h4 id="cancel-order-title" className="text-lg font-black text-white">
-                  ¿Querés cancelar el pedido {formatPublicOrderId(order.id)}?
-                </h4>
-                <p className="mt-2 text-sm leading-6 text-white/72">
-                  {order.payment_status === "confirmado" || order.payment_status === "approved" || order.paid_at
-                    ? "Si confirmás la cancelación, registraremos tu solicitud de arrepentimiento y el reintegro quedará pendiente de gestión."
-                    : "Si confirmás la cancelación, vamos a cancelar tu compra automáticamente."}
-                </p>
-              </div>
-            </div>
-            {cancelError && <p className="mt-3 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">{cancelError}</p>}
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                disabled={cancellingOrder}
-                onClick={() => setCancelModalOpen(false)}
-                className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg border border-white/12 px-4 text-xs font-black text-white/85 transition hover:border-blue-300/30 disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                Continuar con el pedido
-              </button>
-              <button
-                type="button"
-                disabled={cancellingOrder}
-                onClick={() => void handleCancelOrder()}
-                className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-red-300/30 bg-red-500/14 px-4 text-xs font-black text-red-50 transition hover:border-red-300/55 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                {cancellingOrder && <Loader2 className="size-3.5 animate-spin" />}
-                {cancellingOrder ? "Procesando..." : "Sí, cancelar compra"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   )
 }
@@ -2941,6 +2845,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
   const [loading, setLoading] = useState(true)
   const [redirecting, setRedirecting] = useState(false)
   const [error, setError] = useState("")
+  const [cancellationCompleted, setCancellationCompleted] = useState(false)
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" })
@@ -3015,18 +2920,48 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
     return <main className="min-h-screen bg-[#05070A] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#0D1117] p-6 text-center"><p className="text-sm font-bold text-white">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push(`/cuenta/compras/${orderId}`)} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a la compra</button></div></main>
   }
 
+  if (
+    cancellationCompleted ||
+    (order.estado ?? "").toLowerCase() === "cancelado"
+  ) {
+    return (
+      <main className="flex min-h-screen items-start justify-center bg-[#05070A] px-4 pt-32 font-heading sm:pt-36">
+        <section
+          className="customer-cancellation-success-card relative z-20 w-full max-w-md rounded-xl border border-[#18334D] px-5 py-6 text-center shadow-[0_18px_50px_rgba(0,0,0,0.4)]"
+        >
+          <CheckCircle2 className="mx-auto size-8 text-emerald-300" />
+          <h1 className="mt-3 text-base font-medium text-white">
+            Compra cancelada correctamente.
+          </h1>
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="mt-5 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 px-4 text-xs font-normal text-emerald-50 transition-colors hover:border-emerald-300/45 hover:bg-emerald-400/15"
+          >
+            Volver al inicio
+          </button>
+        </section>
+      </main>
+    )
+  }
+
   return (
-    <main className="min-h-screen px-3 pt-24 font-heading sm:px-5 lg:px-8">
-      <div className="customer-claim-page-frame w-full py-3">
+    <main className="customer-claim-create-page min-h-screen px-3 pt-20 font-heading sm:px-5 sm:pt-24 lg:px-8">
+      <div className="customer-claim-page-frame w-full py-2">
         <div className="mx-auto w-full max-w-[72rem]">
           <AccountBackButton
             type="button"
             label="Volver a la compra"
             onClick={() => router.push(`/cuenta/compras/${order.id}`)}
+            className="border-[#31465B] bg-[#0D151E]/75 text-white/78 transition-all duration-200 hover:border-[#5CA9E6]/55 hover:bg-[#111D28] hover:text-white hover:[&_svg]:-translate-x-0.5 [&_svg]:text-white [&_svg]:transition-transform"
           />
 
-          <section className="customer-claim-experience mt-4">
-            <CustomerClaimExperience order={order} claimsVerified />
+          <section className="customer-claim-experience mt-3">
+            <CustomerClaimExperience
+              order={order}
+              claimsVerified
+              onOrderCancelled={() => setCancellationCompleted(true)}
+            />
           </section>
         </div>
       </div>

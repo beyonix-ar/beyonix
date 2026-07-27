@@ -171,7 +171,7 @@ async function notifyCustomerCancellation(
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
@@ -188,6 +188,26 @@ export async function POST(
 
   if (!Number.isFinite(orderId) || orderId <= 0) {
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
+  }
+
+  const body = (await request.json().catch(() => null)) as {
+    reason?: unknown
+  } | null
+  const cancellationReason =
+    typeof body?.reason === "string" ? body.reason.trim() : ""
+
+  if (cancellationReason.length < 5) {
+    return NextResponse.json(
+      { error: "Contanos el motivo con al menos 5 caracteres." },
+      { status: 400 },
+    )
+  }
+
+  if (cancellationReason.length > 600) {
+    return NextResponse.json(
+      { error: "El motivo no puede superar los 600 caracteres." },
+      { status: 400 },
+    )
   }
 
   const admin = createAdminClient()
@@ -290,6 +310,7 @@ export async function POST(
     newStatus: nextFinancialStatus,
     metadata: {
       cancelledAt,
+      cancellationReason,
       paymentStatus: order.payment_status ?? null,
       paymentProofUrl: order.payment_proof_url ?? null,
       invoiceIssued: isOrderInvoiced(order),

@@ -472,6 +472,11 @@ export interface SupabaseOrderClaimMessage {
   created_at: string
 }
 
+export interface SupabaseOrderClaimAffectedItem {
+  order_item_id: number
+  quantity: number
+}
+
 export interface SupabaseOrderClaim {
   id: number
   order_id: number
@@ -523,6 +528,9 @@ export interface SupabaseOrderClaim {
   last_customer_message_at?: string | null
   last_admin_response_at?: string | null
   admin_needs_action?: boolean
+  affected_items?: SupabaseOrderClaimAffectedItem[]
+  affected_items_updated_at?: string | null
+  affected_items_updated_by?: string | null
   order_claim_files?: SupabaseOrderClaimFile[]
   order_claim_messages?: SupabaseOrderClaimMessage[]
 }

@@ -3,12 +3,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
 import {
   CheckCircle2,
+  ChevronDown,
   CreditCard,
   Download,
   Eye,
   FileText,
   MessageSquare,
   PackageCheck,
+  Pencil,
   Play,
   Send,
   ShieldCheck,
@@ -324,16 +326,89 @@ function getReturnInventoryDraft(item: SupabasePedidoItem): ReturnInventoryDraft
   }
 }
 
+type AffectedItemSelection = {
+  order_item_id: number
+  quantity: number
+}
+
+function getClaimAffectedItems(
+  claim: SupabaseOrderClaim,
+  orderItems: SupabasePedidoItem[],
+): AffectedItemSelection[] {
+  const orderItemsById = new Map(orderItems.map((item) => [Number(item.id), item]))
+  const persistedItems = Array.isArray(claim.affected_items)
+    ? claim.affected_items
+        .map((item) => ({
+          order_item_id: Number(item.order_item_id),
+          quantity: Number(item.quantity),
+        }))
+        .filter((item) => {
+          const orderItem = orderItemsById.get(item.order_item_id)
+          return (
+            Boolean(orderItem) &&
+            Number.isInteger(item.quantity) &&
+            item.quantity > 0 &&
+            item.quantity <= Number(orderItem?.cantidad ?? 0)
+          )
+        })
+    : []
+
+  if (persistedItems.length > 0) return persistedItems
+
+  // Compatibilidad con reclamos creados antes de guardar la selección estructurada.
+  const affectedLine = (claim.description ?? "").split(/\r?\n/, 1)[0].toLocaleLowerCase("es")
+  if (affectedLine.includes("todo el pedido")) {
+    return orderItems.map((item) => ({
+      order_item_id: Number(item.id),
+      quantity: Number(item.cantidad ?? 0),
+    }))
+  }
+
+  return orderItems
+    .filter((item) => {
+      const productName = item.productos?.nombre?.trim().toLocaleLowerCase("es")
+      const variantName = item.producto_variantes?.nombre?.trim().toLocaleLowerCase("es")
+      return Boolean(
+        productName &&
+          affectedLine.includes(productName) &&
+          (!variantName || affectedLine.includes(variantName)),
+      )
+    })
+    .map((item) => ({
+      order_item_id: Number(item.id),
+      quantity: Number(item.cantidad ?? 0),
+    }))
+}
+
 function ReturnInventoryPanel({
   pedido,
+  claim,
   canManage,
   onUpdated,
 }: {
   pedido: SupabasePedido
+  claim: SupabaseOrderClaim
   canManage: boolean
   onUpdated?: () => void | Promise<void>
 }) {
-  const items = pedido.orden_items ?? []
+  const orderItems = pedido.orden_items ?? []
+  const [affectedItems, setAffectedItems] = useState<AffectedItemSelection[]>(() =>
+    getClaimAffectedItems(claim, orderItems),
+  )
+  const [editingAffectedItems, setEditingAffectedItems] = useState(false)
+  const [savingAffectedItems, setSavingAffectedItems] = useState(false)
+  const [affectedDrafts, setAffectedDrafts] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      getClaimAffectedItems(claim, orderItems).map((item) => [
+        item.order_item_id,
+        String(item.quantity),
+      ]),
+    ),
+  )
+  const affectedQuantityById = new Map(
+    affectedItems.map((item) => [item.order_item_id, item.quantity]),
+  )
+  const items = orderItems.filter((item) => affectedQuantityById.has(Number(item.id)))
   const [drafts, setDrafts] = useState<Record<number, ReturnInventoryDraft>>(() =>
     Object.fromEntries(items.map((item) => [item.id, getReturnInventoryDraft(item)])),
   )
@@ -342,13 +417,143 @@ function ReturnInventoryPanel({
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null)
 
   useEffect(() => {
+    const nextAffectedItems = getClaimAffectedItems(claim, orderItems)
+    setAffectedItems(nextAffectedItems)
+    setAffectedDrafts(
+      Object.fromEntries(
+        nextAffectedItems.map((item) => [item.order_item_id, String(item.quantity)]),
+      ),
+    )
+    setEditingAffectedItems(false)
     setDrafts(
-      Object.fromEntries(items.map((item) => [item.id, getReturnInventoryDraft(item)])),
+      Object.fromEntries(
+        orderItems
+          .filter((item) =>
+            nextAffectedItems.some(
+              (affectedItem) => affectedItem.order_item_id === Number(item.id),
+            ),
+          )
+          .map((item) => [item.id, getReturnInventoryDraft(item)]),
+      ),
     )
     setSavingItemId(null)
     setConfirmationItemId(null)
     setNotice(null)
-  }, [pedido.id, pedido.orden_items])
+  }, [claim.id, claim.affected_items, claim.affected_items_updated_at, pedido.id, pedido.orden_items])
+
+  const toggleAffectedItem = (item: SupabasePedidoItem) => {
+    if (item.return_inventory_processed_at) return
+
+    setAffectedDrafts((current) => {
+      const next = { ...current }
+      if (Object.prototype.hasOwnProperty.call(next, item.id)) {
+        delete next[item.id]
+      } else {
+        next[item.id] = String(Math.max(Number(item.cantidad ?? 0), 1))
+      }
+      return next
+    })
+  }
+
+  const selectWholeOrder = () => {
+    setAffectedDrafts(
+      Object.fromEntries(
+        orderItems.map((item) => [
+          item.id,
+          String(
+            item.return_inventory_processed_at
+              ? affectedQuantityById.get(Number(item.id)) ?? Number(item.cantidad ?? 0)
+              : Number(item.cantidad ?? 0),
+          ),
+        ]),
+      ),
+    )
+  }
+
+  const saveAffectedItems = async () => {
+    const normalizedItems = Object.entries(affectedDrafts)
+      .map(([orderItemId, quantity]) => ({
+        orderItemId: Number(orderItemId),
+        quantity: Number(quantity),
+      }))
+      .filter((item) => item.quantity > 0)
+
+    if (normalizedItems.length === 0) {
+      setNotice({ ok: false, message: "Seleccioná al menos un producto reclamado." })
+      return
+    }
+
+    for (const selectedItem of normalizedItems) {
+      const orderItem = orderItems.find((item) => Number(item.id) === selectedItem.orderItemId)
+      if (
+        !orderItem ||
+        !Number.isInteger(selectedItem.quantity) ||
+        selectedItem.quantity < 1 ||
+        selectedItem.quantity > Number(orderItem.cantidad ?? 0)
+      ) {
+        setNotice({
+          ok: false,
+          message: "Revisá las cantidades: no pueden superar las unidades compradas.",
+        })
+        return
+      }
+    }
+
+    setSavingAffectedItems(true)
+    setNotice(null)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setNotice({ ok: false, message: "La sesión administrativa venció." })
+        return
+      }
+
+      const response = await fetch(`/api/admin/order-claims/${claim.id}/affected-items`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ items: normalizedItems }),
+      })
+      const data = (await response.json()) as {
+        error?: string
+        claim?: SupabaseOrderClaim
+      }
+
+      if (!response.ok || !data.claim) {
+        setNotice({
+          ok: false,
+          message: data.error || "No se pudo corregir la selección del reclamo.",
+        })
+        return
+      }
+
+      const nextAffectedItems = getClaimAffectedItems(data.claim, orderItems)
+      setAffectedItems(nextAffectedItems)
+      setAffectedDrafts(
+        Object.fromEntries(
+          nextAffectedItems.map((item) => [item.order_item_id, String(item.quantity)]),
+        ),
+      )
+      setEditingAffectedItems(false)
+      setNotice({
+        ok: true,
+        message: "Productos reclamados actualizados correctamente.",
+      })
+      notifyOrderNotificationsChanged()
+      await onUpdated?.()
+    } catch {
+      setNotice({
+        ok: false,
+        message: "No se pudo corregir la selección del reclamo.",
+      })
+    } finally {
+      setSavingAffectedItems(false)
+    }
+  }
 
   const updateDraft = (
     item: SupabasePedidoItem,
@@ -380,7 +585,7 @@ function ReturnInventoryPanel({
     const received = Number(draft.received || 0)
     const restocked = Number(draft.goodCondition || 0)
     const writtenOff = received - restocked
-    const soldQuantity = Number(item.cantidad ?? 0)
+    const claimedQuantity = affectedQuantityById.get(Number(item.id)) ?? 0
     const previouslyProcessed = Boolean(item.return_inventory_processed_at)
 
     if (previouslyProcessed) {
@@ -401,10 +606,10 @@ function ReturnInventoryPanel({
       return
     }
 
-    if (received > soldQuantity) {
+    if (received > claimedQuantity) {
       setNotice({
         ok: false,
-        message: "Las unidades recibidas no pueden superar las unidades vendidas.",
+        message: "Las unidades recibidas no pueden superar las unidades reclamadas.",
       })
       return
     }
@@ -458,6 +663,7 @@ function ReturnInventoryPanel({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            claimId: claim.id,
             restockedQuantity: restocked,
             writtenOffQuantity: writtenOff,
             note: draft.note.trim(),
@@ -517,19 +723,153 @@ function ReturnInventoryPanel({
           <p className="text-10px font-black uppercase tracking-widest text-blue-200/75">
             Recepción e inventario
           </p>
-          <h4 className="mt-1 text-sm font-black text-white">Productos devueltos</h4>
+          <h4 className="mt-1 text-sm font-black text-white">
+            Productos incluidos en el reclamo
+          </h4>
+          <p className="mt-1 text-xs font-semibold text-blue-100/75">
+            {claim.affected_items_updated_at
+              ? "Selección corregida por administración."
+              : "Selección declarada por el cliente."}
+          </p>
           {hasPendingInventory && (
             <p className="mt-1 max-w-3xl text-xs font-semibold leading-5 text-white/62">
               Registrá el destino cuando el producto vuelva físicamente a BEYONIX. Lo revendible suma stock; lo dañado queda asentado como baja o pérdida y no vuelve al stock disponible.
             </p>
           )}
         </div>
-        {!canManage && hasPendingInventory && (
-          <span className="w-fit rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-10px font-black uppercase text-white/55">
-            Solo lectura
-          </span>
-        )}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {!canManage && hasPendingInventory && (
+            <span className="w-fit rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-10px font-black uppercase text-white/55">
+              Solo lectura
+            </span>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              aria-expanded={editingAffectedItems}
+              onClick={() => setEditingAffectedItems((current) => !current)}
+              className="admin-ds-button inline-flex h-9 min-w-max items-center justify-center gap-2 whitespace-nowrap px-3 text-10px font-black"
+            >
+              <Pencil className="size-3.5 shrink-0" />
+              <span>Corregir productos</span>
+              <ChevronDown
+                className={`size-3.5 shrink-0 transition-transform ${
+                  editingAffectedItems ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          )}
+        </div>
       </div>
+
+      {editingAffectedItems && canManage && (
+        <div className="mt-3 rounded-xl border border-blue-300/20 bg-[#08131E] p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-xs font-black text-white">Corregir productos reclamados</p>
+              <p className="mt-1 text-11px font-semibold leading-4 text-white/55">
+                Seleccioná únicamente lo que el cliente devolverá. Los cambios quedan registrados.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={selectWholeOrder}
+              className="admin-ds-button h-8 px-3 text-10px font-black"
+            >
+              Seleccionar todo el pedido
+            </button>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {orderItems.map((item) => {
+              const selected = Object.prototype.hasOwnProperty.call(affectedDrafts, item.id)
+              const purchasedQuantity = Number(item.cantidad ?? 0)
+              const locked = Boolean(item.return_inventory_processed_at)
+              const productName = item.productos?.nombre ?? `Producto #${item.producto_id}`
+              const variantName = item.producto_variantes?.nombre?.trim()
+
+              return (
+                <div
+                  key={`affected-editor-${item.id}`}
+                  className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${
+                    selected
+                      ? "border-blue-300/45 bg-[#112A43]"
+                      : "border-white/10 bg-black/20"
+                  }`}
+                >
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={locked}
+                      onChange={() => toggleAffectedItem(item)}
+                      className="size-4 accent-blue-400"
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-black text-white">
+                        {productName}
+                      </span>
+                      <span className="mt-0.5 block truncate text-10px font-semibold text-white/52">
+                        {variantName || "Sin variante"} · Compradas: {purchasedQuantity}
+                        {locked ? " · Recepción cerrada" : ""}
+                      </span>
+                    </span>
+                  </label>
+                  {selected && (
+                    <label className="shrink-0">
+                      <span className="sr-only">Cantidad reclamada de {productName}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={purchasedQuantity}
+                        step={1}
+                        value={affectedDrafts[item.id] ?? ""}
+                        disabled={locked}
+                        onChange={(event) =>
+                          setAffectedDrafts((current) => ({
+                            ...current,
+                            [item.id]: event.target.value,
+                          }))
+                        }
+                        className={`${adminControlClassName} h-8 min-h-8 w-16 px-2 text-center text-xs`}
+                      />
+                    </label>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              disabled={savingAffectedItems}
+              onClick={() => {
+                setAffectedDrafts(
+                  Object.fromEntries(
+                    affectedItems.map((item) => [
+                      item.order_item_id,
+                      String(item.quantity),
+                    ]),
+                  ),
+                )
+                setEditingAffectedItems(false)
+              }}
+              className="admin-ds-button h-9 px-3 text-10px font-black"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={savingAffectedItems}
+              onClick={() => void saveAffectedItems()}
+              className="admin-ds-button admin-ds-button-primary h-9 px-3 text-10px font-black disabled:opacity-45"
+            >
+              {savingAffectedItems ? "Guardando..." : "Guardar corrección"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {notice && (
         <p
@@ -549,7 +889,7 @@ function ReturnInventoryPanel({
           items.map((item) => {
             const draft = drafts[item.id] ?? getReturnInventoryDraft(item)
             const productName = item.productos?.nombre ?? `Producto #${item.producto_id}`
-            const soldQuantity = Number(item.cantidad ?? 0)
+            const claimedQuantity = affectedQuantityById.get(Number(item.id)) ?? 0
             const receivedQuantity =
               Number(item.return_restocked_quantity ?? 0) +
               Number(item.return_written_off_quantity ?? 0)
@@ -567,7 +907,7 @@ function ReturnInventoryPanel({
             const nextProductStock = productStock + pendingStockDelta
             const nextVariantStock = variantStock + pendingStockDelta
             const singleUnitCondition =
-              soldQuantity === 1 && draftReceived === 1
+              claimedQuantity === 1 && draftReceived === 1
                 ? draftGoodCondition === 1
                   ? "yes"
                   : "no"
@@ -579,11 +919,11 @@ function ReturnInventoryPanel({
               const onlyRestocked = restockedQuantity > 0 && writtenOffQuantity === 0
               const onlyWrittenOff = writtenOffQuantity > 0 && restockedQuantity === 0
               const resultLabel = onlyRestocked
-                ? soldQuantity === 1
+                ? claimedQuantity === 1
                   ? "Sí, volvió al stock"
                   : `${restockedQuantity} unidades volvieron al stock`
                 : onlyWrittenOff
-                  ? soldQuantity === 1
+                  ? claimedQuantity === 1
                     ? "No, se dio de baja"
                     : `${writtenOffQuantity} unidades se dieron de baja`
                   : `${restockedQuantity} al stock · ${writtenOffQuantity} de baja`
@@ -640,7 +980,7 @@ function ReturnInventoryPanel({
                   <div className="min-w-0">
                     <p className="truncate text-sm font-black text-white">{productName}</p>
                     <p className="mt-1 text-11px font-semibold text-white/55">
-                      {item.producto_variantes?.nombre?.trim() || "Sin variante"} · Vendidas: {soldQuantity}
+                      {item.producto_variantes?.nombre?.trim() || "Sin variante"} · Reclamadas: {claimedQuantity}
                     </p>
                     <p className="mt-1 text-11px font-semibold text-blue-100/72">
                       {item.variante_id
@@ -652,13 +992,13 @@ function ReturnInventoryPanel({
                     <div className="shrink-0 rounded-lg border border-emerald-300/18 bg-emerald-400/8 px-2.5 py-1.5 text-right">
                       <p className="text-10px font-black uppercase text-emerald-100">Recepción registrada</p>
                       <p className="mt-0.5 text-10px font-semibold text-white/58">
-                        {formatDate(item.return_inventory_processed_at)} · {receivedQuantity}/{soldQuantity} unidades
+                        {formatDate(item.return_inventory_processed_at)} · {receivedQuantity}/{claimedQuantity} unidades
                       </p>
                     </div>
                   )}
                 </div>
 
-                {soldQuantity === 1 ? (
+                {claimedQuantity === 1 ? (
                   <div className="mt-3">
                     <p className="text-xs font-black text-white">
                       ¿El producto llegó en buenas condiciones y se puede revender?
@@ -738,7 +1078,7 @@ function ReturnInventoryPanel({
                           <input
                             type="number"
                             min={0}
-                            max={soldQuantity}
+                            max={claimedQuantity}
                             step={1}
                             inputMode="numeric"
                             value={draft.received}
@@ -819,7 +1159,7 @@ function ReturnInventoryPanel({
           })
         ) : (
           <p className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-xs font-semibold text-white/55">
-            Este pedido no tiene productos cargados.
+            Este reclamo no tiene productos seleccionados. Usá “Corregir productos” para indicarlos.
           </p>
         )}
       </div>
@@ -951,6 +1291,7 @@ export function AdminClaimManager({
   const [saving, setSaving] = useState(false)
   const [loadingOrderClaims, setLoadingOrderClaims] = useState(false)
   const [notice, setNotice] = useState("")
+  const [creditNoteIssuedLocally, setCreditNoteIssuedLocally] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
   const firstReviewAttemptedRef = useRef<Set<number>>(new Set())
   const loadedOrderClaimsRef = useRef<Set<number>>(new Set())
@@ -1027,6 +1368,10 @@ export function AdminClaimManager({
     setResponse("")
     setNotice("")
   }, [claim?.id])
+
+  useEffect(() => {
+    setCreditNoteIssuedLocally(false)
+  }, [pedido.id])
 
   useEffect(() => {
     if (!claim) return
@@ -1293,11 +1638,17 @@ export function AdminClaimManager({
     if (!claim) return
     const nextStatus = claim.resolution === "cupon_descuento" ? "cupon_pendiente" : "cambio_pendiente"
     const sent = await updateClaim(
-      {
-        status: nextStatus,
-        resolution: claim.resolution ?? decisionResolution,
-      },
-      "Reclamo finalizado.",
+      claim.resolution === "cupon_descuento"
+        ? {
+            action: "mark_credit_note_issued",
+          }
+        : {
+            status: nextStatus,
+            resolution: claim.resolution ?? decisionResolution,
+          },
+      claim.resolution === "cupon_descuento"
+        ? "Nota de crédito informada al cliente y reclamo finalizado."
+        : "Reclamo finalizado.",
     )
     if (sent) closeDecision()
   }
@@ -1330,8 +1681,9 @@ export function AdminClaimManager({
       }
 
       setNotice("Nota de crédito emitida por ARCA.")
+      setCreditNoteIssuedLocally(true)
       notifyOrderNotificationsChanged()
-      await markAcceptedSolutionDone()
+      await onInventoryUpdated?.()
     } catch {
       setNotice("No se pudo emitir la nota de crédito.")
     } finally {
@@ -1477,6 +1829,13 @@ export function AdminClaimManager({
     !pedido.credit_note_issued &&
     pedido.credit_note_status !== "authorized" &&
     !pedido.credit_note_cae
+  const creditNoteIssued =
+    creditNoteIssuedLocally ||
+    Boolean(
+      pedido.credit_note_issued &&
+        pedido.credit_note_status === "authorized" &&
+        pedido.credit_note_cae,
+    )
   const canCloseClaim = !closed && !cancellation
   const canCloseConversation = helpMessage && !closed
   const helpResolved = helpMessage && claim.status === "cerrado"
@@ -1707,9 +2066,14 @@ export function AdminClaimManager({
                   <DecisionButton
                     icon={<CreditCard className="size-4" />}
                     title="Nota de crédito emitida"
-                    description="Confirmar que el crédito fue generado para el cliente."
+                    description={
+                      creditNoteIssued
+                        ? "Confirmar que el crédito fue generado para el cliente."
+                        : "Se habilita después de que ARCA autorice la nota de crédito."
+                    }
                     tone="success"
-                    disabled={saving}
+                    disabled={saving || !creditNoteIssued}
+                    mutedWhenDisabled
                     onClick={() => void markAcceptedSolutionDone()}
                   />
                 )}
@@ -1803,6 +2167,7 @@ export function AdminClaimManager({
       {mode === "claims" && (
         <ReturnInventoryPanel
           pedido={pedido}
+          claim={claim}
           canManage={isAdmin}
           onUpdated={onInventoryUpdated}
         />
@@ -1851,6 +2216,7 @@ function DecisionButton({
   description,
   tone = "secondary",
   disabled = false,
+  mutedWhenDisabled = false,
   onClick,
 }: {
   icon: ReactNode
@@ -1858,6 +2224,7 @@ function DecisionButton({
   description: string
   tone?: "warning" | "success" | "danger" | "primary" | "secondary"
   disabled?: boolean
+  mutedWhenDisabled?: boolean
   onClick?: () => void
 }) {
   return (
@@ -1865,7 +2232,9 @@ function DecisionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`admin-claim-decision-button is-${tone} rounded-lg border px-2.5 py-1.5 text-left transition disabled:cursor-not-allowed disabled:opacity-45`}
+      className={`admin-claim-decision-button is-${tone} ${
+        disabled && mutedWhenDisabled ? "is-disabled-muted" : ""
+      } rounded-lg border px-2.5 py-1.5 text-left transition disabled:cursor-not-allowed disabled:opacity-45`}
     >
       <span className="flex items-center gap-2">
         <span className="grid size-6 shrink-0 place-items-center rounded-md bg-white/10 text-white">{icon}</span>
