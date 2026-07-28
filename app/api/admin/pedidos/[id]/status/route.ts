@@ -429,7 +429,18 @@ export async function PATCH(
     await sendOrderStateEmail(data)
 
     if (estado === "cancelado") {
-      if (Number(currentOrder.credit_balance_used ?? 0) > 0) {
+      const hasAuthorizedInvoice =
+        currentOrder.invoice_status === "authorized" &&
+        Boolean(
+          currentOrder.invoice_cae &&
+            currentOrder.invoice_number &&
+            currentOrder.invoice_point,
+        )
+
+      if (
+        Number(currentOrder.credit_balance_used ?? 0) > 0 &&
+        !hasAuthorizedInvoice
+      ) {
         await reverseCustomerCreditForOrder(auth.admin, {
           orderId,
           description: "Reintegro de saldo por cancelación de compra",

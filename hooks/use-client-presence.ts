@@ -19,13 +19,13 @@ function getCartPayload(cart: ReturnType<typeof useCart>["cart"]) {
   }))
 }
 
-export function useClientPresence() {
+export function useClientPresence(enabled = true) {
   const { user } = useAuth()
   const { cart, isReady } = useCart()
   const cartPayload = useMemo(() => getCartPayload(cart), [cart])
 
   useEffect(() => {
-    if (!user?.id || user.rol !== "cliente") return
+    if (!enabled || !user?.id || user.rol !== "cliente") return
 
     const updatePresence = async () => {
       await supabase
@@ -55,10 +55,10 @@ export function useClientPresence() {
       window.clearInterval(interval)
       document.removeEventListener("visibilitychange", handleVisibility)
     }
-  }, [user?.id, user?.rol])
+  }, [enabled, user?.id, user?.rol])
 
   useEffect(() => {
-    if (!user?.id || user.rol !== "cliente" || !isReady) return
+    if (!enabled || !user?.id || user.rol !== "cliente" || !isReady) return
 
     const saveCart = async () => {
       await supabase
@@ -75,5 +75,5 @@ export function useClientPresence() {
     }
 
     void saveCart()
-  }, [cartPayload, isReady, user?.id, user?.rol])
+  }, [cartPayload, enabled, isReady, user?.id, user?.rol])
 }

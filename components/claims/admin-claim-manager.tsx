@@ -1669,7 +1669,37 @@ export function AdminClaimManager({
         method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          items:
+            (claim.affected_items ?? []).length > 0
+              ? (claim.affected_items ?? []).map((item) => ({
+                  order_item_id: item.order_item_id,
+                  quantity: item.quantity,
+                }))
+              : (pedido.orden_items ?? []).map((item) => ({
+                  order_item_id: item.id,
+                  quantity: item.cantidad,
+                })),
+          manual_amount:
+            (claim.affected_items ?? []).length > 0
+              ? 0
+              : Number(pedido.shipping_cost_charged ?? 0),
+          destination:
+            claim.resolution === "saldo_a_favor" ||
+            claim.resolution === "cupon_descuento"
+              ? "customer_balance"
+              : "external_refund",
+          reason:
+            (
+              claim.description?.split("\n").find((line) => line.trim()) ||
+              "Resolución de reclamo de cliente"
+            )
+              .trim()
+              .slice(0, 50),
+          claim_id: claim.id,
+        }),
       })
       const data = (await request.json()) as {
         error?: string

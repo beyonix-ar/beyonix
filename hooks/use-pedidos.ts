@@ -28,6 +28,8 @@ const REALTIME_PEDIDOS_TABLES = [
   "order_claim_files",
   "order_refund_proofs",
   "order_audit_events",
+  "order_credit_notes",
+  "order_credit_note_items",
 ] as const
 
 function dedupePedidos(pedidos: SupabasePedido[]) {

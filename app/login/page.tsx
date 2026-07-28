@@ -1,10 +1,25 @@
 "use client"
 // @refresh reset
 
-import { Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, useCallback, useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Check, CheckCircle2, Eye, EyeOff, Loader2, RefreshCw } from "lucide-react"
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Check,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  PackageCheck,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  UserRoundPlus,
+} from "lucide-react"
 
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { PasswordRequirements } from "@/components/password-requirements"
@@ -66,7 +81,7 @@ function Field({
 
   return (
     <div>
-      <label htmlFor={name} className="mb-1 block text-xs font-medium text-white/78">
+      <label htmlFor={name} className="mb-1.5 block text-xs font-semibold text-white/72">
         {label}
       </label>
       <div className="relative">
@@ -84,7 +99,7 @@ function Field({
           onFocus={onFocus}
           onBlur={onBlur}
           onChange={(e) => onChange(e.target.value)}
-          className={`beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-[#1b1f24] px-3 text-sm text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24 ${
+          className={`beyonix-login-input h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 text-sm text-white outline-none transition-all placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24 ${
             showPasswordToggle ? "pr-12" : ""
           }`}
         />
@@ -123,7 +138,7 @@ function TextareaField({
 }) {
   return (
     <div className="md:col-span-2">
-      <label htmlFor={name} className="mb-1 block text-xs font-medium text-white/78">
+      <label htmlFor={name} className="mb-1.5 block text-xs font-semibold text-white/72">
         {label}
       </label>
       <textarea
@@ -134,8 +149,36 @@ function TextareaField({
         placeholder={placeholder}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-14 w-full resize-none rounded-lg border border-white/10 bg-[#1b1f24] px-3 py-2 text-sm leading-5 text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
+        className="beyonix-login-textarea min-h-20 w-full resize-none rounded-xl border border-white/10 bg-[#0b1118] px-3.5 py-3 text-sm leading-5 text-white outline-none transition-all placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
       />
+    </div>
+  )
+}
+
+function AuthTransitionScreen({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-screen flex-col text-white">
+      <header className="relative z-20 border-b border-beyonix-blue-light/16 bg-black/72 backdrop-blur-xl">
+        <nav className="container mx-auto px-4 lg:px-8">
+          <div className="flex h-16 items-center justify-center lg:h-18">
+            <BeyonixLogoLink />
+          </div>
+        </nav>
+      </header>
+
+      <main className="relative flex flex-1 items-center justify-center px-4">
+        <div className="relative z-10 flex w-full max-w-sm flex-col items-center rounded-3xl border border-beyonix-blue-light/24 bg-[linear-gradient(145deg,rgba(12,19,28,0.96),rgba(7,12,18,0.98))] px-6 py-9 text-center shadow-[0_28px_80px_rgba(0,0,0,0.48)]">
+          <span className="flex size-12 items-center justify-center rounded-2xl border border-beyonix-sky/24 bg-beyonix-blue/42 text-beyonix-sky">
+            <Loader2 className="size-6 animate-spin" />
+          </span>
+          <p className="mt-5 font-heading text-lg font-bold text-white">
+            {message}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-white/48">
+            Estamos preparando tu experiencia BEYONIX.
+          </p>
+        </div>
+      </main>
     </div>
   )
 }
@@ -167,6 +210,7 @@ function LoginContent() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
   const [confirmationEmail, setConfirmationEmail] = useState("")
   const [confirmationUserId, setConfirmationUserId] = useState("")
   const [confirmationHandoff, setConfirmationHandoff] = useState("")
@@ -182,14 +226,37 @@ function LoginContent() {
   const confirmationPollInProgress = useRef(false)
   const confirmationCompletionStarted = useRef(false)
   const registerRedirectTimeout = useRef<number | null>(null)
+  const redirectFallbackTimeout = useRef<number | null>(null)
+  const navigationStarted = useRef(false)
 
   useEffect(() => {
     return () => {
       if (registerRedirectTimeout.current) {
         window.clearTimeout(registerRedirectTimeout.current)
       }
+      if (redirectFallbackTimeout.current) {
+        window.clearTimeout(redirectFallbackTimeout.current)
+      }
     }
   }, [])
+
+  useEffect(() => {
+    router.prefetch(redirect)
+  }, [redirect, router])
+
+  const beginAuthenticatedRedirect = useCallback(() => {
+    if (navigationStarted.current) return
+
+    navigationStarted.current = true
+    setRedirecting(true)
+    router.replace(redirect)
+
+    redirectFallbackTimeout.current = window.setTimeout(() => {
+      if (window.location.pathname.startsWith("/login")) {
+        window.location.replace(redirect)
+      }
+    }, 6_000)
+  }, [redirect, router])
 
   useEffect(() => {
     if (searchParams.get("reset") !== "success") return
@@ -410,10 +477,21 @@ function LoginContent() {
 
   useEffect(() => {
     if (isLoading || !user || confirmationEmail) return
-    router.replace(redirect)
-  }, [confirmationEmail, isLoading, redirect, router, user])
+    beginAuthenticatedRedirect()
+  }, [
+    beginAuthenticatedRedirect,
+    confirmationEmail,
+    isLoading,
+    user,
+  ])
 
-  if (isLoading || user) return null
+  if (isLoading) {
+    return <AuthTransitionScreen message="Verificando tu sesión" />
+  }
+
+  if (redirecting || user) {
+    return <AuthTransitionScreen message="Ingreso confirmado" />
+  }
 
   const handleModeChange = (nextMode: "login" | "register") => {
     setMode(nextMode)
@@ -424,6 +502,8 @@ function LoginContent() {
     setConfirmationHandoff("")
     setConfirmationValidated(false)
     setFinishingConfirmation(false)
+    setRedirecting(false)
+    navigationStarted.current = false
     confirmationCompletionStarted.current = false
     if (registerRedirectTimeout.current) {
       window.clearTimeout(registerRedirectTimeout.current)
@@ -499,15 +579,18 @@ function LoginContent() {
     setLoading(true)
 
     if (mode === "login") {
+      navigationStarted.current = true
       const result = await login(identifier, password)
       setLoading(false)
 
       if (!result.ok) {
+        navigationStarted.current = false
         setError(result.error || "Error al iniciar sesión")
         return
       }
 
-      router.replace(redirect)
+      navigationStarted.current = false
+      beginAuthenticatedRedirect()
       return
     }
 
@@ -656,23 +739,38 @@ function LoginContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-black text-white">
-      <header className="border-b border-beyonix-blue-light/14 bg-black/95">
+    <div className="flex min-h-screen flex-col text-white">
+      <header className="relative z-20 border-b border-beyonix-blue-light/16 bg-black/72 backdrop-blur-xl">
         <nav className="container mx-auto px-4 lg:px-8">
-          <div className="flex h-16 items-center justify-center lg:h-18">
+          <div className="flex h-16 items-center justify-between lg:h-18">
             <BeyonixLogoLink />
+            <Link
+              href="/"
+              className="group inline-flex h-10 items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 text-xs font-semibold text-white/62 transition hover:border-beyonix-blue-light/36 hover:bg-beyonix-blue/16 hover:text-white sm:text-sm"
+            >
+              <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
+              <span className="hidden sm:inline">Volver a la tienda</span>
+              <span className="sm:hidden">Volver</span>
+            </Link>
           </div>
         </nav>
       </header>
 
-      <main className="relative flex flex-1 items-center justify-center overflow-hidden bg-[linear-gradient(180deg,rgba(17,42,67,0.32)_0%,rgba(7,18,30,0.5)_35%,rgba(0,0,0,0.34)_100%)] px-4 py-5">
+      <main
+        className={`relative flex flex-1 justify-center overflow-hidden px-4 sm:px-6 lg:px-8 ${
+          mode === "register"
+            ? "beyonix-register-main items-start py-4 sm:py-5 lg:py-6"
+            : "items-center py-8 lg:py-12"
+        }`}
+      >
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-beyonix-blue-light/22"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_24%,rgba(30,77,123,0.2),transparent_33%),radial-gradient(circle_at_84%_72%,rgba(74,144,184,0.08),transparent_28%)]"
         />
         {confirmationEmail ? (
-          <div className="w-full max-w-lg rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-surface-4 p-6 text-center shadow-2xl shadow-black/35 lg:p-8">
-            <div className="mx-auto flex size-16 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-500/10">
+          <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-beyonix-blue-light/26 bg-[linear-gradient(145deg,rgba(12,22,33,0.98),rgba(5,10,16,0.98))] p-6 text-center shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:p-9">
+            <div className="pointer-events-none absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-beyonix-sky/70 to-transparent" />
+            <div className="mx-auto flex size-16 items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-500/10 shadow-[0_0_28px_rgba(52,211,153,0.1)]">
               <CheckCircle2 className="size-10 text-emerald-400" strokeWidth={2.25} />
             </div>
 
@@ -765,155 +863,280 @@ function LoginContent() {
           </div>
         ) : (
           <div
-          className={`relative z-10 w-full rounded-2xl border border-beyonix-blue-light/30 bg-[linear-gradient(145deg,rgba(15,28,42,0.98),rgba(10,16,23,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-sm ${
-            mode === "login" ? "max-w-md" : "max-w-5xl"
-          } ${mode === "login" ? "p-5 lg:p-6" : "p-4 lg:p-5"}`}
-        >
-          <div
-          className={
-            mode === "login"
-              ? "mb-6 space-y-5"
-              : "mb-3 grid gap-3 lg:grid-cols-login-register lg:items-end"
-          }
-        >
-          <div>
-            <h1 className="text-2xl font-bold text-white sm:text-3xl">
-              {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
-            </h1>
-            <p className="mt-1.5 text-sm text-white/72">
-              {mode === "login"
-                ? "Accedé a tu cuenta para continuar la compra."
-                : "Registrate para comprar en BEYONIX."}
-            </p>
-          </div>
+            className={`relative z-10 grid min-w-0 w-full overflow-hidden rounded-3xl border border-beyonix-blue-light/28 bg-[#070c12]/96 shadow-[0_34px_100px_rgba(0,0,0,0.56)] backdrop-blur-xl ${
+              mode === "login"
+                ? "max-w-6xl lg:grid-cols-[minmax(20rem,0.9fr)_minmax(28rem,1.1fr)]"
+                : "max-w-6xl lg:grid-cols-[22rem_minmax(0,1fr)]"
+            }`}
+          >
+            <aside className="relative hidden overflow-hidden border-r border-beyonix-blue-light/18 bg-[linear-gradient(155deg,rgba(17,42,67,0.96)_0%,rgba(8,21,34,0.98)_46%,rgba(4,10,16,1)_100%)] p-8 lg:flex lg:flex-col xl:p-10">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -left-28 top-10 size-72 rounded-full border border-beyonix-sky/10"
+              />
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -left-14 top-24 size-48 rounded-full border border-beyonix-sky/10"
+              />
+              <div className="relative">
+                <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-beyonix-sky">
+                  <Sparkles className="size-3.5" />
+                  Experiencia BEYONIX
+                </span>
+                <p
+                  className={`mt-5 max-w-md font-heading font-bold leading-[1.12] tracking-tight text-white ${
+                    mode === "login" ? "text-3xl xl:text-4xl" : "text-3xl"
+                  }`}
+                >
+                  {mode === "login"
+                    ? "Tecnología para tu comodidad, en un solo lugar."
+                    : "Tu experiencia BEYONIX empieza acá."}
+                </p>
+                <p className="mt-4 max-w-sm text-sm leading-6 text-white/58">
+                  {mode === "login"
+                    ? "Ingresá para continuar tu compra, revisar pedidos y gestionar tus datos con tranquilidad."
+                    : "Creá tu cuenta para comprar más rápido y acompañar cada pedido de principio a fin."}
+                </p>
+              </div>
 
-          <div className="grid max-w-sm grid-cols-2 rounded-xl border border-beyonix-blue-light/24 bg-[#08111b] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
-            <button
-              type="button"
-              aria-label="Iniciar sesión"
-              onClick={() => handleModeChange("login")}
-              className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
+              <div
+                className={`relative space-y-3 ${
+                  mode === "login" ? "mt-10 xl:mt-12" : "mt-10"
+                }`}
+              >
+                {[
+                  {
+                    icon: ShieldCheck,
+                    title: "Compra protegida",
+                    text: "Tus datos y operaciones, siempre seguros.",
+                  },
+                  {
+                    icon: PackageCheck,
+                    title: "Seguimiento simple",
+                    text: "Revisá el estado de tus pedidos cuando quieras.",
+                  },
+                  {
+                    icon: BadgeCheck,
+                    title: "Atención personalizada",
+                    text: "Estamos para ayudarte antes y después de comprar.",
+                  },
+                ].map((item) => {
+                  const Icon = item.icon
+
+                  return (
+                    <div
+                      key={item.title}
+                      className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.035] p-3.5"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/20 bg-beyonix-blue-light/20 text-white">
+                        <Icon className="size-4.5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          {item.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px] leading-4 text-white/46">
+                          {item.text}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {mode === "register" && (
+                <div className="relative mt-auto pt-8">
+                  <div className="flex items-center gap-3 border-t border-white/8 pt-5">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/22 bg-beyonix-blue-light/18 text-white">
+                      <UserRoundPlus className="size-5" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        Una cuenta, todo más simple
+                      </p>
+                      <p className="mt-1 text-[11px] leading-4 text-white/46">
+                        Comprá, seguí tus pedidos y gestioná tus datos desde un
+                        solo lugar.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </aside>
+
+            <section
+              className={`relative min-w-0 bg-[linear-gradient(145deg,rgba(12,19,28,0.98),rgba(7,12,18,0.99))] ${
                 mode === "login"
-                  ? "border border-beyonix-blue-light/55 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_rgba(30,77,123,0.22)]"
-                  : "text-white/68 hover:bg-beyonix-blue/24 hover:text-white"
+                  ? "p-5 sm:p-8 lg:p-10 xl:p-12"
+                  : "p-4 sm:p-5 lg:px-6 lg:py-4"
               }`}
             >
-              Iniciar sesión
-            </button>
+              <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-beyonix-sky/55 to-transparent" />
 
-            <button
-              type="button"
-              aria-label="Registrarme"
-              onClick={() => handleModeChange("register")}
-              className={`h-9 cursor-pointer rounded-lg px-5 text-sm font-medium transition-all ${
-                mode === "register"
-                  ? "border border-beyonix-blue-light/55 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_rgba(30,77,123,0.22)]"
-                  : "text-white/68 hover:bg-beyonix-blue/24 hover:text-white"
-              }`}
-            >
-              Registrarme
-            </button>
-          </div>
-        </div>
+              <div className={`min-w-0 ${mode === "login" ? "mx-auto max-w-md" : ""}`}>
+                <div
+                  className={`grid grid-cols-2 rounded-2xl border border-beyonix-blue-light/20 bg-black/24 p-1.5 ${
+                    mode === "login" ? "mb-7" : "mb-4"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    aria-label="Iniciar sesión"
+                    onClick={() => handleModeChange("login")}
+                    className={`flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold transition-all sm:gap-2 sm:px-4 sm:text-sm ${
+                      mode === "login"
+                        ? "border border-beyonix-blue-light/52 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_8px_24px_rgba(0,0,0,0.24)]"
+                        : "text-white/48 hover:bg-white/[0.04] hover:text-white/82"
+                    }`}
+                  >
+                    <LockKeyhole className="size-4" />
+                    Iniciar sesión
+                  </button>
 
-        <form
+                  <button
+                    type="button"
+                    aria-label="Registrarme"
+                    onClick={() => handleModeChange("register")}
+                    className={`flex h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold transition-all sm:gap-2 sm:px-4 sm:text-sm ${
+                      mode === "register"
+                        ? "border border-beyonix-blue-light/52 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_8px_24px_rgba(0,0,0,0.24)]"
+                        : "text-white/48 hover:bg-white/[0.04] hover:text-white/82"
+                    }`}
+                  >
+                    <UserRoundPlus className="size-4" />
+                    Registrarme
+                  </button>
+                </div>
+
+                <div className={mode === "login" ? "mb-7" : "mb-4"}>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-beyonix-cyan">
+                    {mode === "login" ? "Qué bueno verte de nuevo" : "Creá tu perfil"}
+                  </p>
+                  <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                    {mode === "login" ? "Iniciar sesión" : "Crear cuenta"}
+                  </h1>
+                  <p className="mt-2 text-sm leading-6 text-white/52">
+                    {mode === "login"
+                      ? "Accedé a tu cuenta para continuar donde lo dejaste."
+                      : "Completá tus datos una sola vez y disfrutá una compra más ágil."}
+                  </p>
+                </div>
+
+                <form
           key={mode}
           onSubmit={handleSubmit}
           autoComplete="on"
-          className={mode === "register" ? "space-y-3" : "space-y-4"}
+          className={mode === "register" ? "beyonix-register-form space-y-3" : "space-y-5"}
         >
           {mode === "register" && (
             <>
-              <div className="grid gap-2.5 md:grid-cols-2">
-                <Field name="username" label="Usuario*" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" maxLength={FIELD_LIMITS.username} autoComplete="username" />
-                <Field name="email" label="Email*" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
-              </div>
-              <div className="grid gap-2.5 md:grid-cols-2">
-                <div className="relative">
-                  <Field
-                    name="password"
-                    label="Contraseña*"
-                    type="password"
-                    value={password}
-                    onChange={setPassword}
-                    placeholder="Creá una contraseña segura"
-                    maxLength={FIELD_LIMITS.password}
-                    autoComplete="new-password"
-                    showPasswordToggle
-                    onFocus={() => setPasswordFocused(true)}
-                    onBlur={() => setPasswordFocused(false)}
-                  />
-                  {passwordFocused && (
-                    <div className="absolute left-0 top-[calc(100%+0.35rem)] z-30 w-full">
-                      <PasswordRequirements password={password} />
-                    </div>
-                  )}
-                </div>
-                <Field name="confirm-password" label="Confirmar contraseña*" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Repetí la contraseña" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
-              </div>
-              <div className="grid gap-2.5 md:grid-cols-2">
-                <Field name="name" label="Nombre y apellido*" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" maxLength={FIELD_LIMITS.name} autoComplete="name" />
-                <Field name="dni" label="DNI*" type="tel" value={dni} onChange={(value) => setDni(onlyDigits(value, FIELD_LIMITS.dni))} placeholder="12345678" maxLength={FIELD_LIMITS.dni} inputMode="numeric" autoComplete="off" />
-              </div>
-              <div className="grid gap-2.5 md:grid-cols-2">
-                <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={FIELD_LIMITS.street} autoComplete="address-line1" />
-                <div className="grid gap-2.5 md:grid-cols-[minmax(5.5rem,1fr)_minmax(4.75rem,0.75fr)_minmax(4.75rem,0.75fr)]">
-                  <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
-                  <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
-                  <Field name="apartment" label="DPTO" type="text" value={apartment} onChange={(value) => setApartment(value.toLocaleUpperCase("es-AR"))} placeholder="B" maxLength={12} autoComplete="off" required={false} />
-                </div>
-              </div>
-              <div className="grid gap-2.5 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-white/78">
-                    Provincia*
-                  </label>
-                  <ProvinceSelect value={province} onChange={setProvince} compact appearance="login" />
-                </div>
-                <Field name="locality" label="Localidad*" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required />
-              </div>
-              <div className="grid gap-2.5 md:grid-cols-2">
-                <Field name="postal-code" label="Código postal*" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required />
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-white/78">
-                    Teléfono móvil*
-                  </label>
-                  <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
-                    <input
-                      id="phone-area-code"
-                      name="phone-area-code"
-                      type="tel"
-                      aria-label="Característica"
-                      required
-                      value={phoneAreaCode}
-                      placeholder="341"
-                      maxLength={4}
-                      inputMode="numeric"
-                      autoComplete="tel-area-code"
-                      onChange={(event) => setPhoneAreaCode(onlyDigits(event.target.value, 4))}
-                      className="beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-[#1b1f24] px-3 text-sm text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
+              <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
+                <legend className="px-2 text-[11px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
+                  01 · Datos de acceso
+                </legend>
+                <div className="grid gap-2.5 md:grid-cols-2">
+                  <Field name="username" label="Usuario*" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" maxLength={FIELD_LIMITS.username} autoComplete="username" />
+                  <Field name="email" label="Email*" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
+                  <div className="relative">
+                    <Field
+                      name="password"
+                      label="Contraseña*"
+                      type="password"
+                      value={password}
+                      onChange={setPassword}
+                      placeholder="Creá una contraseña segura"
+                      maxLength={FIELD_LIMITS.password}
+                      autoComplete="new-password"
+                      showPasswordToggle
+                      onFocus={() => setPasswordFocused(true)}
+                      onBlur={() => setPasswordFocused(false)}
                     />
-                    <input
-                      id="phone"
-                      name="phone"
-                      type="tel"
-                      aria-label="Teléfono móvil"
-                      required
-                      value={phone}
-                      placeholder="6000000"
-                      maxLength={11}
-                      inputMode="numeric"
-                      autoComplete="tel-national"
-                      onChange={(event) => setPhone(onlyDigits(event.target.value, 11))}
-                      className="beyonix-login-input h-10 w-full rounded-lg border border-white/10 bg-[#1b1f24] px-3 text-sm text-white outline-none transition-all placeholder:text-white/42 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
-                    />
+                    {passwordFocused && (
+                      <div className="absolute left-0 top-[calc(100%+0.35rem)] z-30 w-full">
+                        <PasswordRequirements password={password} />
+                      </div>
+                    )}
                   </div>
-                  <p className="mt-1 text-[11px] leading-4 text-white/58">
-                    Ingresá la característica y el número sin 0 ni 15.
-                  </p>
+                  <Field name="confirm-password" label="Confirmar contraseña*" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Repetí la contraseña" maxLength={FIELD_LIMITS.password} autoComplete="new-password" showPasswordToggle />
                 </div>
-              </div>
-              <TextareaField name="references" label="Referencias para llegar (máximo 80 caracteres)" value={references} onChange={setReferences} placeholder="Fachada blanca, portón negro, antes de llegar a la esquina." maxLength={80} />
+              </fieldset>
+
+              <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
+                <legend className="px-2 text-[11px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
+                  02 · Datos personales
+                </legend>
+                <div className="grid gap-2.5 md:grid-cols-2">
+                  <Field name="name" label="Nombre y apellido*" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" maxLength={FIELD_LIMITS.name} autoComplete="name" />
+                  <Field name="dni" label="DNI*" type="tel" value={dni} onChange={(value) => setDni(onlyDigits(value, FIELD_LIMITS.dni))} placeholder="12345678" maxLength={FIELD_LIMITS.dni} inputMode="numeric" autoComplete="off" />
+                </div>
+              </fieldset>
+
+              <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
+                <legend className="px-2 text-[11px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
+                  03 · Datos de entrega
+                </legend>
+                <div className="space-y-2.5">
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={FIELD_LIMITS.street} autoComplete="address-line1" />
+                    <div className="grid grid-cols-[minmax(5.5rem,1fr)_minmax(4.5rem,0.7fr)_minmax(4.5rem,0.7fr)] gap-2.5">
+                      <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
+                      <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
+                      <Field name="apartment" label="DPTO" type="text" value={apartment} onChange={(value) => setApartment(value.toLocaleUpperCase("es-AR"))} placeholder="B" maxLength={12} autoComplete="off" required={false} />
+                    </div>
+                  </div>
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-white/72">
+                        Provincia*
+                      </label>
+                      <ProvinceSelect value={province} onChange={setProvince} compact appearance="login" />
+                    </div>
+                    <Field name="locality" label="Localidad*" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required />
+                  </div>
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <Field name="postal-code" label="Código postal*" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required />
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-white/72">
+                        Teléfono móvil*
+                      </label>
+                      <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
+                        <input
+                          id="phone-area-code"
+                          name="phone-area-code"
+                          type="tel"
+                          aria-label="Característica"
+                          required
+                          value={phoneAreaCode}
+                          placeholder="341"
+                          maxLength={4}
+                          inputMode="numeric"
+                          autoComplete="tel-area-code"
+                          onChange={(event) => setPhoneAreaCode(onlyDigits(event.target.value, 4))}
+                          className="beyonix-login-input h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 text-sm text-white outline-none transition-all placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
+                        />
+                        <input
+                          id="phone"
+                          name="phone"
+                          type="tel"
+                          aria-label="Teléfono móvil"
+                          required
+                          value={phone}
+                          placeholder="6000000"
+                          maxLength={11}
+                          inputMode="numeric"
+                          autoComplete="tel-national"
+                          onChange={(event) => setPhone(onlyDigits(event.target.value, 11))}
+                          className="beyonix-login-input h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 text-sm text-white outline-none transition-all placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
+                        />
+                      </div>
+                      <p className="mt-1 text-[11px] leading-4 text-white/48">
+                        Ingresá la característica y el número sin 0 ni 15.
+                      </p>
+                    </div>
+                  </div>
+                  <TextareaField name="references" label="Referencias para llegar (máximo 80 caracteres)" value={references} onChange={setReferences} placeholder="Fachada blanca, portón negro, antes de llegar a la esquina." maxLength={80} />
+                </div>
+              </fieldset>
             </>
           )}
 
@@ -925,14 +1148,16 @@ function LoginContent() {
           )}
 
           {mode === "login" && (
-            <button
-              type="button"
-              aria-label="Olvidé mi contraseña"
-              onClick={handleForgotPassword}
-              className="cursor-pointer text-left text-sm font-medium text-beyonix-sky transition-colors hover:text-white"
-            >
-              ¿Olvidaste tu contraseña?
-            </button>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                aria-label="Olvidé mi contraseña"
+                onClick={handleForgotPassword}
+                className="cursor-pointer text-sm font-semibold text-beyonix-sky transition-colors hover:text-white"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
           )}
 
           {error && (
@@ -947,14 +1172,14 @@ function LoginContent() {
             </div>
           )}
 
-          <div className={mode === "register" ? "flex justify-center pt-1" : ""}>
+          <div className={mode === "register" ? "flex justify-center" : ""}>
             <button
               type="submit"
               aria-label={mode === "login" ? "Ingresar" : "Crear cuenta"}
               disabled={loading}
-              className={`flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-10 font-heading text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_34px_rgba(0,0,0,0.35)] transition-all focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-                mode === "login" ? "w-full" : "min-w-44"
-              } ${
+              className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border px-10 font-heading text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_34px_rgba(0,0,0,0.35)] transition-all hover:-translate-y-0.5 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                mode === "login" ? "w-full" : "w-full sm:max-w-xs"
+              } ${mode === "login" ? "h-12" : "h-11"} ${
                 isRegisterReady
                   ? "border-emerald-400/55 bg-emerald-600 text-white hover:border-emerald-300/75 hover:bg-emerald-500 focus-visible:ring-emerald-300/25"
                   : "border-beyonix-blue-light/48 bg-beyonix-blue text-white hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:ring-beyonix-blue-light/25"
@@ -974,7 +1199,15 @@ function LoginContent() {
               )}
             </button>
           </div>
-          </form>
+                </form>
+                {mode === "login" && (
+                  <div className="mt-6 flex items-center justify-center gap-2 border-t border-white/8 pt-5 text-xs text-white/38">
+                    <ShieldCheck className="size-4 text-beyonix-cyan" />
+                    Acceso seguro. Tus datos están protegidos.
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
         )}
       </main>

@@ -140,6 +140,19 @@ interface ExpenseRow {
   status: "pendiente" | "pagado"
 }
 
+interface AuthorizedCreditNoteRow {
+  id: string
+  order_id: number
+  total_amount: number | string
+  manual_amount: number | string
+  authorized_at: string | null
+  order_credit_note_items?: Array<{
+    order_item_id: number
+    quantity: number
+    total_amount: number | string
+  }>
+}
+
 interface CostLedgerPoint {
   date: number
   quantity: number
@@ -492,6 +505,8 @@ const ORDER_ITEM_SELECT = `
   variante_id,
   cantidad,
   precio,
+  return_restocked_quantity,
+  return_written_off_quantity,
   productos(id, nombre, categorias(nombre)),
   producto_variantes(nombre)
 `
@@ -809,6 +824,7 @@ export async function GET(request: Request) {
     creditNotePendingCountResult,
     productCostsScan,
     expensesScan,
+    authorizedCreditNotesScan,
   ] = await Promise.all([
     sensitive
       ? fetchAllDashboardRows<SupabasePedido>(
@@ -941,6 +957,23 @@ export async function GET(request: Request) {
               .range(from, to),
         )
       : Promise.resolve({ rows: [] as ExpenseRow[], complete: true }),
+    sensitive
+      ? fetchAllDashboardRows<AuthorizedCreditNoteRow>(
+          "notas_credito_autorizadas",
+          (from, to) =>
+            auth.admin
+              .from("order_credit_notes")
+              .select(
+                "id, order_id, total_amount, manual_amount, authorized_at, order_credit_note_items(order_item_id, quantity, total_amount)",
+              )
+              .eq("status", "authorized")
+              .order("created_at", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({
+          rows: [] as AuthorizedCreditNoteRow[],
+          complete: true,
+        }),
   ])
 
   const recentOrders = (recentOrdersResult.data ?? []) as SupabasePedido[]
@@ -963,6 +996,31 @@ export async function GET(request: Request) {
   )
   const items = orderItemsScan.rows.filter((item) => paidOrderIds.has(item.orden_id))
   const itemsByOrderId = groupItemsByOrder(items)
+  const authorizedCreditNotes = authorizedCreditNotesScan.rows.filter((note) =>
+    paidOrderIds.has(note.order_id),
+  )
+  const authorizedCreditByOrder = new Map<number, number>()
+  const authorizedCreditByItem = new Map<number, number>()
+  const creditedQuantityByItem = new Map<number, number>()
+  for (const note of authorizedCreditNotes) {
+    authorizedCreditByOrder.set(
+      note.order_id,
+      (authorizedCreditByOrder.get(note.order_id) ?? 0) +
+        Number(note.total_amount ?? 0),
+    )
+    for (const item of note.order_credit_note_items ?? []) {
+      authorizedCreditByItem.set(
+        item.order_item_id,
+        (authorizedCreditByItem.get(item.order_item_id) ?? 0) +
+          Number(item.total_amount ?? 0),
+      )
+      creditedQuantityByItem.set(
+        item.order_item_id,
+        (creditedQuantityByItem.get(item.order_item_id) ?? 0) +
+          Number(item.quantity ?? 0),
+      )
+    }
+  }
   const webOrdersWithoutItems = paidCandidateOrders.filter(
     (order) => !itemsByOrderId.has(order.id),
   )
@@ -974,6 +1032,11 @@ export async function GET(request: Request) {
   let costOfGoodsSold = 0
   items.forEach((item) => {
     const quantity = Math.max(Number(item.cantidad ?? 0), 0)
+    const restockedQuantity = Math.min(
+      quantity,
+      Math.max(Number(item.return_restocked_quantity ?? 0), 0),
+    )
+    const costableQuantity = Math.max(0, quantity - restockedQuantity)
     const order = paidOrdersById.get(item.orden_id)
     const unitCost = getUnitCost(
       costLedgers,
@@ -981,10 +1044,10 @@ export async function GET(request: Request) {
       item.variante_id,
       order?.paid_at ?? order?.created_at ?? new Date().toISOString(),
     )
-    webUnits += quantity
+    webUnits += costableQuantity
     if (unitCost != null) {
-      coveredUnits += quantity
-      costOfGoodsSold += unitCost * quantity
+      coveredUnits += costableQuantity
+      costOfGoodsSold += unitCost * costableQuantity
     }
     itemUnitCosts.set(item.id, unitCost)
   })
@@ -1101,11 +1164,17 @@ export async function GET(request: Request) {
     0,
   )
   const webCompletedRefunds = paidCandidateOrders.reduce(
-    (total, order) =>
-      total +
-      (order.financial_status === "refunded" || order.refunded_at
-        ? Number(order.refund_amount ?? order.total ?? 0)
-        : 0),
+    (total, order) => {
+      const authorizedCredit = authorizedCreditByOrder.get(order.id) ?? 0
+      if (authorizedCredit > 0) return total + authorizedCredit
+
+      const nonInvoicedRefund =
+        order.invoice_status !== "authorized" &&
+        (order.financial_status === "refunded" || order.refunded_at)
+          ? Number(order.refund_amount ?? order.total ?? 0)
+          : 0
+      return total + nonInvoicedRefund
+    },
     0,
   )
   const pendingRefundOrders = paidCandidateOrders.filter(
@@ -1220,6 +1289,7 @@ export async function GET(request: Request) {
   const scanComplete =
     financialOrdersScan.complete &&
     orderItemsScan.complete &&
+    authorizedCreditNotesScan.complete &&
     marketplaceScan.complete &&
     externalSalesScan.complete &&
     productCostsScan.complete &&
@@ -1331,17 +1401,32 @@ export async function GET(request: Request) {
               | null
               | undefined
             const quantity = Number(item.cantidad ?? 0)
+            const creditedQuantity = Math.min(
+              quantity,
+              creditedQuantityByItem.get(item.id) ?? 0,
+            )
+            const restockedQuantity = Math.min(
+              quantity,
+              Math.max(Number(item.return_restocked_quantity ?? 0), 0),
+            )
             const rawItemAmount = quantity * Number(item.precio ?? 0)
             const rawOrderAmount = webItemTotalsByOrder.get(item.orden_id) ?? 0
             const orderGrossAmount = Number(
               order?.original_total ?? order?.total ?? rawOrderAmount,
             )
-            const grossAmount =
+            const allocatedGrossAmount =
               rawOrderAmount > 0
                 ? (rawItemAmount / rawOrderAmount) * orderGrossAmount
                 : rawItemAmount
+            const grossAmount = Math.max(
+              0,
+              allocatedGrossAmount - (authorizedCreditByItem.get(item.id) ?? 0),
+            )
             const unitCost = itemUnitCosts.get(item.id) ?? null
-            const costAmount = unitCost == null ? null : unitCost * quantity
+            const costAmount =
+              unitCost == null
+                ? null
+                : unitCost * Math.max(0, quantity - restockedQuantity)
             const profitAmount = costAmount == null ? null : grossAmount - costAmount
 
             return {
@@ -1352,7 +1437,7 @@ export async function GET(request: Request) {
               productName: product?.nombre ?? `Producto #${item.producto_id}`,
               categoryName: product?.categorias?.nombre ?? null,
               sku: null,
-              quantity,
+              quantity: Math.max(0, quantity - creditedQuantity),
               grossAmount,
               costAmount,
               profitAmount,
@@ -1372,7 +1457,11 @@ export async function GET(request: Request) {
           categoryName: null,
           sku: null,
           quantity: 0,
-          grossAmount: Number(order.original_total ?? order.total ?? 0),
+          grossAmount: Math.max(
+            0,
+            Number(order.original_total ?? order.total ?? 0) -
+              (authorizedCreditByOrder.get(order.id) ?? 0),
+          ),
           costAmount: null,
           profitAmount: null,
           marginPercent: null,

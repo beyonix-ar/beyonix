@@ -4,6 +4,7 @@ import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
+  SupabaseOrderCreditNote,
   SupabaseOrderAuditEvent,
   SupabaseOrderRefundProof,
   SupabaseProducto,
@@ -146,6 +147,7 @@ export async function GET(request: Request) {
     claimsResult,
     refundProofsResult,
     auditEventsResult,
+    creditNotesResult,
   ] = await Promise.all([
     productIds.length
       ? auth.admin.from("productos").select("*").in("id", productIds)
@@ -180,6 +182,14 @@ export async function GET(request: Request) {
         pedidos.map((pedido) => pedido.id)
       )
       .order("created_at", { ascending: true }),
+    auth.admin
+      .from("order_credit_notes")
+      .select("*, order_credit_note_items(*)")
+      .in(
+        "order_id",
+        pedidos.map((pedido) => pedido.id),
+      )
+      .order("created_at", { ascending: false }),
   ])
 
   if (
@@ -189,6 +199,7 @@ export async function GET(request: Request) {
     claimsResult.error ||
     refundProofsResult.error ||
     auditEventsResult.error
+    || creditNotesResult.error
   ) {
     return Response.json(
       {
@@ -198,6 +209,7 @@ export async function GET(request: Request) {
           claimsResult.error?.message ||
           refundProofsResult.error?.message ||
           auditEventsResult.error?.message ||
+          creditNotesResult.error?.message ||
           profilesResult.error?.message ||
           "No se pudo cargar el detalle de los productos.",
       },
@@ -229,6 +241,7 @@ export async function GET(request: Request) {
   const claimsByOrder = new Map<number, any[]>()
   const refundProofsByOrder = new Map<number, SupabaseOrderRefundProof[]>()
   const auditEventsByOrder = new Map<number, SupabaseOrderAuditEvent[]>()
+  const creditNotesByOrder = new Map<number, SupabaseOrderCreditNote[]>()
 
   for (const item of items) {
     const currentItems = itemsByOrder.get(item.orden_id) ?? []
@@ -276,6 +289,12 @@ export async function GET(request: Request) {
     auditEventsByOrder.set(event.order_id, currentEvents)
   }
 
+  for (const note of (creditNotesResult.data ?? []) as SupabaseOrderCreditNote[]) {
+    const currentNotes = creditNotesByOrder.get(note.order_id) ?? []
+    currentNotes.push(note)
+    creditNotesByOrder.set(note.order_id, currentNotes)
+  }
+
   return Response.json({
     pedidos: pedidos.map((pedido) => ({
       ...pedido,
@@ -312,6 +331,7 @@ export async function GET(request: Request) {
       order_claims: claimsByOrder.get(pedido.id) ?? [],
       order_refund_proofs: refundProofsByOrder.get(pedido.id) ?? [],
       order_audit_events: auditEventsByOrder.get(pedido.id) ?? [],
+      order_credit_notes: creditNotesByOrder.get(pedido.id) ?? [],
     })),
     total: count ?? pedidos.length,
   })

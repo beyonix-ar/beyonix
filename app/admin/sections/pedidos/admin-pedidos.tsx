@@ -20,8 +20,10 @@ import {
   LoaderCircle,
   MapPin,
   MessageCircle,
+  Minus,
   Package,
   Pencil,
+  Plus,
   Printer,
   RefreshCw,
   Settings2,
@@ -65,9 +67,10 @@ import {
   isAdminSensitiveStatus,
 } from "@/lib/admin/admin-sensitive-visuals"
 import {
-  getStoreBenefitTypeFromRefundMethod,
-  parseStoreBenefitPercent,
-} from "@/lib/customer-store-benefits"
+  allocateEffectiveOrderItemAmounts,
+  calculatePartialLineAmount,
+  roundCreditMoney,
+} from "@/lib/orders/credit-note-calculations"
 import { cn } from "@/lib/utils"
 import type {
   OrderClaimResolution,
@@ -122,7 +125,6 @@ type ShippingDetailsPayload = {
   tracking_number?: string | null
   tracking_url?: string | null
 }
-const DEFAULT_REFUND_METHOD = "Transferencia"
 const SHIPPING_INCIDENT_STATUSES = [
   "visita_fallida",
   "en_sucursal",
@@ -152,13 +154,6 @@ const SHIPPING_STATUS_LABELS: Record<string, string> = {
   entregado: "Entregado",
   cancelado: "Cancelado",
 }
-const REFUND_METHOD_OPTIONS = [
-  DEFAULT_REFUND_METHOD,
-  "Gift card",
-  "Descuento",
-  "Efectivo",
-  "Otro",
-] as const
 type AdminOrderDetailView =
   | "resumen"
   | "pago"
@@ -1129,16 +1124,6 @@ function formatInvoiceNumberOrDash(
   return formatInvoiceNumber(pointNumber, invoiceNumber)
 }
 
-function formatInvoiceDateOrDash(value?: string | null) {
-  if (!value) return "-"
-  return formatInvoiceDate(value)
-}
-
-function formatOptionalOrderDateOrDash(value?: string | null) {
-  if (!value) return "-"
-  return formatOrderDate(value)
-}
-
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
@@ -1553,25 +1538,6 @@ function PaymentStatusDropdown({
       )}
     </div>
   )
-}
-
-function formatRefundAmountInput(value: number | string | null | undefined) {
-  const parsed = Number(value ?? 0)
-  if (!Number.isFinite(parsed) || parsed <= 0) return ""
-
-  return new Intl.NumberFormat("es-AR", {
-    maximumFractionDigits: 2,
-  }).format(parsed)
-}
-
-function parseRefundAmountInput(value: string) {
-  const normalized = value
-    .trim()
-    .replace(/\./g, "")
-    .replace(",", ".")
-  const parsed = Number(normalized)
-
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
 function getAdminDisplayName(value?: string | null) {
@@ -2039,44 +2005,20 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
 
 function RefundManagementPanel({
   pedido,
-  canEditRefundAmount,
   onRefundUpdated,
 }: {
   pedido: SupabasePedido
-  canEditRefundAmount: boolean
   onRefundUpdated: (order: SupabasePedido) => void
 }) {
-  const shouldShow =
-    isCancellationFlowOrder(pedido)
-
-  const paidAmount = Number(pedido.payment_confirmed_amount ?? pedido.total ?? 0)
+  const shouldShow = isCancellationFlowOrder(pedido)
   const [file, setFile] = useState<File | null>(null)
-  const [amount, setAmount] = useState(formatRefundAmountInput(pedido.refund_amount ?? paidAmount))
-  const [method, setMethod] = useState(pedido.refund_method || DEFAULT_REFUND_METHOD)
-  const [customRefundMethod, setCustomRefundMethod] = useState("")
-  const [storeBenefitPercent, setStoreBenefitPercent] = useState("")
-  const [observation, setObservation] = useState(pedido.refund_observation ?? "")
-  const [internalNote, setInternalNote] = useState(pedido.refund_internal_note ?? "")
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
-    setAmount(formatRefundAmountInput(pedido.refund_amount ?? paidAmount))
-    setMethod(pedido.refund_method || DEFAULT_REFUND_METHOD)
-    setCustomRefundMethod("")
-    setStoreBenefitPercent("")
-    setObservation(pedido.refund_observation ?? "")
-    setInternalNote(pedido.refund_internal_note ?? "")
     setFile(null)
     setMessage(null)
-  }, [
-    paidAmount,
-    pedido.id,
-    pedido.refund_amount,
-    pedido.refund_internal_note,
-    pedido.refund_method,
-    pedido.refund_observation,
-  ])
+  }, [pedido.id, pedido.refund_amount, pedido.refund_method])
 
   if (!shouldShow) return null
 
@@ -2094,47 +2036,65 @@ function RefundManagementPanel({
       : pedido.financial_status === "cancellation_requested"
         ? "Cancelación pendiente"
         : "Cancelación cerrada"
+  const authorizedExternalCredit = roundCreditMoney(
+    (pedido.order_credit_notes ?? [])
+      .filter(
+        (note) =>
+          note.status === "authorized" && note.destination === "external_refund",
+      )
+      .reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0),
+  )
+  const authorizedBalanceCredit = roundCreditMoney(
+    (pedido.order_credit_notes ?? [])
+      .filter(
+        (note) =>
+          note.status === "authorized" && note.destination === "customer_balance",
+      )
+      .reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0),
+  )
+  const creditNoteReadyForRefund = authorizedExternalCredit > 0
+  const balanceAlreadyCredited = authorizedBalanceCredit > 0
   const cancellationCopy = refunded
-    ? "El comprobante fue registrado y la devolución quedó finalizada."
-    : refundPending
-      ? "El pedido fue cancelado con pago recibido. Cargá el comprobante para cerrar la devolución."
-      : "El pedido está cancelado y no tiene un reintegro pendiente."
-  const parsedRefundAmount = parseRefundAmountInput(amount)
-  const maxRefundAmount = Math.max(paidAmount, Number(pedido.total ?? 0))
-  const refundAmountIsValid =
-    parsedRefundAmount !== null &&
-    (maxRefundAmount <= 0 || parsedRefundAmount <= maxRefundAmount)
-  const effectiveRefundMethod =
-    method === "Otro" ? customRefundMethod.trim() : method.trim()
-  const storeBenefitType = getStoreBenefitTypeFromRefundMethod(method)
-  const parsedStoreBenefitPercent = storeBenefitType
-    ? parseStoreBenefitPercent(storeBenefitPercent)
-    : null
-  const storeBenefitPercentIsValid =
-    !storeBenefitType || parsedStoreBenefitPercent !== null
+    ? balanceAlreadyCredited
+      ? "La nota fue autorizada por ARCA y el saldo se acreditó automáticamente en la cuenta del cliente."
+      : "El comprobante fue registrado y la devolución quedó finalizada."
+    : refundPending && !creditNoteReadyForRefund
+      ? "Primero emití la nota de crédito. No se puede cargar ningún dato del reintegro antes de recibir el CAE."
+      : refundPending
+        ? "La nota fue autorizada. Sólo resta adjuntar el comprobante de la devolución de dinero."
+        : "El pedido está cancelado y no tiene un reintegro pendiente."
   const canUploadRefund =
     !refunded &&
     refundPending &&
     Boolean(file) &&
-    refundAmountIsValid &&
-    effectiveRefundMethod.length > 0 &&
-    storeBenefitPercentIsValid &&
+    creditNoteReadyForRefund &&
     !saving
-  const refundDisplayAmount = formatPrice(Number(pedido.refund_amount ?? paidAmount ?? 0))
-  const refundMethodDisplay = effectiveRefundMethod || pedido.refund_method || DEFAULT_REFUND_METHOD
+  const creditNoteSettlementAmount = Number(
+    pedido.refund_amount ??
+      (creditNoteReadyForRefund
+        ? authorizedExternalCredit
+        : authorizedBalanceCredit),
+  )
+  const refundDisplayAmount =
+    creditNoteSettlementAmount > 0
+      ? formatPrice(creditNoteSettlementAmount)
+      : "Pendiente de nota"
+  const refundMethodDisplay =
+    pedido.refund_method ||
+    (balanceAlreadyCredited
+      ? "Saldo en cuenta BEYONIX"
+      : creditNoteReadyForRefund
+        ? "Devolución de dinero"
+        : "Definido por la nota de crédito")
   const uploadDisabledReason = refunded
     ? "La devolución ya fue cerrada."
     : !refundPending
       ? "No hay una acción de reintegro pendiente."
+      : !creditNoteReadyForRefund
+        ? "Primero emití y validá en ARCA la nota de crédito. Hasta entonces, el reintegro permanece bloqueado."
       : !file
         ? "Seleccioná el comprobante para habilitar la acción."
-        : !refundAmountIsValid
-          ? "Revisá el monto reintegrado."
-          : effectiveRefundMethod.length === 0
-            ? "Indicá el método de reintegro."
-            : !storeBenefitPercentIsValid
-              ? "Indicá el porcentaje del beneficio."
-              : null
+        : null
 
   const uploadRefundProof = async () => {
     if (!file) {
@@ -2157,13 +2117,6 @@ function RefundManagementPanel({
 
       const formData = new FormData()
       formData.set("file", file)
-      formData.set("amount", String(parsedRefundAmount ?? ""))
-      formData.set("method", effectiveRefundMethod)
-      if (storeBenefitType && parsedStoreBenefitPercent !== null) {
-        formData.set("storeBenefitPercent", String(parsedStoreBenefitPercent))
-      }
-      formData.set("observation", observation)
-      formData.set("internalNote", internalNote)
 
       const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
         method: "POST",
@@ -2224,7 +2177,9 @@ function RefundManagementPanel({
             <p className="mt-1 text-sm font-black text-white">
               {refunded
                 ? "La devolución ya fue cerrada."
-                : refundPending
+                : refundPending && !creditNoteReadyForRefund
+                  ? "Emitir y validar la nota de crédito desde Facturación."
+                  : refundPending
                   ? "Cargar comprobante de reintegro y marcar la devolución como completada."
                   : "No hay acciones pendientes de reintegro para este pedido."}
             </p>
@@ -2272,14 +2227,31 @@ function RefundManagementPanel({
                 ? "No hay acciones pendientes para esta devolución."
                 : "No hay una acción de reintegro pendiente para este pedido."}
             </p>
+          ) : !creditNoteReadyForRefund ? (
+            <div className="admin-order-cancellation-locked mt-3 rounded-xl border px-4 py-3">
+              <div className="flex items-start gap-3">
+                <span className="admin-order-cancellation-locked-icon">
+                  <ShieldCheck className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-white">
+                    Reintegro bloqueado hasta recibir el CAE
+                  </p>
+                  <p className="mt-1 text-11px font-semibold leading-5 text-white/58">
+                    Emití primero la nota de crédito desde Facturación. El monto y
+                    el destino se tomarán automáticamente del comprobante autorizado.
+                  </p>
+                </div>
+              </div>
+            </div>
           ) : (
             <>
-              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
-                <div className="min-w-0 sm:col-span-2">
+              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,26rem)_minmax(12rem,1fr)] sm:items-end">
+                <div className="min-w-0">
                   <p className="mb-1.5 text-10px font-bold uppercase tracking-widest text-white/68">
                     Archivo del comprobante
                   </p>
-                  <label className="admin-order-cancellation-file-zone flex min-h-10 w-full max-w-[26rem] cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2 transition">
+                  <label className="admin-order-cancellation-file-zone flex min-h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2 transition">
                     <span className="admin-order-cancellation-file-icon">
                       <Upload className="size-3.5" />
                     </span>
@@ -2299,90 +2271,15 @@ function RefundManagementPanel({
                     />
                   </label>
                 </div>
-                <label className="min-w-0">
-                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/68">
-                    Monto reintegrado
+                <div className="admin-order-cancellation-linked-value rounded-xl border px-3 py-2">
+                  <span className="block text-9px font-black uppercase tracking-widest text-white/45">
+                    Definido por la nota autorizada
                   </span>
-                  <span className="admin-order-cancellation-field admin-order-cancellation-money-field flex h-10 w-full items-center overflow-hidden rounded-lg border focus-within:border-beyonix-blue-light">
-                    <span className="flex h-full items-center border-r border-white/10 px-3 text-xs font-black text-white/58">
-                      $
-                    </span>
-                    <input
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      onBlur={() => {
-                        const parsed = parseRefundAmountInput(amount)
-                        if (parsed !== null) setAmount(formatRefundAmountInput(parsed))
-                      }}
-                      inputMode="decimal"
-                      readOnly={!canEditRefundAmount}
-                      disabled={!canEditRefundAmount}
-                      placeholder="Monto reintegrado"
-                      className="admin-order-cancellation-money-input h-full min-w-0 flex-1 bg-transparent px-3 text-xs font-bold text-[#5CFFB0] outline-none placeholder:text-white/38 disabled:cursor-not-allowed disabled:text-white/55"
-                    />
-                  </span>
-                </label>
-                <label className="min-w-0">
-                  <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/68">
-                    Método de reintegro
-                  </span>
-                  <AdminSelect
-                    title="Método de reintegro"
-                    value={method}
-                    triggerClassName="admin-order-cancellation-method-select"
-                    onChange={(value) => {
-                      setMethod(value)
-                      if (value !== "Otro") setCustomRefundMethod("")
-                      if (!getStoreBenefitTypeFromRefundMethod(value)) {
-                        setStoreBenefitPercent("")
-                      }
-                    }}
-                  >
-                    {REFUND_METHOD_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </AdminSelect>
-                  {method === "Otro" && (
-                    <input
-                      value={customRefundMethod}
-                      onChange={(event) => setCustomRefundMethod(event.target.value)}
-                      placeholder="Indicar método"
-                      className="admin-order-cancellation-custom-method mt-2 h-10 w-full rounded-xl border px-3 text-sm font-bold text-white outline-none placeholder:text-white/38"
-                    />
-                  )}
-                  {storeBenefitType && (
-                    <div className="mt-2">
-                      <span className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/68">
-                        Porcentaje del beneficio
-                      </span>
-                      <span className="admin-order-cancellation-field flex h-10 w-full items-center overflow-hidden rounded-lg border focus-within:border-beyonix-blue-light">
-                        <input
-                          value={storeBenefitPercent}
-                          onChange={(event) => setStoreBenefitPercent(event.target.value)}
-                          inputMode="numeric"
-                          placeholder="Ej: 15"
-                          className="h-full min-w-0 flex-1 bg-transparent px-3 text-xs font-bold text-white outline-none placeholder:text-white/38"
-                        />
-                        <span className="flex h-full items-center border-l border-white/10 px-3 text-xs font-black text-white/70">
-                          %
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                </label>
+                  <strong className="mt-1 block text-sm font-black text-emerald-100">
+                    {formatPrice(authorizedExternalCredit)}
+                  </strong>
+                </div>
               </div>
-              {!refundAmountIsValid && amount.trim() && (
-                <p className="mt-2 text-xs font-bold text-red-200">
-                  Ingresá un monto válido, mayor a cero y no superior al monto pagado.
-                </p>
-              )}
-              {!storeBenefitPercentIsValid && (
-                <p className="mt-2 text-xs font-bold text-red-200">
-                  Ingresá un porcentaje entre 1 y 100 para el beneficio.
-                </p>
-              )}
               {uploadDisabledReason && (
                 <p className="mt-2 text-xs font-semibold text-white/52">
                   {uploadDisabledReason}
@@ -2396,7 +2293,7 @@ function RefundManagementPanel({
                   className="admin-order-cancellation-primary-action inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                  {saving ? "Guardando..." : "Subir comprobante y marcar como reintegrado"}
+                  {saving ? "Guardando..." : "Registrar comprobante y cerrar reintegro"}
                 </button>
               </div>
             </>
@@ -2436,13 +2333,88 @@ function BillingManagementPanel({
   invoiceNotice: { ok: boolean; message: string } | null
   onIssueInvoice: () => void
   onDownloadInvoice: () => void
-  onDownloadCreditNote: () => void
+  onDownloadCreditNote: (noteId?: string) => void
   onBillingUpdated: (order: SupabasePedido) => void
 }) {
   const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
   const creditNoteNeeded = needsCreditNoteReminder(pedido)
   const [creditSaving, setCreditSaving] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const [creditQuantities, setCreditQuantities] = useState<Record<number, number>>({})
+  const [manualCreditAmount, setManualCreditAmount] = useState("")
+  const [creditReason, setCreditReason] = useState("")
+  const [creditDestination, setCreditDestination] = useState<
+    "external_refund" | "customer_balance"
+  >("customer_balance")
+  const creditNotes = pedido.order_credit_notes ?? []
+  const authorizedCreditNotes = creditNotes.filter(
+    (note) => note.status === "authorized",
+  )
+  const committedCreditNotes = creditNotes.filter((note) =>
+    ["authorized", "processing"].includes(note.status),
+  )
+  const committedQuantityByItem = useMemo(() => {
+    const quantities = new Map<number, number>()
+    for (const note of committedCreditNotes) {
+      for (const item of note.order_credit_note_items ?? []) {
+        quantities.set(
+          item.order_item_id,
+          (quantities.get(item.order_item_id) ?? 0) + Number(item.quantity),
+        )
+      }
+    }
+    return quantities
+  }, [committedCreditNotes])
+  const itemAllocations = useMemo(
+    () =>
+      new Map(
+        allocateEffectiveOrderItemAmounts(
+          pedido,
+          pedido.orden_items ?? [],
+        ).map((allocation) => [allocation.orderItemId, allocation]),
+      ),
+    [pedido],
+  )
+  const authorizedCreditTotal = roundCreditMoney(
+    authorizedCreditNotes.reduce(
+      (sum, note) => sum + Number(note.total_amount ?? 0),
+      0,
+    ),
+  )
+  const committedCreditTotal = roundCreditMoney(
+    committedCreditNotes.reduce(
+      (sum, note) => sum + Number(note.total_amount ?? 0),
+      0,
+    ),
+  )
+  const invoiceCreditRemaining = roundCreditMoney(
+    Math.max(0, Number(pedido.total ?? 0) - committedCreditTotal),
+  )
+  const selectedItemsAmount = roundCreditMoney(
+    (pedido.orden_items ?? []).reduce((sum, item) => {
+      const allocation = itemAllocations.get(item.id)
+      return (
+        sum +
+        (allocation
+          ? calculatePartialLineAmount(
+              allocation,
+              Number(creditQuantities[item.id] ?? 0),
+            )
+          : 0)
+      )
+    }, 0),
+  )
+  const parsedManualAmount = (() => {
+    const value = Number(manualCreditAmount.replace(/\./g, "").replace(",", "."))
+    return Number.isFinite(value) && value > 0 ? roundCreditMoney(value) : 0
+  })()
+  const newCreditTotal = roundCreditMoney(
+    selectedItemsAmount + parsedManualAmount,
+  )
+  const selectedCreditUnits = Object.values(creditQuantities).reduce(
+    (sum, quantity) => sum + Math.max(0, Number(quantity) || 0),
+    0,
+  )
   const creditNoteIssued =
     pedido.credit_note_status === "authorized" ||
     Boolean(pedido.credit_note_cae || pedido.credit_note_issued)
@@ -2453,7 +2425,10 @@ function BillingManagementPanel({
       pedido.total ??
       0,
   )
-  const creditNoteProcessing = pedido.credit_note_status === "processing" || creditSaving
+  const creditNoteProcessing =
+    pedido.credit_note_status === "processing" ||
+    creditNotes.some((note) => note.status === "processing") ||
+    creditSaving
   const creditNoteFormattedNumber = formatInvoiceNumberOrDash(
     pedido.credit_note_point,
     pedido.credit_note_number,
@@ -2463,21 +2438,13 @@ function BillingManagementPanel({
       ? "-"
       : `Nota de Crédito C ${creditNoteFormattedNumber}`
   const creditNoteCaeLabel = formatBillingDash(pedido.credit_note_cae)
-  const creditNoteCaeDueLabel = formatInvoiceDateOrDash(pedido.credit_note_cae_due)
-  const creditNoteIssuedAtLabel = formatOptionalOrderDateOrDash(
-    pedido.credit_note_created_at || pedido.credit_note_issued_at,
-  )
-  const associatedInvoiceFormattedNumber = formatInvoiceNumberOrDash(
-    pedido.invoice_point,
-    pedido.invoice_number,
-  )
-  const associatedInvoiceLabel =
-    associatedInvoiceFormattedNumber === "-"
-      ? "-"
-      : `Factura C ${associatedInvoiceFormattedNumber}`
   const creditNoteAmountLabel = creditNoteAmount > 0 ? formatPrice(creditNoteAmount) : "-"
   useEffect(() => {
     setMessage(null)
+    setCreditQuantities({})
+    setManualCreditAmount("")
+    setCreditReason("")
+    setCreditDestination("customer_balance")
   }, [pedido.id])
 
   const issueCreditNote = async () => {
@@ -2498,7 +2465,19 @@ function BillingManagementPanel({
         method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          items: Object.entries(creditQuantities)
+            .map(([orderItemId, quantity]) => ({
+              order_item_id: Number(orderItemId),
+              quantity,
+            }))
+            .filter((item) => item.quantity > 0),
+          manual_amount: parsedManualAmount,
+          destination: creditDestination,
+          reason: creditReason,
+        }),
       })
       const data = (await response.json()) as {
         order?: SupabasePedido
@@ -2514,6 +2493,9 @@ function BillingManagementPanel({
       }
 
       onBillingUpdated(data.order)
+      setCreditQuantities({})
+      setManualCreditAmount("")
+      setCreditReason("")
       setMessage({ ok: true, text: "Nota de crédito emitida por ARCA." })
       notifyOrderNotificationsChanged()
     } catch {
@@ -2679,7 +2661,7 @@ function BillingManagementPanel({
                 Icon={Download}
                 title="Descarga disponible"
                 badge="Disponible"
-                tone="blue"
+                tone="green"
               />
             </div>
           </div>
@@ -2691,36 +2673,318 @@ function BillingManagementPanel({
       ) : null}
 
       {invoiceIssued && isCreditNoteFlowOrder(pedido) && (
-        <div className="admin-order-billing-panel admin-order-billing-credit-section mt-3 rounded-lg border p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-white/92">
-            Nota de crédito
-          </p>
-          <div className="mt-3 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <CreditNoteDataCard
-                label="Tipo y número"
-                value={creditNoteNumberLabel}
-              />
-              <CreditNoteDataCard label="CAE" value={creditNoteCaeLabel} />
-              <CreditNoteDataCard
-                label="Vencimiento CAE"
-                value={creditNoteCaeDueLabel}
-              />
-              <CreditNoteDataCard
-                label="Fecha de emisión"
-                value={creditNoteIssuedAtLabel}
-              />
-              <CreditNoteDataCard
-                label="Factura asociada"
-                value={associatedInvoiceLabel}
-              />
-              <CreditNoteDataCard
-                label="Monto a acreditar"
-                value={creditNoteAmountLabel}
-                valueClassName={creditNoteAmountLabel === "-" ? "text-white/92" : "text-emerald-100"}
-              />
+        <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3">
+          <header className="admin-credit-note-header">
+            <div className="admin-credit-note-title">
+              <span className="admin-credit-note-title-icon">
+                <FileText className="size-5" />
+              </span>
+              <div>
+                <p className="text-10px font-black uppercase tracking-widest text-[#8CC8F2]">
+                  Devolución fiscal
+                </p>
+                <h3 className="mt-1 text-base font-black text-white">
+                  Crear nota de crédito
+                </h3>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-white/58">
+                  Seleccioná qué se devuelve, elegí cómo compensar al cliente y
+                  revisá el total antes de enviarlo a ARCA.
+                </p>
+              </div>
             </div>
-            {creditNoteIssued ? (
+            <div className="admin-credit-note-balance">
+              <div>
+                <span>Notas emitidas</span>
+                <strong>{formatPrice(authorizedCreditTotal)}</strong>
+              </div>
+              <div>
+                <span>Disponible</span>
+                <strong>{formatPrice(invoiceCreditRemaining)}</strong>
+              </div>
+            </div>
+          </header>
+
+          {invoiceCreditRemaining > 0 && (
+            <>
+              <div className="admin-credit-note-steps" aria-label="Pasos para crear la nota">
+                <span className={selectedCreditUnits > 0 ? "is-complete" : "is-current"}>
+                  <b>1</b> Productos
+                </span>
+                <span className={selectedCreditUnits > 0 ? "is-current" : ""}>
+                  <b>2</b> Resolución
+                </span>
+                <span className={newCreditTotal > 0 ? "is-current" : ""}>
+                  <b>3</b> Revisar y emitir
+                </span>
+              </div>
+
+              <div className="admin-credit-note-editor">
+                <section className="admin-credit-note-step-card admin-credit-note-products-panel">
+                  <div className="admin-credit-note-step-heading">
+                    <span>1</span>
+                    <div>
+                      <h4>¿Qué productos se devuelven?</h4>
+                      <p>Indicá la cantidad exacta de cada artículo reclamado.</p>
+                    </div>
+                  </div>
+
+                  <div className="admin-credit-note-products">
+                    {(pedido.orden_items ?? []).map((item) => {
+                      const allocation = itemAllocations.get(item.id)
+                      const used = committedQuantityByItem.get(item.id) ?? 0
+                      const available = Math.max(0, Number(item.cantidad) - used)
+                      const quantity = Math.min(
+                        available,
+                        Number(creditQuantities[item.id] ?? 0),
+                      )
+                      const lineAmount = allocation
+                        ? calculatePartialLineAmount(allocation, quantity)
+                        : 0
+                      const productName =
+                        item.productos?.nombre ?? `Artículo #${item.producto_id}`
+                      const variantName = item.producto_variantes?.nombre
+                      const changeQuantity = (next: number) =>
+                        setCreditQuantities((current) => ({
+                          ...current,
+                          [item.id]: Math.max(0, Math.min(available, next)),
+                        }))
+
+                      return (
+                        <article
+                          key={item.id}
+                          className={`admin-credit-note-product ${
+                            quantity > 0 ? "is-selected" : ""
+                          } ${available === 0 ? "is-disabled" : ""}`}
+                        >
+                          <div className="admin-credit-note-product-copy">
+                            <span className="admin-credit-note-product-icon">
+                              <Package className="size-4" />
+                            </span>
+                            <div>
+                              <h5>{productName}</h5>
+                              <p>
+                                {variantName ? `${variantName} · ` : ""}
+                                {available > 0
+                                  ? `${available} ${available === 1 ? "unidad disponible" : "unidades disponibles"}`
+                                  : "Ya acreditado por completo"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {available > 0 && (
+                            <div className="admin-credit-note-product-actions">
+                              <div className="admin-credit-note-counter" aria-label={`Cantidad de ${productName}`}>
+                                <button
+                                  type="button"
+                                  aria-label={`Quitar una unidad de ${productName}`}
+                                  disabled={quantity === 0 || creditNoteProcessing}
+                                  onClick={() => changeQuantity(quantity - 1)}
+                                >
+                                  <Minus className="size-3.5" />
+                                </button>
+                                <strong>{quantity}</strong>
+                                <button
+                                  type="button"
+                                  aria-label={`Agregar una unidad de ${productName}`}
+                                  disabled={quantity >= available || creditNoteProcessing}
+                                  onClick={() => changeQuantity(quantity + 1)}
+                                >
+                                  <Plus className="size-3.5" />
+                                </button>
+                              </div>
+                              <div className="admin-credit-note-line-total">
+                                <span>Se acreditan</span>
+                                <strong>{formatPrice(lineAmount)}</strong>
+                              </div>
+                            </div>
+                          )}
+                        </article>
+                      )
+                    })}
+                  </div>
+                  {selectedCreditUnits === 0 && (
+                    <p className="admin-credit-note-guidance">
+                      Usá el botón <Plus className="size-3" /> para agregar las
+                      unidades incluidas en el reclamo.
+                    </p>
+                  )}
+                </section>
+
+                <aside className="admin-credit-note-side">
+                  <section className="admin-credit-note-step-card admin-credit-note-resolution-panel">
+                    <div className="admin-credit-note-step-heading">
+                      <span>2</span>
+                      <div>
+                        <h4>¿Qué recibe el cliente?</h4>
+                        <p>La acción se ejecutará únicamente después del CAE.</p>
+                      </div>
+                    </div>
+
+                    <div className="admin-credit-note-fields">
+                      <div className="admin-credit-note-field">
+                        <span>Destino del dinero</span>
+                        <AdminSelect
+                          title="Destino del dinero"
+                          ariaLabel="Seleccionar destino de la nota de crédito"
+                          value={creditDestination}
+                          disabled={creditNoteProcessing}
+                          triggerClassName="admin-credit-note-destination-select"
+                          menuClassName="admin-credit-note-destination-menu"
+                          optionClassName="admin-credit-note-destination-option"
+                          onChange={(value) =>
+                            setCreditDestination(
+                              value as
+                                | "external_refund"
+                                | "customer_balance",
+                            )
+                          }
+                        >
+                          <option value="customer_balance">
+                            Saldo en cuenta BEYONIX
+                          </option>
+                          <option value="external_refund">
+                            Devolución de dinero
+                          </option>
+                        </AdminSelect>
+                        <p className="admin-credit-note-destination-help">
+                          {creditDestination === "external_refund"
+                            ? "Elegí esta opción si vas a devolver el dinero por transferencia, Mercado Pago u otro medio."
+                            : "Elegí esta opción si el importe quedará disponible para una próxima compra."}
+                        </p>
+                      </div>
+
+                      <label className="admin-credit-note-reason">
+                        <span>
+                          Motivo de la devolución
+                          <small>Opcional · máximo 50 caracteres</small>
+                        </span>
+                        <input
+                          type="text"
+                          maxLength={50}
+                          value={creditReason}
+                          disabled={creditNoteProcessing}
+                          onChange={(event) => setCreditReason(event.target.value)}
+                          placeholder="Ej.: producto dañado"
+                        />
+                      </label>
+
+                      <label>
+                        <span>
+                          Monto adicional <small>Opcional</small>
+                        </span>
+                        <div className="admin-credit-note-money-input">
+                          <b>$</b>
+                          <input
+                            inputMode="decimal"
+                            value={manualCreditAmount}
+                            disabled={creditNoteProcessing}
+                            onChange={(event) => setManualCreditAmount(event.target.value)}
+                            placeholder="0,00"
+                          />
+                        </div>
+                        <em>Usalo sólo para envío u otro concepto sin producto.</em>
+                      </label>
+                    </div>
+                  </section>
+                </aside>
+
+                <section className="admin-credit-note-review">
+                    <div className="admin-credit-note-step-heading">
+                      <span>3</span>
+                      <div>
+                        <h4>Revisar antes de emitir</h4>
+                        <p>ARCA no permite editar el comprobante luego del CAE.</p>
+                      </div>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Productos ({selectedCreditUnits} u.)</dt>
+                        <dd>{formatPrice(selectedItemsAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt>Monto adicional</dt>
+                        <dd>{formatPrice(parsedManualAmount)}</dd>
+                      </div>
+                      <div className="admin-credit-note-review-total">
+                        <dt>Total de la nota</dt>
+                        <dd>{formatPrice(newCreditTotal)}</dd>
+                      </div>
+                    </dl>
+                    <div className="admin-credit-note-review-action">
+                      <p
+                        className={`admin-credit-note-error ${
+                          newCreditTotal > invoiceCreditRemaining + 0.005
+                            ? "is-visible"
+                            : ""
+                        }`}
+                      >
+                        El total supera el disponible de la factura.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={
+                          creditNoteProcessing ||
+                          newCreditTotal <= 0 ||
+                          newCreditTotal > invoiceCreditRemaining + 0.005
+                        }
+                        onClick={() => void issueCreditNote()}
+                        className="admin-credit-note-submit"
+                      >
+                        {creditNoteProcessing ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="size-4" />
+                        )}
+                        {creditNoteProcessing
+                          ? "Validando con ARCA..."
+                          : "Emitir Nota de Crédito C"}
+                      </button>
+                      <p className="admin-credit-note-secure-copy">
+                        <ShieldCheck className="size-3.5" />
+                        Ningún saldo ni reintegro se acredita sin un CAE válido.
+                      </p>
+                    </div>
+                </section>
+              </div>
+            </>
+          )}
+
+          {authorizedCreditNotes.length > 0 && (
+            <section className="admin-credit-note-history">
+              <div>
+                <CheckCircle2 className="size-4" />
+                <p>
+                  <strong>
+                    {authorizedCreditNotes.length === 1
+                      ? "1 nota autorizada"
+                      : `${authorizedCreditNotes.length} notas autorizadas`}
+                  </strong>
+                  <span>Comprobantes validados por ARCA</span>
+                </p>
+              </div>
+              <div className="admin-credit-note-history-list">
+                {authorizedCreditNotes.map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    onClick={() => void onDownloadCreditNote(note.id)}
+                  >
+                    <span>
+                      NC {formatInvoiceNumberOrDash(note.voucher_point, note.voucher_number)}
+                    </span>
+                    <strong>{formatPrice(Number(note.total_amount))}</strong>
+                    <Download className="size-3.5" />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {creditNoteIssued && creditNotes.length === 0 && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <CreditNoteDataCard label="Tipo y número" value={creditNoteNumberLabel} />
+              <CreditNoteDataCard label="CAE" value={creditNoteCaeLabel} />
+              <CreditNoteDataCard label="Monto acreditado" value={creditNoteAmountLabel} />
               <button
                 type="button"
                 onClick={() => void onDownloadCreditNote()}
@@ -2729,22 +2993,8 @@ function BillingManagementPanel({
                 <Download className="size-4" />
                 Descargar Nota de Crédito
               </button>
-            ) : (
-              <button
-                type="button"
-                disabled={creditNoteProcessing || creditNoteAmount <= 0}
-                onClick={() => void issueCreditNote()}
-                className="admin-order-billing-danger-button admin-order-billing-credit-action inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {creditNoteProcessing ? (
-                  <LoaderCircle className="size-4 animate-spin text-[#ffb4bd]" />
-                ) : (
-                  <FileText className="size-4 text-[#ffb4bd]" />
-                )}
-                {creditNoteProcessing ? "Emitiendo..." : "Emitir Nota de Crédito"}
-              </button>
-            )}
-          </div>
+            </div>
+          )}
           {pedido.credit_note_error && !creditNoteIssued && (
             <p className="mt-3 rounded-lg border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
               {pedido.credit_note_error}
@@ -2862,7 +3112,7 @@ function AccountingStatusRow({
   const toneClass = getAccountingStatusToneClass(tone)
 
   return (
-    <div className="admin-order-accounting-status-card relative isolate flex items-center justify-between gap-3 overflow-hidden rounded-lg border px-3 py-2.5">
+    <div className={`admin-order-accounting-status-card admin-order-accounting-status-card--${tone} relative isolate flex items-center justify-between gap-3 overflow-hidden rounded-lg border px-3 py-2.5`}>
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-0"
@@ -3726,7 +3976,8 @@ function PedidoDetailModal({
     pedidoId: number
   ) => Promise<{ ok: boolean; message: string }>
   onDownloadCreditNote: (
-    pedidoId: number
+    pedidoId: number,
+    noteId?: string,
   ) => Promise<{ ok: boolean; message: string }>
   onClaimChange: (pedidoId: number, claim: SupabaseOrderClaim) => void
   onRefundUpdated: (order: SupabasePedido) => void
@@ -4079,10 +4330,10 @@ function PedidoDetailModal({
     setInvoiceDownloading(false)
   }
 
-  const handleDownloadCreditNote = async () => {
+  const handleDownloadCreditNote = async (noteId?: string) => {
     setInvoiceDownloading(true)
     setInvoiceNotice(null)
-    const result = await onDownloadCreditNote(pedido.id)
+    const result = await onDownloadCreditNote(pedido.id, noteId)
     setInvoiceNotice(result.ok ? null : result)
     setInvoiceDownloading(false)
   }
@@ -4314,7 +4565,6 @@ function PedidoDetailModal({
           {activeView === "cancelacion" && (
             <RefundManagementPanel
               pedido={pedido}
-              canEditRefundAmount={canEditRefundAmount}
               onRefundUpdated={onRefundUpdated}
             />
           )}
@@ -6440,7 +6690,7 @@ export function AdminPedidos({
     }
   }
 
-  const handleDownloadCreditNote = async (pedidoId: number) => {
+  const handleDownloadCreditNote = async (pedidoId: number, noteId?: string) => {
     try {
       const {
         data: { session },
@@ -6453,7 +6703,9 @@ export function AdminPedidos({
         }
       }
 
-      const response = await fetch(`/api/admin/orders/${pedidoId}/invoice/pdf?type=credit_note`, {
+      const params = new URLSearchParams({ type: "credit_note" })
+      if (noteId) params.set("note", noteId)
+      const response = await fetch(`/api/admin/orders/${pedidoId}/invoice/pdf?${params}`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },

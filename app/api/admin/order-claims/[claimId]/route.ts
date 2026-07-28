@@ -434,6 +434,27 @@ export async function PATCH(
       )
     }
 
+    const { data: creditedMovement, error: creditedMovementError } =
+      await auth.admin
+        .from("customer_credit_movements")
+        .select("id")
+        .eq("order_id", currentClaim.order_id)
+        .eq("claim_id", currentClaim.id)
+        .eq("movement_type", "credit")
+        .eq("source_type", "credit_note")
+        .limit(1)
+        .maybeSingle()
+
+    if (creditedMovementError || !creditedMovement) {
+      return NextResponse.json(
+        {
+          error:
+            "La nota está autorizada, pero el saldo todavía no fue acreditado. No se puede informar al cliente como disponible.",
+        },
+        { status: 409 },
+      )
+    }
+
     if (["cerrado", "rechazado"].includes(currentClaim.status)) {
       return NextResponse.json(
         { error: "El reclamo ya está finalizado." },

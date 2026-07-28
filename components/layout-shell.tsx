@@ -44,8 +44,6 @@ export function LayoutShell({
 }: {
   children: React.ReactNode
 }) {
-  useClientPresence()
-
   const pathname =
     usePathname()
 
@@ -91,6 +89,8 @@ export function LayoutShell({
       "/checkout"
     )
 
+  useClientPresence(!isAuthPage && !isPasswordReset)
+
   // Admin layout
   if (isCheckoutPage) {
     return (
@@ -102,12 +102,7 @@ export function LayoutShell({
   }
 
   if (isPasswordReset || isAuthPage) {
-    return (
-      <>
-        <StandaloneAdminNotifications />
-        {children}
-      </>
-    )
+    return children
   }
 
   if (isAdmin) {

@@ -265,6 +265,43 @@ export interface SupabasePedido {
   order_claims?: SupabaseOrderClaim[]
   order_refund_proofs?: SupabaseOrderRefundProof[]
   order_audit_events?: SupabaseOrderAuditEvent[]
+  order_credit_notes?: SupabaseOrderCreditNote[]
+}
+
+export interface SupabaseOrderCreditNoteItem {
+  id: number
+  credit_note_id: string
+  order_item_id: number
+  quantity: number
+  unit_amount: number
+  total_amount: number
+  product_name: string
+  variant_name?: string | null
+  created_at: string
+}
+
+export interface SupabaseOrderCreditNote {
+  id: string
+  order_id: number
+  claim_id?: number | null
+  status: "processing" | "authorized" | "error"
+  destination: "external_refund" | "customer_balance" | "none"
+  reason: string
+  items_amount: number
+  manual_amount: number
+  total_amount: number
+  invoice_point: number
+  invoice_number: number
+  voucher_point?: number | null
+  voucher_number?: number | null
+  cae?: string | null
+  cae_due?: string | null
+  error?: string | null
+  created_by?: string | null
+  created_at: string
+  authorized_at?: string | null
+  updated_at: string
+  order_credit_note_items?: SupabaseOrderCreditNoteItem[]
 }
 
 export interface SupabaseOrderRefundProof {
