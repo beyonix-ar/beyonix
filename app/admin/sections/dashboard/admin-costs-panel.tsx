@@ -275,7 +275,7 @@ function ProductSelect({
             const hasVariants = Boolean(product.producto_variantes?.length)
             const availableStock = Number(product.stock ?? 0)
             const productDisabled =
-              inventoryMode && (hasVariants || availableStock <= 0)
+              hasVariants || (inventoryMode && availableStock <= 0)
             return (
               <div key={product.id}>
                 <button
@@ -296,11 +296,11 @@ function ProductSelect({
                     {product.sku && <span className="ml-2 text-10px text-white/38">{product.sku}</span>}
                   </span>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-10px font-black ${product.activo ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-300" : "border-white/10 bg-white/5 text-white/38"}`}>
-                    {inventoryMode
-                      ? hasVariants
-                        ? "Elegí una variante"
-                        : `${availableStock} disponibles`
-                      : product.activo ? "Activo" : "Inactivo"}
+                    {hasVariants
+                      ? "Elegí una variante"
+                      : inventoryMode
+                        ? `${availableStock} disponibles`
+                        : product.activo ? "Activo" : "Inactivo"}
                   </span>
                 </button>
                 {!product.standalone_key && product.producto_variantes?.map((variant) => {
@@ -610,6 +610,41 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     purchaseSortDirection,
   ])
 
+  const unregisteredCatalogTargets = useMemo(() => {
+    const registered = new Set(
+      (data?.productCosts ?? []).flatMap((item) => {
+        if (item.product_id == null) return []
+        return [
+          item.variant_id
+            ? `v:${item.product_id}:${item.variant_id}`
+            : `p:${item.product_id}`,
+        ]
+      }),
+    )
+
+    return (data?.catalog ?? []).flatMap((product) => {
+      if (product.standalone_key || typeof product.id !== "number") return []
+
+      const variants = product.producto_variantes ?? []
+      if (variants.length) {
+        return variants
+          .map((variant) => ({
+            value: `v:${product.id}:${variant.id}`,
+            label: `${product.nombre} · ${variant.nombre}`,
+            sku: product.sku ?? "",
+          }))
+          .filter((target) => !registered.has(target.value))
+      }
+
+      const target = {
+        value: `p:${product.id}`,
+        label: product.nombre,
+        sku: product.sku ?? "",
+      }
+      return registered.has(target.value) ? [] : [target]
+    })
+  }, [data?.catalog, data?.productCosts])
+
   const purchaseSortDirectionOptions = useMemo(
     () =>
       purchaseSort === "product" || purchaseSort === "supplier"
@@ -687,6 +722,23 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setMessage("")
     requestAnimationFrame(() => {
       productFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }
+
+  const startPurchaseForCatalogTarget = (
+    value: string,
+    sku: string,
+  ) => {
+    resetProductForm()
+    setArticle(value)
+    setProductSku(sku)
+    setError("")
+    setMessage("Completá la cantidad recibida y el costo para registrar el ingreso.")
+    requestAnimationFrame(() => {
+      productFormRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
     })
   }
 
@@ -937,7 +989,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                 />
               </Field>
               <Field label="Fecha compra"><AdminDatePicker title="Fecha compra" ariaLabel="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} centered /></Field>
-              <Field label="Cantidad"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
+              <Field label="Cantidad recibida"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
               <Field label="Costo unitario"><MoneyInput value={unitCost} onChange={setUnitCost} /></Field>
               <Field label="Proveedor"><HistoryAutocompleteInput value={productSupplier} suggestions={supplierSuggestions} onChange={setProductSupplier} placeholder="Opcional" /></Field>
               <Field label="Flete"><MoneyInput value={freightCost} onChange={setFreightCost} /></Field>
@@ -1014,11 +1066,59 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               </span>
             </div>
             <div className="overflow-x-auto rounded-2xl border border-white/7">
-              <table className="w-full min-w-1100px text-sm"><thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42"><tr><th className="px-3 py-2.5 text-center">Fecha</th><th className="px-3 py-2.5 text-left">Artículo</th><th className="px-3 py-2.5 text-center">SKU</th><th className="px-3 py-2.5 text-center">Cantidad</th><th className="px-3 py-2.5 text-center">Unitario</th><th className="px-3 py-2.5 text-center">Extras</th><th className="px-3 py-2.5 text-center">Total</th><th className="px-3 py-2.5 text-center">Proveedor</th><th className="px-3 py-2.5 text-center">Acción</th></tr></thead>
+              <table className="w-full min-w-1100px text-sm"><thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42"><tr><th className="px-3 py-2.5 text-center">Fecha</th><th className="px-3 py-2.5 text-left">Artículo</th><th className="px-3 py-2.5 text-center">SKU</th><th className="px-3 py-2.5 text-center">Cantidad recibida</th><th className="px-3 py-2.5 text-center">Unitario</th><th className="px-3 py-2.5 text-center">Extras</th><th className="px-3 py-2.5 text-center">Total</th><th className="px-3 py-2.5 text-center">Proveedor</th><th className="px-3 py-2.5 text-center">Acción</th></tr></thead>
                 <tbody>{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3 text-center">{item.purchase_date}</td><td className="px-3 py-3 text-left font-bold text-white">{articleLabel}</td><td className="px-3 py-3 text-center font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 text-center tabular-nums">{item.quantity}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(Number(item.unit_cost))}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 text-center font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3 text-center">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
               </table>
-              {!data?.productCosts.length && <p className="px-4 py-8 text-center text-sm text-white/42">Todavía no registraste compras.</p>}
+              {!data?.productCosts.length && (
+                <p className="px-4 py-8 text-center text-sm text-white/42">
+                  No hay compras registradas. Dar de alta un producto crea el
+                  catálogo, pero no registra mercadería recibida.
+                </p>
+              )}
             </div>
+            {unregisteredCatalogTargets.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-amber-300/18 bg-amber-300/5 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-black text-white">
+                      Productos pendientes de registrar una compra
+                    </h4>
+                    <p className="mt-1 text-xs leading-5 text-white/48">
+                      Estos artículos existen en Productos, pero todavía no
+                      tienen cantidad recibida, costo ni fecha de compra.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-amber-300/20 bg-amber-300/8 px-2.5 py-1 text-xs font-black text-amber-200">
+                    {unregisteredCatalogTargets.length} pendientes
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {unregisteredCatalogTargets.map((target) => (
+                    <div
+                      key={target.value}
+                      className="flex min-w-0 items-center gap-2 rounded-xl border border-white/7 bg-black/20 p-2 pl-3"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-xs font-bold text-white/70">
+                        {target.label}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          startPurchaseForCatalogTarget(
+                            target.value,
+                            target.sku,
+                          )
+                        }
+                        className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-beyonix-sky/28 bg-beyonix-blue/24 px-2.5 text-xs font-black text-beyonix-sky transition hover:border-beyonix-sky/50 hover:bg-beyonix-blue/42"
+                      >
+                        <Plus className="size-3.5" />
+                        Registrar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         </>
       ) : (

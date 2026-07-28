@@ -336,6 +336,17 @@ export async function POST(
     )
   }
 
+  await auth.admin
+    .from("order_credit_notes")
+    .update({
+      management_status: "finalizada",
+      settlement_status: "completado",
+      settlement_date: now.slice(0, 10),
+      settlement_reference: String(proof.id),
+      updated_at: now,
+    })
+    .in("id", noteIds)
+
   await appendOrderAuditEvent(auth.admin, {
     orderId,
     actorType: "admin",

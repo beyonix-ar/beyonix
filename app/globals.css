@@ -5099,6 +5099,11 @@ div.claim-form-shell::after {
   justify-content: flex-end;
 }
 
+.admin-credit-note-history-item {
+  display: flex;
+  gap: 0.35rem;
+}
+
 .admin-credit-note-history-list button {
   align-items: center;
   background: #0b2b23 !important;
@@ -5114,6 +5119,12 @@ div.claim-form-shell::after {
   transition: background 150ms ease, border-color 150ms ease;
 }
 
+.admin-credit-note-history-list button.is-settlement-retry {
+  background: rgba(91, 54, 5, 0.88) !important;
+  border-color: rgba(251, 191, 36, 0.38);
+  color: #fde68a;
+}
+
 .admin-credit-note-history-list button:hover {
   background: #124437 !important;
   border-color: rgba(110, 231, 183, 0.52);
@@ -5121,6 +5132,361 @@ div.claim-form-shell::after {
 
 .admin-credit-note-history-list button strong {
   color: #fff;
+}
+
+.admin-return-config-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0.75rem;
+}
+
+.admin-return-config-grid > label,
+.admin-return-config-grid > .admin-credit-note-field {
+  background: rgba(5, 14, 23, 0.72);
+  border: 1px solid rgba(92, 159, 215, 0.2);
+  border-radius: 0.7rem;
+  padding: 0.55rem;
+}
+
+.admin-return-config-grid > .admin-credit-note-reason {
+  grid-column: 1 / -1;
+}
+
+.admin-return-logistics-panel,
+.admin-return-reception-panel {
+  background: rgba(7, 24, 38, 0.9) !important;
+}
+
+.admin-return-compact-fields {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.admin-return-check-row,
+.admin-return-exception-row {
+  align-items: center;
+  background: rgba(4, 13, 21, 0.66);
+  border: 1px solid rgba(140, 200, 242, 0.16);
+  border-radius: 0.65rem;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+  padding: 0.55rem 0.65rem;
+}
+
+.admin-return-check-row span,
+.admin-return-exception-row span {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.admin-return-check-row b,
+.admin-return-exception-row span {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.admin-return-check-row small,
+.admin-return-exception-row small {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.58rem;
+  font-weight: 600;
+}
+
+.admin-return-check-row input,
+.admin-return-exception-row input {
+  accent-color: #4f9bd1;
+  height: 1rem;
+  width: 1rem;
+}
+
+.admin-return-inline-fields {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-return-inline-fields input,
+.admin-return-config-grid input,
+.admin-return-compact-fields textarea,
+.admin-return-compact-fields > input {
+  background: rgba(3, 10, 17, 0.85);
+  border: 1px solid rgba(140, 200, 242, 0.2);
+  border-radius: 0.6rem;
+  color: #fff;
+  font-size: 0.68rem;
+  min-height: 2.25rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  width: 100%;
+}
+
+.admin-return-compact-fields textarea {
+  min-height: 3.4rem;
+  resize: vertical;
+}
+
+.admin-return-closed-summary {
+  align-items: center;
+  background: rgba(5, 48, 35, 0.64);
+  border: 1px solid rgba(110, 231, 183, 0.28);
+  border-radius: 0.8rem;
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.admin-return-closed-summary > svg {
+  color: #6ee7b7 !important;
+}
+
+.admin-return-closed-summary p {
+  color: #a7f3d0;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-return-closed-summary h4 {
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.admin-return-closed-summary span {
+  color: rgba(209, 250, 229, 0.58);
+  font-size: 0.63rem;
+}
+
+.admin-return-closed-summary button {
+  background: #112a43 !important;
+  border: 1px solid rgba(140, 200, 242, 0.4);
+  border-radius: 0.6rem;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 850;
+  min-height: 2.2rem;
+  padding: 0.45rem 0.7rem;
+}
+
+.admin-return-timeline {
+  background: rgba(5, 14, 23, 0.72);
+  border: 1px solid rgba(92, 159, 215, 0.2);
+  border-radius: 0.8rem;
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.admin-return-timeline-events {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.admin-return-timeline-events > div {
+  align-items: flex-start;
+  display: flex;
+  flex: 1 0 8.5rem;
+  gap: 0.4rem;
+  min-width: 0;
+  position: relative;
+}
+
+.admin-return-timeline-events > div:not(:last-child)::after {
+  background: rgba(140, 200, 242, 0.2);
+  content: "";
+  height: 1px;
+  left: 0.75rem;
+  position: absolute;
+  right: 0;
+  top: 0.3rem;
+}
+
+.admin-return-timeline-events > div > span {
+  background: #6ee7b7;
+  border: 2px solid #153c38;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  height: 0.65rem;
+  position: relative;
+  width: 0.65rem;
+  z-index: 1;
+}
+
+.admin-return-timeline-events p {
+  display: grid;
+  gap: 0.1rem;
+  padding-right: 0.6rem;
+}
+
+.admin-return-timeline-events strong {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.61rem;
+}
+
+.admin-return-timeline-events small {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.54rem;
+}
+
+.admin-return-timeline details {
+  border-top: 1px solid rgba(140, 200, 242, 0.14);
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+}
+
+.admin-return-timeline summary {
+  color: #a9d8f8;
+  cursor: pointer;
+  font-size: 0.6rem;
+  font-weight: 800;
+}
+
+.admin-return-timeline details div {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.admin-return-timeline details p {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 0.45rem;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.45rem;
+}
+
+.admin-return-timeline details b,
+.admin-return-timeline details code {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.55rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.admin-return-confirm-backdrop {
+  align-items: center;
+  background: rgba(0, 4, 8, 0.78);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 120;
+}
+
+.admin-return-confirm-modal {
+  background: linear-gradient(150deg, #0e2134, #07111c);
+  border: 1px solid rgba(140, 200, 242, 0.42);
+  border-radius: 1rem;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+  max-height: calc(100dvh - 2rem);
+  max-width: 34rem;
+  overflow-y: auto;
+  padding: 1rem;
+  width: 100%;
+}
+
+.admin-return-confirm-modal header,
+.admin-return-confirm-modal footer {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.admin-return-confirm-modal header p {
+  color: #fbbf24;
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-return-confirm-modal header h3 {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.admin-return-confirm-modal header button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.55rem;
+  color: #fff;
+  display: flex;
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
+}
+
+.admin-return-confirm-modal dl {
+  background: rgba(2, 9, 15, 0.55);
+  border: 1px solid rgba(140, 200, 242, 0.14);
+  border-radius: 0.75rem;
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.8rem 0;
+  padding: 0.75rem;
+}
+
+.admin-return-confirm-modal dl > div {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.admin-return-confirm-modal dt {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.65rem;
+}
+
+.admin-return-confirm-modal dd {
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.admin-return-confirm-modal dl > .is-total {
+  border-top: 1px solid rgba(140, 200, 242, 0.2);
+  padding-top: 0.5rem;
+}
+
+.admin-return-confirm-modal .is-total dd {
+  color: #a9d8f8;
+  font-size: 0.95rem;
+}
+
+.admin-return-confirm-modal footer {
+  justify-content: flex-end;
+}
+
+.admin-return-confirm-modal footer button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.65rem;
+  color: #fff;
+  display: inline-flex;
+  font-size: 0.65rem;
+  font-weight: 850;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.8rem;
+}
+
+.admin-return-confirm-modal footer .is-primary {
+  background: #1e4d7b !important;
+  border-color: rgba(140, 200, 242, 0.56);
 }
 
 @container credit-note (min-width: 820px) {
@@ -5160,6 +5526,25 @@ div.claim-form-shell::after {
 }
 
 @container credit-note (max-width: 700px) {
+  .admin-return-config-grid,
+  .admin-return-inline-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-return-config-grid > .admin-credit-note-reason {
+    grid-column: auto;
+  }
+
+  .admin-return-closed-summary {
+    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .admin-return-closed-summary button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .admin-credit-note-header,
   .admin-credit-note-history {
     align-items: stretch;
@@ -5364,6 +5749,30 @@ div.claim-form-shell::after {
 
   .admin-credit-note-review {
     padding-block: 0.5rem !important;
+  }
+}
+
+@media (max-width: 639px) {
+  .admin-return-confirm-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .admin-return-confirm-modal {
+    border-bottom: 0;
+    border-radius: 1rem 1rem 0 0;
+    max-height: 88dvh;
+    max-width: none;
+  }
+
+  .admin-return-confirm-modal footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .admin-return-confirm-modal footer button {
+    justify-content: center;
+    width: 100%;
   }
 }
 

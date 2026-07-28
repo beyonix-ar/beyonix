@@ -10,7 +10,10 @@ import {
   normalizeCheckoutShipping,
 } from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
-import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
+import {
+  STOCK_CHANGED_MESSAGE,
+  assertCatalogStock,
+} from "@/lib/cart/stock-status"
 import {
   calculateCustomerCreditApplication,
   getPaymentComposition,
@@ -22,7 +25,7 @@ import {
   reverseCustomerCreditForOrder,
 } from "@/lib/customer-credit/server"
 import {
-  decrementCheckoutInventory,
+  validateCheckoutInventory,
   deleteIncompleteCheckoutOrder,
 } from "@/lib/orders/checkout-inventory"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
@@ -185,28 +188,6 @@ function getUnitPriceWithStoreBenefit(product: ProductRow, percent?: number | nu
   return Math.max(Math.round(unitPrice * (1 - percent / 100)), 1)
 }
 
-function assertStock(item: NormalizedItem, product: ProductRow, variant?: VariantRow) {
-  if (!product.activo) {
-    throw new Error(STOCK_CHANGED_MESSAGE)
-  }
-
-  if (variant) {
-    if (!variant.activo) {
-      throw new Error(STOCK_CHANGED_MESSAGE)
-    }
-
-    if ((variant.stock ?? 0) < item.quantity) {
-      throw new Error(STOCK_CHANGED_MESSAGE)
-    }
-
-    return
-  }
-
-  if (product.stock < item.quantity) {
-    throw new Error(STOCK_CHANGED_MESSAGE)
-  }
-}
-
 async function insertOrderItems(
   supabase: Awaited<ReturnType<typeof createClient>>,
   orderId: number,
@@ -336,7 +317,7 @@ export async function POST(request: Request) {
         throw new Error(`Variante inválida para ${product.nombre}.`)
       }
 
-      assertStock(item, product, variant)
+      assertCatalogStock(item.quantity, product, variant)
     }
 
     const baseTotals = calculateCartTotals(
@@ -492,7 +473,7 @@ export async function POST(request: Request) {
     await insertOrderItems(orderClient as never, order.id, items, productRows)
 
     try {
-      await decrementCheckoutInventory(admin, items)
+      await validateCheckoutInventory(admin, items)
     } catch (inventoryError) {
       await deleteIncompleteCheckoutOrder(admin, order.id)
       throw inventoryError

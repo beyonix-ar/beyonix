@@ -3210,7 +3210,7 @@ export function AdminDashboard() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-beyonix-blue-light/18 bg-beyonix-blue/12 px-3 text-xs font-black text-white/70 transition hover:border-beyonix-sky/38 hover:text-white">Editar producto</button>
-                    <button type="button" onClick={() => onNavigate("productos")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-beyonix-sky/24 bg-beyonix-blue/20 px-3 text-xs font-black text-beyonix-sky transition hover:border-beyonix-sky/45 hover:bg-beyonix-blue/32">Reponer stock</button>
+                    <button type="button" onClick={() => onNavigate("compras")} className="inline-flex h-8 cursor-pointer items-center rounded-xl border border-beyonix-sky/24 bg-beyonix-blue/20 px-3 text-xs font-black text-beyonix-sky transition hover:border-beyonix-sky/45 hover:bg-beyonix-blue/32">Registrar compra</button>
                   </div>
                 </div>
               )) : <div className="md:col-span-2 xl:col-span-3"><EmptyState icon={<Package className="size-5" />} title="Stock saludable" description="No hay productos sin stock o bajo el umbral configurado." /></div>}

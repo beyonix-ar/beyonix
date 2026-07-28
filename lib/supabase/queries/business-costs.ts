@@ -25,6 +25,7 @@ export interface ProductCostEntry {
   sku: string | null
   purchase_date: string
   quantity: number
+  received_quantity: number
   unit_cost: number
   freight_cost: number
   tax_cost: number

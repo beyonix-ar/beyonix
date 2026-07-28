@@ -182,9 +182,6 @@ export function ProductosRow({
   const [editColor, setEditColor] =
     useState("")
 
-  const [editStock, setEditStock] =
-    useState("")
-
   const [localVariantes, setLocalVariantes] =
     useState<SupabaseProductoVariante[]>(
       producto.producto_variantes || []
@@ -232,12 +229,6 @@ export function ProductosRow({
   const syncProductSummary = async (
     nextVariantes: SupabaseProductoVariante[]
   ) => {
-    const total = nextVariantes.reduce(
-      (acc, variante) =>
-        acc + (variante.stock ?? 0),
-      0
-    )
-
     const imagenPrincipal =
       getPrincipalVariantImage(
         nextVariantes
@@ -248,18 +239,12 @@ export function ProductosRow({
     )
 
     if (
-      total === stockTotal &&
       imagenPrincipal === localPrincipalImage
     ) {
       return
     }
 
     await updateProducto(producto.id, {
-      ...(total !== stockTotal
-        ? {
-            stock: total,
-          }
-        : {}),
       ...(imagenPrincipal !== localPrincipalImage
         ? {
             imagen_principal:
@@ -274,21 +259,12 @@ export function ProductosRow({
   ) => {
     setEditingVariantId(variante.id)
     setEditColor(variante.color_hex)
-    setEditStock(
-      String(variante.stock ?? 0)
-    )
   }
 
   const saveVariant = async (
     variante: SupabaseProductoVariante
   ) => {
-    const nextStock =
-      Number(editStock) || 0
-
-    if (
-      variante.color_hex === editColor &&
-      (variante.stock ?? 0) === nextStock
-    ) {
+    if (variante.color_hex === editColor) {
       setEditingVariantId(null)
       return
     }
@@ -298,7 +274,6 @@ export function ProductosRow({
         variante.id,
         {
           color_hex: editColor,
-          stock: nextStock,
         }
       )
 
@@ -555,7 +530,7 @@ export function ProductosRow({
                   stockSettings,
                 )}`}
               >
-                Stock: {stockTotal}
+                Stock real: {stockTotal}
               </span>
             </div>
           </div>
@@ -754,19 +729,9 @@ export function ProductosRow({
                   {editingVariantId ===
                   variante.id ? (
                     <>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={editStock}
-                        placeholder="Stock"
-                        aria-label={`Editar stock de ${variante.nombre}`}
-                        onChange={(event) =>
-                          setEditStock(
-                            event.target.value.replace(/\D/g, "")
-                          )
-                        }
-                        className="h-10 w-full min-w-0 max-w-full rounded-xl border border-beyonix-blue-light/16 bg-[#07111b] px-3 text-center text-sm font-black text-white outline-none transition-colors placeholder:text-white/35 hover:border-beyonix-sky/35 focus:border-beyonix-sky/55"
-                      />
+                      <div className="flex h-10 items-center justify-center rounded-xl border border-beyonix-blue-light/16 bg-[#07111b] px-3 text-center text-xs font-black text-beyonix-sky">
+                        Stock calculado: {stock}
+                      </div>
 
                       <label className="relative flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-beyonix-blue-light/16 bg-[#07111b] px-3 transition-colors hover:border-beyonix-sky/40 hover:bg-beyonix-blue/12 focus-within:border-beyonix-sky/55">
                         <span
@@ -814,7 +779,7 @@ export function ProductosRow({
                           stockSettings,
                         )}`}
                       >
-                        Stock: {stock}
+                        Stock real: {stock}
                       </span>
 
                       <span
@@ -989,7 +954,7 @@ function VariantModal({
                   stockSettings,
                 )}`}
               >
-                Stock: {stock}
+                Stock real: {stock}
               </span>
             </div>
           </div>

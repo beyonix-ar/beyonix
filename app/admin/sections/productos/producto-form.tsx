@@ -127,7 +127,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             producto_id: previewId,
             nombre: variant.nombre.trim() || `Variante ${index + 1}`,
             color_hex: variant.color_hex || "#000000",
-            stock: Number(variant.stock) || 0,
+            stock: 0,
             imagenes: images,
             activo: true,
             orden: index + 1,
@@ -153,12 +153,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
         .flatMap((variant) => variant.imagenes ?? [])[0] ??
       producto?.imagen_principal ??
       null
-    const stock = previewVariants.length
-      ? previewVariants.reduce(
-          (total, variant) => total + Number(variant.stock ?? 0),
-          0,
-        )
-      : Number(form.stock) || 0
+    const stock = producto?.stock ?? 0
 
     setPreviewProduct({
       ...(producto ?? {

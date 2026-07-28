@@ -12,12 +12,6 @@ import {
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 
-interface OrderItemRow {
-  producto_id: number
-  variante_id: number | null
-  cantidad: number
-}
-
 interface OrderRow {
   id: number
   estado: string
@@ -87,52 +81,6 @@ function isValidWebhookSignature(request: Request, paymentId: string) {
     expectedBuffer.length === receivedBuffer.length &&
     timingSafeEqual(expectedBuffer, receivedBuffer)
   )
-}
-
-async function decrementStock(orderItems: OrderItemRow[]) {
-  const supabase = createAdminClient()
-
-  for (const item of orderItems) {
-    if (item.variante_id) {
-      const { data: variant, error: variantError } = await supabase
-        .from("producto_variantes")
-        .select("id, stock")
-        .eq("id", item.variante_id)
-        .single()
-
-      if (variantError || !variant) {
-        throw new Error("No se pudo leer el stock de una variante")
-      }
-
-      const { error } = await supabase
-        .from("producto_variantes")
-        .update({
-          stock: Math.max(Number(variant.stock ?? 0) - item.cantidad, 0),
-        })
-        .eq("id", item.variante_id)
-
-      if (error) throw error
-    }
-
-    const { data: product, error: productError } = await supabase
-      .from("productos")
-      .select("id, stock")
-      .eq("id", item.producto_id)
-      .single()
-
-    if (productError || !product) {
-      throw new Error("No se pudo leer el stock de un producto")
-    }
-
-    const { error } = await supabase
-      .from("productos")
-      .update({
-        stock: Math.max(Number(product.stock ?? 0) - item.cantidad, 0),
-      })
-      .eq("id", item.producto_id)
-
-    if (error) throw error
-  }
 }
 
 async function handleWebhook(request: Request) {
@@ -220,17 +168,6 @@ async function handleWebhook(request: Request) {
 
       return NextResponse.json({ ok: true })
     }
-
-    const { data: orderItems, error: itemsError } = await supabase
-      .from("orden_items")
-      .select("producto_id, variante_id, cantidad")
-      .eq("orden_id", orderId)
-
-    if (itemsError) {
-      throw itemsError
-    }
-
-    await decrementStock((orderItems ?? []) as OrderItemRow[])
 
     const { error: updateError } = await supabase
       .from("ordenes")

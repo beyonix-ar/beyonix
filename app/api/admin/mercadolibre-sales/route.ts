@@ -83,6 +83,40 @@ export async function GET(request: Request) {
     if (!data || data.length < 1000) break
   }
 
+  const saleIds = rows.map((row) => String(row.id))
+  const returnReviews: Record<string, unknown>[] = []
+  for (let index = 0; index < saleIds.length; index += 400) {
+    const { data, error } = await auth.admin
+      .from("inventory_return_movements")
+      .select(
+        "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, review_notes, approved_at",
+      )
+      .in("mercadolibre_sale_id", saleIds.slice(index, index + 400))
+
+    if (error) {
+      if (
+        !/mercadolibre_sale_id|received_quantity|schema cache/i.test(
+          error.message,
+        )
+      ) {
+        return Response.json(
+          { error: "No se pudieron cargar las revisiones de devoluciones." },
+          { status: 500 },
+        )
+      }
+      break
+    }
+    returnReviews.push(
+      ...((data ?? []) as unknown as Record<string, unknown>[]),
+    )
+  }
+  const returnReviewBySale = new Map(
+    returnReviews.map((review) => [
+      String(review.mercadolibre_sale_id),
+      review,
+    ]),
+  )
+
   const [catalogResult, productCostsResult] = await Promise.all([
     auth.admin
       .from("productos")
@@ -133,6 +167,7 @@ export async function GET(request: Request) {
 
     return {
       ...row,
+      return_review: returnReviewBySale.get(String(row.id)) ?? null,
       costing: {
         match_key: row.sku
           ? `sku:${String(row.sku)}`

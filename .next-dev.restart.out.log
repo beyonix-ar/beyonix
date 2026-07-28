@@ -3966,3 +3966,11 @@ Creating turbopack project { dir: 'F:\\Web', testMode: true }
 ✓ Compiled in 213ms
  GET /cuenta/compras/2/ayuda 200 in 427ms (next.js: 168ms, proxy.ts: 194ms, application-code: 65ms)
  GET /api/orders/2/claims 200 in 416ms (next.js: 56ms, application-code: 360ms)
+ GET /api/admin/pedidos?view=notifications 200 in 392ms (next.js: 26ms, application-code: 366ms)
+ GET /api/admin/pedidos?view=notifications 200 in 311ms (next.js: 3ms, application-code: 308ms)
+ GET /api/auth/profile 200 in 180ms (next.js: 46ms, application-code: 134ms)
+ GET /api/customer-credit/balance 200 in 194ms (next.js: 30ms, application-code: 164ms)
+ GET /api/admin/pedidos?view=notifications 200 in 268ms (next.js: 6ms, application-code: 262ms)
+ GET /api/admin/pedidos?view=notifications 200 in 298ms (next.js: 4ms, application-code: 294ms)
+ GET /api/admin/pedidos?view=notifications 200 in 645ms (next.js: 3ms, application-code: 641ms)
+[?25h

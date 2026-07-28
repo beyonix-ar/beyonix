@@ -20,7 +20,7 @@ function isStockConflict(message?: string) {
   )
 }
 
-export async function decrementCheckoutInventory(
+export async function validateCheckoutInventory(
   admin: AdminClient,
   items: CheckoutInventoryItem[],
 ) {
@@ -39,7 +39,7 @@ export async function decrementCheckoutInventory(
   }
 
   throw new Error(
-    error.message || "No se pudo actualizar el inventario de la compra.",
+    error.message || "No se pudo validar el inventario de la compra.",
   )
 }
 

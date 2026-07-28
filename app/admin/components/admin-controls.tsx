@@ -159,6 +159,7 @@ interface AdminModalProps {
   title: string
   eyebrow?: string
   description?: string
+  compact?: boolean
   children: ReactNode
   footer?: ReactNode
   onClose: () => void
@@ -903,6 +904,7 @@ export function AdminModal({
   title,
   eyebrow,
   description,
+  compact = false,
   children,
   footer,
   onClose,
@@ -911,17 +913,23 @@ export function AdminModal({
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/86 px-4 backdrop-blur-sm">
-      <div className={cn(adminCardClassName, "w-full max-w-xl p-5 shadow-2xl shadow-black")}>
-        <div className="mb-5 flex items-start justify-between gap-4">
+      <div
+        className={cn(
+          adminCardClassName,
+          "w-full shadow-2xl shadow-black",
+          compact ? "max-w-md p-4" : "max-w-xl p-5",
+        )}
+      >
+        <div className={cn("flex items-start justify-between gap-4", compact ? "mb-3" : "mb-5")}>
           <div className="min-w-0">
             {eyebrow && (
               <p className="mb-1 text-11px font-black uppercase tracking-widest text-beyonix-cyan">
                 {eyebrow}
               </p>
             )}
-            <h2 className="text-2xl font-black text-white">{title}</h2>
+            <h2 className={cn("font-black text-white", compact ? "text-lg" : "text-2xl")}>{title}</h2>
             {description && (
-              <p className="mt-2 text-sm leading-6 text-white/58">
+              <p className={cn("text-white/58", compact ? "mt-1 text-xs leading-5" : "mt-2 text-sm leading-6")}>
                 {description}
               </p>
             )}
@@ -936,7 +944,7 @@ export function AdminModal({
           </AdminGhostButton>
         </div>
         {children}
-        {footer && <div className="mt-6">{footer}</div>}
+        {footer && <div className={compact ? "mt-4" : "mt-6"}>{footer}</div>}
       </div>
     </div>
   )

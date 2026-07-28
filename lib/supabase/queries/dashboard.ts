@@ -181,12 +181,15 @@ export async function getDashboardData({
   }
 
   const promise = (async () => {
-    const response = await fetch("/api/admin/dashboard", {
+    const response = await fetch(
+      force ? "/api/admin/dashboard?refresh=1" : "/api/admin/dashboard",
+      {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
       cache: "no-store",
-    })
+      },
+    )
     const text = await response.text()
     let data: unknown = null
 

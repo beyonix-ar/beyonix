@@ -14,6 +14,69 @@ export interface ProductoVariantePayload {
   orden?: number
 }
 
+export interface ProductVariantAllocation {
+  variant_id: number
+  allocated_quantity: number
+  available_quantity: number
+}
+
+export interface ProductVariantDistribution {
+  totalStock: number
+  assignableQuantity: number
+  allocatedQuantity: number
+  unassignedQuantity: number
+  variants: ProductVariantAllocation[]
+}
+
+async function distributionRequest(
+  productId: number,
+  init?: RequestInit,
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) {
+    throw new Error("La sesión administrativa venció.")
+  }
+
+  const response = await fetch(
+    `/api/admin/products/${productId}/variant-allocations`,
+    {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+      cache: "no-store",
+    },
+  )
+  const payload = (await response.json().catch(() => null)) as
+    | (ProductVariantDistribution & { error?: string })
+    | null
+  if (!response.ok || !payload) {
+    throw new Error(
+      payload?.error || "No se pudo actualizar la distribución del stock.",
+    )
+  }
+
+  return payload
+}
+
+export function getProductVariantDistribution(productId: number) {
+  return distributionRequest(productId)
+}
+
+export function saveProductVariantDistribution(
+  productId: number,
+  allocations: Array<{ variant_id: number; quantity: number }>,
+) {
+  return distributionRequest(productId, {
+    method: "PUT",
+    body: JSON.stringify({ allocations }),
+  })
+}
+
 export async function getProductoVariantes(
   productoId: number
 ) {
@@ -38,9 +101,11 @@ export async function getProductoVariantes(
 export async function createProductoVariante(
   payload: ProductoVariantePayload
 ) {
+  const catalogPayload = { ...payload }
+  delete catalogPayload.stock
   const { data, error } = await supabase
     .from("producto_variantes")
-    .insert(payload)
+    .insert(catalogPayload)
     .select()
     .single()
 
@@ -55,9 +120,11 @@ export async function updateProductoVariante(
   id: number,
   payload: Partial<ProductoVariantePayload>
 ) {
+  const catalogPayload = { ...payload }
+  delete catalogPayload.stock
   const { data, error } = await supabase
     .from("producto_variantes")
-    .update(payload)
+    .update(catalogPayload)
     .eq("id", id)
     .select()
     .single()

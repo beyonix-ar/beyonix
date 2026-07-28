@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { ImageIcon } from "lucide-react"
 
 import { useCategorias } from "@/hooks/use-categorias"
 import { useSiteSettings } from "@/hooks/use-site-settings"
@@ -8,7 +9,13 @@ import { useProductos } from "@/hooks/use-productos"
 import { getProductoById } from "@/lib/supabase/queries/productos"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
-import { adminPageClassName, AdminInfoBlock } from "../../components/admin-controls"
+import {
+  adminPageClassName,
+  AdminDangerButton,
+  AdminInfoBlock,
+  AdminModal,
+  AdminSecondaryButton,
+} from "../../components/admin-controls"
 import { AdminCategorias } from "../categorias/admin-categorias"
 import { ProductoForm } from "./producto-form"
 import { ProductosTable } from "./productos-table"
@@ -25,6 +32,8 @@ export function AdminProductos() {
   const [page, setPage] = useState(1)
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [loadingProductId, setLoadingProductId] = useState<number | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<SupabaseProducto | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   const pageSize = 25
   const [search, setSearch] = useState("")
   const [categorySearch, setCategorySearch] = useState("")
@@ -38,6 +47,8 @@ export function AdminProductos() {
     total,
     loading,
     error,
+    actionMessage,
+    actionError,
     deleteProducto,
     toggleProductoActivo,
     reloadProductos,
@@ -74,10 +85,17 @@ export function AdminProductos() {
     setPage(1)
   }, [activeFilter, categoryFilter, featuredFilter, stockFilter])
 
-  const handleDelete = async (id: number) => {
-    const ok = confirm("¿Eliminar este producto?")
-    if (!ok) return
-    await deleteProducto(id)
+  const handleDelete = (id: number) => {
+    const product = productos.find((item) => item.id === id)
+    if (product) setPendingDelete(product)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    setDeletingId(pendingDelete.id)
+    const deleted = await deleteProducto(pendingDelete.id, true)
+    setDeletingId(null)
+    if (deleted) setPendingDelete(null)
   }
 
   const handleSaved = async () => {
@@ -124,7 +142,6 @@ export function AdminProductos() {
         onActiveFilterChange={setActiveFilter}
         onFeaturedFilterChange={setFeaturedFilter}
         onViewChange={setView}
-        onCreate={() => setEditando(null)}
         onCreateCategory={() => setCreateCategorySignal((current) => current + 1)}
       />
 
@@ -138,6 +155,16 @@ export function AdminProductos() {
           {error && (
             <AdminInfoBlock tone="danger">
               {error}
+            </AdminInfoBlock>
+          )}
+          {actionError && (
+            <AdminInfoBlock tone="danger">
+              {actionError}
+            </AdminInfoBlock>
+          )}
+          {actionMessage && (
+            <AdminInfoBlock>
+              {actionMessage}
             </AdminInfoBlock>
           )}
           {loadingProductId !== null && (
@@ -184,6 +211,65 @@ export function AdminProductos() {
           )}
         </>
       )}
+
+      <AdminModal
+        open={Boolean(pendingDelete)}
+        compact
+        title="Eliminar producto"
+        onClose={() => {
+          if (deletingId === null) setPendingDelete(null)
+        }}
+        footer={
+          <div className="flex justify-center gap-2">
+            <AdminSecondaryButton
+              size="sm"
+              disabled={deletingId !== null}
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancelar
+            </AdminSecondaryButton>
+            <AdminDangerButton
+              size="sm"
+              disabled={!pendingDelete || deletingId !== null}
+              onClick={() => void confirmDelete()}
+            >
+              {deletingId !== null ? "Eliminando…" : "Eliminar"}
+            </AdminDangerButton>
+          </div>
+        }
+      >
+        <div className="flex items-center justify-center gap-3 rounded-xl border border-white/9 bg-linear-to-b from-white/4 to-transparent px-4 py-3.5">
+          <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white">
+            {pendingDelete?.imagen_principal ? (
+              <img
+                alt={pendingDelete.nombre}
+                src={pendingDelete.imagen_principal}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <ImageIcon className="size-4 text-black/25" />
+            )}
+          </span>
+          <div className="min-w-0 max-w-[70%] text-left">
+            <p className="truncate text-base font-black leading-5 text-white">
+              {pendingDelete?.nombre}
+            </p>
+            <span className="mt-1.5 inline-flex rounded-full border border-white/9 bg-black/25 px-2 py-0.5 text-10px font-black uppercase tracking-wider text-white/48">
+              {pendingDelete?.stock ?? 0}{" "}
+              {Math.abs(pendingDelete?.stock ?? 0) === 1 ? "unidad" : "unidades"}
+            </span>
+          </div>
+        </div>
+        <div className="mt-3 px-2 text-center text-xs leading-5 text-white/52">
+          <p>
+            Se borrarán el producto, sus compras, ventas importadas,
+            devoluciones y movimientos de stock.
+          </p>
+          <p className="mt-1.5 text-xs font-bold text-red-300/82">
+            Esta acción no se puede deshacer.
+          </p>
+        </div>
+      </AdminModal>
     </div>
   )
 }

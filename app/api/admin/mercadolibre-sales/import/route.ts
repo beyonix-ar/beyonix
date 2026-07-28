@@ -23,6 +23,12 @@ interface ExistingCostMappingRow {
   raw_data: Record<string, unknown> | null
 }
 
+interface CatalogSkuRow {
+  id: number
+  sku: string | null
+  producto_variantes: Array<{ id: number }> | null
+}
+
 function toNumber(value: unknown) {
   const number = Number(value)
   return Number.isFinite(number) ? number : null
@@ -72,6 +78,7 @@ function normalizeSale(row: MercadoLibreSaleInput, importedBy: string) {
     product_name: row.product_name?.trim() || "Venta MercadoLibre",
     sku: row.sku || null,
     quantity: Math.max(1, Math.trunc(toNumber(row.quantity) ?? 1)),
+    unit_cost: 0,
     gross_amount: toNumber(row.gross_amount) ?? 0,
     fee_amount: toNumber(row.fee_amount),
     shipping_amount: toNumber(row.shipping_amount),
@@ -158,8 +165,46 @@ export async function POST(request: Request) {
     }
   })
 
+  const automaticMappings = new Map<
+    string,
+    NonNullable<ReturnType<typeof getExistingCostMapping>>
+  >()
+  const catalogMatches: CatalogSkuRow[] = []
+  for (let index = 0; index < skus.length; index += 400) {
+    const { data, error } = await auth.admin
+      .from("productos")
+      .select("id, sku, producto_variantes(id)")
+      .in("sku", skus.slice(index, index + 400))
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    catalogMatches.push(...((data ?? []) as CatalogSkuRow[]))
+  }
+
+  const productsBySku = new Map<string, CatalogSkuRow[]>()
+  catalogMatches.forEach((product) => {
+    const sku = product.sku?.trim()
+    if (!sku || product.producto_variantes?.length) return
+    productsBySku.set(sku, [
+      ...(productsBySku.get(sku) ?? []),
+      product,
+    ])
+  })
+  productsBySku.forEach((products, sku) => {
+    if (products.length !== 1) return
+    automaticMappings.set(`sku:${sku}`, {
+      product_id: products[0].id,
+      variant_id: null,
+      match_key: `sku:${sku}`,
+      mapped_at: new Date().toISOString(),
+      mapped_by: auth.user.id,
+      unit_cost: 0,
+    })
+  })
+
   payload = payload.map((row) => {
-    const mapping = preservedMappings.get(mappingKey(row.sku, row.product_name))
+    const key = mappingKey(row.sku, row.product_name)
+    const mapping =
+      preservedMappings.get(key) ??
+      automaticMappings.get(key)
     if (!mapping) return row
 
     return {
@@ -232,5 +277,8 @@ export async function POST(request: Request) {
   return Response.json({
     imported: payload.length,
     replaced: existingIds.length,
+    linked: payload.filter(
+      (row) => "product_id" in row && row.product_id != null,
+    ).length,
   })
 }

@@ -50,7 +50,7 @@ export function ProductosTable({
       <AdminEmptyState
         icon={<Package className="size-5" />}
         title="No hay productos cargados."
-        description="Creá tu primer producto para empezar."
+        description="Registrá mercadería desde Dashboard → Costos reales. Después podrás completar aquí sus imágenes, variantes y publicación."
       />
     )
   }

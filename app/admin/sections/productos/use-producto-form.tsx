@@ -184,9 +184,6 @@ export function useProductoForm({
       producto.cuotas_maximas
         ? String(producto.cuotas_maximas) as "3" | "6"
         : "sin_cuotas",
-    stock: String(
-      producto?.stock ?? 0
-    ),
     categoria_id: String(
       producto?.categoria_id ?? ""
     ),
@@ -305,9 +302,6 @@ export function useProductoForm({
       promo_original_cuotas_maximas:
         null,
 
-      stock:
-        Number(form.stock) || 0,
-
       categoria_id:
         form.categoria_id
           ? Number(
@@ -407,7 +401,7 @@ export function useProductoForm({
       !draftVariants.length
     ) {
       setError(
-        "Agregá al menos una variante con su stock."
+        "Agregá al menos una variante."
       )
 
       return
@@ -419,16 +413,12 @@ export function useProductoForm({
           !variant.nombre.trim() ||
           !/^#[0-9A-F]{6}$/i.test(
             variant.color_hex
-          ) ||
-          !Number.isFinite(
-            Number(variant.stock)
-          ) ||
-          Number(variant.stock) < 0
+          )
       )
 
     if (hasInvalidDraftVariant) {
       setError(
-        "Completá correctamente el nombre, el color y el stock de todas las variantes."
+        "Completá correctamente el nombre y el color de todas las variantes."
       )
 
       return
@@ -437,23 +427,7 @@ export function useProductoForm({
     try {
       setSaving(true)
 
-      const variantsStock =
-        draftVariants.reduce(
-          (total, variant) =>
-            total +
-            (Number(
-              variant.stock
-            ) || 0),
-          0
-        )
-
-      const nextPayload = {
-        ...payload,
-        stock:
-          draftVariants.length
-            ? variantsStock
-            : payload.stock,
-      }
+      const nextPayload = payload
 
       if (producto) {
         await updateProducto(
@@ -501,7 +475,6 @@ export function useProductoForm({
       const variantes: Array<{
         nombre: string
         color_hex: string
-        stock: number
         imagenes: string[]
         activo: boolean
         orden: number
@@ -540,10 +513,6 @@ export function useProductoForm({
             variant.nombre.trim(),
           color_hex:
             variant.color_hex,
-          stock:
-            Number(
-              variant.stock
-            ) || 0,
           imagenes: urls,
           activo: true,
           orden: index + 1,

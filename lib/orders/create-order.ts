@@ -2,7 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { getVariantIdFromValue } from "@/lib/products/product-variants"
-import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
+import {
+  STOCK_CHANGED_MESSAGE,
+  assertCatalogStock,
+} from "@/lib/cart/stock-status"
 
 interface CreateOrderItem {
   productId: number
@@ -277,28 +280,6 @@ async function insertOrder(
   throw new Error(lastError?.message || "No se pudo crear la orden")
 }
 
-function assertStock(
-  item: NormalizedOrderItem,
-  product: ProductRow,
-  variant?: VariantRow,
-) {
-  if (variant) {
-    if (!variant.activo) {
-      throw new Error(STOCK_CHANGED_MESSAGE)
-    }
-
-    if ((variant.stock ?? 0) < item.quantity) {
-      throw new Error(STOCK_CHANGED_MESSAGE)
-    }
-
-    return
-  }
-
-  if (product.stock < item.quantity) {
-    throw new Error(STOCK_CHANGED_MESSAGE)
-  }
-}
-
 export async function createOrder({
   items,
   reservationSessionId,
@@ -412,7 +393,7 @@ export async function createOrder({
         throw new Error(`Variante inválida para ${product.nombre}`)
       }
 
-      assertStock(item, product, variant)
+      assertCatalogStock(item.quantity, product, variant)
     }
 
     const total = normalizedItems.reduce((sum, item) => {
@@ -425,47 +406,6 @@ export async function createOrder({
     createdOrderId = order.id
 
     await insertOrderItems(supabase, order.id, normalizedItems, productRows)
-
-    const productStockUpdates = new Map<number, number>()
-
-    for (const item of normalizedItems) {
-      productStockUpdates.set(
-        item.productId,
-        (productStockUpdates.get(item.productId) ?? 0) + item.quantity,
-      )
-
-      if (!item.variantId) continue
-
-      const variant = variantsById.get(item.variantId)
-      if (!variant) continue
-
-      const { error: variantStockError } = await supabase
-        .from("producto_variantes")
-        .update({
-          stock: Math.max((variant.stock ?? 0) - item.quantity, 0),
-        })
-        .eq("id", variant.id)
-
-      if (variantStockError) {
-        throw new Error(`No se pudo actualizar stock de ${variant.nombre}`)
-      }
-    }
-
-    for (const [productId, quantity] of productStockUpdates) {
-      const product = productRows.find((row) => row.id === productId)
-      if (!product) continue
-
-      const { error: stockError } = await supabase
-        .from("productos")
-        .update({
-          stock: Math.max(product.stock - quantity, 0),
-        })
-        .eq("id", product.id)
-
-      if (stockError) {
-        throw new Error(`No se pudo actualizar stock de ${product.nombre}`)
-      }
-    }
 
     if (hasActiveReservation) {
       await completeOrderReservation(supabase, reservationSessionId, order.id)

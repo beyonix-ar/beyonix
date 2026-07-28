@@ -37,6 +37,7 @@ import {
   getMercadoLibreSales,
   importMercadoLibreSales,
   saveMercadoLibreCostMapping,
+  saveMercadoLibreReturnReview,
   type MercadoLibreCostCatalogProduct,
   type StoredMercadoLibreSale,
 } from "@/lib/supabase/queries/mercadolibre-sales"
@@ -49,12 +50,31 @@ import {
 } from "../../components/admin-controls"
 
 function number(value: unknown) {
-  const parsed = Number(value ?? 0)
+  const parsed = Number(
+    typeof value === "string"
+      ? value.replace(",", ".")
+      : value ?? 0,
+  )
   return Number.isFinite(parsed) ? parsed : 0
 }
 
 function text(value: unknown) {
   return value == null ? "" : String(value).trim()
+}
+
+function isMercadoLibreReturn(row: StoredMercadoLibreSale) {
+  const raw = row.raw_data as {
+    parsed?: Record<string, unknown>
+  }
+  const parsed = raw.parsed ?? {}
+  const status = text(parsed.status).toLocaleLowerCase("es")
+  return (
+    status.includes("devol") ||
+    status.includes("reembolso") ||
+    number(parsed.cancellations_refunds) < 0 ||
+    Boolean(text(parsed.return_delivered_date)) ||
+    Boolean(text(parsed.return_tracking_number))
+  )
 }
 
 function formatDate(value: string | null) {
@@ -194,6 +214,9 @@ function DetailValue({ value }: { value: unknown }) {
   )
 }
 
+const reviewInputClass =
+  "h-10 w-full rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-center text-sm font-black text-white outline-none transition focus:border-beyonix-sky/55"
+
 export function AdminMercadoLibreSales() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [sales, setSales] = useState<StoredMercadoLibreSale[]>([])
@@ -206,6 +229,17 @@ export function AdminMercadoLibreSales() {
   const [importing, setImporting] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [savingMappingKey, setSavingMappingKey] = useState<string | null>(null)
+  const [mappingEditorKey, setMappingEditorKey] = useState<string | null>(null)
+  const [reviewingReturn, setReviewingReturn] =
+    useState<StoredMercadoLibreSale | null>(null)
+  const [savingReturnReview, setSavingReturnReview] = useState(false)
+  const [receivedReturnQuantity, setReceivedReturnQuantity] = useState("0")
+  const [sellableReturnQuantity, setSellableReturnQuantity] = useState("0")
+  const [discountedReturnQuantity, setDiscountedReturnQuantity] = useState("0")
+  const [nonSellableReturnQuantity, setNonSellableReturnQuantity] =
+    useState("0")
+  const [returnDiscountPercent, setReturnDiscountPercent] = useState("")
+  const [returnReviewNotes, setReturnReviewNotes] = useState("")
   const [pendingDelete, setPendingDelete] =
     useState<StoredMercadoLibreSale | null>(null)
   const [error, setError] = useState("")
@@ -320,14 +354,19 @@ export function AdminMercadoLibreSales() {
   const mappingOptions = useMemo(
     () =>
       catalog.flatMap((product) => [
-        {
-          value: product.standalone_key
-            ? `c:${product.standalone_key}`
-            : `p:${product.id}`,
-          label: product.nombre,
-          sku: product.sku ?? null,
-          searchText: `${product.nombre} ${product.sku ?? ""}`,
-        },
+        ...(
+          product.standalone_key ||
+          !product.producto_variantes?.length
+            ? [{
+                value: product.standalone_key
+                  ? `c:${product.standalone_key}`
+                  : `p:${product.id}`,
+                label: product.nombre,
+                sku: product.sku ?? null,
+                searchText: `${product.nombre} ${product.sku ?? ""}`,
+              }]
+            : []
+        ),
         ...(!product.standalone_key ? product.producto_variantes ?? [] : []).map((variant) => ({
           value: `v:${product.id}:${variant.id}`,
           label: `${product.nombre} · ${variant.nombre}`,
@@ -336,6 +375,13 @@ export function AdminMercadoLibreSales() {
         })),
       ]),
     [catalog],
+  )
+  const pendingMappingGroups = useMemo(
+    () =>
+      mappingGroups.filter(
+        (group) => !group.productId && !group.standaloneKey,
+      ),
+    [mappingGroups],
   )
 
   const updateCostMapping = async (matchKey: string, value: string) => {
@@ -355,9 +401,12 @@ export function AdminMercadoLibreSales() {
         standaloneKey,
       )
       await load()
+      setMappingEditorKey(null)
       setSuccess(
-        productId || standaloneKey
-          ? "Publicación vinculada al costo del producto."
+        productId
+          ? "Publicación vinculada al producto, su costo y el inventario."
+          : standaloneKey
+            ? "Publicación vinculada al costo histórico. No afecta el inventario porque no pertenece al catálogo."
           : "Vinculación de costos eliminada.",
       )
     } catch (mappingError) {
@@ -368,6 +417,59 @@ export function AdminMercadoLibreSales() {
       )
     } finally {
       setSavingMappingKey(null)
+    }
+  }
+
+  const openReturnReview = (sale: StoredMercadoLibreSale) => {
+    const review = sale.return_review
+    setReviewingReturn(sale)
+    setReceivedReturnQuantity(
+      String(review?.received_quantity ?? sale.quantity),
+    )
+    setSellableReturnQuantity(
+      String(review?.sellable_quantity ?? 0),
+    )
+    setDiscountedReturnQuantity(
+      String(review?.discounted_quantity ?? 0),
+    )
+    setNonSellableReturnQuantity(
+      String(review?.non_sellable_quantity ?? 0),
+    )
+    setReturnDiscountPercent(
+      review?.discount_percent == null
+        ? ""
+        : String(review.discount_percent),
+    )
+    setReturnReviewNotes(review?.review_notes ?? "")
+    setError("")
+  }
+
+  const saveReturnReview = async () => {
+    if (!reviewingReturn) return
+    try {
+      setSavingReturnReview(true)
+      setError("")
+      await saveMercadoLibreReturnReview(reviewingReturn.id, {
+        receivedQuantity: number(receivedReturnQuantity),
+        sellableQuantity: number(sellableReturnQuantity),
+        discountedQuantity: number(discountedReturnQuantity),
+        nonSellableQuantity: number(nonSellableReturnQuantity),
+        discountPercent: returnDiscountPercent
+          ? number(returnDiscountPercent)
+          : null,
+        notes: returnReviewNotes,
+      })
+      setReviewingReturn(null)
+      setSuccess("Revisión física guardada y stock recalculado.")
+      await load()
+    } catch (reviewError) {
+      setError(
+        reviewError instanceof Error
+          ? reviewError.message
+          : "No se pudo guardar la revisión física.",
+      )
+    } finally {
+      setSavingReturnReview(false)
     }
   }
 
@@ -399,10 +501,11 @@ export function AdminMercadoLibreSales() {
     try {
       const response = await importMercadoLibreSales(preview.rows, fileName)
       const replaced = number(response?.replaced)
+      const linked = number(response?.linked)
       setSuccess(
         `${preview.rows.length} movimientos importados${
           replaced ? `; ${replaced} registros anteriores reemplazados` : ""
-        }.`,
+        }${linked ? `; ${linked} vinculados al inventario` : ""}.`,
       )
       setPreview(null)
       setFileName("")
@@ -443,6 +546,26 @@ export function AdminMercadoLibreSales() {
     stored: sales[index],
     imported: row,
   }))
+  const receivedReturn = number(receivedReturnQuantity)
+  const classifiedReturn =
+    number(sellableReturnQuantity) +
+    number(discountedReturnQuantity) +
+    number(nonSellableReturnQuantity)
+  const pendingReturn = Math.max(
+    0,
+    receivedReturn - classifiedReturn,
+  )
+  const returnReviewValid =
+    receivedReturn >= 0 &&
+    receivedReturn <= number(reviewingReturn?.quantity) &&
+    classifiedReturn <= receivedReturn &&
+    (
+      number(discountedReturnQuantity) === 0 ||
+      (
+        number(returnDiscountPercent) > 0 &&
+        number(returnDiscountPercent) < 100
+      )
+    )
 
   return (
     <div className="space-y-5">
@@ -455,7 +578,8 @@ export function AdminMercadoLibreSales() {
             <h2 className="mt-1 text-2xl font-black text-white">Ventas ML</h2>
             <p className="mt-1 text-sm leading-5 text-white/55">
               Importá el Excel “Ventas AR” y conciliá ventas, cargos, envíos,
-              devoluciones y reclamos.
+              devoluciones y reclamos. Sólo las unidades efectivas vinculadas
+              a un producto descuentan stock.
             </p>
           </div>
           <div>
@@ -539,22 +663,15 @@ export function AdminMercadoLibreSales() {
         </div>
       </section>
 
-      {mappingGroups.length > 0 && (
-        <section className="rounded-3xl border border-beyonix-blue-light/18 bg-[#071018] p-4">
-          <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/22 bg-beyonix-blue/22 text-beyonix-sky">
+      {pendingMappingGroups.length > 0 && (
+        <section className="rounded-2xl border border-amber-300/18 bg-amber-300/5 p-3">
+          <div className="flex items-center gap-2">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-amber-300/20 bg-amber-300/8 text-amber-200">
               <Link2 className="size-4" />
             </span>
-            <div>
-              <h3 className="text-sm font-black text-white">
-                Costeo de publicaciones
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-white/45">
-                Vinculá cada SKU de Mercado Libre con su producto interno. Se
-                aplicará el costo promedio acumulado hasta la fecha de cada
-                venta, incluidos los extras registrados en la compra.
-              </p>
-            </div>
+            <h3 className="text-sm font-black text-white">
+              {pendingMappingGroups.length} SKU sin vincular
+            </h3>
           </div>
 
           {costingError && (
@@ -563,23 +680,13 @@ export function AdminMercadoLibreSales() {
             </p>
           )}
 
-          <div className="mt-3 grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
-            {mappingGroups.map((group) => {
-              const selectedValue = group.standaloneKey
-                ? `c:${group.standaloneKey}`
-                : group.productId
-                  ? group.variantId
-                    ? `v:${group.productId}:${group.variantId}`
-                    : `p:${group.productId}`
-                  : ""
-              const fullyCosted =
-                group.costableUnits === 0 ||
-                group.coveredUnits >= group.costableUnits
-
+          <div className="mt-2 grid gap-2 lg:grid-cols-2 2xl:grid-cols-3">
+            {pendingMappingGroups.map((group) => {
+              const editing = mappingEditorKey === group.key
               return (
                 <div
                   key={group.key}
-                  className="grid gap-3 rounded-2xl border border-white/8 bg-black/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.9fr)] sm:items-center"
+                  className="flex min-w-0 items-center gap-2 rounded-xl border border-white/8 bg-black/20 p-2 pl-3"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-xs font-black text-white">
@@ -591,55 +698,49 @@ export function AdminMercadoLibreSales() {
                     >
                       {group.productName}
                     </p>
-                    <p
-                      className={`mt-1 text-10px font-bold ${
-                        fullyCosted ? "text-emerald-300" : "text-amber-200"
-                      }`}
-                    >
-                      {group.costableUnits === 0
-                        ? "Sin unidades netas para costear"
-                        : fullyCosted
-                          ? `${group.coveredUnits} unidades con costo`
-                          : group.productId || group.standaloneKey
-                            ? "Falta un costo con fecha anterior a la venta"
-                            : `${group.costableUnits} unidades pendientes de costo`}
-                    </p>
                   </div>
-                  <AdminSelect
-                    title="Producto asociado"
-                    ariaLabel={`Producto asociado a ${group.sku ?? group.productName}`}
-                    value={selectedValue}
-                    disabled={savingMappingKey === group.key}
-                    centered
-                    searchable
-                    searchPlaceholder="Buscar por nombre o SKU..."
-                    onChange={(value) =>
-                      void updateCostMapping(group.key, value)
-                    }
-                  >
-                    <option value="">Sin vincular</option>
-                    {mappingOptions.map((option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                        data-search={option.searchText}
-                        data-meta={option.sku ?? undefined}
-                        data-selected-label={option.label}
+                  <div className="ml-auto w-56 shrink-0">
+                    {editing ? (
+                      <AdminSelect
+                        title="Producto asociado"
+                        ariaLabel={`Producto asociado a ${group.sku ?? group.productName}`}
+                        value=""
+                        disabled={savingMappingKey === group.key}
+                        centered
+                        searchable
+                        searchPlaceholder="Buscar por nombre o SKU..."
+                        onChange={(value) =>
+                          void updateCostMapping(group.key, value)
+                        }
                       >
-                        {option.label}
-                      </option>
-                    ))}
-                  </AdminSelect>
+                        <option value="">Elegir producto</option>
+                        {mappingOptions.map((option) => (
+                          <option
+                            key={option.value}
+                            value={option.value}
+                            data-search={option.searchText}
+                            data-meta={option.sku ?? undefined}
+                            data-selected-label={option.label}
+                          >
+                            {option.label}
+                          </option>
+                        ))}
+                      </AdminSelect>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setMappingEditorKey(group.key)}
+                        className="inline-flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-sky/28 bg-beyonix-blue/24 px-3 text-xs font-black text-beyonix-sky transition hover:border-beyonix-sky/55 hover:bg-beyonix-blue/42"
+                      >
+                        <Link2 className="size-3.5" />
+                        Vincular producto
+                      </button>
+                    )}
+                  </div>
                 </div>
               )
             })}
           </div>
-
-          <p className="mt-3 text-center text-11px text-white/38">
-            Fórmula: total informado por ML − costo integral de las unidades
-            netamente vendidas. Los cargos, envíos y reembolsos ya forman parte
-            del total de ML.
-          </p>
         </section>
       )}
 
@@ -694,6 +795,12 @@ export function AdminMercadoLibreSales() {
               </button>
             </div>
           </div>
+
+          <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/7 px-3 py-2 text-center text-xs font-bold text-amber-100">
+            Esta previsualización todavía no modifica el inventario. Presioná
+            “Confirmar importación” para registrar y descontar las ventas
+            vinculadas.
+          </p>
 
           {preview.warnings.length > 0 && (
             <div className="mt-3 space-y-1 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs text-amber-100">
@@ -788,7 +895,19 @@ export function AdminMercadoLibreSales() {
                       <tr className="border-t border-white/6 text-white/65 transition hover:bg-beyonix-blue/8">
                         <td className="px-3 py-3 font-black text-white">{imported.operation_id}</td>
                         <td className="px-3 py-3">{formatDate(imported.sale_date)}</td>
-                        <td className="max-w-56 px-3 py-3"><span className="block truncate" title={text(fields.status)}>{text(fields.status) || "Sin estado"}</span></td>
+                        <td className="max-w-56 px-3 py-3">
+                          <span className="block truncate" title={text(fields.status)}>{text(fields.status) || "Sin estado"}</span>
+                          {stored.return_review && (
+                            <span className="mt-1 block text-9px font-bold text-emerald-300">
+                              {stored.return_review.sellable_quantity + stored.return_review.discounted_quantity} reingresan
+                              {" · "}
+                              {stored.return_review.received_quantity
+                                - stored.return_review.sellable_quantity
+                                - stored.return_review.discounted_quantity
+                                - stored.return_review.non_sellable_quantity} pendientes
+                            </span>
+                          )}
+                        </td>
                         <td className="max-w-80 px-3 py-3">
                           <span className="block truncate font-bold text-white" title={imported.product_name}>{imported.product_name}</span>
                           <span className="mt-1 block text-10px text-white/38">{imported.sku || "Sin SKU"}</span>
@@ -808,6 +927,25 @@ export function AdminMercadoLibreSales() {
                         <td className="max-w-48 px-3 py-3"><span className="block truncate" title={text(fields.buyer)}>{text(fields.buyer) || "Sin dato"}</span></td>
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-center gap-1.5">
+                            {isMercadoLibreReturn(stored) && (
+                              <button
+                                type="button"
+                                aria-label="Revisar devolución"
+                                title={
+                                  stored.return_review
+                                    ? "Editar revisión física"
+                                    : "Revisar devolución"
+                                }
+                                onClick={() => openReturnReview(stored)}
+                                className={`flex size-8 cursor-pointer items-center justify-center rounded-lg border transition ${
+                                  stored.return_review
+                                    ? "border-emerald-400/28 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18"
+                                    : "border-amber-300/28 bg-amber-300/8 text-amber-200 hover:bg-amber-300/16"
+                                }`}
+                              >
+                                <RotateCcw className="size-3.5" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               aria-label={expanded ? "Cerrar detalle" : "Ver detalle"}
@@ -859,6 +997,152 @@ export function AdminMercadoLibreSales() {
           </div>
         )}
       </section>
+
+      <AdminModal
+        open={Boolean(reviewingReturn)}
+        eyebrow="Inventario ML"
+        title="Revisión física de la devolución"
+        description={
+          reviewingReturn
+            ? `${reviewingReturn.product_name} · ${reviewingReturn.quantity} unidades vendidas`
+            : undefined
+        }
+        onClose={() => {
+          if (!savingReturnReview) setReviewingReturn(null)
+        }}
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <AdminSecondaryButton
+              title="Cancelar revisión"
+              aria-label="Cancelar revisión"
+              disabled={savingReturnReview}
+              onClick={() => setReviewingReturn(null)}
+            >
+              Cancelar
+            </AdminSecondaryButton>
+            <button
+              type="button"
+              disabled={!returnReviewValid || savingReturnReview}
+              onClick={() => void saveReturnReview()}
+              className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/14 px-4 text-sm font-black text-emerald-200 transition hover:bg-emerald-400/24 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {savingReturnReview ? (
+                <RefreshCw className="size-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="size-4" />
+              )}
+              Guardar revisión
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                label: "Recibidas",
+                value: receivedReturnQuantity,
+                setter: setReceivedReturnQuantity,
+              },
+              {
+                label: "Vendibles",
+                value: sellableReturnQuantity,
+                setter: setSellableReturnQuantity,
+              },
+              {
+                label: "Con descuento",
+                value: discountedReturnQuantity,
+                setter: setDiscountedReturnQuantity,
+              },
+              {
+                label: "No vendibles",
+                value: nonSellableReturnQuantity,
+                setter: setNonSellableReturnQuantity,
+              },
+            ].map((field) => (
+              <label key={field.label}>
+                <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
+                  {field.label}
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={field.value}
+                  onChange={(event) =>
+                    field.setter(event.target.value.replace(/\D/g, ""))
+                  }
+                  className={reviewInputClass}
+                />
+              </label>
+            ))}
+          </div>
+
+          {number(discountedReturnQuantity) > 0 && (
+            <label className="block">
+              <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
+                Descuento para la unidad condicionada
+              </span>
+              <div className="relative mx-auto max-w-52">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={returnDiscountPercent}
+                  onChange={(event) =>
+                    setReturnDiscountPercent(
+                      event.target.value.replace(/[^\d.,]/g, ""),
+                    )
+                  }
+                  className={`${reviewInputClass} pr-9`}
+                />
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-black text-beyonix-sky">
+                  %
+                </span>
+              </div>
+            </label>
+          )}
+
+          <label className="block">
+            <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
+              Observaciones
+            </span>
+            <textarea
+              value={returnReviewNotes}
+              onChange={(event) => setReturnReviewNotes(event.target.value)}
+              rows={2}
+              placeholder="Estado físico, falla o decisión pendiente"
+              className={`${reviewInputClass} h-auto min-h-20 resize-y py-2.5`}
+            />
+          </label>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-xl border border-emerald-400/18 bg-emerald-400/7 p-3 text-center">
+              <p className="text-10px font-black uppercase tracking-wider text-emerald-200/65">
+                Suman al stock
+              </p>
+              <p className="mt-1 text-xl font-black text-emerald-300">
+                {number(sellableReturnQuantity) +
+                  number(discountedReturnQuantity)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-red-400/18 bg-red-400/7 p-3 text-center">
+              <p className="text-10px font-black uppercase tracking-wider text-red-200/65">
+                Fuera de stock
+              </p>
+              <p className="mt-1 text-xl font-black text-red-300">
+                {number(nonSellableReturnQuantity)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-amber-300/18 bg-amber-300/7 p-3 text-center">
+              <p className="text-10px font-black uppercase tracking-wider text-amber-100/65">
+                Pendientes
+              </p>
+              <p className="mt-1 text-xl font-black text-amber-200">
+                {pendingReturn}
+              </p>
+            </div>
+          </div>
+        </div>
+      </AdminModal>
 
       <AdminModal
         open={Boolean(pendingDelete)}

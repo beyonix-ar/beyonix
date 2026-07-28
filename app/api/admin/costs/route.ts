@@ -57,7 +57,15 @@ async function validateVariant(
   productId: number,
   variantId: number | null,
 ) {
-  if (!variantId) return true
+  if (!variantId) {
+    const { count, error } = await admin
+      .from("producto_variantes")
+      .select("id", { count: "exact", head: true })
+      .eq("producto_id", productId)
+
+    if (error) return "invalid" as const
+    return count ? "variant_required" as const : "valid" as const
+  }
 
   const { data, error } = await admin
     .from("producto_variantes")
@@ -66,7 +74,7 @@ async function validateVariant(
     .eq("producto_id", productId)
     .maybeSingle()
 
-  return !error && Boolean(data)
+  return !error && data ? "valid" as const : "invalid" as const
 }
 
 export async function GET(request: Request) {
@@ -169,9 +177,17 @@ export async function POST(request: Request) {
       )
     }
 
-    if (productId && !(await validateVariant(auth.admin, productId, variantId))) {
+    const targetValidation = productId
+      ? await validateVariant(auth.admin, productId, variantId)
+      : "valid"
+    if (targetValidation !== "valid") {
       return Response.json(
-        { error: "La variante no pertenece al producto seleccionado." },
+        {
+          error:
+            targetValidation === "variant_required"
+              ? "Seleccioná la variante que recibió esta compra."
+              : "La variante no pertenece al producto seleccionado.",
+        },
         { status: 400 },
       )
     }
@@ -195,6 +211,7 @@ export async function POST(request: Request) {
         sku: text(body?.sku, 120),
         purchase_date: purchaseDate,
         quantity,
+        received_quantity: quantity,
         unit_cost: unitCost,
         ...extraAmounts,
         supplier: text(body?.supplier, 180),
@@ -209,12 +226,15 @@ export async function POST(request: Request) {
 
     if (error) {
       const missingSkuMigration = /sku/i.test(error.message)
-      const missingMigration = /sku|article_name|product_id|null value|schema cache/i.test(
+      const missingInventoryMigration = /received_quantity/i.test(error.message)
+      const missingMigration = /sku|article_name|product_id|received_quantity|null value|schema cache/i.test(
         error.message,
       )
       return Response.json(
         {
-          error: missingMigration
+          error: missingInventoryMigration
+            ? "Falta aplicar la migración 093_unified_inventory_source.sql en Supabase."
+            : missingMigration
             ? missingSkuMigration
               ? "Falta aplicar la migración 084_product_cost_sku.sql en Supabase."
               : "Falta aplicar la migración 083_uncatalogued_product_costs.sql en Supabase."
@@ -409,9 +429,17 @@ export async function PATCH(request: Request) {
     )
   }
 
-  if (productId && !(await validateVariant(auth.admin, productId, variantId))) {
+  const targetValidation = productId
+    ? await validateVariant(auth.admin, productId, variantId)
+    : "valid"
+  if (targetValidation !== "valid") {
     return Response.json(
-      { error: "La variante no pertenece al producto seleccionado." },
+      {
+        error:
+          targetValidation === "variant_required"
+            ? "Seleccioná la variante que recibió esta compra."
+            : "La variante no pertenece al producto seleccionado.",
+      },
       { status: 400 },
     )
   }
@@ -435,6 +463,7 @@ export async function PATCH(request: Request) {
       sku: text(body?.sku, 120),
       purchase_date: purchaseDate,
       quantity,
+      received_quantity: quantity,
       unit_cost: unitCost,
       ...extraAmounts,
       supplier: text(body?.supplier, 180),
@@ -448,12 +477,15 @@ export async function PATCH(request: Request) {
     .maybeSingle()
 
   if (error) {
-    const missingMigration = /sku|article_name|product_id|null value|schema cache/i.test(
+    const missingInventoryMigration = /received_quantity/i.test(error.message)
+    const missingMigration = /sku|article_name|product_id|received_quantity|null value|schema cache/i.test(
       error.message,
     )
     return Response.json(
       {
-        error: missingMigration
+        error: missingInventoryMigration
+          ? "Falta aplicar la migración 093_unified_inventory_source.sql en Supabase."
+          : missingMigration
           ? "Falta aplicar la migración 084_product_cost_sku.sql en Supabase."
           : "No se pudo actualizar la compra.",
       },

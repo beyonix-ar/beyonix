@@ -2006,9 +2006,11 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
 function RefundManagementPanel({
   pedido,
   onRefundUpdated,
+  onOpenBilling,
 }: {
   pedido: SupabasePedido
   onRefundUpdated: (order: SupabasePedido) => void
+  onOpenBilling: () => void
 }) {
   const shouldShow = isCancellationFlowOrder(pedido)
   const [file, setFile] = useState<File | null>(null)
@@ -2087,7 +2089,7 @@ function RefundManagementPanel({
         ? "Devolución de dinero"
         : "Definido por la nota de crédito")
   const uploadDisabledReason = refunded
-    ? "La devolución ya fue cerrada."
+    ? "Gestión finalizada. No hay acciones pendientes."
     : !refundPending
       ? "No hay una acción de reintegro pendiente."
       : !creditNoteReadyForRefund
@@ -2176,7 +2178,7 @@ function RefundManagementPanel({
             </p>
             <p className="mt-1 text-sm font-black text-white">
               {refunded
-                ? "La devolución ya fue cerrada."
+                ? "Gestión finalizada. No hay acciones pendientes."
                 : refundPending && !creditNoteReadyForRefund
                   ? "Emitir y validar la nota de crédito desde Facturación."
                   : refundPending
@@ -2189,7 +2191,7 @@ function RefundManagementPanel({
           </div>
           <div className="admin-order-cancellation-amount-card rounded-xl border px-4 py-3">
             <p className="admin-order-cancellation-amount-label text-10px font-black uppercase tracking-widest">
-              Monto a reintegrar
+              Importe resuelto
             </p>
             <p className="admin-order-cancellation-amount-value mt-1 text-xl font-black text-white">
               {refundDisplayAmount}
@@ -2301,6 +2303,15 @@ function RefundManagementPanel({
         </div>
       </div>
 
+      <button
+        type="button"
+        onClick={onOpenBilling}
+        className="admin-order-cancellation-secondary-action mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-black"
+      >
+        <FileText className="size-4" />
+        Ver gestión fiscal y devolución
+      </button>
+
       {message && (
         <p
           role="status"
@@ -2343,6 +2354,27 @@ function BillingManagementPanel({
   const [creditQuantities, setCreditQuantities] = useState<Record<number, number>>({})
   const [manualCreditAmount, setManualCreditAmount] = useState("")
   const [creditReason, setCreditReason] = useState("")
+  const [operationType, setOperationType] = useState("devolucion_parcial")
+  const [reasonCode, setReasonCode] = useState("arrepentimiento")
+  const [reasonDetail, setReasonDetail] = useState("")
+  const [includeOriginalShipping, setIncludeOriginalShipping] = useState(false)
+  const [returnShippingParty, setReturnShippingParty] = useState("cliente")
+  const [returnShippingProvider, setReturnShippingProvider] = useState("")
+  const [returnShippingTracking, setReturnShippingTracking] = useState("")
+  const [returnShippingCost, setReturnShippingCost] = useState("")
+  const [newShippingParty, setNewShippingParty] = useState("no_corresponde")
+  const [newShippingCost, setNewShippingCost] = useState("")
+  const [receptionStatus, setReceptionStatus] = useState("pendiente_despacho")
+  const [receptionException, setReceptionException] = useState(false)
+  const [receptionDate, setReceptionDate] = useState("")
+  const [receptionNotes, setReceptionNotes] = useState("")
+  const [physicalCondition, setPhysicalCondition] = useState("")
+  const [accessoriesComplete, setAccessoriesComplete] = useState("no_informado")
+  const [originalPackaging, setOriginalPackaging] = useState("no_requerido")
+  const [stockDestination, setStockDestination] = useState("pendiente_revision")
+  const [showCreditConfirmation, setShowCreditConfirmation] = useState(false)
+  const [showClosedDetail, setShowClosedDetail] = useState(false)
+  const [settlementSavingId, setSettlementSavingId] = useState<string | null>(null)
   const [creditDestination, setCreditDestination] = useState<
     "external_refund" | "customer_balance"
   >("customer_balance")
@@ -2408,8 +2440,14 @@ function BillingManagementPanel({
     const value = Number(manualCreditAmount.replace(/\./g, "").replace(",", "."))
     return Number.isFinite(value) && value > 0 ? roundCreditMoney(value) : 0
   })()
+  const originalShippingPaid = roundCreditMoney(
+    Math.max(0, Number(pedido.shipping_cost_charged ?? 0)),
+  )
+  const originalShippingRefunded = includeOriginalShipping
+    ? originalShippingPaid
+    : 0
   const newCreditTotal = roundCreditMoney(
-    selectedItemsAmount + parsedManualAmount,
+    selectedItemsAmount + originalShippingRefunded + parsedManualAmount,
   )
   const selectedCreditUnits = Object.values(creditQuantities).reduce(
     (sum, quantity) => sum + Math.max(0, Number(quantity) || 0),
@@ -2439,13 +2477,101 @@ function BillingManagementPanel({
       : `Nota de Crédito C ${creditNoteFormattedNumber}`
   const creditNoteCaeLabel = formatBillingDash(pedido.credit_note_cae)
   const creditNoteAmountLabel = creditNoteAmount > 0 ? formatPrice(creditNoteAmount) : "-"
+  const managementEvents = (pedido.order_audit_events ?? [])
+    .filter((event) =>
+      [
+        "credit_note",
+        "refund",
+        "return",
+        "cancel",
+        "customer_balance",
+      ].some((token) => event.action.includes(token)),
+    )
+    .slice(-5)
+  const managementEventLabel = (action: string) => {
+    if (action.includes("settlement")) return "Saldo acreditado"
+    if (action.includes("credit_note_authorized")) return "Nota de crédito autorizada"
+    if (action.includes("refund_proof")) return "Comprobante de reintegro cargado"
+    if (action.includes("refunded")) return "Reintegro completado"
+    if (action.includes("return")) return "Devolución actualizada"
+    if (action.includes("cancel")) return "Cancelación actualizada"
+    return "Gestión actualizada"
+  }
   useEffect(() => {
     setMessage(null)
     setCreditQuantities({})
     setManualCreditAmount("")
     setCreditReason("")
+    setOperationType("devolucion_parcial")
+    setReasonCode("arrepentimiento")
+    setReasonDetail("")
+    setIncludeOriginalShipping(false)
+    setReturnShippingParty("cliente")
+    setReturnShippingProvider("")
+    setReturnShippingTracking("")
+    setReturnShippingCost("")
+    setNewShippingParty("no_corresponde")
+    setNewShippingCost("")
+    setReceptionStatus("pendiente_despacho")
+    setReceptionException(false)
+    setReceptionDate("")
+    setReceptionNotes("")
+    setPhysicalCondition("")
+    setAccessoriesComplete("no_informado")
+    setOriginalPackaging("no_requerido")
+    setStockDestination("pendiente_revision")
+    setShowCreditConfirmation(false)
+    setShowClosedDetail(false)
+    setSettlementSavingId(null)
     setCreditDestination("customer_balance")
   }, [pedido.id])
+
+  const selectOperationType = (value: string) => {
+    setOperationType(value)
+    if (["devolucion_total", "cancelacion_antes_despacho"].includes(value)) {
+      setCreditQuantities(
+        Object.fromEntries(
+          (pedido.orden_items ?? []).map((item) => [
+            item.id,
+            Math.max(
+              0,
+              Number(item.cantidad) - (committedQuantityByItem.get(item.id) ?? 0),
+            ),
+          ]),
+        ),
+      )
+    }
+    if (value === "cancelacion_antes_despacho") {
+      setReasonCode("cancelacion_antes_despacho")
+      setReceptionStatus("no_requiere")
+      setReturnShippingParty("no_corresponde")
+      setIncludeOriginalShipping(originalShippingPaid > 0)
+    }
+    setNewShippingParty(
+      value === "cambio_producto" ? "cliente" : "no_corresponde",
+    )
+  }
+
+  const selectReasonCode = (value: string) => {
+    setReasonCode(value)
+    const beyonixResponsible = [
+      "producto_defectuoso",
+      "producto_incorrecto",
+      "producto_faltante",
+      "producto_danado_envio",
+      "garantia_aprobada",
+    ].includes(value)
+    setReturnShippingParty(
+      value === "producto_faltante" || value === "cancelacion_antes_despacho"
+        ? "no_corresponde"
+        : beyonixResponsible
+          ? "beyonix"
+          : "cliente",
+    )
+    if (["producto_faltante", "cancelacion_antes_despacho"].includes(value)) {
+      setReceptionStatus("no_requiere")
+    }
+  }
 
   const issueCreditNote = async () => {
     setCreditSaving(true)
@@ -2474,9 +2600,33 @@ function BillingManagementPanel({
               quantity,
             }))
             .filter((item) => item.quantity > 0),
-          manual_amount: parsedManualAmount,
+          operation_type: operationType,
+          reason_code: reasonCode,
+          reason_detail: reasonDetail,
+          include_original_shipping: includeOriginalShipping,
+          other_adjustment_amount: parsedManualAmount,
+          return_shipping_party: returnShippingParty,
+          return_shipping_provider: returnShippingProvider,
+          return_shipping_tracking: returnShippingTracking,
+          return_shipping_cost: Number(
+            returnShippingCost.replace(/\./g, "").replace(",", "."),
+          ) || 0,
+          new_shipping_party: newShippingParty,
+          new_shipping_cost:
+            Number(newShippingCost.replace(/\./g, "").replace(",", ".")) || 0,
+          reception_status: receptionStatus,
+          reception_exception: receptionException,
+          reception_date: receptionDate,
+          reception_notes: receptionNotes,
+          physical_condition: physicalCondition,
+          accessories_complete:
+            accessoriesComplete === "no_informado"
+              ? null
+              : accessoriesComplete === "si",
+          original_packaging: originalPackaging,
+          stock_destination: stockDestination,
           destination: creditDestination,
-          reason: creditReason,
+          reason: creditReason || reasonDetail,
         }),
       })
       const data = (await response.json()) as {
@@ -2496,12 +2646,56 @@ function BillingManagementPanel({
       setCreditQuantities({})
       setManualCreditAmount("")
       setCreditReason("")
+      setReasonDetail("")
+      setShowCreditConfirmation(false)
       setMessage({ ok: true, text: "Nota de crédito emitida por ARCA." })
       notifyOrderNotificationsChanged()
     } catch {
       setMessage({ ok: false, text: "No se pudo emitir la nota de crédito." })
     } finally {
       setCreditSaving(false)
+    }
+  }
+
+  const retryCreditSettlement = async (noteId: string) => {
+    setSettlementSavingId(noteId)
+    setMessage(null)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setMessage({ ok: false, text: "La sesión administrativa venció." })
+        return
+      }
+      const response = await fetch(
+        `/api/admin/orders/${pedido.id}/credit-note/settlement`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ note_id: noteId }),
+        },
+      )
+      const data = (await response.json()) as {
+        order?: SupabasePedido
+        error?: string
+      }
+      if (!response.ok || !data.order) {
+        setMessage({
+          ok: false,
+          text: data.error || "No se pudo reintentar la acreditación.",
+        })
+        return
+      }
+      onBillingUpdated(data.order)
+      setMessage({ ok: true, text: "Saldo acreditado sin volver a emitir la nota." })
+    } catch {
+      setMessage({ ok: false, text: "No se pudo reintentar la acreditación." })
+    } finally {
+      setSettlementSavingId(null)
     }
   }
 
@@ -2672,7 +2866,7 @@ function BillingManagementPanel({
         </p>
       ) : null}
 
-      {invoiceIssued && isCreditNoteFlowOrder(pedido) && (
+      {invoiceIssued && (
         <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3">
           <header className="admin-credit-note-header">
             <div className="admin-credit-note-title">
@@ -2681,14 +2875,14 @@ function BillingManagementPanel({
               </span>
               <div>
                 <p className="text-10px font-black uppercase tracking-widest text-[#8CC8F2]">
-                  Devolución fiscal
+                  Gestión unificada
                 </p>
                 <h3 className="mt-1 text-base font-black text-white">
-                  Crear nota de crédito
+                  Devoluciones y reintegros
                 </h3>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-white/58">
-                  Seleccioná qué se devuelve, elegí cómo compensar al cliente y
-                  revisá el total antes de enviarlo a ARCA.
+                  Productos, recepción, envíos, resolución y comprobantes en una
+                  sola gestión.
                 </p>
               </div>
             </div>
@@ -2706,6 +2900,68 @@ function BillingManagementPanel({
 
           {invoiceCreditRemaining > 0 && (
             <>
+              <div className="admin-return-config-grid">
+                <label className="admin-credit-note-field">
+                  <span>Tipo de gestión</span>
+                  <AdminSelect
+                    title="Tipo de gestión"
+                    ariaLabel="Seleccionar tipo de gestión"
+                    value={operationType}
+                    disabled={creditNoteProcessing}
+                    onChange={selectOperationType}
+                  >
+                    <option value="devolucion_parcial">Devolución parcial</option>
+                    <option value="devolucion_total">Devolución total</option>
+                    <option value="cambio_producto">Cambio de producto</option>
+                    <option value="cancelacion_antes_despacho">
+                      Cancelación antes del despacho
+                    </option>
+                    <option value="reembolso_excepcional">
+                      Reembolso excepcional
+                    </option>
+                    <option value="ajuste_manual">Ajuste manual</option>
+                  </AdminSelect>
+                </label>
+                <label className="admin-credit-note-field">
+                  <span>Motivo</span>
+                  <AdminSelect
+                    title="Motivo"
+                    ariaLabel="Seleccionar motivo"
+                    value={reasonCode}
+                    disabled={creditNoteProcessing}
+                    onChange={selectReasonCode}
+                  >
+                    <option value="arrepentimiento">Arrepentimiento del cliente</option>
+                    <option value="producto_defectuoso">Producto defectuoso</option>
+                    <option value="producto_incorrecto">Producto incorrecto</option>
+                    <option value="producto_faltante">Producto faltante</option>
+                    <option value="producto_danado_envio">
+                      Producto dañado durante el envío
+                    </option>
+                    <option value="garantia_aprobada">Garantía aprobada</option>
+                    <option value="cancelacion_antes_despacho">
+                      Cancelación antes del despacho
+                    </option>
+                    <option value="error_administrativo">Error administrativo</option>
+                    <option value="otro">Otro</option>
+                  </AdminSelect>
+                </label>
+                {reasonCode === "otro" && (
+                  <label className="admin-credit-note-reason">
+                    <span>Detalle del motivo</span>
+                    <input
+                      required
+                      type="text"
+                      maxLength={500}
+                      value={reasonDetail}
+                      disabled={creditNoteProcessing}
+                      onChange={(event) => setReasonDetail(event.target.value)}
+                      placeholder="Describí el motivo de la gestión"
+                    />
+                  </label>
+                )}
+              </div>
+
               <div className="admin-credit-note-steps" aria-label="Pasos para crear la nota">
                 <span className={selectedCreditUnits > 0 ? "is-complete" : "is-current"}>
                   <b>1</b> Productos
@@ -2855,22 +3111,22 @@ function BillingManagementPanel({
 
                       <label className="admin-credit-note-reason">
                         <span>
-                          Motivo de la devolución
-                          <small>Opcional · máximo 50 caracteres</small>
+                          Observación interna
+                          <small>Opcional · máximo 120 caracteres</small>
                         </span>
                         <input
                           type="text"
-                          maxLength={50}
+                          maxLength={120}
                           value={creditReason}
                           disabled={creditNoteProcessing}
                           onChange={(event) => setCreditReason(event.target.value)}
-                          placeholder="Ej.: producto dañado"
+                          placeholder="Detalle breve para auditoría"
                         />
                       </label>
 
                       <label>
                         <span>
-                          Monto adicional <small>Opcional</small>
+                          Otros ajustes <small>Opcional</small>
                         </span>
                         <div className="admin-credit-note-money-input">
                           <b>$</b>
@@ -2882,8 +3138,241 @@ function BillingManagementPanel({
                             placeholder="0,00"
                           />
                         </div>
-                        <em>Usalo sólo para envío u otro concepto sin producto.</em>
+                        <em>No incluye el envío original, que se calcula por separado.</em>
                       </label>
+                    </div>
+                  </section>
+
+                  <section className="admin-credit-note-step-card admin-return-logistics-panel">
+                    <div className="admin-credit-note-step-heading">
+                      <span><Truck className="size-3" /></span>
+                      <div>
+                        <h4>Gestión de envíos</h4>
+                        <p>Los tres conceptos se registran por separado.</p>
+                      </div>
+                    </div>
+                    <div className="admin-return-compact-fields">
+                      <label className="admin-return-check-row">
+                        <span>
+                          <b>Envío original</b>
+                          <small>Pagado: {formatPrice(originalShippingPaid)}</small>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={includeOriginalShipping}
+                          disabled={creditNoteProcessing || originalShippingPaid <= 0}
+                          onChange={(event) =>
+                            setIncludeOriginalShipping(event.target.checked)
+                          }
+                        />
+                      </label>
+                      <label className="admin-credit-note-field">
+                        <span>Envío de devolución</span>
+                        <AdminSelect
+                          title="Envío de devolución"
+                          ariaLabel="Seleccionar responsable del envío de devolución"
+                          value={returnShippingParty}
+                          disabled={creditNoteProcessing}
+                          onChange={setReturnShippingParty}
+                        >
+                          <option value="cliente">A cargo del cliente</option>
+                          <option value="beyonix">A cargo de BEYONIX</option>
+                          <option value="no_corresponde">No corresponde</option>
+                        </AdminSelect>
+                      </label>
+                      {returnShippingParty !== "no_corresponde" && (
+                        <div className="admin-return-inline-fields">
+                          <input
+                            type="text"
+                            value={returnShippingProvider}
+                            onChange={(event) =>
+                              setReturnShippingProvider(event.target.value)
+                            }
+                            placeholder="Operador logístico"
+                          />
+                          <input
+                            type="text"
+                            value={returnShippingTracking}
+                            onChange={(event) =>
+                              setReturnShippingTracking(event.target.value)
+                            }
+                            placeholder="Seguimiento"
+                          />
+                          <input
+                            inputMode="decimal"
+                            value={returnShippingCost}
+                            onChange={(event) =>
+                              setReturnShippingCost(event.target.value)
+                            }
+                            placeholder="Costo del envío"
+                          />
+                        </div>
+                      )}
+                      {operationType === "cambio_producto" && (
+                        <label className="admin-credit-note-field">
+                          <span>Nuevo envío</span>
+                          <AdminSelect
+                            title="Nuevo envío"
+                            ariaLabel="Seleccionar responsable del nuevo envío"
+                            value={newShippingParty}
+                            disabled={creditNoteProcessing}
+                            onChange={setNewShippingParty}
+                          >
+                            <option value="cliente">A cargo del cliente</option>
+                            <option value="beyonix">Bonificado por BEYONIX</option>
+                            <option value="no_corresponde">No corresponde</option>
+                          </AdminSelect>
+                          {newShippingParty !== "no_corresponde" && (
+                            <input
+                              inputMode="decimal"
+                              value={newShippingCost}
+                              onChange={(event) =>
+                                setNewShippingCost(event.target.value)
+                              }
+                              placeholder="Costo del nuevo envío"
+                            />
+                          )}
+                        </label>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="admin-credit-note-step-card admin-return-reception-panel">
+                    <div className="admin-credit-note-step-heading">
+                      <span><Package className="size-3" /></span>
+                      <div>
+                        <h4>Recepción y stock</h4>
+                        <p>La aprobación física habilita la emisión definitiva.</p>
+                      </div>
+                    </div>
+                    <div className="admin-return-compact-fields">
+                      <label className="admin-credit-note-field">
+                        <span>Recepción de la devolución</span>
+                        <AdminSelect
+                          title="Recepción de la devolución"
+                          ariaLabel="Seleccionar estado de recepción"
+                          value={receptionStatus}
+                          disabled={creditNoteProcessing}
+                          onChange={setReceptionStatus}
+                        >
+                          <option value="no_requiere">No requiere devolución</option>
+                          <option value="pendiente_despacho">
+                            Pendiente de despacho del cliente
+                          </option>
+                          <option value="en_transito">En tránsito</option>
+                          <option value="recibido_revision">
+                            Recibido, pendiente de revisión
+                          </option>
+                          <option value="producto_aprobado">Producto aprobado</option>
+                          <option value="producto_rechazado">Producto rechazado</option>
+                          <option value="aprobado_parcial">Aprobado parcialmente</option>
+                        </AdminSelect>
+                      </label>
+                      <label className="admin-credit-note-field">
+                        <span>Destino del producto devuelto</span>
+                        <AdminSelect
+                          title="Destino del producto"
+                          ariaLabel="Seleccionar destino del producto devuelto"
+                          value={stockDestination}
+                          disabled={creditNoteProcessing}
+                          onChange={setStockDestination}
+                        >
+                          <option value="pendiente_revision">Pendiente de revisión</option>
+                          <option value="stock_vendible">Reingresar a stock vendible</option>
+                          <option value="stock_observaciones">
+                            Stock con observaciones
+                          </option>
+                          <option value="fallado">Marcar como fallado</option>
+                          <option value="garantia_proveedor">
+                            Garantía / proveedor
+                          </option>
+                          <option value="no_reingresar">No reingresar</option>
+                          </AdminSelect>
+                      </label>
+                      {[
+                        "recibido_revision",
+                        "producto_aprobado",
+                        "producto_rechazado",
+                        "aprobado_parcial",
+                      ].includes(receptionStatus) && (
+                        <>
+                          <div className="admin-return-inline-fields">
+                            <input
+                              type="date"
+                              value={receptionDate}
+                              onChange={(event) =>
+                                setReceptionDate(event.target.value)
+                              }
+                              aria-label="Fecha de recepción"
+                            />
+                            <input
+                              type="text"
+                              value={physicalCondition}
+                              onChange={(event) =>
+                                setPhysicalCondition(event.target.value)
+                              }
+                              placeholder="Estado físico"
+                            />
+                          </div>
+                          <div className="admin-return-inline-fields">
+                            <label className="admin-credit-note-field">
+                              <span>Accesorios completos</span>
+                              <AdminSelect
+                                title="Accesorios completos"
+                                ariaLabel="Indicar si los accesorios están completos"
+                                value={accessoriesComplete}
+                                onChange={setAccessoriesComplete}
+                              >
+                                <option value="no_informado">No informado</option>
+                                <option value="si">Sí</option>
+                                <option value="no">No</option>
+                              </AdminSelect>
+                            </label>
+                            <label className="admin-credit-note-field">
+                              <span>Embalaje original</span>
+                              <AdminSelect
+                                title="Embalaje original"
+                                ariaLabel="Indicar estado del embalaje original"
+                                value={originalPackaging}
+                                onChange={setOriginalPackaging}
+                              >
+                                <option value="si">Sí</option>
+                                <option value="no">No</option>
+                                <option value="no_requerido">No requerido</option>
+                              </AdminSelect>
+                            </label>
+                          </div>
+                          <textarea
+                            value={receptionNotes}
+                            onChange={(event) =>
+                              setReceptionNotes(event.target.value)
+                            }
+                            placeholder={
+                              receptionStatus === "producto_rechazado"
+                                ? "Motivo del rechazo (obligatorio)"
+                                : "Observaciones internas"
+                            }
+                            rows={2}
+                          />
+                        </>
+                      )}
+                      {!["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(
+                        receptionStatus,
+                      ) && (
+                        <label className="admin-return-exception-row">
+                          <input
+                            type="checkbox"
+                            checked={receptionException}
+                            onChange={(event) =>
+                              setReceptionException(event.target.checked)
+                            }
+                          />
+                          <span>
+                            Autorizar excepción sin recepción aprobada
+                            <small>Quedará registrada con el administrador responsable.</small>
+                          </span>
+                        </label>
+                      )}
                     </div>
                   </section>
                 </aside>
@@ -2902,12 +3391,36 @@ function BillingManagementPanel({
                         <dd>{formatPrice(selectedItemsAmount)}</dd>
                       </div>
                       <div>
-                        <dt>Monto adicional</dt>
+                        <dt>Envío original reintegrado</dt>
+                        <dd>{formatPrice(originalShippingRefunded)}</dd>
+                      </div>
+                      <div>
+                        <dt>Otros ajustes</dt>
                         <dd>{formatPrice(parsedManualAmount)}</dd>
                       </div>
                       <div className="admin-credit-note-review-total">
-                        <dt>Total de la nota</dt>
+                        <dt>Total de la nota de crédito</dt>
                         <dd>{formatPrice(newCreditTotal)}</dd>
+                      </div>
+                      <div>
+                        <dt>Saldo a acreditar</dt>
+                        <dd>
+                          {formatPrice(
+                            creditDestination === "customer_balance"
+                              ? newCreditTotal
+                              : 0,
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Importe a reembolsar</dt>
+                        <dd>
+                          {formatPrice(
+                            creditDestination === "external_refund"
+                              ? newCreditTotal
+                              : 0,
+                          )}
+                        </dd>
                       </div>
                     </dl>
                     <div className="admin-credit-note-review-action">
@@ -2925,9 +3438,18 @@ function BillingManagementPanel({
                         disabled={
                           creditNoteProcessing ||
                           newCreditTotal <= 0 ||
-                          newCreditTotal > invoiceCreditRemaining + 0.005
+                          newCreditTotal > invoiceCreditRemaining + 0.005 ||
+                          (reasonCode === "otro" && !reasonDetail.trim()) ||
+                          (receptionStatus === "producto_rechazado" &&
+                            !receptionNotes.trim()) ||
+                          (![
+                            "no_requiere",
+                            "producto_aprobado",
+                            "aprobado_parcial",
+                          ].includes(receptionStatus) &&
+                            !receptionException)
                         }
-                        onClick={() => void issueCreditNote()}
+                        onClick={() => setShowCreditConfirmation(true)}
                         className="admin-credit-note-submit"
                       >
                         {creditNoteProcessing ? (
@@ -2937,7 +3459,7 @@ function BillingManagementPanel({
                         )}
                         {creditNoteProcessing
                           ? "Validando con ARCA..."
-                          : "Emitir Nota de Crédito C"}
+                          : "Revisar y emitir"}
                       </button>
                       <p className="admin-credit-note-secure-copy">
                         <ShieldCheck className="size-3.5" />
@@ -2949,7 +3471,31 @@ function BillingManagementPanel({
             </>
           )}
 
-          {authorizedCreditNotes.length > 0 && (
+          {invoiceCreditRemaining <= 0 && authorizedCreditNotes.length > 0 && (
+            <section className="admin-return-closed-summary">
+              <CheckCircle2 className="size-6" />
+              <div>
+                <p>Gestión finalizada</p>
+                <h4>No hay acciones pendientes</h4>
+                <span>
+                  {authorizedCreditNotes.length}{" "}
+                  {authorizedCreditNotes.length === 1
+                    ? "nota autorizada"
+                    : "notas autorizadas"}{" "}
+                  por ARCA · Importe resuelto {formatPrice(authorizedCreditTotal)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClosedDetail((current) => !current)}
+              >
+                {showClosedDetail ? "Ocultar detalle" : "Ver detalle completo"}
+              </button>
+            </section>
+          )}
+
+          {authorizedCreditNotes.length > 0 &&
+            (invoiceCreditRemaining > 0 || showClosedDetail) && (
             <section className="admin-credit-note-history">
               <div>
                 <CheckCircle2 className="size-4" />
@@ -2964,19 +3510,67 @@ function BillingManagementPanel({
               </div>
               <div className="admin-credit-note-history-list">
                 {authorizedCreditNotes.map((note) => (
-                  <button
-                    key={note.id}
-                    type="button"
-                    onClick={() => void onDownloadCreditNote(note.id)}
-                  >
-                    <span>
-                      NC {formatInvoiceNumberOrDash(note.voucher_point, note.voucher_number)}
-                    </span>
-                    <strong>{formatPrice(Number(note.total_amount))}</strong>
-                    <Download className="size-3.5" />
-                  </button>
+                  <div key={note.id} className="admin-credit-note-history-item">
+                    <button
+                      type="button"
+                      onClick={() => void onDownloadCreditNote(note.id)}
+                    >
+                      <span>
+                        NC {formatInvoiceNumberOrDash(note.voucher_point, note.voucher_number)}
+                      </span>
+                      <strong>{formatPrice(Number(note.total_amount))}</strong>
+                      <Download className="size-3.5" />
+                    </button>
+                    {note.destination === "customer_balance" &&
+                      note.settlement_status !== "completado" && (
+                        <button
+                          type="button"
+                          className="is-settlement-retry"
+                          disabled={settlementSavingId === note.id}
+                          onClick={() => void retryCreditSettlement(note.id)}
+                        >
+                          {settlementSavingId === note.id ? (
+                            <LoaderCircle className="size-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="size-3.5" />
+                          )}
+                          Reintentar acreditación
+                        </button>
+                      )}
+                  </div>
                 ))}
               </div>
+            </section>
+          )}
+
+          {managementEvents.length > 0 && (
+            <section className="admin-return-timeline">
+              <div className="admin-return-timeline-events">
+                {managementEvents.map((event) => (
+                  <div key={event.id}>
+                    <span aria-hidden="true" />
+                    <p>
+                      <strong>{managementEventLabel(event.action)}</strong>
+                      <small>{formatOptionalOrderDate(event.created_at)}</small>
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <details>
+                <summary>Ver detalle técnico</summary>
+                <div>
+                  {managementEvents.map((event) => (
+                    <p key={event.id}>
+                      <b>{event.action}</b>
+                      <code>
+                        {event.metadata
+                          ? JSON.stringify(event.metadata)
+                          : "Sin datos adicionales"}
+                      </code>
+                    </p>
+                  ))}
+                </div>
+              </details>
             </section>
           )}
 
@@ -3000,6 +3594,97 @@ function BillingManagementPanel({
               {pedido.credit_note_error}
             </p>
           )}
+        </div>
+      )}
+
+      {showCreditConfirmation && (
+        <div
+          className="admin-return-confirm-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setShowCreditConfirmation(false)
+            }
+          }}
+        >
+          <section
+            className="admin-return-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="credit-note-confirm-title"
+          >
+            <header>
+              <div>
+                <p>Acción fiscal irreversible</p>
+                <h3 id="credit-note-confirm-title">Confirmar nota de crédito</h3>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar confirmación"
+                onClick={() => setShowCreditConfirmation(false)}
+              >
+                <X className="size-4" />
+              </button>
+            </header>
+            <dl>
+              <div>
+                <dt>Factura asociada</dt>
+                <dd>
+                  Factura C{" "}
+                  {formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}
+                </dd>
+              </div>
+              <div>
+                <dt>Productos</dt>
+                <dd>{selectedCreditUnits} unidades seleccionadas</dd>
+              </div>
+              <div>
+                <dt>Motivo</dt>
+                <dd>{reasonDetail || creditReason || reasonCode.replaceAll("_", " ")}</dd>
+              </div>
+              <div>
+                <dt>Importe de productos</dt>
+                <dd>{formatPrice(selectedItemsAmount)}</dd>
+              </div>
+              <div>
+                <dt>Envío reintegrado</dt>
+                <dd>{formatPrice(originalShippingRefunded)}</dd>
+              </div>
+              <div className="is-total">
+                <dt>Total fiscal</dt>
+                <dd>{formatPrice(newCreditTotal)}</dd>
+              </div>
+              <div>
+                <dt>Resolución para el cliente</dt>
+                <dd>
+                  {creditDestination === "customer_balance"
+                    ? `Saldo a acreditar: ${formatPrice(newCreditTotal)}`
+                    : `Importe a reembolsar: ${formatPrice(newCreditTotal)}`}
+                </dd>
+              </div>
+            </dl>
+            <footer>
+              <button
+                type="button"
+                onClick={() => setShowCreditConfirmation(false)}
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                className="is-primary"
+                disabled={creditNoteProcessing}
+                onClick={() => void issueCreditNote()}
+              >
+                {creditNoteProcessing ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="size-4" />
+                )}
+                Emitir nota de crédito y aplicar resolución
+              </button>
+            </footer>
+          </section>
         </div>
       )}
 
@@ -4566,6 +5251,7 @@ function PedidoDetailModal({
             <RefundManagementPanel
               pedido={pedido}
               onRefundUpdated={onRefundUpdated}
+              onOpenBilling={() => showDetailView("facturacion")}
             />
           )}
 

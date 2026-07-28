@@ -277,6 +277,11 @@ export interface SupabaseOrderCreditNoteItem {
   total_amount: number
   product_name: string
   variant_name?: string | null
+  return_status?: string
+  received_quantity?: number
+  approved_quantity?: number
+  rejected_quantity?: number
+  stock_processed_at?: string | null
   created_at: string
 }
 
@@ -287,6 +292,34 @@ export interface SupabaseOrderCreditNote {
   status: "processing" | "authorized" | "error"
   destination: "external_refund" | "customer_balance" | "none"
   reason: string
+  operation_type?: string
+  reason_code?: string
+  reason_detail?: string | null
+  resolution_type?: string
+  management_status?: string
+  reception_status?: string
+  reception_exception?: boolean
+  reception_date?: string | null
+  reception_notes?: string | null
+  physical_condition?: string | null
+  accessories_complete?: boolean | null
+  original_packaging?: string | null
+  original_shipping_paid?: number
+  original_shipping_discounted?: number
+  original_shipping_refunded?: number
+  return_shipping_party?: string
+  return_shipping_provider?: string | null
+  return_shipping_tracking?: string | null
+  return_shipping_cost?: number
+  new_shipping_party?: string
+  new_shipping_cost?: number
+  other_adjustment_amount?: number
+  stock_destination?: string
+  stock_reviewed_by?: string | null
+  stock_reviewed_at?: string | null
+  settlement_status?: string
+  settlement_reference?: string | null
+  settlement_date?: string | null
   items_amount: number
   manual_amount: number
   total_amount: number

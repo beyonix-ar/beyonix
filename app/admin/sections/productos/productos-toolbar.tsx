@@ -24,7 +24,6 @@ interface ProductosToolbarProps {
   activeFilter: ActiveFilter
   featuredFilter: FeaturedFilter
   view: ProductView
-  onCreate: () => void
   onCreateCategory: () => void
   onSearchChange: (value: string) => void
   onCategorySearchChange: (value: string) => void
@@ -44,7 +43,6 @@ export function ProductosToolbar({
   activeFilter,
   featuredFilter,
   view,
-  onCreate,
   onCreateCategory,
   onSearchChange,
   onCategorySearchChange,
@@ -54,15 +52,12 @@ export function ProductosToolbar({
   onFeaturedFilterChange,
   onViewChange,
 }: ProductosToolbarProps) {
-  const createLabel = view === "productos" ? "Nuevo producto" : "Nueva categoría"
-  const createHandler = view === "productos" ? onCreate : onCreateCategory
-
   return (
     <div className="space-y-4">
       <AdminPageHeader
         eyebrow="Gestión"
         title="Productos"
-        description="Catálogo, stock, variantes, imágenes, categorías y disponibilidad."
+        description="Catálogo y stock real calculado desde Compras, Pedidos y devoluciones aprobadas."
         actions={
           <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-xl border border-beyonix-blue-light/25 bg-black/35 p-0.5 shadow-inner shadow-black/40">
@@ -94,16 +89,18 @@ export function ProductosToolbar({
             </button>
           </div>
 
-          <AdminPrimaryButton
-            title={createLabel}
-            aria-label={createLabel}
-            size="lg"
-            onClick={createHandler}
-            className="min-w-160px"
-          >
-            <Plus className="size-4" />
-            {createLabel}
-          </AdminPrimaryButton>
+          {view === "categorias" && (
+            <AdminPrimaryButton
+              title="Nueva categoría"
+              aria-label="Nueva categoría"
+              size="lg"
+              onClick={onCreateCategory}
+              className="min-w-160px"
+            >
+              <Plus className="size-4" />
+              Nueva categoría
+            </AdminPrimaryButton>
+          )}
         </div>
         }
       />

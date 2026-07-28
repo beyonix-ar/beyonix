@@ -13,6 +13,8 @@ type CreditNotePdfRecord = {
   id: string
   total_amount: number | string
   manual_amount: number | string
+  original_shipping_refunded?: number | string
+  other_adjustment_amount?: number | string
   voucher_number: number
   voucher_point: number
   cae: string
@@ -235,13 +237,21 @@ export async function GET(
             ? { nombre: item.variant_name }
             : null,
         })),
-        ...(Number(creditNoteRecord.manual_amount ?? 0) > 0
+        {
+          cantidad: 1,
+          precio: Number(creditNoteRecord.original_shipping_refunded ?? 0),
+          productos: {
+            nombre: "Envío reintegrado",
+          },
+          producto_variantes: null,
+        },
+        ...(Number(creditNoteRecord.other_adjustment_amount ?? 0) > 0
           ? [
               {
                 cantidad: 1,
-                precio: Number(creditNoteRecord.manual_amount),
+                precio: Number(creditNoteRecord.other_adjustment_amount),
                 productos: {
-                  nombre: `Ajuste: ${creditNoteRecord.reason}`,
+                  nombre: `Otros ajustes: ${creditNoteRecord.reason}`,
                 },
                 producto_variantes: null,
               },

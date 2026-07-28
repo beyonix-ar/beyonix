@@ -18,6 +18,7 @@ export interface StoredMercadoLibreSale {
   source_file_name: string | null
   imported_at: string
   raw_data: MercadoLibreImportRow["raw_data"] | Record<string, unknown>
+  return_review: MercadoLibreReturnReview | null
   costing: {
     match_key: string
     product_id: number | null
@@ -27,6 +28,18 @@ export interface StoredMercadoLibreSale {
     unit_cost: number | null
     merchandise_cost: number | null
   }
+}
+
+export interface MercadoLibreReturnReview {
+  id: string
+  mercadolibre_sale_id: string
+  received_quantity: number
+  sellable_quantity: number
+  discounted_quantity: number
+  non_sellable_quantity: number
+  discount_percent: number | null
+  review_notes: string | null
+  approved_at: string
 }
 
 export interface MercadoLibreCostCatalogVariant {
@@ -91,6 +104,7 @@ export async function importMercadoLibreSales(
 ) {
   let imported = 0
   let replaced = 0
+  let linked = 0
   for (let index = 0; index < rows.length; index += 150) {
     const result = await request("/api/admin/mercadolibre-sales/import", {
       method: "POST",
@@ -101,8 +115,9 @@ export async function importMercadoLibreSales(
     })
     imported += Number(result?.imported ?? 0)
     replaced += Number(result?.replaced ?? 0)
+    linked += Number(result?.linked ?? 0)
   }
-  return { imported, replaced }
+  return { imported, replaced, linked }
 }
 
 export async function deleteMercadoLibreSale(id: string) {
@@ -121,4 +136,24 @@ export async function saveMercadoLibreCostMapping(
     method: "PATCH",
     body: JSON.stringify({ matchKey, productId, variantId, standaloneKey }),
   })
+}
+
+export async function saveMercadoLibreReturnReview(
+  saleId: string,
+  payload: {
+    receivedQuantity: number
+    sellableQuantity: number
+    discountedQuantity: number
+    nonSellableQuantity: number
+    discountPercent: number | null
+    notes: string
+  },
+) {
+  return request(
+    `/api/admin/mercadolibre-sales/${encodeURIComponent(saleId)}/return-review`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  )
 }

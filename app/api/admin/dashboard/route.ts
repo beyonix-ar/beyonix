@@ -31,6 +31,11 @@ const DISPATCHED_STATES = [
 ] as const
 const PAID_STATES = new Set(["pagado", ...DISPATCHED_STATES, "approved"])
 const PAYMENT_REVIEW_STATES = new Set(["pendiente_comprobante", "en_revision"])
+const DASHBOARD_SERVER_CACHE_MS = 60_000
+const dashboardServerCache = new Map<
+  string,
+  { expiresAt: number; payload: Record<string, unknown> }
+>()
 
 interface DashboardLowStockItem {
   id: string
@@ -593,6 +598,15 @@ export async function GET(request: Request) {
   if ("error" in auth) return auth.error
 
   const sensitive = canViewSensitiveNumbers(auth.profile.rol)
+  const cacheKey = auth.profile.rol
+  const forceRefresh =
+    new URL(request.url).searchParams.get("refresh") === "1"
+  const cached = dashboardServerCache.get(cacheKey)
+  if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+    return Response.json(cached.payload, {
+      headers: { "X-Dashboard-Cache": "HIT" },
+    })
+  }
   const { stock: stockSettings } = await getSiteSettings()
   const paidOrderFilter =
     "estado.in.(pagado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado,approved),payment_status.eq.approved"
@@ -1687,7 +1701,7 @@ export async function GET(request: Request) {
     })),
   ]
 
-  return Response.json({
+  const payload = {
     role: auth.profile.rol,
     stats: {
       totalProductos: getCount(productsCountResult),
@@ -1730,5 +1744,13 @@ export async function GET(request: Request) {
     recentActivity,
     systemStatus,
     searchIndex,
+  }
+  dashboardServerCache.set(cacheKey, {
+    payload,
+    expiresAt: Date.now() + DASHBOARD_SERVER_CACHE_MS,
+  })
+
+  return Response.json(payload, {
+    headers: { "X-Dashboard-Cache": "MISS" },
   })
 }

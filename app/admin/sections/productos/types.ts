@@ -16,7 +16,6 @@ export interface ProductoFormState {
   precio: string
   precio_anterior: string
   cuotas: "sin_cuotas" | "3" | "6"
-  stock: string
   categoria_id: string
   destacado: boolean
   activo: boolean
@@ -32,8 +31,6 @@ export interface ProductosToolbarProps {
   onSearchChange: (
     value: string
   ) => void
-
-  onCreate: () => void
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,7 +101,6 @@ export interface DraftProductoVariante {
   tempId: string
   nombre: string
   color_hex: string
-  stock: number | null
   imagenes: File[]
 }
 

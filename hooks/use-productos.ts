@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
+import { supabase } from "@/lib/supabase/client"
 
 import {
   getProductosPage,
@@ -34,6 +35,8 @@ export function useProductos({
 
   const [error, setError] =
     useState<string | null>(null)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const loadProductos =
     useCallback(async () => {
@@ -86,21 +89,69 @@ export function useProductos({
     void loadProductos()
   }, [loadProductos])
 
-  const handleDelete =
-    async (id: number) => {
-      try {
-        await deleteProducto(id)
+  useEffect(() => {
+    if (!enabled) return
 
-        setProductos((prev) =>
-          prev.filter(
-            (p) => p.id !== id
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const reload = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        void loadProductos()
+      }, 180)
+    }
+    const channel = supabase
+      .channel(`admin-product-stock-${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "productos" },
+        reload,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "producto_variantes" },
+        reload,
+      )
+      .subscribe()
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      void supabase.removeChannel(channel)
+    }
+  }, [enabled, loadProductos])
+
+  const handleDelete =
+    async (id: number, force = false) => {
+      try {
+        const result = await deleteProducto(id, { force })
+
+        if (result.mode === "deleted") {
+          setProductos((prev) =>
+            prev.filter(
+              (p) => p.id !== id
+            )
           )
-        )
-        setTotal((current) => Math.max(0, current - 1))
+          setTotal((current) => Math.max(0, current - 1))
+        } else {
+          setProductos((prev) =>
+            prev.map((product) =>
+              product.id === id
+                ? { ...product, activo: false, destacado: false }
+                : product
+            )
+          )
+        }
+        setActionMessage(result.message)
+        setActionError(null)
 
         return true
       } catch (err) {
-        console.error(err)
+        setActionMessage(null)
+        setActionError(
+          err instanceof Error
+            ? err.message
+            : "No se pudo eliminar el producto.",
+        )
 
         return false
       }
@@ -144,6 +195,8 @@ export function useProductos({
     pageSize,
     loading,
     error,
+    actionMessage,
+    actionError,
 
     reloadProductos:
       loadProductos,

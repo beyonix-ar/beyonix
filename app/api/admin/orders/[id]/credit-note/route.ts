@@ -21,13 +21,100 @@ import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 export const runtime = "nodejs"
 
 type CreditNoteDestination = "external_refund" | "customer_balance"
+type InventoryReturnMovement = {
+  source_key: string
+  order_id: number
+  order_item_id: number
+  product_id: number
+  variant_id: number | null
+  quantity: number
+  approved_by: string
+  approved_at: string
+}
 
 type CreditNoteRequest = {
   items?: Array<{ order_item_id?: unknown; quantity?: unknown }>
-  manual_amount?: unknown
+  operation_type?: unknown
   destination?: unknown
   reason?: unknown
+  reason_code?: unknown
+  reason_detail?: unknown
+  include_original_shipping?: unknown
+  other_adjustment_amount?: unknown
+  return_shipping_party?: unknown
+  return_shipping_provider?: unknown
+  return_shipping_tracking?: unknown
+  return_shipping_cost?: unknown
+  new_shipping_party?: unknown
+  new_shipping_cost?: unknown
+  reception_status?: unknown
+  reception_exception?: unknown
+  reception_date?: unknown
+  reception_notes?: unknown
+  physical_condition?: unknown
+  accessories_complete?: unknown
+  original_packaging?: unknown
+  stock_destination?: unknown
   claim_id?: unknown
+}
+
+const OPERATION_TYPES = [
+  "devolucion_parcial",
+  "devolucion_total",
+  "cambio_producto",
+  "cancelacion_antes_despacho",
+  "reembolso_excepcional",
+  "ajuste_manual",
+] as const
+const REASON_CODES = [
+  "arrepentimiento",
+  "producto_defectuoso",
+  "producto_incorrecto",
+  "producto_faltante",
+  "producto_danado_envio",
+  "garantia_aprobada",
+  "cancelacion_antes_despacho",
+  "error_administrativo",
+  "otro",
+] as const
+const RECEPTION_STATUSES = [
+  "no_requiere",
+  "pendiente_despacho",
+  "en_transito",
+  "recibido_revision",
+  "producto_aprobado",
+  "producto_rechazado",
+  "aprobado_parcial",
+] as const
+const SHIPPING_PARTIES = ["cliente", "beyonix", "no_corresponde"] as const
+const STOCK_DESTINATIONS = [
+  "stock_vendible",
+  "stock_observaciones",
+  "fallado",
+  "garantia_proveedor",
+  "no_reingresar",
+  "pendiente_revision",
+] as const
+
+function enumValue<T extends string>(
+  value: unknown,
+  values: readonly T[],
+  fallback: T,
+) {
+  return typeof value === "string" && values.includes(value as T)
+    ? (value as T)
+    : fallback
+}
+
+function optionalText(value: unknown, maxLength: number) {
+  return typeof value === "string"
+    ? value.trim().slice(0, maxLength) || null
+    : null
+}
+
+function safeMoney(value: unknown) {
+  const amount = roundCreditMoney(Number(value ?? 0))
+  return Number.isFinite(amount) && amount >= 0 ? amount : null
 }
 
 function getPointOfSale() {
@@ -130,9 +217,40 @@ export async function POST(
   }
 
   const destination = body.destination as CreditNoteDestination
+  const operationType = enumValue(
+    body.operation_type,
+    OPERATION_TYPES,
+    "devolucion_parcial",
+  )
+  const reasonCode = enumValue(body.reason_code, REASON_CODES, "otro")
+  const reasonDetail = optionalText(body.reason_detail, 500)
   const reason = typeof body.reason === "string" ? body.reason.trim() : ""
-  const storedReason = reason || "Sin motivo informado"
-  const manualAmount = roundCreditMoney(Number(body.manual_amount ?? 0))
+  const storedReason = reason || reasonDetail || reasonCode
+  const otherAdjustmentAmount = safeMoney(body.other_adjustment_amount)
+  const returnShippingCost = safeMoney(body.return_shipping_cost)
+  const newShippingCost = safeMoney(body.new_shipping_cost)
+  const includeOriginalShipping = body.include_original_shipping === true
+  const returnShippingParty = enumValue(
+    body.return_shipping_party,
+    SHIPPING_PARTIES,
+    "cliente",
+  )
+  const newShippingParty = enumValue(
+    body.new_shipping_party,
+    SHIPPING_PARTIES,
+    "no_corresponde",
+  )
+  const receptionStatus = enumValue(
+    body.reception_status,
+    RECEPTION_STATUSES,
+    "pendiente_despacho",
+  )
+  const receptionException = body.reception_exception === true
+  const stockDestination = enumValue(
+    body.stock_destination,
+    STOCK_DESTINATIONS,
+    "pendiente_revision",
+  )
   const claimIdValue = Number(body.claim_id)
   let claimId =
     Number.isInteger(claimIdValue) && claimIdValue > 0 ? claimIdValue : null
@@ -143,16 +261,49 @@ export async function POST(
       { status: 400 },
     )
   }
-  if (reason.length > 50) {
+  if (reason.length > 120) {
     return NextResponse.json(
-      { error: "El motivo no puede superar los 50 caracteres." },
+      { error: "El motivo no puede superar los 120 caracteres." },
       { status: 400 },
     )
   }
-  if (!Number.isFinite(manualAmount) || manualAmount < 0) {
+  if (reasonCode === "otro" && !reasonDetail && !reason) {
     return NextResponse.json(
-      { error: "El ajuste manual no es válido." },
+      { error: "Detallá el motivo cuando seleccionás “Otro”." },
       { status: 400 },
+    )
+  }
+  if (
+    otherAdjustmentAmount === null ||
+    returnShippingCost === null ||
+    newShippingCost === null
+  ) {
+    return NextResponse.json(
+      { error: "Revisá los importes de la gestión." },
+      { status: 400 },
+    )
+  }
+  if (
+    receptionStatus === "producto_rechazado" &&
+    !optionalText(body.reception_notes, 2000)
+  ) {
+    return NextResponse.json(
+      { error: "Indicá el motivo por el que el producto fue rechazado." },
+      { status: 400 },
+    )
+  }
+  const receptionApproved = [
+    "no_requiere",
+    "producto_aprobado",
+    "aprobado_parcial",
+  ].includes(receptionStatus)
+  if (!receptionApproved && !receptionException) {
+    return NextResponse.json(
+      {
+        error:
+          "La nota queda bloqueada hasta recibir y aprobar el producto. Usá la excepción administrativa únicamente si corresponde.",
+      },
+      { status: 409 },
     )
   }
 
@@ -161,7 +312,7 @@ export async function POST(
       auth.admin
         .from("ordenes")
         .select(
-          "id, usuario_id, total, estado, financial_status, credit_balance_used, andreani_costo, invoice_status, invoice_cae, invoice_number, invoice_point, invoice_created_at, credit_note_status",
+          "id, usuario_id, total, estado, financial_status, credit_balance_used, andreani_costo, shipping_cost_charged, shipping_cost_real, invoice_status, invoice_cae, invoice_number, invoice_point, invoice_created_at, credit_note_status",
         )
         .eq("id", orderId)
         .single(),
@@ -245,9 +396,24 @@ export async function POST(
   }
 
   const items = orderItems ?? []
+  const originalShippingPaid = roundCreditMoney(
+    Math.max(0, Number(order.shipping_cost_charged ?? 0)),
+  )
+  const originalShippingRefunded = includeOriginalShipping
+    ? originalShippingPaid
+    : 0
+  if (includeOriginalShipping && originalShippingPaid <= 0) {
+    return NextResponse.json(
+      { error: "No se puede reintegrar un envío que el cliente no pagó." },
+      { status: 409 },
+    )
+  }
+  const manualAmount = roundCreditMoney(
+    originalShippingRefunded + otherAdjustmentAmount,
+  )
   const calculationOrder = {
     ...order,
-    shipping_cost_charged: Number(order.andreani_costo ?? 0),
+    shipping_cost_charged: originalShippingPaid,
   }
   const allocations = new Map(
     allocateEffectiveOrderItemAmounts(calculationOrder, items).map((item) => [
@@ -283,7 +449,6 @@ export async function POST(
       { status: 400 },
     )
   }
-
   const productIds = [...new Set(selectedBase.map(({ item }) => item.producto_id))]
   const variantIds = [
     ...new Set(
@@ -364,6 +529,123 @@ export async function POST(
   }
 
   const noteId = String((reservedNote as { id: string }).id)
+  const resolutionType =
+    destination === "customer_balance"
+      ? "saldo_favor"
+      : operationType === "cambio_producto"
+        ? "cambio_producto"
+        : "medio_pago"
+  const managementStatus =
+    destination === "customer_balance"
+      ? "nota_credito_pendiente"
+      : "reembolso_pendiente"
+  const { error: managementError } = await auth.admin
+    .from("order_credit_notes")
+    .update({
+      operation_type: operationType,
+      reason_code: reasonCode,
+      reason_detail: reasonDetail,
+      resolution_type: resolutionType,
+      management_status: managementStatus,
+      reception_status: receptionStatus,
+      reception_exception: receptionException,
+      reception_date: optionalText(body.reception_date, 10),
+      reception_notes: optionalText(body.reception_notes, 2000),
+      physical_condition: optionalText(body.physical_condition, 500),
+      accessories_complete:
+        typeof body.accessories_complete === "boolean"
+          ? body.accessories_complete
+          : null,
+      original_packaging: optionalText(body.original_packaging, 20),
+      original_shipping_paid: originalShippingPaid,
+      original_shipping_discounted: roundCreditMoney(
+        Math.max(0, Number(order.shipping_cost_real ?? 0) - originalShippingPaid),
+      ),
+      original_shipping_refunded: originalShippingRefunded,
+      return_shipping_party: returnShippingParty,
+      return_shipping_provider: optionalText(body.return_shipping_provider, 120),
+      return_shipping_tracking: optionalText(body.return_shipping_tracking, 180),
+      return_shipping_cost: returnShippingCost,
+      new_shipping_party: newShippingParty,
+      new_shipping_cost: newShippingCost,
+      other_adjustment_amount: otherAdjustmentAmount,
+      stock_destination: stockDestination,
+      settlement_status: "pendiente",
+    })
+    .eq("id", noteId)
+    .eq("status", "processing")
+
+  if (managementError) {
+    await auth.admin
+      .from("order_credit_notes")
+      .update({
+        status: "error",
+        error: "No se pudo guardar la gestión comercial antes de contactar a ARCA.",
+      })
+      .eq("id", noteId)
+    return NextResponse.json(
+      { error: "No se pudo guardar la gestión. ARCA no fue contactada." },
+      { status: 500 },
+    )
+  }
+  const itemReception =
+    receptionStatus === "producto_aprobado"
+      ? {
+          return_status: "recibido_correctamente",
+          received: true,
+          approved: true,
+          rejected: false,
+        }
+      : receptionStatus === "aprobado_parcial"
+        ? {
+            return_status: "recibido_observaciones",
+            received: true,
+            approved: true,
+            rejected: false,
+          }
+        : receptionStatus === "producto_rechazado"
+          ? {
+              return_status: "rechazado",
+              received: true,
+              approved: false,
+              rejected: true,
+            }
+          : {
+              return_status:
+                receptionStatus === "no_requiere"
+                  ? "resuelto"
+                  : "pendiente_devolucion",
+              received: false,
+              approved: false,
+              rejected: false,
+            }
+  const itemReceptionResults = await Promise.all(
+    selectedItems.map((item) =>
+      auth.admin
+        .from("order_credit_note_items")
+        .update({
+          return_status: itemReception.return_status,
+          received_quantity: itemReception.received ? item.quantity : 0,
+          approved_quantity: itemReception.approved ? item.quantity : 0,
+          rejected_quantity: itemReception.rejected ? item.quantity : 0,
+        })
+        .eq("credit_note_id", noteId)
+        .eq("order_item_id", item.order_item_id),
+    ),
+  )
+  if (itemReceptionResults.some((result) => result.error)) {
+    await auth.admin
+      .from("order_credit_notes")
+      .update({
+        status: "error",
+        error: "No se pudo guardar la recepción antes de contactar a ARCA.",
+      })
+      .eq("id", noteId)
+    return NextResponse.json(
+      { error: "No se pudo guardar la recepción. ARCA no fue contactada." },
+      { status: 500 },
+    )
+  }
   let arcaAuthorizationPersisted = false
   try {
     const pointOfSale = getPointOfSale()
@@ -406,6 +688,12 @@ export async function POST(
         authorized_at: authorizedAt,
         updated_at: authorizedAt,
         error: null,
+        management_status:
+          destination === "customer_balance"
+            ? "nota_credito_emitida"
+            : "reembolso_pendiente",
+        settlement_status:
+          destination === "customer_balance" ? "procesando" : "pendiente",
       })
       .eq("id", noteId)
       .eq("status", "processing")
@@ -418,6 +706,73 @@ export async function POST(
       )
     }
     arcaAuthorizationPersisted = true
+
+    if (
+      stockDestination === "stock_vendible" &&
+      ["producto_aprobado", "aprobado_parcial"].includes(receptionStatus)
+    ) {
+      const orderItemsById = new Map(
+        items.map((item) => [Number(item.id), item]),
+      )
+      const returnMovements = (note.order_credit_note_items ?? [])
+        .map((creditItem: {
+          id: number
+          order_item_id: number
+          approved_quantity?: number | null
+          quantity: number
+        }) => {
+          const orderItem = orderItemsById.get(Number(creditItem.order_item_id))
+          const quantity = Number(
+            creditItem.approved_quantity ?? creditItem.quantity ?? 0,
+          )
+          if (!orderItem || quantity <= 0) return null
+
+          return {
+            source_key: `credit-note-item:${creditItem.id}`,
+            order_id: orderId,
+            order_item_id: Number(orderItem.id),
+            product_id: Number(orderItem.producto_id),
+            variant_id:
+              typeof orderItem.variante_id === "number"
+                ? orderItem.variante_id
+                : null,
+            quantity,
+            approved_by: auth.user.id,
+            approved_at: authorizedAt,
+          }
+        })
+        .filter(
+          (
+            movement: InventoryReturnMovement | null,
+          ): movement is InventoryReturnMovement => Boolean(movement),
+        )
+
+      if (returnMovements.length) {
+        const { error: stockMovementError } = await auth.admin
+          .from("inventory_return_movements")
+          .upsert(returnMovements, { onConflict: "source_key", ignoreDuplicates: true })
+
+        if (stockMovementError) {
+          throw new Error(
+            "La nota fue autorizada, pero no se pudo registrar el reingreso de stock.",
+          )
+        }
+
+        await auth.admin
+          .from("order_credit_note_items")
+          .update({ stock_processed_at: authorizedAt })
+          .eq("credit_note_id", noteId)
+          .gt("approved_quantity", 0)
+
+        await auth.admin
+          .from("order_credit_notes")
+          .update({
+            stock_reviewed_by: auth.user.id,
+            stock_reviewed_at: authorizedAt,
+          })
+          .eq("id", noteId)
+      }
+    }
 
     const { data: authorizedNotes } = await auth.admin
       .from("order_credit_notes")
@@ -467,6 +822,18 @@ export async function POST(
             },
           })
         : null
+
+    if (destination === "customer_balance") {
+      await auth.admin
+        .from("order_credit_notes")
+        .update({
+          management_status: "finalizada",
+          settlement_status: "completado",
+          settlement_date: issueDate.iso,
+          updated_at: authorizedAt,
+        })
+        .eq("id", noteId)
+    }
 
     const legacyCreditNote = {
       credit_note_status: "authorized",

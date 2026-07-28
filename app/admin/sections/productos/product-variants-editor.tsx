@@ -34,8 +34,11 @@ import {
 import {
   createProductoVariante,
   deleteProductoVariante,
+  getProductVariantDistribution,
   getProductoVariantes,
+  saveProductVariantDistribution,
   updateProductoVariante,
+  type ProductVariantDistribution,
 } from "@/lib/supabase/queries/producto-variantes"
 
 import {
@@ -94,9 +97,12 @@ export function ProductVariantsEditor({
 
   const [colorHex, setColorHex] =
     useState("#000000")
-
-  const [stock, setStock] =
-    useState("")
+  const [cantidad, setCantidad] =
+    useState("0")
+  const [distribution, setDistribution] =
+    useState<ProductVariantDistribution | null>(null)
+  const [allocations, setAllocations] =
+    useState<Record<number, number>>({})
 
   const [variantImages, setVariantImages] =
     useState<File[]>([])
@@ -130,16 +136,26 @@ export function ProductVariantsEditor({
         setLoading(true)
         setError("")
 
-        const data =
-          await getProductoVariantes(
-            productoId
-          )
+        const [data, stockDistribution] = await Promise.all([
+          getProductoVariantes(productoId),
+          getProductVariantDistribution(productoId),
+        ])
 
         setVariantes(data)
+        setDistribution(stockDistribution)
+        setAllocations(
+          Object.fromEntries(
+            stockDistribution.variants.map((variant) => [
+              variant.variant_id,
+              variant.allocated_quantity,
+            ]),
+          ),
+        )
       } catch (err) {
-        console.error(err)
         setError(
-          "No se pudieron cargar las variantes. Revisá que exista la tabla producto_variantes."
+          err instanceof Error
+            ? err.message
+            : "No se pudieron cargar las variantes."
         )
       } finally {
         setLoading(false)
@@ -159,38 +175,11 @@ export function ProductVariantsEditor({
   const resetFields = () => {
     setNombre("")
     setColorHex("#000000")
-    setStock("")
+    setCantidad("0")
     setVariantImages([])
     setPersistedVariantImages([])
     setDraggedImageIndex(null)
     setEditingVariant(null)
-  }
-
-  const syncProductoStock = async (
-    nextVariantes: SupabaseProductoVariante[]
-  ) => {
-    if (!productoId) {
-      return
-    }
-
-    const total = nextVariantes.reduce(
-      (acc, variante) =>
-        acc + (variante.stock ?? 0),
-      0
-    )
-    const currentTotal = variantes.reduce(
-      (acc, variante) =>
-        acc + (variante.stock ?? 0),
-      0
-    )
-
-    if (total === currentTotal) {
-      return
-    }
-
-    await updateProducto(productoId, {
-      stock: total,
-    })
   }
 
   const syncPrincipalImage = async (
@@ -331,11 +320,12 @@ export function ProductVariantsEditor({
       )
       return
     }
-
-    if (!stock) {
-      setError(
-        "El stock de la variante es obligatorio."
-      )
+    const allocationQuantity = Number(cantidad)
+    if (
+      !Number.isInteger(allocationQuantity) ||
+      allocationQuantity < 0
+    ) {
+      setError("La cantidad asignada debe ser un número entero positivo.")
       return
     }
 
@@ -343,7 +333,6 @@ export function ProductVariantsEditor({
       nombre: cleanName,
       color_hex:
         normalizeHex(colorHex),
-      stock: Number(stock),
     }
 
     if (editingVariant?.kind === "draft") {
@@ -411,6 +400,17 @@ export function ProductVariantsEditor({
             }
           )
 
+        await saveProductVariantDistribution(
+          productoId,
+          variantes.map((variant) => ({
+            variant_id: variant.id,
+            quantity:
+              variant.id === updated.id
+                ? allocationQuantity
+                : allocations[variant.id] ?? 0,
+          })),
+        )
+
         await updateProductoImageOrder(updated.imagenes || [])
 
         const nextVariantes =
@@ -424,10 +424,8 @@ export function ProductVariantsEditor({
         await syncPrincipalImage(
           nextVariantes
         )
-        await syncProductoStock(
-          nextVariantes
-        )
         resetFields()
+        await loadVariantes()
         return
       }
 
@@ -455,20 +453,35 @@ export function ProductVariantsEditor({
           variantes.length + 1,
       })
 
-      await syncProductoStock([
-        ...variantes,
-        created,
-      ])
       await syncPrincipalImage([
         ...variantes,
         created,
       ])
+      try {
+        await saveProductVariantDistribution(
+          productoId,
+          [
+            ...variantes.map((variant) => ({
+              variant_id: variant.id,
+              quantity: allocations[variant.id] ?? 0,
+            })),
+            {
+              variant_id: created.id,
+              quantity: allocationQuantity,
+            },
+          ],
+        )
+      } catch (allocationError) {
+        await deleteProductoVariante(created.id)
+        throw allocationError
+      }
       resetFields()
       await loadVariantes()
     } catch (err) {
-      console.error(err)
       setError(
-        "No se pudo crear la variante."
+        err instanceof Error
+          ? err.message
+          : "No se pudo guardar la variante."
       )
     } finally {
       setSaving(false)
@@ -488,12 +501,10 @@ export function ProductVariantsEditor({
           )
 
         setVariantes(nextVariantes)
-        await syncProductoStock(
-          nextVariantes
-        )
         await syncPrincipalImage(
           nextVariantes
         )
+        await loadVariantes()
       } catch (err) {
         console.error(err)
         setError(
@@ -518,7 +529,7 @@ export function ProductVariantsEditor({
   ) => {
     setNombre(variant.nombre)
     setColorHex(variant.color_hex)
-    setStock(String(variant.stock ?? ""))
+    setCantidad("0")
     setVariantImages(variant.imagenes)
     setPersistedVariantImages([])
     setEditingVariant({
@@ -532,7 +543,7 @@ export function ProductVariantsEditor({
   ) => {
     setNombre(variant.nombre)
     setColorHex(variant.color_hex)
-    setStock(String(variant.stock ?? ""))
+    setCantidad(String(allocations[variant.id] ?? 0))
     setVariantImages([])
     setPersistedVariantImages(variant.imagenes || [])
     setEditingVariant({
@@ -545,7 +556,29 @@ export function ProductVariantsEditor({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(190px,1fr)_minmax(100px,0.55fr)]">
+      {productoId && distribution && (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[
+            ["Stock total", distribution.totalStock],
+            ["Distribuido", distribution.allocatedQuantity],
+            ["Sin distribuir", distribution.unassignedQuantity],
+          ].map(([label, value]) => (
+            <div
+              key={String(label)}
+              className="rounded-xl border border-white/7 bg-black/22 px-3 py-2.5 text-center"
+            >
+              <p className="text-10px font-black uppercase tracking-widest text-white/38">
+                {label}
+              </p>
+              <p className="mt-0.5 text-lg font-black text-white">
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(190px,1fr)_minmax(130px,0.65fr)]">
         <input
           type="text"
           value={nombre}
@@ -587,16 +620,22 @@ export function ProductVariantsEditor({
         </div>
 
         <input
-          min="0"
-          type="number"
-          value={stock}
-          placeholder="Stock"
-          onChange={(e) =>
-            setStock(e.target.value)
+          type="text"
+          inputMode="numeric"
+          value={cantidad}
+          placeholder="Unidades"
+          aria-label="Unidades asignadas a la variante"
+          onChange={(event) =>
+            setCantidad(event.target.value.replace(/\D/g, ""))
           }
-          className={inputCls}
+          className={`${inputCls} text-center`}
         />
       </div>
+
+      <p className="text-center text-xs font-semibold leading-5 text-white/45">
+        Distribuí únicamente las unidades recibidas en Costos reales. El total
+        físico no se modifica.
+      </p>
 
       <div className="rounded-xl border border-white/7 bg-[#101010] p-3">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
@@ -678,6 +717,7 @@ export function ProductVariantsEditor({
                   nombre={variante.nombre}
                   colorHex={variante.color_hex}
                   stock={variante.stock}
+                  allocated={allocations[variante.id] ?? 0}
                   imageCount={
                     variante.imagenes?.length || 0
                   }
@@ -702,7 +742,8 @@ export function ProductVariantsEditor({
                 key={variant.tempId}
                 nombre={variant.nombre}
                 colorHex={variant.color_hex}
-                stock={variant.stock}
+                stock={0}
+                allocated={0}
                 imageCount={
                   variant.imagenes.length
                 }
@@ -830,6 +871,7 @@ interface VariantRowProps {
   nombre: string
   colorHex: string
   stock: number | null
+  allocated: number
   imageCount: number
   onEdit: () => void
   onRemove: () => void
@@ -839,6 +881,7 @@ function VariantRow({
   nombre,
   colorHex,
   stock,
+  allocated,
   imageCount,
   onEdit,
   onRemove,
@@ -860,6 +903,7 @@ function VariantRow({
 
           <p className="text-xs text-white/50">
             {colorHex}
+            {` · Asignadas ${allocated}`}
             {typeof stock === "number" &&
               ` · Stock ${stock}`}
             {` · ${imageCount} imágenes`}

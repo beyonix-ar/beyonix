@@ -11,6 +11,20 @@ export const STOCK_LIMIT_MESSAGE =
 export const STOCK_CHANGED_MESSAGE =
   "La disponibilidad del producto cambió desde que comenzaste la compra. Revisá tu carrito antes de continuar."
 
+export function assertCatalogStock(
+  quantity: number,
+  product: { stock: number | null; activo?: boolean | null },
+  variant?: { stock: number | null; activo?: boolean | null },
+) {
+  const source = variant ?? product
+  if (product.activo === false || source.activo === false) {
+    throw new Error(STOCK_CHANGED_MESSAGE)
+  }
+  if (Number(source.stock ?? 0) < quantity) {
+    throw new Error(STOCK_CHANGED_MESSAGE)
+  }
+}
+
 export function getProductStock(product: SupabaseProducto, variantValue?: string | null) {
   const variant = getVariantOptionByValue(product, variantValue)
 

@@ -312,9 +312,11 @@ export async function getFeaturedProductos() {
 export async function createProducto(
   payload: ProductoPayload
 ) {
+  const catalogPayload = { ...payload }
+  delete catalogPayload.stock
   const { data, error } = await supabase
     .from("productos")
-    .insert(payload)
+    .insert(catalogPayload)
     .select()
     .single()
 
@@ -331,12 +333,18 @@ export async function createProductoCompleto({
   variantes = [],
   especificaciones = [],
 }: ProductoCompletoPayload) {
+  const catalogProduct = { ...producto }
+  delete catalogProduct.stock
   const { data, error } = await supabase.rpc(
     "create_producto_completo",
     {
-      p_producto: producto,
+      p_producto: catalogProduct,
       p_imagenes: imagenes,
-      p_variantes: variantes,
+      p_variantes: variantes.map((variant) => {
+        const catalogVariant = { ...variant }
+        delete catalogVariant.stock
+        return catalogVariant
+      }),
       p_especificaciones: especificaciones,
     }
   )
@@ -352,9 +360,11 @@ export async function updateProducto(
   id: number,
   payload: Partial<ProductoPayload>
 ) {
+  const catalogPayload = { ...payload }
+  delete catalogPayload.stock
   const { data, error } = await supabase
     .from("productos")
-    .update(payload)
+    .update(catalogPayload)
     .eq("id", id)
     .select()
     .single()
@@ -367,67 +377,49 @@ export async function updateProducto(
 }
 
 export async function deleteProducto(
-  id: number
+  id: number,
+  options: { force?: boolean } = {},
 ) {
-  const { data: imagenes } =
-    await supabase
-      .from(
-        "imagenes_producto"
-      )
-      .select("url")
-      .eq(
-        "producto_id",
-        id
-      )
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
-  const paths =
-    imagenes
-      ?.map((img) =>
-        img.url.split(
-          "/imagenes-productos/"
-        )[1]
-      )
-      .filter(Boolean) || []
-
-  if (paths.length) {
-    await supabase.storage
-      .from(
-        "imagenes-productos"
-      )
-      .remove(paths)
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
   }
 
-  await supabase
-    .from(
-      "imagenes_producto"
-    )
-    .delete()
-    .eq(
-      "producto_id",
-      id
-    )
+  const query = options.force ? "?force=true" : ""
+  const response = await fetch(`/api/admin/products/${id}${query}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    cache: "no-store",
+  })
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        mode?: "deleted" | "archived"
+        message?: string
+        error?: string
+      }
+    | null
 
-  await supabase
-    .from(
-      "producto_variantes"
+  if (!response.ok || !payload?.mode) {
+    throw new Error(
+      payload?.error || "No se pudo eliminar el producto.",
     )
-    .delete()
-    .eq(
-      "producto_id",
-      id
-    )
-
-  const { error } =
-    await supabase
-      .from("productos")
-      .delete()
-      .eq("id", id)
-
-  if (error) {
-    throw error
   }
 
-  return true
+  return {
+    mode: payload.mode,
+    message:
+      payload.message ||
+      (payload.mode === "deleted"
+        ? "Producto eliminado."
+        : "Producto archivado."),
+  }
 }
 
 export async function toggleProductoActivo(
