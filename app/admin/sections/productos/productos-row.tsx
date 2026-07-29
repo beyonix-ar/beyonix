@@ -29,6 +29,7 @@ import type { StockSettings } from "@/lib/site-settings"
 
 import {
   deleteProductoVariante,
+  setProductoVarianteActivo,
   updateProductoVariante,
 } from "@/lib/supabase/queries/producto-variantes"
 
@@ -47,6 +48,7 @@ import {
 interface ProductosRowProps {
   producto: SupabaseProducto
   stockSettings: StockSettings
+  visualIndex: number
   isLast?: boolean
   onEdit: (
     producto: SupabaseProducto
@@ -168,6 +170,7 @@ const getInstallmentsLabel = (
 export function ProductosRow({
   producto,
   stockSettings,
+  visualIndex,
   isLast,
   onEdit,
   onDelete,
@@ -178,6 +181,14 @@ export function ProductosRow({
 
   const [editingVariantId, setEditingVariantId] =
     useState<number | null>(null)
+  const [savingVariantId, setSavingVariantId] =
+    useState<number | null>(null)
+  const [deletingVariantId, setDeletingVariantId] =
+    useState<number | null>(null)
+  const [pendingVariantDelete, setPendingVariantDelete] =
+    useState<SupabaseProductoVariante | null>(null)
+  const [variantError, setVariantError] =
+    useState("")
 
   const [viewingVariant, setViewingVariant] =
     useState<SupabaseProductoVariante | null>(
@@ -404,20 +415,61 @@ export function ProductosRow({
     setEditingVariantId(null)
   }
 
-  const removeVariant = async (
+  const toggleVariant = async (
     variante: SupabaseProductoVariante
   ) => {
-    if (
-      !confirm(
-        `¿Eliminar variante ${variante.nombre}?`
+    const nextActive = variante.activo === false
+
+    if (nextActive && !producto.activo) {
+      setVariantError(
+        "Activá primero el producto principal para habilitar sus variantes.",
       )
-    ) {
       return
     }
 
-    await deleteProductoVariante(
-      variante.id
-    )
+    try {
+      setSavingVariantId(variante.id)
+      setVariantError("")
+
+      const updated = await setProductoVarianteActivo(
+        producto.id,
+        variante.id,
+        nextActive,
+      )
+
+      setLocalVariantes((current) =>
+        current.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      )
+    } catch (error) {
+      setVariantError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo cambiar el estado de la variante.",
+      )
+    } finally {
+      setSavingVariantId(null)
+    }
+  }
+
+  const removeVariant = async (
+    variante: SupabaseProductoVariante
+  ) => {
+    try {
+      setDeletingVariantId(variante.id)
+      setVariantError("")
+      await deleteProductoVariante(variante.id)
+    } catch (error) {
+      setVariantError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo eliminar la variante.",
+      )
+      return
+    } finally {
+      setDeletingVariantId(null)
+    }
 
     const nextVariantes =
       variantes.filter(
@@ -426,9 +478,15 @@ export function ProductosRow({
       )
 
     setLocalVariantes(nextVariantes)
-    await syncProductSummary(
-      nextVariantes
-    )
+    setPendingVariantDelete(null)
+
+    try {
+      await syncProductSummary(nextVariantes)
+    } catch {
+      setVariantError(
+        "La variante se eliminó, pero no se pudo actualizar la imagen principal.",
+      )
+    }
   }
 
   const viewVariant = (
@@ -576,6 +634,10 @@ export function ProductosRow({
   return (
     <div
       className={`admin-product-row relative bg-black transition-colors ${
+        visualIndex % 2 === 0
+          ? "admin-product-group-even"
+          : "admin-product-group-odd"
+      } ${open ? "admin-product-row-open" : ""} ${
         !isLast
           ? "border-b border-white/5"
           : ""
@@ -643,6 +705,7 @@ export function ProductosRow({
         </div>
 
         <span
+          data-label="Cantidad"
           className={`justify-self-center text-sm font-black tabular-nums ${stockColor(
             stockTotal,
             stockSettings,
@@ -652,13 +715,17 @@ export function ProductosRow({
         </span>
 
         <span
+          data-label="SKU"
           className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
           title={skuTitle}
         >
           {skuDisplay}
         </span>
 
-        <div className="flex min-w-0 items-center justify-center gap-2">
+        <div
+          data-label="Color"
+          className="flex min-w-0 items-center justify-center gap-2"
+        >
           {primaryVariant ? (
             <>
               <span
@@ -683,6 +750,7 @@ export function ProductosRow({
         </div>
 
         <span
+          data-label="Stock"
           className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-center text-10px font-black ${productStockStatus.className}`}
         >
           <span
@@ -691,7 +759,7 @@ export function ProductosRow({
           {productStockStatus.label}
         </span>
 
-        <div className="justify-self-stretch text-center">
+        <div data-label="Precio" className="justify-self-stretch text-center">
           <p className="text-base font-bold tabular-nums text-white">
             $
             {producto.precio.toLocaleString(
@@ -720,6 +788,7 @@ export function ProductosRow({
 
         <button
           type="button"
+          data-label="Estado"
           aria-label={
             producto.activo
               ? "Desactivar producto"
@@ -747,7 +816,7 @@ export function ProductosRow({
             : "Inactivo"}
         </button>
 
-        <div className="flex items-center justify-end gap-1.5 pr-2">
+        <div className="admin-product-actions flex items-center justify-end gap-1.5 pr-2">
           <button
             type="button"
             aria-label={`Ver producto ${producto.nombre}`}
@@ -782,7 +851,7 @@ export function ProductosRow({
       </div>
 
       {open && (
-        <div className="border-t border-white/5 bg-black py-2">
+        <div className="admin-product-details border-t border-white/5 bg-black py-2">
           <div className="grid gap-1.5">
             {variantes.length ? (
               variantes.map((variante, index) => {
@@ -839,6 +908,7 @@ export function ProductosRow({
                     </div>
 
                     <span
+                      data-label="Cantidad"
                       className={`justify-self-center text-sm font-black tabular-nums ${stockColor(
                         stock,
                         stockSettings,
@@ -848,6 +918,7 @@ export function ProductosRow({
                     </span>
 
                     <span
+                      data-label="SKU"
                       className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
                       title={variante.sku?.trim() || "Sin SKU"}
                     >
@@ -855,7 +926,10 @@ export function ProductosRow({
                     </span>
 
                     {editing ? (
-                      <label className="relative flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 transition-colors hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/55">
+                      <label
+                        data-label="Color"
+                        className="relative flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 transition-colors hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/55"
+                      >
                         <span
                           className="size-4 shrink-0 rounded-full border border-white/28"
                           style={{ backgroundColor: editColor }}
@@ -872,7 +946,10 @@ export function ProductosRow({
                         />
                       </label>
                     ) : (
-                      <div className="flex min-w-0 items-center justify-center gap-2">
+                      <div
+                        data-label="Color"
+                        className="flex min-w-0 items-center justify-center gap-2"
+                      >
                         <span
                           className="size-4 shrink-0 rounded-full border border-white/25"
                           style={{ backgroundColor: variante.color_hex }}
@@ -889,6 +966,7 @@ export function ProductosRow({
                     )}
 
                     <span
+                      data-label="Stock"
                       className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-center text-10px font-black ${status.className}`}
                     >
                       <span
@@ -897,7 +975,7 @@ export function ProductosRow({
                       {status.label}
                     </span>
 
-                    <div className="justify-self-stretch text-center">
+                    <div data-label="Precio" className="justify-self-stretch text-center">
                       <p className="text-sm font-bold tabular-nums text-white">
                         ${producto.precio.toLocaleString("es-AR")}
                       </p>
@@ -908,12 +986,28 @@ export function ProductosRow({
                       )}
                     </div>
 
-                    <span
+                    <button
+                      type="button"
+                      data-label="Estado"
+                      disabled={savingVariantId === variante.id}
+                      aria-label={
+                        variante.activo !== false
+                          ? `Desactivar variante ${variante.nombre}`
+                          : `Activar variante ${variante.nombre}`
+                      }
+                      title={
+                        !producto.activo && variante.activo === false
+                          ? "Activá primero el producto principal"
+                          : variante.activo !== false
+                            ? "Desactivar variante"
+                            : "Activar variante"
+                      }
+                      onClick={() => void toggleVariant(variante)}
                       className={`inline-flex w-fit items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-semibold ${
                         variante.activo !== false
                           ? "border-green-500/20 bg-green-500/10 text-green-400"
                           : "border-white/10 bg-white/5 text-white/45"
-                      }`}
+                      } cursor-pointer transition-colors hover:border-beyonix-sky/35 disabled:cursor-wait disabled:opacity-55`}
                     >
                       <span
                         className={`size-1.5 rounded-full ${
@@ -922,10 +1016,14 @@ export function ProductosRow({
                             : "bg-white/25"
                         }`}
                       />
-                      {variante.activo !== false ? "Activa" : "Inactiva"}
-                    </span>
+                      {savingVariantId === variante.id
+                        ? "Guardando…"
+                        : variante.activo !== false
+                          ? "Activa"
+                          : "Inactiva"}
+                    </button>
 
-                    <div className="flex items-center justify-end gap-1.5 pr-2">
+                    <div className="admin-product-actions flex items-center justify-end gap-1.5 pr-2">
                       <button
                         type="button"
                         aria-label={`Ver variante ${variante.nombre}`}
@@ -963,7 +1061,10 @@ export function ProductosRow({
                       <button
                         type="button"
                         aria-label={`Eliminar variante ${variante.nombre}`}
-                        onClick={() => removeVariant(variante)}
+                        onClick={() => {
+                          setVariantError("")
+                          setPendingVariantDelete(variante)
+                        }}
                         className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
                       >
                         <Trash2 className="size-3.5" />
@@ -983,6 +1084,12 @@ export function ProductosRow({
             {conditionedError && (
               <div className="mx-4 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
                 {conditionedError}
+              </div>
+            )}
+
+            {variantError && (
+              <div className="mx-4 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+                {variantError}
               </div>
             )}
 
@@ -1024,18 +1131,25 @@ export function ProductosRow({
                     </div>
                   </div>
 
-                  <span className="justify-self-center text-sm font-black tabular-nums text-amber-300">
+                  <span
+                    data-label="Cantidad"
+                    className="justify-self-center text-sm font-black tabular-nums text-amber-300"
+                  >
                     {item.quantity}
                   </span>
 
                   <span
+                    data-label="SKU"
                     className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
                     title={linkedVariant?.sku?.trim() || "Sin SKU"}
                   >
                     {linkedVariant?.sku?.trim() || "—"}
                   </span>
 
-                  <div className="flex min-w-0 items-center justify-center gap-2">
+                  <div
+                    data-label="Color"
+                    className="flex min-w-0 items-center justify-center gap-2"
+                  >
                     {linkedVariant ? (
                       <>
                         <span
@@ -1051,12 +1165,15 @@ export function ProductosRow({
                     )}
                   </div>
 
-                  <span className="inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-10px font-black text-amber-200">
+                  <span
+                    data-label="Stock"
+                    className="inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-10px font-black text-amber-200"
+                  >
                     <span className="size-1.5 rounded-full bg-amber-300" />
                     Con descuento
                   </span>
 
-                  <div className="justify-self-stretch text-center">
+                  <div data-label="Precio" className="justify-self-stretch text-center">
                     <p className="text-sm font-bold tabular-nums text-amber-200">
                       ${conditionedPrice.toLocaleString("es-AR")}
                     </p>
@@ -1067,6 +1184,7 @@ export function ProductosRow({
 
                   <button
                     type="button"
+                    data-label="Estado"
                     disabled={savingConditionedId === item.id}
                     onClick={() => void toggleConditionedStock(item)}
                     className={`inline-flex w-fit cursor-pointer items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-semibold transition disabled:cursor-wait disabled:opacity-50 ${
@@ -1083,7 +1201,7 @@ export function ProductosRow({
                     {item.active ? "Activa" : "Inactiva"}
                   </button>
 
-                  <div className="flex items-center justify-end gap-1.5 pr-2">
+                  <div className="admin-product-actions flex items-center justify-end gap-1.5 pr-2">
                     <button
                       type="button"
                       aria-label="Editar unidad con descuento"
@@ -1112,6 +1230,68 @@ export function ProductosRow({
           </div>
         </div>
       )}
+
+      {pendingVariantDelete &&
+        createPortal(
+          <AdminModal
+            open
+            compact
+            title="Eliminar variante"
+            description="Esta acción es permanente."
+            onClose={() => {
+              if (!deletingVariantId) {
+                setPendingVariantDelete(null)
+                setVariantError("")
+              }
+            }}
+            footer={
+              <div className="flex items-center justify-end gap-2">
+                <AdminSecondaryButton
+                  disabled={deletingVariantId !== null}
+                  onClick={() => {
+                    setPendingVariantDelete(null)
+                    setVariantError("")
+                  }}
+                >
+                  Cancelar
+                </AdminSecondaryButton>
+                <button
+                  type="button"
+                  disabled={deletingVariantId !== null}
+                  onClick={() => void removeVariant(pendingVariantDelete)}
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-red-400/25 bg-red-400/10 px-4 text-sm font-black text-red-200 transition hover:border-red-400/45 hover:bg-red-400/16 disabled:cursor-wait disabled:opacity-50"
+                >
+                  <Trash2 className="size-4" />
+                  {deletingVariantId !== null ? "Eliminando…" : "Eliminar"}
+                </button>
+              </div>
+            }
+          >
+            <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/30">
+                <span
+                  className="size-4 rounded-full border border-white/25"
+                  style={{ backgroundColor: pendingVariantDelete.color_hex }}
+                />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold text-white">
+                  {pendingVariantDelete.nombre}
+                </span>
+                <span className="mt-0.5 block text-10px font-semibold uppercase tracking-wider text-white/38">
+                  {pendingVariantDelete.sku?.trim() || "Sin SKU"}
+                </span>
+              </span>
+            </div>
+
+            {variantError && (
+              <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+                {variantError}
+              </p>
+            )}
+          </AdminModal>,
+          document.body,
+        )}
 
       {viewingVariant &&
         createPortal(

@@ -137,6 +137,49 @@ export async function updateProductoVariante(
   return data as SupabaseProductoVariante
 }
 
+export async function setProductoVarianteActivo(
+  productId: number,
+  variantId: number,
+  activo: boolean,
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const response = await fetch(
+    `/api/admin/products/${productId}/variants/${variantId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ activo }),
+      cache: "no-store",
+    },
+  )
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        variant?: SupabaseProductoVariante
+        error?: string
+      }
+    | null
+
+  if (!response.ok || !payload?.variant) {
+    throw new Error(
+      payload?.error || "No se pudo cambiar el estado de la variante.",
+    )
+  }
+
+  return payload.variant
+}
+
 export async function deleteProductoVariante(
   id: number
 ) {

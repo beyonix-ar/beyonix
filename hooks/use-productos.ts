@@ -192,15 +192,22 @@ export function useProductos({
                   ...p,
                   ...updated,
                   producto_variantes:
+                    updated.producto_variantes ??
                     p.producto_variantes,
                 }
               : p
           )
         )
+        setActionError(null)
 
         return true
       } catch (err) {
-        console.error(err)
+        setActionMessage(null)
+        setActionError(
+          err instanceof Error
+            ? err.message
+            : "No se pudo cambiar el estado del producto.",
+        )
 
         return false
       }

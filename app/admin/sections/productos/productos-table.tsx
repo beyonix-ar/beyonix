@@ -151,6 +151,7 @@ export function ProductosTable({
           key={producto.id}
           producto={producto}
           stockSettings={stockSettings}
+          visualIndex={index}
           isLast={index === productos.length - 1}
           onEdit={onEdit}
           onDelete={onDelete}

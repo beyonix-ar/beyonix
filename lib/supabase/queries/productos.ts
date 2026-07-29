@@ -753,9 +753,41 @@ export async function deleteProducto(
 export async function toggleProductoActivo(
   producto: SupabaseProducto
 ) {
-  return updateProducto(producto.id, {
-    activo: !producto.activo,
+  const nextActive = !producto.activo
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const response = await fetch(`/api/admin/products/${producto.id}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ activo: nextActive }),
+    cache: "no-store",
   })
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        product?: SupabaseProducto
+        error?: string
+      }
+    | null
+
+  if (!response.ok || !payload?.product) {
+    throw new Error(
+      payload?.error || "No se pudo cambiar el estado del producto.",
+    )
+  }
+
+  return payload.product
 }
 
 // ─────────────────────────────────────────────────────────────

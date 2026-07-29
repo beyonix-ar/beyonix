@@ -5,6 +5,108 @@ function parseProductId(value: string) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireInternalUser(request, ["admin", "super_admin"])
+  if ("error" in auth) return auth.error
+
+  const { id: rawId } = await context.params
+  const productId = parseProductId(rawId)
+  if (!productId) {
+    return Response.json(
+      { error: "El producto indicado no es válido." },
+      { status: 400 },
+    )
+  }
+
+  const body = (await request.json().catch(() => null)) as {
+    activo?: unknown
+  } | null
+
+  if (typeof body?.activo !== "boolean") {
+    return Response.json(
+      { error: "El estado del producto no es válido." },
+      { status: 400 },
+    )
+  }
+
+  const { data: existingProduct, error: productError } = await auth.admin
+    .from("productos")
+    .select("id")
+    .eq("id", productId)
+    .maybeSingle()
+
+  if (productError) {
+    return Response.json(
+      { error: "No se pudo consultar el producto." },
+      { status: 500 },
+    )
+  }
+
+  if (!existingProduct) {
+    return Response.json(
+      { error: "El producto ya no existe." },
+      { status: 404 },
+    )
+  }
+
+  const { data: updatedProduct, error: updateError } = await auth.admin
+    .from("productos")
+    .update({ activo: body.activo })
+    .eq("id", productId)
+    .select("*")
+    .single()
+
+  if (updateError) {
+    return Response.json(
+      {
+        error:
+          updateError.message || "No se pudo cambiar el estado del producto.",
+      },
+      { status: 500 },
+    )
+  }
+
+  const { error: variantsUpdateError } = await auth.admin
+    .from("producto_variantes")
+    .update({ activo: body.activo })
+    .eq("producto_id", productId)
+
+  if (variantsUpdateError) {
+    return Response.json(
+      {
+        error:
+          variantsUpdateError.message ||
+          "No se pudo aplicar el estado a todas las variantes.",
+      },
+      { status: 500 },
+    )
+  }
+
+  const { data: variants, error: variantsError } = await auth.admin
+    .from("producto_variantes")
+    .select("*")
+    .eq("producto_id", productId)
+    .order("orden", { ascending: true })
+    .order("id", { ascending: true })
+
+  if (variantsError) {
+    return Response.json(
+      { error: "El producto se actualizó, pero no se pudieron recargar sus variantes." },
+      { status: 500 },
+    )
+  }
+
+  return Response.json({
+    product: {
+      ...updatedProduct,
+      producto_variantes: variants ?? [],
+    },
+  })
+}
+
 export async function DELETE(
   request: Request,
   context: { params: Promise<{ id: string }> },
