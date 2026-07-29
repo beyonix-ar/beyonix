@@ -10,6 +10,9 @@ import {
 } from "react"
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Boxes,
   Check,
   ChevronDown,
@@ -40,12 +43,62 @@ import { AdminDatePicker } from "../../components/admin-date-picker"
 type CostMode = "product" | "expense"
 type PurchaseSortKey =
   | "product"
+  | "sku"
   | "unitCost"
   | "subtotal"
   | "supplier"
   | "date"
   | "quantity"
 type PurchaseSortDirection = "asc" | "desc"
+
+function PurchaseSortableHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  align = "center",
+  onSort,
+}: {
+  label: string
+  sortKey: PurchaseSortKey
+  activeKey: PurchaseSortKey
+  direction: PurchaseSortDirection
+  align?: "left" | "center"
+  onSort: (key: PurchaseSortKey) => void
+}) {
+  const active = sortKey === activeKey
+  const Icon = active
+    ? direction === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown
+  const nextDirection = active && direction === "asc" ? "descendente" : "ascendente"
+
+  return (
+    <th className={`px-3 py-2.5 ${align === "left" ? "text-left" : "text-center"}`}>
+      <span
+        className={`inline-flex items-center gap-1.5 ${
+          align === "left" ? "justify-start" : "justify-center"
+        }`}
+      >
+        {label}
+        <button
+          type="button"
+          aria-label={`Ordenar ${label.toLocaleLowerCase("es")} de forma ${nextDirection}`}
+          title={`Ordenar por ${label}`}
+          onClick={() => onSort(sortKey)}
+          className={`admin-column-sort-button inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md border transition ${
+            active
+              ? "border-beyonix-sky/42 bg-beyonix-blue/35 text-beyonix-sky"
+              : "border-white/10 bg-white/4 text-white/38 hover:border-beyonix-sky/30 hover:text-white/75"
+          }`}
+        >
+          <Icon className="size-3" />
+        </button>
+      </span>
+    </th>
+  )
+}
 
 const inputClass =
   "h-10 min-w-0 w-full rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-center text-sm font-bold text-white outline-none transition placeholder:text-white/28 hover:border-beyonix-sky/30 focus:border-beyonix-sky/55"
@@ -97,10 +150,11 @@ function Field({ label, children, className = "" }: {
   )
 }
 
-function MoneyInput({ value, onChange, placeholder = "0" }: {
+function MoneyInput({ value, onChange, placeholder = "0", ariaLabel }: {
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  ariaLabel?: string
 }) {
   return (
     <div className="relative">
@@ -111,6 +165,7 @@ function MoneyInput({ value, onChange, placeholder = "0" }: {
         value={value}
         inputMode="decimal"
         placeholder={placeholder}
+        aria-label={ariaLabel}
         onChange={(event) => onChange(numeric(event.target.value))}
         className={`${inputClass} pl-7`}
       />
@@ -426,6 +481,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const [purchaseSort, setPurchaseSort] = useState<PurchaseSortKey>("date")
   const [purchaseSortDirection, setPurchaseSortDirection] =
     useState<PurchaseSortDirection>("desc")
+  const [purchaseNameFilter, setPurchaseNameFilter] = useState("")
+  const [purchaseQuantityFrom, setPurchaseQuantityFrom] = useState("")
+  const [purchaseQuantityTo, setPurchaseQuantityTo] = useState("")
+  const [purchasePriceFrom, setPurchasePriceFrom] = useState("")
+  const [purchasePriceTo, setPurchasePriceTo] = useState("")
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [article, setArticle] = useState("")
   const [customArticleName, setCustomArticleName] = useState("")
@@ -554,7 +614,50 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   )
 
   const sortedProductCosts = useMemo(() => {
-    const rows = [...(data?.productCosts ?? [])]
+    const normalizedNameFilter = purchaseNameFilter
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("es")
+    const quantityFrom = purchaseQuantityFrom
+      ? Number(purchaseQuantityFrom)
+      : null
+    const quantityTo = purchaseQuantityTo
+      ? Number(purchaseQuantityTo)
+      : null
+    const priceFrom = purchasePriceFrom
+      ? Number(purchasePriceFrom)
+      : null
+    const priceTo = purchasePriceTo
+      ? Number(purchasePriceTo)
+      : null
+    const rows = (data?.productCosts ?? []).filter((item) => {
+      const normalizedName = getProductCostName(item)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLocaleLowerCase("es")
+
+      if (normalizedNameFilter && !normalizedName.includes(normalizedNameFilter)) {
+        return false
+      }
+      const itemQuantity = Number(item.quantity)
+      const itemPrice = Number(item.unit_cost)
+
+      if (quantityFrom !== null && itemQuantity < quantityFrom) {
+        return false
+      }
+      if (quantityTo !== null && itemQuantity > quantityTo) {
+        return false
+      }
+      if (priceFrom !== null && itemPrice < priceFrom) {
+        return false
+      }
+      if (priceTo !== null && itemPrice > priceTo) {
+        return false
+      }
+
+      return true
+    })
     const compareText = (left: string, right: string) =>
       left.localeCompare(right, "es", {
         sensitivity: "base",
@@ -571,6 +674,15 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
             getProductCostName(right),
           )
           break
+        case "sku": {
+          const leftSku = left.sku?.trim()
+          const rightSku = right.sku?.trim()
+          if (!leftSku && !rightSku) return 0
+          if (!leftSku) return 1
+          if (!rightSku) return -1
+          comparison = compareText(leftSku, rightSku)
+          break
+        }
         case "unitCost":
           comparison = Number(left.unit_cost) - Number(right.unit_cost)
           break
@@ -606,9 +718,26 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   }, [
     data?.productCosts,
     getProductCostName,
+    purchaseNameFilter,
+    purchasePriceFrom,
+    purchasePriceTo,
+    purchaseQuantityFrom,
+    purchaseQuantityTo,
     purchaseSort,
     purchaseSortDirection,
   ])
+
+  const handlePurchaseSort = (key: PurchaseSortKey) => {
+    if (purchaseSort === key) {
+      setPurchaseSortDirection((current) =>
+        current === "asc" ? "desc" : "asc",
+      )
+      return
+    }
+
+    setPurchaseSort(key)
+    setPurchaseSortDirection("asc")
+  }
 
   const unregisteredCatalogTargets = useMemo(() => {
     const registered = new Set(
@@ -625,15 +754,26 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     return (data?.catalog ?? []).flatMap((product) => {
       if (product.standalone_key || typeof product.id !== "number") return []
 
-      const variants = product.producto_variantes ?? []
+      const variants = [...(product.producto_variantes ?? [])].sort(
+        (left, right) => left.id - right.id,
+      )
       if (variants.length) {
+        // Una compra anterior a la creación de variantes pertenece a la
+        // primera variante agregada; no debe solicitarse nuevamente.
+        const hasLegacyProductPurchase = registered.has(`p:${product.id}`)
+        const legacyVariantId = hasLegacyProductPurchase ? variants[0]?.id : null
+
         return variants
           .map((variant) => ({
             value: `v:${product.id}:${variant.id}`,
             label: `${product.nombre} · ${variant.nombre}`,
             sku: product.sku ?? "",
+            coveredByLegacyPurchase: variant.id === legacyVariantId,
           }))
-          .filter((target) => !registered.has(target.value))
+          .filter(
+            (target) =>
+              !target.coveredByLegacyPurchase && !registered.has(target.value),
+          )
       }
 
       const target = {
@@ -644,20 +784,6 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       return registered.has(target.value) ? [] : [target]
     })
   }, [data?.catalog, data?.productCosts])
-
-  const purchaseSortDirectionOptions = useMemo(
-    () =>
-      purchaseSort === "product" || purchaseSort === "supplier"
-        ? [
-            { value: "desc", label: "Mayor a menor (Z–A)" },
-            { value: "asc", label: "Menor a mayor (A–Z)" },
-          ]
-        : [
-            { value: "desc", label: "Mayor a menor" },
-            { value: "asc", label: "Menor a mayor" },
-          ],
-    [purchaseSort],
-  )
 
   const productInvestment = data?.productCosts.reduce(
     (total, item) => total + Number(item.total_cost),
@@ -1016,63 +1142,133 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               <h3 className="text-base font-black text-white">
                 Historial de compras
               </h3>
-              <div className="flex flex-wrap items-center justify-center gap-2 justify-self-center">
-                <div className="flex items-center rounded-xl border border-beyonix-blue-light/18 bg-black/22 p-1.5 pl-2.5">
-                  <span className="mr-2 whitespace-nowrap text-10px font-black uppercase tracking-wider text-white/42">
-                    Ordenar por:
-                  </span>
-                  <div className="w-180px">
-                    <ModernSelect
-                      ariaLabel="Ordenar historial de compras por"
-                      value={purchaseSort}
-                      onChange={(value) =>
-                        setPurchaseSort(value as PurchaseSortKey)
-                      }
-                      options={[
-                        { value: "product", label: "Producto" },
-                        { value: "unitCost", label: "Precio unitario" },
-                        { value: "subtotal", label: "Subtotal" },
-                        { value: "supplier", label: "Proveedor" },
-                        { value: "date", label: "Fecha" },
-                        { value: "quantity", label: "Cantidad" },
-                      ]}
-                      compact
-                      centered
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center rounded-xl border border-beyonix-blue-light/18 bg-black/22 p-1.5 pl-2.5">
-                  <span className="mr-2 whitespace-nowrap text-10px font-black uppercase tracking-wider text-white/42">
-                    Dirección:
-                  </span>
-                  <div className="w-190px">
-                    <ModernSelect
-                      ariaLabel="Dirección del orden del historial de compras"
-                      value={purchaseSortDirection}
-                      onChange={(value) =>
-                        setPurchaseSortDirection(
-                          value === "asc" ? "asc" : "desc",
+              <div className="grid w-full max-w-4xl gap-3 sm:grid-cols-3 md:justify-self-center">
+                <Field label="Nombre">
+                  <input
+                    value={purchaseNameFilter}
+                    onChange={(event) => setPurchaseNameFilter(event.target.value)}
+                    className={inputClass}
+                    placeholder="Filtrar por nombre"
+                  />
+                </Field>
+                <Field label="Cantidad">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={purchaseQuantityFrom}
+                      inputMode="numeric"
+                      onChange={(event) =>
+                        setPurchaseQuantityFrom(
+                          event.target.value.replace(/\D/g, ""),
                         )
                       }
-                      options={purchaseSortDirectionOptions}
-                      compact
-                      centered
+                      className={inputClass}
+                      placeholder="Desde"
+                      aria-label="Cantidad mínima"
+                    />
+                    <input
+                      value={purchaseQuantityTo}
+                      inputMode="numeric"
+                      onChange={(event) =>
+                        setPurchaseQuantityTo(
+                          event.target.value.replace(/\D/g, ""),
+                        )
+                      }
+                      className={inputClass}
+                      placeholder="Hasta"
+                      aria-label="Cantidad máxima"
                     />
                   </div>
-                </div>
+                </Field>
+                <Field label="Precio unitario">
+                  <div className="grid grid-cols-2 gap-2">
+                    <MoneyInput
+                      value={purchasePriceFrom}
+                      onChange={setPurchasePriceFrom}
+                      placeholder="Desde"
+                      ariaLabel="Precio unitario mínimo"
+                    />
+                    <MoneyInput
+                      value={purchasePriceTo}
+                      onChange={setPurchasePriceTo}
+                      placeholder="Hasta"
+                      ariaLabel="Precio unitario máximo"
+                    />
+                  </div>
+                </Field>
               </div>
               <span className="text-xs font-bold text-white/38 md:justify-self-end">
-                {data?.productCosts.length ?? 0} registros
+                {sortedProductCosts.length}
+                {sortedProductCosts.length !== (data?.productCosts.length ?? 0)
+                  ? ` de ${data?.productCosts.length ?? 0}`
+                  : ""}{" "}
+                registros
               </span>
             </div>
             <div className="overflow-x-auto rounded-2xl border border-white/7">
-              <table className="w-full min-w-1100px text-sm"><thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42"><tr><th className="px-3 py-2.5 text-center">Fecha</th><th className="px-3 py-2.5 text-left">Artículo</th><th className="px-3 py-2.5 text-center">SKU</th><th className="px-3 py-2.5 text-center">Cantidad recibida</th><th className="px-3 py-2.5 text-center">Unitario</th><th className="px-3 py-2.5 text-center">Extras</th><th className="px-3 py-2.5 text-center">Total</th><th className="px-3 py-2.5 text-center">Proveedor</th><th className="px-3 py-2.5 text-center">Acción</th></tr></thead>
+              <table className="w-full min-w-1100px text-sm">
+                <thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42">
+                  <tr>
+                    <PurchaseSortableHeader
+                      label="Fecha"
+                      sortKey="date"
+                      activeKey={purchaseSort}
+                      direction={purchaseSortDirection}
+                      onSort={handlePurchaseSort}
+                    />
+                    <PurchaseSortableHeader
+                      label="Artículo"
+                      sortKey="product"
+                      activeKey={purchaseSort}
+                      direction={purchaseSortDirection}
+                      align="left"
+                      onSort={handlePurchaseSort}
+                    />
+                    <PurchaseSortableHeader
+                      label="SKU"
+                      sortKey="sku"
+                      activeKey={purchaseSort}
+                      direction={purchaseSortDirection}
+                      onSort={handlePurchaseSort}
+                    />
+                    <PurchaseSortableHeader
+                      label="Cantidad recibida"
+                      sortKey="quantity"
+                      activeKey={purchaseSort}
+                      direction={purchaseSortDirection}
+                      onSort={handlePurchaseSort}
+                    />
+                    <PurchaseSortableHeader
+                      label="Unitario"
+                      sortKey="unitCost"
+                      activeKey={purchaseSort}
+                      direction={purchaseSortDirection}
+                      onSort={handlePurchaseSort}
+                    />
+                    <th className="px-3 py-2.5 text-center">Extras</th>
+                    <PurchaseSortableHeader
+                      label="Total"
+                      sortKey="subtotal"
+                      activeKey={purchaseSort}
+                      direction={purchaseSortDirection}
+                      onSort={handlePurchaseSort}
+                    />
+                    <PurchaseSortableHeader
+                      label="Proveedor"
+                      sortKey="supplier"
+                      activeKey={purchaseSort}
+                      direction={purchaseSortDirection}
+                      onSort={handlePurchaseSort}
+                    />
+                    <th className="px-3 py-2.5 text-center">Acción</th>
+                  </tr>
+                </thead>
                 <tbody>{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3 text-center">{item.purchase_date}</td><td className="px-3 py-3 text-left font-bold text-white">{articleLabel}</td><td className="px-3 py-3 text-center font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 text-center tabular-nums">{item.quantity}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(Number(item.unit_cost))}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 text-center font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3 text-center">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
               </table>
-              {!data?.productCosts.length && (
+              {!sortedProductCosts.length && (
                 <p className="px-4 py-8 text-center text-sm text-white/42">
-                  No hay compras registradas. Dar de alta un producto crea el
-                  catálogo, pero no registra mercadería recibida.
+                  {data?.productCosts.length
+                    ? "No hay compras que coincidan con los filtros aplicados."
+                    : "No hay compras registradas. Dar de alta un producto crea el catálogo, pero no registra mercadería recibida."}
                 </p>
               )}
             </div>

@@ -70,10 +70,22 @@ export interface ProductosPageOptions {
   page?: number
   pageSize?: number
   search?: string
+  colorSearch?: string
   categoryId?: number | null
-  stockFilter?: "todos" | "sin_stock" | "bajo_stock" | "disponible"
+  stockFilter?:
+    | "todos"
+    | "sin_stock"
+    | "bajo_stock"
+    | "disponible"
+    | "mayor_que"
+    | "menor_que"
+    | "entre"
+  stockFrom?: number | null
+  stockTo?: number | null
   activeFilter?: "todos" | "activos" | "inactivos"
   featuredFilter?: "todos" | "destacados" | "normales"
+  sortBy?: "nombre" | "stock" | "sku" | "color"
+  sortDirection?: "asc" | "desc"
   lowStockThreshold?: number
   availableStockThreshold?: number
 }
@@ -83,6 +95,12 @@ export interface ProductosPage {
   total: number
   page: number
   pageSize: number
+}
+
+export interface ProductColorOption {
+  value: string
+  label: string
+  hex: string
 }
 
 export interface CategoryProductStats {
@@ -172,10 +190,15 @@ export async function getProductosPage({
   page = 1,
   pageSize = 25,
   search = "",
+  colorSearch = "",
   categoryId = null,
   stockFilter = "todos",
+  stockFrom = null,
+  stockTo = null,
   activeFilter = "todos",
   featuredFilter = "todos",
+  sortBy = "nombre",
+  sortDirection = "asc",
   lowStockThreshold = 5,
   availableStockThreshold = 6,
 }: ProductosPageOptions = {}): Promise<ProductosPage> {
@@ -190,8 +213,34 @@ export async function getProductosPage({
   const normalizedSearch = search.trim().replace(/[%(),]/g, " ")
   if (normalizedSearch) {
     query = query.or(
-      `nombre.ilike.%${normalizedSearch}%,slug.ilike.%${normalizedSearch}%,sku.ilike.%${normalizedSearch}%`,
+      `nombre.ilike.%${normalizedSearch}%,sku.ilike.%${normalizedSearch}%`,
     )
+  }
+  const normalizedColor = colorSearch.trim().replace(/[%(),]/g, " ")
+  if (normalizedColor) {
+    const { data: matchingVariants, error: variantsError } = await supabase
+      .from("producto_variantes")
+      .select("producto_id")
+      .or(
+        `nombre.ilike.%${normalizedColor}%,color_hex.ilike.%${normalizedColor}%`,
+      )
+
+    if (variantsError) throw variantsError
+
+    const productIds = [
+      ...new Set((matchingVariants ?? []).map((item) => item.producto_id)),
+    ]
+
+    if (!productIds.length) {
+      return {
+        productos: [],
+        total: 0,
+        page: safePage,
+        pageSize: safePageSize,
+      }
+    }
+
+    query = query.in("id", productIds)
   }
   if (categoryId) query = query.eq("categoria_id", categoryId)
   if (activeFilter === "activos") query = query.eq("activo", true)
@@ -205,9 +254,23 @@ export async function getProductosPage({
   if (stockFilter === "disponible") {
     query = query.gte("stock", availableStockThreshold)
   }
+  if (stockFilter === "mayor_que" && stockFrom !== null) {
+    query = query.gt("stock", stockFrom)
+  }
+  if (stockFilter === "menor_que" && stockTo !== null) {
+    query = query.lt("stock", stockTo)
+  }
+  if (stockFilter === "entre") {
+    if (stockFrom !== null) query = query.gte("stock", stockFrom)
+    if (stockTo !== null) query = query.lte("stock", stockTo)
+  }
 
   const { data, error, count } = await query
-    .order("id", { ascending: false })
+    .order(sortBy === "color" ? "id" : sortBy, {
+      ascending: sortDirection === "asc",
+      nullsFirst: false,
+    })
+    .order("id", { ascending: true })
     .range(from, to)
 
   if (error) throw error
@@ -227,6 +290,32 @@ export async function getProductosPage({
     page: safePage,
     pageSize: safePageSize,
   }
+}
+
+export async function getProductColorOptions(): Promise<ProductColorOption[]> {
+  const { data, error } = await supabase
+    .from("producto_variantes")
+    .select("nombre, color_hex")
+    .order("nombre", { ascending: true })
+
+  if (error) throw error
+
+  const colors = new Map<string, ProductColorOption>()
+
+  for (const variant of data ?? []) {
+    const label = variant.nombre?.trim()
+    const hex = variant.color_hex?.trim()
+    if (!label || !hex) continue
+
+    const key = hex.toLocaleLowerCase("es")
+    if (!colors.has(key)) {
+      colors.set(key, { value: hex, label, hex })
+    }
+  }
+
+  return [...colors.values()].sort((left, right) =>
+    left.label.localeCompare(right.label, "es", { sensitivity: "base" }),
+  )
 }
 
 export async function getCategoryProductStats() {

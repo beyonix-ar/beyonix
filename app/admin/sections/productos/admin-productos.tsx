@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ImageIcon } from "lucide-react"
 
 import { useCategorias } from "@/hooks/use-categorias"
+import { useProductColors } from "@/hooks/use-product-colors"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { useProductos } from "@/hooks/use-productos"
 import { getProductoById } from "@/lib/supabase/queries/productos"
+import type { ProductColorOption } from "@/lib/supabase/queries/productos"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
 import {
@@ -21,26 +23,82 @@ import { ProductoForm } from "./producto-form"
 import { ProductosTable } from "./productos-table"
 import { ProductosToolbar } from "./productos-toolbar"
 
-type StockFilter = "todos" | "sin_stock" | "bajo_stock" | "disponible"
+type StockFilter =
+  | "todos"
+  | "sin_stock"
+  | "bajo_stock"
+  | "disponible"
+  | "mayor_que"
+  | "menor_que"
+  | "entre"
 type ActiveFilter = "todos" | "activos" | "inactivos"
 type FeaturedFilter = "todos" | "destacados" | "normales"
 type ProductView = "productos" | "categorias"
+export type ProductSortKey = "nombre" | "stock" | "sku" | "color"
+export type SortDirection = "asc" | "desc"
+
+function parseStockValue(value: string) {
+  if (!value.trim()) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function getPrimaryColor(product: SupabaseProducto) {
+  return [...(product.producto_variantes ?? [])]
+    .sort((a, b) => a.orden - b.orden || a.id - b.id)[0]
+    ?.nombre.trim() ?? ""
+}
+
+function mergeProductColors(
+  storedColors: ProductColorOption[],
+  products: SupabaseProducto[],
+) {
+  const colors = new Map(
+    storedColors.map((color) => [color.hex.toLocaleLowerCase("es"), color]),
+  )
+
+  for (const product of products) {
+    for (const variant of product.producto_variantes ?? []) {
+      const label = variant.nombre?.trim()
+      const hex = variant.color_hex?.trim()
+      if (!label || !hex) continue
+
+      const key = hex.toLocaleLowerCase("es")
+      if (!colors.has(key)) {
+        colors.set(key, { value: hex, label, hex })
+      }
+    }
+  }
+
+  return [...colors.values()].sort((left, right) =>
+    left.label.localeCompare(right.label, "es", { sensitivity: "base" }),
+  )
+}
 
 export function AdminProductos() {
   const { stock: stockSettings } = useSiteSettings()
   const { categorias } = useCategorias()
+  const storedColorOptions = useProductColors()
   const [page, setPage] = useState(1)
   const [debouncedSearch, setDebouncedSearch] = useState("")
+  const [debouncedColorSearch, setDebouncedColorSearch] = useState("")
+  const [debouncedStockFrom, setDebouncedStockFrom] = useState<number | null>(null)
+  const [debouncedStockTo, setDebouncedStockTo] = useState<number | null>(null)
   const [loadingProductId, setLoadingProductId] = useState<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<SupabaseProducto | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const pageSize = 25
   const [search, setSearch] = useState("")
+  const [colorSearch, setColorSearch] = useState("")
+  const [stockFrom, setStockFrom] = useState("")
+  const [stockTo, setStockTo] = useState("")
   const [categorySearch, setCategorySearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("todos")
   const [stockFilter, setStockFilter] = useState<StockFilter>("todos")
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("todos")
   const [featuredFilter, setFeaturedFilter] = useState<FeaturedFilter>("todos")
+  const [sortBy, setSortBy] = useState<ProductSortKey>("nombre")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [view, setView] = useState<ProductView>("productos")
   const {
     productos,
@@ -57,10 +115,15 @@ export function AdminProductos() {
     page,
     pageSize,
     search: debouncedSearch,
+    colorSearch: debouncedColorSearch,
     categoryId: categoryFilter === "todos" ? null : Number(categoryFilter),
     stockFilter,
+    stockFrom: debouncedStockFrom,
+    stockTo: debouncedStockTo,
     activeFilter,
     featuredFilter,
+    sortBy,
+    sortDirection,
     lowStockThreshold: stockSettings.lowStockThreshold,
     availableStockThreshold: stockSettings.availableStockThreshold,
   })
@@ -75,15 +138,53 @@ export function AdminProductos() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedSearch(search)
+      setDebouncedColorSearch(colorSearch)
+      setDebouncedStockFrom(parseStockValue(stockFrom))
+      setDebouncedStockTo(parseStockValue(stockTo))
       setPage(1)
     }, 300)
 
     return () => window.clearTimeout(timer)
-  }, [search])
+  }, [colorSearch, search, stockFrom, stockTo])
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, categoryFilter, featuredFilter, stockFilter])
+  }, [
+    activeFilter,
+    categoryFilter,
+    featuredFilter,
+    sortBy,
+    sortDirection,
+    stockFilter,
+  ])
+
+  const displayedProducts = useMemo(() => {
+    if (sortBy !== "color") return productos
+
+    return [...productos].sort((left, right) => {
+      const comparison = getPrimaryColor(left).localeCompare(
+        getPrimaryColor(right),
+        "es",
+        { sensitivity: "base" },
+      )
+      return sortDirection === "asc" ? comparison : -comparison
+    })
+  }, [productos, sortBy, sortDirection])
+
+  const colorOptions = useMemo(
+    () => mergeProductColors(storedColorOptions, productos),
+    [productos, storedColorOptions],
+  )
+
+  const handleSort = (key: ProductSortKey) => {
+    if (sortBy === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"))
+      return
+    }
+
+    setSortBy(key)
+    setSortDirection("asc")
+  }
 
   const handleDelete = (id: number) => {
     const product = productos.find((item) => item.id === id)
@@ -128,6 +229,10 @@ export function AdminProductos() {
     <div className={adminPageClassName}>
       <ProductosToolbar
         search={search}
+        colorSearch={colorSearch}
+        colorOptions={colorOptions}
+        stockFrom={stockFrom}
+        stockTo={stockTo}
         categorySearch={categorySearch}
         categorias={categorias}
         categoryFilter={categoryFilter}
@@ -136,6 +241,9 @@ export function AdminProductos() {
         featuredFilter={featuredFilter}
         view={view}
         onSearchChange={setSearch}
+        onColorSearchChange={setColorSearch}
+        onStockFromChange={setStockFrom}
+        onStockToChange={setStockTo}
         onCategorySearchChange={setCategorySearch}
         onCategoryFilterChange={setCategoryFilter}
         onStockFilterChange={setStockFilter}
@@ -174,9 +282,12 @@ export function AdminProductos() {
           )}
 
           <ProductosTable
-            productos={productos}
+            productos={displayedProducts}
             stockSettings={stockSettings}
             loading={loading}
+            sortBy={sortBy}
+            sortDirection={sortDirection}
+            onSort={handleSort}
             onEdit={(producto) => void handleEdit(producto)}
             onDelete={handleDelete}
             onToggleActivo={toggleProductoActivo}

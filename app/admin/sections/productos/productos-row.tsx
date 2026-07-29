@@ -215,6 +215,7 @@ export function ProductosRow({
 
   const variantes =
     sortVariantes(localVariantes)
+  const primaryVariant = variantes[0]
 
   const stockTotal =
     variantes.length
@@ -468,7 +469,7 @@ export function ProductosRow({
           : ""
       }`}
     >
-      <div className="admin-product-row-grid relative z-[1] grid grid-cols-admin-products items-center gap-4 px-5 py-4">
+      <div className="admin-product-row-grid relative z-[1] grid grid-cols-admin-products items-center gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
@@ -524,16 +525,48 @@ export function ProductosRow({
                 </span>
               )}
 
-              <span
-                className={`text-xs font-semibold ${stockColor(
-                  stockTotal,
-                  stockSettings,
-                )}`}
-              >
-                Stock real: {stockTotal}
-              </span>
             </div>
           </div>
+        </div>
+
+        <span
+          className={`justify-self-center text-sm font-black tabular-nums ${stockColor(
+            stockTotal,
+            stockSettings,
+          )}`}
+        >
+          {stockTotal}
+        </span>
+
+        <span
+          className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
+          title={producto.sku || "Sin SKU"}
+        >
+          {producto.sku || "—"}
+        </span>
+
+        <div className="flex min-w-0 items-center justify-center gap-2">
+          {primaryVariant ? (
+            <>
+              <span
+                className="size-4 shrink-0 rounded-full border border-white/25"
+                style={{ backgroundColor: primaryVariant.color_hex }}
+              />
+              <span
+                className="truncate text-xs font-bold text-white/70"
+                title={primaryVariant.nombre}
+              >
+                {primaryVariant.nombre}
+              </span>
+              {variantes.length > 1 && (
+                <span className="shrink-0 text-10px font-bold text-white/35">
+                  +{variantes.length - 1}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-xs font-bold text-white/35">—</span>
+          )}
         </div>
 
         <span className="justify-self-stretch truncate text-center text-base font-bold text-white">
@@ -563,17 +596,10 @@ export function ProductosRow({
               -{producto.descuento}% OFF
             </p>
           )}
+          <p className="mt-0.5 text-10px font-semibold text-white/38">
+            {getInstallmentsLabel(producto)}
+          </p>
         </div>
-
-        <span
-          className={`w-fit justify-self-center rounded-full border px-3 py-1.5 text-xs font-semibold ${
-            producto.cuotas_sin_interes
-              ? "border-beyonix-blue-light/20 bg-beyonix-blue/18 text-beyonix-cyan"
-              : "border-white/10 bg-white/5 text-white/45"
-          }`}
-        >
-          {getInstallmentsLabel(producto)}
-        </span>
 
         <button
           type="button"
