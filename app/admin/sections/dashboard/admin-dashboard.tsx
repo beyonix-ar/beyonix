@@ -18,6 +18,7 @@ import {
   ImageDown,
   Package,
   ReceiptText,
+  RefreshCw,
   RotateCcw,
   Search,
   ShieldAlert,
@@ -171,7 +172,7 @@ function SectionHeader({
   action?: React.ReactNode
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
       <div>
         {eyebrow && (
           <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -194,7 +195,7 @@ function FilterField({
 }) {
   return (
     <div className="block min-w-0">
-      <span className="mb-2 block text-center text-10px font-black uppercase tracking-widest text-white/42">
+      <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
         {label}
       </span>
       {children}
@@ -217,6 +218,7 @@ function StatCard({
 }) {
   return (
     <AdminStatCard
+      className="admin-dashboard-stat-card"
       title={title}
       value={value}
       helper={helper}
@@ -224,7 +226,7 @@ function StatCard({
       onClick={onClick}
       action={
         onClick ? (
-          <span className="inline-flex h-8 items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/18 px-3 text-xs font-black text-white/72 transition group-hover:border-beyonix-sky/38 group-hover:text-white">
+          <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-beyonix-blue-light/20 bg-black/18 px-2.5 text-11px font-black text-white/72 transition group-hover:border-beyonix-sky/38 group-hover:text-white">
             Abrir <ArrowRight className="size-3.5" />
           </span>
         ) : null
@@ -252,11 +254,11 @@ function FinancialMetric({
   }[tone]
 
   return (
-    <div className="min-w-0 rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+    <div className="admin-dashboard-financial-metric min-w-0 rounded-xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
       <p className="text-10px font-black uppercase tracking-widest text-white/42">
         {label}
       </p>
-      <p className={`mt-1 truncate text-lg font-black tabular-nums ${toneClass}`}>
+      <p className={`mt-1 truncate text-base font-black tabular-nums ${toneClass}`}>
         {value}
       </p>
       <p className="mt-1 truncate text-11px font-semibold text-white/42">
@@ -281,7 +283,7 @@ function ControlIndicator({
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-w-0 cursor-pointer items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+      className={`flex min-w-0 cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
         healthy
           ? "border-emerald-400/16 bg-emerald-400/6 hover:border-emerald-400/30"
           : "border-red-400/22 bg-red-400/8 hover:border-red-400/40"
@@ -456,7 +458,7 @@ function GlobalAdminSearch({
   const showResults = open && query.trim().length >= 2
 
   return (
-    <div ref={rootRef} className="relative w-full max-w-3xl">
+    <div ref={rootRef} className="relative w-full max-w-2xl">
       <div
         className={`admin-dashboard-search flex h-12 items-center gap-3 rounded-2xl border bg-[linear-gradient(135deg,rgba(9,23,36,0.94),rgba(3,8,14,0.96))] px-3 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition ${
           open
@@ -590,32 +592,53 @@ function GlobalAdminSearch({
   )
 }
 
-function SystemStatusPill({ item }: { item: DashboardSystemStatus }) {
+function SystemStatusPill({
+  item,
+  ready,
+}: {
+  item: DashboardSystemStatus
+  ready: boolean
+}) {
+  const effectiveStatus = ready ? item.status : "unknown"
   const tone =
-    item.status === "ok"
+    effectiveStatus === "ok"
       ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
-      : item.status === "error"
+      : effectiveStatus === "error"
         ? "border-red-400/25 bg-red-400/10 text-red-200"
-        : item.status === "warning"
+        : effectiveStatus === "warning"
           ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+          : effectiveStatus === "disabled"
+            ? "border-slate-400/20 bg-slate-400/8 text-slate-300"
           : "border-white/10 bg-white/5 text-white/52"
   const label =
-    item.status === "ok"
-      ? "OK"
-      : item.status === "error"
-        ? "Error"
-        : item.status === "warning"
-          ? "Revisar"
-          : "Sin datos"
+    !ready
+      ? "Verificando"
+      : item.verified === false
+        ? "No verificable"
+        : item.status === "ok"
+          ? "Operativo"
+          : item.status === "error"
+            ? "Caído"
+            : item.status === "warning"
+              ? "Degradado"
+              : item.status === "disabled"
+                ? "Deshabilitado"
+                : "Sin verificar"
 
   return (
-    <div className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+    <div className="rounded-xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-black text-white">{item.label}</p>
           <p className="mt-1 line-clamp-2 text-11px leading-4 text-white/45">
-            {item.detail}
+            {ready ? item.detail : "Ejecutando una comprobación real..."}
           </p>
+          {ready && item.checkedAt && (
+            <p className="mt-1 text-9px font-bold uppercase tracking-wide text-white/28">
+              {item.latencyMs != null ? `${item.latencyMs} ms · ` : ""}
+              {formatRelativeTime(item.checkedAt)}
+            </p>
+          )}
         </div>
         <span className={`shrink-0 rounded-full border px-2 py-0.5 text-9px font-black uppercase tracking-widest ${tone}`}>
           {label}
@@ -1777,7 +1800,7 @@ function EnhancedMiniLineChart({
     mode === "evolution" && grouping === "month"
       ? Math.max(760, visiblePointCount * 64 + 110)
       : 760
-  const height = 320
+  const height = 260
   const padding = { top: 30, right: 24, bottom: 58, left: 86 }
   const plotWidth = width - padding.left - padding.right
   const plotHeight = height - padding.top - padding.bottom
@@ -1963,13 +1986,13 @@ function EnhancedMiniLineChart({
   }, [mode])
 
   return (
-    <div className="grid gap-6 xl:grid-cols-3 xl:items-start">
-      <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
+    <div className="grid gap-3 xl:grid-cols-3 xl:items-start">
+      <section className="rounded-2xl border border-white/8 bg-[#141414] p-4 xl:col-span-2">
         <SectionHeader
           eyebrow="Facturación"
           title={mode === "evolution" ? "Evolución" : "Comparación"}
         />
-        <div className="rounded-3xl border border-white/7 bg-black p-4 sm:p-5">
+        <div className="rounded-2xl border border-white/7 bg-black p-3 sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-sm font-black text-white">
@@ -2002,7 +2025,7 @@ function EnhancedMiniLineChart({
                   className={`h-9 cursor-pointer rounded-lg text-xs font-black transition ${
                     mode === value
                       ? value === "comparison"
-                        ? "bg-violet-500/20 text-violet-100"
+                        ? "bg-beyonix-blue/45 text-beyonix-sky"
                         : "bg-sky-500/20 text-sky-100"
                       : "text-white/45 hover:bg-white/[0.04] hover:text-white"
                   }`}
@@ -2082,7 +2105,7 @@ function EnhancedMiniLineChart({
                   <p className="mb-1.5 text-10px font-black uppercase tracking-widest text-white/38">
                     Alineación
                   </p>
-                  <span className="inline-flex h-11 items-center rounded-xl border border-violet-400/20 bg-violet-400/8 px-3 text-11px font-black text-violet-200">
+                  <span className="inline-flex h-11 items-center rounded-xl border border-beyonix-sky/20 bg-beyonix-blue/24 px-3 text-11px font-black text-beyonix-sky">
                     Día relativo
                   </span>
                 </div>
@@ -2137,8 +2160,8 @@ function EnhancedMiniLineChart({
             </div>
 
             {mode === "comparison" && (
-              <div className="mt-2.5 rounded-2xl border border-violet-400/18 bg-violet-400/[0.045] p-2.5">
-                <p className="mb-2 text-10px font-black uppercase tracking-widest text-violet-300/65">
+              <div className="mt-2.5 rounded-2xl border border-beyonix-sky/18 bg-beyonix-blue/10 p-2.5">
+                <p className="mb-2 text-10px font-black uppercase tracking-widest text-beyonix-sky/65">
                   Segunda selección
                 </p>
                 <div className="flex flex-wrap items-end gap-2">
@@ -2692,7 +2715,7 @@ function EnhancedMiniLineChart({
               </div>
             </>
           ) : (
-            <p className="flex min-h-280px items-center justify-center text-sm text-white/45">
+            <p className="flex min-h-220px items-center justify-center text-sm text-white/45">
               No hay datos para graficar con los filtros seleccionados.
             </p>
           )}
@@ -2905,6 +2928,11 @@ export function AdminDashboard() {
     loading,
     error,
     reloadDashboard,
+    healthRefreshing,
+    healthReady,
+    healthCheckedAt,
+    healthError,
+    refreshSystemHealth,
   } = useDashboard()
   const [tab, setTab] = useState<DashboardTab>("operativo")
   const [from, setFrom] = useState("")
@@ -3037,22 +3065,25 @@ export function AdminDashboard() {
   }
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <div className="rounded-3xl border border-beyonix-blue-light/22 bg-[radial-gradient(circle_at_18%_0%,rgba(140,200,242,0.12),transparent_34%),linear-gradient(145deg,rgba(7,16,24,0.98),rgba(3,7,13,0.94))] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_64px_rgba(0,0,0,0.28)]">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+    <div
+      className="admin-dashboard-page min-w-0 space-y-4 p-3 sm:p-4 lg:p-5"
+      data-dashboard-tab={tab}
+    >
+      <div className="admin-dashboard-hero rounded-2xl border border-beyonix-blue-light/22 bg-[radial-gradient(circle_at_18%_0%,rgba(140,200,242,0.12),transparent_34%),linear-gradient(145deg,rgba(7,16,24,0.98),rgba(3,7,13,0.94))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_44px_rgba(0,0,0,0.24)]">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
+            <p className="mb-1 text-10px font-bold uppercase tracking-widest text-beyonix-sky">
               Panel administrativo
             </p>
-            <h1 className="text-3xl font-black text-white lg:text-4xl">
+            <h1 className="text-2xl font-black text-white lg:text-3xl">
               Dashboard BEYONIX
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/68">
+            <p className="mt-1.5 max-w-2xl text-xs leading-5 text-white/62 sm:text-sm">
               Centro operativo por defecto y análisis comercial separado para proteger información sensible.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex flex-wrap rounded-2xl border border-beyonix-blue-light/24 bg-black/30 p-1 shadow-inner shadow-black/40">
+          <div className="admin-dashboard-tabs-scroll min-w-0 max-w-full overflow-x-auto">
+            <div className="admin-dashboard-tabs inline-flex min-w-max flex-nowrap rounded-xl border border-beyonix-blue-light/24 bg-black/30 p-1 shadow-inner shadow-black/40">
               {[
                 ["operativo", "Centro operativo"],
                 ["comercial", "Análisis comercial"],
@@ -3069,7 +3100,7 @@ export function AdminDashboard() {
                   type="button"
                   aria-label={label}
                   onClick={() => setTab(key as DashboardTab)}
-                  className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
+                  className={`inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-all ${
                     tab === key
                       ? "border-beyonix-sky/36 bg-beyonix-blue/70 text-white shadow-[0_0_10px_rgba(96,165,250,0.10)]"
                       : "border-transparent text-white/62 hover:border-beyonix-blue-light/20 hover:bg-beyonix-blue/18 hover:text-white"
@@ -3108,12 +3139,12 @@ export function AdminDashboard() {
         <AdminMercadoLibreSales />
       ) : tab === "operativo" ? (
         <>
-          <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.82),rgba(3,7,13,0.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_18px_48px_rgba(0,0,0,0.18)] sm:p-5">
-            <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <section className="admin-dashboard-priorities rounded-2xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.82),rgba(3,7,13,0.92))] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_14px_36px_rgba(0,0,0,0.16)] sm:p-4">
+            <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <SectionHeader eyebrow="Centro operativo" title="Prioridades de hoy" />
               <GlobalAdminSearch rows={searchIndex} onNavigate={onNavigate} />
             </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
               <StatCard title="Pagos en revisión" value={stats.pagosEnRevision} helper={`${stats.esperandoComprobante} esperan comprobante`} icon={<CreditCard className="size-5" />} onClick={() => onNavigate("pedidos")} />
               <StatCard title="Pedidos a preparar" value={stats.enviosPendientes} helper={`${stats.pedidosSinTracking} sin tracking o etiqueta`} icon={<ShoppingCart className="size-5" />} onClick={() => onNavigate("pedidos")} />
               <StatCard title="Facturas pendientes" value={stats.facturasPendientes} helper="Pedidos pagados sin factura emitida" icon={<FileUp className="size-5" />} onClick={() => onNavigate("facturacion")} />
@@ -3121,7 +3152,7 @@ export function AdminDashboard() {
               <StatCard title="Reintegros pendientes" value={stats.reintegrosPendientes} helper="Dinero por devolver" icon={<RotateCcw className="size-5" />} onClick={() => onNavigate("pedidos")} />
               <StatCard title="Notas de crédito" value={stats.notasCreditoPendientes} helper="Pendientes de autorizar" icon={<ReceiptText className="size-5" />} onClick={() => onNavigate("facturacion")} />
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            <div className="mt-2.5 grid grid-cols-2 gap-2 xl:grid-cols-3 2xl:grid-cols-6">
               <FinancialMetric label="Pedidos totales" value={String(stats.totalOrdenes)} detail="Histórico" />
               <FinancialMetric label="Pedidos pagos" value={String(stats.pedidosPagados)} detail="Cobro confirmado" tone="positive" />
               <FinancialMetric label="Pendientes" value={String(stats.pedidosPendientes)} detail="Sin completar" tone={stats.pedidosPendientes > 0 ? "warning" : "neutral"} />
@@ -3148,7 +3179,7 @@ export function AdminDashboard() {
                     : "Lectura incompleta"}
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-5">
                 <ControlIndicator label="Cobros distintos" value={financialSummary.ordersWithPaymentMismatch} healthy={financialSummary.ordersWithPaymentMismatch === 0} onClick={() => onNavigate("pedidos")} />
                 <ControlIndicator label="Envíos sin costo" value={financialSummary.ordersMissingShippingCost} healthy={financialSummary.ordersMissingShippingCost === 0} onClick={() => onNavigate("pedidos")} />
                 <ControlIndicator label="Facturas con error" value={financialSummary.invoiceErrors} healthy={financialSummary.invoiceErrors === 0} onClick={() => onNavigate("facturacion")} />
@@ -3167,14 +3198,45 @@ export function AdminDashboard() {
                 <h2 className="mt-1 text-base font-black text-white">
                   Estado del sistema
                 </h2>
+                <p className="mt-1 text-10px font-semibold text-white/38">
+                  Comprobaciones activas · actualización automática cada 30 segundos
+                </p>
               </div>
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-beyonix-blue-light/22 bg-beyonix-blue/28 text-beyonix-sky">
-                <CheckCircle2 className="size-4" />
-              </span>
+              <div className="flex items-center gap-2">
+                {healthCheckedAt && (
+                  <span className="hidden text-right text-9px font-bold uppercase tracking-wide text-white/30 sm:block">
+                    Última comprobación
+                    <span className="block text-white/48">
+                      {formatRelativeTime(healthCheckedAt)}
+                    </span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-label="Comprobar ahora el estado del sistema"
+                  title="Comprobar ahora"
+                  onClick={() => void refreshSystemHealth()}
+                  disabled={healthRefreshing}
+                  className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/22 bg-beyonix-blue/28 text-beyonix-sky transition hover:border-beyonix-sky/48 hover:bg-beyonix-blue/45 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className={`size-4 ${healthRefreshing ? "animate-spin" : ""}`}
+                  />
+                </button>
+              </div>
             </div>
+            {healthError && (
+              <p className="mb-2 rounded-lg border border-red-400/20 bg-red-400/8 px-3 py-2 text-10px font-semibold text-red-200">
+                La última comprobación falló: {healthError}
+              </p>
+            )}
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {systemStatus.map((item) => (
-                <SystemStatusPill key={item.id} item={item} />
+                <SystemStatusPill
+                  key={item.id}
+                  item={item}
+                  ready={healthReady}
+                />
               ))}
             </div>
           </section>
@@ -3219,7 +3281,7 @@ export function AdminDashboard() {
         </>
       ) : (
         <>          {!sensitive ? (
-            <section className="rounded-3xl border border-white/8 bg-[#141414] p-8 text-center">
+            <section className="rounded-2xl border border-white/8 bg-[#141414] p-5 text-center">
               <h2 className="text-2xl font-black text-white">Análisis comercial</h2>
               <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/55">
                 Esta vista contiene facturación, ganancia y ticket promedio. Solo admin y super admin pueden verla.
@@ -3227,13 +3289,13 @@ export function AdminDashboard() {
             </section>
           ) : (
             <>
-              <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <section className="rounded-2xl border border-white/8 bg-[#141414] p-4">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                   <div>
                     <p className="mb-1 text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
                       Análisis comercial
                     </p>
-                    <h2 className="text-2xl font-black text-white">
+                    <h2 className="text-xl font-black text-white">
                       Métricas y ventas
                     </h2>
                   </div>
@@ -3241,15 +3303,15 @@ export function AdminDashboard() {
                     type="button"
                     aria-label={hiddenValues ? "Mostrar valores" : "Ocultar valores"}
                     onClick={toggleHiddenValues}
-                    className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 px-5 text-sm font-black text-white/72 transition hover:border-beyonix-sky/45 hover:text-white"
+                    className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-black text-white/72 transition hover:border-beyonix-sky/45 hover:text-white"
                   >
                     {hiddenValues ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
                     {hiddenValues ? "Mostrar valores" : "Ocultar valores"}
                   </button>
                 </div>
 
-                <div className="mt-5 rounded-3xl border border-white/8 bg-transparent p-4">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-admin-commercial-filters">
+                <div className="mt-3 rounded-2xl border border-white/8 bg-transparent p-3">
+                  <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-admin-commercial-filters">
                     <FilterField label="Desde">
                       <AdminDatePicker
                         title="Desde"
@@ -3351,7 +3413,7 @@ export function AdminDashboard() {
                 </div>
               </section>
 
-              <section className="rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.88),rgba(3,7,13,0.96))] p-4 sm:p-5">
+              <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.88),rgba(3,7,13,0.96))] p-4">
                 <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
@@ -3367,7 +3429,7 @@ export function AdminDashboard() {
                   </p>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-2 xl:grid-cols-3 2xl:grid-cols-6">
                   <FinancialMetric label="Ventas brutas" value={maskAmount(formatPrice(financialSummary.grossSales), hiddenValues)} detail="Web + externas + Mercado Libre" />
                   <FinancialMetric label="Ventas netas" value={maskAmount(formatPrice(financialSummary.netSales), hiddenValues)} detail="Luego de cargos, descuentos y reintegros" tone="positive" />
                   <FinancialMetric label="Cobros web" value={maskAmount(formatPrice(financialSummary.externalCollected), hiddenValues)} detail="Dinero cobrado por pasarelas" />
@@ -3376,7 +3438,7 @@ export function AdminDashboard() {
                   <FinancialMetric label="Facturado ARCA" value={maskAmount(formatPrice(financialSummary.invoicedAmount), hiddenValues)} detail={`${financialSummary.invoicedOrders} comprobantes`} />
                 </div>
 
-                <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                <div className="mt-2 grid grid-cols-2 gap-2 xl:grid-cols-3 2xl:grid-cols-6">
                   <FinancialMetric label="Envíos cobrados" value={maskAmount(formatPrice(financialSummary.shippingCharged), hiddenValues)} detail="Cobrado al cliente" />
                   <FinancialMetric label="Costo logístico" value={maskAmount(formatPrice(financialSummary.shippingCost), hiddenValues)} detail="Web + externas + Mercado Libre" tone={financialSummary.shippingCost > 0 ? "warning" : "neutral"} />
                   <FinancialMetric label="Resultado envíos web" value={maskAmount(formatPrice(financialSummary.shippingBalance), hiddenValues)} detail="Cobrado menos costo web" tone={financialSummary.shippingBalance >= 0 ? "positive" : "danger"} />
@@ -3385,7 +3447,7 @@ export function AdminDashboard() {
                   <FinancialMetric label="Resultado conocido" value={maskAmount(formatPrice(financialSummary.knownOperatingResult), hiddenValues)} detail="Antes de mercadería e impuestos" tone={financialSummary.knownOperatingResult >= 0 ? "positive" : "danger"} />
                 </div>
 
-                <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                <div className="mt-2 grid grid-cols-2 gap-2 xl:grid-cols-3 2xl:grid-cols-6">
                   <FinancialMetric label="Compras mercadería" value={maskAmount(formatPrice(financialSummary.inventoryPurchases), hiddenValues)} detail="Capital comprado" />
                   <FinancialMetric label="Costo vendido" value={maskAmount(formatPrice(financialSummary.costOfGoodsSold), hiddenValues)} detail={`${financialSummary.costCoveragePercent.toFixed(1)}% cubierto`} />
                   <FinancialMetric label="Gastos pagados" value={maskAmount(formatPrice(financialSummary.operatingExpensesPaid), hiddenValues)} detail="Operación e impuestos" tone={financialSummary.operatingExpensesPaid > 0 ? "warning" : "neutral"} />
@@ -3404,7 +3466,7 @@ export function AdminDashboard() {
                 </div>
               </section>
 
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+              <div className="grid gap-2.5 md:grid-cols-2 2xl:grid-cols-4">
                 <StatCard title="Facturación diaria" value={maskAmount(formatPrice(commercialStats.facturacionDiaria), hiddenValues)} icon={<BarChart3 className="size-5" />} />
                 <StatCard title="Facturación mensual" value={maskAmount(formatPrice(commercialStats.facturacionMensual), hiddenValues)} icon={<BarChart3 className="size-5" />} />
                 <StatCard title="Facturación anual" value={maskAmount(formatPrice(commercialStats.facturacionAnual), hiddenValues)} icon={<BarChart3 className="size-5" />} />
@@ -3421,14 +3483,14 @@ export function AdminDashboard() {
                 hidden={hiddenValues}
               />
 
-              <div className="grid gap-6 xl:grid-cols-2">
-                <section className="rounded-3xl border border-white/8 bg-[#141414] p-5 xl:col-span-2">
+              <div className="grid gap-3 xl:grid-cols-2">
+                <section className="rounded-2xl border border-white/8 bg-[#141414] p-4 xl:col-span-2">
                   <SectionHeader eyebrow="Productos" title="Más vendidos" />
                   <BarList rows={byProduct} valueKey="value" />
                 </section>
               </div>
 
-              <section className="rounded-3xl border border-white/8 bg-[#141414] p-5">
+              <section className="rounded-2xl border border-white/8 bg-[#141414] p-4">
                 <SectionHeader eyebrow="Tabla" title="Detalle comercial" />
                 <div className="overflow-x-auto rounded-2xl border border-white/7 bg-black">
                   <table className="min-w-980px w-full text-left text-sm">

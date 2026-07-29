@@ -53,8 +53,17 @@ export interface DashboardRecentActivity {
 export interface DashboardSystemStatus {
   id: "store" | "mercadopago" | "andreani" | "arca"
   label: string
-  status: "ok" | "warning" | "error" | "unknown"
+  status: "ok" | "warning" | "error" | "disabled" | "unknown"
   detail: string
+  checkedAt?: string
+  latencyMs?: number | null
+  verified?: boolean
+}
+
+export interface SystemHealthResponse {
+  checks: DashboardSystemStatus[]
+  checkedAt: string
+  pollAfterMs: number
 }
 
 export interface DashboardSearchItem {
@@ -234,4 +243,35 @@ export async function getDashboardData({
       dashboardRequest = null
     }
   }
+}
+
+export async function getSystemHealth() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error("La sesión administrativa venció.")
+  }
+
+  const response = await fetch("/api/admin/system-health", {
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    cache: "no-store",
+  })
+  const data = (await response.json().catch(() => null)) as
+    | SystemHealthResponse
+    | { error?: string }
+    | null
+
+  if (!response.ok || !data || !("checks" in data)) {
+    throw new Error(
+      data && "error" in data && typeof data.error === "string"
+        ? data.error
+        : "No se pudo verificar el estado del sistema.",
+    )
+  }
+
+  return data
 }

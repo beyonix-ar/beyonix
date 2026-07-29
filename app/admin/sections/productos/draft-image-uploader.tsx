@@ -8,7 +8,6 @@ import {
 } from "react"
 import {
   GripVertical,
-  ImageIcon,
   Trash2,
   Upload,
 } from "lucide-react"
@@ -92,7 +91,7 @@ export function DraftImageUploader({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2.5">
       <div
         onClick={() =>
           inputRef.current?.click()
@@ -125,8 +124,8 @@ export function DraftImageUploader({
             Arrastrá imágenes acá
           </p>
 
-          <p className="mt-1 text-xs text-white/40">
-            o hacé click para seleccionar
+          <p className="mt-0.5 line-clamp-1 text-10px text-white/40">
+            {files.length ? "Agregá más archivos" : emptyMessage}
           </p>
 
           <p className="mt-1 text-10px font-semibold uppercase tracking-widest text-beyonix-cyan/70">
@@ -154,16 +153,6 @@ export function DraftImageUploader({
           }}
         />
       </div>
-
-      {!files.length && (
-        <div className="admin-ds-card px-4 py-4 text-center">
-          <ImageIcon className="mx-auto mb-2 size-7 text-white/15" />
-
-          <p className="text-sm text-white/55">
-            {emptyMessage}
-          </p>
-        </div>
-      )}
 
       {!!files.length && (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

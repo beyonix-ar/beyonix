@@ -84,7 +84,7 @@ export async function GET(request: Request) {
   const [catalogResult, productCostsResult, expensesResult] = await Promise.all([
     auth.admin
       .from("productos")
-      .select("id, nombre, sku, activo, stock, producto_variantes(id, nombre, activo, stock)")
+      .select("id, nombre, sku, activo, stock, producto_variantes(id, nombre, sku, activo, stock)")
       .order("nombre", { ascending: true }),
     auth.admin
       .from("product_cost_entries")
@@ -102,12 +102,16 @@ export async function GET(request: Request) {
 
   const error = catalogResult.error || productCostsResult.error || expensesResult.error
   if (error) {
+    const missingVariantSku =
+      /producto_variantes.*sku|sku.*producto_variantes/i.test(error.message)
     const missingTables = /product_cost_entries|business_expenses|sku|created_from_costs|schema cache/i.test(
       error.message,
     )
     return Response.json(
       {
-        error: missingTables
+        error: missingVariantSku
+          ? "Falta aplicar la migración 099_variant_sku.sql en Supabase."
+          : missingTables
           ? /sku|created_from_costs/i.test(error.message)
             ? "Falta aplicar la migración 085_cost_items_shared_catalog.sql en Supabase."
             : "Falta aplicar la migración 080_business_costs.sql en Supabase."
@@ -120,7 +124,12 @@ export async function GET(request: Request) {
   const costRows = (productCostsResult.data ?? []) as StandaloneCostRow[]
   const latestSkuByProduct = new Map<number, string>()
   costRows.forEach((row) => {
-    if (row.product_id != null && row.sku?.trim() && !latestSkuByProduct.has(row.product_id)) {
+    if (
+      row.product_id != null &&
+      row.variant_id == null &&
+      row.sku?.trim() &&
+      !latestSkuByProduct.has(row.product_id)
+    ) {
       latestSkuByProduct.set(row.product_id, row.sku.trim())
     }
   })
@@ -292,7 +301,7 @@ export async function POST(request: Request) {
 
       const { data: product, error: productError } = await auth.admin
         .from("productos")
-        .select("id, nombre, sku, producto_variantes(id, nombre, producto_id)")
+        .select("id, nombre, sku, producto_variantes(id, nombre, sku, producto_id)")
         .eq("id", productId)
         .maybeSingle()
 
@@ -330,7 +339,10 @@ export async function POST(request: Request) {
           p_product_id: productId,
           p_variant_id: variantId,
           p_product_name: productName,
-          p_product_sku: text(body?.productSku, 120) ?? product.sku,
+          p_product_sku:
+            text(body?.productSku, 120) ??
+            variant?.sku ??
+            product.sku,
           p_quantity: quantity,
           p_notes: text(body?.notes, 1000),
           p_created_by: auth.user.id,

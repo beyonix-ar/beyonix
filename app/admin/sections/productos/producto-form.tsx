@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react"
 import {
   ArrowLeft,
+  Boxes,
   Eye,
+  Info,
+  ListChecks,
   Loader2,
   Play,
   ToggleLeft,
@@ -45,7 +48,7 @@ const inputCls =
   adminControlClassName
 
 const labelCls =
-  "mb-2 block text-xs font-semibold uppercase tracking-widest text-white/50"
+  "mb-1.5 block text-10px font-semibold uppercase tracking-widest text-white/50"
 
 export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps) {
   const [draftVariants, setDraftVariants] = useState<DraftProductoVariante[]>([])
@@ -126,6 +129,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             id: 2_000_000_000 + index + 1,
             producto_id: previewId,
             nombre: variant.nombre.trim() || `Variante ${index + 1}`,
+            sku: variant.sku.trim() || null,
             color_hex: variant.color_hex || "#000000",
             stock: 0,
             imagenes: images,
@@ -193,9 +197,10 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
   }
 
   return (
-    <div className={adminPageClassName}>
+    <div className={`${adminPageClassName} admin-product-page`}>
       <div className="w-full">
         <AdminPageHeader
+          className="admin-product-header"
           eyebrow="Productos"
           title={producto ? "Editar producto" : "Nuevo producto"}
           actions={
@@ -223,14 +228,20 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               },
             })
           }}
-          className="admin-product-form admin-ds-surface mt-5 p-3 sm:p-4"
+          className="admin-product-form admin-ds-surface mt-3 min-w-0 overflow-hidden p-2.5 sm:p-3"
         >
-          <div className="grid gap-4 xl:grid-cols-2 xl:items-start 2xl:grid-cols-12">
-            <section className="admin-product-section admin-ds-card space-y-3 p-4 2xl:col-span-4">
-              <div className="border-b border-white/7 pb-3">
-                <p className="text-10px font-semibold uppercase tracking-widest text-beyonix-cyan/75">
-                  Información general
-                </p>
+          <div className="grid min-w-0 items-start gap-3 xl:grid-cols-2 2xl:grid-cols-[minmax(320px,0.92fr)_minmax(470px,1.25fr)_minmax(300px,0.82fr)]">
+            <section className="admin-product-section admin-product-section-info admin-ds-card min-w-0 space-y-2.5 overflow-hidden border-t-2 border-t-sky-400/55 p-3.5">
+              <div className="flex items-center gap-2 border-b border-white/7 pb-2.5">
+                <span className="flex size-7 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300">
+                  <Info className="size-3.5" />
+                </span>
+                <div>
+                  <p className="text-10px font-semibold uppercase tracking-widest text-sky-300/85">
+                    Información general
+                  </p>
+                  <p className="text-10px text-white/35">Datos comerciales y visibilidad</p>
+                </div>
               </div>
               <div>
                 <label htmlFor="video_url" className={labelCls}>
@@ -244,8 +255,8 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   onChange={(event) => setField("video_url", event.target.value)}
                   className={inputCls}
                 />
-                <p className="mt-2 text-xs leading-5 text-white/45">
-                  Opcional. Pegá un enlace externo al video.
+                <p className="mt-1 text-11px leading-4 text-white/40">
+                  Opcional · YouTube, Vimeo o archivo HTTPS.
                 </p>
 
                 {canPreviewVideo ? (
@@ -278,34 +289,18 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 ) : null}
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <label htmlFor="nombre" className={labelCls}>
-                    Nombre *
-                  </label>
-                  <input
-                    id="nombre"
-                    type="text"
-                    value={form.nombre}
-                    placeholder="Auriculares..."
-                    onChange={(event) => handleNombreChange(event.target.value)}
-                    className={inputCls}
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="slug" className={labelCls}>
-                    Slug
-                  </label>
-                  <input
-                    id="slug"
-                    type="text"
-                    value={form.slug}
-                    placeholder="auriculares..."
-                    onChange={(event) => setField("slug", event.target.value)}
-                    className={inputCls}
-                  />
-                </div>
+              <div className="min-w-0">
+                <label htmlFor="nombre" className={labelCls}>
+                  Nombre *
+                </label>
+                <input
+                  id="nombre"
+                  type="text"
+                  value={form.nombre}
+                  placeholder="Auriculares..."
+                  onChange={(event) => handleNombreChange(event.target.value)}
+                  className={inputCls}
+                />
               </div>
 
               <div>
@@ -317,11 +312,11 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   value={form.descripcion}
                   placeholder="Descripción del producto..."
                   onChange={(event) => setField("descripcion", event.target.value)}
-                  className={`${inputCls} min-h-88px resize-none py-3 leading-5`}
+                  className={`${inputCls} min-h-60px resize-none py-2.5 leading-5`}
                 />
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid min-w-0 gap-2.5 sm:grid-cols-2">
                 <div>
                   <label htmlFor="precio" className={labelCls}>
                     Precio
@@ -355,37 +350,39 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="cuotas" className={labelCls}>
-                  Cuotas sin interés
-                </label>
-                <AdminSelect
-                  title="Cuotas sin interés"
-                  value={form.cuotas}
-                  onChange={(value) => setField("cuotas", value)}
-                >
-                  <option value="sin_cuotas">Sin cuotas</option>
-                  <option value="3">3 cuotas sin interés</option>
-                  <option value="6">6 cuotas sin interés</option>
-                </AdminSelect>
-              </div>
+              <div className="grid min-w-0 gap-2.5 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <label htmlFor="cuotas" className={labelCls}>
+                    Cuotas
+                  </label>
+                  <AdminSelect
+                    title="Cuotas sin interés"
+                    value={form.cuotas}
+                    onChange={(value) => setField("cuotas", value)}
+                  >
+                    <option value="sin_cuotas">Sin cuotas</option>
+                    <option value="3">3 cuotas sin interés</option>
+                    <option value="6">6 cuotas sin interés</option>
+                  </AdminSelect>
+                </div>
 
-              <div>
-                <label htmlFor="categoria" className={labelCls}>
-                  Categoría
-                </label>
-                <AdminSelect
-                  title="Categoría"
-                  value={form.categoria_id}
-                  onChange={(value) => setField("categoria_id", value)}
-                >
-                  <option value="">Sin categoría</option>
-                  {categorias.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.nombre}
-                    </option>
-                  ))}
-                </AdminSelect>
+                <div className="min-w-0">
+                  <label htmlFor="categoria" className={labelCls}>
+                    Categoría
+                  </label>
+                  <AdminSelect
+                    title="Categoría"
+                    value={form.categoria_id}
+                    onChange={(value) => setField("categoria_id", value)}
+                  >
+                    <option value="">Sin categoría</option>
+                    {categorias.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.nombre}
+                      </option>
+                    ))}
+                  </AdminSelect>
+                </div>
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2">
@@ -408,22 +405,38 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     type="button"
                     aria-label={toggle.label}
                     onClick={() => setField(toggle.key, !toggle.active)}
-                    className="admin-ds-button admin-ds-button-secondary flex min-h-10 items-center gap-3 px-3.5 text-left"
+                    className={`admin-ds-button flex min-h-10 min-w-0 items-center gap-2.5 border px-3 text-left ${
+                      toggle.key === "activo"
+                        ? "border-emerald-400/20 bg-emerald-400/8"
+                        : "border-sky-400/20 bg-sky-400/8"
+                    }`}
                   >
                     {toggle.active ? (
                       <ToggleRight className={`size-6 ${toggle.color}`} />
                     ) : (
                       <ToggleLeft className="size-6 text-white/45" />
                     )}
-                    <span className="text-sm text-white/80">{toggle.label}</span>
+                    <span className="min-w-0 truncate text-xs font-bold text-white/80">
+                      {toggle.label}
+                    </span>
                   </button>
                 ))}
               </div>
             </section>
 
-            <section className="admin-product-section admin-ds-card p-4 2xl:col-span-4">
-              <div>
-                <label className={labelCls}>Variantes</label>
+            <section className="admin-product-section admin-product-section-variants admin-ds-card min-w-0 overflow-hidden border-t-2 border-t-cyan-400/55 p-3.5">
+              <div className="min-w-0">
+                <div className="mb-3 flex items-center gap-2 border-b border-white/7 pb-2.5">
+                  <span className="flex size-7 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
+                    <Boxes className="size-3.5" />
+                  </span>
+                  <div>
+                    <p className="text-10px font-semibold uppercase tracking-widest text-cyan-300/85">
+                      Variantes
+                    </p>
+                    <p className="text-10px text-white/35">Color, SKU, stock e imágenes</p>
+                  </div>
+                </div>
                 <ProductVariantsEditor
                   productoId={currentProductoId || undefined}
                   draftVariants={draftVariants}
@@ -433,9 +446,19 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="admin-product-section admin-ds-card p-4 2xl:col-span-4">
-              <div>
-                <label className={labelCls}>Especificaciones</label>
+            <section className="admin-product-section admin-product-section-specs admin-ds-card min-w-0 overflow-visible border-t-2 border-t-blue-400/55 p-3.5 xl:col-span-2 2xl:col-span-1">
+              <div className="min-w-0">
+                <div className="mb-3 flex items-center gap-2 border-b border-white/7 pb-2.5">
+                  <span className="flex size-7 items-center justify-center rounded-lg border border-blue-400/25 bg-blue-400/10 text-blue-200">
+                    <ListChecks className="size-3.5" />
+                  </span>
+                  <div>
+                    <p className="text-10px font-semibold uppercase tracking-widest text-blue-200/85">
+                      Especificaciones
+                    </p>
+                    <p className="text-10px text-white/35">Características visibles del producto</p>
+                  </div>
+                </div>
                 <ProductSpecificationsEditor
                   productoId={currentProductoId || undefined}
                   draftSpecifications={draftSpecifications}
@@ -446,7 +469,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             </section>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-3 space-y-2.5">
             {error && (
               <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
             )}
@@ -455,13 +478,13 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               <AdminInfoBlock tone="success">{success}</AdminInfoBlock>
             )}
 
-            <div className="flex flex-col gap-3 border-t border-white/7 pt-4 sm:flex-row sm:justify-end">
+            <div className="admin-product-actions -mx-2.5 -mb-2.5 flex flex-col gap-2 border-t border-white/8 bg-[#040a11]/95 px-3 py-2.5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-end">
               <AdminSecondaryButton
                 title="Vista previa del producto"
                 aria-label="Vista previa del producto"
                 onClick={openProductPreview}
                 disabled={saving}
-                className="w-full border-beyonix-sky/30 bg-beyonix-blue/22 text-white sm:w-auto sm:min-w-180px"
+                className="w-full border-sky-400/25 bg-sky-400/8 text-white sm:w-auto sm:min-w-150px"
               >
                 <Eye className="size-4 text-beyonix-sky" />
                 Vista previa
@@ -472,7 +495,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 disabled={saving}
                 title="Guardar producto"
                 aria-label="Guardar producto"
-                className="w-full sm:w-auto sm:min-w-180px"
+                className="w-full sm:w-auto sm:min-w-160px"
               >
                 {saving ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -489,7 +512,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 title="Cancelar"
                 aria-label="Cancelar"
                 onClick={onCancel}
-                className="w-full sm:w-auto sm:min-w-140px"
+                className="w-full sm:w-auto sm:min-w-120px"
               >
                 Cancelar
               </AdminSecondaryButton>

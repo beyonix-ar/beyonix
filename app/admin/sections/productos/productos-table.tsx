@@ -136,7 +136,7 @@ export function ProductosTable({
           centered
           onSort={onSort}
         />
-        {["Categoría", "Precio", "Estado", "Acciones"].map((label) => (
+        {["Stock", "Precio", "Estado", "Acciones"].map((label) => (
           <span
             key={label}
             className="text-center text-10px font-semibold uppercase tracking-widest text-white/45"

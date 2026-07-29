@@ -94,6 +94,8 @@ export function ProductVariantsEditor({
 
   const [nombre, setNombre] =
     useState("")
+  const [sku, setSku] =
+    useState("")
 
   const [colorHex, setColorHex] =
     useState("#000000")
@@ -174,6 +176,7 @@ export function ProductVariantsEditor({
 
   const resetFields = () => {
     setNombre("")
+    setSku("")
     setColorHex("#000000")
     setCantidad("0")
     setVariantImages([])
@@ -331,6 +334,7 @@ export function ProductVariantsEditor({
 
     const nextVariant = {
       nombre: cleanName,
+      sku: sku.trim() || null,
       color_hex:
         normalizeHex(colorHex),
     }
@@ -343,6 +347,7 @@ export function ProductVariantsEditor({
             ? {
                 ...variant,
                 ...nextVariant,
+                sku: nextVariant.sku ?? "",
                 imagenes:
                   variantImages,
               }
@@ -359,6 +364,7 @@ export function ProductVariantsEditor({
         ...draftVariants,
         {
           ...nextVariant,
+          sku: nextVariant.sku ?? "",
           tempId:
             crypto.randomUUID(),
           imagenes:
@@ -528,6 +534,7 @@ export function ProductVariantsEditor({
     variant: DraftProductoVariante
   ) => {
     setNombre(variant.nombre)
+    setSku(variant.sku)
     setColorHex(variant.color_hex)
     setCantidad("0")
     setVariantImages(variant.imagenes)
@@ -542,6 +549,7 @@ export function ProductVariantsEditor({
     variant: SupabaseProductoVariante
   ) => {
     setNombre(variant.nombre)
+    setSku(variant.sku ?? "")
     setColorHex(variant.color_hex)
     setCantidad(String(allocations[variant.id] ?? 0))
     setVariantImages([])
@@ -555,22 +563,36 @@ export function ProductVariantsEditor({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-2.5">
       {productoId && distribution && (
         <div className="grid gap-2 sm:grid-cols-3">
           {[
-            ["Stock total", distribution.totalStock],
-            ["Distribuido", distribution.allocatedQuantity],
-            ["Sin distribuir", distribution.unassignedQuantity],
-          ].map(([label, value]) => (
+            {
+              label: "Stock total",
+              value: distribution.totalStock,
+              className: "border-sky-400/20 bg-sky-400/8 text-sky-200",
+            },
+            {
+              label: "Distribuido",
+              value: distribution.allocatedQuantity,
+              className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
+            },
+            {
+              label: "Sin distribuir",
+              value: distribution.unassignedQuantity,
+              className: distribution.unassignedQuantity > 0
+                ? "border-amber-400/25 bg-amber-400/8 text-amber-200"
+                : "border-white/8 bg-white/3 text-white/65",
+            },
+          ].map(({ label, value, className }) => (
             <div
-              key={String(label)}
-              className="rounded-xl border border-white/7 bg-black/22 px-3 py-2.5 text-center"
+              key={label}
+              className={`rounded-xl border px-2.5 py-2 text-center ${className}`}
             >
-              <p className="text-10px font-black uppercase tracking-widest text-white/38">
+              <p className="truncate text-9px font-black uppercase tracking-wider text-white/45">
                 {label}
               </p>
-              <p className="mt-0.5 text-lg font-black text-white">
+              <p className="mt-0.5 text-base font-black">
                 {value}
               </p>
             </div>
@@ -578,67 +600,101 @@ export function ProductVariantsEditor({
         </div>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(190px,1fr)_minmax(130px,0.65fr)]">
-        <input
-          type="text"
-          value={nombre}
-          placeholder="Negro, azul, rosa..."
-          onChange={(e) =>
-            setNombre(e.target.value)
-          }
-          className={inputCls}
-        />
-
-        <div className="flex gap-2">
-          <input
-            type="color"
-            value={normalizeHex(colorHex)}
-            onChange={(e) =>
-              setColorHex(
-                normalizeHex(
-                  e.target.value
-                )
-              )
-            }
-            className="h-10 w-12 cursor-pointer rounded-xl border border-white/8 bg-[#181818] p-1 transition-colors hover:border-[#112A43]"
-          />
-
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2 2xl:grid-cols-[minmax(140px,1fr)_minmax(115px,0.75fr)_minmax(150px,0.9fr)_80px]">
+        <label className="min-w-0">
+          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+            Nombre
+          </span>
           <input
             type="text"
-            value={colorHex}
-            placeholder="#000000"
+            value={nombre}
+            placeholder="Negro, azul, rosa..."
             onChange={(e) =>
-              setColorHex(e.target.value)
-            }
-            onBlur={() =>
-              setColorHex(
-                normalizeHex(colorHex)
-              )
+              setNombre(e.target.value)
             }
             className={inputCls}
           />
-        </div>
+        </label>
 
-        <input
-          type="text"
-          inputMode="numeric"
-          value={cantidad}
-          placeholder="Unidades"
-          aria-label="Unidades asignadas a la variante"
-          onChange={(event) =>
-            setCantidad(event.target.value.replace(/\D/g, ""))
-          }
-          className={`${inputCls} text-center`}
-        />
+        <label className="min-w-0">
+          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+            SKU
+          </span>
+          <input
+            type="text"
+            value={sku}
+            placeholder="Opcional"
+            aria-label="SKU de la variante"
+            maxLength={120}
+            onChange={(event) => setSku(event.target.value)}
+            className={inputCls}
+          />
+        </label>
+
+        <label className="min-w-0">
+          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+            Color
+          </span>
+          <span className="admin-variant-color-control flex h-11 min-w-0 items-center gap-2 rounded-xl border border-beyonix-blue-light/28 bg-[#07111b] px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/60">
+            <span
+              className="relative size-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 border-white/20 shadow-[0_0_0_3px_rgba(140,200,242,0.06)]"
+              style={{ backgroundColor: normalizeHex(colorHex) }}
+            >
+              <input
+                type="color"
+                value={normalizeHex(colorHex)}
+                aria-label="Elegir color de la variante"
+                onChange={(e) =>
+                  setColorHex(
+                    normalizeHex(
+                      e.target.value
+                    )
+                  )
+                }
+                className="absolute inset-0 size-full cursor-pointer opacity-0"
+              />
+            </span>
+            <input
+              type="text"
+              value={colorHex}
+              placeholder="#000000"
+              onChange={(e) =>
+                setColorHex(e.target.value)
+              }
+              onBlur={() =>
+                setColorHex(
+                  normalizeHex(colorHex)
+                )
+              }
+              className="admin-variant-hex-input min-w-0 flex-1 bg-transparent px-1 text-sm font-bold text-white outline-none"
+            />
+          </span>
+        </label>
+
+        <label className="min-w-0">
+          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+            Unidades
+          </span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={cantidad}
+            placeholder="0"
+            aria-label="Unidades asignadas a la variante"
+            onChange={(event) =>
+              setCantidad(event.target.value.replace(/\D/g, ""))
+            }
+            className={`${inputCls} text-center`}
+          />
+        </label>
       </div>
 
-      <p className="text-center text-xs font-semibold leading-5 text-white/45">
-        Distribuí únicamente las unidades recibidas en Costos reales. El total
-        físico no se modifica.
+      <p className="rounded-lg border border-amber-400/12 bg-amber-400/5 px-2.5 py-1.5 text-center text-10px font-semibold leading-4 text-amber-100/55">
+        Distribuí solo unidades recibidas en Costos reales; el total físico no cambia.
       </p>
 
-      <div className="rounded-xl border border-white/7 bg-[#101010] p-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
+      <div className="rounded-xl border border-cyan-400/12 bg-cyan-400/3 p-2.5">
+        <p className="mb-2 text-10px font-semibold uppercase tracking-wide text-cyan-100/55">
           Imágenes de esta variante
         </p>
 
@@ -708,13 +764,14 @@ export function ProductVariantsEditor({
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <div className="grid gap-2 border-t border-white/8 pt-3 xl:grid-cols-2">
+        <div className="grid gap-2 border-t border-white/8 pt-2.5 sm:grid-cols-2">
           {productoId ? (
             variantes.length ? (
               variantes.map((variante) => (
                 <VariantRow
                   key={variante.id}
                   nombre={variante.nombre}
+                  sku={variante.sku}
                   colorHex={variante.color_hex}
                   stock={variante.stock}
                   allocated={allocations[variante.id] ?? 0}
@@ -741,6 +798,7 @@ export function ProductVariantsEditor({
               <VariantRow
                 key={variant.tempId}
                 nombre={variant.nombre}
+                sku={variant.sku}
                 colorHex={variant.color_hex}
                 stock={0}
                 allocated={0}
@@ -869,6 +927,7 @@ function PersistedVariantImages({
 
 interface VariantRowProps {
   nombre: string
+  sku?: string | null
   colorHex: string
   stock: number | null
   allocated: number
@@ -879,6 +938,7 @@ interface VariantRowProps {
 
 function VariantRow({
   nombre,
+  sku,
   colorHex,
   stock,
   allocated,
@@ -887,23 +947,27 @@ function VariantRow({
   onRemove,
 }: VariantRowProps) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-white/7 bg-[#181818] px-3 py-2.5">
-      <div className="flex items-center gap-3">
+    <div className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-cyan-400/12 bg-cyan-400/4 px-2.5 py-2">
+      <div className="flex min-w-0 items-center gap-2.5">
         <span
-          className="size-6 rounded-full border border-white/20"
+          className="size-5 shrink-0 rounded-full border border-white/25 shadow-[0_0_0_3px_rgba(255,255,255,0.035)]"
           style={{
             backgroundColor: colorHex,
           }}
         />
 
-        <div>
-          <p className="text-sm font-medium text-white">
-            {nombre}
-          </p>
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <p className="truncate text-xs font-bold text-white">
+              {nombre}
+            </p>
+            <span className="shrink-0 rounded-md border border-beyonix-sky/15 bg-beyonix-blue/35 px-1.5 py-0.5 text-9px font-bold text-beyonix-sky/75">
+              {sku?.trim() || "Sin SKU"}
+            </span>
+          </div>
 
-          <p className="text-xs text-white/50">
-            {colorHex}
-            {` · Asignadas ${allocated}`}
+          <p className="mt-0.5 truncate text-10px text-white/42">
+            {`Asignadas ${allocated}`}
             {typeof stock === "number" &&
               ` · Stock ${stock}`}
             {` · ${imageCount} imágenes`}
@@ -911,12 +975,12 @@ function VariantRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
           aria-label={`Editar variante ${nombre}`}
           onClick={onEdit}
-          className="flex size-8 items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
+          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-sky-400/15 bg-sky-400/5 text-sky-200/65 transition-colors hover:border-sky-400/35 hover:bg-sky-400/12 hover:text-white"
         >
           <Pencil className="size-4" />
         </button>
@@ -925,7 +989,7 @@ function VariantRow({
           type="button"
           aria-label={`Eliminar variante ${nombre}`}
           onClick={onRemove}
-          className="flex size-8 items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
+          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/15 bg-red-400/5 text-red-200/65 transition-colors hover:border-red-400/35 hover:bg-red-400/12 hover:text-white"
         >
           <Trash2 className="size-4" />
         </button>

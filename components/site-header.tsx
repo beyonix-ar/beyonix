@@ -66,24 +66,6 @@ function AccountMenuIcon({
   )
 }
 
-function AccountLoadingPlaceholder({ mobile = false }: { mobile?: boolean }) {
-  if (mobile) {
-    return (
-      <div className="grid gap-2 px-2 py-3 sm:grid-cols-2" aria-hidden="true">
-        <span className="h-10 animate-pulse rounded-lg border border-beyonix-blue-light/14 bg-white/4" />
-        <span className="h-10 animate-pulse rounded-lg border border-beyonix-blue-light/18 bg-beyonix-blue/35" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-2" aria-hidden="true">
-      <span className="h-11 w-32 animate-pulse rounded-full border border-beyonix-blue-light/16 bg-white/4" />
-      <span className="h-11 w-28 animate-pulse rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/35" />
-    </div>
-  )
-}
-
 export function SiteHeader() {
   const pathname = usePathname()
   const { cart, total, openCart } = useCart()
@@ -403,10 +385,8 @@ export function SiteHeader() {
                     </div>
                   )}
                 </>
-              ) : isLoading ? (
-                <AccountLoadingPlaceholder />
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" aria-busy={isLoading}>
                   <Link
                     href="/login"
                     className={cn(
@@ -608,10 +588,11 @@ export function SiteHeader() {
                     Cerrar sesión
                   </button>
                 </>
-              ) : isLoading ? (
-                <AccountLoadingPlaceholder mobile />
               ) : (
-                <div className="grid gap-2 px-2 py-3 sm:grid-cols-2">
+                <div
+                  className="grid gap-2 px-2 py-3 sm:grid-cols-2"
+                  aria-busy={isLoading}
+                >
                   <Link
                     href="/login"
                     onClick={() => setMobileOpen(false)}

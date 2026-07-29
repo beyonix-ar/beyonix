@@ -1,6 +1,7 @@
 export interface StandaloneCostRow {
   id: string
   product_id: number | null
+  variant_id?: number | null
   article_name: string | null
   sku: string | null
   purchase_date: string

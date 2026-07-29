@@ -3,6 +3,15 @@
 -- 2. concentra compras, ventas y devoluciones en un libro cronológico;
 -- 3. deriva Productos y el desglose desde ese mismo libro, sin repetir fórmulas.
 
+do $$
+begin
+  if to_regclass('public.inventory_variant_allocations') is not null then
+    raise exception
+      'La migración 095 es histórica y no debe volver a ejecutarse. Aplicá 101_restore_variant_inventory_calculation.sql.';
+  end if;
+end;
+$$;
+
 with unique_catalog_skus as (
   select
     upper(trim(products.sku)) as normalized_sku,

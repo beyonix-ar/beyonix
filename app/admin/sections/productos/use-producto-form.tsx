@@ -474,6 +474,7 @@ export function useProductoForm({
       }> = []
       const variantes: Array<{
         nombre: string
+        sku: string | null
         color_hex: string
         imagenes: string[]
         activo: boolean
@@ -511,6 +512,9 @@ export function useProductoForm({
         variantes.push({
           nombre:
             variant.nombre.trim(),
+          sku:
+            variant.sku.trim() ||
+            null,
           color_hex:
             variant.color_hex,
           imagenes: urls,

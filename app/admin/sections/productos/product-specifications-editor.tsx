@@ -445,8 +445,8 @@ export function ProductSpecificationsEditor({
   const visibleSpecifications = sortSpecifications(specifications)
 
   return (
-    <div className="space-y-3">
-      <div className="grid gap-2">
+    <div className="min-w-0 space-y-2.5">
+      <div className="grid min-w-0 gap-2">
         <LucideIconPicker
           value={icono}
           onChange={setIcono}
@@ -468,7 +468,11 @@ export function ProductSpecificationsEditor({
             activo ? "Desactivar especificación" : "Activar especificación"
           }
           onClick={() => setActivo((current) => !current)}
-          className="flex min-h-40px cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-[#181818] px-3.5 text-left transition-colors hover:border-[#112A43] hover:bg-[#112A43]"
+          className={`flex min-h-10 cursor-pointer items-center gap-2.5 rounded-xl border px-3 text-left transition-colors ${
+            activo
+              ? "border-emerald-400/20 bg-emerald-400/8 hover:border-emerald-400/35"
+              : "border-amber-400/20 bg-amber-400/8 hover:border-amber-400/35"
+          }`}
         >
           {activo ? (
             <ToggleRight className="size-6 text-beyonix-cyan" />
@@ -491,7 +495,7 @@ export function ProductSpecificationsEditor({
           }
           onClick={saveSpecification}
           disabled={saving}
-          className="inline-flex h-10 min-w-120px cursor-pointer items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-black transition-colors hover:bg-[#112A43] hover:text-white disabled:opacity-50"
+          className="inline-flex h-10 min-w-120px cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue px-4 text-sm font-bold text-white transition-colors hover:border-beyonix-sky/60 hover:bg-beyonix-blue-hover disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="size-4 animate-spin" />
@@ -525,7 +529,7 @@ export function ProductSpecificationsEditor({
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <div className="space-y-2 border-t border-white/8 pt-3">
+        <div className="space-y-2 border-t border-white/8 pt-2.5">
           {productoId ? (
             visibleSpecifications.length ? (
               visibleSpecifications.map((specification, index) => (
@@ -694,8 +698,8 @@ function SpecificationRow({
             <GripVertical className="size-4" />
           </span>
 
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/20 bg-beyonix-blue/35 text-beyonix-sky">
-            <Icon className="size-4" />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-[#444444] text-white">
+            <Icon className="size-4 text-white" />
           </span>
 
           <div className="min-w-0">

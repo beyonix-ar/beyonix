@@ -8,12 +8,12 @@ import {
 import { createPortal } from "react-dom"
 
 import {
+  BadgePercent,
   Check,
   ChevronDown,
   ChevronRight,
   Eye,
   GripVertical,
-  ImageIcon,
   Package,
   Pencil,
   Star,
@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 
 import type {
+  SupabaseConditionedStock,
   SupabaseProductoVariante,
   SupabaseProducto,
 } from "@/lib/supabase/types"
@@ -32,10 +33,16 @@ import {
 } from "@/lib/supabase/queries/producto-variantes"
 
 import {
+  deleteConditionedStock,
   updateProducto,
+  updateConditionedStock,
 } from "@/lib/supabase/queries/productos"
 
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
+import {
+  AdminModal,
+  AdminSecondaryButton,
+} from "../../components/admin-controls"
 
 interface ProductosRowProps {
   producto: SupabaseProducto
@@ -186,6 +193,16 @@ export function ProductosRow({
     useState<SupabaseProductoVariante[]>(
       producto.producto_variantes || []
     )
+  const [localConditionedStock, setLocalConditionedStock] =
+    useState<SupabaseConditionedStock[]>(
+      producto.conditioned_stock || [],
+    )
+  const [editingConditionedStock, setEditingConditionedStock] =
+    useState<SupabaseConditionedStock | null>(null)
+  const [savingConditionedId, setSavingConditionedId] =
+    useState<string | null>(null)
+  const [conditionedError, setConditionedError] =
+    useState("")
   const [localPrincipalImage, setLocalPrincipalImage] =
     useState<string | null>(
       producto.imagen_principal
@@ -202,6 +219,12 @@ export function ProductosRow({
   }, [producto.producto_variantes])
 
   useEffect(() => {
+    setLocalConditionedStock(
+      producto.conditioned_stock || [],
+    )
+  }, [producto.conditioned_stock])
+
+  useEffect(() => {
     setLocalPrincipalImage(
       producto.imagen_principal
     )
@@ -215,7 +238,15 @@ export function ProductosRow({
 
   const variantes =
     sortVariantes(localVariantes)
+  const conditionedStock = localConditionedStock
   const primaryVariant = variantes[0]
+  const hasDetails = variantes.length > 0 || conditionedStock.length > 0
+  const skuTitle = variantes.length
+    ? "Los SKU se muestran en cada variante"
+    : producto.sku?.trim() || "Sin SKU"
+  const skuDisplay = variantes.length
+    ? "—"
+    : producto.sku?.trim() || "—"
 
   const stockTotal =
     variantes.length
@@ -226,6 +257,87 @@ export function ProductosRow({
           0
         )
       : getStockTotal(producto)
+  const productStockStatus = stockStatus(stockTotal, stockSettings)
+
+  const replaceConditionedStock = (nextItem: SupabaseConditionedStock) => {
+    setLocalConditionedStock((current) =>
+      current.map((item) =>
+        item.id === nextItem.id ? nextItem : item,
+      ),
+    )
+  }
+
+  const toggleConditionedStock = async (item: SupabaseConditionedStock) => {
+    try {
+      setSavingConditionedId(item.id)
+      setConditionedError("")
+      replaceConditionedStock(
+        await updateConditionedStock(item.id, { active: !item.active }),
+      )
+    } catch (error) {
+      setConditionedError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo cambiar el estado.",
+      )
+    } finally {
+      setSavingConditionedId(null)
+    }
+  }
+
+  const saveConditionedStock = async (
+    item: SupabaseConditionedStock,
+    values: {
+      discountPercent: number
+      discountReason: string
+      nonSellableReason: string
+    },
+  ) => {
+    try {
+      setSavingConditionedId(item.id)
+      setConditionedError("")
+      replaceConditionedStock(
+        await updateConditionedStock(item.id, values),
+      )
+      setEditingConditionedStock(null)
+    } catch (error) {
+      setConditionedError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo editar la unidad.",
+      )
+      throw error
+    } finally {
+      setSavingConditionedId(null)
+    }
+  }
+
+  const removeConditionedStock = async (item: SupabaseConditionedStock) => {
+    if (
+      !window.confirm(
+        "¿Quitar esta unidad del inventario con descuento? Quedará pendiente de clasificación y no se borrará el historial de la devolución.",
+      )
+    ) {
+      return
+    }
+
+    try {
+      setSavingConditionedId(item.id)
+      setConditionedError("")
+      await deleteConditionedStock(item.id)
+      setLocalConditionedStock((current) =>
+        current.filter((currentItem) => currentItem.id !== item.id),
+      )
+    } catch (error) {
+      setConditionedError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo quitar la unidad.",
+      )
+    } finally {
+      setSavingConditionedId(null)
+    }
+  }
 
   const syncProductSummary = async (
     nextVariantes: SupabaseProductoVariante[]
@@ -474,9 +586,9 @@ export function ProductosRow({
           <button
             type="button"
             aria-label={
-              variantes.length
-                ? `Ver variantes de ${producto.nombre}`
-                : `${producto.nombre} no tiene variantes`
+              hasDetails
+                ? `Ver detalle de ${producto.nombre}`
+                : `${producto.nombre} no tiene detalles`
             }
             onClick={() =>
               setOpen((value) => !value)
@@ -494,20 +606,11 @@ export function ProductosRow({
             )}
           </button>
 
-          <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/6 bg-white">
-            {localPrincipalImage ? (
-              <img
-                alt={producto.nombre}
-                src={localPrincipalImage}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <ImageIcon className="size-4 text-black/20" />
-            )}
-          </div>
-
           <div className="min-w-0">
-            <p className="truncate text-base font-bold text-white">
+            <p
+              className="truncate text-sm font-bold text-white"
+              title={producto.nombre}
+            >
               {producto.nombre}
             </p>
 
@@ -522,6 +625,16 @@ export function ProductosRow({
               {!!variantes.length && (
                 <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-semibold text-white/65">
                   {variantes.length} variantes
+                </span>
+              )}
+
+              {!!conditionedStock.length && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-0.5 text-xs font-semibold text-amber-200">
+                  <BadgePercent className="size-3" />
+                  {conditionedStock.reduce(
+                    (total, item) => total + item.quantity,
+                    0,
+                  )} con descuento
                 </span>
               )}
 
@@ -540,9 +653,9 @@ export function ProductosRow({
 
         <span
           className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
-          title={producto.sku || "Sin SKU"}
+          title={skuTitle}
         >
-          {producto.sku || "—"}
+          {skuDisplay}
         </span>
 
         <div className="flex min-w-0 items-center justify-center gap-2">
@@ -569,9 +682,13 @@ export function ProductosRow({
           )}
         </div>
 
-        <span className="justify-self-stretch truncate text-center text-base font-bold text-white">
-          {producto.categorias?.nombre ||
-            "—"}
+        <span
+          className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-center text-10px font-black ${productStockStatus.className}`}
+        >
+          <span
+            className={`size-1.5 rounded-full ${productStockStatus.dotClassName}`}
+          />
+          {productStockStatus.label}
         </span>
 
         <div className="justify-self-stretch text-center">
@@ -665,209 +782,333 @@ export function ProductosRow({
       </div>
 
       {open && (
-        <div className="border-t border-white/5 bg-black px-5 py-4">
-          <div className="grid gap-2">
+        <div className="border-t border-white/5 bg-black py-2">
+          <div className="grid gap-1.5">
             {variantes.length ? (
               variantes.map((variante, index) => {
-              const stock =
-                variante.stock ?? 0
+                const stock = variante.stock ?? 0
+                const status = stockStatus(stock, stockSettings)
+                const isPrincipal = index === 0
+                const editing = editingVariantId === variante.id
 
-              const status =
-                stockStatus(stock, stockSettings)
-              const isPrincipal =
-                index === 0
-              return (
-                <div
-                  key={variante.id}
-                  data-variant-drop-id={
-                    variante.id
-                  }
-                  className="grid grid-cols-[2.5rem_1fr] items-stretch gap-3"
-                >
-                  <div className="flex items-center justify-center">
-                    {variantes.length > 1 ? (
-                      <button
-                        type="button"
-                        aria-label={`Reordenar variante ${variante.nombre}`}
-                        onPointerDown={(event) =>
-                          handleVariantPointerDown(
-                            event,
-                            variante.id
-                          )
-                        }
-                        onPointerUp={
-                          handleVariantPointerUp
-                        }
-                        onPointerCancel={
-                          stopVariantReorder
-                        }
-                        className={`flex size-9 cursor-grab items-center justify-center rounded-xl border text-white/45 transition-colors active:cursor-grab ${
-                          draggedVariantId ===
-                          variante.id
-                            ? "border-beyonix-blue-light/40 bg-beyonix-blue/20 text-beyonix-cyan"
-                            : "border-white/8 bg-white/5 hover:border-beyonix-blue-light/30 hover:text-beyonix-cyan"
-                        }`}
-                      >
-                        <GripVertical className="size-4" />
-                      </button>
-                    ) : (
-                      <span className="size-9" />
-                    )}
-                  </div>
-
+                return (
                   <div
-                    className={`grid items-center gap-3 rounded-2xl border border-white/7 bg-black px-4 py-3 ${
-                      editingVariantId === variante.id
-                        ? "grid-cols-[minmax(0,1fr)_130px_170px_120px]"
-                        : "grid-cols-admin-variant-row"
-                    }`}
+                    key={variante.id}
+                    data-variant-drop-id={variante.id}
+                    className="admin-product-variant-row grid grid-cols-admin-products items-center gap-3 rounded-xl border border-beyonix-blue-light/14 bg-[#07111b] px-4 py-2.5"
                   >
-                    <div className="flex items-center gap-3">
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/8 p-1">
-                      <span
-                        className="size-full rounded-full"
-                        style={{
-                          backgroundColor:
-                            variante.color_hex,
-                        }}
-                      />
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {variantes.length > 1 ? (
+                        <button
+                          type="button"
+                          aria-label={`Reordenar variante ${variante.nombre}`}
+                          onPointerDown={(event) =>
+                            handleVariantPointerDown(event, variante.id)
+                          }
+                          onPointerUp={handleVariantPointerUp}
+                          onPointerCancel={stopVariantReorder}
+                          className={`flex size-9 shrink-0 cursor-grab items-center justify-center rounded-xl border text-white/45 transition-colors active:cursor-grabbing ${
+                            draggedVariantId === variante.id
+                              ? "border-beyonix-blue-light/40 bg-beyonix-blue/20 text-beyonix-cyan"
+                              : "border-white/8 bg-black/30 hover:border-beyonix-blue-light/30 hover:text-beyonix-cyan"
+                          }`}
+                        >
+                          <GripVertical className="size-4" />
+                        </button>
+                      ) : (
+                        <span className="size-9 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p
+                          className="truncate text-xs font-bold text-white"
+                          title={`${producto.nombre} · ${variante.nombre}`}
+                        >
+                          {producto.nombre}
+                        </p>
+                        <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-10px font-semibold text-white/48">
+                            Variante {variante.nombre}
+                          </span>
+                          {isPrincipal && (
+                            <span className="shrink-0 rounded-full border border-beyonix-blue-light/25 bg-beyonix-blue/20 px-1.5 py-0.5 text-9px font-semibold text-beyonix-cyan">
+                              Principal
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`justify-self-center text-sm font-black tabular-nums ${stockColor(
+                        stock,
+                        stockSettings,
+                      )}`}
+                    >
+                      {stock}
                     </span>
 
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium text-white">
-                          {variante.nombre}
-                        </p>
+                    <span
+                      className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
+                      title={variante.sku?.trim() || "Sin SKU"}
+                    >
+                      {variante.sku?.trim() || "—"}
+                    </span>
 
-                        {isPrincipal && (
-                          <span className="rounded-full border border-beyonix-blue-light/25 bg-beyonix-blue/20 px-2 py-0.5 text-10px font-semibold text-beyonix-cyan">
-                            Principal
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="text-xs text-white/50">
-                        {variante.color_hex}
-                      </p>
-                    </div>
-                  </div>
-
-                  {editingVariantId ===
-                  variante.id ? (
-                    <>
-                      <div className="flex h-10 items-center justify-center rounded-xl border border-beyonix-blue-light/16 bg-[#07111b] px-3 text-center text-xs font-black text-beyonix-sky">
-                        Stock calculado: {stock}
-                      </div>
-
-                      <label className="relative flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-beyonix-blue-light/16 bg-[#07111b] px-3 transition-colors hover:border-beyonix-sky/40 hover:bg-beyonix-blue/12 focus-within:border-beyonix-sky/55">
+                    {editing ? (
+                      <label className="relative flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 transition-colors hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/55">
                         <span
-                          className="size-5 shrink-0 rounded-md border border-white/28 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]"
+                          className="size-4 shrink-0 rounded-full border border-white/28"
                           style={{ backgroundColor: editColor }}
                         />
-                        <span className="text-xs font-bold uppercase text-white/68">
+                        <span className="truncate text-10px font-bold uppercase text-white/68">
                           {editColor}
                         </span>
                         <input
                           type="color"
                           value={editColor}
                           aria-label={`Editar color de ${variante.nombre}`}
-                          onChange={(event) =>
-                            setEditColor(
-                              event.target.value
-                            )
-                          }
+                          onChange={(event) => setEditColor(event.target.value)}
                           className="absolute inset-0 size-full cursor-pointer opacity-0"
                         />
                       </label>
-
-                      <div className="flex items-center justify-end">
-                        <button
-                          type="button"
-                          aria-label={`Guardar variante ${variante.nombre}`}
-                          onClick={() =>
-                            saveVariant(
-                              variante
-                            )
-                          }
-                          className="inline-flex h-10 min-w-100px cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/38 bg-beyonix-blue/28 px-4 text-xs font-black text-white transition-colors hover:border-beyonix-sky/65 hover:bg-beyonix-blue/42"
-                        >
-                          <Check className="size-4 text-emerald-300" />
-                          Guardar
-                        </button>
-
+                    ) : (
+                      <div className="flex min-w-0 items-center justify-center gap-2">
+                        <span
+                          className="size-4 shrink-0 rounded-full border border-white/25"
+                          style={{ backgroundColor: variante.color_hex }}
+                        />
+                        <span className="min-w-0 text-center">
+                          <span className="block truncate text-xs font-bold text-white/70">
+                            {variante.nombre}
+                          </span>
+                          <span className="block truncate text-9px font-semibold uppercase text-white/35">
+                            {variante.color_hex}
+                          </span>
+                        </span>
                       </div>
-                    </>
-                  ) : (
-                    <>
+                    )}
+
+                    <span
+                      className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-center text-10px font-black ${status.className}`}
+                    >
                       <span
-                        className={`text-sm font-semibold ${stockColor(
-                          stock,
-                          stockSettings,
-                        )}`}
-                      >
-                        Stock real: {stock}
-                      </span>
+                        className={`size-1.5 rounded-full ${status.dotClassName}`}
+                      />
+                      {status.label}
+                    </span>
 
+                    <div className="justify-self-stretch text-center">
+                      <p className="text-sm font-bold tabular-nums text-white">
+                        ${producto.precio.toLocaleString("es-AR")}
+                      </p>
+                      {!!producto.precio_anterior && (
+                        <p className="text-10px tabular-nums text-white/38 line-through">
+                          ${producto.precio_anterior.toLocaleString("es-AR")}
+                        </p>
+                      )}
+                    </div>
+
+                    <span
+                      className={`inline-flex w-fit items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-semibold ${
+                        variante.activo !== false
+                          ? "border-green-500/20 bg-green-500/10 text-green-400"
+                          : "border-white/10 bg-white/5 text-white/45"
+                      }`}
+                    >
                       <span
-                        className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-3 py-1.5 text-center text-xs font-black ${status.className}`}
+                        className={`size-1.5 rounded-full ${
+                          variante.activo !== false
+                            ? "bg-green-400"
+                            : "bg-white/25"
+                        }`}
+                      />
+                      {variante.activo !== false ? "Activa" : "Inactiva"}
+                    </span>
+
+                    <div className="flex items-center justify-end gap-1.5 pr-2">
+                      <button
+                        type="button"
+                        aria-label={`Ver variante ${variante.nombre}`}
+                        onClick={() => viewVariant(variante)}
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400"
                       >
-                        <span className={`size-1.5 rounded-full ${status.dotClassName}`} />
-                        {status.label}
-                      </span>
+                        <Eye className="size-3.5" />
+                      </button>
 
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          aria-label={`Ver variante ${variante.nombre}`}
-                          onClick={() =>
-                            viewVariant(
-                              variante
-                            )
-                          }
-                          className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400 cursor-pointer"
-                        >
-                          <Eye className="size-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          aria-label={`Editar variante ${variante.nombre}`}
-                          onClick={() =>
-                            startEditVariant(
-                              variante
-                            )
-                          }
-                          className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-white/20 hover:text-white cursor-pointer"
-                        >
+                      <button
+                        type="button"
+                        aria-label={
+                          editing
+                            ? `Guardar variante ${variante.nombre}`
+                            : `Editar variante ${variante.nombre}`
+                        }
+                        onClick={() =>
+                          editing
+                            ? void saveVariant(variante)
+                            : startEditVariant(variante)
+                        }
+                        className={`flex size-8 cursor-pointer items-center justify-center rounded-xl border transition-colors ${
+                          editing
+                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18"
+                            : "border-white/8 text-white/60 hover:border-white/20 hover:text-white"
+                        }`}
+                      >
+                        {editing ? (
+                          <Check className="size-3.5" />
+                        ) : (
                           <Pencil className="size-3.5" />
-                        </button>
+                        )}
+                      </button>
 
-                        <button
-                          type="button"
-                          aria-label={`Eliminar variante ${variante.nombre}`}
-                          onClick={() =>
-                            removeVariant(
-                              variante
-                            )
-                          }
-                          className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400 cursor-pointer"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      </div>
-                    </>
-                  )}
+                      <button
+                        type="button"
+                        aria-label={`Eliminar variante ${variante.nombre}`}
+                        onClick={() => removeVariant(variante)}
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )
-            })
-            ) : (
-              <div className="rounded-2xl border border-white/7 bg-black px-4 py-3">
+                )
+              })
+            ) : conditionedStock.length ? null : (
+              <div className="mx-4 rounded-xl border border-white/7 bg-[#07111b] px-4 py-3">
                 <p className="text-sm text-white/60">
                   Este producto no tiene variantes cargadas.
                 </p>
               </div>
             )}
+
+            {conditionedError && (
+              <div className="mx-4 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+                {conditionedError}
+              </div>
+            )}
+
+            {conditionedStock.map((item) => {
+              const linkedVariant = variantes.find(
+                (variante) => variante.id === item.variant_id,
+              )
+              const conditionedPrice = Math.round(
+                producto.precio * (1 - item.discount_percent / 100),
+              )
+
+              return (
+                <div
+                  key={`conditioned-${item.id}`}
+                  className="admin-product-variant-row grid grid-cols-admin-products items-center gap-3 rounded-xl border border-amber-300/22 bg-[linear-gradient(90deg,rgba(245,158,11,0.08),rgba(7,17,27,0.96))] px-4 py-2.5"
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/10">
+                      <BadgePercent className="size-4 text-white" />
+                    </span>
+                    <div className="min-w-0">
+                      <p
+                        className="truncate text-xs font-bold text-white"
+                        title={`${producto.nombre} · Con detalles`}
+                      >
+                        {producto.nombre}
+                      </p>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                        <span className="shrink-0 rounded-full border border-amber-300/25 bg-amber-300/12 px-1.5 py-0.5 text-9px font-black text-amber-200">
+                          {item.discount_percent}% OFF
+                        </span>
+                        <span
+                          className="truncate text-10px font-semibold text-white/48"
+                          title={item.reason || "Motivo pendiente"}
+                        >
+                          {item.reason || "Motivo pendiente"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span className="justify-self-center text-sm font-black tabular-nums text-amber-300">
+                    {item.quantity}
+                  </span>
+
+                  <span
+                    className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
+                    title={linkedVariant?.sku?.trim() || "Sin SKU"}
+                  >
+                    {linkedVariant?.sku?.trim() || "—"}
+                  </span>
+
+                  <div className="flex min-w-0 items-center justify-center gap-2">
+                    {linkedVariant ? (
+                      <>
+                        <span
+                          className="size-4 shrink-0 rounded-full border border-white/25"
+                          style={{ backgroundColor: linkedVariant.color_hex }}
+                        />
+                        <span className="truncate text-xs font-bold text-white/70">
+                          {linkedVariant.nombre}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs font-semibold text-white/35">—</span>
+                    )}
+                  </div>
+
+                  <span className="inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-10px font-black text-amber-200">
+                    <span className="size-1.5 rounded-full bg-amber-300" />
+                    Con descuento
+                  </span>
+
+                  <div className="justify-self-stretch text-center">
+                    <p className="text-sm font-bold tabular-nums text-amber-200">
+                      ${conditionedPrice.toLocaleString("es-AR")}
+                    </p>
+                    <p className="text-10px tabular-nums text-white/38 line-through">
+                      ${producto.precio.toLocaleString("es-AR")}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={savingConditionedId === item.id}
+                    onClick={() => void toggleConditionedStock(item)}
+                    className={`inline-flex w-fit cursor-pointer items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-semibold transition disabled:cursor-wait disabled:opacity-50 ${
+                      item.active
+                        ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+                        : "border-white/10 bg-white/5 text-white/45 hover:border-emerald-400/20 hover:text-white/70"
+                    }`}
+                  >
+                    <span
+                      className={`size-1.5 rounded-full ${
+                        item.active ? "bg-emerald-400" : "bg-white/25"
+                      }`}
+                    />
+                    {item.active ? "Activa" : "Inactiva"}
+                  </button>
+
+                  <div className="flex items-center justify-end gap-1.5 pr-2">
+                    <button
+                      type="button"
+                      aria-label="Editar unidad con descuento"
+                      disabled={savingConditionedId === item.id}
+                      onClick={() => {
+                        setConditionedError("")
+                        setEditingConditionedStock(item)
+                      }}
+                      className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/65 transition-colors hover:border-beyonix-blue-light/30 hover:text-white disabled:cursor-wait disabled:opacity-40"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Eliminar unidad con descuento"
+                      disabled={savingConditionedId === item.id}
+                      onClick={() => void removeConditionedStock(item)}
+                      className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/20 bg-red-400/7 text-red-300 transition-colors hover:border-red-400/40 hover:bg-red-400/12 disabled:cursor-wait disabled:opacity-40"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -880,6 +1121,25 @@ export function ProductosRow({
             stockSettings={stockSettings}
             onClose={() =>
               setViewingVariant(null)
+            }
+          />,
+          document.body,
+        )}
+
+      {editingConditionedStock &&
+        createPortal(
+          <ConditionedStockEditModal
+            item={editingConditionedStock}
+            saving={savingConditionedId === editingConditionedStock.id}
+            error={conditionedError}
+            onClose={() => {
+              if (!savingConditionedId) {
+                setEditingConditionedStock(null)
+                setConditionedError("")
+              }
+            }}
+            onSave={(values) =>
+              saveConditionedStock(editingConditionedStock, values)
             }
           />,
           document.body,
@@ -899,6 +1159,159 @@ export function ProductosRow({
           document.body,
         )}
     </div>
+  )
+}
+
+function ConditionedStockEditModal({
+  item,
+  saving,
+  error,
+  onClose,
+  onSave,
+}: {
+  item: SupabaseConditionedStock
+  saving: boolean
+  error: string
+  onClose: () => void
+  onSave: (values: {
+    discountPercent: number
+    discountReason: string
+    nonSellableReason: string
+  }) => Promise<void>
+}) {
+  const [discountPercent, setDiscountPercent] = useState(
+    String(item.discount_percent),
+  )
+  const [discountReason, setDiscountReason] = useState(item.reason ?? "")
+  const [nonSellableReason, setNonSellableReason] = useState(
+    item.non_sellable_reason ?? "",
+  )
+  const parsedPercent = Number(discountPercent.replace(",", "."))
+  const valid =
+    Number.isFinite(parsedPercent) &&
+    parsedPercent > 0 &&
+    parsedPercent < 100 &&
+    Boolean(discountReason.trim()) &&
+    (
+      item.non_sellable_quantity === 0 ||
+      Boolean(nonSellableReason.trim())
+    )
+  const inputClass =
+    "h-11 w-full rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/25 focus:border-beyonix-sky/55"
+
+  const submit = async () => {
+    if (!valid || saving) return
+    try {
+      await onSave({
+        discountPercent: parsedPercent,
+        discountReason: discountReason.trim(),
+        nonSellableReason: nonSellableReason.trim(),
+      })
+    } catch {
+      // El mensaje se muestra dentro del modal.
+    }
+  }
+
+  return (
+    <AdminModal
+      open
+      eyebrow="Inventario con descuento"
+      title="Editar unidad"
+      description="Actualizá el descuento y documentá el estado físico del producto."
+      onClose={onClose}
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <AdminSecondaryButton
+            title="Cancelar edición"
+            aria-label="Cancelar edición"
+            disabled={saving}
+            onClick={onClose}
+          >
+            Cancelar
+          </AdminSecondaryButton>
+          <button
+            type="button"
+            disabled={!valid || saving}
+            onClick={() => void submit()}
+            className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue/25 px-4 text-sm font-black text-white transition hover:bg-beyonix-blue/38 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Check className="size-4" />
+            {saving ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <div className="rounded-xl border border-amber-300/18 bg-amber-300/6 p-3">
+          <p className="text-10px font-black uppercase tracking-wider text-amber-100/65">
+            Cantidad condicionada
+          </p>
+          <p className="mt-1 text-xl font-black tabular-nums text-amber-200">
+            {item.quantity}
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
+          <label>
+            <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-white/45">
+              Descuento
+            </span>
+            <div className="relative">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={discountPercent}
+                onChange={(event) =>
+                  setDiscountPercent(
+                    event.target.value.replace(/[^\d.,]/g, ""),
+                  )
+                }
+                className={`${inputClass} pr-9 text-center font-black`}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-black text-amber-200">
+                %
+              </span>
+            </div>
+          </label>
+
+          <label>
+            <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-white/45">
+              Motivo del descuento
+            </span>
+            <input
+              type="text"
+              value={discountReason}
+              maxLength={300}
+              onChange={(event) => setDiscountReason(event.target.value)}
+              placeholder="Ej.: Tiene una marca"
+              className={inputClass}
+            />
+          </label>
+        </div>
+
+        {item.non_sellable_quantity > 0 && (
+          <label className="block rounded-xl border border-red-400/16 bg-red-400/5 p-3">
+            <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-red-200/70">
+              Motivo de no vendible
+            </span>
+            <input
+              type="text"
+              value={nonSellableReason}
+              maxLength={300}
+              onChange={(event) => setNonSellableReason(event.target.value)}
+              placeholder="Ej.: Llegó completamente roto"
+              className={inputClass}
+            />
+          </label>
+        )}
+
+        {error && (
+          <p className="rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+            {error}
+          </p>
+        )}
+      </div>
+    </AdminModal>
   )
 }
 
@@ -968,6 +1381,10 @@ function VariantModal({
                 {variante.color_hex}
               </span>
 
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/65">
+                SKU: {variante.sku?.trim() || "sin SKU"}
+              </span>
+
               <span
                 className={`rounded-full border px-3 py-1 text-xs font-semibold ${status.className}`}
               >
@@ -980,7 +1397,7 @@ function VariantModal({
                   stockSettings,
                 )}`}
               >
-                Stock real: {stock}
+                Stock: {stock}
               </span>
             </div>
           </div>

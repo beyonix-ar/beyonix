@@ -15,7 +15,9 @@ import {
   CircleDollarSign,
   FileSpreadsheet,
   Link2,
+  Minus,
   Package,
+  Plus,
   RefreshCw,
   RotateCcw,
   Trash2,
@@ -187,14 +189,14 @@ function SummaryCard({
     danger: "text-red-300",
   }[tone]
   return (
-    <div className="rounded-2xl border border-beyonix-blue-light/14 bg-black/25 px-3 py-3 text-center">
-      <span className="mx-auto flex size-7 items-center justify-center rounded-lg bg-beyonix-blue/20 text-beyonix-sky">
+    <div className="rounded-xl border border-beyonix-blue-light/14 bg-black/25 px-3 py-2.5 text-center">
+      <span className="mx-auto flex size-6 items-center justify-center rounded-md bg-beyonix-blue/20 text-beyonix-sky">
         {icon}
       </span>
       <p className="mt-1.5 text-9px font-black uppercase tracking-widest text-white/40">
         {label}
       </p>
-      <p className={`mt-0.5 text-lg font-black tabular-nums ${valueClass}`}>{value}</p>
+      <p className={`mt-0.5 text-base font-black tabular-nums ${valueClass}`}>{value}</p>
       <p
         title={helper}
         className="mt-0.5 truncate text-10px font-semibold text-white/35"
@@ -216,6 +218,114 @@ function DetailValue({ value }: { value: unknown }) {
 
 const reviewInputClass =
   "h-10 w-full rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-center text-sm font-black text-white outline-none transition focus:border-beyonix-sky/55"
+
+function clampQuantity(value: unknown, min: number, max: number) {
+  const parsed = Math.trunc(number(value))
+  return Math.min(Math.max(parsed, min), Math.max(min, max))
+}
+
+function ReturnQuantityStepper({
+  label,
+  value,
+  min = 0,
+  max,
+  tone,
+  onChange,
+}: {
+  label: string
+  value: string
+  min?: number
+  max: number
+  tone: "blue" | "green" | "amber" | "red"
+  onChange: (value: string) => void
+}) {
+  const quantity = clampQuantity(value, min, max)
+  const inputId = `return-${label.toLocaleLowerCase("es").replace(/\s+/g, "-")}`
+  const toneStyles = {
+    blue: {
+      card: "border-sky-400/20 bg-sky-400/[0.055]",
+      label: "text-sky-200/75",
+      button: "text-sky-300 hover:bg-sky-400/12",
+    },
+    green: {
+      card: "border-emerald-400/20 bg-emerald-400/[0.055]",
+      label: "text-emerald-200/75",
+      button: "text-emerald-300 hover:bg-emerald-400/12",
+    },
+    amber: {
+      card: "border-amber-300/20 bg-amber-300/[0.055]",
+      label: "text-amber-100/75",
+      button: "text-amber-200 hover:bg-amber-300/12",
+    },
+    red: {
+      card: "border-red-400/20 bg-red-400/[0.055]",
+      label: "text-red-200/75",
+      button: "text-red-300 hover:bg-red-400/12",
+    },
+  }[tone]
+  const commit = (nextValue: unknown) => {
+    onChange(String(clampQuantity(nextValue, min, max)))
+  }
+
+  return (
+    <div className={`rounded-xl border p-2.5 ${toneStyles.card}`}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <label
+          htmlFor={inputId}
+          className={`truncate text-10px font-black uppercase tracking-wider ${toneStyles.label}`}
+        >
+          {label}
+        </label>
+        <span className="shrink-0 rounded-md border border-white/8 bg-black/25 px-1.5 py-0.5 text-9px font-bold tabular-nums text-white/42">
+          Límite {max}
+        </span>
+      </div>
+      <div className="grid h-11 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] overflow-hidden rounded-lg border border-white/10 bg-[#050B12] shadow-inner transition focus-within:border-beyonix-sky/55">
+        <button
+          type="button"
+          aria-label={`Restar una unidad en ${label}`}
+          disabled={quantity <= min}
+          onClick={() => commit(quantity - 1)}
+          className={`flex cursor-pointer items-center justify-center border-r border-white/8 transition disabled:cursor-not-allowed disabled:text-white/18 ${toneStyles.button}`}
+        >
+          <Minus className="size-4" />
+        </button>
+        <input
+          id={inputId}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          role="spinbutton"
+          value={value}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={quantity}
+          onChange={(event) => commit(event.target.value.replace(/\D/g, ""))}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp") {
+              event.preventDefault()
+              commit(quantity + 1)
+            }
+            if (event.key === "ArrowDown") {
+              event.preventDefault()
+              commit(quantity - 1)
+            }
+          }}
+          className="min-w-0 bg-transparent px-1 text-center text-base font-black tabular-nums text-white outline-none"
+        />
+        <button
+          type="button"
+          aria-label={`Sumar una unidad en ${label}`}
+          disabled={quantity >= max}
+          onClick={() => commit(quantity + 1)}
+          className={`flex cursor-pointer items-center justify-center border-l border-white/8 transition disabled:cursor-not-allowed disabled:text-white/18 ${toneStyles.button}`}
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export function AdminMercadoLibreSales() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -239,6 +349,8 @@ export function AdminMercadoLibreSales() {
   const [nonSellableReturnQuantity, setNonSellableReturnQuantity] =
     useState("0")
   const [returnDiscountPercent, setReturnDiscountPercent] = useState("")
+  const [returnDiscountReason, setReturnDiscountReason] = useState("")
+  const [returnNonSellableReason, setReturnNonSellableReason] = useState("")
   const [returnReviewNotes, setReturnReviewNotes] = useState("")
   const [pendingDelete, setPendingDelete] =
     useState<StoredMercadoLibreSale | null>(null)
@@ -370,8 +482,8 @@ export function AdminMercadoLibreSales() {
         ...(!product.standalone_key ? product.producto_variantes ?? [] : []).map((variant) => ({
           value: `v:${product.id}:${variant.id}`,
           label: `${product.nombre} · ${variant.nombre}`,
-          sku: product.sku ?? null,
-          searchText: `${product.nombre} ${variant.nombre} ${product.sku ?? ""}`,
+          sku: variant.sku ?? null,
+          searchText: `${product.nombre} ${variant.nombre} ${variant.sku ?? ""}`,
         })),
       ]),
     [catalog],
@@ -440,6 +552,8 @@ export function AdminMercadoLibreSales() {
         ? ""
         : String(review.discount_percent),
     )
+    setReturnDiscountReason(review?.discount_reason ?? "")
+    setReturnNonSellableReason(review?.non_sellable_reason ?? "")
     setReturnReviewNotes(review?.review_notes ?? "")
     setError("")
   }
@@ -457,10 +571,12 @@ export function AdminMercadoLibreSales() {
         discountPercent: returnDiscountPercent
           ? number(returnDiscountPercent)
           : null,
+        discountReason: returnDiscountReason,
+        nonSellableReason: returnNonSellableReason,
         notes: returnReviewNotes,
       })
       setReviewingReturn(null)
-      setSuccess("Revisión física guardada y stock recalculado.")
+      setSuccess("Revisión física guardada y stock actualizado.")
       await load()
     } catch (reviewError) {
       setError(
@@ -555,6 +671,28 @@ export function AdminMercadoLibreSales() {
     0,
     receivedReturn - classifiedReturn,
   )
+  const soldReturnQuantity = Math.max(
+    0,
+    Math.trunc(number(reviewingReturn?.quantity)),
+  )
+  const sellableReturnMax = Math.max(
+    0,
+    receivedReturn -
+      number(discountedReturnQuantity) -
+      number(nonSellableReturnQuantity),
+  )
+  const discountedReturnMax = Math.max(
+    0,
+    receivedReturn -
+      number(sellableReturnQuantity) -
+      number(nonSellableReturnQuantity),
+  )
+  const nonSellableReturnMax = Math.max(
+    0,
+    receivedReturn -
+      number(sellableReturnQuantity) -
+      number(discountedReturnQuantity),
+  )
   const returnReviewValid =
     receivedReturn >= 0 &&
     receivedReturn <= number(reviewingReturn?.quantity) &&
@@ -563,19 +701,24 @@ export function AdminMercadoLibreSales() {
       number(discountedReturnQuantity) === 0 ||
       (
         number(returnDiscountPercent) > 0 &&
-        number(returnDiscountPercent) < 100
+        number(returnDiscountPercent) < 100 &&
+        Boolean(returnDiscountReason.trim())
       )
+    ) &&
+    (
+      number(nonSellableReturnQuantity) === 0 ||
+      Boolean(returnNonSellableReason.trim())
     )
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.9),rgba(3,7,13,0.98))] p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="admin-dashboard-panel admin-mercadolibre-sales space-y-3">
+      <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.9),rgba(3,7,13,0.98))] p-3.5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
               Reportes de Mercado Libre
             </p>
-            <h2 className="mt-1 text-2xl font-black text-white">Ventas ML</h2>
+            <h2 className="mt-1 text-xl font-black text-white">Ventas ML</h2>
             <p className="mt-1 text-sm leading-5 text-white/55">
               Importá el Excel “Ventas AR” y conciliá ventas, cargos, envíos,
               devoluciones y reclamos. Sólo las unidades efectivas vinculadas
@@ -609,7 +752,7 @@ export function AdminMercadoLibreSales() {
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-2.5 grid grid-cols-2 gap-2 xl:grid-cols-4">
           <SummaryCard
             label="Ventas"
             value={String(summary.sales)}
@@ -651,7 +794,7 @@ export function AdminMercadoLibreSales() {
           />
         </div>
 
-        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+        <div className="mt-2 grid grid-cols-2 gap-2 xl:grid-cols-4 2xl:grid-cols-8">
           <SummaryCard label="Cargos por venta" value={formatPrice(Math.abs(summary.saleFees))} helper={`Suma aplicada en ${summary.salesWithSaleFee} operaciones`} icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
           <SummaryCard label="Costo fijo" value={formatPrice(Math.abs(summary.fixedCosts))} helper="Cargos fijos" icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
           <SummaryCard label="Costo por cuotas" value={formatPrice(Math.abs(summary.installmentCosts))} helper="Financiación" icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
@@ -686,7 +829,7 @@ export function AdminMercadoLibreSales() {
               return (
                 <div
                   key={group.key}
-                  className="flex min-w-0 items-center gap-2 rounded-xl border border-white/8 bg-black/20 p-2 pl-3"
+                  className="flex min-w-0 flex-col items-stretch gap-2 rounded-xl border border-white/8 bg-black/20 p-2.5 sm:flex-row sm:items-center sm:pl-3"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-xs font-black text-white">
@@ -699,7 +842,7 @@ export function AdminMercadoLibreSales() {
                       {group.productName}
                     </p>
                   </div>
-                  <div className="ml-auto w-56 shrink-0">
+                  <div className="w-full shrink-0 sm:ml-auto sm:w-56">
                     {editing ? (
                       <AdminSelect
                         title="Producto asociado"
@@ -756,7 +899,7 @@ export function AdminMercadoLibreSales() {
       )}
 
       {preview && (
-        <section className="rounded-3xl border border-beyonix-sky/28 bg-[#071018] p-4">
+        <section className="rounded-2xl border border-beyonix-sky/28 bg-[#071018] p-3.5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
@@ -848,7 +991,7 @@ export function AdminMercadoLibreSales() {
         </section>
       )}
 
-      <section className="rounded-3xl border border-beyonix-blue-light/18 bg-[#071018] p-4">
+      <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[#071018] p-3.5">
         <div className="mb-4">
           <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
             Movimientos importados
@@ -910,7 +1053,16 @@ export function AdminMercadoLibreSales() {
                         </td>
                         <td className="max-w-80 px-3 py-3">
                           <span className="block truncate font-bold text-white" title={imported.product_name}>{imported.product_name}</span>
-                          <span className="mt-1 block text-10px text-white/38">{imported.sku || "Sin SKU"}</span>
+                          <span className="mt-1 block text-10px font-bold text-beyonix-sky">
+                            {stored.costing?.catalog_sku ?? imported.sku ?? "Sin SKU"}
+                          </span>
+                          {stored.costing?.catalog_sku &&
+                            imported.sku &&
+                            stored.costing.catalog_sku !== imported.sku && (
+                              <span className="mt-0.5 block text-9px text-white/32">
+                                SKU original de ML: {imported.sku}
+                              </span>
+                            )}
                         </td>
                         <td className="px-3 py-3">{imported.quantity}</td>
                         <td className="px-3 py-3 tabular-nums">{formatPrice(imported.gross_amount)}</td>
@@ -1037,72 +1189,135 @@ export function AdminMercadoLibreSales() {
         }
       >
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                label: "Recibidas",
-                value: receivedReturnQuantity,
-                setter: setReceivedReturnQuantity,
-              },
-              {
-                label: "Vendibles",
-                value: sellableReturnQuantity,
-                setter: setSellableReturnQuantity,
-              },
-              {
-                label: "Con descuento",
-                value: discountedReturnQuantity,
-                setter: setDiscountedReturnQuantity,
-              },
-              {
-                label: "No vendibles",
-                value: nonSellableReturnQuantity,
-                setter: setNonSellableReturnQuantity,
-              },
-            ].map((field) => (
-              <label key={field.label}>
-                <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
-                  {field.label}
-                </span>
-                <input
-                  type="text"
-                  inputMode="numeric"
+          <section className="rounded-2xl border border-beyonix-blue-light/16 bg-black/20 p-3">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-white">
+                  Distribución de unidades
+                </p>
+                <p className="mt-0.5 text-10px font-semibold text-white/38">
+                  Clasificá únicamente las unidades recibidas.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/15 px-2.5 py-1 text-10px font-black tabular-nums text-beyonix-cyan">
+                {classifiedReturn}/{receivedReturn} asignadas
+              </span>
+            </div>
+
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {[
+                {
+                  label: "Recibidas",
+                  value: receivedReturnQuantity,
+                  setter: setReceivedReturnQuantity,
+                  min: classifiedReturn,
+                  max: soldReturnQuantity,
+                  tone: "blue" as const,
+                },
+                {
+                  label: "Vendibles",
+                  value: sellableReturnQuantity,
+                  setter: setSellableReturnQuantity,
+                  min: 0,
+                  max: sellableReturnMax,
+                  tone: "green" as const,
+                },
+                {
+                  label: "Con descuento",
+                  value: discountedReturnQuantity,
+                  setter: setDiscountedReturnQuantity,
+                  min: 0,
+                  max: discountedReturnMax,
+                  tone: "amber" as const,
+                },
+                {
+                  label: "No vendibles",
+                  value: nonSellableReturnQuantity,
+                  setter: setNonSellableReturnQuantity,
+                  min: 0,
+                  max: nonSellableReturnMax,
+                  tone: "red" as const,
+                },
+              ].map((field) => (
+                <ReturnQuantityStepper
+                  key={field.label}
+                  label={field.label}
                   value={field.value}
-                  onChange={(event) =>
-                    field.setter(event.target.value.replace(/\D/g, ""))
-                  }
-                  className={reviewInputClass}
+                  min={field.min}
+                  max={field.max}
+                  tone={field.tone}
+                  onChange={field.setter}
                 />
-              </label>
-            ))}
-          </div>
+              ))}
+            </div>
+          </section>
 
           {number(discountedReturnQuantity) > 0 && (
-            <label className="block">
-              <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
-                Descuento para la unidad condicionada
-              </span>
-              <div className="relative mx-auto max-w-52">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={returnDiscountPercent}
-                  onChange={(event) =>
-                    setReturnDiscountPercent(
-                      event.target.value.replace(/[^\d.,]/g, ""),
-                    )
-                  }
-                  className={`${reviewInputClass} pr-9`}
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-black text-beyonix-sky">
-                  %
-                </span>
+            <div className="rounded-xl border border-amber-300/16 bg-amber-300/[0.045] p-3">
+              <p className="mb-2 text-10px font-black uppercase tracking-wider text-amber-100/70">
+                Condición con descuento
+              </p>
+              <div className="grid gap-2.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                <label>
+                  <span className="mb-1.5 block text-10px font-bold text-white/45">
+                    Descuento
+                  </span>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={returnDiscountPercent}
+                      onChange={(event) =>
+                        setReturnDiscountPercent(
+                          event.target.value.replace(/[^\d.,]/g, ""),
+                        )
+                      }
+                      className={`${reviewInputClass} pr-9`}
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-black text-amber-200">
+                      %
+                    </span>
+                  </div>
+                </label>
+                <label>
+                  <span className="mb-1.5 block text-10px font-bold text-white/45">
+                    Motivo obligatorio
+                  </span>
+                  <input
+                    type="text"
+                    value={returnDiscountReason}
+                    maxLength={300}
+                    onChange={(event) =>
+                      setReturnDiscountReason(event.target.value)
+                    }
+                    placeholder="Ej.: Tiene una marca"
+                    className={`${reviewInputClass} text-left font-semibold`}
+                  />
+                </label>
               </div>
+            </div>
+          )}
+
+          {number(nonSellableReturnQuantity) > 0 && (
+            <label className="block rounded-xl border border-red-400/16 bg-red-400/[0.045] p-3">
+              <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-red-200/70">
+                Motivo de no vendible · obligatorio
+              </span>
+              <input
+                type="text"
+                value={returnNonSellableReason}
+                maxLength={300}
+                onChange={(event) =>
+                  setReturnNonSellableReason(event.target.value)
+                }
+                placeholder="Ej.: Llegó completamente roto"
+                className={`${reviewInputClass} text-left font-semibold`}
+              />
             </label>
           )}
 
           <label className="block">
-            <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
+            <span className="mb-2 block text-10px font-black uppercase tracking-wider text-white/45">
               Observaciones
             </span>
             <textarea
@@ -1110,7 +1325,7 @@ export function AdminMercadoLibreSales() {
               onChange={(event) => setReturnReviewNotes(event.target.value)}
               rows={2}
               placeholder="Estado físico, falla o decisión pendiente"
-              className={`${reviewInputClass} h-auto min-h-20 resize-y py-2.5`}
+              className={`${reviewInputClass} h-auto min-h-20 resize-y py-2.5 text-left font-semibold`}
             />
           </label>
 

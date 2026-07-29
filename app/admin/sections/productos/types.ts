@@ -100,6 +100,7 @@ export interface ImageUploaderProps {
 export interface DraftProductoVariante {
   tempId: string
   nombre: string
+  sku: string
   color_hex: string
   imagenes: File[]
 }

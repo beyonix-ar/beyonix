@@ -6414,5 +6414,328 @@ span.admin-claim-status-finalized,
   isolation: isolate;
 }
 
+/* Edición de producto: composición compacta y sin desbordes. */
+.beyonix-admin-main > .admin-product-page {
+  max-width: none !important;
+  padding: clamp(0.75rem, 1.35vw, 1.25rem) !important;
+}
+
+.admin-product-page .admin-product-header {
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-product-page .admin-product-form,
+.admin-product-page .admin-product-section,
+.admin-product-page .admin-product-section > div {
+  min-width: 0;
+}
+
+.admin-product-page .admin-product-section {
+  isolation: isolate;
+}
+
+.admin-product-page .admin-product-section-info {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(56, 189, 248, 0.09), transparent 16rem),
+    linear-gradient(145deg, rgba(8, 20, 32, 0.99), rgba(5, 13, 22, 0.99)) !important;
+}
+
+.admin-product-page .admin-product-section-variants {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(34, 211, 238, 0.08), transparent 18rem),
+    linear-gradient(145deg, rgba(7, 21, 31, 0.99), rgba(4, 14, 22, 0.99)) !important;
+}
+
+.admin-product-page .admin-product-section-specs {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(96, 165, 250, 0.1), transparent 16rem),
+    linear-gradient(145deg, rgba(14, 17, 32, 0.99), rgba(7, 11, 22, 0.99)) !important;
+}
+
+.admin-product-page .admin-variant-color-control {
+  border-radius: 0.75rem !important;
+  background: #07111b !important;
+}
+
+.admin-product-page .admin-variant-color-control input[type="color"] {
+  min-height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.admin-product-page input.admin-variant-hex-input,
+.admin-product-page input.admin-variant-hex-input:hover,
+.admin-product-page input.admin-variant-hex-input:focus,
+.admin-product-page input.admin-variant-hex-input:focus-visible {
+  min-height: 0 !important;
+  height: 2.25rem !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.admin-product-page .admin-icon-picker-trigger {
+  border-color: rgba(140, 200, 242, 0.24) !important;
+  background: #111820 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+.admin-product-page .admin-icon-picker-trigger:hover {
+  border-color: rgba(140, 200, 242, 0.48) !important;
+  background: #152230 !important;
+}
+
+.admin-product-page .admin-icon-picker-popover {
+  border-color: rgba(140, 200, 242, 0.28) !important;
+  background: #07111b !important;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.62),
+    0 0 0 1px rgba(140, 200, 242, 0.06) !important;
+}
+
+.admin-product-page .admin-icon-picker-search {
+  border-color: rgba(140, 200, 242, 0.26) !important;
+  background: #0b1622 !important;
+  box-shadow: none !important;
+}
+
+.admin-product-page input.admin-icon-picker-search-input,
+.admin-product-page input.admin-icon-picker-search-input:hover,
+.admin-product-page input.admin-icon-picker-search-input:focus,
+.admin-product-page input.admin-icon-picker-search-input:focus-visible {
+  min-height: 0 !important;
+  height: 2.25rem !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.admin-product-page .admin-icon-picker-option {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: #242424 !important;
+  box-shadow: none !important;
+}
+
+.admin-product-page .admin-icon-picker-option:hover {
+  border-color: rgba(140, 200, 242, 0.38) !important;
+  background: #303b46 !important;
+}
+
+.admin-product-page .admin-icon-picker-option-selected {
+  border-color: rgba(140, 200, 242, 0.68) !important;
+  background: #112a43 !important;
+}
+
+.admin-product-page .admin-icon-picker :where(svg) {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+.admin-product-page .admin-ds-upload-zone-compact {
+  min-height: 5.25rem;
+}
+
+.admin-product-page .admin-product-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+}
+
+@media (max-width: 639px) {
+  .beyonix-admin-main > .admin-product-page {
+    padding: 0.75rem !important;
+  }
+
+  .admin-product-page .admin-product-header {
+    align-items: stretch;
+  }
+
+  .admin-product-page .admin-product-header > div:last-child,
+  .admin-product-page .admin-product-header > div:last-child button {
+    width: 100%;
+  }
+
+  .admin-product-page .admin-product-form {
+    overflow: visible;
+  }
+
+  .admin-product-page .admin-product-section {
+    padding: 0.75rem;
+  }
+
+  .admin-product-page .admin-product-actions {
+    position: static;
+  }
+}
+
+/* Dashboard compacto: optimizado para 1920 × 1080 y pantallas móviles. */
+.admin-dashboard-page,
+.admin-dashboard-page .admin-dashboard-panel,
+.admin-dashboard-page section,
+.admin-dashboard-page table {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-dashboard-page .admin-dashboard-tabs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(89, 180, 255, 0.42) transparent;
+}
+
+.admin-dashboard-page .admin-dashboard-tabs-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.admin-dashboard-page .admin-dashboard-tabs-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(89, 180, 255, 0.42);
+}
+
+.admin-dashboard-page .admin-dashboard-stat-card {
+  min-height: 0;
+  border-radius: 14px;
+  padding: 13px;
+}
+
+.admin-dashboard-page .admin-dashboard-stat-card > div:first-child {
+  gap: 8px;
+}
+
+.admin-dashboard-page .admin-dashboard-stat-card .size-11 {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.admin-dashboard-page .admin-dashboard-stat-card p.mt-3 {
+  margin-top: 6px;
+  font-size: 1.35rem;
+}
+
+.admin-dashboard-page .admin-dashboard-stat-card p.mt-1\.5 {
+  margin-top: 3px;
+  line-height: 1.15rem;
+}
+
+.admin-dashboard-page .admin-dashboard-stat-card > div.mt-4 {
+  margin-top: 9px;
+}
+
+.admin-dashboard-page .admin-dashboard-search {
+  height: 42px;
+  border-radius: 12px;
+}
+
+.admin-dashboard-page .admin-dashboard-panel > section,
+.admin-dashboard-page[data-dashboard-tab="comercial"] section {
+  border-radius: 16px;
+}
+
+.admin-dashboard-page .admin-dashboard-panel :where(table th) {
+  white-space: nowrap;
+}
+
+.admin-dashboard-page .admin-dashboard-panel :where(table td) {
+  vertical-align: middle;
+}
+
+@media (min-width: 1280px) and (max-height: 1100px) {
+  .admin-dashboard-page {
+    padding: 14px 18px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-hero {
+    padding: 14px 16px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-priorities {
+    padding: 13px;
+  }
+
+  .admin-dashboard-page[data-dashboard-tab="comercial"] section {
+    padding: 14px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-panel > section {
+    padding: 13px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-panel :where(table th) {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-panel :where(table td) {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-dashboard-page {
+    padding: 10px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-hero {
+    padding: 12px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-tabs-scroll {
+    width: 100%;
+    padding-bottom: 3px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-tabs {
+    display: inline-flex;
+    width: max-content;
+  }
+
+  .admin-dashboard-page .admin-dashboard-tabs button {
+    min-width: max-content;
+    padding-inline: 10px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-priorities,
+  .admin-dashboard-page .admin-dashboard-panel > section,
+  .admin-dashboard-page[data-dashboard-tab="comercial"] section {
+    border-radius: 14px;
+    padding: 11px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-stat-card {
+    padding: 12px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-financial-metric {
+    padding: 9px 10px;
+  }
+
+  .admin-dashboard-page .admin-dashboard-financial-metric > p:first-child {
+    font-size: 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .admin-dashboard-page .admin-dashboard-financial-metric > p:nth-child(2) {
+    font-size: 0.9rem;
+  }
+
+  .admin-dashboard-page .admin-dashboard-financial-metric > p:last-child {
+    white-space: normal;
+  }
+
+  .admin-dashboard-page .admin-dashboard-panel :where(input, button, select) {
+    max-width: 100%;
+  }
+
+  .admin-dashboard-page .admin-dashboard-panel :where(.overflow-x-auto) {
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 
 

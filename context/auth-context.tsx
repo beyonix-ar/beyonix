@@ -33,6 +33,7 @@ const AUTH_ADMIN_INACTIVITY_LIMIT_MS = 30 * 60 * 1000
 const AUTH_ADMIN_WARNING_THRESHOLD_MS = 2 * 60 * 1000
 const AUTH_CLIENT_SESSION_LIMIT_MS = 7 * 24 * 60 * 60 * 1000
 const AUTH_ACTIVITY_WRITE_INTERVAL_MS = 15 * 1000
+const AUTH_INITIALIZATION_TIMEOUT_MS = 5 * 1000
 
 function isAdminSessionRole(role?: string | null) {
   return role === "admin" || role === "super_admin"
@@ -543,6 +544,9 @@ export function AuthProvider({
 
   useEffect(() => {
     let inactivityLogoutInProgress = false
+    const initializationTimeout = window.setTimeout(() => {
+      setIsLoading(false)
+    }, AUTH_INITIALIZATION_TIMEOUT_MS)
 
     function clearAuthenticatedUser() {
       hasAuthenticatedSession.current = false
@@ -726,11 +730,13 @@ export function AuthProvider({
 
           if (event === "SIGNED_OUT") {
             clearAuthenticatedUser()
+            setIsLoading(false)
             return
           }
 
           if (registrationInProgress.current) {
             setUser(null)
+            setIsLoading(false)
             return
           }
 
@@ -761,16 +767,19 @@ export function AuthProvider({
 
             if (shouldHideRecoverySession()) {
               setUser(null)
+              setIsLoading(false)
               return
             }
 
             if (!isEmailConfirmed(session.user)) {
               setUser(null)
+              setIsLoading(false)
               return
             }
 
             if (!isAccountActivated(session.user)) {
               setUser(null)
+              setIsLoading(false)
               return
             }
 
@@ -779,9 +788,10 @@ export function AuthProvider({
             loadProfile(
               session.user,
               session.access_token
-            )
+            ).finally(() => setIsLoading(false))
           } else {
             clearAuthenticatedUser()
+            setIsLoading(false)
           }
         }
       )
@@ -816,6 +826,7 @@ export function AuthProvider({
     )
 
     return () => {
+      window.clearTimeout(initializationTimeout)
       window.clearInterval(inactivityCheck)
       activityEvents.forEach((eventName) => {
         window.removeEventListener(eventName, trackActivity)

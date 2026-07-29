@@ -7,6 +7,7 @@ import type {
 export interface ProductoVariantePayload {
   producto_id: number
   nombre: string
+  sku?: string | null
   color_hex: string
   stock?: number | null
   imagenes?: string[]

@@ -30,6 +30,8 @@ export async function POST(
     discountedQuantity && discountedQuantity > 0
       ? Number(body?.discountPercent)
       : null
+  const discountReason = optionalText(body?.discountReason, 300)
+  const nonSellableReason = optionalText(body?.nonSellableReason, 300)
 
   if (
     receivedQuantity == null ||
@@ -64,6 +66,20 @@ export async function POST(
   ) {
     return Response.json(
       { error: "Indicá un descuento entre 0 y 100%." },
+      { status: 400 },
+    )
+  }
+
+  if (discountedQuantity > 0 && !discountReason) {
+    return Response.json(
+      { error: "Indicá el motivo del descuento." },
+      { status: 400 },
+    )
+  }
+
+  if (nonSellableQuantity > 0 && !nonSellableReason) {
+    return Response.json(
+      { error: "Indicá por qué las unidades no son vendibles." },
       { status: 400 },
     )
   }
@@ -103,12 +119,15 @@ export async function POST(
         mercadolibre_sale_id: sale.id,
         product_id: sale.product_id,
         variant_id: null,
-        quantity: sellableQuantity + discountedQuantity,
+        quantity: sellableQuantity,
         received_quantity: receivedQuantity,
         sellable_quantity: sellableQuantity,
         discounted_quantity: discountedQuantity,
         non_sellable_quantity: nonSellableQuantity,
         discount_percent: discountPercent,
+        discount_reason: discountedQuantity > 0 ? discountReason : null,
+        non_sellable_reason:
+          nonSellableQuantity > 0 ? nonSellableReason : null,
         review_notes: optionalText(body?.notes, 1000),
         approved_by: auth.user.id,
         approved_at: new Date().toISOString(),
@@ -120,13 +139,13 @@ export async function POST(
 
   if (error) {
     const missingMigration =
-      /mercadolibre_sale_id|received_quantity|sellable_quantity|schema cache/i.test(
+      /mercadolibre_sale_id|received_quantity|sellable_quantity|discount_reason|schema cache/i.test(
         error.message,
       )
     return Response.json(
       {
         error: missingMigration
-          ? "Falta aplicar la migración 096_mercadolibre_return_condition.sql."
+          ? "Falta aplicar la migración 103_separate_conditioned_return_stock.sql."
           : "No se pudo guardar la revisión física.",
       },
       { status: missingMigration ? 503 : 500 },

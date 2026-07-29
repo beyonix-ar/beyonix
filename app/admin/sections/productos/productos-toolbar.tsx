@@ -22,6 +22,7 @@ type StockFilter =
   | "entre"
 type ActiveFilter = "todos" | "activos" | "inactivos"
 type FeaturedFilter = "todos" | "destacados" | "normales"
+type SkuFilter = "todos" | "con_sku" | "sin_sku"
 type ProductView = "productos" | "categorias"
 
 interface ProductosToolbarProps {
@@ -36,6 +37,7 @@ interface ProductosToolbarProps {
   stockFilter: StockFilter
   activeFilter: ActiveFilter
   featuredFilter: FeaturedFilter
+  skuFilter: SkuFilter
   view: ProductView
   onCreateCategory: () => void
   onSearchChange: (value: string) => void
@@ -47,6 +49,7 @@ interface ProductosToolbarProps {
   onStockFilterChange: (value: StockFilter) => void
   onActiveFilterChange: (value: ActiveFilter) => void
   onFeaturedFilterChange: (value: FeaturedFilter) => void
+  onSkuFilterChange: (value: SkuFilter) => void
   onViewChange: (value: ProductView) => void
 }
 
@@ -62,6 +65,7 @@ export function ProductosToolbar({
   stockFilter,
   activeFilter,
   featuredFilter,
+  skuFilter,
   view,
   onCreateCategory,
   onSearchChange,
@@ -73,6 +77,7 @@ export function ProductosToolbar({
   onStockFilterChange,
   onActiveFilterChange,
   onFeaturedFilterChange,
+  onSkuFilterChange,
   onViewChange,
 }: ProductosToolbarProps) {
   return (
@@ -80,7 +85,7 @@ export function ProductosToolbar({
       <AdminPageHeader
         eyebrow="Gestión"
         title="Productos"
-        description="Catálogo y stock real calculado desde Compras, Pedidos y devoluciones aprobadas."
+        description="Catálogo y stock actualizado desde Compras, Pedidos y devoluciones aprobadas."
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <div className="inline-flex rounded-xl border border-beyonix-blue-light/25 bg-black/35 p-0.5 shadow-inner shadow-black/40">
@@ -131,7 +136,7 @@ export function ProductosToolbar({
       <AdminFiltersBar className="p-3">
         {view === "productos" ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
               <AdminTextInput
                 title="Buscar producto"
                 ariaLabel="Buscar producto"
@@ -219,6 +224,18 @@ export function ProductosToolbar({
                 <option value="todos">Todos los productos</option>
                 <option value="destacados">Solo destacados</option>
                 <option value="normales">No destacados</option>
+              </AdminSelect>
+
+              <AdminSelect
+                title="SKU"
+                value={skuFilter}
+                centered
+                optionClassName="admin-products-filter-option"
+                onChange={(value) => onSkuFilterChange(value as SkuFilter)}
+              >
+                <option value="todos">SKU</option>
+                <option value="con_sku">Con SKU</option>
+                <option value="sin_sku">Sin SKU</option>
               </AdminSelect>
             </div>
 

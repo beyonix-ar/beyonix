@@ -2,6 +2,18 @@
 -- Las ventas de Mercado Libre sólo descuentan inventario cuando están vinculadas
 -- a un producto del catálogo. Las cancelaciones no consumen; una devolución no
 -- reingresa automáticamente hasta que exista recepción y aprobación física.
+-- MIGRACIÓN HISTÓRICA: no volver a ejecutarla después de la migración 095.
+-- Para actualizar únicamente la descripción visible, usar
+-- 100_inventory_stock_wording.sql.
+
+do $$
+begin
+  if to_regclass('public.inventory_variant_allocations') is not null then
+    raise exception
+      'La migración 094 es histórica y no debe volver a ejecutarse. Aplicá 101_restore_variant_inventory_calculation.sql.';
+  end if;
+end;
+$$;
 
 create or replace function public.inventory_ml_variant_id(
   p_raw_data jsonb
@@ -493,7 +505,7 @@ revoke insert, update, delete on public.inventory_opening_balances
 comment on function public.inventory_ml_stock_units(integer, jsonb) is
   'Calcula unidades vendidas en Mercado Libre excluyendo sólo cancelaciones; las devoluciones requieren reingreso aprobado.';
 comment on view public.inventory_stock_breakdown is
-  'Explica el stock real usando compras, pedidos web, ventas externas, Mercado Libre, devoluciones y salidas.';
+  'Explica el stock usando compras, pedidos web, ventas externas, Mercado Libre, devoluciones y salidas.';
 comment on view public.inventory_movements is
   'Libro único de movimientos de inventario con la fecha comercial real de cada compra y venta.';
 comment on view public.inventory_stock_timeline is

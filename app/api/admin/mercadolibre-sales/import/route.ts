@@ -1,4 +1,8 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import {
+  getCanonicalCatalogSku,
+  normalizeMercadoLibreSku,
+} from "@/lib/mercadolibre/sku-aliases"
 
 interface MercadoLibreSaleInput {
   sale_date?: string | null
@@ -26,7 +30,10 @@ interface ExistingCostMappingRow {
 interface CatalogSkuRow {
   id: number
   sku: string | null
-  producto_variantes: Array<{ id: number }> | null
+  producto_variantes: Array<{
+    id: number
+    sku: string | null
+  }> | null
 }
 
 function toNumber(value: unknown) {
@@ -41,7 +48,7 @@ function rawObject(value: unknown) {
 }
 
 function mappingKey(sku: unknown, productName: unknown) {
-  const normalizedSku = String(sku ?? "").trim()
+  const normalizedSku = normalizeMercadoLibreSku(sku)
   return normalizedSku
     ? `sku:${normalizedSku}`
     : `product:${String(productName ?? "").trim()}`
@@ -66,6 +73,10 @@ function getExistingCostMapping(row: ExistingCostMappingRow) {
       typeof stored.mapped_at === "string" ? stored.mapped_at : undefined,
     mapped_by:
       typeof stored.mapped_by === "string" ? stored.mapped_by : undefined,
+    canonical_sku:
+      typeof stored.canonical_sku === "string"
+        ? stored.canonical_sku
+        : undefined,
     unit_cost: toNumber(row.unit_cost) ?? 0,
   }
 }
@@ -169,42 +180,65 @@ export async function POST(request: Request) {
     string,
     NonNullable<ReturnType<typeof getExistingCostMapping>>
   >()
-  const catalogMatches: CatalogSkuRow[] = []
-  for (let index = 0; index < skus.length; index += 400) {
-    const { data, error } = await auth.admin
-      .from("productos")
-      .select("id, sku, producto_variantes(id)")
-      .in("sku", skus.slice(index, index + 400))
-    if (error) return Response.json({ error: error.message }, { status: 500 })
-    catalogMatches.push(...((data ?? []) as CatalogSkuRow[]))
+  const { data: catalogData, error: catalogError } = await auth.admin
+    .from("productos")
+    .select("id, sku, producto_variantes(id, sku)")
+  if (catalogError) {
+    return Response.json({ error: catalogError.message }, { status: 500 })
   }
 
-  const productsBySku = new Map<string, CatalogSkuRow[]>()
-  catalogMatches.forEach((product) => {
-    const sku = product.sku?.trim()
-    if (!sku || product.producto_variantes?.length) return
-    productsBySku.set(sku, [
-      ...(productsBySku.get(sku) ?? []),
-      product,
-    ])
+  const catalogTargetsBySku = new Map<
+    string,
+    Array<{ productId: number; variantId: number | null }>
+  >()
+  ;((catalogData ?? []) as CatalogSkuRow[]).forEach((product) => {
+    const variants = product.producto_variantes ?? []
+    const productSku = normalizeMercadoLibreSku(product.sku)
+
+    if (productSku && !variants.length) {
+      catalogTargetsBySku.set(productSku, [
+        ...(catalogTargetsBySku.get(productSku) ?? []),
+        { productId: product.id, variantId: null },
+      ])
+    }
+
+    variants.forEach((variant) => {
+      const variantSku = normalizeMercadoLibreSku(variant.sku)
+      if (!variantSku) return
+      catalogTargetsBySku.set(variantSku, [
+        ...(catalogTargetsBySku.get(variantSku) ?? []),
+        { productId: product.id, variantId: variant.id },
+      ])
+    })
   })
-  productsBySku.forEach((products, sku) => {
-    if (products.length !== 1) return
-    automaticMappings.set(`sku:${sku}`, {
-      product_id: products[0].id,
-      variant_id: null,
-      match_key: `sku:${sku}`,
+
+  skus.forEach((incomingSku) => {
+    const canonicalSku = getCanonicalCatalogSku(incomingSku)
+    const targets = catalogTargetsBySku.get(canonicalSku) ?? []
+    if (targets.length !== 1) return
+
+    const matchKey = mappingKey(incomingSku, "")
+    automaticMappings.set(matchKey, {
+      product_id: targets[0].productId,
+      variant_id: targets[0].variantId,
+      match_key: matchKey,
       mapped_at: new Date().toISOString(),
       mapped_by: auth.user.id,
+      canonical_sku: canonicalSku,
       unit_cost: 0,
     })
   })
 
   payload = payload.map((row) => {
     const key = mappingKey(row.sku, row.product_name)
-    const mapping =
-      preservedMappings.get(key) ??
-      automaticMappings.get(key)
+    const automaticMapping = automaticMappings.get(key)
+    const preservedMapping = preservedMappings.get(key)
+    const usesSkuAlias =
+      Boolean(row.sku) &&
+      getCanonicalCatalogSku(row.sku) !== normalizeMercadoLibreSku(row.sku)
+    const mapping = usesSkuAlias
+      ? automaticMapping ?? preservedMapping
+      : preservedMapping ?? automaticMapping
     if (!mapping) return row
 
     return {
@@ -219,6 +253,7 @@ export async function POST(request: Request) {
           match_key: mapping.match_key,
           mapped_at: mapping.mapped_at,
           mapped_by: mapping.mapped_by,
+          canonical_sku: mapping.canonical_sku,
         },
       },
     }

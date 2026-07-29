@@ -916,7 +916,7 @@ export function AdminModal({
       <div
         className={cn(
           adminCardClassName,
-          "w-full shadow-2xl shadow-black",
+          "custom-scrollbar max-h-[calc(100dvh-2rem)] w-full overflow-y-auto shadow-2xl shadow-black",
           compact ? "max-w-md p-4" : "max-w-xl p-5",
         )}
       >

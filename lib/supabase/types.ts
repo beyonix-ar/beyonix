@@ -29,12 +29,26 @@ export interface SupabaseProductoVariante {
   id: number
   producto_id: number
   nombre: string
+  sku?: string | null
   color_hex: string
   stock: number | null
   imagenes: string[]
   activo: boolean
   orden: number
   created_at: string
+}
+
+export interface SupabaseConditionedStock {
+  id: string
+  product_id: number
+  variant_id: number | null
+  quantity: number
+  discount_percent: number
+  reason: string | null
+  non_sellable_quantity: number
+  non_sellable_reason: string | null
+  active: boolean
+  approved_at: string
 }
 
 export interface SupabaseProductoEspecificacion {
@@ -91,6 +105,7 @@ export interface SupabaseProducto {
 
   imagenes_producto?: SupabaseImagenProducto[]
   producto_variantes?: SupabaseProductoVariante[]
+  conditioned_stock?: SupabaseConditionedStock[]
   producto_especificaciones?: SupabaseProductoEspecificacion[]
 }
 

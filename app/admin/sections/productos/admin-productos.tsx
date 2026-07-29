@@ -33,6 +33,7 @@ type StockFilter =
   | "entre"
 type ActiveFilter = "todos" | "activos" | "inactivos"
 type FeaturedFilter = "todos" | "destacados" | "normales"
+type SkuFilter = "todos" | "con_sku" | "sin_sku"
 type ProductView = "productos" | "categorias"
 export type ProductSortKey = "nombre" | "stock" | "sku" | "color"
 export type SortDirection = "asc" | "desc"
@@ -97,6 +98,7 @@ export function AdminProductos() {
   const [stockFilter, setStockFilter] = useState<StockFilter>("todos")
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("todos")
   const [featuredFilter, setFeaturedFilter] = useState<FeaturedFilter>("todos")
+  const [skuFilter, setSkuFilter] = useState<SkuFilter>("todos")
   const [sortBy, setSortBy] = useState<ProductSortKey>("nombre")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [view, setView] = useState<ProductView>("productos")
@@ -122,6 +124,7 @@ export function AdminProductos() {
     stockTo: debouncedStockTo,
     activeFilter,
     featuredFilter,
+    skuFilter,
     sortBy,
     sortDirection,
     lowStockThreshold: stockSettings.lowStockThreshold,
@@ -153,6 +156,7 @@ export function AdminProductos() {
     activeFilter,
     categoryFilter,
     featuredFilter,
+    skuFilter,
     sortBy,
     sortDirection,
     stockFilter,
@@ -239,6 +243,7 @@ export function AdminProductos() {
         stockFilter={stockFilter}
         activeFilter={activeFilter}
         featuredFilter={featuredFilter}
+        skuFilter={skuFilter}
         view={view}
         onSearchChange={setSearch}
         onColorSearchChange={setColorSearch}
@@ -249,6 +254,7 @@ export function AdminProductos() {
         onStockFilterChange={setStockFilter}
         onActiveFilterChange={setActiveFilter}
         onFeaturedFilterChange={setFeaturedFilter}
+        onSkuFilterChange={setSkuFilter}
         onViewChange={setView}
         onCreateCategory={() => setCreateCategorySignal((current) => current + 1)}
       />

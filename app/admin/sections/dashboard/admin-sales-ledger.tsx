@@ -378,34 +378,34 @@ export function AdminSalesLedger({
   }
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.9),rgba(3,7,13,0.98))] p-4">
+    <div className="admin-dashboard-panel admin-sales-ledger space-y-3">
+      <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.9),rgba(3,7,13,0.98))] p-3.5">
         <div>
           <div>
             <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
               Registro comercial
             </p>
-            <h2 className="mt-1 text-2xl font-black text-white">{title}</h2>
+            <h2 className="mt-1 text-xl font-black text-white">{title}</h2>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-white/55">{description}</p>
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-white/8 bg-black/25 p-3 text-center">
+        <div className="mt-2.5 grid grid-cols-2 gap-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-white/8 bg-black/25 p-2.5 text-center">
             <ShoppingBag className="mx-auto size-4 text-beyonix-sky" />
             <p className="mt-1.5 text-10px font-black uppercase tracking-widest text-white/40">
               Ventas registradas
             </p>
             <p className="mt-1 text-xl font-black text-white">{rows.length}</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/25 p-3 text-center">
+          <div className="rounded-xl border border-white/8 bg-black/25 p-2.5 text-center">
             <Package className="mx-auto size-4 text-beyonix-sky" />
             <p className="mt-1.5 text-10px font-black uppercase tracking-widest text-white/40">
               Unidades vendidas
             </p>
             <p className="mt-1 text-xl font-black text-white">{totals.units}</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/25 p-3 text-center">
+          <div className="rounded-xl border border-white/8 bg-black/25 p-2.5 text-center">
             <CircleDollarSign className="mx-auto size-4 text-beyonix-sky" />
             <p className="mt-1.5 text-10px font-black uppercase tracking-widest text-white/40">
               Facturación total
@@ -414,7 +414,7 @@ export function AdminSalesLedger({
               {formatPrice(totals.gross)}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/25 p-3 text-center">
+          <div className="rounded-xl border border-white/8 bg-black/25 p-2.5 text-center">
             <CircleDollarSign className="mx-auto size-4 text-emerald-300" />
             <p className="mt-1.5 text-10px font-black uppercase tracking-widest text-white/40">
               Ganancia obtenida
@@ -428,9 +428,9 @@ export function AdminSalesLedger({
 
       <section
         ref={formAnchor}
-        className="rounded-3xl border border-beyonix-blue-light/18 bg-[#071018] p-4 sm:p-5"
+        className="rounded-2xl border border-beyonix-blue-light/18 bg-[#071018] p-3.5 sm:p-4"
       >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-white">
               {editingId ? "Editar venta" : "Agregar una venta"}
@@ -463,7 +463,7 @@ export function AdminSalesLedger({
         )}
 
         <div className="sales-ledger-scrollbar overflow-x-auto rounded-2xl border border-beyonix-blue-light/16 bg-black/20">
-          <table className="w-full min-w-[2250px] text-center">
+          <table className="w-full min-w-[1980px] text-center">
             <thead>
               <tr className="text-10px font-black uppercase tracking-widest text-white/38">
                 {[

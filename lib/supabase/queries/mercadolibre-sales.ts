@@ -23,6 +23,7 @@ export interface StoredMercadoLibreSale {
     match_key: string
     product_id: number | null
     variant_id: number | null
+    catalog_sku: string | null
     standalone_key: string | null
     costable_units: number
     unit_cost: number | null
@@ -38,6 +39,8 @@ export interface MercadoLibreReturnReview {
   discounted_quantity: number
   non_sellable_quantity: number
   discount_percent: number | null
+  discount_reason: string | null
+  non_sellable_reason: string | null
   review_notes: string | null
   approved_at: string
 }
@@ -45,6 +48,7 @@ export interface MercadoLibreReturnReview {
 export interface MercadoLibreCostCatalogVariant {
   id: number
   nombre: string
+  sku?: string | null
   activo: boolean
 }
 
@@ -146,6 +150,8 @@ export async function saveMercadoLibreReturnReview(
     discountedQuantity: number
     nonSellableQuantity: number
     discountPercent: number | null
+    discountReason: string
+    nonSellableReason: string
     notes: string
   },
 ) {

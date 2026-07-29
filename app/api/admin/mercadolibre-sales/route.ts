@@ -36,11 +36,6 @@ const SELECT = [
   "raw_data",
 ].join(", ")
 
-function number(value: unknown) {
-  const parsed = Number(value ?? 0)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
 function rawObject(value: unknown) {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -86,12 +81,30 @@ export async function GET(request: Request) {
   const saleIds = rows.map((row) => String(row.id))
   const returnReviews: Record<string, unknown>[] = []
   for (let index = 0; index < saleIds.length; index += 400) {
-    const { data, error } = await auth.admin
+    let { data, error } = await auth.admin
       .from("inventory_return_movements")
       .select(
-        "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, review_notes, approved_at",
+        "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, discount_reason, non_sellable_reason, review_notes, approved_at",
       )
       .in("mercadolibre_sale_id", saleIds.slice(index, index + 400))
+
+    if (
+      error &&
+      /discount_reason|non_sellable_reason|schema cache/i.test(error.message)
+    ) {
+      const fallback = await auth.admin
+        .from("inventory_return_movements")
+        .select(
+          "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, review_notes, approved_at",
+        )
+        .in("mercadolibre_sale_id", saleIds.slice(index, index + 400))
+      data = fallback.data?.map((review) => ({
+        ...review,
+        discount_reason: null,
+        non_sellable_reason: null,
+      })) ?? null
+      error = fallback.error
+    }
 
     if (error) {
       if (
@@ -120,7 +133,9 @@ export async function GET(request: Request) {
   const [catalogResult, productCostsResult] = await Promise.all([
     auth.admin
       .from("productos")
-      .select("id, nombre, sku, activo, producto_variantes(id, nombre, activo)")
+      .select(
+        "id, nombre, sku, activo, producto_variantes(id, nombre, sku, activo)",
+      )
       .order("nombre", { ascending: true }),
     auth.admin
       .from("product_cost_entries")
@@ -144,6 +159,27 @@ export async function GET(request: Request) {
     ? []
     : ((productCostsResult.data ?? []) as (ProductCostLedgerRow & StandaloneCostRow)[])
   const costLedgers = buildProductCostLedgers(allCostRows)
+  const catalogSkuByTarget = new Map<string, string>()
+  ;(
+    (catalogResult.data ?? []) as Array<{
+      id: number
+      sku: string | null
+      producto_variantes:
+        | Array<{ id: number; sku: string | null }>
+        | null
+    }>
+  ).forEach((product) => {
+    const productSku = product.sku?.trim()
+    if (productSku) {
+      catalogSkuByTarget.set(`${product.id}:`, productSku)
+    }
+    product.producto_variantes?.forEach((variant) => {
+      const variantSku = variant.sku?.trim()
+      if (variantSku) {
+        catalogSkuByTarget.set(`${product.id}:${variant.id}`, variantSku)
+      }
+    })
+  })
   const costedRows = rows.map((row) => {
     const mapping: MercadoLibreCostMapping | null =
       getMercadoLibreCostMapping(row)
@@ -174,6 +210,13 @@ export async function GET(request: Request) {
           : `product:${String(row.product_name ?? "")}`,
         product_id: mapping?.product_id ?? null,
         variant_id: mapping?.variant_id ?? null,
+        catalog_sku: mapping?.product_id
+          ? catalogSkuByTarget.get(
+              `${mapping.product_id}:${mapping.variant_id ?? ""}`,
+            ) ??
+            catalogSkuByTarget.get(`${mapping.product_id}:`) ??
+            null
+          : null,
         standalone_key: mapping?.standalone_key ?? null,
         costable_units: costableUnits,
         unit_cost: unitCost,

@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/client"
 export interface BusinessCostCatalogVariant {
   id: number
   nombre: string
+  sku?: string | null
   activo: boolean
   stock: number | null
 }

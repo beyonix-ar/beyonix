@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
   getDashboardData,
+  getSystemHealth,
   type DashboardCommercialSale,
   type DashboardFinancialSummary,
   type DashboardRecentActivity,
@@ -75,6 +76,11 @@ export function useDashboard() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [healthRefreshing, setHealthRefreshing] = useState(true)
+  const [healthReady, setHealthReady] = useState(false)
+  const [healthCheckedAt, setHealthCheckedAt] = useState<string | null>(null)
+  const [healthError, setHealthError] = useState<string | null>(null)
+  const healthRequestRef = useRef<Promise<void> | null>(null)
 
   const loadDashboard = useCallback(async (force = false) => {
     try {
@@ -93,10 +99,78 @@ export function useDashboard() {
     void loadDashboard()
   }, [loadDashboard])
 
+  const refreshSystemHealth = useCallback(async () => {
+    if (healthRequestRef.current) return healthRequestRef.current
+
+    const request = (async () => {
+      try {
+        setHealthRefreshing(true)
+        setHealthError(null)
+        const health = await getSystemHealth()
+        setData((current) => ({
+          ...current,
+          systemStatus: health.checks,
+        }))
+        setHealthCheckedAt(health.checkedAt)
+        setHealthReady(true)
+      } catch (healthCause) {
+        setHealthError(
+          healthCause instanceof Error
+            ? healthCause.message
+            : "No se pudo comprobar el estado del sistema.",
+        )
+        setData((current) => ({
+          ...current,
+          systemStatus: current.systemStatus.map((item) => ({
+            ...item,
+            status: "unknown",
+            detail: "No se pudo ejecutar una comprobación actual.",
+            checkedAt: new Date().toISOString(),
+            verified: false,
+            latencyMs: null,
+          })),
+        }))
+        setHealthCheckedAt(new Date().toISOString())
+        setHealthReady(true)
+      } finally {
+        setHealthRefreshing(false)
+        healthRequestRef.current = null
+      }
+    })()
+
+    healthRequestRef.current = request
+    return request
+  }, [])
+
+  useEffect(() => {
+    void refreshSystemHealth()
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshSystemHealth()
+      }
+    }, 30_000)
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void refreshSystemHealth()
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility)
+
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener("visibilitychange", handleVisibility)
+    }
+  }, [refreshSystemHealth])
+
   return {
     ...data,
     loading,
     error,
     reloadDashboard: () => loadDashboard(true),
+    healthRefreshing,
+    healthReady,
+    healthCheckedAt,
+    healthError,
+    refreshSystemHealth,
   }
 }

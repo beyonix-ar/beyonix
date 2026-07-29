@@ -219,9 +219,9 @@ function SummaryCard({ label, value, detail }: {
   detail: string
 }) {
   return (
-    <div className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3">
+    <div className="rounded-xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-3 py-2.5">
       <p className="text-10px font-black uppercase tracking-widest text-white/40">{label}</p>
-      <p className="mt-1 text-lg font-black tabular-nums text-white">{value}</p>
+      <p className="mt-1 text-base font-black tabular-nums text-white">{value}</p>
       <p className="mt-1 text-11px font-semibold text-white/38">{detail}</p>
     </div>
   )
@@ -258,7 +258,11 @@ function ProductSelect({
     .toLocaleLowerCase("es")
   const filteredProducts = products.filter((product) =>
     (!inventoryMode || !product.standalone_key) &&
-    `${product.nombre} ${product.sku ?? ""}`
+    `${product.nombre} ${product.sku ?? ""} ${
+      product.producto_variantes
+        ?.map((variant) => `${variant.nombre} ${variant.sku ?? ""}`)
+        .join(" ") ?? ""
+    }`
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLocaleLowerCase("es")
@@ -378,7 +382,14 @@ function ProductSelect({
                       }}
                       className={`flex w-full items-center justify-between gap-3 rounded-xl py-2 pl-7 pr-3 text-left text-xs font-bold transition ${variantDisabled ? "cursor-not-allowed text-white/25" : variantActive ? "cursor-pointer bg-beyonix-blue/55 text-white" : "cursor-pointer text-white/52 hover:bg-beyonix-blue/24 hover:text-white"}`}
                     >
-                      <span className="truncate">↳ {variant.nombre}</span>
+                      <span className="truncate">
+                        ↳ {variant.nombre}
+                        {variant.sku && (
+                          <span className="ml-2 text-10px text-white/38">
+                            {variant.sku}
+                          </span>
+                        )}
+                      </span>
                       <span className="text-10px text-white/35">
                         {inventoryMode ? `${variantStock} disponibles` : "Variante"}
                       </span>
@@ -767,7 +778,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
           .map((variant) => ({
             value: `v:${product.id}:${variant.id}`,
             label: `${product.nombre} · ${variant.nombre}`,
-            sku: product.sku ?? "",
+            sku: variant.sku ?? "",
             coveredByLegacyPurchase: variant.id === legacyVariantId,
           }))
           .filter(
@@ -962,6 +973,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     const selectedExpenseProduct = data?.catalog.find(
       (product) => String(product.id) === expenseProductId,
     )
+    const selectedExpenseVariant =
+      selectedExpenseProduct?.producto_variantes?.find(
+        (variant) => String(variant.id) === expenseVariantId,
+      )
 
     try {
       setSaving(true)
@@ -974,7 +989,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         expenseType,
         productId: expenseProductId,
         variantId: expenseVariantId,
-        productSku: selectedExpenseProduct?.sku ?? "",
+        productSku:
+          selectedExpenseVariant?.sku ??
+          selectedExpenseProduct?.sku ??
+          "",
         quantity: expenseProductQuantity,
         categoryDetail: expenseCategoryDetail,
         recipient: expenseRecipient,
@@ -1028,19 +1046,19 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
 
   if (loading && !data) {
     return (
-      <div className="flex min-h-240px items-center justify-center rounded-3xl border border-beyonix-blue-light/16 bg-[#071018]">
+      <div className="flex min-h-200px items-center justify-center rounded-2xl border border-beyonix-blue-light/16 bg-[#071018]">
         <Loader2 className="size-6 animate-spin text-beyonix-sky" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-3xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.9),rgba(3,7,13,0.96))] p-4 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <div className="admin-dashboard-panel admin-costs-panel space-y-3">
+      <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.9),rgba(3,7,13,0.96))] p-3.5 sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">Contabilidad interna</p>
-            <h2 className="mt-1 text-2xl font-black text-white">Costos reales</h2>
+            <h2 className="mt-1 text-xl font-black text-white">Costos reales</h2>
             <p className="mt-1 text-xs font-semibold text-white/45">Compras, impuestos y gastos con historial.</p>
           </div>
           <div className="inline-flex rounded-2xl border border-beyonix-blue-light/20 bg-black/30 p-1">
@@ -1048,7 +1066,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
             <button type="button" onClick={() => setMode("expense")} className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl px-4 text-xs font-black transition ${mode === "expense" ? "bg-beyonix-blue/60 text-white" : "text-white/55 hover:text-white"}`}><WalletCards className="size-4" /> Gastos</button>
           </div>
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
           <SummaryCard label="Mercadería" value={formatPrice(productInvestment)} detail={`${purchasedUnits} unidades compradas`} />
           <SummaryCard label="Costo promedio" value={formatPrice(purchasedUnits ? productInvestment / purchasedUnits : 0)} detail="Integral por unidad" />
           <SummaryCard label="Gastos pagados" value={formatPrice(paidExpenses)} detail="Egresos registrados" />
@@ -1065,12 +1083,12 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
 
       {mode === "product" ? (
         <>
-          <section ref={productFormRef} className="scroll-mt-4 rounded-3xl border border-beyonix-blue-light/16 bg-[#071018] p-4 sm:p-5">
-            <div className="mb-4 flex items-center gap-2">
+          <section ref={productFormRef} className="scroll-mt-4 rounded-2xl border border-beyonix-blue-light/16 bg-[#071018] p-3.5 sm:p-4">
+            <div className="mb-3 flex items-center gap-2">
               {editingProductId ? <Pencil className="size-4 text-beyonix-sky" /> : <Plus className="size-4 text-beyonix-sky" />}
               <h3 className="text-base font-black text-white">{editingProductId ? "Editar compra" : "Nueva compra"}</h3>
             </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-5">
               <Field label="Artículo" className="xl:col-span-2">
                 <ProductSelect
                   value={article}
@@ -1082,14 +1100,24 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                     } else {
                       setCustomArticleName("")
                     }
-                    const selectedProduct = data?.catalog.find(
-                      (product) =>
-                        value ===
+                    const selectedProduct = data?.catalog.find((product) =>
+                      value ===
                         (product.standalone_key
                           ? `c:${product.standalone_key}`
-                          : `p:${product.id}`),
+                          : `p:${product.id}`) ||
+                      (!product.standalone_key &&
+                        value.startsWith(`v:${product.id}:`)),
                     )
-                    setProductSku(selectedProduct?.sku ?? "")
+                    const selectedVariant =
+                      selectedProduct?.producto_variantes?.find(
+                        (variant) =>
+                          value === `v:${selectedProduct.id}:${variant.id}`,
+                      )
+                    setProductSku(
+                      selectedVariant
+                        ? selectedVariant.sku ?? ""
+                        : selectedProduct?.sku ?? "",
+                    )
                   }}
                 />
               </Field>
@@ -1105,7 +1133,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                   />
                 </Field>
               )}
-              <Field label="SKU">
+              <Field label="SKU (opcional)">
                 <input
                   value={productSku}
                   onChange={(event) => setProductSku(event.target.value)}
@@ -1127,7 +1155,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               <Field label="Medio pago"><HistoryAutocompleteInput value={productPaymentMethod} suggestions={paymentMethodSuggestions} onChange={setProductPaymentMethod} placeholder="Transferencia" /></Field>
               <Field label="Notas" className="xl:col-span-2"><HistoryAutocompleteInput value={productNotes} suggestions={notesSuggestions} onChange={setProductNotes} placeholder="Detalle adicional" /></Field>
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-3 flex justify-end gap-2">
               {editingProductId && (
                 <button type="button" disabled={saving} onClick={resetProductForm} className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/15 px-4 text-sm font-black text-white/65 transition hover:border-white/30 hover:text-white disabled:opacity-50">
                   <X className="size-4" /> Cancelar
@@ -1137,7 +1165,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[#071018] p-4 sm:p-5">
+          <section className="rounded-2xl border border-beyonix-blue-light/16 bg-[#071018] p-3.5 sm:p-4">
             <div className="mb-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center">
               <h3 className="text-base font-black text-white">
                 Historial de compras
@@ -1319,7 +1347,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         </>
       ) : (
         <>
-          <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[#071018] p-4 sm:p-5">
+          <section className="rounded-2xl border border-beyonix-blue-light/16 bg-[#071018] p-3.5 sm:p-4">
             <div className="mb-4 flex items-center gap-2"><Plus className="size-4 text-beyonix-sky" /><h3 className="text-base font-black text-white">Nuevo gasto</h3></div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <Field label="Fecha gasto"><AdminDatePicker title="Fecha gasto" ariaLabel="Fecha del gasto" value={expenseDate} onChange={setExpenseDate} centered /></Field>
@@ -1429,7 +1457,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
             <div className="mt-4 flex justify-end"><button type="button" disabled={saving} onClick={() => void saveExpense()} className="inline-flex h-10 min-w-130px cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/38 px-5 text-sm font-black text-white transition hover:border-beyonix-sky/60 hover:bg-beyonix-blue/55 disabled:cursor-wait disabled:opacity-50">{saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Guardar</button></div>
           </section>
 
-          <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[#071018] p-4 sm:p-5">
+          <section className="rounded-2xl border border-beyonix-blue-light/16 bg-[#071018] p-3.5 sm:p-4">
             <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-black text-white">Historial de gastos</h3><span className="text-xs font-bold text-white/38">{data?.expenses.length ?? 0} registros</span></div>
             <div className="overflow-x-auto rounded-2xl border border-white/7">
               <table className="w-full min-w-1000px text-sm"><thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42"><tr><th className="px-3 py-2.5 text-left">Fecha</th><th className="px-3 py-2.5 text-left">Categoría</th><th className="px-3 py-2.5 text-left">Descripción</th><th className="px-3 py-2.5 text-right">Importe</th><th className="px-3 py-2.5 text-center">Estado</th><th className="px-3 py-2.5 text-center">Frecuencia</th><th className="px-3 py-2.5 text-left">Proveedor</th><th className="px-3 py-2.5 text-center">Acción</th></tr></thead>

@@ -1,6 +1,19 @@
 -- Fuente única de inventario:
 -- saldo inicial conciliado + compras recibidas - ventas confirmadas
 -- + devoluciones aprobadas reingresadas - salidas internas.
+-- MIGRACIÓN HISTÓRICA: no volver a ejecutarla si ya existen
+-- public.inventory_movements o public.inventory_stock_timeline (migración 095).
+-- Para actualizar únicamente la descripción visible, usar
+-- 100_inventory_stock_wording.sql.
+
+do $$
+begin
+  if to_regclass('public.inventory_variant_allocations') is not null then
+    raise exception
+      'La migración 093 es histórica y no debe volver a ejecutarse. Aplicá 101_restore_variant_inventory_calculation.sql.';
+  end if;
+end;
+$$;
 
 alter table public.product_cost_entries
   add column if not exists received_quantity integer;
@@ -1005,4 +1018,4 @@ comment on column public.productos.stock is
 comment on column public.producto_variantes.stock is
   'Proyección derivada del libro unificado de inventario. No se edita manualmente.';
 comment on view public.inventory_stock_breakdown is
-  'Explica el stock real por producto y variante usando compras, ventas, devoluciones y salidas.';
+  'Explica el stock por producto y variante usando compras, ventas, devoluciones y salidas.';
