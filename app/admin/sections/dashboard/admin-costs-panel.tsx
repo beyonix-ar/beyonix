@@ -288,20 +288,24 @@ function ProductSelect({
           setOpen((current) => !current)
           if (open) setSearch("")
         }}
-        className={`${inputClass} flex cursor-pointer items-center justify-between gap-3 px-4 hover:bg-beyonix-blue/12 focus:border-beyonix-sky/55`}
+        className={`${inputClass} group flex cursor-pointer items-center justify-between gap-3 !border-beyonix-sky/48 !bg-[linear-gradient(135deg,rgba(17,42,67,0.72),rgba(7,17,27,0.98))] px-3 shadow-[inset_0_0_0_1px_rgba(140,200,242,0.08),0_0_18px_rgba(30,77,123,0.12)] hover:!border-beyonix-sky/75 hover:!bg-[linear-gradient(135deg,rgba(30,77,123,0.76),rgba(7,19,31,0.98))] focus:!border-beyonix-sky/80 ${open ? "ring-1 ring-beyonix-sky/45" : ""}`}
       >
-        <span className="size-4 shrink-0 text-beyonix-sky"><Boxes className="size-4" /></span>
-        <span className={`min-w-0 flex-1 truncate ${selectedProduct || isUncatalogued ? "text-white" : "text-white/48"}`}>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-sky/35 bg-beyonix-blue/45 text-beyonix-sky shadow-[0_0_12px_rgba(140,200,242,0.12)] transition group-hover:border-beyonix-sky/60 group-hover:text-white">
+          <Boxes className="size-4" />
+        </span>
+        <span className={`min-w-0 flex-1 truncate ${selectedProduct || isUncatalogued ? "text-white" : "text-white/88"}`}>
           {isUncatalogued
             ? "Artículo no catalogado"
             : selectedVariant
               ? `${selectedProduct?.nombre} · ${selectedVariant.nombre}`
               : selectedProduct?.nombre ?? "Seleccionar producto"}
         </span>
-        <ChevronDown className={`size-4 shrink-0 text-beyonix-sky transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-sky/28 bg-black/20 text-beyonix-sky transition group-hover:border-beyonix-sky/55 group-hover:bg-beyonix-blue/45 group-hover:text-white">
+          <ChevronDown className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
+        </span>
       </button>
       {open && (
-        <div role="listbox" className="absolute left-0 right-0 top-full z-30 mt-2 max-h-280px overflow-y-auto rounded-2xl border border-beyonix-sky/28 bg-[#07131F] p-1.5 shadow-2xl shadow-black/60 custom-scrollbar">
+        <div role="listbox" className="absolute left-0 right-0 top-full z-30 mt-2 max-h-280px overflow-y-auto rounded-2xl border border-beyonix-sky/50 bg-[#07131F] p-1.5 shadow-[0_24px_55px_rgba(0,0,0,0.72),0_0_0_1px_rgba(140,200,242,0.08),0_0_28px_rgba(30,77,123,0.18)] custom-scrollbar">
           <label className="relative mb-1 block">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-beyonix-sky/65" />
             <input

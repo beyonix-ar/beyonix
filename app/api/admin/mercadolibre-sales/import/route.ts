@@ -3,6 +3,7 @@ import {
   getCanonicalCatalogSku,
   normalizeMercadoLibreSku,
 } from "@/lib/mercadolibre/sku-aliases"
+import { validateMercadoLibreImportBatch } from "@/lib/mercadolibre/import-integrity"
 
 interface MercadoLibreSaleInput {
   sale_date?: string | null
@@ -117,7 +118,7 @@ export async function POST(request: Request) {
     )
   }
 
-  let payload = rows.map((row) =>
+  const normalizedRows = rows.map((row) =>
     normalizeSale(
       {
         ...row,
@@ -126,6 +127,21 @@ export async function POST(request: Request) {
       auth.user.id
     )
   )
+  let integrityResult: ReturnType<typeof validateMercadoLibreImportBatch>
+  try {
+    integrityResult = validateMercadoLibreImportBatch(normalizedRows)
+  } catch (error) {
+    return Response.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "El archivo contiene ventas inconsistentes.",
+      },
+      { status: 400 },
+    )
+  }
+  let payload = integrityResult.rows
 
   const preservedMappings = new Map<
     string,
@@ -259,59 +275,48 @@ export async function POST(request: Request) {
     }
   })
 
-  const operationIds = Array.from(
-    new Set(
-      payload
-        .map((row) => row.operation_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
+  const { data: importResult, error: importError } = await auth.admin.rpc(
+    "import_mercadolibre_sales_idempotent",
+    {
+      p_rows: payload,
+      p_imported_by: auth.user.id,
+      p_source_file_name: body.sourceFileName || null,
+    },
   )
-  const existingIds: string[] = []
-  for (let index = 0; index < operationIds.length; index += 400) {
-    const { data, error } = await auth.admin
-      .from("mercadolibre_sales")
-      .select("id")
-      .in("operation_id", operationIds.slice(index, index + 400))
-    if (error) {
-      return Response.json({ error: error.message }, { status: 500 })
-    }
-    existingIds.push(...(data ?? []).map((row) => String(row.id)))
-  }
 
-  const insertedIds: string[] = []
-  for (let index = 0; index < payload.length; index += 400) {
-    const { data, error } = await auth.admin
-      .from("mercadolibre_sales")
-      .insert(payload.slice(index, index + 400))
-      .select("id")
-    if (error) {
-      if (insertedIds.length) {
-        await auth.admin.from("mercadolibre_sales").delete().in("id", insertedIds)
-      }
-      return Response.json({ error: error.message }, { status: 500 })
-    }
-    insertedIds.push(...(data ?? []).map((row) => String(row.id)))
-  }
-
-  for (let index = 0; index < existingIds.length; index += 400) {
-    const { error } = await auth.admin
-      .from("mercadolibre_sales")
-      .delete()
-      .in("id", existingIds.slice(index, index + 400))
-    if (error) {
-      return Response.json(
-        {
-          error:
-            "Las ventas se importaron, pero no se pudieron reemplazar todos los registros anteriores.",
-        },
-        { status: 500 },
+  if (importError) {
+    const missingMigration =
+      /import_mercadolibre_sales_idempotent|source_key|schema cache/i.test(
+        importError.message,
       )
-    }
+    return Response.json(
+      {
+        error: missingMigration
+          ? "Falta aplicar la migración 106_idempotent_mercadolibre_import.sql."
+          : importError.message,
+      },
+      { status: missingMigration ? 503 : 400 },
+    )
   }
+
+  const result = (
+    importResult && typeof importResult === "object"
+      ? importResult
+      : {}
+  ) as Record<string, unknown>
+  const inserted = Number(result.inserted ?? 0)
+  const updated = Number(result.updated ?? 0)
+  const unchanged = Number(result.unchanged ?? 0)
+  const duplicateRows =
+    integrityResult.duplicateRows + Number(result.duplicate_rows ?? 0)
 
   return Response.json({
     imported: payload.length,
-    replaced: existingIds.length,
+    inserted,
+    updated,
+    unchanged,
+    duplicateRows,
+    replaced: updated,
     linked: payload.filter(
       (row) => "product_id" in row && row.product_id != null,
     ).length,

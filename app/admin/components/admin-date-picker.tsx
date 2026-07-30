@@ -8,7 +8,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react"
 import { createPortal } from "react-dom"
-import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react"
+import {
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react"
 
 import {
   formatAdminDateInput,
@@ -45,6 +52,7 @@ const MONTHS = [
 ]
 
 const WEEK_DAYS = ["L", "M", "X", "J", "V", "S", "D"]
+const FIRST_SELECTABLE_YEAR = 2026
 
 function isValidDate(date: Date) {
   return Number.isFinite(date.getTime())
@@ -134,11 +142,22 @@ export function AdminDatePicker({
   const [mounted, setMounted] = useState(false)
   const [textValue, setTextValue] = useState(toDisplayDate(value))
   const [visibleMonth, setVisibleMonth] = useState(() => selectedDate ?? today)
+  const [openHeaderSelect, setOpenHeaderSelect] = useState<
+    "month" | "year" | null
+  >(null)
   const [popoverPosition, setPopoverPosition] = useState({
     left: 0,
     top: 0,
   })
   const safeVisibleMonth = isValidDate(visibleMonth) ? visibleMonth : today
+  const lastSelectableYear = Math.max(
+    FIRST_SELECTABLE_YEAR,
+    today.getFullYear(),
+  )
+  const selectableYears = Array.from(
+    { length: lastSelectableYear - FIRST_SELECTABLE_YEAR + 1 },
+    (_, index) => FIRST_SELECTABLE_YEAR + index,
+  )
 
   const calendarDays = useMemo(
     () => getCalendarDays(safeVisibleMonth),
@@ -164,17 +183,15 @@ export function AdminDatePicker({
         !wrapperRef.current?.contains(event.target as Node) &&
         !popoverRef.current?.contains(event.target as Node)
       ) {
+        setOpenHeaderSelect(null)
         setOpen(false)
       }
     }
 
     function handleEscape(event: KeyboardEvent) {
       const key = typeof event.key === "string" ? event.key : ""
-      if (
-        key === "Escape" ||
-        key === "Tab" ||
-        key.startsWith("Arrow")
-      ) {
+      if (key === "Escape") {
+        setOpenHeaderSelect(null)
         setOpen(false)
       }
     }
@@ -184,6 +201,7 @@ export function AdminDatePicker({
         !wrapperRef.current?.contains(event.target as Node) &&
         !popoverRef.current?.contains(event.target as Node)
       ) {
+        setOpenHeaderSelect(null)
         setOpen(false)
       }
     }
@@ -236,11 +254,14 @@ export function AdminDatePicker({
   }, [open])
 
   const changeMonth = (direction: number) => {
+    setOpenHeaderSelect(null)
     setVisibleMonth((current) => {
       const safeCurrent = isValidDate(current) ? current : new Date()
-      const next = new Date(safeCurrent)
-      next.setMonth(safeCurrent.getMonth() + direction)
-      return next
+      return new Date(
+        safeCurrent.getFullYear(),
+        safeCurrent.getMonth() + direction,
+        1,
+      )
     })
   }
 
@@ -299,11 +320,13 @@ export function AdminDatePicker({
     setOpen(false)
   }
 
-  const handleSelectVisibleMonth = () => {
+  const handleSelectMonth = (month: number) => {
+    const year = safeVisibleMonth.getFullYear()
+    setVisibleMonth(new Date(year, month, 1))
+    setOpenHeaderSelect(null)
+
     if (!onSelectMonth) return
 
-    const year = safeVisibleMonth.getFullYear()
-    const month = safeVisibleMonth.getMonth()
     const firstDay = toInputDate(new Date(year, month, 1))
     const lastDay = toInputDate(new Date(year, month + 1, 0))
 
@@ -314,10 +337,11 @@ export function AdminDatePicker({
     setOpen(false)
   }
 
-  const handleSelectVisibleYear = () => {
-    if (!onSelectYear) return
+  const handleSelectYear = (year: number) => {
+    setVisibleMonth(new Date(year, safeVisibleMonth.getMonth(), 1))
+    setOpenHeaderSelect(null)
 
-    const year = safeVisibleMonth.getFullYear()
+    if (!onSelectYear) return
 
     onSelectYear({
       from: toInputDate(new Date(year, 0, 1)),
@@ -359,7 +383,10 @@ export function AdminDatePicker({
           aria-label="Abrir calendario"
           aria-expanded={open}
           tabIndex={compact ? -1 : undefined}
-          onClick={() => setOpen((current) => !current)}
+          onClick={() => {
+            if (open) setOpenHeaderSelect(null)
+            setOpen((current) => !current)
+          }}
           className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg bg-beyonix-blue/18 text-beyonix-sky transition hover:bg-beyonix-blue/45 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
         >
           <CalendarDays className="size-3.5" />
@@ -386,37 +413,111 @@ export function AdminDatePicker({
                   Seleccionar fecha
                 </p>
 
-                {onSelectMonth || onSelectYear ? (
-                  <div className="-ml-2 mt-1 flex items-center gap-1">
-                    {onSelectMonth && (
-                      <button
-                        type="button"
-                        title="Seleccionar el mes completo"
-                        aria-label={`Seleccionar todo ${MONTHS[safeVisibleMonth.getMonth()]} de ${safeVisibleMonth.getFullYear()}`}
-                        onClick={handleSelectVisibleMonth}
-                        className="cursor-pointer rounded-lg px-2 py-1 text-sm font-black capitalize text-white/92 transition hover:bg-beyonix-blue/28 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
+                <div className="-ml-2 mt-1 flex items-center gap-1">
+                  <div className="relative">
+                    <button
+                      type="button"
+                      title="Elegir mes"
+                      aria-label={`Mes seleccionado: ${MONTHS[safeVisibleMonth.getMonth()]}`}
+                      aria-haspopup="listbox"
+                      aria-expanded={openHeaderSelect === "month"}
+                      onClick={() =>
+                        setOpenHeaderSelect((current) =>
+                          current === "month" ? null : "month",
+                        )
+                      }
+                      className="admin-ds-datepicker-heading-trigger cursor-pointer rounded-lg px-2 py-1 text-sm font-black capitalize transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
+                    >
+                      <span>{MONTHS[safeVisibleMonth.getMonth()]}</span>
+                      <ChevronDown
+                        className={`size-3.5 transition-transform ${
+                          openHeaderSelect === "month" ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {openHeaderSelect === "month" && (
+                      <div
+                        role="listbox"
+                        aria-label="Seleccionar mes"
+                        className="admin-ds-datepicker-heading-menu admin-select-scrollbar absolute left-0 top-full z-20 mt-1 max-h-64 w-36 overflow-y-auto p-1.5"
                       >
-                        {MONTHS[safeVisibleMonth.getMonth()]}
-                      </button>
-                    )}
-                    {onSelectYear && (
-                      <button
-                        type="button"
-                        title="Seleccionar el año completo"
-                        aria-label={`Seleccionar todo el año ${safeVisibleMonth.getFullYear()}`}
-                        onClick={handleSelectVisibleYear}
-                        className="cursor-pointer rounded-lg px-2 py-1 text-sm font-black text-white/92 transition hover:bg-beyonix-blue/28 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
-                      >
-                        {safeVisibleMonth.getFullYear()}
-                      </button>
+                        {MONTHS.map((month, index) => {
+                          const selected =
+                            index === safeVisibleMonth.getMonth()
+
+                          return (
+                            <button
+                              key={month}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              onClick={() => handleSelectMonth(index)}
+                              className={`admin-ds-datepicker-heading-option flex w-full cursor-pointer items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-bold capitalize transition ${
+                                selected ? "is-selected" : ""
+                              }`}
+                            >
+                              {month}
+                              {selected && <Check className="size-3.5" />}
+                            </button>
+                          )
+                        })}
+                      </div>
                     )}
                   </div>
-                ) : (
-                  <p className="mt-1 text-sm font-black capitalize text-white/92">
-                    {MONTHS[safeVisibleMonth.getMonth()]}{" "}
-                    {safeVisibleMonth.getFullYear()}
-                  </p>
-                )}
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      title="Elegir año"
+                      aria-label={`Año seleccionado: ${safeVisibleMonth.getFullYear()}`}
+                      aria-haspopup="listbox"
+                      aria-expanded={openHeaderSelect === "year"}
+                      onClick={() =>
+                        setOpenHeaderSelect((current) =>
+                          current === "year" ? null : "year",
+                        )
+                      }
+                      className="admin-ds-datepicker-heading-trigger cursor-pointer rounded-lg px-2 py-1 text-sm font-black transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/60"
+                    >
+                      <span>{safeVisibleMonth.getFullYear()}</span>
+                      <ChevronDown
+                        className={`size-3.5 transition-transform ${
+                          openHeaderSelect === "year" ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {openHeaderSelect === "year" && (
+                      <div
+                        role="listbox"
+                        aria-label="Seleccionar año"
+                        className="admin-ds-datepicker-heading-menu admin-select-scrollbar absolute left-0 top-full z-20 mt-1 max-h-48 w-24 overflow-y-auto p-1.5"
+                      >
+                        {selectableYears.map((year) => {
+                          const selected =
+                            year === safeVisibleMonth.getFullYear()
+
+                          return (
+                            <button
+                              key={year}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              onClick={() => handleSelectYear(year)}
+                              className={`admin-ds-datepicker-heading-option flex w-full cursor-pointer items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-bold transition ${
+                                selected ? "is-selected" : ""
+                              }`}
+                            >
+                              {year}
+                              {selected && <Check className="size-3.5" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">

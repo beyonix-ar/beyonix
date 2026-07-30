@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 import type { MercadoLibreImportRow } from "@/lib/mercadolibre/sales-report"
+import { validateMercadoLibreImportBatch } from "@/lib/mercadolibre/import-integrity"
 
 export interface StoredMercadoLibreSale {
   id: string
@@ -106,22 +107,38 @@ export async function importMercadoLibreSales(
   rows: MercadoLibreImportRow[],
   sourceFileName: string,
 ) {
-  let imported = 0
+  const validated = validateMercadoLibreImportBatch(rows)
+  const imported = rows.length
   let replaced = 0
   let linked = 0
-  for (let index = 0; index < rows.length; index += 150) {
+  let inserted = 0
+  let updated = 0
+  let unchanged = 0
+  let duplicateRows = validated.duplicateRows
+  for (let index = 0; index < validated.rows.length; index += 150) {
     const result = await request("/api/admin/mercadolibre-sales/import", {
       method: "POST",
       body: JSON.stringify({
-        rows: rows.slice(index, index + 150),
+        rows: validated.rows.slice(index, index + 150),
         sourceFileName,
       }),
     })
-    imported += Number(result?.imported ?? 0)
     replaced += Number(result?.replaced ?? 0)
     linked += Number(result?.linked ?? 0)
+    inserted += Number(result?.inserted ?? 0)
+    updated += Number(result?.updated ?? 0)
+    unchanged += Number(result?.unchanged ?? 0)
+    duplicateRows += Number(result?.duplicateRows ?? 0)
   }
-  return { imported, replaced, linked }
+  return {
+    imported,
+    replaced,
+    linked,
+    inserted,
+    updated,
+    unchanged,
+    duplicateRows,
+  }
 }
 
 export async function deleteMercadoLibreSale(id: string) {

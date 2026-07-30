@@ -29,6 +29,41 @@ export interface ProductVariantDistribution {
   variants: ProductVariantAllocation[]
 }
 
+async function authenticatedVariantRequest(
+  path: string,
+  init: RequestInit = {},
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) {
+    throw new Error("La sesión administrativa venció. Volvé a iniciar sesión.")
+  }
+
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...init.headers,
+    },
+    cache: "no-store",
+  })
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        variant?: SupabaseProductoVariante
+        variants?: SupabaseProductoVariante[]
+        error?: string
+      }
+    | null
+
+  if (!response.ok) {
+    throw new Error(payload?.error || "No se pudo guardar la variante.")
+  }
+
+  return payload
+}
+
 async function distributionRequest(
   productId: number,
   init?: RequestInit,
@@ -81,22 +116,19 @@ export function saveProductVariantDistribution(
 export async function getProductoVariantes(
   productoId: number
 ) {
-  const { data, error } = await supabase
-    .from("producto_variantes")
-    .select("*")
-    .eq("producto_id", productoId)
-    .order("orden", {
-      ascending: true,
-    })
-    .order("id", {
-      ascending: true,
-    })
+  const response = await authenticatedVariantRequest(
+    `/api/admin/products/${productoId}/variants`,
+  )
 
-  if (error) {
-    throw error
-  }
+  return response?.variants ?? []
+}
 
-  return (data || []) as SupabaseProductoVariante[]
+export async function getAdminProductoVariantes() {
+  const response = await authenticatedVariantRequest(
+    "/api/admin/product-variants",
+  )
+
+  return response?.variants ?? []
 }
 
 export async function createProductoVariante(
@@ -104,37 +136,42 @@ export async function createProductoVariante(
 ) {
   const catalogPayload = { ...payload }
   delete catalogPayload.stock
-  const { data, error } = await supabase
-    .from("producto_variantes")
-    .insert(catalogPayload)
-    .select()
-    .single()
+  const response = await authenticatedVariantRequest(
+    `/api/admin/products/${payload.producto_id}/variants`,
+    {
+      method: "POST",
+      body: JSON.stringify(catalogPayload),
+    },
+  )
 
-  if (error) {
-    throw error
+  if (!response?.variant) {
+    throw new Error("No se pudo crear la variante.")
   }
 
-  return data as SupabaseProductoVariante
+  return response.variant
 }
 
 export async function updateProductoVariante(
+  productId: number,
   id: number,
   payload: Partial<ProductoVariantePayload>
 ) {
   const catalogPayload = { ...payload }
+  delete catalogPayload.producto_id
   delete catalogPayload.stock
-  const { data, error } = await supabase
-    .from("producto_variantes")
-    .update(catalogPayload)
-    .eq("id", id)
-    .select()
-    .single()
+  const response = await authenticatedVariantRequest(
+    `/api/admin/products/${productId}/variants/${id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(catalogPayload),
+    },
+  )
 
-  if (error) {
-    throw error
+  if (!response?.variant) {
+    throw new Error("No se pudo actualizar la variante.")
   }
 
-  return data as SupabaseProductoVariante
+  return response.variant
 }
 
 export async function setProductoVarianteActivo(
@@ -181,16 +218,13 @@ export async function setProductoVarianteActivo(
 }
 
 export async function deleteProductoVariante(
+  productId: number,
   id: number
 ) {
-  const { error } = await supabase
-    .from("producto_variantes")
-    .delete()
-    .eq("id", id)
-
-  if (error) {
-    throw error
-  }
+  await authenticatedVariantRequest(
+    `/api/admin/products/${productId}/variants/${id}`,
+    { method: "DELETE" },
+  )
 
   return true
 }

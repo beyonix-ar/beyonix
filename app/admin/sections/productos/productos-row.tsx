@@ -256,7 +256,7 @@ export function ProductosRow({
     ? "Los SKU se muestran en cada variante"
     : producto.sku?.trim() || "Sin SKU"
   const skuDisplay = variantes.length
-    ? "—"
+    ? ""
     : producto.sku?.trim() || "—"
 
   const stockTotal =
@@ -395,6 +395,7 @@ export function ProductosRow({
 
     const updated =
       await updateProductoVariante(
+        producto.id,
         variante.id,
         {
           color_hex: editColor,
@@ -459,7 +460,7 @@ export function ProductosRow({
     try {
       setDeletingVariantId(variante.id)
       setVariantError("")
-      await deleteProductoVariante(variante.id)
+      await deleteProductoVariante(producto.id, variante.id)
     } catch (error) {
       setVariantError(
         error instanceof Error
@@ -542,6 +543,7 @@ export function ProductosRow({
       await Promise.all(
         nextVariantes.map((item) =>
           updateProductoVariante(
+            producto.id,
             item.id,
             {
               orden: item.orden,

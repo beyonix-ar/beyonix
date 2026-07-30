@@ -321,32 +321,48 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   <label htmlFor="precio" className={labelCls}>
                     Precio
                   </label>
-                  <input
-                    min="0"
-                    type="number"
-                    id="precio"
-                    placeholder="0"
-                    value={form.precio}
-                    onChange={(event) => setField("precio", event.target.value)}
-                    className={inputCls}
-                  />
+                  <div className="relative">
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-emerald-300"
+                    >
+                      $
+                    </span>
+                    <input
+                      min="0"
+                      type="number"
+                      id="precio"
+                      placeholder="0"
+                      value={form.precio}
+                      onChange={(event) => setField("precio", event.target.value)}
+                      className={`${inputCls} !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label htmlFor="precio_anterior" className={labelCls}>
                     Precio anterior
                   </label>
-                  <input
-                    min="0"
-                    type="number"
-                    id="precio_anterior"
-                    placeholder="0"
-                    value={form.precio_anterior}
-                    onChange={(event) =>
-                      setField("precio_anterior", event.target.value)
-                    }
-                    className={inputCls}
-                  />
+                  <div className="relative">
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-emerald-300"
+                    >
+                      $
+                    </span>
+                    <input
+                      min="0"
+                      type="number"
+                      id="precio_anterior"
+                      placeholder="0"
+                      value={form.precio_anterior}
+                      onChange={(event) =>
+                        setField("precio_anterior", event.target.value)
+                      }
+                      className={`${inputCls} !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                    />
+                  </div>
                 </div>
               </div>
 

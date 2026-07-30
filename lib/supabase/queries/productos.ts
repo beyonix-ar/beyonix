@@ -7,6 +7,10 @@ import type {
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
 import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
+import {
+  getAdminProductoVariantes,
+  getProductoVariantes,
+} from "@/lib/supabase/queries/producto-variantes"
 
 export interface ProductoPayload {
   nombre: string
@@ -289,21 +293,19 @@ export async function getProductosPage({
   const safePageSize = Math.min(100, Math.max(10, Math.floor(pageSize)))
   const from = (safePage - 1) * safePageSize
   const to = from + safePageSize - 1
+  const adminVariants = await getAdminProductoVariantes()
   let query = supabase
     .from("productos")
     .select(PRODUCTO_SELECT, { count: "exact" })
 
   const normalizedSearch = search.trim().replace(/[%(),]/g, " ")
   if (normalizedSearch) {
-    const { data: matchingVariants, error: variantsError } = await supabase
-      .from("producto_variantes")
-      .select("producto_id")
-      .ilike("sku", `%${normalizedSearch}%`)
-
-    if (variantsError) throw variantsError
-
+    const normalizedSearchKey = normalizedSearch.toLocaleLowerCase("es")
+    const matchingVariants = adminVariants.filter((variant) =>
+      variant.sku?.toLocaleLowerCase("es").includes(normalizedSearchKey),
+    )
     const variantProductIds = [
-      ...new Set((matchingVariants ?? []).map((item) => item.producto_id)),
+      ...new Set(matchingVariants.map((item) => item.producto_id)),
     ]
     const variantSearchClause = variantProductIds.length
       ? `,id.in.(${variantProductIds.join(",")})`
@@ -315,17 +317,14 @@ export async function getProductosPage({
   }
   const normalizedColor = colorSearch.trim().replace(/[%(),]/g, " ")
   if (normalizedColor) {
-    const { data: matchingVariants, error: variantsError } = await supabase
-      .from("producto_variantes")
-      .select("producto_id")
-      .or(
-        `nombre.ilike.%${normalizedColor}%,color_hex.ilike.%${normalizedColor}%`,
-      )
-
-    if (variantsError) throw variantsError
-
+    const normalizedColorKey = normalizedColor.toLocaleLowerCase("es")
+    const matchingVariants = adminVariants.filter(
+      (variant) =>
+        variant.nombre.toLocaleLowerCase("es").includes(normalizedColorKey) ||
+        variant.color_hex.toLocaleLowerCase("es").includes(normalizedColorKey),
+    )
     const productIds = [
-      ...new Set((matchingVariants ?? []).map((item) => item.producto_id)),
+      ...new Set(matchingVariants.map((item) => item.producto_id)),
     ]
 
     if (!productIds.length) {
@@ -345,15 +344,12 @@ export async function getProductosPage({
   if (featuredFilter === "destacados") query = query.eq("destacado", true)
   if (featuredFilter === "normales") query = query.eq("destacado", false)
   if (skuFilter !== "todos") {
-    const { data: variantsWithSku, error: variantsError } = await supabase
-      .from("producto_variantes")
-      .select("producto_id")
-      .not("sku", "is", null)
-
-    if (variantsError) throw variantsError
-
     const productIdsWithVariantSku = [
-      ...new Set((variantsWithSku ?? []).map((item) => item.producto_id)),
+      ...new Set(
+        adminVariants
+          .filter((variant) => Boolean(variant.sku?.trim()))
+          .map((item) => item.producto_id),
+      ),
     ]
 
     if (skuFilter === "con_sku") {
@@ -400,11 +396,21 @@ export async function getProductosPage({
 
   if (error) throw error
 
+  const variantsByProduct = adminVariants.reduce<
+    Record<number, SupabaseProductoVariante[]>
+  >((result, variant) => {
+    result[variant.producto_id] = [
+      ...(result[variant.producto_id] ?? []),
+      variant,
+    ]
+    return result
+  }, {})
+
   const productos = await attachProductReviewSummaries(
     await attachConditionedStock(
       ((data ?? []) as SupabaseProducto[]).map((producto) => ({
         ...producto,
-        producto_variantes: [...(producto.producto_variantes ?? [])].sort(
+        producto_variantes: [...(variantsByProduct[producto.id] ?? [])].sort(
           (a, b) => a.orden - b.orden || a.id - b.id,
         ),
       })),
@@ -420,16 +426,11 @@ export async function getProductosPage({
 }
 
 export async function getProductColorOptions(): Promise<ProductColorOption[]> {
-  const { data, error } = await supabase
-    .from("producto_variantes")
-    .select("nombre, color_hex")
-    .order("nombre", { ascending: true })
-
-  if (error) throw error
+  const variants = await getAdminProductoVariantes()
 
   const colors = new Map<string, ProductColorOption>()
 
-  for (const variant of data ?? []) {
+  for (const variant of variants) {
     const label = variant.nombre?.trim()
     const hex = variant.color_hex?.trim()
     if (!label || !hex) continue
@@ -467,18 +468,24 @@ export async function getCategoryProductStats() {
 export async function getProductoById(
   id: number
 ) {
-  const { data, error } = await supabase
-    .from("productos")
-    .select(PRODUCTO_SELECT)
-    .eq("id", id)
-    .single()
+  const [{ data, error }, variants] = await Promise.all([
+    supabase
+      .from("productos")
+      .select(PRODUCTO_SELECT)
+      .eq("id", id)
+      .single(),
+    getProductoVariantes(id),
+  ])
 
   if (error) {
     throw error
   }
 
   const [product] = await attachProductReviewSummaries([
-    data as SupabaseProducto,
+    {
+      ...(data as SupabaseProducto),
+      producto_variantes: variants,
+    },
   ])
 
   return product

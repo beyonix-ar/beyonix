@@ -616,12 +616,16 @@ export function AdminMercadoLibreSales() {
     setSuccess("")
     try {
       const response = await importMercadoLibreSales(preview.rows, fileName)
-      const replaced = number(response?.replaced)
+      const inserted = number(response?.inserted)
+      const updated = number(response?.updated)
+      const unchanged = number(response?.unchanged)
+      const duplicateRows = number(response?.duplicateRows)
       const linked = number(response?.linked)
       setSuccess(
-        `${preview.rows.length} movimientos importados${
-          replaced ? `; ${replaced} registros anteriores reemplazados` : ""
-        }${linked ? `; ${linked} vinculados al inventario` : ""}.`,
+        `${preview.rows.length} movimientos comprobados: ${inserted} nuevos, ` +
+          `${updated} actualizados y ${unchanged} sin cambios` +
+          `${duplicateRows ? `; ${duplicateRows} filas repetidas ignoradas` : ""}` +
+          `${linked ? `; ${linked} vinculados al inventario` : ""}.`,
       )
       setPreview(null)
       setFileName("")

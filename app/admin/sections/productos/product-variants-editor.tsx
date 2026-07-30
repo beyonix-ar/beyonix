@@ -229,7 +229,7 @@ export function ProductVariantsEditor({
     nextImages.splice(toIndex, 0, image)
     setPersistedVariantImages(nextImages)
 
-    if (editingVariant?.kind !== "persisted") {
+    if (!productoId || editingVariant?.kind !== "persisted") {
       return
     }
 
@@ -238,6 +238,7 @@ export function ProductVariantsEditor({
 
       const updated =
         await updateProductoVariante(
+          productoId,
           editingVariant.id,
           {
             imagenes: nextImages,
@@ -269,7 +270,7 @@ export function ProductVariantsEditor({
   const removePersistedImage = async (
     imageUrl: string
   ) => {
-    if (editingVariant?.kind !== "persisted") {
+    if (!productoId || editingVariant?.kind !== "persisted") {
       return
     }
 
@@ -286,6 +287,7 @@ export function ProductVariantsEditor({
 
       const updated =
         await updateProductoVariante(
+          productoId,
           editingVariant.id,
           {
             imagenes: nextImages,
@@ -396,6 +398,7 @@ export function ProductVariantsEditor({
 
         const updated =
           await updateProductoVariante(
+            productoId,
             editingVariant.id,
             {
               ...nextVariant,
@@ -478,7 +481,7 @@ export function ProductVariantsEditor({
           ],
         )
       } catch (allocationError) {
-        await deleteProductoVariante(created.id)
+        await deleteProductoVariante(productoId, created.id)
         throw allocationError
       }
       resetFields()
@@ -496,9 +499,11 @@ export function ProductVariantsEditor({
 
   const removePersistedVariant =
     async (id: number) => {
+      if (!productoId) return
+
       try {
         setError("")
-        await deleteProductoVariante(id)
+        await deleteProductoVariante(productoId, id)
 
         const nextVariantes =
           variantes.filter(
