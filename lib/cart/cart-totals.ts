@@ -6,6 +6,7 @@ interface CartTotalItem {
     precio: number
   }
   quantity: number
+  unitPrice?: number
 }
 
 interface CartTotalsOptions {
@@ -17,12 +18,20 @@ export function calculateCartTotals(
   options: CartTotalsOptions = {}
 ) {
   const subtotal = items.reduce((acc, item) => {
-    const price = Number.isFinite(item.product.precio) ? item.product.precio : 0
+    const price = Number.isFinite(item.unitPrice)
+      ? Math.max(item.unitPrice ?? 0, 0)
+      : Number.isFinite(item.product.precio)
+        ? item.product.precio
+        : 0
     return acc + price * item.quantity
   }, 0)
 
   const discount = items.reduce((acc, item) => {
-    const price = Number.isFinite(item.product.precio) ? item.product.precio : 0
+    const price = Number.isFinite(item.unitPrice)
+      ? Math.max(item.unitPrice ?? 0, 0)
+      : Number.isFinite(item.product.precio)
+        ? item.product.precio
+        : 0
     const rate = getProductDiscount(item.product.id)
 
     return acc + price * rate * item.quantity

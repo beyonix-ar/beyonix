@@ -32,11 +32,11 @@ import {
 } from "@/lib/supabase/queries/producto-imagenes"
 
 import {
-  createProductoVariante,
+  createProductoVariantWithAllocation,
   deleteProductoVariante,
   getProductVariantDistribution,
   getProductoVariantes,
-  saveProductVariantDistribution,
+  updateProductoVariantWithAllocation,
   updateProductoVariante,
   type ProductVariantDistribution,
 } from "@/lib/supabase/queries/producto-variantes"
@@ -142,6 +142,24 @@ export function ProductVariantsEditor({
           getProductoVariantes(productoId),
           getProductVariantDistribution(productoId),
         ])
+        const catalogVariantIds = new Set(
+          data.map((variant) => Number(variant.id)),
+        )
+        const distributionVariantIds = new Set(
+          stockDistribution.variants.map((variant) =>
+            Number(variant.variant_id),
+          ),
+        )
+        const inconsistentCatalog =
+          catalogVariantIds.size !== distributionVariantIds.size ||
+          [...catalogVariantIds].some(
+            (variantId) => !distributionVariantIds.has(variantId),
+          )
+        if (inconsistentCatalog) {
+          throw new Error(
+            "Las variantes y su distribución no coinciden. Recargá la pantalla; si continúa, revisá la integridad del inventario.",
+          )
+        }
 
         setVariantes(data)
         setDistribution(stockDistribution)
@@ -330,7 +348,7 @@ export function ProductVariantsEditor({
       !Number.isInteger(allocationQuantity) ||
       allocationQuantity < 0
     ) {
-      setError("La cantidad asignada debe ser un número entero positivo.")
+      setError("La asignación debe ser un número entero igual o mayor que cero.")
       return
     }
 
@@ -396,32 +414,20 @@ export function ProductVariantsEditor({
               )
             : []
 
-        const updated =
-          await updateProductoVariante(
-            productoId,
-            editingVariant.id,
-            {
-              ...nextVariant,
-              imagenes: [
-                ...persistedVariantImages,
-                ...urls,
-              ],
-            }
-          )
-
-        await saveProductVariantDistribution(
+        const updated = await updateProductoVariantWithAllocation(
           productoId,
-          variantes.map((variant) => ({
-            variant_id: variant.id,
-            quantity:
-              variant.id === updated.id
-                ? allocationQuantity
-                : allocations[variant.id] ?? 0,
-          })),
+          editingVariant.id,
+          {
+            name: nextVariant.nombre,
+            sku: nextVariant.sku,
+            color: nextVariant.color_hex,
+            quantity: allocationQuantity,
+            images: [
+              ...persistedVariantImages,
+              ...urls,
+            ],
+          },
         )
-
-        await updateProductoImageOrder(updated.imagenes || [])
-
         const nextVariantes =
           variantes.map((variante) =>
             variante.id === updated.id
@@ -430,11 +436,25 @@ export function ProductVariantsEditor({
           )
 
         setVariantes(nextVariantes)
-        await syncPrincipalImage(
-          nextVariantes
-        )
+        setAllocations((current) => ({
+          ...current,
+          [updated.id]: allocationQuantity,
+        }))
         resetFields()
+        let secondaryUpdateWarning = ""
+        try {
+          await updateProductoImageOrder(updated.imagenes || [])
+          await syncPrincipalImage(nextVariantes)
+        } catch (secondaryError) {
+          console.error(
+            "VARIANT_SECONDARY_SYNC_ERROR",
+            secondaryError,
+          )
+          secondaryUpdateWarning =
+            "La variante se guardó, pero no se pudo sincronizar su imagen principal."
+        }
         await loadVariantes()
+        if (secondaryUpdateWarning) setError(secondaryUpdateWarning)
         return
       }
 
@@ -452,40 +472,52 @@ export function ProductVariantsEditor({
             )
           : []
 
-      const created =
-        await createProductoVariante({
-        producto_id: productoId,
-        ...nextVariant,
-        imagenes: urls,
-        activo: true,
-        orden:
-          variantes.length + 1,
-      })
-
-      await syncPrincipalImage([
-        ...variantes,
-        created,
-      ])
+      let created: SupabaseProductoVariante
       try {
-        await saveProductVariantDistribution(
+        created = await createProductoVariantWithAllocation(
           productoId,
-          [
-            ...variantes.map((variant) => ({
-              variant_id: variant.id,
-              quantity: allocations[variant.id] ?? 0,
-            })),
-            {
-              variant_id: created.id,
-              quantity: allocationQuantity,
-            },
-          ],
+          {
+            name: nextVariant.nombre,
+            sku: nextVariant.sku,
+            color: nextVariant.color_hex,
+            quantity: allocationQuantity,
+            images: urls,
+          },
         )
-      } catch (allocationError) {
-        await deleteProductoVariante(productoId, created.id)
-        throw allocationError
+      } catch (createError) {
+        for (const url of urls) {
+          try {
+            await deleteProductoImageByUrl(url)
+          } catch (cleanupError) {
+            console.error(
+              "No se pudo limpiar una imagen de la variante:",
+              cleanupError,
+            )
+          }
+        }
+        throw createError
       }
+
+      const nextVariantes = [...variantes, created]
+      setVariantes(nextVariantes)
+      setAllocations((current) => ({
+        ...current,
+        [created.id]: allocationQuantity,
+      }))
       resetFields()
+      let secondaryUpdateWarning = ""
+      try {
+        await syncPrincipalImage(nextVariantes)
+      } catch (secondaryError) {
+        console.error(
+          "VARIANT_SECONDARY_SYNC_ERROR",
+          secondaryError,
+        )
+        secondaryUpdateWarning =
+          "La variante se guardó, pero no se pudo sincronizar su imagen principal."
+      }
       await loadVariantes()
+      if (secondaryUpdateWarning) setError(secondaryUpdateWarning)
     } catch (err) {
       setError(
         err instanceof Error
@@ -568,22 +600,41 @@ export function ProductVariantsEditor({
   }
 
   return (
-    <div className="min-w-0 space-y-2.5">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
       {productoId && distribution && (
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-6">
           {[
             {
-              label: "Stock total",
-              value: distribution.totalStock,
+              label: "Existencia física",
+              value: distribution.physicalStock,
               className: "border-sky-400/20 bg-sky-400/8 text-sky-200",
             },
             {
-              label: "Distribuido",
+              label: "Stock normal",
+              value: distribution.normalStock,
+              className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
+            },
+            {
+              label: "Con descuento",
+              value: distribution.discountedStock,
+              className: distribution.discountedStock > 0
+                ? "border-amber-400/25 bg-amber-400/8 text-amber-200"
+                : "border-white/8 bg-white/3 text-white/65",
+            },
+            {
+              label: "En cuarentena",
+              value: distribution.quarantineStock,
+              className: distribution.quarantineStock > 0
+                ? "border-red-400/25 bg-red-400/8 text-red-200"
+                : "border-white/8 bg-white/3 text-white/65",
+            },
+            {
+              label: "Normal distribuido",
               value: distribution.allocatedQuantity,
               className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
             },
             {
-              label: "Sin distribuir",
+              label: "Normal sin distribuir",
               value: distribution.unassignedQuantity,
               className: distribution.unassignedQuantity > 0
                 ? "border-amber-400/25 bg-amber-400/8 text-amber-200"
@@ -592,12 +643,15 @@ export function ProductVariantsEditor({
           ].map(({ label, value, className }) => (
             <div
               key={label}
-              className={`rounded-xl border px-2.5 py-2 text-center ${className}`}
+              className={`flex min-h-18 flex-col items-center justify-center rounded-xl border px-2 py-2.5 text-center ${className}`}
             >
-              <p className="truncate text-9px font-black uppercase tracking-wider text-white/45">
+              <p
+                title={label}
+                className="flex min-h-6 w-full items-center justify-center text-9px font-black uppercase leading-3 tracking-wide text-white/52"
+              >
                 {label}
               </p>
-              <p className="mt-0.5 text-base font-black">
+              <p className="mt-1 text-base font-black leading-none">
                 {value}
               </p>
             </div>
@@ -605,9 +659,15 @@ export function ProductVariantsEditor({
         </div>
       )}
 
-      <div className="grid min-w-0 gap-2 sm:grid-cols-2 2xl:grid-cols-[minmax(140px,1fr)_minmax(115px,0.75fr)_minmax(150px,0.9fr)_80px]">
+      {distribution && distribution.allocationOverflow > 0 && (
+        <p className="rounded-lg border border-red-400/25 bg-red-400/10 px-2.5 py-2 text-center text-xs font-bold text-red-200">
+          Inconsistencia detectada: hay {distribution.allocationOverflow} unidades distribuidas que no existen en el pool normal.
+        </p>
+      )}
+
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2 2xl:grid-cols-[minmax(150px,1.1fr)_minmax(115px,0.8fr)_minmax(165px,1fr)_minmax(120px,0.72fr)]">
         <label className="min-w-0">
-          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+          <span className="mb-1 flex min-h-3 items-end text-9px font-black uppercase tracking-wider text-white/38">
             Nombre
           </span>
           <input
@@ -622,7 +682,7 @@ export function ProductVariantsEditor({
         </label>
 
         <label className="min-w-0">
-          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+          <span className="mb-1 flex min-h-3 items-end text-9px font-black uppercase tracking-wider text-white/38">
             SKU
           </span>
           <input
@@ -637,7 +697,7 @@ export function ProductVariantsEditor({
         </label>
 
         <label className="min-w-0">
-          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+          <span className="mb-1 flex min-h-3 items-end text-9px font-black uppercase tracking-wider text-white/38">
             Color
           </span>
           <span className="admin-variant-color-control flex h-11 min-w-0 items-center gap-2 rounded-xl border border-beyonix-blue-light/28 bg-[#07111b] px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/60">
@@ -677,15 +737,15 @@ export function ProductVariantsEditor({
         </label>
 
         <label className="min-w-0">
-          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
-            Unidades
+          <span className="mb-1 flex min-h-3 items-end whitespace-nowrap text-9px font-black uppercase tracking-wider text-white/38">
+            Asignación normal
           </span>
           <input
             type="text"
             inputMode="numeric"
             value={cantidad}
             placeholder="0"
-            aria-label="Unidades asignadas a la variante"
+            aria-label="Unidades del pool normal asignadas a la variante"
             onChange={(event) =>
               setCantidad(event.target.value.replace(/\D/g, ""))
             }
@@ -695,7 +755,7 @@ export function ProductVariantsEditor({
       </div>
 
       <p className="rounded-lg border border-amber-400/12 bg-amber-400/5 px-2.5 py-1.5 text-center text-10px font-semibold leading-4 text-amber-100/55">
-        Distribuí solo unidades recibidas en Costos reales; el total físico no cambia.
+        Distribuí únicamente el stock normal sin asignar. Las unidades con descuento o en cuarentena mantienen su clasificación.
       </p>
 
       <div className="rounded-xl border border-cyan-400/12 bg-cyan-400/3 p-2.5">
@@ -765,11 +825,11 @@ export function ProductVariantsEditor({
       )}
 
       {loading ? (
-        <div className="flex h-20 items-center justify-center text-white/45">
+        <div className="mt-auto flex h-20 items-center justify-center text-white/45">
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <div className="grid gap-2 border-t border-white/8 pt-2.5 sm:grid-cols-2">
+        <div className="mt-auto grid gap-2 border-t border-white/8 pt-3 sm:grid-cols-2">
           {productoId ? (
             variantes.length ? (
               variantes.map((variante) => (

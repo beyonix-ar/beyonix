@@ -286,6 +286,7 @@ function getItemColor(item: NonNullable<SupabasePedido["orden_items"]>[number]) 
   }
 
   return (
+    item.conditioned_name ||
     item.producto_variantes?.nombre ||
     itemColor.color_nombre ||
     itemColor.color ||
@@ -295,6 +296,7 @@ function getItemColor(item: NonNullable<SupabasePedido["orden_items"]>[number]) 
 
 function getItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
   return (
+    item.conditioned_images?.[0] ||
     item.producto_variantes?.imagenes?.[0] ||
     item.productos?.imagen_principal ||
     item.productos?.imagenes_producto?.[0]?.url ||
@@ -2998,7 +3000,9 @@ function BillingManagementPanel({
                         : 0
                       const productName =
                         item.productos?.nombre ?? `Artículo #${item.producto_id}`
-                      const variantName = item.producto_variantes?.nombre
+                      const variantName =
+                        item.conditioned_name ||
+                        item.producto_variantes?.nombre
                       const changeQuantity = (next: number) =>
                         setCreditQuantities((current) => ({
                           ...current,

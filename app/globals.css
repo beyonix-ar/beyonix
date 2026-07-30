@@ -6740,6 +6740,19 @@ span.admin-claim-status-finalized,
   box-shadow: none !important;
 }
 
+.admin-product-page input.admin-product-price-input {
+  padding-left: 2rem !important;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.admin-product-page input.admin-product-price-input::-webkit-inner-spin-button,
+.admin-product-page input.admin-product-price-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 .admin-product-page .admin-icon-picker-trigger {
   border-color: rgba(140, 200, 242, 0.24) !important;
   background: #111820 !important;

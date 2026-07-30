@@ -30,7 +30,11 @@ import { supabase } from "@/lib/supabase/client"
 import {
   type AdminNotificationTone,
 } from "@/lib/admin/admin-notifications"
-import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
+import {
+  ADMIN_ATTENTION_WARNING,
+  ADMIN_SENSITIVE_DANGER,
+} from "@/lib/admin/admin-sensitive-visuals"
+import { AdminNotificationGroupsProvider } from "@/context/admin-notifications-context"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 import {
   ADMIN_ROUTES,
@@ -88,6 +92,8 @@ function SidebarItem({
   onDrop?: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd?: () => void
 }) {
+  const mercadoLibreReturnTone =
+    item.notificationTone === "mercadolibre_return"
   const sensitiveNotificationTone =
     item.notificationTone === "claim" ||
     item.notificationTone === "cancellation"
@@ -146,11 +152,13 @@ function SidebarItem({
           {item.notificationCount ? (
             <span
               className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-10px font-black transition-colors group-hover/nav:text-white ${
-                sensitiveNotificationTone
-                  ? `${ADMIN_SENSITIVE_DANGER.badge} admin-ds-nav-badge-danger`
-                  : incomingPaymentTone
-                    ? "admin-ds-nav-badge admin-ds-nav-badge-payment"
-                    : "admin-ds-nav-badge"
+                mercadoLibreReturnTone
+                  ? ADMIN_ATTENTION_WARNING.badge
+                  : sensitiveNotificationTone
+                    ? `${ADMIN_SENSITIVE_DANGER.badge} admin-ds-nav-badge-danger`
+                    : incomingPaymentTone
+                      ? "admin-ds-nav-badge admin-ds-nav-badge-payment"
+                      : "admin-ds-nav-badge"
               }`}
             >
               {item.notificationCount}
@@ -265,13 +273,23 @@ export function AdminClient({ children }: { children: ReactNode }) {
 
   const navigation = useMemo<NavigationItem[]>(() => {
     const giftCardNotificationCount = notificationGroups.giftcard ?? 0
+    const mercadoLibreReturnNotificationCount =
+      notificationGroups.mercadolibre_return ?? 0
     const clientNotificationCount = notifications.filter((notification) =>
       notification.actionUrl === ADMIN_ROUTES.clientes ||
       notification.actionUrl.startsWith(`${ADMIN_ROUTES.clientes}?`),
     ).length
+    const productNotificationCount = notifications.filter((notification) =>
+      notification.actionUrl === ADMIN_ROUTES.productos ||
+      notification.actionUrl.startsWith(`${ADMIN_ROUTES.productos}?`),
+    ).length
     const orderNotificationCount = Math.max(
       0,
-      notificationCount - giftCardNotificationCount - clientNotificationCount,
+      notificationCount -
+        giftCardNotificationCount -
+        clientNotificationCount -
+        mercadoLibreReturnNotificationCount -
+        productNotificationCount,
     )
     const operational: NavigationItem[] = [
       {
@@ -279,12 +297,16 @@ export function AdminClient({ children }: { children: ReactNode }) {
         label: "Dashboard",
         description: "Control del negocio",
         icon: <BarChart3 className="size-4" />,
+        notificationCount: mercadoLibreReturnNotificationCount,
+        notificationTone: "mercadolibre_return",
       },
       {
         key: "productos",
         label: "Productos",
         description: "Stock, precios, variantes y categorías",
         icon: <Package className="size-4" />,
+        notificationCount: productNotificationCount,
+        notificationTone: "inventory",
       },
       {
         key: "pedidos",
@@ -365,7 +387,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           ]
         : []),
     ]
-  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.giftcard, notificationTone, notifications])
+  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.giftcard, notificationGroups.mercadolibre_return, notificationTone, notifications])
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -617,7 +639,9 @@ export function AdminClient({ children }: { children: ReactNode }) {
           pathname === ADMIN_ROUTES.dashboard ? "" : "admin-solid-surface"
         }`}
       >
-        {routeDenied ? <AdminSectionLoading /> : children}
+        <AdminNotificationGroupsProvider groups={notificationGroups}>
+          {routeDenied ? <AdminSectionLoading /> : children}
+        </AdminNotificationGroupsProvider>
       </main>
     </div>
   )

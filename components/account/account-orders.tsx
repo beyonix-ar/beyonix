@@ -123,7 +123,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
 
       const { data, error: ordersError } = await supabase
         .from("ordenes")
-        .select("*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*)")
+        .select("*, orden_items(id, orden_id, producto_id, variante_id, conditioned_stock_id, conditioned_name, conditioned_sku, conditioned_color_hex, conditioned_images, conditioned_discount_percent, conditioned_reason, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*)")
         .order("created_at", { ascending: false })
 
       if (ordersError) {

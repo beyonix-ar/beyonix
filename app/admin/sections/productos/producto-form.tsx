@@ -230,8 +230,8 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
           }}
           className="admin-product-form admin-ds-surface mt-3 min-w-0 overflow-hidden p-2.5 sm:p-3"
         >
-          <div className="grid min-w-0 items-start gap-3 xl:grid-cols-2 2xl:grid-cols-[minmax(320px,0.92fr)_minmax(470px,1.25fr)_minmax(300px,0.82fr)]">
-            <section className="admin-product-section admin-product-section-info admin-ds-card min-w-0 space-y-2.5 overflow-hidden border-t-2 border-t-sky-400/55 p-3.5">
+          <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-2 2xl:grid-cols-[minmax(300px,0.76fr)_minmax(620px,1.62fr)_minmax(270px,0.68fr)]">
+            <section className="admin-product-section admin-product-section-info admin-ds-card flex min-w-0 flex-col gap-3 overflow-hidden border-t-2 border-t-sky-400/55 p-3.5 2xl:min-h-[640px] 2xl:justify-between">
               <div className="flex items-center gap-2 border-b border-white/7 pb-2.5">
                 <span className="flex size-7 items-center justify-center rounded-lg border border-sky-400/20 bg-sky-400/10 text-sky-300">
                   <Info className="size-3.5" />
@@ -312,7 +312,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   value={form.descripcion}
                   placeholder="Descripción del producto..."
                   onChange={(event) => setField("descripcion", event.target.value)}
-                  className={`${inputCls} min-h-60px resize-none py-2.5 leading-5`}
+                  className={`${inputCls} h-28 min-h-28 resize-y py-2.5 leading-5`}
                 />
               </div>
 
@@ -328,15 +328,23 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     >
                       $
                     </span>
+                    <div className="relative">
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-emerald-300"
+                    >
+                      $
+                    </span>
                     <input
-                      min="0"
-                      type="number"
-                      id="precio"
-                      placeholder="0"
-                      value={form.precio}
-                      onChange={(event) => setField("precio", event.target.value)}
-                      className={`${inputCls} !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                    />
+                        min="0"
+                        type="number"
+                        id="precio"
+                        placeholder="0"
+                        value={form.precio}
+                        onChange={(event) => setField("precio", event.target.value)}
+                        className={`${`${inputCls} admin-product-price-input`} !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                      />
+                  </div>
                   </div>
                 </div>
 
@@ -351,17 +359,25 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     >
                       $
                     </span>
+                    <div className="relative">
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-emerald-300"
+                    >
+                      $
+                    </span>
                     <input
-                      min="0"
-                      type="number"
-                      id="precio_anterior"
-                      placeholder="0"
-                      value={form.precio_anterior}
-                      onChange={(event) =>
-                        setField("precio_anterior", event.target.value)
-                      }
-                      className={`${inputCls} !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                    />
+                        min="0"
+                        type="number"
+                        id="precio_anterior"
+                        placeholder="0"
+                        value={form.precio_anterior}
+                        onChange={(event) =>
+                          setField("precio_anterior", event.target.value)
+                        }
+                        className={`${`${inputCls} admin-product-price-input`} !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                      />
+                  </div>
                   </div>
                 </div>
               </div>
@@ -401,7 +417,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                 </div>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2">
                 {[
                   {
                     key: "destacado" as const,
@@ -421,7 +437,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     type="button"
                     aria-label={toggle.label}
                     onClick={() => setField(toggle.key, !toggle.active)}
-                    className={`admin-ds-button flex min-h-10 min-w-0 items-center gap-2.5 border px-3 text-left ${
+                    className={`admin-ds-button flex min-h-11 w-full min-w-0 items-center gap-2.5 border px-3 text-left ${
                       toggle.key === "activo"
                         ? "border-emerald-400/20 bg-emerald-400/8"
                         : "border-sky-400/20 bg-sky-400/8"
@@ -432,7 +448,7 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                     ) : (
                       <ToggleLeft className="size-6 text-white/45" />
                     )}
-                    <span className="min-w-0 truncate text-xs font-bold text-white/80">
+                    <span className="min-w-0 text-xs font-bold text-white/80">
                       {toggle.label}
                     </span>
                   </button>
@@ -440,9 +456,9 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="admin-product-section admin-product-section-variants admin-ds-card min-w-0 overflow-hidden border-t-2 border-t-cyan-400/55 p-3.5">
-              <div className="min-w-0">
-                <div className="mb-3 flex items-center gap-2 border-b border-white/7 pb-2.5">
+            <section className="admin-product-section admin-product-section-variants admin-ds-card flex min-w-0 flex-col overflow-hidden border-t-2 border-t-cyan-400/55 p-3.5 2xl:min-h-[640px]">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="mb-4 flex items-center gap-2 border-b border-white/7 pb-2.5">
                   <span className="flex size-7 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
                     <Boxes className="size-3.5" />
                   </span>
@@ -462,9 +478,9 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
               </div>
             </section>
 
-            <section className="admin-product-section admin-product-section-specs admin-ds-card min-w-0 overflow-visible border-t-2 border-t-blue-400/55 p-3.5 xl:col-span-2 2xl:col-span-1">
-              <div className="min-w-0">
-                <div className="mb-3 flex items-center gap-2 border-b border-white/7 pb-2.5">
+            <section className="admin-product-section admin-product-section-specs admin-ds-card flex min-w-0 flex-col overflow-visible border-t-2 border-t-blue-400/55 p-3.5 xl:col-span-2 2xl:col-span-1 2xl:min-h-[640px]">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="mb-4 flex items-center gap-2 border-b border-white/7 pb-2.5">
                   <span className="flex size-7 items-center justify-center rounded-lg border border-blue-400/25 bg-blue-400/10 text-blue-200">
                     <ListChecks className="size-3.5" />
                   </span>

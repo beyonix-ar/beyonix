@@ -13,6 +13,10 @@ import {
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { formatARS } from "@/lib/customer-credit"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
+import {
+  getMercadoLibrePendingReturnUnits,
+  isMercadoLibreReturn,
+} from "@/lib/mercadolibre/returns"
 
 export const ADMIN_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:admin-notifications-changed"
@@ -26,6 +30,8 @@ export type AdminNotificationType =
   | "shipping"
   | "cancellation"
   | "claim"
+  | "mercadolibre_return"
+  | "inventory"
 
 export type AdminNotificationTone = AdminNotificationType
 
@@ -96,6 +102,8 @@ const EMPTY_GROUPS: AdminNotificationGroups = {
   shipping: 0,
   cancellation: 0,
   claim: 0,
+  mercadolibre_return: 0,
+  inventory: 0,
 }
 
 const EMPTY_SUMMARY: AdminNotificationSummary = {
@@ -536,6 +544,196 @@ async function getCreditAdminNotifications() {
   return notifications
 }
 
+type MercadoLibreReturnNotificationRow = {
+  id: string
+  operation_id?: string | null
+  product_id?: number | null
+  product_name: string
+  quantity: number | string
+  imported_at: string
+  raw_data?: Record<string, unknown> | null
+}
+
+type MercadoLibreReturnReviewNotificationRow = {
+  mercadolibre_sale_id: string
+  received_quantity: number | string
+  sellable_quantity: number | string
+  discounted_quantity: number | string
+  non_sellable_quantity: number | string
+}
+
+async function getMercadoLibreReturnNotifications() {
+  const sales: MercadoLibreReturnNotificationRow[] = []
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("mercadolibre_sales")
+      .select(
+        "id, operation_id, product_id, product_name, quantity, imported_at, raw_data",
+      )
+      .order("imported_at", { ascending: false })
+      .range(from, from + 999)
+
+    if (error) {
+      console.warn(
+        "ADMIN_MERCADOLIBRE_RETURNS_LOAD_ERROR",
+        getSupabaseErrorDetails(error),
+      )
+      return []
+    }
+
+    sales.push(
+      ...((data ?? []) as unknown as MercadoLibreReturnNotificationRow[]),
+    )
+    if (!data || data.length < 1000) break
+  }
+
+  const returnedSales = sales.filter(isMercadoLibreReturn)
+  if (returnedSales.length === 0) return []
+
+  const reviews: MercadoLibreReturnReviewNotificationRow[] = []
+  const saleIds = returnedSales.map((sale) => sale.id)
+
+  for (let index = 0; index < saleIds.length; index += 400) {
+    const { data, error } = await supabase
+      .from("inventory_return_movements")
+      .select(
+        "mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity",
+      )
+      .in("mercadolibre_sale_id", saleIds.slice(index, index + 400))
+
+    if (error) {
+      console.warn(
+        "ADMIN_MERCADOLIBRE_RETURN_REVIEWS_LOAD_ERROR",
+        getSupabaseErrorDetails(error),
+      )
+      return []
+    }
+
+    reviews.push(
+      ...((data ?? []) as unknown as MercadoLibreReturnReviewNotificationRow[]),
+    )
+  }
+
+  const reviewBySale = new Map(
+    reviews.map((review) => [String(review.mercadolibre_sale_id), review]),
+  )
+
+  return returnedSales.flatMap<AdminNotification>((sale) => {
+    const review = reviewBySale.get(sale.id)
+    const pendingQuantity = getMercadoLibrePendingReturnUnits({
+      quantity: sale.quantity,
+      return_review: review,
+    })
+
+    if (pendingQuantity === 0 && sale.product_id) return []
+
+    const operation = sale.operation_id
+      ? `#${sale.operation_id}`
+      : sale.id.slice(0, 8)
+    const unitsLabel =
+      pendingQuantity === 1 ? "1 unidad" : `${pendingQuantity} unidades`
+    const body = !sale.product_id
+      ? `Venta ML ${operation} · ${sale.product_name}. Vinculá el producto y revisá el ajuste de inventario.`
+      : review
+        ? `Venta ML ${operation} · ${sale.product_name}. Quedan ${unitsLabel} sin clasificar para completar el ajuste.`
+        : `Venta ML ${operation} · ${sale.product_name} · ${unitsLabel}. Revisá cuántas vuelven al stock y corregí la diferencia.`
+
+    return [
+      {
+        id: `mercadolibre-return:${sale.id}`,
+        type: "mercadolibre_return",
+        eventKey: `mercadolibre-return:${sale.id}`,
+        eventAt: sale.imported_at,
+        title: "Devolución de Mercado Libre pendiente",
+        body,
+        actionLabel: "Revisar en Ventas ML",
+        actionUrl: `${ADMIN_ROUTES.dashboard}?tab=ml&mlSale=${encodeURIComponent(sale.id)}`,
+        isRead: false,
+        priority: "attention",
+      },
+    ]
+  })
+}
+
+type InventoryIntegrityNotificationRow = {
+  product_id: number | string
+  product_name: string
+  stored_normal_stock: number | string
+  stored_variant_stock: number | string
+  generic_balance: number | string
+  allocation_overflow: number | string
+  pending_review_stock: number | string
+  issues?: string[] | null
+}
+
+async function getInventoryIntegrityNotifications() {
+  const { data, error } = await supabase
+    .from("inventory_stock_integrity")
+    .select(
+      "product_id, product_name, stored_normal_stock, stored_variant_stock, generic_balance, allocation_overflow, pending_review_stock, issues",
+    )
+    .order("product_id", { ascending: true })
+    .limit(250)
+
+  if (error) {
+    console.warn(
+      "ADMIN_INVENTORY_INTEGRITY_LOAD_ERROR",
+      getSupabaseErrorDetails(error),
+    )
+    return []
+  }
+
+  const eventAt = new Date().toISOString()
+  return (
+    (data ?? []) as unknown as InventoryIntegrityNotificationRow[]
+  ).flatMap<AdminNotification>((row) => {
+    const issues = Array.isArray(row.issues) ? row.issues : []
+    const hasNegativeStock =
+      Number(row.stored_normal_stock) < 0 ||
+      Number(row.stored_variant_stock) < 0 ||
+      Number(row.generic_balance) < 0
+    const overflow = Math.max(0, Number(row.allocation_overflow ?? 0))
+    const pendingReview = Math.max(0, Number(row.pending_review_stock ?? 0))
+    if (
+      issues.length === 0 &&
+      !hasNegativeStock &&
+      overflow === 0 &&
+      pendingReview === 0
+    ) {
+      return []
+    }
+
+    const details = [
+      hasNegativeStock ? "stock negativo" : null,
+      overflow > 0 ? `${overflow} unidades distribuidas de más` : null,
+      pendingReview > 0 ? `${pendingReview} unidades sin clasificar` : null,
+      issues.includes("PRODUCT_STOCK_MISMATCH")
+        ? "el producto no coincide con el libro"
+        : null,
+      issues.includes("VARIANT_STOCK_MISMATCH")
+        ? "las variantes no coinciden con el libro"
+        : null,
+      issues.includes("PRODUCT_AND_VARIANT_SKU")
+        ? "SKU duplicado entre producto y variante"
+        : null,
+    ].filter(Boolean)
+
+    return [{
+      id: `inventory-integrity:${row.product_id}`,
+      type: "inventory",
+      eventKey: `inventory-integrity:${row.product_id}`,
+      eventAt,
+      title: "Inventario requiere conciliación",
+      body: `${row.product_name}: ${details.join(" · ")}.`,
+      actionLabel: "Revisar en Productos",
+      actionUrl: ADMIN_ROUTES.productos,
+      isRead: false,
+      priority: "attention",
+    }]
+  })
+}
+
 async function loadReads(
   adminId: string,
   notifications: AdminNotification[],
@@ -624,12 +822,16 @@ function isPendingAdminTask(notification: AdminNotification) {
     notification.type === "shipping" ||
     notification.type === "invoice" ||
     notification.type === "cancellation" ||
-    notification.type === "claim"
+    notification.type === "claim" ||
+    notification.type === "mercadolibre_return" ||
+    notification.type === "inventory"
   )
 }
 
 function getOperationalPriority(notification: AdminNotification) {
   if (notification.type === "claim") return 5
+  if (notification.type === "mercadolibre_return") return 5
+  if (notification.type === "inventory") return 5
   if (notification.type === "payment") return 4
   if (notification.type === "giftcard") return 4
   if (notification.type === "shipping") return 3
@@ -727,24 +929,24 @@ function getTone(
   groups: AdminNotificationGroups,
   notifications: AdminNotification[],
 ): AdminNotificationTone {
-  const latestNotification = notifications[0]
-
-  if (
-    latestNotification?.priority === "attention" ||
-    isAdminCancellationSensitiveNotification(latestNotification)
-  ) {
-    return "cancellation"
-  }
   if (groups.claim > 0 || notifications.some(isAdminClaimSensitiveNotification)) {
     return "claim"
   }
+  const nonMercadoLibreNotifications = notifications.filter(
+    (notification) => notification.type !== "mercadolibre_return",
+  )
   if (
     groups.cancellation > 0 ||
-    notifications.some(isAdminCancellationSensitiveNotification) ||
-    notifications.some(isAdminSensitiveNotification)
+    nonMercadoLibreNotifications.some(
+      (notification) =>
+        notification.priority === "attention" ||
+        isAdminCancellationSensitiveNotification(notification) ||
+        isAdminSensitiveNotification(notification),
+    )
   ) {
     return "cancellation"
   }
+  if (groups.mercadolibre_return > 0) return "mercadolibre_return"
   if (groups.payment > 0) return "payment"
   if (groups.shipping > 0) return "shipping"
   if (groups.message > 0) return "message"
@@ -776,10 +978,14 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       pedidos,
       orderLastSeenAt,
       creditNotifications,
+      mercadoLibreReturnNotifications,
+      inventoryIntegrityNotifications,
     ] = await Promise.all([
       getPedidos({ notificationView: true }),
       getOrderLastSeenAt(adminId),
       getCreditAdminNotifications(),
+      getMercadoLibreReturnNotifications(),
+      getInventoryIntegrityNotifications(),
     ])
 
     const orders = pedidos.pedidos.filter(isOrderVisible)
@@ -807,6 +1013,8 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
     const notifications: AdminNotification[] = []
 
     notifications.push(...creditNotifications)
+    notifications.push(...mercadoLibreReturnNotifications)
+    notifications.push(...inventoryIntegrityNotifications)
 
     for (const order of orders) {
       const orderId = Number(order.id)

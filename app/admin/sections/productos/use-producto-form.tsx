@@ -175,10 +175,13 @@ export function useProductoForm({
     video_url:
       producto?.video_url ?? "",
     precio:
-      String(producto?.precio ?? ""),
-    precio_anterior: String(
-      producto?.precio_anterior ?? ""
-    ),
+      Number(producto?.precio ?? 0) > 0
+        ? String(producto?.precio)
+        : "",
+    precio_anterior:
+      Number(producto?.precio_anterior ?? 0) > 0
+        ? String(producto?.precio_anterior)
+        : "",
     cuotas:
       producto?.cuotas_sin_interes &&
       producto.cuotas_maximas
@@ -333,12 +336,17 @@ export function useProductoForm({
       return
     }
 
-    if (
-      !Number.isFinite(payload.precio) ||
-      payload.precio <= 0
-    ) {
+    if (!Number.isFinite(payload.precio) || payload.precio < 0) {
       setError(
-        "El precio es obligatorio."
+        "El precio no es válido."
+      )
+
+      return
+    }
+
+    if (form.activo && payload.precio <= 0) {
+      setError(
+        "Ingresá un precio mayor que cero antes de activar el producto."
       )
 
       return

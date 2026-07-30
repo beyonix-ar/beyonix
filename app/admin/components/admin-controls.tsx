@@ -160,6 +160,7 @@ interface AdminModalProps {
   eyebrow?: string
   description?: string
   compact?: boolean
+  wide?: boolean
   children: ReactNode
   footer?: ReactNode
   onClose: () => void
@@ -380,7 +381,13 @@ export function AdminSelect({
             : "h-11 w-full gap-3 px-4 text-sm"
         }`}
       >
-        <span className={`flex min-w-0 items-center gap-2 truncate ${centered ? "px-4 text-center" : ""}`}>
+        <span
+          className={`flex min-w-0 items-center gap-2 truncate ${
+            centered
+              ? "max-w-[calc(100%_-_1.5rem)] flex-1 justify-center text-center"
+              : ""
+          }`}
+        >
           {leadingIcon && <span className="shrink-0">{leadingIcon}</span>}
           <span className="truncate">{selectedOption?.selectedLabel}</span>
         </span>
@@ -905,6 +912,7 @@ export function AdminModal({
   eyebrow,
   description,
   compact = false,
+  wide = false,
   children,
   footer,
   onClose,
@@ -917,7 +925,11 @@ export function AdminModal({
         className={cn(
           adminCardClassName,
           "custom-scrollbar max-h-[calc(100dvh-2rem)] w-full overflow-y-auto shadow-2xl shadow-black",
-          compact ? "max-w-md p-4" : "max-w-xl p-5",
+          compact
+            ? "max-w-md p-4"
+            : wide
+              ? "max-w-4xl p-5"
+              : "max-w-xl p-5",
         )}
       >
         <div className={cn("flex items-start justify-between gap-4", compact ? "mb-3" : "mb-5")}>

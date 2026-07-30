@@ -1,7 +1,19 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { getVariantIdFromValue } from "@/lib/products/product-variants"
+import { createAdminClient } from "@/lib/supabase/admin"
+import {
+  getConditionedStockIdFromValue,
+  getVariantIdFromValue,
+} from "@/lib/products/product-variants"
+import {
+  assertConditionedCheckoutStock,
+  getConditionedOrderItemFields,
+  getConditionedUnitPrice,
+  loadConditionedCheckoutRows,
+  normalizeConditionedStockId,
+  type ConditionedCheckoutRow,
+} from "@/lib/orders/conditioned-checkout"
 import {
   STOCK_CHANGED_MESSAGE,
   assertCatalogStock,
@@ -11,6 +23,7 @@ interface CreateOrderItem {
   productId: number
   quantity: number
   variantId?: number | null
+  conditionedStockId?: string | null
   color?: string | null
 }
 
@@ -30,6 +43,7 @@ interface ProductRow {
   nombre: string
   precio: number
   stock: number
+  activo: boolean
 }
 
 interface VariantRow {
@@ -45,15 +59,21 @@ type NormalizedOrderItem = ReturnType<typeof normalizeItem>
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 function normalizeItem(item: CreateOrderItem) {
+  const conditionedStockId =
+    normalizeConditionedStockId(item.conditionedStockId) ||
+    getConditionedStockIdFromValue(item.color)
   const variantId =
-    Number(item.variantId) ||
-    getVariantIdFromValue(item.color) ||
-    null
+    conditionedStockId
+      ? null
+      : Number(item.variantId) ||
+        getVariantIdFromValue(item.color) ||
+        null
 
   return {
     productId: Number(item.productId),
     quantity: Math.trunc(Number(item.quantity)),
     variantId,
+    conditionedStockId,
   }
 }
 
@@ -116,6 +136,7 @@ async function reserveOrderStock(
       productId: item.productId,
       quantity: item.quantity,
       variantId: item.variantId,
+      conditionedStockId: item.conditionedStockId,
     })),
   })
 
@@ -176,30 +197,38 @@ async function insertOrderItems(
   orderId: number,
   items: NormalizedOrderItem[],
   products: ProductRow[],
+  conditionedRows: Map<string, ConditionedCheckoutRow>,
 ) {
-  const attempts: Array<Record<string, number>[]> = [
+  const hasConditionedItems = items.some((item) => item.conditionedStockId)
+  const attempts: Array<Array<Record<string, unknown>>> = [
     items.map((item) => {
+      const product = products.find((row) => row.id === item.productId)
+      const conditioned = item.conditionedStockId
+        ? conditionedRows.get(item.conditionedStockId)
+        : null
+
+      return {
+        orden_id: orderId,
+        producto_id: item.productId,
+        ...(!conditioned && item.variantId
+          ? { variante_id: item.variantId }
+          : {}),
+        ...getConditionedOrderItemFields(conditioned),
+        cantidad: item.quantity,
+        precio: getConditionedUnitPrice(product?.precio ?? 0, conditioned),
+      }
+    }),
+    ...(!hasConditionedItems ? [items.map((item) => {
       const product = products.find((row) => row.id === item.productId)
 
       return {
         orden_id: orderId,
         producto_id: item.productId,
-        ...(item.variantId ? { variante_id: item.variantId } : {}),
         cantidad: item.quantity,
         precio: product?.precio ?? 0,
       }
-    }),
-    items.map((item) => {
-      const product = products.find((row) => row.id === item.productId)
-
-      return {
-        orden_id: orderId,
-        producto_id: item.productId,
-        cantidad: item.quantity,
-        precio: product?.precio ?? 0,
-      }
-    }),
-    items.map((item) => {
+    })] : []),
+    ...(!hasConditionedItems ? [items.map((item) => {
       const product = products.find((row) => row.id === item.productId)
 
       return {
@@ -209,8 +238,8 @@ async function insertOrderItems(
         cantidad: item.quantity,
         precio_unitario: product?.precio ?? 0,
       }
-    }),
-    items.map((item) => {
+    })] : []),
+    ...(!hasConditionedItems ? [items.map((item) => {
       const product = products.find((row) => row.id === item.productId)
 
       return {
@@ -219,7 +248,7 @@ async function insertOrderItems(
         cantidad: item.quantity,
         precio_unitario: product?.precio ?? 0,
       }
-    }),
+    })] : []),
   ]
 
   let lastError: { message?: string } | null = null
@@ -286,6 +315,7 @@ export async function createOrder({
   customer,
 }: CreateOrderPayload) {
   const supabase = await createClient()
+  const admin = createAdminClient()
   let createdOrderId: number | null = null
   let hasActiveReservation = false
 
@@ -316,7 +346,7 @@ export async function createOrder({
     ]
     const { data: products, error: productsError } = await supabase
       .from("productos")
-      .select("id, nombre, precio, stock")
+      .select("id, nombre, precio, stock, activo")
       .in("id", productIds)
 
     if (productsError) {
@@ -359,16 +389,25 @@ export async function createOrder({
       variantsByProductId.set(variant.producto_id, productVariants)
     }
 
+    const conditionedRows = await loadConditionedCheckoutRows(
+      admin,
+      normalizedItems,
+    )
+
     for (const item of normalizedItems) {
-      if (item.variantId) continue
+      if (item.variantId || item.conditionedStockId) continue
 
       const productVariants =
         variantsByProductId.get(item.productId)?.filter(
           (variant) => variant.activo,
         ) ?? []
 
-      if (productVariants.length > 0) {
+      if (productVariants.length === 1) {
         item.variantId = productVariants[0].id
+      } else if (productVariants.length > 1) {
+        throw new Error(
+          "Elegí la variante exacta antes de confirmar la compra.",
+        )
       }
     }
 
@@ -393,19 +432,38 @@ export async function createOrder({
         throw new Error(`Variante inválida para ${product.nombre}`)
       }
 
-      assertCatalogStock(item.quantity, product, variant)
+      const conditioned = assertConditionedCheckoutStock(
+        item,
+        conditionedRows,
+      )
+      if (!conditioned) {
+        assertCatalogStock(item.quantity, product, variant)
+      }
     }
 
     const total = normalizedItems.reduce((sum, item) => {
       const product = productRows.find((row) => row.id === item.productId)
-      return sum + (product?.precio ?? 0) * item.quantity
+      const conditioned = item.conditionedStockId
+        ? conditionedRows.get(item.conditionedStockId)
+        : null
+      return (
+        sum +
+        getConditionedUnitPrice(product?.precio ?? 0, conditioned) *
+          item.quantity
+      )
     }, 0)
 
     const order = await insertOrder(supabase, user.id, total, customer)
 
     createdOrderId = order.id
 
-    await insertOrderItems(supabase, order.id, normalizedItems, productRows)
+    await insertOrderItems(
+      supabase,
+      order.id,
+      normalizedItems,
+      productRows,
+      conditionedRows,
+    )
 
     if (hasActiveReservation) {
       await completeOrderReservation(supabase, reservationSessionId, order.id)

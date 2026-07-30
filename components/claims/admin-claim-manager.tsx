@@ -367,7 +367,10 @@ function getClaimAffectedItems(
   return orderItems
     .filter((item) => {
       const productName = item.productos?.nombre?.trim().toLocaleLowerCase("es")
-      const variantName = item.producto_variantes?.nombre?.trim().toLocaleLowerCase("es")
+      const variantName = (
+        item.conditioned_name ||
+        item.producto_variantes?.nombre
+      )?.trim().toLocaleLowerCase("es")
       return Boolean(
         productName &&
           affectedLine.includes(productName) &&
@@ -712,7 +715,9 @@ function ReturnInventoryPanel({
     confirmationItem?.producto_variantes?.stock ?? 0,
   )
   const confirmationVariantName =
-    confirmationItem?.producto_variantes?.nombre?.trim() || "Variante seleccionada"
+    confirmationItem?.conditioned_name?.trim() ||
+    confirmationItem?.producto_variantes?.nombre?.trim() ||
+    "Variante seleccionada"
   const hasPendingInventory = items.some((item) => !item.return_inventory_processed_at)
 
   return (
@@ -786,7 +791,9 @@ function ReturnInventoryPanel({
               const purchasedQuantity = Number(item.cantidad ?? 0)
               const locked = Boolean(item.return_inventory_processed_at)
               const productName = item.productos?.nombre ?? `Producto #${item.producto_id}`
-              const variantName = item.producto_variantes?.nombre?.trim()
+              const variantName =
+                item.conditioned_name?.trim() ||
+                item.producto_variantes?.nombre?.trim()
 
               return (
                 <div
@@ -896,7 +903,9 @@ function ReturnInventoryPanel({
             const productStock = Number(item.productos?.stock ?? 0)
             const variantStock = Number(item.producto_variantes?.stock ?? 0)
             const variantName =
-              item.producto_variantes?.nombre?.trim() || "Variante seleccionada"
+              item.conditioned_name?.trim() ||
+              item.producto_variantes?.nombre?.trim() ||
+              "Variante seleccionada"
             const saving = savingItemId === item.id
             const inventoryLocked = Boolean(item.return_inventory_processed_at)
             const draftReceived = Number(draft.received || 0)
@@ -980,7 +989,10 @@ function ReturnInventoryPanel({
                   <div className="min-w-0">
                     <p className="truncate text-sm font-black text-white">{productName}</p>
                     <p className="mt-1 text-11px font-semibold text-white/55">
-                      {item.producto_variantes?.nombre?.trim() || "Sin variante"} · Reclamadas: {claimedQuantity}
+                      {item.conditioned_name?.trim() ||
+                        item.producto_variantes?.nombre?.trim() ||
+                        "Sin variante"}{" "}
+                      · Reclamadas: {claimedQuantity}
                     </p>
                     <p className="mt-1 text-11px font-semibold text-blue-100/72">
                       {item.variante_id

@@ -222,14 +222,17 @@ function getAffectedProductsFromDescription(description: string) {
 }
 
 function getItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
-  return item.producto_variantes?.imagenes?.[0]
+  return item.conditioned_images?.[0]
+    || item.producto_variantes?.imagenes?.[0]
     || item.productos?.imagen_principal
     || item.productos?.imagenes_producto?.[0]?.url
     || ""
 }
 
 function getItemVariant(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
-  return item.producto_variantes?.nombre?.trim() || "Sin variante"
+  return item.conditioned_name?.trim()
+    || item.producto_variantes?.nombre?.trim()
+    || "Sin variante"
 }
 
 function getOrderStage(order: SupabasePedido) {

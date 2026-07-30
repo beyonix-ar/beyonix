@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -34,6 +35,11 @@ import {
   type MercadoLibreImportRow,
   type ParsedMercadoLibreReport,
 } from "@/lib/mercadolibre/sales-report"
+import {
+  getMercadoLibrePendingReturnUnits,
+  isMercadoLibreReturn,
+} from "@/lib/mercadolibre/returns"
+import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 import {
   deleteMercadoLibreSale,
   getMercadoLibreSales,
@@ -62,21 +68,6 @@ function number(value: unknown) {
 
 function text(value: unknown) {
   return value == null ? "" : String(value).trim()
-}
-
-function isMercadoLibreReturn(row: StoredMercadoLibreSale) {
-  const raw = row.raw_data as {
-    parsed?: Record<string, unknown>
-  }
-  const parsed = raw.parsed ?? {}
-  const status = text(parsed.status).toLocaleLowerCase("es")
-  return (
-    status.includes("devol") ||
-    status.includes("reembolso") ||
-    number(parsed.cancellations_refunds) < 0 ||
-    Boolean(text(parsed.return_delivered_date)) ||
-    Boolean(text(parsed.return_tracking_number))
-  )
 }
 
 function formatDate(value: string | null) {
@@ -328,7 +319,10 @@ function ReturnQuantityStepper({
 }
 
 export function AdminMercadoLibreSales() {
+  const searchParams = useSearchParams()
+  const notificationSaleId = searchParams.get("mlSale")
   const inputRef = useRef<HTMLInputElement>(null)
+  const openedNotificationSaleId = useRef<string | null>(null)
   const [sales, setSales] = useState<StoredMercadoLibreSale[]>([])
   const [catalog, setCatalog] = useState<MercadoLibreCostCatalogProduct[]>([])
   const [preview, setPreview] = useState<ParsedMercadoLibreReport | null>(null)
@@ -419,6 +413,18 @@ export function AdminMercadoLibreSales() {
       profit: exact ? summary.total - merchandiseCost : null,
     }
   }, [costingError, sales, summary.total])
+  const pendingReturnUnitsTotal = useMemo(
+    () =>
+      sales.reduce(
+        (total, sale) =>
+          total +
+          (isMercadoLibreReturn(sale)
+            ? getMercadoLibrePendingReturnUnits(sale)
+            : 0),
+        0,
+      ),
+    [sales],
+  )
   const mappingGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -532,7 +538,7 @@ export function AdminMercadoLibreSales() {
     }
   }
 
-  const openReturnReview = (sale: StoredMercadoLibreSale) => {
+  const openReturnReview = useCallback((sale: StoredMercadoLibreSale) => {
     const review = sale.return_review
     setReviewingReturn(sale)
     setReceivedReturnQuantity(
@@ -556,7 +562,22 @@ export function AdminMercadoLibreSales() {
     setReturnNonSellableReason(review?.non_sellable_reason ?? "")
     setReturnReviewNotes(review?.review_notes ?? "")
     setError("")
-  }
+  }, [])
+
+  useEffect(() => {
+    if (
+      !notificationSaleId ||
+      openedNotificationSaleId.current === notificationSaleId
+    ) {
+      return
+    }
+
+    const sale = sales.find((item) => item.id === notificationSaleId)
+    if (!sale || !isMercadoLibreReturn(sale)) return
+
+    openedNotificationSaleId.current = notificationSaleId
+    openReturnReview(sale)
+  }, [notificationSaleId, openReturnReview, sales])
 
   const saveReturnReview = async () => {
     if (!reviewingReturn) return
@@ -578,6 +599,7 @@ export function AdminMercadoLibreSales() {
       setReviewingReturn(null)
       setSuccess("Revisión física guardada y stock actualizado.")
       await load()
+      notifyAdminNotificationsChanged()
     } catch (reviewError) {
       setError(
         reviewError instanceof Error
@@ -722,7 +744,31 @@ export function AdminMercadoLibreSales() {
             <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
               Reportes de Mercado Libre
             </p>
-            <h2 className="mt-1 text-xl font-black text-white">Ventas ML</h2>
+            <div className="mt-1 flex items-center gap-2">
+              <h2 className="text-xl font-black text-white">Ventas ML</h2>
+              {pendingReturnUnitsTotal > 0 && (
+                <span
+                  title={`${pendingReturnUnitsTotal} ${
+                    pendingReturnUnitsTotal === 1
+                      ? "unidad pendiente"
+                      : "unidades pendientes"
+                  } de asignar`}
+                  className="inline-flex"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="size-2 rounded-full bg-amber-300 shadow-[0_0_8px_2px_rgba(252,211,77,0.72)]"
+                  />
+                  <span className="sr-only">
+                    {pendingReturnUnitsTotal}{" "}
+                    {pendingReturnUnitsTotal === 1
+                      ? "unidad pendiente"
+                      : "unidades pendientes"}{" "}
+                    de asignar
+                  </span>
+                </span>
+              )}
+            </div>
             <p className="mt-1 text-sm leading-5 text-white/55">
               Importá el Excel “Ventas AR” y conciliá ventas, cargos, envíos,
               devoluciones y reclamos. Sólo las unidades efectivas vinculadas
@@ -1032,6 +1078,10 @@ export function AdminMercadoLibreSales() {
                 {visibleRows.map(({ stored, imported }) => {
                   const fields = imported.raw_data.parsed
                   const expanded = expandedId === stored.id
+                  const isReturn = isMercadoLibreReturn(stored)
+                  const pendingReturnUnits = isReturn
+                    ? getMercadoLibrePendingReturnUnits(stored)
+                    : 0
                   const merchandiseCost = stored.costing?.merchandise_cost
                   const rowProfit =
                     merchandiseCost == null
@@ -1044,16 +1094,20 @@ export function AdminMercadoLibreSales() {
                         <td className="px-3 py-3">{formatDate(imported.sale_date)}</td>
                         <td className="max-w-56 px-3 py-3">
                           <span className="block truncate" title={text(fields.status)}>{text(fields.status) || "Sin estado"}</span>
-                          {stored.return_review && (
-                            <span className="mt-1 block text-9px font-bold text-emerald-300">
-                              {stored.return_review.sellable_quantity + stored.return_review.discounted_quantity} reingresan
-                              {" · "}
-                              {stored.return_review.received_quantity
-                                - stored.return_review.sellable_quantity
-                                - stored.return_review.discounted_quantity
-                                - stored.return_review.non_sellable_quantity} pendientes
+                          {isReturn && pendingReturnUnits > 0 ? (
+                            <span className="mt-1 block text-9px font-bold text-amber-200">
+                              {pendingReturnUnits}{" "}
+                              {pendingReturnUnits === 1
+                                ? "unidad pendiente de asignar"
+                                : "unidades pendientes de asignar"}
                             </span>
-                          )}
+                          ) : stored.return_review ? (
+                            <span className="mt-1 block text-9px font-bold text-emerald-300">
+                              {stored.return_review.sellable_quantity +
+                                stored.return_review.discounted_quantity}{" "}
+                              reingresan · revisión completa
+                            </span>
+                          ) : null}
                         </td>
                         <td className="max-w-80 px-3 py-3">
                           <span className="block truncate font-bold text-white" title={imported.product_name}>{imported.product_name}</span>
@@ -1083,22 +1137,40 @@ export function AdminMercadoLibreSales() {
                         <td className="max-w-48 px-3 py-3"><span className="block truncate" title={text(fields.buyer)}>{text(fields.buyer) || "Sin dato"}</span></td>
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-center gap-1.5">
-                            {isMercadoLibreReturn(stored) && (
+                            {isReturn && (
                               <button
                                 type="button"
-                                aria-label="Revisar devolución"
+                                aria-label={
+                                  pendingReturnUnits > 0
+                                    ? `Revisar devolución: ${pendingReturnUnits} ${
+                                        pendingReturnUnits === 1
+                                          ? "unidad pendiente"
+                                          : "unidades pendientes"
+                                      }`
+                                    : "Editar revisión física"
+                                }
                                 title={
-                                  stored.return_review
-                                    ? "Editar revisión física"
-                                    : "Revisar devolución"
+                                  pendingReturnUnits > 0
+                                    ? `${
+                                        pendingReturnUnits === 1
+                                          ? "1 unidad pendiente"
+                                          : `${pendingReturnUnits} unidades pendientes`
+                                      } de asignar`
+                                    : "Editar revisión física"
                                 }
                                 onClick={() => openReturnReview(stored)}
-                                className={`flex size-8 cursor-pointer items-center justify-center rounded-lg border transition ${
-                                  stored.return_review
-                                    ? "border-emerald-400/28 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18"
-                                    : "border-amber-300/28 bg-amber-300/8 text-amber-200 hover:bg-amber-300/16"
+                                className={`relative flex size-8 cursor-pointer items-center justify-center rounded-lg border transition ${
+                                  pendingReturnUnits > 0
+                                    ? "border-amber-300/28 bg-amber-300/8 text-amber-200 hover:bg-amber-300/16"
+                                    : "border-emerald-400/28 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18"
                                 }`}
                               >
+                                {pendingReturnUnits > 0 && (
+                                  <span
+                                    aria-hidden="true"
+                                    className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-300 shadow-[0_0_8px_2px_rgba(252,211,77,0.72)]"
+                                  />
+                                )}
                                 <RotateCcw className="size-3.5" />
                               </button>
                             )}

@@ -6,6 +6,7 @@ import type {
 } from "@/lib/supabase/types"
 import { hasPurchasableStock } from "@/lib/cart/stock-status"
 import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
+import { attachStoreConditionedStock } from "@/lib/supabase/queries/store-conditioned"
 
 const PRODUCT_SELECT = `
   *,
@@ -29,7 +30,12 @@ export async function getStoreProductos() {
     throw error
   }
 
-  const products = ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
+  const products = (
+    await attachStoreConditionedStock(
+      supabase,
+      (data || []) as SupabaseProducto[],
+    )
+  ).filter(hasPurchasableStock)
 
   return attachProductReviewSummaries(products)
 }
@@ -50,7 +56,12 @@ export async function getFeaturedProductos() {
     throw error
   }
 
-  const products = ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
+  const products = (
+    await attachStoreConditionedStock(
+      supabase,
+      (data || []) as SupabaseProducto[],
+    )
+  ).filter(hasPurchasableStock)
 
   return attachProductReviewSummaries(products)
 }
@@ -72,9 +83,12 @@ export async function getProductoBySlug(
 
   if (!data) return null
 
-  const product = data as SupabaseProducto
+  const [product] = await attachStoreConditionedStock(
+    supabase,
+    [data as SupabaseProducto],
+  )
 
-  if (!hasPurchasableStock(product)) {
+  if (!product || !hasPurchasableStock(product)) {
     return null
   }
 
@@ -126,7 +140,12 @@ export async function getProductosByCategoriaId(
     throw error
   }
 
-  const products = ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
+  const products = (
+    await attachStoreConditionedStock(
+      supabase,
+      (data || []) as SupabaseProducto[],
+    )
+  ).filter(hasPurchasableStock)
 
   return attachProductReviewSummaries(products)
 }
@@ -151,7 +170,12 @@ export async function searchProductos(
     throw error
   }
 
-  const products = ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
+  const products = (
+    await attachStoreConditionedStock(
+      supabase,
+      (data || []) as SupabaseProducto[],
+    )
+  ).filter(hasPurchasableStock)
 
   return attachProductReviewSummaries(products)
 }
@@ -204,7 +228,12 @@ export async function getRelatedProductos(
     throw error
   }
 
-  const products = ((data || []) as SupabaseProducto[]).filter(hasPurchasableStock)
+  const products = (
+    await attachStoreConditionedStock(
+      supabase,
+      (data || []) as SupabaseProducto[],
+    )
+  ).filter(hasPurchasableStock)
 
   return attachProductReviewSummaries(products)
 }

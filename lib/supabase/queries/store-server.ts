@@ -3,6 +3,8 @@ import "server-only"
 import { createClient } from "@supabase/supabase-js"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
+import { hasPurchasableStock } from "@/lib/cart/stock-status"
+import { attachStoreConditionedStock } from "@/lib/supabase/queries/store-conditioned"
 
 const FEATURED_PRODUCT_SELECT = `
   *,
@@ -36,22 +38,27 @@ export async function getFeaturedProduct() {
     .select(FEATURED_PRODUCT_SELECT)
     .eq("activo", true)
     .eq("destacado", true)
-    .gt("stock", 0)
     .order("created_at", {
       ascending: false,
     })
-    .limit(1)
-    .maybeSingle()
+    .limit(12)
 
   if (error) {
     throw error
   }
 
-  if (!data) {
+  if (!data?.length) {
     return null
   }
 
-  const { reviews = [], ...product } = data as unknown as FeaturedProductRow
+  const candidates = await attachStoreConditionedStock(
+    supabase,
+    data as unknown as FeaturedProductRow[],
+  )
+  const selected = candidates.find(hasPurchasableStock)
+  if (!selected) return null
+
+  const { reviews = [], ...product } = selected as FeaturedProductRow
   const ratings = reviews
     .map((review) => Number(review.rating))
     .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5)

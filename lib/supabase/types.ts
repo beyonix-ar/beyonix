@@ -42,6 +42,8 @@ export interface SupabaseConditionedStock {
   id: string
   product_id: number
   variant_id: number | null
+  original_quantity: number
+  sold_quantity: number
   quantity: number
   discount_percent: number
   reason: string | null
@@ -49,6 +51,20 @@ export interface SupabaseConditionedStock {
   non_sellable_reason: string | null
   active: boolean
   approved_at: string
+  conditioned_name: string | null
+  conditioned_sku: string | null
+  conditioned_color_hex: string | null
+  conditioned_images: string[]
+}
+
+export interface SupabaseInventoryStockSummary {
+  normal: number
+  discounted: number
+  non_sellable: number
+  pending_review: number
+  sellable: number
+  quarantine: number
+  physical: number
 }
 
 export interface SupabaseProductoEspecificacion {
@@ -106,6 +122,7 @@ export interface SupabaseProducto {
   imagenes_producto?: SupabaseImagenProducto[]
   producto_variantes?: SupabaseProductoVariante[]
   conditioned_stock?: SupabaseConditionedStock[]
+  inventory_stock_summary?: SupabaseInventoryStockSummary
   producto_especificaciones?: SupabaseProductoEspecificacion[]
 }
 
@@ -498,6 +515,13 @@ export interface SupabasePedidoItem {
   orden_id: number
   producto_id: number
   variante_id?: number | null
+  conditioned_stock_id?: string | null
+  conditioned_name?: string | null
+  conditioned_sku?: string | null
+  conditioned_color_hex?: string | null
+  conditioned_images?: string[] | null
+  conditioned_discount_percent?: number | null
+  conditioned_reason?: string | null
   cantidad: number
   precio: number
   return_restocked_quantity?: number | null

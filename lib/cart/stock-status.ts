@@ -53,12 +53,20 @@ export function getStockStatusLabel(status: StockStatus) {
 }
 
 export function hasPurchasableStock(product: SupabaseProducto) {
-  if ((product.stock ?? 0) <= 0) return false
+  const hasConditionedStock = (product.conditioned_stock ?? []).some(
+    (item) => item.active && item.quantity > 0,
+  )
+  if ((product.stock ?? 0) <= 0 && !hasConditionedStock) return false
 
   const activeVariants =
     product.producto_variantes?.filter((variant) => variant.activo !== false) ?? []
 
-  if (!activeVariants.length) return true
+  if (!activeVariants.length) {
+    return (product.stock ?? 0) > 0 || hasConditionedStock
+  }
 
-  return activeVariants.some((variant) => (variant.stock ?? 0) > 0)
+  return (
+    activeVariants.some((variant) => (variant.stock ?? 0) > 0) ||
+    hasConditionedStock
+  )
 }

@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase/client"
 
 import {
   getProductosPage,
+  getProductVariantIssues,
   deleteProducto,
   toggleProductoActivo,
   type ProductosPageOptions,
@@ -26,7 +27,7 @@ export function useProductos({
   stockTo = null,
   activeFilter = "todos",
   featuredFilter = "todos",
-  skuFilter = "todos",
+  variantFilter = "todas",
   sortBy = "nombre",
   sortDirection = "asc",
   lowStockThreshold = 5,
@@ -35,6 +36,10 @@ export function useProductos({
   const [productos, setProductos] =
     useState<SupabaseProducto[]>([])
   const [total, setTotal] = useState(0)
+  const [variantIssues, setVariantIssues] = useState({
+    count: 0,
+    hasIssues: false,
+  })
 
   const [loading, setLoading] =
     useState(true)
@@ -54,26 +59,30 @@ export function useProductos({
       try {
         setLoading(true)
 
-        const result = await getProductosPage({
-          page,
-          pageSize,
-          search,
-          colorSearch,
-          categoryId,
-          stockFilter,
-          stockFrom,
-          stockTo,
-          activeFilter,
-          featuredFilter,
-          skuFilter,
-          sortBy,
-          sortDirection,
-          lowStockThreshold,
-          availableStockThreshold,
-        })
+        const [result, issues] = await Promise.all([
+          getProductosPage({
+            page,
+            pageSize,
+            search,
+            colorSearch,
+            categoryId,
+            stockFilter,
+            stockFrom,
+            stockTo,
+            activeFilter,
+            featuredFilter,
+            variantFilter,
+            sortBy,
+            sortDirection,
+            lowStockThreshold,
+            availableStockThreshold,
+          }),
+          getProductVariantIssues(),
+        ])
 
         setProductos(result.productos)
         setTotal(result.total)
+        setVariantIssues(issues)
         setError(null)
       } catch (err) {
         console.error(err)
@@ -91,7 +100,7 @@ export function useProductos({
       colorSearch,
       enabled,
       featuredFilter,
-      skuFilter,
+      variantFilter,
       lowStockThreshold,
       page,
       pageSize,
@@ -216,6 +225,7 @@ export function useProductos({
   return {
     productos,
     total,
+    variantIssues,
     page,
     pageSize,
     loading,

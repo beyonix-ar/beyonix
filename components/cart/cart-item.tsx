@@ -42,8 +42,18 @@ function getStockIcon(status: StockStatus) {
 }
 
 export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
-  const { product, color, image, quantity, variantName, colorHex } = item
-  const price = product.precio
+  const {
+    product,
+    color,
+    image,
+    quantity,
+    variantName,
+    colorHex,
+    unitPrice,
+    conditionedStockId,
+    discountReason,
+  } = item
+  const price = unitPrice
   const colorName = variantName || (color !== "default" ? color : null)
   const hasColor = Boolean(colorHex)
   const maxQuantity = getProductStock(product, color)
@@ -81,6 +91,16 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
               )}
               <span className="text-xs capitalize text-white/65">{colorName}</span>
             </div>
+          )}
+
+          {conditionedStockId && (
+            <p
+              className="mt-1 line-clamp-2 text-10px font-semibold leading-4 text-amber-200/80"
+              title={discountReason || "Variante con descuento"}
+            >
+              Con descuento
+              {discountReason ? ` · ${discountReason}` : ""}
+            </p>
           )}
 
           <span

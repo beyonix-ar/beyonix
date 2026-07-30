@@ -4,6 +4,7 @@ import {
   buildStandaloneCostItems,
   type StandaloneCostRow,
 } from "@/lib/business/standalone-cost-items"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
 type SalesChannel = "external" | "ml"
 
@@ -28,7 +29,11 @@ const COMMON_SALES_COLUMNS = [
 ]
 
 const EXTERNAL_SALES_COLUMNS = [...COMMON_SALES_COLUMNS, "created_at"].join(", ")
-const ML_SALES_COLUMNS = [...COMMON_SALES_COLUMNS, "created_at:imported_at"].join(", ")
+const ML_SALES_COLUMNS = [
+  ...COMMON_SALES_COLUMNS,
+  "raw_data",
+  "created_at:imported_at",
+].join(", ")
 const EXTENDED_SALES_FIELDS = ["fee_type", "fee_value", "customer_name"]
 const LEGACY_META_PREFIX = "__BEYONIX_SALE_META__"
 
@@ -80,13 +85,28 @@ function tableFor(value: SalesChannel) {
   return value === "external" ? "external_sales" : "mercadolibre_sales"
 }
 
-function columnsFor(value: SalesChannel, extended = true) {
-  const base = value === "external" ? EXTERNAL_SALES_COLUMNS : ML_SALES_COLUMNS
+function columnsFor(
+  value: SalesChannel,
+  extended = true,
+  includeVariant = true,
+) {
+  const base =
+    value === "external" && includeVariant
+      ? `${EXTERNAL_SALES_COLUMNS}, variant_id`
+      : value === "external"
+        ? EXTERNAL_SALES_COLUMNS
+        : ML_SALES_COLUMNS
   return extended ? `${base}, ${EXTENDED_SALES_FIELDS.join(", ")}` : base
 }
 
 function missingExtendedColumns(message: string) {
   return /fee_type|fee_value|customer_name/i.test(message)
+}
+
+function missingExternalVariantColumn(message: string) {
+  return /variant_id.*external_sales|external_sales.*variant_id|schema cache.*variant_id/i.test(
+    message,
+  )
 }
 
 function packLegacyPayload(payload: Record<string, unknown>) {
@@ -105,10 +125,24 @@ function packLegacyPayload(payload: Record<string, unknown>) {
 }
 
 function normalizeResponseRow(row: Record<string, unknown>) {
+  const rawData =
+    row.raw_data && typeof row.raw_data === "object"
+      ? (row.raw_data as Record<string, unknown>)
+      : null
+  const rawMapping =
+    rawData?.beyonix_cost_mapping &&
+    typeof rawData.beyonix_cost_mapping === "object"
+      ? (rawData.beyonix_cost_mapping as Record<string, unknown>)
+      : null
+  const mappedVariantId = optionalPositiveInteger(rawMapping?.variant_id)
+  const publicRow = { ...row }
+  delete publicRow.raw_data
+
   const rawNotes = typeof row.notes === "string" ? row.notes : ""
   if (!rawNotes.startsWith(LEGACY_META_PREFIX)) {
     return {
-      ...row,
+      ...publicRow,
+      variant_id: optionalPositiveInteger(row.variant_id) ?? mappedVariantId,
       fee_type: row.fee_type === "percent" ? "percent" : "amount",
       fee_value: Number(row.fee_value ?? row.fee_amount ?? 0),
       customer_name: row.customer_name ?? null,
@@ -126,7 +160,8 @@ function normalizeResponseRow(row: Record<string, unknown>) {
     }
     const notes = noteLines.join("\n").trim()
     return {
-      ...row,
+      ...publicRow,
+      variant_id: optionalPositiveInteger(row.variant_id) ?? mappedVariantId,
       fee_type: metadata.feeType === "percent" ? "percent" : "amount",
       fee_value: Number(metadata.feeValue ?? row.fee_amount ?? 0),
       customer_name: metadata.customerName ?? null,
@@ -134,12 +169,52 @@ function normalizeResponseRow(row: Record<string, unknown>) {
     }
   } catch {
     return {
-      ...row,
+      ...publicRow,
+      variant_id: optionalPositiveInteger(row.variant_id) ?? mappedVariantId,
       fee_type: "amount",
       fee_value: Number(row.fee_amount ?? 0),
       customer_name: null,
     }
   }
+}
+
+async function validateCatalogTarget(
+  admin: SupabaseClient,
+  productId: number | null,
+  variantId: number | null,
+) {
+  if (!productId) {
+    return variantId
+      ? "No se puede indicar una variante sin un producto."
+      : null
+  }
+
+  const [productResult, variantsResult] = await Promise.all([
+    admin
+      .from("productos")
+      .select("id")
+      .eq("id", productId)
+      .maybeSingle(),
+    admin
+      .from("producto_variantes")
+      .select("id")
+      .eq("producto_id", productId),
+  ])
+  if (productResult.error || variantsResult.error) {
+    return "No se pudo validar el artículo contra el catálogo."
+  }
+  if (!productResult.data) return "El producto seleccionado ya no existe."
+
+  const variantIds = new Set(
+    (variantsResult.data ?? []).map((variant) => Number(variant.id)),
+  )
+  if (variantId && !variantIds.has(variantId)) {
+    return "La variante seleccionada no pertenece al producto."
+  }
+  if (variantIds.size > 0 && !variantId) {
+    return "Seleccioná una variante para descontar correctamente el stock."
+  }
+  return null
 }
 
 function normalizePayload(body: Record<string, unknown>, userId: string, updating = false) {
@@ -214,11 +289,14 @@ function normalizePayload(body: Record<string, unknown>, userId: string, updatin
 }
 
 function databaseError(message: string) {
+  const missingVariantMigration = /variant_id/i.test(message)
   const missingMigration = /external_sales|unit_price|unit_cost|other_expense_amount|fee_type|fee_value|customer_name|schema cache/i.test(
     message,
   )
   return errorResponse(
-    /sku|created_from_costs/i.test(message)
+    missingVariantMigration
+      ? "Falta aplicar la migración 20260730170000_inventory_integrity_and_variant_sales.sql en Supabase."
+      : /sku|created_from_costs/i.test(message)
       ? "Falta aplicar la migración 085_cost_items_shared_catalog.sql en Supabase."
       : missingMigration
         ? "Falta aplicar la migración 081_external_and_manual_sales.sql en Supabase."
@@ -234,11 +312,11 @@ export async function GET(request: Request) {
   const [catalogResult, productCostsResult, externalResult, mlResult] = await Promise.all([
     auth.admin
       .from("productos")
-      .select("id, nombre, sku, precio, activo, producto_variantes(id, nombre, activo)")
+      .select("id, nombre, sku, precio, activo, producto_variantes(id, nombre, sku, stock, activo)")
       .order("nombre", { ascending: true }),
     auth.admin
       .from("product_cost_entries")
-      .select("id, product_id, article_name, sku, quantity, total_cost, purchase_date, created_at")
+      .select("id, product_id, variant_id, article_name, sku, quantity, total_cost, purchase_date, created_at")
       .order("purchase_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(5000),
@@ -256,15 +334,31 @@ export async function GET(request: Request) {
       .limit(1000),
   ])
 
-  const resolvedExternalResult =
-    externalResult.error && missingExtendedColumns(externalResult.error.message)
-      ? await auth.admin
-          .from("external_sales")
-          .select(columnsFor("external", false))
-          .order("sale_date", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(1000)
-      : externalResult
+  let resolvedExternalResult = externalResult
+  let externalHasVariantColumn = true
+  if (
+    resolvedExternalResult.error &&
+    missingExternalVariantColumn(resolvedExternalResult.error.message)
+  ) {
+    externalHasVariantColumn = false
+    resolvedExternalResult = await auth.admin
+      .from("external_sales")
+      .select(columnsFor("external", true, false))
+      .order("sale_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1000)
+  }
+  if (
+    resolvedExternalResult.error &&
+    missingExtendedColumns(resolvedExternalResult.error.message)
+  ) {
+    resolvedExternalResult = await auth.admin
+      .from("external_sales")
+      .select(columnsFor("external", false, externalHasVariantColumn))
+      .order("sale_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1000)
+  }
   const resolvedMlResult =
     mlResult.error && missingExtendedColumns(mlResult.error.message)
       ? await auth.admin
@@ -279,6 +373,7 @@ export async function GET(request: Request) {
   if (error) return databaseError(error.message)
 
   const latestUnitCostByProduct = new Map<number, number>()
+  const latestUnitCostByVariant = new Map<number, number>()
   const latestSkuByProduct = new Map<number, string>()
   const costRows = productCostsResult.error
     ? []
@@ -296,6 +391,21 @@ export async function GET(request: Request) {
         !latestSkuByProduct.has(productId)
       ) {
         latestSkuByProduct.set(productId, row.sku.trim())
+      }
+      const variantId = Number(row.variant_id)
+      if (
+        row.variant_id != null &&
+        Number.isInteger(variantId) &&
+        variantId > 0 &&
+        !latestUnitCostByVariant.has(variantId) &&
+        Number.isFinite(quantity) &&
+        quantity > 0 &&
+        Number.isFinite(totalCost)
+      ) {
+        latestUnitCostByVariant.set(
+          variantId,
+          Math.round((totalCost / quantity) * 100) / 100,
+        )
       }
       if (
         row.product_id != null &&
@@ -319,6 +429,10 @@ export async function GET(request: Request) {
     sku: product.sku ?? latestSkuByProduct.get(Number(product.id)) ?? null,
     unit_cost: latestUnitCostByProduct.get(Number(product.id)) ?? null,
     standalone_key: null,
+    producto_variantes: (product.producto_variantes ?? []).map((variant) => ({
+      ...variant,
+      unit_cost: latestUnitCostByVariant.get(Number(variant.id)) ?? null,
+    })),
   }))
   const standaloneCatalog = buildStandaloneCostItems(costRows).map((item) => ({
     id: `cost:${item.key}`,
@@ -352,9 +466,21 @@ export async function POST(request: Request) {
     return errorResponse(normalized.error ?? "Los datos de la venta no son válidos.")
   }
   const normalizedValue = normalized.value as Record<string, unknown>
+  const productId = optionalPositiveInteger(normalizedValue.product_id)
+  const variantId = optionalPositiveInteger(body.variantId)
+  const targetError = await validateCatalogTarget(
+    auth.admin,
+    productId,
+    variantId,
+  )
+  if (targetError) return errorResponse(targetError)
 
   const payload = (() => {
-    if (saleChannel !== "ml") return normalizedValue
+    if (saleChannel !== "ml") {
+      return variantId
+        ? { ...normalizedValue, variant_id: variantId }
+        : normalizedValue
+    }
     const manualMlSale = { ...normalizedValue }
     delete manualMlSale.created_by
     return {
@@ -362,21 +488,39 @@ export async function POST(request: Request) {
       sale_date: `${String(manualMlSale.sale_date)}T12:00:00-03:00`,
       imported_by: auth.user.id,
       imported_at: new Date().toISOString(),
-      raw_data: { origin: "manual" },
+      raw_data: {
+        origin: "manual",
+        beyonix_cost_mapping: {
+          product_id: productId,
+          variant_id: variantId,
+        },
+      },
     }
   })()
 
   let result = await auth.admin
     .from(tableFor(saleChannel))
     .insert(payload)
-    .select(columnsFor(saleChannel))
+    .select(
+      columnsFor(
+        saleChannel,
+        true,
+        saleChannel !== "external" || variantId != null,
+      ),
+    )
     .single()
 
   if (result.error && missingExtendedColumns(result.error.message)) {
     result = await auth.admin
       .from(tableFor(saleChannel))
       .insert(packLegacyPayload(payload))
-      .select(columnsFor(saleChannel, false))
+      .select(
+        columnsFor(
+          saleChannel,
+          false,
+          saleChannel !== "external" || variantId != null,
+        ),
+      )
       .single()
   }
   if (result.error) return databaseError(result.error.message)
@@ -399,13 +543,45 @@ export async function PATCH(request: Request) {
     return errorResponse(normalized.error ?? "Los datos de la venta no son válidos.")
   }
   const normalizedValue = normalized.value as Record<string, unknown>
-  const payload =
-    saleChannel === "ml"
-      ? {
-          ...normalizedValue,
-          sale_date: `${String(normalizedValue.sale_date)}T12:00:00-03:00`,
-        }
-      : normalizedValue
+  const productId = optionalPositiveInteger(normalizedValue.product_id)
+  const variantId = optionalPositiveInteger(body.variantId)
+  const targetError = await validateCatalogTarget(
+    auth.admin,
+    productId,
+    variantId,
+  )
+  if (targetError) return errorResponse(targetError)
+
+  let payload: Record<string, unknown>
+  if (saleChannel === "ml") {
+    const { data: currentSale, error: currentSaleError } = await auth.admin
+      .from("mercadolibre_sales")
+      .select("raw_data")
+      .eq("id", id)
+      .maybeSingle()
+    if (currentSaleError || !currentSale) {
+      return errorResponse("No se pudo recuperar el origen de la venta.", 500)
+    }
+    const currentRawData =
+      currentSale.raw_data && typeof currentSale.raw_data === "object"
+        ? currentSale.raw_data as Record<string, unknown>
+        : {}
+    payload = {
+      ...normalizedValue,
+      sale_date: `${String(normalizedValue.sale_date)}T12:00:00-03:00`,
+      raw_data: {
+        ...currentRawData,
+        beyonix_cost_mapping: {
+          product_id: productId,
+          variant_id: variantId,
+        },
+      },
+    }
+  } else {
+    payload = variantId
+      ? { ...normalizedValue, variant_id: variantId }
+      : { ...normalizedValue, variant_id: null }
+  }
 
   let result = await auth.admin
     .from(tableFor(saleChannel))
@@ -414,12 +590,34 @@ export async function PATCH(request: Request) {
     .select(columnsFor(saleChannel))
     .single()
 
+  if (
+    saleChannel === "external" &&
+    variantId == null &&
+    result.error &&
+    missingExternalVariantColumn(result.error.message)
+  ) {
+    const legacyPayload = { ...payload }
+    delete legacyPayload.variant_id
+    result = await auth.admin
+      .from("external_sales")
+      .update(legacyPayload)
+      .eq("id", id)
+      .select(columnsFor("external", true, false))
+      .single()
+  }
+
   if (result.error && missingExtendedColumns(result.error.message)) {
     result = await auth.admin
       .from(tableFor(saleChannel))
       .update(packLegacyPayload(payload))
       .eq("id", id)
-      .select(columnsFor(saleChannel, false))
+      .select(
+        columnsFor(
+          saleChannel,
+          false,
+          saleChannel !== "external" || variantId != null,
+        ),
+      )
       .single()
   }
   if (result.error) return databaseError(result.error.message)

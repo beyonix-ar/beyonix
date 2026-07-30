@@ -7,6 +7,7 @@ export interface StockReservationItem {
   productId: number
   quantity: number
   variantId?: number | null
+  conditionedStockId?: string | null
 }
 
 interface ReserveCartStockPayload {
@@ -20,6 +21,10 @@ function normalizeReservationItems(items: StockReservationItem[]) {
       productId: Number(item.productId),
       quantity: Math.trunc(Number(item.quantity)),
       variantId: item.variantId ? Number(item.variantId) : null,
+      conditionedStockId:
+        typeof item.conditionedStockId === "string"
+          ? item.conditionedStockId
+          : null,
     }))
     .filter(
       (item) =>

@@ -5,9 +5,11 @@ import {
   CreditCard,
   FileText,
   MessageCircle,
+  PackageSearch,
   ShieldAlert,
   ShoppingCart,
   Truck,
+  Undo2,
   XCircle,
 } from "lucide-react"
 
@@ -17,6 +19,7 @@ import {
   type AdminNotificationType,
 } from "@/lib/admin/admin-notifications"
 import {
+  ADMIN_ATTENTION_WARNING,
   ADMIN_SENSITIVE_DANGER,
   isAdminSensitiveNotification,
 } from "@/lib/admin/admin-sensitive-visuals"
@@ -31,6 +34,8 @@ const TYPE_LABELS: Record<AdminNotificationType, string> = {
   shipping: "Envío pendiente",
   cancellation: "Compra cancelada",
   claim: "Reclamo por responder",
+  mercadolibre_return: "Devolución de Mercado Libre",
+  inventory: "Integridad de inventario",
 }
 
 const ADMIN_NEUTRAL_CARD_STYLE =
@@ -54,6 +59,8 @@ function getNotificationIcon(type: AdminNotificationType) {
   if (type === "shipping") return Truck
   if (type === "cancellation") return XCircle
   if (type === "claim") return ShieldAlert
+  if (type === "mercadolibre_return") return Undo2
+  if (type === "inventory") return PackageSearch
   return Bell
 }
 
@@ -132,6 +139,8 @@ export function AdminNotificationsPopover({
           <div className="space-y-1.5">
             {notifications.map((notification) => {
               const Icon = getNotificationIcon(notification.type)
+              const mercadoLibreReturn =
+                notification.type === "mercadolibre_return"
               const sensitive = isAdminSensitiveNotification(notification)
               const incomingPayment = notification.eventKey.startsWith("balance-topup:")
               const typeLabel =
@@ -146,21 +155,25 @@ export function AdminNotificationsPopover({
                   onClick={() => onNotificationClick(notification)}
                   className={cn(
                     "group flex w-full cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all",
-                    sensitive
-                      ? ADMIN_SENSITIVE_DANGER.card
-                      : incomingPayment
-                        ? ADMIN_INCOMING_PAYMENT_STYLE.card
-                        : ADMIN_NEUTRAL_CARD_STYLE,
+                    mercadoLibreReturn
+                      ? ADMIN_ATTENTION_WARNING.card
+                      : sensitive
+                        ? ADMIN_SENSITIVE_DANGER.card
+                        : incomingPayment
+                          ? ADMIN_INCOMING_PAYMENT_STYLE.card
+                          : ADMIN_NEUTRAL_CARD_STYLE,
                   )}
                 >
                   <span
                     className={cn(
                       "flex size-8 shrink-0 items-center justify-center rounded-lg border",
-                      sensitive
-                        ? ADMIN_SENSITIVE_DANGER.icon
-                        : incomingPayment
-                          ? ADMIN_INCOMING_PAYMENT_STYLE.icon
-                          : ADMIN_NEUTRAL_ICON_STYLE,
+                      mercadoLibreReturn
+                        ? ADMIN_ATTENTION_WARNING.icon
+                        : sensitive
+                          ? ADMIN_SENSITIVE_DANGER.icon
+                          : incomingPayment
+                            ? ADMIN_INCOMING_PAYMENT_STYLE.icon
+                            : ADMIN_NEUTRAL_ICON_STYLE,
                     )}
                   >
                     <Icon className="size-3.5" />
@@ -171,11 +184,13 @@ export function AdminNotificationsPopover({
                       <span
                         className={cn(
                           "min-w-0 flex-1 text-xs font-bold uppercase tracking-normal leading-4",
-                          sensitive
-                            ? ADMIN_SENSITIVE_DANGER.label
-                            : incomingPayment
-                              ? ADMIN_INCOMING_PAYMENT_STYLE.label
-                              : "text-white/64",
+                          mercadoLibreReturn
+                            ? ADMIN_ATTENTION_WARNING.label
+                            : sensitive
+                              ? ADMIN_SENSITIVE_DANGER.label
+                              : incomingPayment
+                                ? ADMIN_INCOMING_PAYMENT_STYLE.label
+                                : "text-white/64",
                         )}
                       >
                         {typeLabel}
@@ -184,11 +199,13 @@ export function AdminNotificationsPopover({
                         <span
                           className={cn(
                             "mt-1 size-1.5 shrink-0 rounded-full",
-                            sensitive
-                              ? ADMIN_SENSITIVE_DANGER.dot
-                              : incomingPayment
-                                ? ADMIN_INCOMING_PAYMENT_STYLE.dot
-                                : ADMIN_NEUTRAL_DOT_STYLE,
+                            mercadoLibreReturn
+                              ? ADMIN_ATTENTION_WARNING.dot
+                              : sensitive
+                                ? ADMIN_SENSITIVE_DANGER.dot
+                                : incomingPayment
+                                  ? ADMIN_INCOMING_PAYMENT_STYLE.dot
+                                  : ADMIN_NEUTRAL_DOT_STYLE,
                           )}
                         />
                       )}
@@ -205,11 +222,13 @@ export function AdminNotificationsPopover({
                         <span
                           className={cn(
                             "font-black group-hover:text-white",
-                            sensitive
-                              ? ADMIN_SENSITIVE_DANGER.label
-                              : incomingPayment
-                                ? "text-emerald-300"
-                                : "text-beyonix-sky",
+                            mercadoLibreReturn
+                              ? ADMIN_ATTENTION_WARNING.label
+                              : sensitive
+                                ? ADMIN_SENSITIVE_DANGER.label
+                                : incomingPayment
+                                  ? "text-emerald-300"
+                                  : "text-beyonix-sky",
                           )}
                         >
                           {notification.actionLabel}

@@ -1,4 +1,8 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import {
+  calculateInventoryStock,
+  classifyReturnStock,
+} from "@/lib/inventory/stock-metrics"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 function parseProductId(value: string) {
@@ -35,7 +39,13 @@ async function loadDistribution(
   admin: SupabaseClient,
   productId: number,
 ) {
-  const [productResult, variantsResult, allocationsResult, genericResult] =
+  const [
+    productResult,
+    variantsResult,
+    allocationsResult,
+    genericResult,
+    returnsResult,
+  ] =
     await Promise.all([
       admin
         .from("productos")
@@ -57,6 +67,12 @@ async function loadDistribution(
         .select("quantity_delta")
         .eq("product_id", productId)
         .is("variant_id", null),
+      admin
+        .from("inventory_return_movements")
+        .select(
+          "received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity",
+        )
+        .eq("product_id", productId),
     ])
 
   const migrationError =
@@ -76,7 +92,8 @@ async function loadDistribution(
     productResult.error ||
     variantsResult.error ||
     allocationsResult.error ||
-    genericResult.error
+    genericResult.error ||
+    returnsResult.error
   ) {
     return {
       error: Response.json(
@@ -100,21 +117,56 @@ async function loadDistribution(
       Number(row.quantity),
     ]),
   )
-  const assignableQuantity = (genericResult.data ?? []).reduce(
+  const genericBalance = (genericResult.data ?? []).reduce(
     (total, movement) => total + Number(movement.quantity_delta ?? 0),
     0,
   )
+  const assignableQuantity = Math.max(0, genericBalance)
   const allocatedQuantity = [...allocationByVariant.values()].reduce(
     (total, quantity) => total + quantity,
     0,
   )
+  const returns = (returnsResult.data ?? []).reduce(
+    (total, movement) => {
+      const classified = classifyReturnStock({
+        received: movement.received_quantity,
+        sellable: movement.sellable_quantity,
+        discounted: movement.discounted_quantity,
+        nonSellable: movement.non_sellable_quantity,
+      })
+      return {
+        discounted: total.discounted + classified.discounted,
+        nonSellable: total.nonSellable + classified.nonSellable,
+        pendingReview: total.pendingReview + classified.pendingReview,
+      }
+    },
+    { discounted: 0, nonSellable: 0, pendingReview: 0 },
+  )
+  const stock = calculateInventoryStock({
+    normal: productResult.data.stock,
+    discounted: returns.discounted,
+    nonSellable: returns.nonSellable,
+    pendingReview: returns.pendingReview,
+  })
 
   return {
     data: {
-      totalStock: Number(productResult.data.stock ?? 0),
-      assignableQuantity: Math.max(0, assignableQuantity),
+      totalStock: stock.normal,
+      normalStock: stock.normal,
+      discountedStock: stock.discounted,
+      nonSellableStock: stock.nonSellable,
+      pendingReviewStock: stock.pendingReview,
+      sellableStock: stock.sellable,
+      quarantineStock: stock.quarantine,
+      physicalStock: stock.physical,
+      genericBalance,
+      assignableQuantity,
       allocatedQuantity,
       unassignedQuantity: Math.max(0, assignableQuantity - allocatedQuantity),
+      allocationOverflow: Math.max(
+        0,
+        allocatedQuantity - assignableQuantity,
+      ),
       variants: (variantsResult.data ?? []).map((variant) => ({
         variant_id: Number(variant.id),
         allocated_quantity: allocationByVariant.get(Number(variant.id)) ?? 0,

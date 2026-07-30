@@ -33,7 +33,7 @@ type StockFilter =
   | "entre"
 type ActiveFilter = "todos" | "activos" | "inactivos"
 type FeaturedFilter = "todos" | "destacados" | "normales"
-type SkuFilter = "todos" | "con_sku" | "sin_sku"
+type VariantFilter = "todas" | "sin_variantes"
 type ProductView = "productos" | "categorias"
 export type ProductSortKey = "nombre" | "stock" | "sku" | "color"
 export type SortDirection = "asc" | "desc"
@@ -98,13 +98,15 @@ export function AdminProductos() {
   const [stockFilter, setStockFilter] = useState<StockFilter>("todos")
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("todos")
   const [featuredFilter, setFeaturedFilter] = useState<FeaturedFilter>("todos")
-  const [skuFilter, setSkuFilter] = useState<SkuFilter>("todos")
+  const [variantFilter, setVariantFilter] =
+    useState<VariantFilter>("todas")
   const [sortBy, setSortBy] = useState<ProductSortKey>("nombre")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [view, setView] = useState<ProductView>("productos")
   const {
     productos,
     total,
+    variantIssues,
     loading,
     error,
     actionMessage,
@@ -124,7 +126,7 @@ export function AdminProductos() {
     stockTo: debouncedStockTo,
     activeFilter,
     featuredFilter,
-    skuFilter,
+    variantFilter,
     sortBy,
     sortDirection,
     lowStockThreshold: stockSettings.lowStockThreshold,
@@ -156,7 +158,7 @@ export function AdminProductos() {
     activeFilter,
     categoryFilter,
     featuredFilter,
-    skuFilter,
+    variantFilter,
     sortBy,
     sortDirection,
     stockFilter,
@@ -179,6 +181,22 @@ export function AdminProductos() {
     () => mergeProductColors(storedColorOptions, productos),
     [productos, storedColorOptions],
   )
+  const visibleVariantIssueCount = useMemo(
+    () =>
+      productos.filter((product) => {
+        const variants = product.producto_variantes ?? []
+        return (
+          variants.length === 0 ||
+          variants.some((variant) => !variant.sku?.trim())
+        )
+      }).length,
+    [productos],
+  )
+  const effectiveVariantIssues = {
+    count: Math.max(variantIssues.count, visibleVariantIssueCount),
+    hasIssues:
+      variantIssues.hasIssues || visibleVariantIssueCount > 0,
+  }
 
   const handleSort = (key: ProductSortKey) => {
     if (sortBy === key) {
@@ -243,7 +261,8 @@ export function AdminProductos() {
         stockFilter={stockFilter}
         activeFilter={activeFilter}
         featuredFilter={featuredFilter}
-        skuFilter={skuFilter}
+        variantFilter={variantFilter}
+        variantIssues={effectiveVariantIssues}
         view={view}
         onSearchChange={setSearch}
         onColorSearchChange={setColorSearch}
@@ -254,7 +273,7 @@ export function AdminProductos() {
         onStockFilterChange={setStockFilter}
         onActiveFilterChange={setActiveFilter}
         onFeaturedFilterChange={setFeaturedFilter}
-        onSkuFilterChange={setSkuFilter}
+        onVariantFilterChange={setVariantFilter}
         onViewChange={setView}
         onCreateCategory={() => setCreateCategorySignal((current) => current + 1)}
       />
@@ -372,8 +391,16 @@ export function AdminProductos() {
               {pendingDelete?.nombre}
             </p>
             <span className="mt-1.5 inline-flex rounded-full border border-white/9 bg-black/25 px-2 py-0.5 text-10px font-black uppercase tracking-wider text-white/48">
-              {pendingDelete?.stock ?? 0}{" "}
-              {Math.abs(pendingDelete?.stock ?? 0) === 1 ? "unidad" : "unidades"}
+              {pendingDelete?.inventory_stock_summary?.physical ??
+                pendingDelete?.stock ??
+                0}{" "}
+              {Math.abs(
+                pendingDelete?.inventory_stock_summary?.physical ??
+                  pendingDelete?.stock ??
+                  0,
+              ) === 1
+                ? "unidad"
+                : "unidades"}
             </span>
           </div>
         </div>

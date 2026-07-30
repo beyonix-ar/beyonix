@@ -445,8 +445,8 @@ export function ProductSpecificationsEditor({
   const visibleSpecifications = sortSpecifications(specifications)
 
   return (
-    <div className="min-w-0 space-y-2.5">
-      <div className="grid min-w-0 gap-2">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+      <div className="grid min-w-0 gap-3">
         <LucideIconPicker
           value={icono}
           onChange={setIcono}
@@ -525,11 +525,11 @@ export function ProductSpecificationsEditor({
       )}
 
       {loading ? (
-        <div className="flex h-20 items-center justify-center text-white/45">
+        <div className="mt-auto flex h-20 items-center justify-center text-white/45">
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <div className="space-y-2 border-t border-white/8 pt-2.5">
+        <div className="mt-auto space-y-2 border-t border-white/8 pt-3">
           {productoId ? (
             visibleSpecifications.length ? (
               visibleSpecifications.map((specification, index) => (
@@ -634,7 +634,7 @@ function EmptySpecifications() {
   return (
     <div className="rounded-xl border border-white/7 bg-[#181818] px-4 py-4 text-center">
       <p className="text-sm text-white/55">
-        Todavia no hay especificaciones cargadas.
+        Todavía no hay especificaciones cargadas.
       </p>
     </div>
   )

@@ -119,7 +119,7 @@ export async function GET(
 
   const { data: itemRows, error: itemsError } = await admin
     .from("orden_items")
-    .select("id, orden_id, producto_id, variante_id, cantidad, precio, precio_unitario")
+    .select("id, orden_id, producto_id, variante_id, conditioned_name, cantidad, precio, precio_unitario")
     .eq("orden_id", orderId)
 
   if (itemsError) {
@@ -243,7 +243,10 @@ export async function GET(
       precio: Number(item.precio ?? item.precio_unitario ?? 0),
       productos: productsById.get(item.producto_id) ?? null,
       producto_variantes:
-        typeof item.variante_id === "number"
+        typeof item.conditioned_name === "string" &&
+        item.conditioned_name.trim()
+          ? { nombre: item.conditioned_name }
+          : typeof item.variante_id === "number"
           ? variantsById.get(item.variante_id) ?? null
           : null,
     })),

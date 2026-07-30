@@ -28,7 +28,18 @@ import {
   validateCheckoutInventory,
   deleteIncompleteCheckoutOrder,
 } from "@/lib/orders/checkout-inventory"
-import { getVariantIdFromValue } from "@/lib/products/product-variants"
+import {
+  getConditionedStockIdFromValue,
+  getVariantIdFromValue,
+} from "@/lib/products/product-variants"
+import {
+  assertConditionedCheckoutStock,
+  getConditionedOrderItemFields,
+  getConditionedUnitPrice,
+  loadConditionedCheckoutRows,
+  normalizeConditionedStockId,
+  type ConditionedCheckoutRow,
+} from "@/lib/orders/conditioned-checkout"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
   calculateStoreBenefitDiscount,
@@ -41,6 +52,7 @@ interface CheckoutItemPayload {
   productId?: number
   quantity?: number
   variantId?: number | null
+  conditionedStockId?: string | null
   color?: string | null
 }
 
@@ -88,6 +100,7 @@ interface NormalizedItem {
   productId: number
   quantity: number
   variantId: number | null
+  conditionedStockId: string | null
 }
 
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
@@ -100,11 +113,22 @@ function normalizeItems(items: CheckoutPayload["items"]) {
   if (!Array.isArray(items)) return []
 
   return items
-    .map((item) => ({
-      productId: Number(item.productId),
-      quantity: Math.trunc(Number(item.quantity)),
-      variantId: Number(item.variantId) || getVariantIdFromValue(item.color) || null,
-    }))
+    .map((item) => {
+      const conditionedStockId =
+        normalizeConditionedStockId(item.conditionedStockId) ||
+        getConditionedStockIdFromValue(item.color)
+
+      return {
+        productId: Number(item.productId),
+        quantity: Math.trunc(Number(item.quantity)),
+        variantId: conditionedStockId
+          ? null
+          : Number(item.variantId) ||
+            getVariantIdFromValue(item.color) ||
+            null,
+        conditionedStockId,
+      }
+    })
     .filter(
       (item) =>
         Number.isFinite(item.productId) &&
@@ -177,12 +201,22 @@ function normalizeShipping(
   }
 }
 
-function getUnitPrice(product: ProductRow) {
-  return Math.round(product.precio * (1 - getProductDiscount(product.id)))
+function getUnitPrice(
+  product: ProductRow,
+  conditioned?: ConditionedCheckoutRow | null,
+) {
+  return Math.round(
+    getConditionedUnitPrice(product.precio, conditioned) *
+      (1 - getProductDiscount(product.id)),
+  )
 }
 
-function getUnitPriceWithStoreBenefit(product: ProductRow, percent?: number | null) {
-  const unitPrice = getUnitPrice(product)
+function getUnitPriceWithStoreBenefit(
+  product: ProductRow,
+  percent?: number | null,
+  conditioned?: ConditionedCheckoutRow | null,
+) {
+  const unitPrice = getUnitPrice(product, conditioned)
   if (!percent) return unitPrice
 
   return Math.max(Math.round(unitPrice * (1 - percent / 100)), 1)
@@ -193,16 +227,21 @@ async function insertOrderItems(
   orderId: number,
   items: NormalizedItem[],
   products: ProductRow[],
+  conditionedRows: Map<string, ConditionedCheckoutRow>,
 ) {
   const payload = items.map((item) => {
     const product = products.find((row) => row.id === item.productId)
+    const conditioned = item.conditionedStockId
+      ? conditionedRows.get(item.conditionedStockId)
+      : null
 
     return {
       orden_id: orderId,
       producto_id: item.productId,
-      variante_id: item.variantId,
+      ...(!conditioned ? { variante_id: item.variantId } : {}),
+      ...getConditionedOrderItemFields(conditioned),
       cantidad: item.quantity,
-      precio: product ? getUnitPrice(product) : 0,
+      precio: product ? getUnitPrice(product, conditioned) : 0,
     }
   })
 
@@ -290,6 +329,7 @@ export async function POST(request: Request) {
     }
 
     const variantRows = (variants ?? []) as VariantRow[]
+    const conditionedRows = await loadConditionedCheckoutRows(admin, items)
     const variantsById = new Map(variantRows.map((variant) => [variant.id, variant]))
     const variantsByProductId = new Map<number, VariantRow[]>()
 
@@ -301,23 +341,33 @@ export async function POST(request: Request) {
     }
 
     for (const item of items) {
-      if (!item.variantId) {
-        item.variantId =
+      if (!item.variantId && !item.conditionedStockId) {
+        const activeVariants =
           variantsByProductId
             .get(item.productId)
-            ?.find((variant) => variant.activo)?.id ?? null
+            ?.filter((variant) => variant.activo) ?? []
+        if (activeVariants.length === 1) {
+          item.variantId = activeVariants[0].id
+        } else if (activeVariants.length > 1) {
+          throw new Error(
+            "Elegí la variante exacta antes de confirmar la compra.",
+          )
+        }
       }
 
       const product = productRows.find((row) => row.id === item.productId)
       if (!product) throw new Error("Producto inexistente.")
 
       const variant = item.variantId ? variantsById.get(item.variantId) : undefined
+      const conditioned = assertConditionedCheckoutStock(item, conditionedRows)
 
       if (item.variantId && (!variant || variant.producto_id !== product.id)) {
         throw new Error(`Variante inválida para ${product.nombre}.`)
       }
 
-      assertCatalogStock(item.quantity, product, variant)
+      if (!conditioned) {
+        assertCatalogStock(item.quantity, product, variant)
+      }
     }
 
     const baseTotals = calculateCartTotals(
@@ -327,6 +377,12 @@ export async function POST(request: Request) {
         return {
           product,
           quantity: item.quantity,
+          unitPrice: getConditionedUnitPrice(
+            product.precio,
+            item.conditionedStockId
+              ? conditionedRows.get(item.conditionedStockId)
+              : null,
+          ),
         }
       }),
     )
@@ -345,6 +401,12 @@ export async function POST(request: Request) {
         return {
           product,
           quantity: item.quantity,
+          unitPrice: getConditionedUnitPrice(
+            product.precio,
+            item.conditionedStockId
+              ? conditionedRows.get(item.conditionedStockId)
+              : null,
+          ),
         }
       }),
       {
@@ -470,7 +532,13 @@ export async function POST(request: Request) {
       throw new Error(orderError?.message || "No se pudo crear la orden.")
     }
 
-    await insertOrderItems(orderClient as never, order.id, items, productRows)
+    await insertOrderItems(
+      orderClient as never,
+      order.id,
+      items,
+      productRows,
+      conditionedRows,
+    )
 
     try {
       await validateCheckoutInventory(admin, items)
@@ -519,6 +587,9 @@ export async function POST(request: Request) {
               unit_price: getUnitPriceWithStoreBenefit(
                 product,
                 storeBenefit?.percent,
+                item.conditionedStockId
+                  ? conditionedRows.get(item.conditionedStockId)
+                  : null,
               ),
               currency_id: "ARS",
             }

@@ -578,6 +578,7 @@ export default function CheckoutPage() {
         productId: item.product.id,
         quantity: item.quantity,
         variantId: item.variantId,
+        conditionedStockId: item.conditionedStockId,
       })),
     })
       .then((result) => {
@@ -1080,6 +1081,7 @@ export default function CheckoutPage() {
             productId: item.product.id,
             quantity: item.quantity,
             variantId: item.variantId,
+            conditionedStockId: item.conditionedStockId,
             color: item.color,
           })),
         }),
@@ -1860,7 +1862,7 @@ export default function CheckoutPage() {
                           </div>
                         </div>
                         <span className="shrink-0 text-sm font-semibold text-white">
-                          {formatPrice(item.product.precio * item.quantity)}
+                          {formatPrice(item.unitPrice * item.quantity)}
                         </span>
                       </div>
 

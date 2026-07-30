@@ -86,13 +86,13 @@ export default function SharedProductCard({
       : 0
 
   const discountPercentage =
-    product.precio_anterior &&
-    product.precio_anterior >
-      product.precio
+    defaultVariant.originalPrice &&
+    defaultVariant.originalPrice >
+      defaultVariant.price
       ? Math.round(
           (1 -
-            product.precio /
-              product.precio_anterior) *
+            defaultVariant.price /
+              defaultVariant.originalPrice) *
             100
         )
       : null
@@ -295,9 +295,9 @@ export default function SharedProductCard({
 
         <div className="mt-3 border-t border-beyonix-blue-light/12 pt-3">
           <ProductCardPricing
-            price={product.precio}
+            price={defaultVariant.price}
             originalPrice={
-              product.precio_anterior ||
+              defaultVariant.originalPrice ||
               undefined
             }
             discountPercentage={

@@ -37,16 +37,6 @@ const dashboardServerCache = new Map<
   { expiresAt: number; payload: Record<string, unknown> }
 >()
 
-interface DashboardLowStockItem {
-  id: string
-  nombre: string
-  stock: number
-  threshold: number
-  tipo: "producto" | "variante"
-  producto_nombre?: string
-  color_hex?: string
-}
-
 interface CommercialSale {
   id: string
   date: string
@@ -82,13 +72,6 @@ interface SystemStatusItem {
 
 function isPaidOrder(order: SupabasePedido) {
   return PAID_STATES.has(order.estado) || order.payment_status === "approved"
-}
-
-function isReadyToPrepare(order: SupabasePedido) {
-  return (
-    isPaidOrder(order) &&
-    ![...DISPATCHED_STATES, "cancelado"].includes(order.estado)
-  )
 }
 
 interface DashboardFinancialSummary {
@@ -303,19 +286,6 @@ async function getMercadoPagoStatus(): Promise<SystemStatusItem> {
       status: "error",
       detail: "No se pudo verificar la API",
     }
-  }
-}
-
-async function withFallback<T>(
-  promise: PromiseLike<T>,
-  fallback: T,
-  label: string
-) {
-  try {
-    return await promise
-  } catch (error) {
-    console.warn(`DASHBOARD_${label}_FALLBACK`, getErrorLogDetails(error))
-    return fallback
   }
 }
 
@@ -894,17 +864,17 @@ export async function GET(request: Request) {
       "productos_stock_negativo",
       auth.admin
         .from("productos")
-        .select("id", { count: "exact", head: true })
+        .select("id")
         .lt("stock", 0),
-      EMPTY_COUNT_RESULT,
+      EMPTY_ROWS_RESULT,
     ),
     safeDashboardQuery(
       "variantes_stock_negativo",
       auth.admin
         .from("producto_variantes")
-        .select("id", { count: "exact", head: true })
+        .select("id, producto_id")
         .lt("stock", 0),
-      EMPTY_COUNT_RESULT,
+      EMPTY_ROWS_RESULT,
     ),
     safeDashboardQuery(
       "pedidos_a_preparar_count",
@@ -1170,8 +1140,23 @@ export async function GET(request: Request) {
       }))
   const lowStock = [...lowStockProducts, ...lowStockVariants]
   const sortedLowStock = [...lowStock].sort((a, b) => a.stock - b.stock)
+  const negativeVariants = (negativeVariantsResult.data ?? []) as Array<{
+    id: number
+    producto_id: number
+  }>
+  const negativeProducts = (negativeProductsResult.data ?? []) as Array<{
+    id: number
+  }>
+  const negativeVariantProductIds = new Set(
+    negativeVariants.map((variant) => Number(variant.producto_id)),
+  )
+  // Si una variante ya explica el saldo negativo del producto, se informa una
+  // sola vez. El padre sólo se suma cuando la anomalía no está localizada.
+  const unexplainedNegativeProducts = negativeProducts
+    .filter((product) => !negativeVariantProductIds.has(Number(product.id)))
+    .length
   const negativeStockItems =
-    getCount(negativeProductsResult) + getCount(negativeVariantsResult)
+    negativeVariants.length + unexplainedNegativeProducts
   const webGrossSales = paidCandidateOrders.reduce(
     (total, order) =>
       total + Number(order.original_total ?? order.total ?? 0),

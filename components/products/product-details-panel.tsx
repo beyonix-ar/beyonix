@@ -162,6 +162,8 @@ export function ProductDetailsPanel({
   selectedStock,
 }: ProductDetailsPanelProps) {
   const colors = getProductVariantOptions(product)
+  const selectedOption =
+    colors.find((option) => option.value === selectedColor) ?? colors[0]
   const installmentsLabel =
     getInstallmentsLabel(product)
   const hasVariants =
@@ -303,14 +305,30 @@ export function ProductDetailsPanel({
               />
               </section>
             )}
+
+            {selectedOption?.isConditioned && (
+              <section className="rounded-xl border border-amber-300/22 bg-amber-300/7 px-4 py-3">
+                <p className="text-10px font-black uppercase tracking-widest text-amber-200">
+                  Variante con descuento
+                </p>
+                <p className="mt-1 text-sm font-semibold leading-5 text-white/72">
+                  {selectedOption.reason ||
+                    "Esta unidad fue revisada y se vende separada del stock normal."}
+                </p>
+              </section>
+            )}
           </div>
         </div>
       </div>
 
       <div className="shrink-0 border-t border-white/7">
         <ProductPurchaseBox
-          price={product.precio}
-          originalPrice={product.precio_anterior || undefined}
+          price={selectedOption?.price ?? product.precio}
+          originalPrice={
+            selectedOption?.originalPrice ??
+            product.precio_anterior ??
+            undefined
+          }
           installmentsLabel={installmentsLabel}
           isInCart={isInCart}
           cartQuantity={cartQuantity}

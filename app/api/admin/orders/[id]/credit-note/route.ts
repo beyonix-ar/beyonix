@@ -318,7 +318,7 @@ export async function POST(
         .single(),
       auth.admin
         .from("orden_items")
-        .select("id, orden_id, producto_id, variante_id, cantidad, precio")
+        .select("id, orden_id, producto_id, variante_id, conditioned_name, cantidad, precio")
         .eq("orden_id", orderId),
     ])
 
@@ -489,7 +489,10 @@ export async function POST(
       product_name:
         productNames.get(Number(item.producto_id)) ?? `Artículo #${item.producto_id}`,
       variant_name:
-        typeof item.variante_id === "number"
+        typeof item.conditioned_name === "string" &&
+        item.conditioned_name.trim()
+          ? item.conditioned_name
+          : typeof item.variante_id === "number"
           ? variantNames.get(item.variante_id) ?? ""
           : "",
     }),

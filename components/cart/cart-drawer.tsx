@@ -60,7 +60,7 @@ export function CartDrawer({
     (sum, item) => {
       return (
         sum +
-        item.product.precio *
+        item.unitPrice *
           item.quantity
       )
     },
@@ -175,13 +175,10 @@ export function CartDrawer({
                   (item) => ({
                     product: {
                       id: item.product.id,
-                      precio:
-                        item.product
-                          .precio,
+                      precio: item.product.precio,
                     },
-
-                    quantity:
-                      item.quantity,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
                   })
                 )}
                 onCheckout={() => {

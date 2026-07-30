@@ -6,18 +6,21 @@ import {
   useState,
 } from "react"
 import { createPortal } from "react-dom"
+import Image from "next/image"
 
 import {
   BadgePercent,
   Check,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   Eye,
   GripVertical,
   Package,
   Pencil,
   Star,
   Trash2,
+  X,
 } from "lucide-react"
 
 import type {
@@ -26,6 +29,7 @@ import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
 import type { StockSettings } from "@/lib/site-settings"
+import { calculateInventoryStock } from "@/lib/inventory/stock-metrics"
 
 import {
   deleteProductoVariante,
@@ -38,8 +42,13 @@ import {
   updateProducto,
   updateConditionedStock,
 } from "@/lib/supabase/queries/productos"
+import {
+  deleteProductoImageByUrl,
+  uploadProductoImages,
+} from "@/lib/supabase/queries/producto-imagenes"
 
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
+import { DraftImageUploader } from "./draft-image-uploader"
 import {
   AdminModal,
   AdminSecondaryButton,
@@ -102,21 +111,10 @@ const stockStatus = (stock: number, settings: StockSettings) => {
   }
 }
 
-const getStockTotal = (
-  producto: SupabaseProducto
-) => {
-  const variantes =
-    producto.producto_variantes || []
-
-  if (!variantes.length) {
-    return producto.stock
-  }
-
-  return variantes.reduce(
-    (total, variante) =>
-      total + (variante.stock ?? 0),
-    0
-  )
+const formatProductPrice = (value: number | null | undefined) => {
+  const price = Number(value)
+  const safePrice = Number.isFinite(price) ? Math.max(0, price) : 0
+  return `$${safePrice.toLocaleString("es-AR")}`
 }
 
 const sortVariantes = (
@@ -199,6 +197,10 @@ export function ProductosRow({
 
   const [editColor, setEditColor] =
     useState("")
+  const [editVariantName, setEditVariantName] =
+    useState("")
+  const [editVariantSku, setEditVariantSku] =
+    useState("")
 
   const [localVariantes, setLocalVariantes] =
     useState<SupabaseProductoVariante[]>(
@@ -214,6 +216,8 @@ export function ProductosRow({
     useState<string | null>(null)
   const [conditionedError, setConditionedError] =
     useState("")
+  const [localPendingReviewDelta, setLocalPendingReviewDelta] =
+    useState(0)
   const [localPrincipalImage, setLocalPrincipalImage] =
     useState<string | null>(
       producto.imagen_principal
@@ -233,7 +237,8 @@ export function ProductosRow({
     setLocalConditionedStock(
       producto.conditioned_stock || [],
     )
-  }, [producto.conditioned_stock])
+    setLocalPendingReviewDelta(0)
+  }, [producto.conditioned_stock, producto.inventory_stock_summary])
 
   useEffect(() => {
     setLocalPrincipalImage(
@@ -259,16 +264,30 @@ export function ProductosRow({
     ? ""
     : producto.sku?.trim() || "—"
 
-  const stockTotal =
-    variantes.length
-      ? variantes.reduce(
-          (total, variante) =>
-            total +
-            (variante.stock ?? 0),
-          0
-        )
-      : getStockTotal(producto)
-  const productStockStatus = stockStatus(stockTotal, stockSettings)
+  const conditionedStockTotal = conditionedStock.reduce(
+    (total, item) => total + item.quantity,
+    0,
+  )
+  const normalStockTotal =
+    producto.inventory_stock_summary?.normal ?? producto.stock
+  const stockMetrics = calculateInventoryStock({
+    normal: normalStockTotal,
+    discounted: conditionedStockTotal,
+    nonSellable: producto.inventory_stock_summary?.non_sellable,
+    pendingReview:
+      (producto.inventory_stock_summary?.pending_review ?? 0) +
+      localPendingReviewDelta,
+  })
+  const physicalStockTotal = stockMetrics.physical
+  const stockBreakdownTitle = [
+    `${physicalStockTotal} ${
+      physicalStockTotal === 1 ? "unidad física" : "unidades físicas"
+    }`,
+    `${normalStockTotal} normales`,
+    `${conditionedStockTotal} con descuento`,
+    `${stockMetrics.quarantine} en cuarentena`,
+  ].join(" · ")
+  const productStockStatus = stockStatus(normalStockTotal, stockSettings)
 
   const replaceConditionedStock = (nextItem: SupabaseConditionedStock) => {
     setLocalConditionedStock((current) =>
@@ -299,19 +318,51 @@ export function ProductosRow({
   const saveConditionedStock = async (
     item: SupabaseConditionedStock,
     values: {
+      active: boolean
       discountPercent: number
       discountReason: string
       nonSellableReason: string
+      sourceVariantId: number | null
+      conditionedName: string
+      conditionedSku: string
+      conditionedColor: string
+      conditionedImages: string[]
+      newImages: File[]
     },
   ) => {
+    let uploadedImages: string[] = []
     try {
       setSavingConditionedId(item.id)
       setConditionedError("")
-      replaceConditionedStock(
-        await updateConditionedStock(item.id, values),
-      )
+      uploadedImages = values.newImages.length
+        ? await uploadProductoImages(
+            producto.id,
+            values.newImages,
+            values.conditionedImages.length,
+          )
+        : []
+      const nextItem = await updateConditionedStock(item.id, {
+        active: values.active,
+        discountPercent: values.discountPercent,
+        discountReason: values.discountReason,
+        nonSellableReason: values.nonSellableReason,
+        sourceVariantId: values.sourceVariantId,
+        conditionedName: values.conditionedName,
+        conditionedSku: values.conditionedSku,
+        conditionedColor: values.conditionedColor,
+        conditionedImages: [
+          ...values.conditionedImages,
+          ...uploadedImages,
+        ],
+      })
+      replaceConditionedStock(nextItem)
       setEditingConditionedStock(null)
     } catch (error) {
+      await Promise.all(
+        uploadedImages.map((image) =>
+          deleteProductoImageByUrl(image).catch(() => undefined),
+        ),
+      )
       setConditionedError(
         error instanceof Error
           ? error.message
@@ -335,10 +386,15 @@ export function ProductosRow({
     try {
       setSavingConditionedId(item.id)
       setConditionedError("")
-      await deleteConditionedStock(item.id)
-      setLocalConditionedStock((current) =>
-        current.filter((currentItem) => currentItem.id !== item.id),
-      )
+      const result = await deleteConditionedStock(item.id)
+      if (result?.archived) {
+        replaceConditionedStock({ ...item, active: false })
+      } else {
+        setLocalConditionedStock((current) =>
+          current.filter((currentItem) => currentItem.id !== item.id),
+        )
+        setLocalPendingReviewDelta((current) => current + item.quantity)
+      }
     } catch (error) {
       setConditionedError(
         error instanceof Error
@@ -381,39 +437,77 @@ export function ProductosRow({
   const startEditVariant = (
     variante: SupabaseProductoVariante
   ) => {
+    setVariantError("")
     setEditingVariantId(variante.id)
     setEditColor(variante.color_hex)
+    setEditVariantName(variante.nombre)
+    setEditVariantSku(variante.sku ?? "")
+  }
+
+  const cancelEditVariant = () => {
+    setEditingVariantId(null)
+    setEditColor("")
+    setEditVariantName("")
+    setEditVariantSku("")
   }
 
   const saveVariant = async (
     variante: SupabaseProductoVariante
   ) => {
-    if (variante.color_hex === editColor) {
-      setEditingVariantId(null)
+    const name = editVariantName.trim()
+    const sku = editVariantSku.trim() || null
+    const color = editColor.trim().toUpperCase()
+
+    if (!name) {
+      setVariantError("El nombre del color es obligatorio.")
+      return
+    }
+    if (!/^#[0-9A-F]{6}$/.test(color)) {
+      setVariantError("El color hexadecimal no es válido.")
       return
     }
 
-    const updated =
-      await updateProductoVariante(
+    if (
+      variante.nombre === name &&
+      (variante.sku?.trim() || null) === sku &&
+      variante.color_hex.toUpperCase() === color
+    ) {
+      cancelEditVariant()
+      return
+    }
+
+    try {
+      setSavingVariantId(variante.id)
+      setVariantError("")
+      const updated = await updateProductoVariante(
+        producto.id,
         producto.id,
         variante.id,
         {
-          color_hex: editColor,
-        }
+          nombre: name,
+          sku,
+          color_hex: color,
+        },
       )
 
-    const nextVariantes =
-      variantes.map((item) =>
+      const nextVariantes = variantes.map((item) =>
         item.id === updated.id
           ? updated
-          : item
+          : item,
       )
 
-    setLocalVariantes(nextVariantes)
-    await syncProductSummary(
-      nextVariantes
-    )
-    setEditingVariantId(null)
+      setLocalVariantes(nextVariantes)
+      await syncProductSummary(nextVariantes)
+      cancelEditVariant()
+    } catch (error) {
+      setVariantError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo actualizar la variante.",
+      )
+    } finally {
+      setSavingVariantId(null)
+    }
   }
 
   const toggleVariant = async (
@@ -695,10 +789,24 @@ export function ProductosRow({
               {!!conditionedStock.length && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-0.5 text-xs font-semibold text-amber-200">
                   <BadgePercent className="size-3" />
-                  {conditionedStock.reduce(
-                    (total, item) => total + item.quantity,
-                    0,
-                  )} con descuento
+                  {conditionedStockTotal}{" "}
+                  {conditionedStockTotal === 1
+                    ? "unidad con descuento"
+                    : "unidades con descuento"}
+                </span>
+              )}
+
+              {stockMetrics.pendingReview > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-red-300/25 bg-red-400/10 px-2.5 py-0.5 text-xs font-semibold text-red-200">
+                  <CircleAlert className="size-3" />
+                  {stockMetrics.pendingReview} sin clasificar
+                </span>
+              )}
+
+              {stockMetrics.nonSellable > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-orange-300/20 bg-orange-400/10 px-2.5 py-0.5 text-xs font-semibold text-orange-200">
+                  <Package className="size-3" />
+                  {stockMetrics.nonSellable} no vendible
                 </span>
               )}
 
@@ -708,12 +816,21 @@ export function ProductosRow({
 
         <span
           data-label="Cantidad"
-          className={`justify-self-center text-sm font-black tabular-nums ${stockColor(
-            stockTotal,
-            stockSettings,
-          )}`}
+          title={stockBreakdownTitle}
+          aria-label={stockBreakdownTitle}
+          className="inline-flex min-w-14 flex-col items-center justify-center justify-self-center text-center"
         >
-          {stockTotal}
+          <span className="text-9px font-semibold leading-none text-white/38">
+            Total:
+          </span>
+          <span
+            className={`mt-1 text-sm font-black leading-none tabular-nums ${stockColor(
+              physicalStockTotal,
+              stockSettings,
+            )}`}
+          >
+            {physicalStockTotal}
+          </span>
         </span>
 
         <span
@@ -753,6 +870,7 @@ export function ProductosRow({
 
         <span
           data-label="Stock"
+          title={`${productStockStatus.label}: ${normalStockTotal} unidades normales, ${conditionedStockTotal} con descuento y ${stockMetrics.quarantine} en cuarentena.`}
           className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-center text-10px font-black ${productStockStatus.className}`}
         >
           <span
@@ -763,10 +881,7 @@ export function ProductosRow({
 
         <div data-label="Precio" className="justify-self-stretch text-center">
           <p className="text-base font-bold tabular-nums text-white">
-            $
-            {producto.precio.toLocaleString(
-              "es-AR"
-            )}
+            {formatProductPrice(producto.precio)}
           </p>
 
           {!!producto.precio_anterior && (
@@ -919,34 +1034,75 @@ export function ProductosRow({
                       {stock}
                     </span>
 
-                    <span
-                      data-label="SKU"
-                      className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
-                      title={variante.sku?.trim() || "Sin SKU"}
-                    >
-                      {variante.sku?.trim() || "—"}
-                    </span>
+                    {editing ? (
+                      <input
+                        type="text"
+                        data-label="SKU"
+                        value={editVariantSku}
+                        maxLength={120}
+                        placeholder="Sin SKU"
+                        aria-label={`Editar SKU de ${variante.nombre}`}
+                        onChange={(event) => setEditVariantSku(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault()
+                            void saveVariant(variante)
+                          }
+                          if (event.key === "Escape") cancelEditVariant()
+                        }}
+                        className="h-9 min-w-0 justify-self-stretch rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 text-center text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                      />
+                    ) : (
+                      <span
+                        data-label="SKU"
+                        className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
+                        title={variante.sku?.trim() || "Sin SKU"}
+                      >
+                        {variante.sku?.trim() || "—"}
+                      </span>
+                    )}
 
                     {editing ? (
-                      <label
+                      <div
                         data-label="Color"
-                        className="relative flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 transition-colors hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/55"
+                        className="flex h-9 min-w-0 items-center gap-1.5 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 transition-colors hover:border-beyonix-sky/40 focus-within:border-beyonix-sky/55"
                       >
-                        <span
-                          className="size-4 shrink-0 rounded-full border border-white/28"
-                          style={{ backgroundColor: editColor }}
-                        />
-                        <span className="truncate text-10px font-bold uppercase text-white/68">
-                          {editColor}
-                        </span>
+                        <label
+                          title={`Seleccionar color (${editColor})`}
+                          className="relative flex size-5 shrink-0 cursor-pointer items-center justify-center"
+                        >
+                          <span
+                            className="size-4 rounded-full border border-white/28"
+                            style={{ backgroundColor: editColor }}
+                          />
+                          <input
+                            type="color"
+                            value={editColor}
+                            aria-label={`Seleccionar color de ${variante.nombre}`}
+                            onChange={(event) => setEditColor(event.target.value)}
+                            className="absolute inset-0 size-full cursor-pointer opacity-0"
+                          />
+                        </label>
                         <input
-                          type="color"
-                          value={editColor}
-                          aria-label={`Editar color de ${variante.nombre}`}
-                          onChange={(event) => setEditColor(event.target.value)}
-                          className="absolute inset-0 size-full cursor-pointer opacity-0"
+                          type="text"
+                          value={editVariantName}
+                          maxLength={160}
+                          placeholder="Nombre del color"
+                          title={`${editVariantName || "Sin nombre"} · ${editColor}`}
+                          aria-label={`Editar nombre del color de ${variante.nombre}`}
+                          onChange={(event) =>
+                            setEditVariantName(event.target.value)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault()
+                              void saveVariant(variante)
+                            }
+                            if (event.key === "Escape") cancelEditVariant()
+                          }}
+                          className="h-full w-full min-w-0 border-0 bg-transparent p-0 text-center text-xs font-bold text-white outline-none placeholder:text-white/28"
                         />
-                      </label>
+                      </div>
                     ) : (
                       <div
                         data-label="Color"
@@ -979,7 +1135,7 @@ export function ProductosRow({
 
                     <div data-label="Precio" className="justify-self-stretch text-center">
                       <p className="text-sm font-bold tabular-nums text-white">
-                        ${producto.precio.toLocaleString("es-AR")}
+                        {formatProductPrice(producto.precio)}
                       </p>
                       {!!producto.precio_anterior && (
                         <p className="text-10px tabular-nums text-white/38 line-through">
@@ -1026,17 +1182,20 @@ export function ProductosRow({
                     </button>
 
                     <div className="admin-product-actions flex items-center justify-end gap-1.5 pr-2">
-                      <button
-                        type="button"
-                        aria-label={`Ver variante ${variante.nombre}`}
-                        onClick={() => viewVariant(variante)}
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400"
-                      >
-                        <Eye className="size-3.5" />
-                      </button>
+                      {!editing && (
+                        <button
+                          type="button"
+                          aria-label={`Ver variante ${variante.nombre}`}
+                          onClick={() => viewVariant(variante)}
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400"
+                        >
+                          <Eye className="size-3.5" />
+                        </button>
+                      )}
 
                       <button
                         type="button"
+                        disabled={savingVariantId === variante.id}
                         aria-label={
                           editing
                             ? `Guardar variante ${variante.nombre}`
@@ -1051,7 +1210,7 @@ export function ProductosRow({
                           editing
                             ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18"
                             : "border-white/8 text-white/60 hover:border-white/20 hover:text-white"
-                        }`}
+                        } disabled:cursor-wait disabled:opacity-50`}
                       >
                         {editing ? (
                           <Check className="size-3.5" />
@@ -1060,17 +1219,30 @@ export function ProductosRow({
                         )}
                       </button>
 
-                      <button
-                        type="button"
-                        aria-label={`Eliminar variante ${variante.nombre}`}
-                        onClick={() => {
-                          setVariantError("")
-                          setPendingVariantDelete(variante)
-                        }}
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      {editing ? (
+                        <button
+                          type="button"
+                          disabled={savingVariantId === variante.id}
+                          aria-label={`Cancelar edición de ${variante.nombre}`}
+                          title="Cancelar edición"
+                          onClick={cancelEditVariant}
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/55 transition-colors hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label={`Eliminar variante ${variante.nombre}`}
+                          onClick={() => {
+                            setVariantError("")
+                            setPendingVariantDelete(variante)
+                          }}
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 )
@@ -1098,7 +1270,22 @@ export function ProductosRow({
             {conditionedStock.map((item) => {
               const linkedVariant = variantes.find(
                 (variante) => variante.id === item.variant_id,
+              ) ?? (
+                item.variant_id == null && variantes.length === 1
+                  ? variantes[0]
+                  : undefined
               )
+              const conditionedName =
+                item.conditioned_name?.trim() ||
+                `${linkedVariant?.nombre || "Variante"} · Con descuento`
+              const conditionedColorName =
+                linkedVariant?.nombre?.trim() ||
+                conditionedName.split("·", 1)[0]?.trim() ||
+                "Sin color"
+              const conditionedSku =
+                item.conditioned_sku?.trim() || "SKU pendiente"
+              const conditionedColor =
+                item.conditioned_color_hex || linkedVariant?.color_hex || "#000000"
               const conditionedPrice = Math.round(
                 producto.precio * (1 - item.discount_percent / 100),
               )
@@ -1125,9 +1312,9 @@ export function ProductosRow({
                         </span>
                         <span
                           className="truncate text-10px font-semibold text-white/48"
-                          title={item.reason || "Motivo pendiente"}
+                          title={`${conditionedName} · ${item.reason || "Motivo pendiente"}`}
                         >
-                          {item.reason || "Motivo pendiente"}
+                          {conditionedName}
                         </span>
                       </div>
                     </div>
@@ -1143,28 +1330,25 @@ export function ProductosRow({
                   <span
                     data-label="SKU"
                     className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
-                    title={linkedVariant?.sku?.trim() || "Sin SKU"}
+                    title={conditionedSku}
                   >
-                    {linkedVariant?.sku?.trim() || "—"}
+                    {conditionedSku}
                   </span>
 
                   <div
                     data-label="Color"
                     className="flex min-w-0 items-center justify-center gap-2"
                   >
-                    {linkedVariant ? (
-                      <>
-                        <span
-                          className="size-4 shrink-0 rounded-full border border-white/25"
-                          style={{ backgroundColor: linkedVariant.color_hex }}
-                        />
-                        <span className="truncate text-xs font-bold text-white/70">
-                          {linkedVariant.nombre}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-xs font-semibold text-white/35">—</span>
-                    )}
+                    <span
+                      className="size-4 shrink-0 rounded-full border border-white/25"
+                      style={{ backgroundColor: conditionedColor }}
+                    />
+                    <span
+                      className="truncate text-xs font-bold text-white/70"
+                      title={conditionedColorName}
+                    >
+                      {conditionedColorName}
+                    </span>
                   </div>
 
                   <span
@@ -1180,7 +1364,7 @@ export function ProductosRow({
                       ${conditionedPrice.toLocaleString("es-AR")}
                     </p>
                     <p className="text-10px tabular-nums text-white/38 line-through">
-                      ${producto.precio.toLocaleString("es-AR")}
+                      {formatProductPrice(producto.precio)}
                     </p>
                   </div>
 
@@ -1311,7 +1495,11 @@ export function ProductosRow({
       {editingConditionedStock &&
         createPortal(
           <ConditionedStockEditModal
+            key={editingConditionedStock.id}
             item={editingConditionedStock}
+            productName={producto.nombre}
+            productPrice={producto.precio}
+            variants={variantes}
             saving={savingConditionedId === editingConditionedStock.id}
             error={conditionedError}
             onClose={() => {
@@ -1346,21 +1534,60 @@ export function ProductosRow({
 
 function ConditionedStockEditModal({
   item,
+  productName,
+  productPrice,
+  variants,
   saving,
   error,
   onClose,
   onSave,
 }: {
   item: SupabaseConditionedStock
+  productName: string
+  productPrice: number
+  variants: SupabaseProductoVariante[]
   saving: boolean
   error: string
   onClose: () => void
   onSave: (values: {
+    active: boolean
     discountPercent: number
     discountReason: string
     nonSellableReason: string
+    sourceVariantId: number | null
+    conditionedName: string
+    conditionedSku: string
+    conditionedColor: string
+    conditionedImages: string[]
+    newImages: File[]
   }) => Promise<void>
 }) {
+  const initialVariant =
+    variants.find((variant) => variant.id === item.variant_id) ??
+    (item.variant_id == null && variants.length === 1 ? variants[0] : null)
+  const conditionedSuffix = item.id.replaceAll("-", "").slice(0, 8).toUpperCase()
+  const suggestedSku = (variant: SupabaseProductoVariante | null) =>
+    `${(variant?.sku?.trim() || "COND").slice(0, 96)}-DESC-${conditionedSuffix}`
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    initialVariant ? String(initialVariant.id) : "",
+  )
+  const [conditionedName, setConditionedName] = useState(
+    item.conditioned_name?.trim() ||
+      `${initialVariant?.nombre || productName} · Con descuento`,
+  )
+  const [conditionedSku, setConditionedSku] = useState(
+    item.conditioned_sku?.trim() || suggestedSku(initialVariant),
+  )
+  const [conditionedColor, setConditionedColor] = useState(
+    item.conditioned_color_hex || initialVariant?.color_hex || "#000000",
+  )
+  const [conditionedImages, setConditionedImages] = useState<string[]>(
+    item.conditioned_images.length
+      ? item.conditioned_images
+      : initialVariant?.imagenes ?? [],
+  )
+  const [newImages, setNewImages] = useState<File[]>([])
+  const [active, setActive] = useState(item.active)
   const [discountPercent, setDiscountPercent] = useState(
     String(item.discount_percent),
   )
@@ -1370,6 +1597,9 @@ function ConditionedStockEditModal({
   )
   const parsedPercent = Number(discountPercent.replace(",", "."))
   const valid =
+    Boolean(conditionedName.trim()) &&
+    Boolean(conditionedSku.trim()) &&
+    /^#[0-9A-F]{6}$/i.test(conditionedColor) &&
     Number.isFinite(parsedPercent) &&
     parsedPercent > 0 &&
     parsedPercent < 100 &&
@@ -1381,13 +1611,34 @@ function ConditionedStockEditModal({
   const inputClass =
     "h-11 w-full rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/25 focus:border-beyonix-sky/55"
 
+  const selectVariant = (value: string) => {
+    setSelectedVariantId(value)
+    const selected = variants.find((variant) => String(variant.id) === value)
+    setConditionedName(
+      `${selected?.nombre || productName} · Con descuento`,
+    )
+    setConditionedSku(suggestedSku(selected ?? null))
+    setConditionedColor(selected?.color_hex ?? "#000000")
+    setConditionedImages(selected?.imagenes ?? [])
+    setNewImages([])
+  }
+
   const submit = async () => {
     if (!valid || saving) return
     try {
       await onSave({
+        active,
         discountPercent: parsedPercent,
         discountReason: discountReason.trim(),
         nonSellableReason: nonSellableReason.trim(),
+        sourceVariantId: selectedVariantId
+          ? Number(selectedVariantId)
+          : null,
+        conditionedName: conditionedName.trim(),
+        conditionedSku: conditionedSku.trim(),
+        conditionedColor: conditionedColor.toUpperCase(),
+        conditionedImages,
+        newImages,
       })
     } catch {
       // El mensaje se muestra dentro del modal.
@@ -1397,9 +1648,10 @@ function ConditionedStockEditModal({
   return (
     <AdminModal
       open
+      wide
       eyebrow="Inventario con descuento"
-      title="Editar unidad"
-      description="Actualizá el descuento y documentá el estado físico del producto."
+      title="Editar variante con descuento"
+      description="Es una oferta vendible separada, vinculada a la variante original y con stock condicionado propio."
       onClose={onClose}
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -1424,13 +1676,179 @@ function ConditionedStockEditModal({
       }
     >
       <div className="space-y-3">
-        <div className="rounded-xl border border-amber-300/18 bg-amber-300/6 p-3">
-          <p className="text-10px font-black uppercase tracking-wider text-amber-100/65">
-            Cantidad condicionada
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-amber-300/18 bg-amber-300/6 p-3">
+            <p className="text-10px font-black uppercase tracking-wider text-amber-100/65">
+              Stock propio
+            </p>
+            <p className="mt-1 text-xl font-black tabular-nums text-amber-200">
+              {item.quantity}
+            </p>
+            {(item.sold_quantity > 0 ||
+              item.original_quantity !== item.quantity) && (
+              <p className="mt-1 text-9px font-semibold text-white/38">
+                Inicial: {item.original_quantity} · Vendidas:{" "}
+                {item.sold_quantity}
+              </p>
+            )}
+          </div>
+          <div className="rounded-xl border border-white/8 bg-white/[0.025] p-3">
+            <p className="text-10px font-black uppercase tracking-wider text-white/40">
+              Precio original
+            </p>
+            <p className="mt-1 text-xl font-black tabular-nums text-white/65">
+              {formatProductPrice(productPrice)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-emerald-300/16 bg-emerald-300/5 p-3">
+            <p className="text-10px font-black uppercase tracking-wider text-emerald-100/55">
+              Precio con descuento
+            </p>
+            <p className="mt-1 text-xl font-black tabular-nums text-emerald-300">
+              {formatProductPrice(
+                Math.max(
+                  Math.round(
+                    productPrice *
+                      (1 -
+                        (Number.isFinite(parsedPercent)
+                          ? parsedPercent
+                          : 0) /
+                          100),
+                  ),
+                  0,
+                ),
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-beyonix-blue-light/16 bg-beyonix-blue/5 p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-10px font-black uppercase tracking-wider text-beyonix-cyan/70">
+              Identidad comercial condicionada
+            </p>
+            <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-9px font-black uppercase tracking-wider text-amber-200">
+              Variante con descuento
+            </span>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label>
+              <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-white/45">
+                Vinculada a
+              </span>
+              <select
+                value={selectedVariantId}
+                onChange={(event) => selectVariant(event.target.value)}
+                className={inputClass}
+              >
+                <option value="">Sin variante original</option>
+                {variants.map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variant.nombre}
+                    {variant.sku?.trim() ? ` · ${variant.sku}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-white/45">
+                Nombre / color
+              </span>
+              <input
+                type="text"
+                value={conditionedName}
+                maxLength={160}
+                onChange={(event) => setConditionedName(event.target.value)}
+                placeholder="Negro · Con descuento"
+                className={inputClass}
+              />
+            </label>
+
+            <label>
+              <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-white/45">
+                SKU propio
+              </span>
+              <input
+                type="text"
+                value={conditionedSku}
+                maxLength={120}
+                onChange={(event) => setConditionedSku(event.target.value)}
+                placeholder="AP01-DESC-..."
+                className={inputClass}
+              />
+            </label>
+
+            <label>
+              <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-white/45">
+                Color
+              </span>
+              <span className="flex h-11 items-center gap-2 rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-2 focus-within:border-beyonix-sky/55">
+                <span className="relative flex size-7 shrink-0 cursor-pointer items-center justify-center">
+                  <span
+                    className="size-5 rounded-full border border-white/25"
+                    style={{ backgroundColor: conditionedColor }}
+                  />
+                  <input
+                    type="color"
+                    value={conditionedColor}
+                    aria-label="Seleccionar color de la variante con descuento"
+                    onChange={(event) => setConditionedColor(event.target.value)}
+                    className="absolute inset-0 size-full cursor-pointer opacity-0"
+                  />
+                </span>
+                <span className="truncate text-xs font-bold uppercase text-white/65">
+                  {conditionedColor}
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <p className="mt-2 text-10px font-semibold leading-4 text-white/38">
+            Vincular copia los datos de referencia, pero esta oferta conserva su propio SKU, imágenes, precio y cantidad.
           </p>
-          <p className="mt-1 text-xl font-black tabular-nums text-amber-200">
-            {item.quantity}
+        </div>
+
+        <div className="rounded-xl border border-cyan-400/12 bg-cyan-400/3 p-3">
+          <p className="mb-2 text-10px font-black uppercase tracking-wider text-cyan-100/55">
+            Imágenes de la variante con descuento
           </p>
+          {conditionedImages.length > 0 && (
+            <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {conditionedImages.map((image, index) => (
+                <div
+                  key={`${image}-${index}`}
+                  className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-black/30"
+                >
+                  <Image
+                    src={image}
+                    alt={`Imagen ${index + 1} de la variante con descuento`}
+                    fill
+                    sizes="(max-width: 640px) 33vw, 10rem"
+                    className="object-cover"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Quitar imagen ${index + 1}`}
+                    onClick={() =>
+                      setConditionedImages((current) =>
+                        current.filter((_, imageIndex) => imageIndex !== index),
+                      )
+                    }
+                    className="absolute right-1.5 top-1.5 flex size-7 cursor-pointer items-center justify-center rounded-lg border border-red-400/25 bg-black/80 text-red-300 opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <DraftImageUploader
+            files={newImages}
+            onChange={setNewImages}
+            emptyMessage="Podés conservar las imágenes heredadas o cargar fotos específicas de la falla."
+          />
         </div>
 
         <div className="grid gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
@@ -1470,6 +1888,42 @@ function ConditionedStockEditModal({
             />
           </label>
         </div>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={active}
+          onClick={() => setActive((current) => !current)}
+          className={`flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left transition ${
+            active
+              ? "border-emerald-400/25 bg-emerald-400/9"
+              : "border-white/10 bg-white/[0.025]"
+          }`}
+        >
+          <span>
+            <span className="block text-sm font-black text-white">
+              Disponible para la venta
+            </span>
+            <span className="mt-0.5 block text-10px font-semibold leading-4 text-white/42">
+              Al activarla se publica como una variante separada; no utiliza ni modifica el stock normal.
+            </span>
+          </span>
+          <span
+            className={`relative h-6 w-11 shrink-0 rounded-full border transition ${
+              active
+                ? "border-emerald-300/35 bg-emerald-400/30"
+                : "border-white/15 bg-black/35"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 size-4.5 rounded-full transition ${
+                active
+                  ? "left-5.5 bg-emerald-200"
+                  : "left-0.5 bg-white/45"
+              }`}
+            />
+          </span>
+        </button>
 
         {item.non_sellable_quantity > 0 && (
           <label className="block rounded-xl border border-red-400/16 bg-red-400/5 p-3">
@@ -1599,12 +2053,14 @@ function VariantModal({
             {imagenes.map((imagen, index) => (
               <div
                 key={`${imagen}-${index}`}
-                className="overflow-hidden rounded-2xl border border-white/8 bg-white"
+                className="relative aspect-square overflow-hidden rounded-2xl border border-white/8 bg-white"
               >
-                <img
+                <Image
                   src={imagen}
                   alt={`${producto.nombre} ${variante.nombre} ${index + 1}`}
-                  className="aspect-square h-full w-full object-cover"
+                  fill
+                  sizes="(max-width: 768px) 33vw, 18rem"
+                  className="object-cover"
                 />
               </div>
             ))}

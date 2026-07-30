@@ -123,13 +123,13 @@ export function CategoryProductCard({
 
           <div className="space-y-1">
             <span className="block text-18px font-bold text-foreground">
-              {formatPrice(product.precio)}
+              {formatPrice(activeVariant.price)}
             </span>
 
-            {product.precio_anterior ? (
+            {activeVariant.originalPrice ? (
               <span className="mb-2 block min-h-28px text-14px line-through text-muted-foreground/70">
                 {formatPrice(
-                  product.precio_anterior
+                  activeVariant.originalPrice
                 )}
               </span>
             ) : (

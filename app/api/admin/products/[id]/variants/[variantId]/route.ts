@@ -5,58 +5,97 @@ function parseId(value: string) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
-function parseVariantUpdates(value: unknown) {
+function requiredText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return null
+  const normalized = value.trim()
+  return normalized ? normalized.slice(0, maxLength) : null
+}
+
+function optionalText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return null
+  return value.trim().slice(0, maxLength) || null
+}
+
+function normalizedSku(value: unknown) {
+  return optionalText(value, 120)?.toLocaleUpperCase("es") ?? null
+}
+
+function validColor(value: unknown) {
+  const normalized = requiredText(value, 7)
+  return normalized && /^#[0-9A-F]{6}$/i.test(normalized)
+    ? normalized.toUpperCase()
+    : null
+}
+
+function nonNegativeInteger(value: unknown) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+function imageUrls(value: unknown) {
+  if (!Array.isArray(value)) return null
+  const urls = value.filter(
+    (item): item is string =>
+      typeof item === "string" &&
+      item.startsWith("https://") &&
+      item.length <= 2000,
+  )
+  return urls.length === value.length ? urls : null
+}
+
+function variantMetadata(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
 
-  const body = value as Record<string, unknown>
-  const updates: Record<string, unknown> = {}
-
-  if ("nombre" in body) {
-    if (
-      typeof body.nombre !== "string" ||
-      !body.nombre.trim() ||
-      body.nombre.trim().length > 120
-    ) {
-      return null
-    }
-    updates.nombre = body.nombre.trim()
-  }
-  if ("sku" in body) {
-    if (body.sku !== null && typeof body.sku !== "string") return null
-    updates.sku =
-      typeof body.sku === "string" && body.sku.trim() ? body.sku.trim() : null
-  }
-  if ("color_hex" in body) {
-    if (
-      typeof body.color_hex !== "string" ||
-      !/^#[0-9A-F]{6}$/.test(body.color_hex.trim().toUpperCase())
-    ) {
-      return null
-    }
-    updates.color_hex = body.color_hex.trim().toUpperCase()
-  }
-  if ("imagenes" in body) {
-    if (
-      !Array.isArray(body.imagenes) ||
-      !body.imagenes.every(
-        (image) => typeof image === "string" && Boolean(image),
-      )
-    ) {
-      return null
-    }
-    updates.imagenes = body.imagenes
-  }
-  if ("activo" in body) {
-    if (typeof body.activo !== "boolean") return null
-    updates.activo = body.activo
-  }
-  if ("orden" in body) {
-    const orden = Number(body.orden)
-    if (!Number.isInteger(orden) || orden < 1) return null
-    updates.orden = orden
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(record)
+  const allowedKeys = new Set([
+    "nombre",
+    "sku",
+    "color_hex",
+    "imagenes",
+    "orden",
+  ])
+  if (
+    keys.length === 0 ||
+    keys.some((key) => !allowedKeys.has(key))
+  ) {
+    return null
   }
 
-  return Object.keys(updates).length ? updates : null
+  const payload: {
+    nombre?: string
+    sku?: string | null
+    color_hex?: string
+    imagenes?: string[]
+    orden?: number
+  } = {}
+
+  if ("nombre" in record) {
+    const name = requiredText(record.nombre, 160)
+    if (!name) return null
+    payload.nombre = name
+  }
+  if ("sku" in record) {
+    if (record.sku != null && typeof record.sku !== "string") return null
+    payload.sku = optionalText(record.sku ?? "", 120)
+  }
+  if ("color_hex" in record) {
+    const color = validColor(record.color_hex)
+    if (!color) return null
+    payload.color_hex = color
+  }
+  if ("imagenes" in record) {
+    const images = imageUrls(record.imagenes)
+    if (!images) return null
+    payload.imagenes = images
+  }
+  if ("orden" in record) {
+    const order = parseId(String(record.orden))
+    if (!order) return null
+    payload.orden = order
+  }
+
+  return payload
 }
 
 export async function PATCH(
@@ -77,15 +116,227 @@ export async function PATCH(
     )
   }
 
-  const updates = parseVariantUpdates(
-    await request.json().catch(() => null),
-  )
+  const body = (await request.json().catch(() => null)) as
+    | Record<string, unknown>
+    | null
 
-  if (!updates) {
+  if (!body) {
     return Response.json(
       { error: "Los datos de la variante no son válidos." },
       { status: 400 },
     )
+  }
+
+  if ("metadata" in body) {
+    const metadata = variantMetadata(body.metadata)
+    if (!metadata) {
+      return Response.json(
+        { error: "Los datos complementarios de la variante no son válidos." },
+        { status: 400 },
+      )
+    }
+
+    if (metadata.sku) {
+      const registry = await auth.admin
+        .from("catalog_sku_registry")
+        .select("product_id, variant_id")
+        .eq("normalized_sku", normalizedSku(metadata.sku))
+        .maybeSingle()
+
+      if (registry.error) {
+        return Response.json(
+          { error: "No se pudo validar la identidad SKU." },
+          { status: 500 },
+        )
+      }
+
+      const belongsToCurrentVariant =
+        Number(registry.data?.product_id) === productId &&
+        Number(registry.data?.variant_id) === variantId
+      if (registry.data && !belongsToCurrentVariant) {
+        return Response.json(
+          { error: `El SKU ${metadata.sku} ya está asignado a otro artículo.` },
+          { status: 409 },
+        )
+      }
+    }
+
+    const { data: updated, error: updateError } = await auth.admin
+      .from("producto_variantes")
+      .update(metadata)
+      .eq("id", variantId)
+      .eq("producto_id", productId)
+      .select("*")
+      .maybeSingle()
+
+    if (updateError) {
+      return Response.json(
+        {
+          error:
+            updateError.message ||
+            "No se pudo actualizar la variante.",
+        },
+        { status: 409 },
+      )
+    }
+    if (!updated) {
+      return Response.json(
+        { error: "La variante ya no existe." },
+        { status: 404 },
+      )
+    }
+
+    return Response.json({ variant: updated })
+  }
+
+  if (typeof body.activo !== "boolean") {
+    const name = requiredText(body.name, 160)
+    const sku = optionalText(body.sku, 120)
+    const color = validColor(body.color)
+    const quantity = nonNegativeInteger(body.quantity)
+    const images = imageUrls(body.images)
+    if (!name || !color || quantity == null || !images) {
+      return Response.json(
+        { error: "Completá correctamente la variante y sus unidades." },
+        { status: 400 },
+      )
+    }
+
+    const [currentResult, allocationsResult] = await Promise.all([
+      auth.admin
+        .from("producto_variantes")
+        .select("*")
+        .eq("id", variantId)
+        .eq("producto_id", productId)
+        .maybeSingle(),
+      auth.admin
+        .from("inventory_variant_allocations")
+        .select("variant_id, quantity")
+        .eq("product_id", productId),
+    ])
+    if (currentResult.error || allocationsResult.error) {
+      return Response.json(
+        { error: "No se pudo preparar la actualización de la variante." },
+        { status: 500 },
+      )
+    }
+    if (!currentResult.data) {
+      return Response.json(
+        { error: "La variante ya no existe." },
+        { status: 404 },
+      )
+    }
+
+    const skuKey = normalizedSku(sku)
+    if (skuKey) {
+      const registry = await auth.admin
+        .from("catalog_sku_registry")
+        .select("product_id, variant_id")
+        .eq("normalized_sku", skuKey)
+        .maybeSingle()
+      if (registry.error) {
+        return Response.json(
+          { error: "No se pudo validar la identidad SKU." },
+          { status: 500 },
+        )
+      }
+      const duplicate =
+        Boolean(registry.data) &&
+        Number(registry.data?.variant_id) !== variantId
+      if (duplicate) {
+        return Response.json(
+          { error: `El SKU ${sku} ya está asignado a otro artículo.` },
+          { status: 409 },
+        )
+      }
+    }
+
+    const atomicResult = await auth.admin.rpc(
+      "update_product_variant_with_allocation",
+      {
+        p_product_id: productId,
+        p_variant_id: variantId,
+        p_name: name,
+        p_sku: sku,
+        p_color_hex: color,
+        p_images: images,
+        p_quantity: quantity,
+        p_actor_id: auth.user.id,
+      },
+    )
+    const atomicFunctionMissing =
+      atomicResult.error &&
+      /update_product_variant_with_allocation|schema cache|PGRST202/i.test(
+        atomicResult.error.message,
+      )
+    if (!atomicResult.error) {
+      const updated = Array.isArray(atomicResult.data)
+        ? atomicResult.data[0]
+        : atomicResult.data
+      return Response.json({ variant: updated })
+    }
+    if (!atomicFunctionMissing) {
+      return Response.json(
+        { error: atomicResult.error.message },
+        { status: 409 },
+      )
+    }
+
+    const { data: updated, error: updateError } = await auth.admin
+      .from("producto_variantes")
+      .update({
+        nombre: name,
+        sku,
+        color_hex: color,
+        imagenes: images,
+      })
+      .eq("id", variantId)
+      .eq("producto_id", productId)
+      .select("*")
+      .single()
+    if (updateError) {
+      return Response.json(
+        { error: updateError.message },
+        { status: 409 },
+      )
+    }
+
+    const allocations = (allocationsResult.data ?? []).map((allocation) => ({
+      variant_id: Number(allocation.variant_id),
+      quantity:
+        Number(allocation.variant_id) === variantId
+          ? quantity
+          : Number(allocation.quantity),
+    }))
+    if (!allocations.some((item) => item.variant_id === variantId)) {
+      allocations.push({ variant_id: variantId, quantity })
+    }
+    const { error: allocationError } = await auth.admin.rpc(
+      "set_product_variant_allocations",
+      {
+        p_product_id: productId,
+        p_allocations: allocations,
+        p_actor_id: auth.user.id,
+      },
+    )
+    if (allocationError) {
+      const previous = currentResult.data
+      await auth.admin
+        .from("producto_variantes")
+        .update({
+          nombre: previous.nombre,
+          sku: previous.sku,
+          color_hex: previous.color_hex,
+          imagenes: previous.imagenes,
+        })
+        .eq("id", variantId)
+      return Response.json(
+        { error: allocationError.message },
+        { status: 409 },
+      )
+    }
+
+    return Response.json({ variant: updated })
   }
 
   const { data: variant, error: variantError } = await auth.admin
@@ -154,7 +405,6 @@ export async function DELETE(
   const params = await context.params
   const productId = parseId(params.id)
   const variantId = parseId(params.variantId)
-
   if (!productId || !variantId) {
     return Response.json(
       { error: "La variante indicada no es válida." },
@@ -162,7 +412,7 @@ export async function DELETE(
     )
   }
 
-  const { data: deleted, error } = await auth.admin
+  const { data: deleted, error: deleteError } = await auth.admin
     .from("producto_variantes")
     .delete()
     .eq("id", variantId)
@@ -170,15 +420,15 @@ export async function DELETE(
     .select("id")
     .maybeSingle()
 
-  if (error) {
+  if (deleteError) {
+    const isReferenced = deleteError.code === "23503"
     return Response.json(
       {
-        error:
-          error.code === "23503"
-            ? "La variante tiene movimientos asociados y no se puede eliminar."
-            : error.message || "No se pudo eliminar la variante.",
+        error: isReferenced
+          ? "La variante tiene movimientos asociados y no puede eliminarse."
+          : deleteError.message || "No se pudo eliminar la variante.",
       },
-      { status: error.code === "23503" ? 409 : 500 },
+      { status: isReferenced ? 409 : 500 },
     )
   }
   if (!deleted) {
@@ -188,5 +438,5 @@ export async function DELETE(
     )
   }
 
-  return Response.json({ success: true })
+  return Response.json({ deleted: true })
 }

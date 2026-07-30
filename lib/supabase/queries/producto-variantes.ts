@@ -22,16 +22,26 @@ export interface ProductVariantAllocation {
 }
 
 export interface ProductVariantDistribution {
+  /** @deprecated Usar normalStock. */
   totalStock: number
+  normalStock: number
+  discountedStock: number
+  nonSellableStock: number
+  pendingReviewStock: number
+  sellableStock: number
+  quarantineStock: number
+  physicalStock: number
+  genericBalance: number
   assignableQuantity: number
   allocatedQuantity: number
   unassignedQuantity: number
+  allocationOverflow: number
   variants: ProductVariantAllocation[]
 }
 
-async function authenticatedVariantRequest(
+async function variantRequest<T>(
   path: string,
-  init: RequestInit = {},
+  init?: RequestInit,
 ) {
   const {
     data: { session },
@@ -44,21 +54,19 @@ async function authenticatedVariantRequest(
     ...init,
     headers: {
       Authorization: `Bearer ${session.access_token}`,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
     },
     cache: "no-store",
   })
   const payload = (await response.json().catch(() => null)) as
-    | {
-        variant?: SupabaseProductoVariante
-        variants?: SupabaseProductoVariante[]
-        error?: string
-      }
+    | (T & { error?: string })
     | null
 
-  if (!response.ok) {
-    throw new Error(payload?.error || "No se pudo guardar la variante.")
+  if (!response.ok || !payload) {
+    throw new Error(
+      payload?.error || "No se pudo completar la operación con la variante.",
+    )
   }
 
   return payload
@@ -103,52 +111,156 @@ export function getProductVariantDistribution(productId: number) {
   return distributionRequest(productId)
 }
 
-export function saveProductVariantDistribution(
-  productId: number,
-  allocations: Array<{ variant_id: number; quantity: number }>,
-) {
-  return distributionRequest(productId, {
-    method: "PUT",
-    body: JSON.stringify({ allocations }),
-  })
-}
-
 export async function getProductoVariantes(
   productoId: number
 ) {
-  const response = await authenticatedVariantRequest(
-    `/api/admin/products/${productoId}/variants`,
-  )
+  const result = await variantRequest<{
+    variants: SupabaseProductoVariante[]
+  }>(`/api/admin/products/${productoId}/variants`)
 
-  return response?.variants ?? []
+  return result.variants
 }
 
-export async function getAdminProductoVariantes() {
-  const response = await authenticatedVariantRequest(
-    "/api/admin/product-variants",
-  )
+export async function getAdminProductoVariantes(options: {
+  productIds?: number[]
+  skuSearch?: string
+  colorSearch?: string
+} = {}): Promise<SupabaseProductoVariante[]> {
+  const requestedProductIds = [
+    ...new Set(
+      (options.productIds ?? []).filter(
+        (id) => Number.isInteger(id) && id > 0,
+      ),
+    ),
+  ]
+  if (options.productIds?.length && requestedProductIds.length === 0) {
+    return []
+  }
+  if (requestedProductIds.length > 100) {
+    const chunks: number[][] = []
+    for (let index = 0; index < requestedProductIds.length; index += 100) {
+      chunks.push(requestedProductIds.slice(index, index + 100))
+    }
 
-  return response?.variants ?? []
-}
-
-export async function createProductoVariante(
-  payload: ProductoVariantePayload
-) {
-  const catalogPayload = { ...payload }
-  delete catalogPayload.stock
-  const response = await authenticatedVariantRequest(
-    `/api/admin/products/${payload.producto_id}/variants`,
-    {
-      method: "POST",
-      body: JSON.stringify(catalogPayload),
-    },
-  )
-
-  if (!response?.variant) {
-    throw new Error("No se pudo crear la variante.")
+    const results: SupabaseProductoVariante[][] = await Promise.all(
+      chunks.map((productIds) =>
+        getAdminProductoVariantes({
+          ...options,
+          productIds,
+        }),
+      ),
+    )
+    return results.flat()
   }
 
-  return response.variant
+  const searchParams = new URLSearchParams()
+  if (requestedProductIds.length) {
+    searchParams.set("productIds", requestedProductIds.join(","))
+  }
+  if (options.skuSearch?.trim()) {
+    searchParams.set("skuSearch", options.skuSearch.trim())
+  }
+  if (options.colorSearch?.trim()) {
+    searchParams.set("colorSearch", options.colorSearch.trim())
+  }
+  const query = searchParams.size ? `?${searchParams.toString()}` : ""
+  const result = await variantRequest<{
+    variants: SupabaseProductoVariante[]
+  }>(`/api/admin/product-variants${query}`)
+
+  return result.variants
+}
+
+export async function createProductoVariantWithAllocation(
+  productId: number,
+  payload: {
+    name: string
+    sku: string | null
+    color: string
+    quantity: number
+    images: string[]
+  },
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const response = await fetch(`/api/admin/products/${productId}/variants`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  })
+  const result = (await response.json().catch(() => null)) as
+    | {
+        variant?: SupabaseProductoVariante
+        error?: string
+      }
+    | null
+
+  if (!response.ok || !result?.variant) {
+    throw new Error(
+      result?.error || "No se pudo crear y distribuir la variante.",
+    )
+  }
+
+  return result.variant
+}
+
+export async function updateProductoVariantWithAllocation(
+  productId: number,
+  variantId: number,
+  payload: {
+    name: string
+    sku: string | null
+    color: string
+    quantity: number
+    images: string[]
+  },
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const response = await fetch(
+    `/api/admin/products/${productId}/variants/${variantId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    },
+  )
+  const result = (await response.json().catch(() => null)) as
+    | {
+        variant?: SupabaseProductoVariante
+        error?: string
+      }
+    | null
+
+  if (!response.ok || !result?.variant) {
+    throw new Error(
+      result?.error || "No se pudo actualizar y distribuir la variante.",
+    )
+  }
+
+  return result.variant
 }
 
 export async function updateProductoVariante(
@@ -159,19 +271,17 @@ export async function updateProductoVariante(
   const catalogPayload = { ...payload }
   delete catalogPayload.producto_id
   delete catalogPayload.stock
-  const response = await authenticatedVariantRequest(
-    `/api/admin/products/${productId}/variants/${id}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(catalogPayload),
-    },
-  )
+  delete catalogPayload.producto_id
+  delete catalogPayload.activo
 
-  if (!response?.variant) {
-    throw new Error("No se pudo actualizar la variante.")
-  }
+  const result = await variantRequest<{
+    variant: SupabaseProductoVariante
+  }>(`/api/admin/products/${productId}/variants/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ metadata: catalogPayload }),
+  })
 
-  return response.variant
+  return result.variant
 }
 
 export async function setProductoVarianteActivo(
@@ -219,12 +329,12 @@ export async function setProductoVarianteActivo(
 
 export async function deleteProductoVariante(
   productId: number,
+  productId: number,
   id: number
 ) {
-  await authenticatedVariantRequest(
+  await variantRequest<{ deleted: boolean }>(
     `/api/admin/products/${productId}/variants/${id}`,
     { method: "DELETE" },
   )
-
   return true
 }

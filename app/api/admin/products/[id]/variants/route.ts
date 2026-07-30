@@ -1,54 +1,46 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
-function parseProductId(value: string) {
+function positiveInteger(value: unknown) {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
-function parseVariantPayload(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+function nonNegativeInteger(value: unknown) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
 
-  const body = value as Record<string, unknown>
-  const nombre = typeof body.nombre === "string" ? body.nombre.trim() : ""
-  const sku =
-    body.sku === null || body.sku === undefined || body.sku === ""
-      ? null
-      : typeof body.sku === "string"
-        ? body.sku.trim()
-        : null
-  const colorHex =
-    typeof body.color_hex === "string" ? body.color_hex.trim().toUpperCase() : ""
-  const imagenes = Array.isArray(body.imagenes)
-    ? body.imagenes.filter(
-        (image): image is string => typeof image === "string" && Boolean(image),
-      )
-    : []
-  const activo = typeof body.activo === "boolean" ? body.activo : true
-  const orden = Number(body.orden)
+function requiredText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return null
+  const normalized = value.trim()
+  return normalized ? normalized.slice(0, maxLength) : null
+}
 
-  if (
-    !nombre ||
-    nombre.length > 120 ||
-    (body.sku !== null &&
-      body.sku !== undefined &&
-      body.sku !== "" &&
-      typeof body.sku !== "string") ||
-    !/^#[0-9A-F]{6}$/.test(colorHex) ||
-    !Number.isInteger(orden) ||
-    orden < 1 ||
-    imagenes.length !== (Array.isArray(body.imagenes) ? body.imagenes.length : 0)
-  ) {
-    return null
-  }
+function optionalText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return null
+  return value.trim().slice(0, maxLength) || null
+}
 
-  return {
-    nombre,
-    sku,
-    color_hex: colorHex,
-    imagenes,
-    activo,
-    orden,
-  }
+function normalizedSku(value: unknown) {
+  return optionalText(value, 120)?.toLocaleUpperCase("es") ?? null
+}
+
+function validColor(value: unknown) {
+  const normalized = requiredText(value, 7)
+  return normalized && /^#[0-9A-F]{6}$/i.test(normalized)
+    ? normalized.toUpperCase()
+    : null
+}
+
+function imageUrls(value: unknown) {
+  if (!Array.isArray(value)) return null
+  const urls = value.filter(
+    (item): item is string =>
+      typeof item === "string" &&
+      item.startsWith("https://") &&
+      item.length <= 2000,
+  )
+  return urls.length === value.length ? urls : null
 }
 
 export async function GET(
@@ -58,7 +50,7 @@ export async function GET(
   const auth = await requireInternalUser(request)
   if ("error" in auth) return auth.error
 
-  const productId = parseProductId((await context.params).id)
+  const productId = positiveInteger((await context.params).id)
   if (!productId) {
     return Response.json(
       { error: "El producto indicado no es válido." },
@@ -66,7 +58,7 @@ export async function GET(
     )
   }
 
-  const { data: variants, error } = await auth.admin
+  const { data, error } = await auth.admin
     .from("producto_variantes")
     .select("*")
     .eq("producto_id", productId)
@@ -75,12 +67,12 @@ export async function GET(
 
   if (error) {
     return Response.json(
-      { error: error.message || "No se pudieron cargar las variantes." },
+      { error: "No se pudieron cargar las variantes del producto." },
       { status: 500 },
     )
   }
 
-  return Response.json({ variants: variants ?? [] })
+  return Response.json({ variants: data ?? [] })
 }
 
 export async function POST(
@@ -90,54 +82,152 @@ export async function POST(
   const auth = await requireInternalUser(request, ["admin", "super_admin"])
   if ("error" in auth) return auth.error
 
-  const productId = parseProductId((await context.params).id)
-  const payload = parseVariantPayload(await request.json().catch(() => null))
+  const productId = positiveInteger((await context.params).id)
+  const body = (await request.json().catch(() => null)) as
+    | Record<string, unknown>
+    | null
+  const name = requiredText(body?.name, 160)
+  const sku = optionalText(body?.sku, 120)
+  const color = validColor(body?.color)
+  const quantity = nonNegativeInteger(body?.quantity)
+  const images = imageUrls(body?.images)
 
-  if (!productId || !payload) {
+  if (!productId || !name || !color || quantity == null || !images) {
     return Response.json(
-      { error: "Los datos de la variante no son válidos." },
+      { error: "Completá correctamente la variante y sus unidades." },
       { status: 400 },
     )
   }
 
-  const { data: product, error: productError } = await auth.admin
-    .from("productos")
-    .select("id")
-    .eq("id", productId)
-    .maybeSingle()
+  const [productResult, variantsResult, allocationsResult] = await Promise.all([
+    auth.admin
+      .from("productos")
+      .select("id, sku, activo")
+      .eq("id", productId)
+      .maybeSingle(),
+    auth.admin
+      .from("producto_variantes")
+      .select("id, sku, orden")
+      .eq("producto_id", productId)
+      .order("orden", { ascending: true })
+      .order("id", { ascending: true }),
+    auth.admin
+      .from("inventory_variant_allocations")
+      .select("variant_id, quantity")
+      .eq("product_id", productId),
+  ])
 
-  if (productError) {
+  if (productResult.error || variantsResult.error || allocationsResult.error) {
     return Response.json(
-      { error: "No se pudo comprobar el producto." },
+      { error: "No se pudo preparar la creación de la variante." },
       { status: 500 },
     )
   }
-  if (!product) {
+  if (!productResult.data) {
     return Response.json(
       { error: "El producto ya no existe." },
       { status: 404 },
     )
   }
 
-  const { data: variant, error } = await auth.admin
+  const skuKey = normalizedSku(sku)
+  if (skuKey) {
+    const registry = await auth.admin
+      .from("catalog_sku_registry")
+      .select("product_id, variant_id")
+      .eq("normalized_sku", skuKey)
+      .maybeSingle()
+    if (registry.error) {
+      return Response.json(
+        { error: "No se pudo validar la identidad SKU." },
+        { status: 500 },
+      )
+    }
+    const ownedByCurrentSimpleProduct =
+      Number(registry.data?.product_id) === productId &&
+      registry.data?.variant_id == null
+    if (registry.data && !ownedByCurrentSimpleProduct) {
+      return Response.json(
+        { error: `El SKU ${sku} ya está asignado a otro artículo.` },
+        { status: 409 },
+      )
+    }
+  }
+
+  const atomicResult = await auth.admin.rpc(
+    "create_product_variant_with_allocation",
+    {
+      p_product_id: productId,
+      p_name: name,
+      p_sku: sku,
+      p_color_hex: color,
+      p_images: images,
+      p_quantity: quantity,
+      p_actor_id: auth.user.id,
+    },
+  )
+  const atomicFunctionMissing =
+    atomicResult.error &&
+    /create_product_variant_with_allocation|schema cache|PGRST202/i.test(
+      atomicResult.error.message,
+    )
+
+  if (!atomicResult.error) {
+    const atomicVariant = Array.isArray(atomicResult.data)
+      ? atomicResult.data[0]
+      : atomicResult.data
+    if (!atomicVariant) {
+      return Response.json(
+        { error: "La variante se creó sin una respuesta verificable." },
+        { status: 500 },
+      )
+    }
+    return Response.json({ variant: atomicVariant }, { status: 201 })
+  }
+  if (!atomicFunctionMissing) {
+    return Response.json(
+      { error: atomicResult.error.message },
+      { status: 409 },
+    )
+  }
+
+  // Compatibilidad temporal hasta aplicar la migración 106. Cada escritura
+  // tiene compensación y la distribución final conserva el bloqueo de stock.
+  const previousSku = productResult.data.sku
+  const { data: created, error: createError } = await auth.admin
     .from("producto_variantes")
     .insert({
       producto_id: productId,
-      ...payload,
+      nombre: name,
+      sku,
+      color_hex: color,
+      imagenes: images,
+      activo: productResult.data.activo === true,
+      orden: (variantsResult.data?.length ?? 0) + 1,
     })
     .select("*")
     .single()
 
-  if (error) {
-    const duplicatedSku = error.code === "23505"
+  if (createError || !created) {
     return Response.json(
       {
-        error: duplicatedSku
-          ? "El SKU ingresado ya pertenece a otra variante."
-          : error.message || "No se pudo crear la variante.",
+        error:
+          createError?.message || "No se pudo crear la variante en el catálogo.",
       },
-      { status: duplicatedSku ? 409 : 500 },
+      { status: 400 },
     )
+  }
+
+  const rollback = async () => {
+    await auth.admin
+      .from("producto_variantes")
+      .delete()
+      .eq("id", created.id)
+      .eq("producto_id", productId)
+    await auth.admin
+      .from("productos")
+      .update({ sku: previousSku })
+      .eq("id", productId)
   }
 
   const { error: productSkuError } = await auth.admin
@@ -146,19 +236,43 @@ export async function POST(
     .eq("id", productId)
 
   if (productSkuError) {
-    await auth.admin
-      .from("producto_variantes")
-      .delete()
-      .eq("id", variant.id)
-
+    await rollback()
     return Response.json(
-      {
-        error:
-          "No se pudo trasladar el SKU general a la variante. Intentá nuevamente.",
-      },
+      { error: "No se pudo transferir el SKU principal a la variante." },
       { status: 500 },
     )
   }
 
-  return Response.json({ variant }, { status: 201 })
+  const allocations = [
+    ...(allocationsResult.data ?? []).map((allocation) => ({
+      variant_id: Number(allocation.variant_id),
+      quantity: Number(allocation.quantity),
+    })),
+    {
+      variant_id: Number(created.id),
+      quantity,
+    },
+  ]
+  const { error: allocationError } = await auth.admin.rpc(
+    "set_product_variant_allocations",
+    {
+      p_product_id: productId,
+      p_allocations: allocations,
+      p_actor_id: auth.user.id,
+    },
+  )
+
+  if (allocationError) {
+    await rollback()
+    return Response.json(
+      {
+        error:
+          allocationError.message ||
+          "No se pudo asignar el inventario a la variante.",
+      },
+      { status: 409 },
+    )
+  }
+
+  return Response.json({ variant: created }, { status: 201 })
 }

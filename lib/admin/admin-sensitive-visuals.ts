@@ -11,6 +11,18 @@ export const ADMIN_SENSITIVE_DANGER = {
   textMuted: "text-[#f4b8c0]/72",
 } as const
 
+export const ADMIN_ATTENTION_WARNING = {
+  action:
+    "border-amber-300/45 bg-amber-300/10 text-amber-100 hover:border-amber-200/70 hover:bg-amber-300/16 hover:text-white",
+  badge:
+    "border-amber-300/45 bg-amber-300/12 text-amber-100 shadow-[0_0_10px_rgba(252,211,77,0.16)]",
+  card:
+    "border-amber-300/35 bg-amber-300/[0.06] shadow-[0_0_18px_rgba(252,211,77,0.08)] hover:border-amber-200/55 hover:bg-amber-300/[0.10]",
+  dot: "bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.82)]",
+  icon: "border-amber-300/40 bg-amber-300/10 text-amber-100",
+  label: "text-amber-200",
+} as const
+
 export function isAdminSensitiveStatus(value?: string | null) {
   const normalized = (value ?? "").toLowerCase()
 

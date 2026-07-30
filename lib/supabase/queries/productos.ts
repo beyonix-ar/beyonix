@@ -6,11 +6,12 @@ import type {
   SupabaseProducto,
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
-import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
 import {
-  getAdminProductoVariantes,
-  getProductoVariantes,
-} from "@/lib/supabase/queries/producto-variantes"
+  calculateInventoryStock,
+  classifyReturnStock,
+} from "@/lib/inventory/stock-metrics"
+import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
+import { getAdminProductoVariantes } from "@/lib/supabase/queries/producto-variantes"
 
 export interface ProductoPayload {
   nombre: string
@@ -72,6 +73,13 @@ const PRODUCTO_SELECT = `
   producto_especificaciones(*)
 `
 
+const ADMIN_PRODUCTO_SELECT = `
+  *,
+  categorias(*),
+  imagenes_producto(*),
+  producto_especificaciones(*)
+`
+
 export interface ProductosPageOptions {
   page?: number
   pageSize?: number
@@ -90,7 +98,7 @@ export interface ProductosPageOptions {
   stockTo?: number | null
   activeFilter?: "todos" | "activos" | "inactivos"
   featuredFilter?: "todos" | "destacados" | "normales"
-  skuFilter?: "todos" | "con_sku" | "sin_sku"
+  variantFilter?: "todas" | "sin_variantes"
   sortBy?: "nombre" | "stock" | "sku" | "color"
   sortDirection?: "asc" | "desc"
   lowStockThreshold?: number
@@ -102,6 +110,11 @@ export interface ProductosPage {
   total: number
   page: number
   pageSize: number
+}
+
+export interface ProductVariantIssues {
+  count: number
+  hasIssues: boolean
 }
 
 export interface ProductColorOption {
@@ -134,25 +147,23 @@ async function attachConditionedStock(productos: SupabaseProducto[]) {
   let { data, error } = await supabase
     .from("inventory_return_movements")
     .select(
-      "id, product_id, variant_id, discounted_quantity, discount_percent, discount_reason, non_sellable_quantity, non_sellable_reason, conditioned_active, approved_at",
+      "id, product_id, variant_id, received_quantity, sellable_quantity, discounted_quantity, discount_percent, discount_reason, non_sellable_quantity, non_sellable_reason, conditioned_active, conditioned_name, conditioned_sku, conditioned_color_hex, conditioned_images, approved_at",
     )
     .in("product_id", productIds)
-    .gt("discounted_quantity", 0)
     .order("approved_at", { ascending: false })
 
   if (
     error &&
-    /discount_reason|non_sellable_reason|conditioned_active|schema cache/i.test(
+    /discount_reason|non_sellable_reason|conditioned_active|conditioned_name|conditioned_sku|conditioned_color_hex|conditioned_images|schema cache/i.test(
       error.message,
     )
   ) {
     const fallback = await supabase
       .from("inventory_return_movements")
       .select(
-        "id, product_id, variant_id, discounted_quantity, discount_percent, non_sellable_quantity, approved_at",
+        "id, product_id, variant_id, received_quantity, sellable_quantity, discounted_quantity, discount_percent, non_sellable_quantity, approved_at",
       )
       .in("product_id", productIds)
-      .gt("discounted_quantity", 0)
       .order("approved_at", { ascending: false })
 
     data = fallback.data?.map((item) => ({
@@ -160,24 +171,90 @@ async function attachConditionedStock(productos: SupabaseProducto[]) {
       discount_reason: null,
       non_sellable_reason: null,
       conditioned_active: false,
+      conditioned_name: null,
+      conditioned_sku: null,
+      conditioned_color_hex: null,
+      conditioned_images: [],
     })) ?? null
     error = fallback.error
   }
 
   if (error) throw error
 
+  const availabilityById = new Map<
+    string,
+    {
+      original: number
+      sold: number
+      available: number
+    }
+  >()
+  const availability = await supabase
+    .from("conditioned_inventory_offers")
+    .select("id, product_id, original_quantity, sold_quantity, available_quantity")
+    .in("product_id", productIds)
+
+  if (!availability.error) {
+    for (const item of availability.data ?? []) {
+      availabilityById.set(String(item.id), {
+        original: Math.max(Number(item.original_quantity) || 0, 0),
+        sold: Math.max(Number(item.sold_quantity) || 0, 0),
+        available: Math.max(Number(item.available_quantity) || 0, 0),
+      })
+    }
+  } else if (
+    !/conditioned_inventory_offers|schema cache|does not exist/i.test(
+      availability.error.message,
+    )
+  ) {
+    throw availability.error
+  }
+
   const conditionedByProduct = new Map<number, SupabaseConditionedStock[]>()
+  const returnSummaryByProduct = new Map<
+    number,
+    {
+      discounted: number
+      nonSellable: number
+      pendingReview: number
+    }
+  >()
   for (const item of data ?? []) {
     const productId = Number(item.product_id)
-    const quantity = Number(item.discounted_quantity ?? 0)
+    if (!productId) continue
+
+    const returnStock = classifyReturnStock({
+      received: item.received_quantity,
+      sellable: item.sellable_quantity,
+      discounted: item.discounted_quantity,
+      nonSellable: item.non_sellable_quantity,
+    })
+    const currentSummary = returnSummaryByProduct.get(productId) ?? {
+      discounted: 0,
+      nonSellable: 0,
+      pendingReview: 0,
+    }
+    const availabilitySummary = availabilityById.get(String(item.id))
+    const availableDiscounted =
+      availabilitySummary?.available ?? returnStock.discounted
+    returnSummaryByProduct.set(productId, {
+      discounted: currentSummary.discounted + availableDiscounted,
+      nonSellable: currentSummary.nonSellable + returnStock.nonSellable,
+      pendingReview: currentSummary.pendingReview + returnStock.pendingReview,
+    })
+
+    const originalQuantity = Number(item.discounted_quantity ?? 0)
     const discountPercent = Number(item.discount_percent ?? 0)
-    if (!productId || quantity <= 0 || discountPercent <= 0) continue
+    if (originalQuantity <= 0 || discountPercent <= 0) continue
+    const quantity = availabilitySummary?.available ?? originalQuantity
 
     const conditionedItem: SupabaseConditionedStock = {
       id: String(item.id),
       product_id: productId,
       variant_id:
         item.variant_id == null ? null : Number(item.variant_id),
+      original_quantity: availabilitySummary?.original ?? originalQuantity,
+      sold_quantity: availabilitySummary?.sold ?? 0,
       quantity,
       discount_percent: discountPercent,
       reason:
@@ -189,8 +266,25 @@ async function attachConditionedStock(productos: SupabaseProducto[]) {
         typeof item.non_sellable_reason === "string"
           ? item.non_sellable_reason
           : null,
-      active: item.conditioned_active === true,
+      active: item.conditioned_active === true && quantity > 0,
       approved_at: String(item.approved_at),
+      conditioned_name:
+        typeof item.conditioned_name === "string"
+          ? item.conditioned_name
+          : null,
+      conditioned_sku:
+        typeof item.conditioned_sku === "string"
+          ? item.conditioned_sku
+          : null,
+      conditioned_color_hex:
+        typeof item.conditioned_color_hex === "string"
+          ? item.conditioned_color_hex
+          : null,
+      conditioned_images: Array.isArray(item.conditioned_images)
+        ? item.conditioned_images.filter(
+            (image): image is string => typeof image === "string",
+          )
+        : [],
     }
     conditionedByProduct.set(productId, [
       ...(conditionedByProduct.get(productId) ?? []),
@@ -198,10 +292,29 @@ async function attachConditionedStock(productos: SupabaseProducto[]) {
     ])
   }
 
-  return productos.map((producto) => ({
-    ...producto,
-    conditioned_stock: conditionedByProduct.get(producto.id) ?? [],
-  }))
+  return productos.map((producto) => {
+    const returnSummary = returnSummaryByProduct.get(producto.id)
+    const stock = calculateInventoryStock({
+      normal: producto.stock,
+      discounted: returnSummary?.discounted,
+      nonSellable: returnSummary?.nonSellable,
+      pendingReview: returnSummary?.pendingReview,
+    })
+
+    return {
+      ...producto,
+      conditioned_stock: conditionedByProduct.get(producto.id) ?? [],
+      inventory_stock_summary: {
+        normal: stock.normal,
+        discounted: stock.discounted,
+        non_sellable: stock.nonSellable,
+        pending_review: stock.pendingReview,
+        sellable: stock.sellable,
+        quarantine: stock.quarantine,
+        physical: stock.physical,
+      },
+    }
+  })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -211,7 +324,7 @@ async function attachConditionedStock(productos: SupabaseProducto[]) {
 export async function getProductos() {
   const { data, error } = await supabase
     .from("productos")
-    .select(PRODUCTO_SELECT)
+    .select(ADMIN_PRODUCTO_SELECT)
     .order("id", {
       ascending: false,
     })
@@ -223,27 +336,13 @@ export async function getProductos() {
   const productos =
     (data || []) as SupabaseProducto[]
 
-  const {
-    data: variantes,
-    error: variantesError,
-  } = await supabase
-    .from("producto_variantes")
-    .select("*")
-    .order("orden", {
-      ascending: true,
-    })
-    .order("id", {
-      ascending: true,
-    })
-
-  if (variantesError) {
-    throw variantesError
-  }
+  const variantes = await getAdminProductoVariantes({
+    productIds: productos.map((producto) => producto.id),
+  })
 
   const variantesByProducto =
     (
-      variantes ||
-      []
+      variantes
     ).reduce<
       Record<
         number,
@@ -283,7 +382,7 @@ export async function getProductosPage({
   stockTo = null,
   activeFilter = "todos",
   featuredFilter = "todos",
-  skuFilter = "todos",
+  variantFilter = "todas",
   sortBy = "nombre",
   sortDirection = "asc",
   lowStockThreshold = 5,
@@ -296,15 +395,15 @@ export async function getProductosPage({
   const adminVariants = await getAdminProductoVariantes()
   let query = supabase
     .from("productos")
-    .select(PRODUCTO_SELECT, { count: "exact" })
+    .select(ADMIN_PRODUCTO_SELECT, { count: "exact" })
 
   const normalizedSearch = search.trim().replace(/[%(),]/g, " ")
   if (normalizedSearch) {
-    const normalizedSearchKey = normalizedSearch.toLocaleLowerCase("es")
-    const matchingVariants = adminVariants.filter((variant) =>
-      variant.sku?.toLocaleLowerCase("es").includes(normalizedSearchKey),
-    )
+    const matchingVariants = await getAdminProductoVariantes({
+      skuSearch: normalizedSearch,
+    })
     const variantProductIds = [
+      ...new Set(matchingVariants.map((item) => item.producto_id)),
       ...new Set(matchingVariants.map((item) => item.producto_id)),
     ]
     const variantSearchClause = variantProductIds.length
@@ -317,13 +416,11 @@ export async function getProductosPage({
   }
   const normalizedColor = colorSearch.trim().replace(/[%(),]/g, " ")
   if (normalizedColor) {
-    const normalizedColorKey = normalizedColor.toLocaleLowerCase("es")
-    const matchingVariants = adminVariants.filter(
-      (variant) =>
-        variant.nombre.toLocaleLowerCase("es").includes(normalizedColorKey) ||
-        variant.color_hex.toLocaleLowerCase("es").includes(normalizedColorKey),
-    )
+    const matchingVariants = await getAdminProductoVariantes({
+      colorSearch: normalizedColor,
+    })
     const productIds = [
+      ...new Set(matchingVariants.map((item) => item.producto_id)),
       ...new Set(matchingVariants.map((item) => item.producto_id)),
     ]
 
@@ -343,29 +440,18 @@ export async function getProductosPage({
   if (activeFilter === "inactivos") query = query.eq("activo", false)
   if (featuredFilter === "destacados") query = query.eq("destacado", true)
   if (featuredFilter === "normales") query = query.eq("destacado", false)
-  if (skuFilter !== "todos") {
-    const productIdsWithVariantSku = [
-      ...new Set(
-        adminVariants
-          .filter((variant) => Boolean(variant.sku?.trim()))
-          .map((item) => item.producto_id),
-      ),
+  if (variantFilter === "sin_variantes") {
+    const variants = await getAdminProductoVariantes()
+    const productIdsWithVariants = [
+      ...new Set(variants.map((item) => item.producto_id)),
     ]
 
-    if (skuFilter === "con_sku") {
-      const variantSkuClause = productIdsWithVariantSku.length
-        ? `,id.in.(${productIdsWithVariantSku.join(",")})`
-        : ""
-      query = query.or(`sku.not.is.null${variantSkuClause}`)
-    } else {
-      query = query.is("sku", null)
-      if (productIdsWithVariantSku.length) {
-        query = query.not(
-          "id",
-          "in",
-          `(${productIdsWithVariantSku.join(",")})`,
-        )
-      }
+    if (productIdsWithVariants.length) {
+      query = query.not(
+        "id",
+        "in",
+        `(${productIdsWithVariants.join(",")})`,
+      )
     }
   }
   if (stockFilter === "sin_stock") query = query.lte("stock", 0)
@@ -396,20 +482,24 @@ export async function getProductosPage({
 
   if (error) throw error
 
-  const variantsByProduct = adminVariants.reduce<
-    Record<number, SupabaseProductoVariante[]>
-  >((result, variant) => {
-    result[variant.producto_id] = [
-      ...(result[variant.producto_id] ?? []),
+  const rawProducts = (data ?? []) as SupabaseProducto[]
+  const pageVariants = rawProducts.length
+    ? await getAdminProductoVariantes({
+        productIds: rawProducts.map((product) => product.id),
+      })
+    : []
+  const variantsByProduct = new Map<number, SupabaseProductoVariante[]>()
+  for (const variant of pageVariants) {
+    variantsByProduct.set(variant.producto_id, [
+      ...(variantsByProduct.get(variant.producto_id) ?? []),
       variant,
-    ]
-    return result
-  }, {})
-
+    ])
+  }
   const productos = await attachProductReviewSummaries(
     await attachConditionedStock(
-      ((data ?? []) as SupabaseProducto[]).map((producto) => ({
+      rawProducts.map((producto) => ({
         ...producto,
+        producto_variantes: variantsByProduct.get(producto.id) ?? [],
         producto_variantes: [...(variantsByProduct[producto.id] ?? [])].sort(
           (a, b) => a.orden - b.orden || a.id - b.id,
         ),
@@ -425,12 +515,41 @@ export async function getProductosPage({
   }
 }
 
-export async function getProductColorOptions(): Promise<ProductColorOption[]> {
+export async function getProductVariantIssues(): Promise<ProductVariantIssues> {
+  const { data, error } = await supabase
+    .from("productos")
+    .select("id")
+
+  if (error) throw error
+
   const variants = await getAdminProductoVariantes()
+  const variantsByProduct = new Map<number, SupabaseProductoVariante[]>()
+  for (const variant of variants) {
+    variantsByProduct.set(variant.producto_id, [
+      ...(variantsByProduct.get(variant.producto_id) ?? []),
+      variant,
+    ])
+  }
+  const count = (data ?? []).filter((product) => {
+    const variants = variantsByProduct.get(Number(product.id)) ?? []
+    return (
+      variants.length === 0 ||
+      variants.some((variant) => !variant.sku?.trim())
+    )
+  }).length
+
+  return {
+    count,
+    hasIssues: count > 0,
+  }
+}
+
+export async function getProductColorOptions(): Promise<ProductColorOption[]> {
+  const data = await getAdminProductoVariantes()
 
   const colors = new Map<string, ProductColorOption>()
 
-  for (const variant of variants) {
+  for (const variant of data) {
     const label = variant.nombre?.trim()
     const hex = variant.color_hex?.trim()
     if (!label || !hex) continue
@@ -468,20 +587,24 @@ export async function getCategoryProductStats() {
 export async function getProductoById(
   id: number
 ) {
-  const [{ data, error }, variants] = await Promise.all([
-    supabase
-      .from("productos")
-      .select(PRODUCTO_SELECT)
-      .eq("id", id)
-      .single(),
-    getProductoVariantes(id),
-  ])
+  const { data, error } = await supabase
+    .from("productos")
+    .select(ADMIN_PRODUCTO_SELECT)
+    .eq("id", id)
+    .single()
 
   if (error) {
     throw error
   }
 
+  const variants = await getAdminProductoVariantes({
+    productIds: [id],
+  })
   const [product] = await attachProductReviewSummaries([
+    {
+      ...(data as SupabaseProducto),
+      producto_variantes: variants,
+    },
     {
       ...(data as SupabaseProducto),
       producto_variantes: variants,
@@ -558,25 +681,41 @@ export async function createProductoCompleto({
 }: ProductoCompletoPayload) {
   const catalogProduct = { ...producto }
   delete catalogProduct.stock
-  const { data, error } = await supabase.rpc(
-    "create_producto_completo",
-    {
-      p_producto: catalogProduct,
-      p_imagenes: imagenes,
-      p_variantes: variantes.map((variant) => {
-        const catalogVariant = { ...variant }
-        delete catalogVariant.stock
-        return catalogVariant
-      }),
-      p_especificaciones: especificaciones,
-    }
+  const catalogVariants = variantes.map((variant) => {
+    const catalogVariant = { ...variant }
+    delete catalogVariant.stock
+    return catalogVariant
+  })
+  const rpcPayload = {
+    p_producto: catalogProduct,
+    p_imagenes: imagenes,
+    p_variantes: catalogVariants,
+    p_especificaciones: especificaciones,
+  }
+  let usedAtomicSkuVersion = true
+  let result = await supabase.rpc(
+    "create_producto_completo_v2",
+    rpcPayload,
   )
+  if (
+    result.error &&
+    /create_producto_completo_v2|schema cache|PGRST202/i.test(
+      result.error.message,
+    )
+  ) {
+    usedAtomicSkuVersion = false
+    result = await supabase.rpc("create_producto_completo", rpcPayload)
+  }
+  const { data, error } = result
 
   if (error) {
     throw error
   }
 
   const created = data as SupabaseProducto
+  if (usedAtomicSkuVersion) return created
+
+  // Compatibilidad temporal hasta aplicar la migración 106.
   const variantsWithSku = variantes.filter((variant) => variant.sku?.trim())
 
   if (variantsWithSku.length) {
@@ -655,14 +794,22 @@ async function conditionedStockRequest(
           product_id: number
           variant_id: number | null
           discounted_quantity: number
+          original_quantity?: number
+          sold_quantity?: number
+          available_quantity?: number
           discount_percent: number
           discount_reason: string | null
           non_sellable_quantity: number
           non_sellable_reason: string | null
           conditioned_active: boolean
+          conditioned_name: string | null
+          conditioned_sku: string | null
+          conditioned_color_hex: string | null
+          conditioned_images: string[]
           approved_at: string
         }
         deleted?: boolean
+        archived?: boolean
         error?: string
       }
     | null
@@ -681,6 +828,11 @@ export async function updateConditionedStock(
     discountPercent?: number
     discountReason?: string
     nonSellableReason?: string
+    sourceVariantId?: number | null
+    conditionedName?: string
+    conditionedSku?: string
+    conditionedColor?: string
+    conditionedImages?: string[]
   },
 ) {
   const response = await conditionedStockRequest(id, {
@@ -697,18 +849,30 @@ export async function updateConditionedStock(
       response.item.variant_id == null
         ? null
         : Number(response.item.variant_id),
-    quantity: Number(response.item.discounted_quantity),
+    original_quantity: Number(
+      response.item.original_quantity ?? response.item.discounted_quantity,
+    ),
+    sold_quantity: Number(response.item.sold_quantity ?? 0),
+    quantity: Number(
+      response.item.available_quantity ?? response.item.discounted_quantity,
+    ),
     discount_percent: Number(response.item.discount_percent),
     reason: response.item.discount_reason,
     non_sellable_quantity: Number(response.item.non_sellable_quantity),
     non_sellable_reason: response.item.non_sellable_reason,
     active: response.item.conditioned_active === true,
     approved_at: response.item.approved_at,
+    conditioned_name: response.item.conditioned_name,
+    conditioned_sku: response.item.conditioned_sku,
+    conditioned_color_hex: response.item.conditioned_color_hex,
+    conditioned_images: Array.isArray(response.item.conditioned_images)
+      ? response.item.conditioned_images
+      : [],
   } satisfies SupabaseConditionedStock
 }
 
 export async function deleteConditionedStock(id: string) {
-  await conditionedStockRequest(id, { method: "DELETE" })
+  return conditionedStockRequest(id, { method: "DELETE" })
 }
 
 export async function deleteProducto(

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import dynamic from "next/dynamic"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
   ArrowRight,
@@ -49,6 +49,7 @@ import {
   ADMIN_ROUTES,
   type AdminRouteKey,
 } from "@/lib/admin/admin-routes"
+import { useAdminNotificationGroups } from "@/context/admin-notifications-context"
 
 function DashboardPanelLoading() {
   return (
@@ -2910,6 +2911,10 @@ function BarList({
 
 export function AdminDashboard() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const notificationGroups = useAdminNotificationGroups()
+  const hasPendingMercadoLibreReturns =
+    notificationGroups.mercadolibre_return > 0
   const onNavigate = useCallback(
     (section: AdminRouteKey) => router.push(ADMIN_ROUTES[section]),
     [router],
@@ -2934,7 +2939,15 @@ export function AdminDashboard() {
     healthError,
     refreshSystemHealth,
   } = useDashboard()
-  const [tab, setTab] = useState<DashboardTab>("operativo")
+  const requestedTab = searchParams.get("tab")
+  const [tab, setTab] = useState<DashboardTab>(
+    requestedTab === "comercial" ||
+      requestedTab === "externas" ||
+      requestedTab === "ml" ||
+      requestedTab === "costos"
+      ? requestedTab
+      : "operativo",
+  )
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
   const [month, setMonth] = useState("")
@@ -2947,6 +2960,18 @@ export function AdminDashboard() {
     if (typeof window === "undefined") return true
     return window.localStorage.getItem("beyonix-hide-dashboard-values") !== "false"
   })
+
+  useEffect(() => {
+    if (
+      requestedTab === "operativo" ||
+      requestedTab === "comercial" ||
+      requestedTab === "externas" ||
+      requestedTab === "ml" ||
+      requestedTab === "costos"
+    ) {
+      setTab(requestedTab)
+    }
+  }, [requestedTab])
 
   if (loading || !stats || !financialSummary) return <Skeleton />
   const sensitive = role === "admin" || role === "super_admin"
@@ -3118,6 +3143,13 @@ export function AdminDashboard() {
                     <BarChart3 className="size-3.5" />
                   )}
                   {label}
+                  {key === "ml" && hasPendingMercadoLibreReturns && (
+                    <span
+                      aria-label="Hay devoluciones de Mercado Libre pendientes"
+                      title="Hay devoluciones de Mercado Libre pendientes"
+                      className="size-2 rounded-full bg-amber-300 shadow-[0_0_8px_2px_rgba(252,211,77,0.76)]"
+                    />
+                  )}
                 </button>
               ))}
             </div>

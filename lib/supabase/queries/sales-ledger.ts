@@ -13,7 +13,10 @@ export interface SalesLedgerCatalogProduct {
   producto_variantes?: Array<{
     id: number
     nombre: string
+    sku: string | null
+    stock: number
     activo: boolean
+    unit_cost?: number | null
   }>
 }
 
@@ -21,6 +24,7 @@ export interface SalesLedgerRow {
   id: string
   sale_date: string
   product_id: number | null
+  variant_id: number | null
   product_name: string
   sku: string | null
   quantity: number

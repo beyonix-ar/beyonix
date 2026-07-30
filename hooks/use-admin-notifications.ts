@@ -21,6 +21,8 @@ const EMPTY_GROUPS: AdminNotificationGroups = {
   shipping: 0,
   cancellation: 0,
   claim: 0,
+  mercadolibre_return: 0,
+  inventory: 0,
 }
 
 const REALTIME_TABLES = [
@@ -38,6 +40,12 @@ const REALTIME_TABLES = [
   "customer_credit_topups",
   "customer_credit_movements",
   "customer_gift_cards",
+  "mercadolibre_sales",
+  "inventory_return_movements",
+  "productos",
+  "producto_variantes",
+  "inventory_variant_allocations",
+  "external_sales",
 ] as const
 
 const FALLBACK_REFRESH_INTERVAL_MS = 60_000

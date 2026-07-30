@@ -11,6 +11,7 @@ import {
   type AdminNotificationTone,
 } from "@/lib/admin/admin-notifications"
 import {
+  ADMIN_ATTENTION_WARNING,
   ADMIN_SENSITIVE_DANGER,
   isAdminSensitiveNotification,
 } from "@/lib/admin/admin-sensitive-visuals"
@@ -37,7 +38,7 @@ interface AdminNotificationBellProps {
 export function AdminNotificationBell({
   count,
   tone,
-  groups: _groups,
+  groups,
   notifications,
   loading = false,
   error = "",
@@ -95,16 +96,28 @@ export function AdminNotificationBell({
   const handleNotificationClick = async (notification: AdminNotification) => {
     clearCloseTimer()
     setOpen(false)
-    if (notification.type !== "payment" && notification.type !== "shipping") {
+    if (
+      notification.type !== "payment" &&
+      notification.type !== "shipping" &&
+      notification.type !== "mercadolibre_return"
+    ) {
       await markAdminNotificationRead(notification)
     }
     router.push(notification.actionUrl)
   }
 
+  const mercadoLibreReturnTone =
+    tone === "mercadolibre_return" &&
+    groups.mercadolibre_return > 0
   const sensitiveTone =
-    tone === "cancellation" ||
-    tone === "claim" ||
-    notifications.some(isAdminSensitiveNotification)
+    !mercadoLibreReturnTone &&
+    (tone === "cancellation" ||
+      tone === "claim" ||
+      notifications.some(
+        (notification) =>
+          notification.type !== "mercadolibre_return" &&
+          isAdminSensitiveNotification(notification),
+      ))
   const incomingPaymentTone = notifications.some((notification) =>
     notification.eventKey.startsWith("balance-topup:"),
   )
@@ -125,11 +138,13 @@ export function AdminNotificationBell({
         className={cn(
           "admin-ds-bell-button relative flex size-11 cursor-pointer items-center justify-center rounded-full border text-white transition-all",
           count > 0
-            ? sensitiveTone
-              ? ADMIN_SENSITIVE_DANGER.action
-              : incomingPaymentTone
-                ? ADMIN_INCOMING_PAYMENT_BELL_STYLE
-                : ADMIN_NEUTRAL_BELL_STYLE
+            ? mercadoLibreReturnTone
+              ? ADMIN_ATTENTION_WARNING.action
+              : sensitiveTone
+                ? ADMIN_SENSITIVE_DANGER.action
+                : incomingPaymentTone
+                  ? ADMIN_INCOMING_PAYMENT_BELL_STYLE
+                  : ADMIN_NEUTRAL_BELL_STYLE
             : "admin-ds-bell-button-idle",
         )}
       >
@@ -138,11 +153,13 @@ export function AdminNotificationBell({
           <span
             className={cn(
               "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-9px font-medium leading-none",
-              sensitiveTone
-                ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
-                : incomingPaymentTone
-                  ? ADMIN_INCOMING_PAYMENT_BADGE_STYLE
-                  : ADMIN_NEUTRAL_BADGE_STYLE,
+              mercadoLibreReturnTone
+                ? `${ADMIN_ATTENTION_WARNING.dot} text-black`
+                : sensitiveTone
+                  ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
+                  : incomingPaymentTone
+                    ? ADMIN_INCOMING_PAYMENT_BADGE_STYLE
+                    : ADMIN_NEUTRAL_BADGE_STYLE,
             )}
           >
             {count > 99 ? "99+" : count}

@@ -34,8 +34,12 @@ export interface CartItem {
   image: string
   quantity: number
   variantId: number | null
+  conditionedStockId: string | null
   variantName: string | null
   colorHex: string | null
+  unitPrice: number
+  originalUnitPrice: number | null
+  discountReason: string | null
 }
 
 interface CartContextType {
@@ -130,6 +134,7 @@ function normalizeCartItem(item: unknown): CartItem | null {
       : DEFAULT_VARIANT_VALUE
   const variant = resolveCartVariant(product, rawColor)
   const variantId = toFiniteNumber(rawItem.variantId, variant?.id ?? NaN)
+  const storedUnitPrice = toFiniteNumber(rawItem.unitPrice, NaN)
 
   return {
     product,
@@ -140,6 +145,10 @@ function normalizeCartItem(item: unknown): CartItem | null {
         : variant?.images[0] ?? getProductImage(product),
     quantity,
     variantId: Number.isFinite(variantId) ? variantId : null,
+    conditionedStockId:
+      typeof rawItem.conditionedStockId === "string"
+        ? rawItem.conditionedStockId
+        : variant?.conditionedStockId ?? null,
     variantName:
       typeof rawItem.variantName === "string"
         ? rawItem.variantName
@@ -148,6 +157,17 @@ function normalizeCartItem(item: unknown): CartItem | null {
       typeof rawItem.colorHex === "string"
         ? rawItem.colorHex
         : variant?.colorHex ?? null,
+    unitPrice: Number.isFinite(storedUnitPrice)
+      ? Math.max(storedUnitPrice, 0)
+      : variant?.price ?? product.precio,
+    originalUnitPrice:
+      typeof rawItem.originalUnitPrice === "number"
+        ? rawItem.originalUnitPrice
+        : variant?.originalPrice ?? null,
+    discountReason:
+      typeof rawItem.discountReason === "string"
+        ? rawItem.discountReason
+        : variant?.reason ?? null,
   }
 }
 
@@ -391,8 +411,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
             getProductImage(normalizedProduct),
           quantity: 1,
           variantId: variant?.id ?? null,
+          conditionedStockId: variant?.conditionedStockId ?? null,
           variantName: variant?.name ?? null,
           colorHex: variant?.colorHex ?? null,
+          unitPrice: variant?.price ?? normalizedProduct.precio,
+          originalUnitPrice: variant?.originalPrice ?? null,
+          discountReason: variant?.reason ?? null,
         },
       ]
     })
@@ -490,7 +514,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const { total, itemCount } = useMemo(() => {
     return cart.reduce(
       (acc, item) => {
-        acc.total += item.product.precio * item.quantity
+        acc.total += item.unitPrice * item.quantity
         acc.itemCount += item.quantity
         return acc
       },

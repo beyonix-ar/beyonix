@@ -5,6 +5,7 @@ export interface CheckoutInventoryItem {
   productId: number
   quantity: number
   variantId?: number | null
+  conditionedStockId?: string | null
 }
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -14,6 +15,7 @@ function isStockConflict(message?: string) {
 
   return (
     normalized.includes("checkout_stock_insufficient") ||
+    normalized.includes("checkout_variant_required") ||
     normalized.includes("stock insuficiente") ||
     normalized.includes("sin stock") ||
     normalized.includes("no está disponible")
@@ -28,6 +30,7 @@ export async function validateCheckoutInventory(
     p_items: items.map((item) => ({
       product_id: item.productId,
       variant_id: item.variantId ?? null,
+      conditioned_stock_id: item.conditionedStockId ?? null,
       quantity: item.quantity,
     })),
   })

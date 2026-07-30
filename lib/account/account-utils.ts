@@ -142,6 +142,7 @@ export function getCuentaItemColor(item: NonNullable<SupabasePedido["orden_items
   }
 
   return (
+    item.conditioned_name ||
     item.producto_variantes?.nombre ||
     itemColor.color_nombre ||
     itemColor.color ||
@@ -151,6 +152,7 @@ export function getCuentaItemColor(item: NonNullable<SupabasePedido["orden_items
 
 export function getCuentaItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
   return (
+    item.conditioned_images?.[0] ||
     item.producto_variantes?.imagenes?.[0] ||
     item.productos?.imagen_principal ||
     item.productos?.imagenes_producto?.[0]?.url ||

@@ -41,6 +41,16 @@ interface SaleForm {
   notes: string
 }
 
+type SalesLedgerCatalogVariant = NonNullable<
+  SalesLedgerCatalogProduct["producto_variantes"]
+>[number]
+
+interface SalesLedgerCatalogOption {
+  key: string
+  product: SalesLedgerCatalogProduct
+  variant: SalesLedgerCatalogVariant | null
+}
+
 function localDate() {
   const now = new Date()
   const offset = now.getTimezoneOffset() * 60_000
@@ -79,7 +89,11 @@ function dateOnly(value: string) {
 function formFromRow(row: SalesLedgerRow): SaleForm {
   return {
     saleDate: dateOnly(row.sale_date),
-    productId: row.product_id ? String(row.product_id) : "",
+    productId: row.product_id
+      ? row.variant_id
+        ? `${row.product_id}:${row.variant_id}`
+        : String(row.product_id)
+      : "",
     productName: row.product_name,
     sku: row.sku ?? "",
     quantity: String(row.quantity),
@@ -150,11 +164,42 @@ export function AdminSalesLedger({
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
 
+  const catalogOptions = useMemo<SalesLedgerCatalogOption[]>(
+    () =>
+      catalog.flatMap<SalesLedgerCatalogOption>((product) => {
+        const variants = product.producto_variantes ?? []
+        if (!variants.length) {
+          return [{
+            key: String(product.id),
+            product,
+            variant: null,
+          }]
+        }
+        return variants.map((variant) => ({
+          key: `${product.id}:${variant.id}`,
+          product,
+          variant,
+        }))
+      }),
+    [catalog],
+  )
+
   const title = channel === "external" ? "Ventas externas" : "Ventas ML"
   const description =
     channel === "external"
       ? "Registrá las ventas realizadas fuera de la tienda, junto con todos sus costos."
       : "Cargá, corregí o eliminá ventas de Mercado Libre de forma manual."
+
+  const catalogUnitCostFor = useCallback(
+    (row: SalesLedgerRow) => {
+      const product = catalog.find((item) => item.id === row.product_id)
+      const variant = product?.producto_variantes?.find(
+        (item) => item.id === row.variant_id,
+      )
+      return variant?.unit_cost ?? product?.unit_cost ?? 0
+    },
+    [catalog],
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -181,8 +226,7 @@ export function AdminSalesLedger({
       rows.reduce(
         (acc, row) => {
           const gross = number(row.gross_amount)
-          const catalogUnitCost =
-            catalog.find((product) => product.id === row.product_id)?.unit_cost ?? 0
+          const catalogUnitCost = catalogUnitCostFor(row)
           const effectiveUnitCost =
             number(row.unit_cost) > 0 ? number(row.unit_cost) : number(catalogUnitCost)
           const expenses =
@@ -197,7 +241,7 @@ export function AdminSalesLedger({
         },
         { units: 0, gross: 0, result: 0 },
       ),
-    [catalog, rows],
+    [catalogUnitCostFor, rows],
   )
 
   const draftGross = number(form.quantity) * number(form.unitPrice)
@@ -217,19 +261,23 @@ export function AdminSalesLedger({
   }
 
   const selectProduct = (productId: string) => {
-    const product = catalog.find((item) => String(item.id) === productId)
+    const selection = catalogOptions.find((item) => item.key === productId)
+    const product = selection?.product
+    const variant = selection?.variant
     setForm((current) => ({
       ...current,
       productName: product?.nombre ?? current.productName,
       productId,
-      sku: product?.sku ?? "",
+      sku: variant?.sku ?? product?.sku ?? "",
       unitPrice:
         product && current.productId !== productId
           ? String(product.precio)
           : current.unitPrice,
       unitCost:
-        product && current.productId !== productId && product.unit_cost != null
-          ? String(product.unit_cost)
+        product &&
+        current.productId !== productId &&
+        (variant?.unit_cost ?? product.unit_cost) != null
+          ? String(variant?.unit_cost ?? product.unit_cost)
           : current.unitCost,
     }))
   }
@@ -305,15 +353,22 @@ export function AdminSalesLedger({
     setError("")
     setSuccess("")
     try {
-      const selectedProduct = catalog.find(
-        (product) => String(product.id) === form.productId,
+      const selection = catalogOptions.find(
+        (item) => item.key === form.productId,
       )
+      if (form.productId && !selection) {
+        throw new Error(
+          "El artículo cambió en el catálogo. Volvé a seleccionar su variante antes de guardar.",
+        )
+      }
+      const selectedProduct = selection?.product
       await saveSalesLedgerRow(
         {
           channel,
           ...form,
           productId:
             typeof selectedProduct?.id === "number" ? selectedProduct.id : null,
+          variantId: selection?.variant?.id ?? null,
           quantity: Number(form.quantity),
           unitPrice: number(form.unitPrice),
           unitCost: number(form.unitCost),
@@ -346,8 +401,7 @@ export function AdminSalesLedger({
       )
       if (matchingStandalone) nextForm.productId = String(matchingStandalone.id)
     }
-    const catalogUnitCost =
-      catalog.find((product) => product.id === row.product_id)?.unit_cost ?? null
+    const catalogUnitCost = catalogUnitCostFor(row)
     if (number(row.unit_cost) === 0 && catalogUnitCost != null) {
       nextForm.unitCost = String(catalogUnitCost)
     }
@@ -520,15 +574,21 @@ export function AdminSalesLedger({
                     optionClassName="sales-ledger-product-option justify-center text-center"
                   >
                     <option value="">Seleccionar producto</option>
-                    {catalog.map((product) => (
+                    {catalogOptions.map(({ key, product, variant }) => (
                       <option
-                        key={product.id}
-                        value={String(product.id)}
-                        data-search={`${product.nombre} ${product.sku ?? ""}`}
-                        data-meta={product.sku ?? undefined}
-                        data-selected-label={product.nombre}
+                        key={key}
+                        value={key}
+                        data-search={`${product.nombre} ${variant?.nombre ?? ""} ${variant?.sku ?? product.sku ?? ""}`}
+                        data-meta={variant?.sku ?? product.sku ?? undefined}
+                        data-selected-label={
+                          variant
+                            ? `${product.nombre} · ${variant.nombre}`
+                            : product.nombre
+                        }
                       >
-                        {product.nombre}
+                        {variant
+                          ? `${product.nombre} · ${variant.nombre}`
+                          : product.nombre}
                       </option>
                     ))}
                   </AdminSelect>
@@ -656,8 +716,7 @@ export function AdminSalesLedger({
 
               {rows.map((row) => {
                 const gross = number(row.gross_amount)
-                const catalogUnitCost =
-                  catalog.find((product) => product.id === row.product_id)?.unit_cost ?? 0
+                const catalogUnitCost = catalogUnitCostFor(row)
                 const effectiveUnitCost =
                   number(row.unit_cost) > 0
                     ? number(row.unit_cost)

@@ -22,7 +22,7 @@ type StockFilter =
   | "entre"
 type ActiveFilter = "todos" | "activos" | "inactivos"
 type FeaturedFilter = "todos" | "destacados" | "normales"
-type SkuFilter = "todos" | "con_sku" | "sin_sku"
+type VariantFilter = "todas" | "sin_variantes"
 type ProductView = "productos" | "categorias"
 
 interface ProductosToolbarProps {
@@ -37,7 +37,11 @@ interface ProductosToolbarProps {
   stockFilter: StockFilter
   activeFilter: ActiveFilter
   featuredFilter: FeaturedFilter
-  skuFilter: SkuFilter
+  variantFilter: VariantFilter
+  variantIssues: {
+    count: number
+    hasIssues: boolean
+  }
   view: ProductView
   onCreateCategory: () => void
   onSearchChange: (value: string) => void
@@ -49,7 +53,7 @@ interface ProductosToolbarProps {
   onStockFilterChange: (value: StockFilter) => void
   onActiveFilterChange: (value: ActiveFilter) => void
   onFeaturedFilterChange: (value: FeaturedFilter) => void
-  onSkuFilterChange: (value: SkuFilter) => void
+  onVariantFilterChange: (value: VariantFilter) => void
   onViewChange: (value: ProductView) => void
 }
 
@@ -65,7 +69,8 @@ export function ProductosToolbar({
   stockFilter,
   activeFilter,
   featuredFilter,
-  skuFilter,
+  variantFilter,
+  variantIssues,
   view,
   onCreateCategory,
   onSearchChange,
@@ -77,7 +82,7 @@ export function ProductosToolbar({
   onStockFilterChange,
   onActiveFilterChange,
   onFeaturedFilterChange,
-  onSkuFilterChange,
+  onVariantFilterChange,
   onViewChange,
 }: ProductosToolbarProps) {
   return (
@@ -136,7 +141,7 @@ export function ProductosToolbar({
       <AdminFiltersBar className="p-3">
         {view === "productos" ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
               <AdminTextInput
                 title="Buscar producto"
                 ariaLabel="Buscar producto"
@@ -226,17 +231,36 @@ export function ProductosToolbar({
                 <option value="normales">No destacados</option>
               </AdminSelect>
 
-              <AdminSelect
-                title="SKU"
-                value={skuFilter}
-                centered
-                optionClassName="admin-products-filter-option"
-                onChange={(value) => onSkuFilterChange(value as SkuFilter)}
-              >
-                <option value="todos">SKU</option>
-                <option value="con_sku">Con SKU</option>
-                <option value="sin_sku">Sin SKU</option>
-              </AdminSelect>
+              <div className="relative min-w-0">
+                <AdminSelect
+                  title="Filtrar por variantes"
+                  ariaLabel={
+                    variantIssues.hasIssues
+                      ? `Filtrar por variantes. Hay ${variantIssues.count} ${
+                          variantIssues.count === 1
+                            ? "producto sin variantes o con algún SKU faltante"
+                            : "productos sin variantes o con algún SKU faltante"
+                        }.`
+                      : "Filtrar por variantes"
+                  }
+                  value={variantFilter}
+                  centered
+                  optionClassName="admin-products-filter-option"
+                  onChange={(value) =>
+                    onVariantFilterChange(value as VariantFilter)
+                  }
+                >
+                  <option value="todas">Todas las variantes</option>
+                  <option value="sin_variantes">Sin variantes</option>
+                </AdminSelect>
+                {variantIssues.hasIssues && (
+                  <span
+                    className="pointer-events-none absolute left-3 top-1/2 z-10 size-2.5 -translate-y-1/2 rounded-full border border-red-200/70 bg-red-500 shadow-[0_0_9px_rgba(239,68,68,1)]"
+                    title="Hay productos sin variantes o con SKU faltante."
+                    aria-hidden="true"
+                  />
+                )}
+              </div>
             </div>
 
             {(stockFilter === "mayor_que" ||

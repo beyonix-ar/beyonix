@@ -91,7 +91,7 @@ type ProfileView =
   | "seguridad"
 
 const ACCOUNT_ORDER_SELECT =
-  "*, orden_items(id, orden_id, producto_id, variante_id, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*, order_claim_files(*), order_claim_messages(*))"
+  "*, orden_items(id, orden_id, producto_id, variante_id, conditioned_stock_id, conditioned_name, conditioned_sku, conditioned_color_hex, conditioned_images, conditioned_discount_percent, conditioned_reason, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*, order_claim_files(*), order_claim_messages(*))"
 const CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES = [
   "pendiente_comprobante",
   "en_revision",
