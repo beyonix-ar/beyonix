@@ -329,12 +329,12 @@ export async function setProductoVarianteActivo(
 
 export async function deleteProductoVariante(
   productId: number,
-  productId: number,
-  id: number
+  id: number,
 ) {
   await variantRequest<{ deleted: boolean }>(
     `/api/admin/products/${productId}/variants/${id}`,
     { method: "DELETE" },
   )
+
   return true
 }
