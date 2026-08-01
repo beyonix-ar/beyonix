@@ -43,7 +43,9 @@ export interface MercadoLibreReturnReview {
   discount_reason: string | null
   non_sellable_reason: string | null
   review_notes: string | null
+  occurred_at: string
   approved_at: string
+  updated_at: string
 }
 
 export interface MercadoLibreCostCatalogVariant {
@@ -147,6 +149,13 @@ export async function deleteMercadoLibreSale(id: string) {
   })
 }
 
+export async function deleteAllMercadoLibreSales(expectedCount: number) {
+  return request(
+    `/api/admin/mercadolibre-sales?scope=all&expectedCount=${expectedCount}`,
+    { method: "DELETE" },
+  )
+}
+
 export async function saveMercadoLibreCostMapping(
   matchKey: string,
   productId: number | null,
@@ -170,6 +179,7 @@ export async function saveMercadoLibreReturnReview(
     discountReason: string
     nonSellableReason: string
     notes: string
+    occurredAt?: string | null
   },
 ) {
   return request(

@@ -67,9 +67,10 @@ export async function reserveCartStock({
   if (error) {
     if (isMissingRpcError(error)) {
       return {
-        success: true,
+        success: false,
         configured: false,
-        message: null,
+        message:
+          "El sistema de reservas de stock está pendiente de actualización.",
         expiresAt: null,
       }
     }

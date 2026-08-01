@@ -602,12 +602,22 @@ export function ProductVariantsEditor({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
       {productoId && distribution && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:grid-cols-8">
           {[
             {
               label: "Existencia física",
               value: distribution.physicalStock,
               className: "border-sky-400/20 bg-sky-400/8 text-sky-200",
+            },
+            {
+              label: "Reservado",
+              value: distribution.reservedStock,
+              className: "border-violet-400/20 bg-violet-400/8 text-violet-200",
+            },
+            {
+              label: "Disponible",
+              value: distribution.availableStock,
+              className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
             },
             {
               label: "Stock normal",

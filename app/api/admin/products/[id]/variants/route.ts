@@ -99,25 +99,13 @@ export async function POST(
     )
   }
 
-  const [productResult, variantsResult, allocationsResult] = await Promise.all([
-    auth.admin
-      .from("productos")
-      .select("id, sku, activo")
-      .eq("id", productId)
-      .maybeSingle(),
-    auth.admin
-      .from("producto_variantes")
-      .select("id, sku, orden")
-      .eq("producto_id", productId)
-      .order("orden", { ascending: true })
-      .order("id", { ascending: true }),
-    auth.admin
-      .from("inventory_variant_allocations")
-      .select("variant_id, quantity")
-      .eq("product_id", productId),
-  ])
+  const productResult = await auth.admin
+    .from("productos")
+    .select("id, sku, activo")
+    .eq("id", productId)
+    .maybeSingle()
 
-  if (productResult.error || variantsResult.error || allocationsResult.error) {
+  if (productResult.error) {
     return Response.json(
       { error: "No se pudo preparar la creación de la variante." },
       { status: 500 },
@@ -166,12 +154,6 @@ export async function POST(
       p_actor_id: auth.user.id,
     },
   )
-  const atomicFunctionMissing =
-    atomicResult.error &&
-    /create_product_variant_with_allocation|schema cache|PGRST202/i.test(
-      atomicResult.error.message,
-    )
-
   if (!atomicResult.error) {
     const atomicVariant = Array.isArray(atomicResult.data)
       ? atomicResult.data[0]
@@ -184,95 +166,16 @@ export async function POST(
     }
     return Response.json({ variant: atomicVariant }, { status: 201 })
   }
-  if (!atomicFunctionMissing) {
-    return Response.json(
-      { error: atomicResult.error.message },
-      { status: 409 },
+  const missingMigration =
+    /create_product_variant_with_allocation|schema cache|PGRST202/i.test(
+      atomicResult.error.message,
     )
-  }
-
-  // Compatibilidad temporal hasta aplicar la migración 106. Cada escritura
-  // tiene compensación y la distribución final conserva el bloqueo de stock.
-  const previousSku = productResult.data.sku
-  const { data: created, error: createError } = await auth.admin
-    .from("producto_variantes")
-    .insert({
-      producto_id: productId,
-      nombre: name,
-      sku,
-      color_hex: color,
-      imagenes: images,
-      activo: productResult.data.activo === true,
-      orden: (variantsResult.data?.length ?? 0) + 1,
-    })
-    .select("*")
-    .single()
-
-  if (createError || !created) {
-    return Response.json(
-      {
-        error:
-          createError?.message || "No se pudo crear la variante en el catálogo.",
-      },
-      { status: 400 },
-    )
-  }
-
-  const rollback = async () => {
-    await auth.admin
-      .from("producto_variantes")
-      .delete()
-      .eq("id", created.id)
-      .eq("producto_id", productId)
-    await auth.admin
-      .from("productos")
-      .update({ sku: previousSku })
-      .eq("id", productId)
-  }
-
-  const { error: productSkuError } = await auth.admin
-    .from("productos")
-    .update({ sku: null })
-    .eq("id", productId)
-
-  if (productSkuError) {
-    await rollback()
-    return Response.json(
-      { error: "No se pudo transferir el SKU principal a la variante." },
-      { status: 500 },
-    )
-  }
-
-  const allocations = [
-    ...(allocationsResult.data ?? []).map((allocation) => ({
-      variant_id: Number(allocation.variant_id),
-      quantity: Number(allocation.quantity),
-    })),
+  return Response.json(
     {
-      variant_id: Number(created.id),
-      quantity,
+      error: missingMigration
+        ? "Falta aplicar la migración 20260730170000_inventory_integrity_and_variant_sales.sql."
+        : atomicResult.error.message,
     },
-  ]
-  const { error: allocationError } = await auth.admin.rpc(
-    "set_product_variant_allocations",
-    {
-      p_product_id: productId,
-      p_allocations: allocations,
-      p_actor_id: auth.user.id,
-    },
+    { status: missingMigration ? 503 : 409 },
   )
-
-  if (allocationError) {
-    await rollback()
-    return Response.json(
-      {
-        error:
-          allocationError.message ||
-          "No se pudo asignar el inventario a la variante.",
-      },
-      { status: 409 },
-    )
-  }
-
-  return Response.json({ variant: created }, { status: 201 })
 }

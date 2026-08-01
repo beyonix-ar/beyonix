@@ -192,7 +192,7 @@ function rounded(value: number) {
   return Math.round(value * 100) / 100
 }
 
-function parseSaleDate(value: unknown) {
+export function parseMercadoLibreDate(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString()
   }
@@ -413,7 +413,7 @@ export function parseMercadoLibreSalesReport(buffer: ArrayBuffer): ParsedMercado
       )
       const shippingCosts =
         -number(fields.shipping_cost) - number(fields.declared_shipping_cost)
-      const parsedDate = parseSaleDate(fields.sale_date_text)
+      const parsedDate = parseMercadoLibreDate(fields.sale_date_text)
       if (!parsedDate) warnings.add(`No se pudo interpretar la fecha de la venta ${saleNumber}.`)
 
       return {

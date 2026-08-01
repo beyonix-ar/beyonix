@@ -41,6 +41,7 @@ import {
 } from "@/lib/mercadolibre/returns"
 import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 import {
+  deleteAllMercadoLibreSales,
   deleteMercadoLibreSale,
   getMercadoLibreSales,
   importMercadoLibreSales,
@@ -79,6 +80,13 @@ function formatDate(value: string | null) {
     timeStyle: "short",
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(date)
+}
+
+function dateTimeLocalValue(value?: string | null) {
+  const date = value ? new Date(value) : new Date()
+  if (Number.isNaN(date.getTime())) return ""
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
 }
 
 function emptyParsedFields() {
@@ -346,8 +354,12 @@ export function AdminMercadoLibreSales() {
   const [returnDiscountReason, setReturnDiscountReason] = useState("")
   const [returnNonSellableReason, setReturnNonSellableReason] = useState("")
   const [returnReviewNotes, setReturnReviewNotes] = useState("")
+  const [returnOccurredAt, setReturnOccurredAt] = useState("")
   const [pendingDelete, setPendingDelete] =
     useState<StoredMercadoLibreSale | null>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState("")
+  const [deletingAll, setDeletingAll] = useState(false)
   const [error, setError] = useState("")
   const [costingError, setCostingError] = useState("")
   const [success, setSuccess] = useState("")
@@ -561,6 +573,7 @@ export function AdminMercadoLibreSales() {
     setReturnDiscountReason(review?.discount_reason ?? "")
     setReturnNonSellableReason(review?.non_sellable_reason ?? "")
     setReturnReviewNotes(review?.review_notes ?? "")
+    setReturnOccurredAt(dateTimeLocalValue(review?.occurred_at))
     setError("")
   }, [])
 
@@ -595,6 +608,9 @@ export function AdminMercadoLibreSales() {
         discountReason: returnDiscountReason,
         nonSellableReason: returnNonSellableReason,
         notes: returnReviewNotes,
+        occurredAt: returnOccurredAt
+          ? new Date(returnOccurredAt).toISOString()
+          : null,
       })
       setReviewingReturn(null)
       setSuccess("Revisión física guardada y stock actualizado.")
@@ -681,6 +697,35 @@ export function AdminMercadoLibreSales() {
     } finally {
       setDeletingId(null)
       setPendingDelete(null)
+    }
+  }
+
+  const removeAll = async () => {
+    if (
+      deletingAll ||
+      bulkDeleteConfirmation.trim() !== String(sales.length)
+    ) return
+
+    setDeletingAll(true)
+    setError("")
+    setSuccess("")
+    try {
+      const result = await deleteAllMercadoLibreSales(sales.length)
+      const deleted = number(result?.deleted)
+      setSales([])
+      setBulkDeleteOpen(false)
+      setBulkDeleteConfirmation("")
+      setSuccess(
+        `${deleted} ${deleted === 1 ? "venta eliminada" : "ventas eliminadas"} de Mercado Libre. El inventario y el historial quedaron conciliados.`,
+      )
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "No se pudieron eliminar las ventas de Mercado Libre.",
+      )
+    } finally {
+      setDeletingAll(false)
     }
   }
 
@@ -1042,14 +1087,30 @@ export function AdminMercadoLibreSales() {
       )}
 
       <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[#071018] p-3.5">
-        <div className="mb-4">
-          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-            Movimientos importados
-          </p>
-          <h3 className="mt-1 text-lg font-black text-white">Detalle completo</h3>
-          <p className="mt-1 text-xs text-white/42">
-            Abrí una fila para consultar los 65 campos originales del reporte.
-          </p>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+              Movimientos importados
+            </p>
+            <h3 className="mt-1 text-lg font-black text-white">Detalle completo</h3>
+            <p className="mt-1 text-xs text-white/42">
+              Abrí una fila para consultar los 65 campos originales del reporte.
+            </p>
+          </div>
+          {sales.length > 0 && (
+            <AdminDangerButton
+              title="Eliminar todas las ventas de Mercado Libre"
+              aria-label="Eliminar todas las ventas de Mercado Libre"
+              disabled={deletingAll || importing}
+              onClick={() => {
+                setBulkDeleteConfirmation("")
+                setBulkDeleteOpen(true)
+              }}
+            >
+              <Trash2 className="size-4" />
+              Eliminar todo ({sales.length})
+            </AdminDangerButton>
+          )}
         </div>
 
         {loading ? (
@@ -1394,6 +1455,18 @@ export function AdminMercadoLibreSales() {
 
           <label className="block">
             <span className="mb-2 block text-10px font-black uppercase tracking-wider text-white/45">
+              Fecha efectiva de recepción
+            </span>
+            <input
+              type="datetime-local"
+              value={returnOccurredAt}
+              onChange={(event) => setReturnOccurredAt(event.target.value)}
+              className={`${reviewInputClass} mb-3 text-left font-semibold`}
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-10px font-black uppercase tracking-wider text-white/45">
               Observaciones
             </span>
             <textarea
@@ -1436,10 +1509,76 @@ export function AdminMercadoLibreSales() {
       </AdminModal>
 
       <AdminModal
+        open={bulkDeleteOpen}
+        eyebrow="Acción irreversible"
+        title="Eliminar todas las ventas de Mercado Libre"
+        description={`Se eliminarán exclusivamente ${sales.length} registros importados de Mercado Libre.`}
+        onClose={() => {
+          if (!deletingAll) {
+            setBulkDeleteOpen(false)
+            setBulkDeleteConfirmation("")
+          }
+        }}
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <AdminSecondaryButton
+              title="Cancelar eliminación total"
+              aria-label="Cancelar eliminación total"
+              disabled={deletingAll}
+              onClick={() => setBulkDeleteOpen(false)}
+            >
+              Cancelar
+            </AdminSecondaryButton>
+            <AdminDangerButton
+              title="Confirmar eliminación total"
+              aria-label="Confirmar eliminación total"
+              disabled={
+                deletingAll ||
+                bulkDeleteConfirmation.trim() !== String(sales.length)
+              }
+              onClick={() => void removeAll()}
+            >
+              {deletingAll ? (
+                <RefreshCw className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              Eliminar {sales.length} ventas
+            </AdminDangerButton>
+          </div>
+        }
+      >
+        <div className="space-y-4 rounded-2xl border border-red-400/20 bg-red-400/7 p-4">
+          <p className="text-sm leading-6 text-white/70">
+            No se afectarán ventas web, productos, compras ni clientes. Las
+            devoluciones asociadas y su impacto de inventario se revertirán en
+            la misma transacción, y la acción quedará auditada.
+          </p>
+          <label className="block">
+            <span className="mb-2 block text-xs font-black text-red-200">
+              Escribí {sales.length} para confirmar
+            </span>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={bulkDeleteConfirmation}
+              onChange={(event) =>
+                setBulkDeleteConfirmation(
+                  event.target.value.replace(/[^\d]/g, ""),
+                )
+              }
+              className="h-11 w-full rounded-xl border border-red-300/25 bg-black/25 px-3 text-center font-black text-white outline-none transition focus:border-red-300/60"
+            />
+          </label>
+        </div>
+      </AdminModal>
+
+      <AdminModal
         open={Boolean(pendingDelete)}
         eyebrow="Ventas ML"
         title="Eliminar venta importada"
-        description="La venta se quitará de este panel y de sus métricas. Esta acción no modifica nada en Mercado Libre."
+        description="La venta se quitará de este panel; su movimiento de stock y su devolución asociada se revertirán atómicamente. Esta acción no modifica nada en Mercado Libre."
         onClose={() => {
           if (!deletingId) setPendingDelete(null)
         }}
@@ -1485,8 +1624,8 @@ export function AdminMercadoLibreSales() {
               </p>
               <p className="mt-3 text-xs leading-5 text-white/48">
                 Si volvés a importar el mismo Excel, esta venta aparecerá
-                nuevamente. Las ventas con el mismo número se reemplazan, por
-                lo que no se generan duplicados.
+                nuevamente. Una reimportación posterior actualiza el mismo
+                registro y no vuelve a descontar stock.
               </p>
             </div>
           </div>

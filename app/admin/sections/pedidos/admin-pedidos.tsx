@@ -2374,6 +2374,8 @@ function BillingManagementPanel({
   const [accessoriesComplete, setAccessoriesComplete] = useState("no_informado")
   const [originalPackaging, setOriginalPackaging] = useState("no_requerido")
   const [stockDestination, setStockDestination] = useState("pendiente_revision")
+  const [conditionedDiscountPercent, setConditionedDiscountPercent] =
+    useState("10")
   const [showCreditConfirmation, setShowCreditConfirmation] = useState(false)
   const [showClosedDetail, setShowClosedDetail] = useState(false)
   const [settlementSavingId, setSettlementSavingId] = useState<string | null>(null)
@@ -2522,6 +2524,7 @@ function BillingManagementPanel({
     setAccessoriesComplete("no_informado")
     setOriginalPackaging("no_requerido")
     setStockDestination("pendiente_revision")
+    setConditionedDiscountPercent("10")
     setShowCreditConfirmation(false)
     setShowClosedDetail(false)
     setSettlementSavingId(null)
@@ -2627,6 +2630,10 @@ function BillingManagementPanel({
               : accessoriesComplete === "si",
           original_packaging: originalPackaging,
           stock_destination: stockDestination,
+          conditioned_discount_percent:
+            stockDestination === "stock_observaciones"
+              ? Number(conditionedDiscountPercent)
+              : null,
           destination: creditDestination,
           reason: creditReason || reasonDetail,
         }),
@@ -3293,6 +3300,22 @@ function BillingManagementPanel({
                           <option value="no_reingresar">No reingresar</option>
                           </AdminSelect>
                       </label>
+                      {stockDestination === "stock_observaciones" && (
+                        <label className="admin-credit-note-field">
+                          <span>Descuento especial (%)</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            step="1"
+                            value={conditionedDiscountPercent}
+                            onChange={(event) =>
+                              setConditionedDiscountPercent(event.target.value)
+                            }
+                            aria-label="Porcentaje de descuento del producto devuelto"
+                          />
+                        </label>
+                      )}
                       {[
                         "recibido_revision",
                         "producto_aprobado",

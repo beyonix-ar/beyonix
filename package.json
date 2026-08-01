@@ -7,7 +7,9 @@
     "dev:turbopack": "node --max-old-space-size=8192 node_modules/next/dist/bin/next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "node --test --experimental-strip-types lib/mercadolibre/import-integrity.test.ts lib/mercadolibre/sales-report.test.ts lib/inventory/stock-metrics.test.ts lib/inventory/inventory-sql-contract.test.ts lib/products/product-variants.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-label": "2.1.8",

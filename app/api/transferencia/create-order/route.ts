@@ -469,7 +469,12 @@ export async function POST(request: Request) {
     )
 
     try {
-      await validateCheckoutInventory(admin, items)
+      await validateCheckoutInventory(
+        admin,
+        items,
+        payload.reservationSessionId,
+        order.id,
+      )
     } catch (inventoryError) {
       await deleteIncompleteCheckoutOrder(admin, order.id)
       throw inventoryError

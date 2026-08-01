@@ -18,6 +18,7 @@ import {
   STOCK_CHANGED_MESSAGE,
   assertCatalogStock,
 } from "@/lib/cart/stock-status"
+import { validateCheckoutInventory } from "@/lib/orders/checkout-inventory"
 
 interface CreateOrderItem {
   productId: number
@@ -150,19 +151,6 @@ async function reserveOrderStock(
   }
 
   return true
-}
-
-async function completeOrderReservation(
-  supabase: SupabaseServerClient,
-  sessionId: string | null | undefined,
-  orderId: number,
-) {
-  if (!sessionId) return
-
-  await supabase.rpc("complete_cart_stock_reservation", {
-    p_session_id: sessionId,
-    p_order_id: orderId,
-  })
 }
 
 async function releaseOrderReservation(
@@ -465,9 +453,12 @@ export async function createOrder({
       conditionedRows,
     )
 
-    if (hasActiveReservation) {
-      await completeOrderReservation(supabase, reservationSessionId, order.id)
-    }
+    await validateCheckoutInventory(
+      admin,
+      normalizedItems,
+      reservationSessionId,
+      order.id,
+    )
 
     return {
       success: true,

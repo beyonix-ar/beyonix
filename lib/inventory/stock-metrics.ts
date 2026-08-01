@@ -58,7 +58,7 @@ export function calculateInventoryStock(input: {
   const nonSellable = finiteInteger(input.nonSellable)
   const pendingReview = finiteInteger(input.pendingReview)
   const sellable = normal + discounted
-  const quarantine = nonSellable + pendingReview
+  const quarantine = pendingReview
 
   return {
     normal,
@@ -67,6 +67,6 @@ export function calculateInventoryStock(input: {
     pendingReview,
     sellable,
     quarantine,
-    physical: sellable + quarantine,
+    physical: sellable + quarantine + nonSellable,
   }
 }

@@ -31,6 +31,18 @@ function positiveInteger(value: unknown) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
+function nonNegativeInteger(value: unknown) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+function reception(value: unknown) {
+  const status = text(value, 20) ?? "recibida"
+  return new Set(["pendiente", "parcial", "recibida", "anulada"]).has(status)
+    ? status
+    : null
+}
+
 function date(value: unknown) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return null
@@ -171,8 +183,22 @@ export async function POST(request: Request) {
     const purchaseDate = date(body?.purchaseDate)
     const quantity = positiveInteger(body?.quantity)
     const unitCost = amount(body?.unitCost)
+    const receptionStatus = reception(body?.receptionStatus)
+    const requestedReceivedQuantity = nonNegativeInteger(
+      body?.receivedQuantity ?? quantity,
+    )
 
-    if ((!productId && !articleName) || !purchaseDate || !quantity || unitCost == null) {
+    if (
+      (!productId && !articleName) ||
+      !purchaseDate ||
+      !quantity ||
+      unitCost == null ||
+      !receptionStatus ||
+      requestedReceivedQuantity == null ||
+      requestedReceivedQuantity > quantity ||
+      (receptionStatus === "parcial" &&
+        (requestedReceivedQuantity <= 0 || requestedReceivedQuantity >= quantity))
+    ) {
       return Response.json(
         { error: "Artículo, fecha, cantidad y costo unitario son obligatorios." },
         { status: 400 },
@@ -211,38 +237,43 @@ export async function POST(request: Request) {
       return Response.json({ error: "Los importes no pueden ser negativos." }, { status: 400 })
     }
 
-    const { data: inserted, error } = await auth.admin
-      .from("product_cost_entries")
-      .insert({
-        product_id: productId,
-        variant_id: variantId,
-        article_name: productId ? null : articleName,
-        sku: text(body?.sku, 120),
-        purchase_date: purchaseDate,
-        quantity,
-        received_quantity: quantity,
-        unit_cost: unitCost,
-        ...extraAmounts,
-        supplier: text(body?.supplier, 180),
-        document_type: text(body?.documentType, 80),
-        document_number: text(body?.documentNumber, 120),
-        payment_method: text(body?.paymentMethod, 100),
-        notes: text(body?.notes, 1000),
-        created_by: auth.user.id,
-      })
-      .select("*")
-      .single()
+    const { data: inserted, error } = await auth.admin.rpc(
+      "save_product_purchase_atomic",
+      {
+        p_purchase: {
+          product_id: productId,
+          variant_id: variantId,
+          article_name: productId ? null : articleName,
+          sku: text(body?.sku, 120),
+          purchase_date: purchaseDate,
+          quantity,
+          received_quantity: requestedReceivedQuantity,
+          reception_status: receptionStatus,
+          unit_cost: unitCost,
+          ...extraAmounts,
+          supplier: text(body?.supplier, 180),
+          document_type: text(body?.documentType, 80),
+          document_number: text(body?.documentNumber, 120),
+          payment_method: text(body?.paymentMethod, 100),
+          notes: text(body?.notes, 1000),
+        },
+        p_actor_id: auth.user.id,
+      },
+    )
 
     if (error) {
       const missingSkuMigration = /sku/i.test(error.message)
-      const missingInventoryMigration = /received_quantity/i.test(error.message)
-      const missingMigration = /sku|article_name|product_id|received_quantity|null value|schema cache/i.test(
+      const missingInventoryMigration =
+        /save_product_purchase_atomic|reception_status|received_quantity|PGRST202/i.test(
+          error.message,
+        )
+      const missingMigration = /sku|article_name|product_id|received_quantity|null value|schema cache|PGRST202/i.test(
         error.message,
       )
       return Response.json(
         {
           error: missingInventoryMigration
-            ? "Falta aplicar la migración 093_unified_inventory_source.sql en Supabase."
+            ? "Falta aplicar la migración 20260801093000_atomic_product_purchases.sql en Supabase."
             : missingMigration
             ? missingSkuMigration
               ? "Falta aplicar la migración 084_product_cost_sku.sql en Supabase."
@@ -426,8 +457,23 @@ export async function PATCH(request: Request) {
   const purchaseDate = date(body?.purchaseDate)
   const quantity = positiveInteger(body?.quantity)
   const unitCost = amount(body?.unitCost)
+  const receptionStatus = reception(body?.receptionStatus)
+  const requestedReceivedQuantity = nonNegativeInteger(
+    body?.receivedQuantity ?? quantity,
+  )
 
-  if (!id || (!productId && !articleName) || !purchaseDate || !quantity || unitCost == null) {
+  if (
+    !id ||
+    (!productId && !articleName) ||
+    !purchaseDate ||
+    !quantity ||
+    unitCost == null ||
+    !receptionStatus ||
+    requestedReceivedQuantity == null ||
+    requestedReceivedQuantity > quantity ||
+    (receptionStatus === "parcial" &&
+      (requestedReceivedQuantity <= 0 || requestedReceivedQuantity >= quantity))
+  ) {
     return Response.json(
       { error: "Artículo, fecha, cantidad y costo unitario son obligatorios." },
       { status: 400 },
@@ -466,37 +512,43 @@ export async function PATCH(request: Request) {
     return Response.json({ error: "Los importes no pueden ser negativos." }, { status: 400 })
   }
 
-  const { data: updated, error } = await auth.admin
-    .from("product_cost_entries")
-    .update({
-      product_id: productId,
-      variant_id: variantId,
-      article_name: productId ? null : articleName,
-      sku: text(body?.sku, 120),
-      purchase_date: purchaseDate,
-      quantity,
-      received_quantity: quantity,
-      unit_cost: unitCost,
-      ...extraAmounts,
-      supplier: text(body?.supplier, 180),
-      document_type: text(body?.documentType, 80),
-      document_number: text(body?.documentNumber, 120),
-      payment_method: text(body?.paymentMethod, 100),
-      notes: text(body?.notes, 1000),
-    })
-    .eq("id", id)
-    .select("*")
-    .maybeSingle()
+  const { data: updated, error } = await auth.admin.rpc(
+    "save_product_purchase_atomic",
+    {
+      p_purchase: {
+        id,
+        product_id: productId,
+        variant_id: variantId,
+        article_name: productId ? null : articleName,
+        sku: text(body?.sku, 120),
+        purchase_date: purchaseDate,
+        quantity,
+        received_quantity: requestedReceivedQuantity,
+        reception_status: receptionStatus,
+        unit_cost: unitCost,
+        ...extraAmounts,
+        supplier: text(body?.supplier, 180),
+        document_type: text(body?.documentType, 80),
+        document_number: text(body?.documentNumber, 120),
+        payment_method: text(body?.paymentMethod, 100),
+        notes: text(body?.notes, 1000),
+      },
+      p_actor_id: auth.user.id,
+    },
+  )
 
   if (error) {
-    const missingInventoryMigration = /received_quantity/i.test(error.message)
-    const missingMigration = /sku|article_name|product_id|received_quantity|null value|schema cache/i.test(
+    const missingInventoryMigration =
+      /save_product_purchase_atomic|reception_status|received_quantity|PGRST202/i.test(
+        error.message,
+      )
+    const missingMigration = /sku|article_name|product_id|received_quantity|null value|schema cache|PGRST202/i.test(
       error.message,
     )
     return Response.json(
       {
         error: missingInventoryMigration
-          ? "Falta aplicar la migración 093_unified_inventory_source.sql en Supabase."
+          ? "Falta aplicar la migración 20260801093000_atomic_product_purchases.sql en Supabase."
           : missingMigration
           ? "Falta aplicar la migración 084_product_cost_sku.sql en Supabase."
           : "No se pudo actualizar la compra.",
@@ -548,9 +600,32 @@ export async function DELETE(request: Request) {
     return Response.json({ success: true })
   }
 
-  const { error } = await auth.admin.from(table!).delete().eq("id", id)
+  const { data: deleted, error } = await auth.admin.rpc(
+    "delete_product_purchase_atomic",
+    {
+      p_purchase_id: id,
+      p_actor_id: auth.user.id,
+    },
+  )
   if (error) {
-    return Response.json({ error: "No se pudo eliminar el movimiento." }, { status: 500 })
+    const missingMigration =
+      /delete_product_purchase_atomic|schema cache|PGRST202/i.test(
+        error.message,
+      )
+    const consumedStock = /STOCK_INSUFICIENTE/i.test(error.message)
+    return Response.json(
+      {
+        error: missingMigration
+          ? "Falta aplicar la migración 20260801093000_atomic_product_purchases.sql en Supabase."
+          : consumedStock
+            ? "No se puede eliminar la compra porque parte de ese stock ya fue consumido. Anulala o corregí primero los movimientos posteriores."
+            : error.message || "No se pudo eliminar el movimiento.",
+      },
+      { status: missingMigration ? 503 : consumedStock ? 409 : 500 },
+    )
+  }
+  if (!deleted) {
+    return Response.json({ error: "La compra ya no existe." }, { status: 404 })
   }
 
   return Response.json({ success: true })

@@ -5,7 +5,7 @@ import {
   getMercadoLibreSaleIdentity,
   validateMercadoLibreImportBatch,
   type MercadoLibreIdentityRow,
-} from "./import-integrity"
+} from "./import-integrity.ts"
 
 function sale(
   overrides: Partial<MercadoLibreIdentityRow> = {},
@@ -80,6 +80,19 @@ test("distingue publicaciones y variantes dentro de una misma orden", () => {
   assert.notEqual(
     getMercadoLibreSaleIdentity(black),
     getMercadoLibreSaleIdentity(otherListing),
+  )
+})
+
+test("la identidad alternativa normaliza formatos equivalentes de fecha", () => {
+  const iso = sale({ operation_id: null, sale_date: "2026-07-29T12:00:00.000Z" })
+  const databaseFormat = sale({
+    operation_id: null,
+    sale_date: "2026-07-29 12:00:00+00",
+  })
+
+  assert.equal(
+    getMercadoLibreSaleIdentity(iso),
+    getMercadoLibreSaleIdentity(databaseFormat),
   )
 })
 

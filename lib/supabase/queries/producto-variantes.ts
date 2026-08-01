@@ -18,6 +18,7 @@ export interface ProductoVariantePayload {
 export interface ProductVariantAllocation {
   variant_id: number
   allocated_quantity: number
+  reserved_quantity: number
   available_quantity: number
 }
 
@@ -31,6 +32,8 @@ export interface ProductVariantDistribution {
   sellableStock: number
   quarantineStock: number
   physicalStock: number
+  reservedStock: number
+  availableStock: number
   genericBalance: number
   assignableQuantity: number
   allocatedQuantity: number
@@ -271,7 +274,6 @@ export async function updateProductoVariante(
   const catalogPayload = { ...payload }
   delete catalogPayload.producto_id
   delete catalogPayload.stock
-  delete catalogPayload.producto_id
   delete catalogPayload.activo
 
   const result = await variantRequest<{

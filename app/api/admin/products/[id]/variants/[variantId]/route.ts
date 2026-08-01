@@ -202,19 +202,13 @@ export async function PATCH(
       )
     }
 
-    const [currentResult, allocationsResult] = await Promise.all([
-      auth.admin
-        .from("producto_variantes")
-        .select("*")
-        .eq("id", variantId)
-        .eq("producto_id", productId)
-        .maybeSingle(),
-      auth.admin
-        .from("inventory_variant_allocations")
-        .select("variant_id, quantity")
-        .eq("product_id", productId),
-    ])
-    if (currentResult.error || allocationsResult.error) {
+    const currentResult = await auth.admin
+      .from("producto_variantes")
+      .select("id")
+      .eq("id", variantId)
+      .eq("producto_id", productId)
+      .maybeSingle()
+    if (currentResult.error) {
       return Response.json(
         { error: "No se pudo preparar la actualización de la variante." },
         { status: 500 },
@@ -264,79 +258,24 @@ export async function PATCH(
         p_actor_id: auth.user.id,
       },
     )
-    const atomicFunctionMissing =
-      atomicResult.error &&
-      /update_product_variant_with_allocation|schema cache|PGRST202/i.test(
-        atomicResult.error.message,
-      )
     if (!atomicResult.error) {
       const updated = Array.isArray(atomicResult.data)
         ? atomicResult.data[0]
         : atomicResult.data
       return Response.json({ variant: updated })
     }
-    if (!atomicFunctionMissing) {
-      return Response.json(
-        { error: atomicResult.error.message },
-        { status: 409 },
+    const missingMigration =
+      /update_product_variant_with_allocation|schema cache|PGRST202/i.test(
+        atomicResult.error.message,
       )
-    }
-
-    const { data: updated, error: updateError } = await auth.admin
-      .from("producto_variantes")
-      .update({
-        nombre: name,
-        sku,
-        color_hex: color,
-        imagenes: images,
-      })
-      .eq("id", variantId)
-      .eq("producto_id", productId)
-      .select("*")
-      .single()
-    if (updateError) {
-      return Response.json(
-        { error: updateError.message },
-        { status: 409 },
-      )
-    }
-
-    const allocations = (allocationsResult.data ?? []).map((allocation) => ({
-      variant_id: Number(allocation.variant_id),
-      quantity:
-        Number(allocation.variant_id) === variantId
-          ? quantity
-          : Number(allocation.quantity),
-    }))
-    if (!allocations.some((item) => item.variant_id === variantId)) {
-      allocations.push({ variant_id: variantId, quantity })
-    }
-    const { error: allocationError } = await auth.admin.rpc(
-      "set_product_variant_allocations",
+    return Response.json(
       {
-        p_product_id: productId,
-        p_allocations: allocations,
-        p_actor_id: auth.user.id,
+        error: missingMigration
+          ? "Falta aplicar la migración 20260730170000_inventory_integrity_and_variant_sales.sql."
+          : atomicResult.error.message,
       },
+      { status: missingMigration ? 503 : 409 },
     )
-    if (allocationError) {
-      const previous = currentResult.data
-      await auth.admin
-        .from("producto_variantes")
-        .update({
-          nombre: previous.nombre,
-          sku: previous.sku,
-          color_hex: previous.color_hex,
-          imagenes: previous.imagenes,
-        })
-        .eq("id", variantId)
-      return Response.json(
-        { error: allocationError.message },
-        { status: 409 },
-      )
-    }
-
-    return Response.json({ variant: updated })
   }
 
   const { data: variant, error: variantError } = await auth.admin
@@ -363,6 +302,7 @@ export async function PATCH(
   const relatedProduct = Array.isArray(variant.productos)
     ? variant.productos[0]
     : variant.productos
+  const updates = { activo: body.activo }
 
   if (updates.activo === true && relatedProduct?.activo === false) {
     return Response.json(

@@ -11,6 +11,13 @@ function optionalText(value: unknown, max: number) {
   return normalized ? normalized.slice(0, max) : null
 }
 
+function optionalDateTime(value: unknown) {
+  if (value == null || value === "") return null
+  if (typeof value !== "string") return undefined
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -32,12 +39,14 @@ export async function POST(
       : null
   const discountReason = optionalText(body?.discountReason, 300)
   const nonSellableReason = optionalText(body?.nonSellableReason, 300)
+  const occurredAt = optionalDateTime(body?.occurredAt)
 
   if (
     receivedQuantity == null ||
     sellableQuantity == null ||
     discountedQuantity == null ||
-    nonSellableQuantity == null
+    nonSellableQuantity == null ||
+    occurredAt === undefined
   ) {
     return Response.json(
       { error: "Las cantidades de la revisión no son válidas." },
@@ -84,71 +93,41 @@ export async function POST(
     )
   }
 
-  const { data: sale, error: saleError } = await auth.admin
-    .from("mercadolibre_sales")
-    .select("id, product_id, quantity")
-    .eq("id", id)
-    .maybeSingle()
-
-  if (saleError || !sale) {
-    return Response.json(
-      { error: "La venta de Mercado Libre ya no existe." },
-      { status: 404 },
-    )
-  }
-  if (!sale.product_id) {
-    return Response.json(
-      { error: "Primero vinculá la venta con un producto." },
-      { status: 400 },
-    )
-  }
-  if (receivedQuantity > Number(sale.quantity)) {
-    return Response.json(
-      { error: "No podés recibir más unidades que las vendidas." },
-      { status: 400 },
-    )
-  }
-
-  const { data: review, error } = await auth.admin
-    .from("inventory_return_movements")
-    .upsert(
-      {
-        source_key: `mercadolibre-sale:${sale.id}`,
-        order_id: null,
-        order_item_id: null,
-        mercadolibre_sale_id: sale.id,
-        product_id: sale.product_id,
-        variant_id: null,
-        quantity: sellableQuantity,
-        received_quantity: receivedQuantity,
-        sellable_quantity: sellableQuantity,
-        discounted_quantity: discountedQuantity,
-        non_sellable_quantity: nonSellableQuantity,
-        discount_percent: discountPercent,
-        discount_reason: discountedQuantity > 0 ? discountReason : null,
-        non_sellable_reason:
-          nonSellableQuantity > 0 ? nonSellableReason : null,
-        review_notes: optionalText(body?.notes, 1000),
-        approved_by: auth.user.id,
-        approved_at: new Date().toISOString(),
-      },
-      { onConflict: "source_key" },
-    )
-    .select("*")
-    .single()
+  const { data: review, error } = await auth.admin.rpc(
+    "review_mercadolibre_return",
+    {
+      p_sale_id: id,
+      p_received_quantity: receivedQuantity,
+      p_sellable_quantity: sellableQuantity,
+      p_discounted_quantity: discountedQuantity,
+      p_non_sellable_quantity: nonSellableQuantity,
+      p_discount_percent: discountPercent,
+      p_discount_reason: discountReason,
+      p_non_sellable_reason: nonSellableReason,
+      p_notes: optionalText(body?.notes, 1000),
+      p_occurred_at: occurredAt,
+      p_reviewed_by: auth.user.id,
+    },
+  )
 
   if (error) {
     const missingMigration =
-      /mercadolibre_sale_id|received_quantity|sellable_quantity|discount_reason|schema cache/i.test(
+      /review_mercadolibre_return|mercadolibre_sale_id|occurred_at|schema cache|PGRST202/i.test(
         error.message,
       )
     return Response.json(
       {
         error: missingMigration
-          ? "Falta aplicar la migración 103_separate_conditioned_return_stock.sql."
-          : "No se pudo guardar la revisión física.",
+          ? "Falta aplicar la migración 20260801091000_mercadolibre_returns_and_bulk_delete.sql."
+          : error.message || "No se pudo guardar la revisión física.",
       },
-      { status: missingMigration ? 503 : 500 },
+      {
+        status: missingMigration
+          ? 503
+          : /STOCK_INSUFICIENTE/i.test(error.message)
+            ? 409
+            : 500,
+      },
     )
   }
 

@@ -25,20 +25,34 @@ function isStockConflict(message?: string) {
 export async function validateCheckoutInventory(
   admin: AdminClient,
   items: CheckoutInventoryItem[],
+  reservationSessionId: string | null | undefined,
+  orderId: number,
 ) {
-  const { error } = await admin.rpc("decrement_checkout_inventory", {
+  const { error } = await admin.rpc("validate_checkout_inventory_reservation", {
     p_items: items.map((item) => ({
       product_id: item.productId,
       variant_id: item.variantId ?? null,
       conditioned_stock_id: item.conditionedStockId ?? null,
       quantity: item.quantity,
     })),
+    p_session_id: reservationSessionId ?? null,
+    p_order_id: orderId,
   })
 
   if (!error) return
 
   if (isStockConflict(error.message)) {
     throw new Error(STOCK_CHANGED_MESSAGE)
+  }
+
+  if (
+    /validate_checkout_inventory_reservation|schema cache|PGRST202/i.test(
+      error.message,
+    )
+  ) {
+    throw new Error(
+      "El sistema de reservas de stock no está actualizado. Intentá nuevamente luego de aplicar la migración pendiente.",
+    )
   }
 
   throw new Error(

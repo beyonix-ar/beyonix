@@ -3,7 +3,10 @@ import {
   getCanonicalCatalogSku,
   normalizeMercadoLibreSku,
 } from "@/lib/mercadolibre/sku-aliases"
-import { validateMercadoLibreImportBatch } from "@/lib/mercadolibre/import-integrity"
+import {
+  getMercadoLibreSaleIdentity,
+  validateMercadoLibreImportBatch,
+} from "@/lib/mercadolibre/import-integrity"
 
 interface MercadoLibreSaleInput {
   sale_date?: string | null
@@ -21,7 +24,10 @@ interface MercadoLibreSaleInput {
 }
 
 interface ExistingCostMappingRow {
-  source_key: string
+  id: string
+  sale_date: string | null
+  operation_id: string | null
+  order_id: string | null
   sku: string | null
   product_name: string
   product_id: number | null
@@ -56,28 +62,6 @@ function mappingKey(sku: unknown, productName: unknown) {
     : `product:${String(productName ?? "").trim()}`
 }
 
-function sourceIdentityPart(value: unknown) {
-  return encodeURIComponent(String(value ?? "").trim().toUpperCase())
-}
-
-function getSaleSourceKey(row: MercadoLibreSaleInput) {
-  const raw = rawObject(row.raw_data)
-  const parsed = rawObject(raw.parsed)
-  const operationId =
-    row.operation_id || parsed.sale_number || row.order_id || ""
-  const listingId = parsed.listing_id || ""
-  const variant = parsed.variant || ""
-  const sku = normalizeMercadoLibreSku(row.sku || parsed.sku)
-
-  return [
-    "mercadolibre",
-    sourceIdentityPart(operationId),
-    sourceIdentityPart(listingId),
-    sourceIdentityPart(variant),
-    sourceIdentityPart(sku),
-  ].join(":")
-}
-
 function getExistingCostMapping(row: ExistingCostMappingRow) {
   const raw = rawObject(row.raw_data)
   const stored = rawObject(raw.beyonix_cost_mapping)
@@ -107,7 +91,6 @@ function getExistingCostMapping(row: ExistingCostMappingRow) {
 
 function normalizeSale(row: MercadoLibreSaleInput, importedBy: string) {
   return {
-    source_key: getSaleSourceKey(row),
     sale_date: row.sale_date || null,
     operation_id: row.operation_id || null,
     order_id: row.order_id || null,
@@ -178,14 +161,38 @@ export async function POST(request: Request) {
         .filter((value): value is string => Boolean(value)),
     ),
   )
-  const sourceKeys = Array.from(new Set(payload.map((row) => row.source_key)))
+  const operationIds = Array.from(
+    new Set(
+      payload
+        .map((row) => row.operation_id)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  )
+  const orderIds = Array.from(
+    new Set(
+      payload
+        .map((row) => row.order_id)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  )
   const mappingMatches: ExistingCostMappingRow[] = []
 
-  for (let index = 0; index < sourceKeys.length; index += 400) {
+  for (let index = 0; index < operationIds.length; index += 400) {
     const { data, error } = await auth.admin
       .from("mercadolibre_sales")
-      .select("source_key, sku, product_name, product_id, unit_cost, raw_data")
-      .in("source_key", sourceKeys.slice(index, index + 400))
+      .select("id, sale_date, operation_id, order_id, sku, product_name, product_id, unit_cost, raw_data")
+      .in("operation_id", operationIds.slice(index, index + 400))
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    mappingMatches.push(
+      ...((data ?? []) as unknown as ExistingCostMappingRow[]),
+    )
+  }
+  for (let index = 0; index < orderIds.length; index += 400) {
+    const { data, error } = await auth.admin
+      .from("mercadolibre_sales")
+      .select("id, sale_date, operation_id, order_id, sku, product_name, product_id, unit_cost, raw_data")
+      .is("operation_id", null)
+      .in("order_id", orderIds.slice(index, index + 400))
     if (error) return Response.json({ error: error.message }, { status: 500 })
     mappingMatches.push(
       ...((data ?? []) as unknown as ExistingCostMappingRow[]),
@@ -195,7 +202,13 @@ export async function POST(request: Request) {
   mappingMatches.forEach((row) => {
     const mapping = getExistingCostMapping(row)
     if (mapping) {
-      preservedMappings.set(row.source_key, mapping)
+      preservedMappings.set(
+        getMercadoLibreSaleIdentity({
+          ...row,
+          raw_data: row.raw_data ?? undefined,
+        }),
+        mapping,
+      )
     }
   })
 
@@ -255,7 +268,9 @@ export async function POST(request: Request) {
   payload = payload.map((row) => {
     const key = mappingKey(row.sku, row.product_name)
     const automaticMapping = automaticMappings.get(key)
-    const preservedMapping = preservedMappings.get(row.source_key)
+    const preservedMapping = preservedMappings.get(
+      getMercadoLibreSaleIdentity(row),
+    )
     // Una operación ya contabilizada conserva su imputación histórica para no
     // mover stock entre el pool genérico y una variante al reimportar. Sólo
     // las operaciones nuevas usan la identidad SKU vigente del catálogo.
@@ -280,68 +295,6 @@ export async function POST(request: Request) {
     }
   })
 
-  const operationIds = Array.from(
-    new Set(
-      payload
-        .map((row) => row.operation_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  )
-  const incomingSourceKeys = new Set(payload.map((row) => row.source_key))
-  const existingRows: Array<{ id: string; source_key: string }> = []
-  for (let index = 0; index < operationIds.length; index += 400) {
-    const { data, error } = await auth.admin
-      .from("mercadolibre_sales")
-      .select("id, source_key")
-      .in("operation_id", operationIds.slice(index, index + 400))
-    if (error) {
-      return Response.json({ error: error.message }, { status: 500 })
-    }
-    existingRows.push(
-      ...(data ?? []).map((row) => ({
-        id: String(row.id),
-        source_key: String(row.source_key),
-      })),
-    )
-  }
-
-  const existingIds = new Set(existingRows.map((row) => row.id))
-  const insertedIds: string[] = []
-  for (let index = 0; index < payload.length; index += 400) {
-    const { data, error } = await auth.admin
-      .from("mercadolibre_sales")
-      .upsert(payload.slice(index, index + 400), {
-        onConflict: "source_key",
-      })
-      .select("id")
-    if (error) {
-      const newIds = insertedIds.filter((id) => !existingIds.has(id))
-      if (newIds.length) {
-        await auth.admin.from("mercadolibre_sales").delete().in("id", newIds)
-      }
-      return Response.json({ error: error.message }, { status: 500 })
-    }
-    insertedIds.push(...(data ?? []).map((row) => String(row.id)))
-  }
-
-  const staleIds = existingRows
-    .filter((row) => !incomingSourceKeys.has(row.source_key))
-    .map((row) => row.id)
-  for (let index = 0; index < staleIds.length; index += 400) {
-    const { error } = await auth.admin
-      .from("mercadolibre_sales")
-      .delete()
-      .in("id", staleIds.slice(index, index + 400))
-    if (error) {
-      return Response.json(
-        {
-          error:
-            "Las ventas se importaron, pero no se pudieron reemplazar todos los registros anteriores.",
-        },
-        { status: 500 },
-      )
-    }
-  }
   const { data: importResult, error: importError } = await auth.admin.rpc(
     "import_mercadolibre_sales_idempotent",
     {
@@ -359,7 +312,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error: missingMigration
-          ? "Falta aplicar la migración 106_idempotent_mercadolibre_import.sql."
+          ? "Falta aplicar la migración 20260801090000_idempotent_mercadolibre_import.sql."
           : importError.message,
       },
       { status: missingMigration ? 503 : 400 },
@@ -378,8 +331,13 @@ export async function POST(request: Request) {
     integrityResult.duplicateRows + Number(result.duplicate_rows ?? 0)
 
   return Response.json({
-    imported: payload.length,
-    replaced: existingRows.length,
+    received: payload.length,
+    inserted,
+    updated,
+    unchanged,
+    duplicateRows,
+    invalidRows: 0,
+    errors: [],
     linked: payload.filter(
       (row) => "product_id" in row && row.product_id != null,
     ).length,

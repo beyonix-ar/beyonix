@@ -27,6 +27,7 @@ export interface ProductCostEntry {
   purchase_date: string
   quantity: number
   received_quantity: number
+  reception_status: "pendiente" | "parcial" | "recibida" | "anulada"
   unit_cost: number
   freight_cost: number
   tax_cost: number

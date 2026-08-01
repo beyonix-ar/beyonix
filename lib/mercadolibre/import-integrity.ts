@@ -23,6 +23,11 @@ function objectValue(value: unknown) {
     : {}
 }
 
+function normalizedDate(value: unknown) {
+  const parsed = new Date(String(value ?? ""))
+  return Number.isNaN(parsed.getTime()) ? normalized(value) : String(parsed.getTime())
+}
+
 export function getMercadoLibreIdentityParts(row: MercadoLibreIdentityRow) {
   const parsed = objectValue(objectValue(row.raw_data).parsed)
   const operationId = normalized(row.operation_id)
@@ -50,7 +55,7 @@ export function getMercadoLibreIdentityParts(row: MercadoLibreIdentityRow) {
         "order",
         normalized(row.order_id),
         "sale_date",
-        normalized(row.sale_date),
+        normalizedDate(row.sale_date),
         discriminatorType,
         discriminator,
         "variant",

@@ -481,7 +481,6 @@ export function ProductosRow({
       setVariantError("")
       const updated = await updateProductoVariante(
         producto.id,
-        producto.id,
         variante.id,
         {
           nombre: name,

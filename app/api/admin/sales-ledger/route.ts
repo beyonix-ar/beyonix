@@ -289,6 +289,18 @@ function normalizePayload(body: Record<string, unknown>, userId: string, updatin
 }
 
 function databaseError(message: string) {
+  if (/STOCK_INSUFICIENTE/i.test(message)) {
+    return errorResponse(
+      "La venta supera el stock disponible del producto o de la variante.",
+      409,
+    )
+  }
+  if (/source_key|prepare_manual_mercadolibre_sale_identity/i.test(message)) {
+    return errorResponse(
+      "Falta aplicar la migración 20260801100000_inventory_sale_write_guards.sql en Supabase.",
+      503,
+    )
+  }
   const missingVariantMigration = /variant_id/i.test(message)
   const missingMigration = /external_sales|unit_price|unit_cost|other_expense_amount|fee_type|fee_value|customer_name|schema cache/i.test(
     message,

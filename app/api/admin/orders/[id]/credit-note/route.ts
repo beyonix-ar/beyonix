@@ -28,6 +28,20 @@ type InventoryReturnMovement = {
   product_id: number
   variant_id: number | null
   quantity: number
+  received_quantity: number
+  sellable_quantity: number
+  discounted_quantity: number
+  non_sellable_quantity: number
+  discount_percent: number | null
+  discount_reason: string | null
+  non_sellable_reason: string | null
+  review_notes: string | null
+  occurred_at: string
+  conditioned_active: boolean
+  conditioned_name: string | null
+  conditioned_sku: string | null
+  conditioned_color_hex: string | null
+  conditioned_images: string[]
   approved_by: string
   approved_at: string
 }
@@ -55,6 +69,7 @@ type CreditNoteRequest = {
   accessories_complete?: unknown
   original_packaging?: unknown
   stock_destination?: unknown
+  conditioned_discount_percent?: unknown
   claim_id?: unknown
 }
 
@@ -251,6 +266,7 @@ export async function POST(
     STOCK_DESTINATIONS,
     "pendiente_revision",
   )
+  const conditionedDiscountPercent = Number(body.conditioned_discount_percent)
   const claimIdValue = Number(body.claim_id)
   let claimId =
     Number.isInteger(claimIdValue) && claimIdValue > 0 ? claimIdValue : null
@@ -280,6 +296,17 @@ export async function POST(
   ) {
     return NextResponse.json(
       { error: "Revisá los importes de la gestión." },
+      { status: 400 },
+    )
+  }
+  if (
+    stockDestination === "stock_observaciones" &&
+    (!Number.isFinite(conditionedDiscountPercent) ||
+      conditionedDiscountPercent <= 0 ||
+      conditionedDiscountPercent >= 100)
+  ) {
+    return NextResponse.json(
+      { error: "Indicá un descuento entre 0% y 100% para el stock con observaciones." },
       { status: 400 },
     )
   }
@@ -318,7 +345,7 @@ export async function POST(
         .single(),
       auth.admin
         .from("orden_items")
-        .select("id, orden_id, producto_id, variante_id, conditioned_name, cantidad, precio")
+        .select("id, orden_id, producto_id, variante_id, conditioned_stock_id, conditioned_name, cantidad, precio")
         .eq("orden_id", orderId),
     ])
 
@@ -459,12 +486,15 @@ export async function POST(
   ]
   const [productsResult, variantsResult] = await Promise.all([
     productIds.length
-      ? auth.admin.from("productos").select("id, nombre").in("id", productIds)
+      ? auth.admin
+          .from("productos")
+          .select("id, nombre, sku, imagen_principal")
+          .in("id", productIds)
       : Promise.resolve({ data: [], error: null }),
     variantIds.length
       ? auth.admin
           .from("producto_variantes")
-          .select("id, nombre")
+          .select("id, nombre, sku, color_hex, imagenes")
           .in("id", variantIds)
       : Promise.resolve({ data: [], error: null }),
   ])
@@ -479,6 +509,12 @@ export async function POST(
   )
   const variantNames = new Map(
     (variantsResult.data ?? []).map((variant) => [Number(variant.id), variant.nombre]),
+  )
+  const productsById = new Map(
+    (productsResult.data ?? []).map((product) => [Number(product.id), product]),
+  )
+  const variantsById = new Map(
+    (variantsResult.data ?? []).map((variant) => [Number(variant.id), variant]),
   )
   const selectedItems = selectedBase.map(
     ({ item, quantity, allocation, totalAmount }) => ({
@@ -710,13 +746,41 @@ export async function POST(
     }
     arcaAuthorizationPersisted = true
 
-    if (
-      stockDestination === "stock_vendible" &&
-      ["producto_aprobado", "aprobado_parcial"].includes(receptionStatus)
-    ) {
+    const physicallyReceived = [
+      "recibido_revision",
+      "producto_aprobado",
+      "producto_rechazado",
+      "aprobado_parcial",
+    ].includes(receptionStatus)
+    if (physicallyReceived && stockDestination !== "no_reingresar") {
       const orderItemsById = new Map(
         items.map((item) => [Number(item.id), item]),
       )
+      const conditionedIds = items
+        .map((item) => item.conditioned_stock_id)
+        .filter((value): value is string => typeof value === "string")
+      const conditionedSources = conditionedIds.length
+        ? await auth.admin
+            .from("inventory_return_movements")
+            .select("id, variant_id")
+            .in("id", conditionedIds)
+        : { data: [], error: null }
+      if (conditionedSources.error) {
+        throw new Error(
+          "No se pudo recuperar la variante original del stock con descuento.",
+        )
+      }
+      const sourceVariantByMovement = new Map(
+        (conditionedSources.data ?? []).map((movement) => [
+          String(movement.id),
+          typeof movement.variant_id === "number" ? movement.variant_id : null,
+        ]),
+      )
+      const occurredAt = /^\d{4}-\d{2}-\d{2}$/.test(
+        String(body.reception_date ?? ""),
+      )
+        ? `${String(body.reception_date)}T12:00:00-03:00`
+        : authorizedAt
       const returnMovements = (note.order_credit_note_items ?? [])
         .map((creditItem: {
           id: number
@@ -730,16 +794,80 @@ export async function POST(
           )
           if (!orderItem || quantity <= 0) return null
 
+          const product = productsById.get(Number(orderItem.producto_id))
+          const variant =
+            typeof orderItem.variante_id === "number"
+              ? variantsById.get(orderItem.variante_id)
+              : null
+          const returnVariantId =
+            typeof orderItem.variante_id === "number"
+              ? orderItem.variante_id
+              : orderItem.conditioned_stock_id
+                ? sourceVariantByMovement.get(orderItem.conditioned_stock_id) ?? null
+                : null
+          const sellableQuantity =
+            stockDestination === "stock_vendible" ? quantity : 0
+          const discountedQuantity =
+            stockDestination === "stock_observaciones" ? quantity : 0
+          const nonSellableQuantity = [
+            "fallado",
+            "garantia_proveedor",
+          ].includes(stockDestination)
+            ? quantity
+            : 0
+          const discountReason =
+            discountedQuantity > 0
+              ? optionalText(body.physical_condition, 300) ||
+                optionalText(body.reception_notes, 300) ||
+                "Detalle físico verificado en devolución"
+              : null
+          const nonSellableReason =
+            nonSellableQuantity > 0
+              ? optionalText(body.reception_notes, 300) ||
+                optionalText(body.physical_condition, 300) ||
+                (stockDestination === "garantia_proveedor"
+                  ? "Derivado a garantía del proveedor"
+                  : "Producto fallado")
+              : null
+          const baseName = [product?.nombre, variant?.nombre]
+            .filter(Boolean)
+            .join(" · ")
+          const baseSku = variant?.sku || product?.sku || `DEV-${orderItem.id}`
+
           return {
             source_key: `credit-note-item:${creditItem.id}`,
             order_id: orderId,
             order_item_id: Number(orderItem.id),
             product_id: Number(orderItem.producto_id),
-            variant_id:
-              typeof orderItem.variante_id === "number"
-                ? orderItem.variante_id
+            variant_id: returnVariantId,
+            quantity: sellableQuantity + discountedQuantity,
+            received_quantity: quantity,
+            sellable_quantity: sellableQuantity,
+            discounted_quantity: discountedQuantity,
+            non_sellable_quantity: nonSellableQuantity,
+            discount_percent:
+              discountedQuantity > 0 ? conditionedDiscountPercent : null,
+            discount_reason: discountReason,
+            non_sellable_reason: nonSellableReason,
+            review_notes: optionalText(body.reception_notes, 1000),
+            occurred_at: occurredAt,
+            conditioned_active: discountedQuantity > 0,
+            conditioned_name:
+              discountedQuantity > 0
+                ? `${baseName || "Producto devuelto"} · Con descuento`
                 : null,
-            quantity,
+            conditioned_sku:
+              discountedQuantity > 0
+                ? `${baseSku}-DEV-${creditItem.id}`.slice(0, 120)
+                : null,
+            conditioned_color_hex:
+              discountedQuantity > 0
+                ? variant?.color_hex || "#808080"
+                : null,
+            conditioned_images:
+              discountedQuantity > 0 && Array.isArray(variant?.imagenes)
+                ? variant.imagenes
+                : [],
             approved_by: auth.user.id,
             approved_at: authorizedAt,
           }
@@ -753,7 +881,7 @@ export async function POST(
       if (returnMovements.length) {
         const { error: stockMovementError } = await auth.admin
           .from("inventory_return_movements")
-          .upsert(returnMovements, { onConflict: "source_key", ignoreDuplicates: true })
+          .upsert(returnMovements, { onConflict: "source_key" })
 
         if (stockMovementError) {
           throw new Error(

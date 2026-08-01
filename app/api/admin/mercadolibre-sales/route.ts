@@ -84,13 +84,15 @@ export async function GET(request: Request) {
     let { data, error } = await auth.admin
       .from("inventory_return_movements")
       .select(
-        "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, discount_reason, non_sellable_reason, review_notes, approved_at",
+        "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, discount_reason, non_sellable_reason, review_notes, occurred_at, approved_at, updated_at",
       )
       .in("mercadolibre_sale_id", saleIds.slice(index, index + 400))
 
     if (
       error &&
-      /discount_reason|non_sellable_reason|schema cache/i.test(error.message)
+      /discount_reason|non_sellable_reason|occurred_at|updated_at|schema cache/i.test(
+        error.message,
+      )
     ) {
       const fallback = await auth.admin
         .from("inventory_return_movements")
@@ -102,6 +104,8 @@ export async function GET(request: Request) {
         ...review,
         discount_reason: null,
         non_sellable_reason: null,
+        occurred_at: review.approved_at,
+        updated_at: review.approved_at,
       })) ?? null
       error = fallback.error
     }
@@ -425,19 +429,46 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const auth = await authorize(request)
+  const auth = await requireInternalUser(request, ["admin", "super_admin"])
   if ("error" in auth) return auth.error
-  const id = new URL(request.url).searchParams.get("id")
-  if (!id) {
+  const url = new URL(request.url)
+  const deleteAll = url.searchParams.get("scope") === "all"
+  const id = url.searchParams.get("id")
+  const expectedCount = Number(url.searchParams.get("expectedCount"))
+  if (!deleteAll && !id) {
     return Response.json({ error: "La venta indicada no es válida." }, { status: 400 })
   }
-
-  const { error } = await auth.admin.from("mercadolibre_sales").delete().eq("id", id)
-  if (error) {
+  if (
+    deleteAll &&
+    (!Number.isInteger(expectedCount) || expectedCount < 0)
+  ) {
     return Response.json(
-      { error: "No se pudo eliminar la venta de Mercado Libre." },
-      { status: 500 },
+      { error: "La confirmación de cantidad no es válida." },
+      { status: 400 },
     )
   }
-  return Response.json({ success: true })
+
+  const { data, error } = await auth.admin.rpc(
+    "delete_mercadolibre_sales_atomic",
+    {
+      p_sale_id: deleteAll ? null : id,
+      p_expected_count: deleteAll ? expectedCount : 1,
+      p_deleted_by: auth.user.id,
+    },
+  )
+  if (error) {
+    const missingMigration =
+      /delete_mercadolibre_sales_atomic|schema cache|PGRST202/i.test(
+        error.message,
+      )
+    return Response.json(
+      {
+        error: missingMigration
+          ? "Falta aplicar la migración 20260801091000_mercadolibre_returns_and_bulk_delete.sql."
+          : error.message || "No se pudieron eliminar las ventas de Mercado Libre.",
+      },
+      { status: missingMigration ? 503 : 409 },
+    )
+  }
+  return Response.json({ success: true, ...(data as object) })
 }

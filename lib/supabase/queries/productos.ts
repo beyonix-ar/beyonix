@@ -392,7 +392,6 @@ export async function getProductosPage({
   const safePageSize = Math.min(100, Math.max(10, Math.floor(pageSize)))
   const from = (safePage - 1) * safePageSize
   const to = from + safePageSize - 1
-  const adminVariants = await getAdminProductoVariantes()
   let query = supabase
     .from("productos")
     .select(ADMIN_PRODUCTO_SELECT, { count: "exact" })
@@ -403,7 +402,6 @@ export async function getProductosPage({
       skuSearch: normalizedSearch,
     })
     const variantProductIds = [
-      ...new Set(matchingVariants.map((item) => item.producto_id)),
       ...new Set(matchingVariants.map((item) => item.producto_id)),
     ]
     const variantSearchClause = variantProductIds.length
@@ -420,7 +418,6 @@ export async function getProductosPage({
       colorSearch: normalizedColor,
     })
     const productIds = [
-      ...new Set(matchingVariants.map((item) => item.producto_id)),
       ...new Set(matchingVariants.map((item) => item.producto_id)),
     ]
 
@@ -499,8 +496,7 @@ export async function getProductosPage({
     await attachConditionedStock(
       rawProducts.map((producto) => ({
         ...producto,
-        producto_variantes: variantsByProduct.get(producto.id) ?? [],
-        producto_variantes: [...(variantsByProduct[producto.id] ?? [])].sort(
+        producto_variantes: [...(variantsByProduct.get(producto.id) ?? [])].sort(
           (a, b) => a.orden - b.orden || a.id - b.id,
         ),
       })),
@@ -692,56 +688,22 @@ export async function createProductoCompleto({
     p_variantes: catalogVariants,
     p_especificaciones: especificaciones,
   }
-  let usedAtomicSkuVersion = true
-  let result = await supabase.rpc(
+  const result = await supabase.rpc(
     "create_producto_completo_v2",
     rpcPayload,
   )
-  if (
-    result.error &&
-    /create_producto_completo_v2|schema cache|PGRST202/i.test(
-      result.error.message,
-    )
-  ) {
-    usedAtomicSkuVersion = false
-    result = await supabase.rpc("create_producto_completo", rpcPayload)
-  }
   const { data, error } = result
 
   if (error) {
+    if (/create_producto_completo_v2|schema cache|PGRST202/i.test(error.message)) {
+      throw new Error(
+        "Falta aplicar la migración 20260730170000_inventory_integrity_and_variant_sales.sql.",
+      )
+    }
     throw error
   }
 
-  const created = data as SupabaseProducto
-  if (usedAtomicSkuVersion) return created
-
-  // Compatibilidad temporal hasta aplicar la migración 106.
-  const variantsWithSku = variantes.filter((variant) => variant.sku?.trim())
-
-  if (variantsWithSku.length) {
-    const { data: createdVariants, error: variantsError } = await supabase
-      .from("producto_variantes")
-      .select("id, orden")
-      .eq("producto_id", created.id)
-
-    if (variantsError) throw variantsError
-
-    for (const variant of variantsWithSku) {
-      const createdVariant = createdVariants?.find(
-        (item) => item.orden === (variant.orden ?? 1),
-      )
-      if (!createdVariant) continue
-
-      const { error: skuError } = await supabase
-        .from("producto_variantes")
-        .update({ sku: variant.sku?.trim() || null })
-        .eq("id", createdVariant.id)
-
-      if (skuError) throw skuError
-    }
-  }
-
-  return created
+  return data as SupabaseProducto
 }
 
 export async function updateProducto(

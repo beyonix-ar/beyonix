@@ -507,6 +507,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const [productSku, setProductSku] = useState("")
   const [purchaseDate, setPurchaseDate] = useState(today)
   const [quantity, setQuantity] = useState("")
+  const [receivedQuantity, setReceivedQuantity] = useState("")
+  const [purchaseReception, setPurchaseReception] = useState<
+    "pendiente" | "parcial" | "recibida" | "anulada"
+  >("recibida")
   const [unitCost, setUnitCost] = useState("")
   const [freightCost, setFreightCost] = useState("")
   const [taxCost, setTaxCost] = useState("")
@@ -824,6 +828,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setProductSku("")
     setPurchaseDate(today())
     setQuantity("")
+    setReceivedQuantity("")
+    setPurchaseReception("recibida")
     setUnitCost("")
     setFreightCost("")
     setTaxCost("")
@@ -849,6 +855,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setProductSku(item.sku ?? "")
     setPurchaseDate(item.purchase_date)
     setQuantity(String(item.quantity))
+    setReceivedQuantity(String(item.received_quantity ?? item.quantity))
+    setPurchaseReception(item.reception_status ?? "recibida")
     setUnitCost(String(item.unit_cost))
     setFreightCost(Number(item.freight_cost) ? String(item.freight_cost) : "")
     setTaxCost(Number(item.tax_cost) ? String(item.tax_cost) : "")
@@ -895,8 +903,22 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         ? customArticleName.trim()
         : standaloneProduct?.nombre.trim() ?? ""
 
-    if ((!productId && !articleName) || !purchaseDate || !quantity || !unitCost) {
+    if (
+      (!productId && !articleName) ||
+      !purchaseDate ||
+      !quantity ||
+      !unitCost ||
+      (purchaseReception === "parcial" && !receivedQuantity)
+    ) {
       setError("Completá artículo, fecha, cantidad y costo unitario.")
+      return
+    }
+    if (
+      purchaseReception === "parcial" &&
+      (Number(receivedQuantity) <= 0 ||
+        Number(receivedQuantity) >= Number(quantity))
+    ) {
+      setError("La recepción parcial debe ser mayor que cero y menor que la cantidad comprada.")
       return
     }
 
@@ -913,6 +935,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         sku: productSku,
         purchaseDate,
         quantity,
+        receivedQuantity:
+          purchaseReception === "recibida"
+            ? quantity
+            : purchaseReception === "parcial"
+              ? receivedQuantity
+              : 0,
+        receptionStatus: purchaseReception,
         unitCost,
         freightCost,
         taxCost,
@@ -1147,7 +1176,36 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                 />
               </Field>
               <Field label="Fecha compra"><AdminDatePicker title="Fecha compra" ariaLabel="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} centered /></Field>
-              <Field label="Cantidad recibida"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
+              <Field label="Cantidad comprada"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
+              <Field label="Recepción">
+                <select
+                  value={purchaseReception}
+                  onChange={(event) =>
+                    setPurchaseReception(
+                      event.target.value as typeof purchaseReception,
+                    )
+                  }
+                  className={inputClass}
+                >
+                  <option value="recibida">Recibida completa</option>
+                  <option value="parcial">Recibida parcialmente</option>
+                  <option value="pendiente">Pendiente de recepción</option>
+                  <option value="anulada">Compra anulada</option>
+                </select>
+              </Field>
+              {purchaseReception === "parcial" && (
+                <Field label="Cantidad recibida">
+                  <input
+                    value={receivedQuantity}
+                    inputMode="numeric"
+                    onChange={(event) =>
+                      setReceivedQuantity(event.target.value.replace(/\D/g, ""))
+                    }
+                    className={inputClass}
+                    placeholder="0"
+                  />
+                </Field>
+              )}
               <Field label="Costo unitario"><MoneyInput value={unitCost} onChange={setUnitCost} /></Field>
               <Field label="Proveedor"><HistoryAutocompleteInput value={productSupplier} suggestions={supplierSuggestions} onChange={setProductSupplier} placeholder="Opcional" /></Field>
               <Field label="Flete"><MoneyInput value={freightCost} onChange={setFreightCost} /></Field>
@@ -1263,7 +1321,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                       onSort={handlePurchaseSort}
                     />
                     <PurchaseSortableHeader
-                      label="Cantidad recibida"
+                      label="Recibida / comprada"
                       sortKey="quantity"
                       activeKey={purchaseSort}
                       direction={purchaseSortDirection}
@@ -1294,7 +1352,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                     <th className="px-3 py-2.5 text-center">Acción</th>
                   </tr>
                 </thead>
-                <tbody>{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3 text-center">{item.purchase_date}</td><td className="px-3 py-3 text-left font-bold text-white">{articleLabel}</td><td className="px-3 py-3 text-center font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 text-center tabular-nums">{item.quantity}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(Number(item.unit_cost))}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 text-center font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3 text-center">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
+                <tbody>{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); const received = Number(item.received_quantity ?? item.quantity); const receptionLabel = item.reception_status === "anulada" ? "Anulada" : item.reception_status === "pendiente" ? "Pendiente" : item.reception_status === "parcial" ? "Parcial" : "Recibida"; return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3 text-center">{item.purchase_date}</td><td className="px-3 py-3 text-left font-bold text-white">{articleLabel}</td><td className="px-3 py-3 text-center font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 text-center tabular-nums"><span className="block">{received}/{item.quantity}</span><span className="text-10px font-bold text-white/40">{receptionLabel}</span></td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(Number(item.unit_cost))}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 text-center font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3 text-center">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
               </table>
               {!sortedProductCosts.length && (
                 <p className="px-4 py-8 text-center text-sm text-white/42">

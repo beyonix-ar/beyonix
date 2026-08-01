@@ -45,6 +45,7 @@ async function loadDistribution(
     allocationsResult,
     genericResult,
     returnsResult,
+    reservationsResult,
   ] =
     await Promise.all([
       admin
@@ -73,6 +74,11 @@ async function loadDistribution(
           "received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity",
         )
         .eq("product_id", productId),
+      admin
+        .from("stock_reservations")
+        .select("variant_id, conditioned_stock_id, quantity")
+        .eq("product_id", productId)
+        .gt("expires_at", new Date().toISOString()),
     ])
 
   const migrationError =
@@ -88,12 +94,24 @@ async function loadDistribution(
       ),
     }
   }
+  const reservationMigrationError =
+    reservationsResult.error &&
+    /stock_reservations|schema cache/i.test(reservationsResult.error.message)
+  if (reservationMigrationError) {
+    return {
+      error: Response.json(
+        { error: "Falta aplicar la migración 20260801095000_stock_reservations.sql." },
+        { status: 503 },
+      ),
+    }
+  }
   if (
     productResult.error ||
     variantsResult.error ||
     allocationsResult.error ||
     genericResult.error ||
-    returnsResult.error
+    returnsResult.error ||
+    reservationsResult.error
   ) {
     return {
       error: Response.json(
@@ -148,6 +166,31 @@ async function loadDistribution(
     nonSellable: returns.nonSellable,
     pendingReview: returns.pendingReview,
   })
+  const reservations = reservationsResult.data ?? []
+  const reservedByVariant = new Map<number, number>()
+  reservations.forEach((reservation) => {
+    if (reservation.conditioned_stock_id || reservation.variant_id == null) return
+    const variantId = Number(reservation.variant_id)
+    reservedByVariant.set(
+      variantId,
+      (reservedByVariant.get(variantId) ?? 0) + Number(reservation.quantity ?? 0),
+    )
+  })
+  const normalReserved = reservations.reduce(
+    (total, reservation) =>
+      reservation.conditioned_stock_id
+        ? total
+        : total + Number(reservation.quantity ?? 0),
+    0,
+  )
+  const discountedReserved = reservations.reduce(
+    (total, reservation) =>
+      reservation.conditioned_stock_id
+        ? total + Number(reservation.quantity ?? 0)
+        : total,
+    0,
+  )
+  const reservedStock = normalReserved + discountedReserved
 
   return {
     data: {
@@ -159,6 +202,10 @@ async function loadDistribution(
       sellableStock: stock.sellable,
       quarantineStock: stock.quarantine,
       physicalStock: stock.physical,
+      reservedStock,
+      availableStock:
+        Math.max(0, stock.normal - normalReserved) +
+        Math.max(0, stock.discounted - discountedReserved),
       genericBalance,
       assignableQuantity,
       allocatedQuantity,
@@ -167,11 +214,19 @@ async function loadDistribution(
         0,
         allocatedQuantity - assignableQuantity,
       ),
-      variants: (variantsResult.data ?? []).map((variant) => ({
-        variant_id: Number(variant.id),
-        allocated_quantity: allocationByVariant.get(Number(variant.id)) ?? 0,
-        available_quantity: Number(variant.stock ?? 0),
-      })),
+      variants: (variantsResult.data ?? []).map((variant) => {
+        const variantId = Number(variant.id)
+        const reservedQuantity = reservedByVariant.get(variantId) ?? 0
+        return {
+          variant_id: variantId,
+          allocated_quantity: allocationByVariant.get(variantId) ?? 0,
+          reserved_quantity: reservedQuantity,
+          available_quantity: Math.max(
+            0,
+            Number(variant.stock ?? 0) - reservedQuantity,
+          ),
+        }
+      }),
     },
   }
 }
