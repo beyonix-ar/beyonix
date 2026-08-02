@@ -38,6 +38,10 @@ import {
   isPlayableProductVideo,
   isValidHttpsVideoUrl,
 } from "@/lib/products/product-video"
+import {
+  parseOptionalProductLogistics,
+  ProductLogisticsValidationError,
+} from "@/lib/shipping/logistics-validation"
 
 interface Props {
   producto?: SupabaseProducto | null
@@ -110,6 +114,15 @@ const getErrorMessage = (
 
   if (details.code === "23505") {
     return "Ya existe un producto con ese slug. Modificá el nombre o el slug e intentá nuevamente."
+  }
+
+  if (
+    details.code === "23514" &&
+    /peso_empaquetado|alto_paquete|ancho_paquete|largo_paquete/i.test(
+      `${details.message ?? ""} ${details.details ?? ""}`,
+    )
+  ) {
+    return "Los datos de envío deben ser números positivos dentro de los límites permitidos."
   }
 
   if (
@@ -194,6 +207,20 @@ export function useProductoForm({
       producto?.destacado ?? false,
     activo:
       producto?.activo ?? false,
+    peso_empaquetado_kg:
+      producto?.peso_empaquetado_kg == null
+        ? ""
+        : String(producto.peso_empaquetado_kg),
+    alto_paquete_cm:
+      producto?.alto_paquete_cm == null ? "" : String(producto.alto_paquete_cm),
+    ancho_paquete_cm:
+      producto?.ancho_paquete_cm == null
+        ? ""
+        : String(producto.ancho_paquete_cm),
+    largo_paquete_cm:
+      producto?.largo_paquete_cm == null
+        ? ""
+        : String(producto.largo_paquete_cm),
   })
 
   useEffect(() => {
@@ -248,6 +275,17 @@ export function useProductoForm({
         : form.cuotas === "6"
           ? 6
           : null
+    let logistics
+    try {
+      logistics = parseOptionalProductLogistics(form)
+    } catch {
+      logistics = {
+        peso_empaquetado_kg: null,
+        alto_paquete_cm: null,
+        ancho_paquete_cm: null,
+        largo_paquete_cm: null,
+      }
+    }
 
     return {
       nombre:
@@ -317,6 +355,8 @@ export function useProductoForm({
 
       activo:
         form.activo,
+
+      ...logistics,
     }
   }, [form])
 
@@ -368,6 +408,21 @@ export function useProductoForm({
         "El video del producto debe ser una URL HTTPS válida."
       )
 
+      return
+    }
+
+    let logistics
+    try {
+      logistics = parseOptionalProductLogistics(form)
+      for (const variant of draftVariants) {
+        parseOptionalProductLogistics(variant)
+      }
+    } catch (validationError) {
+      setError(
+        validationError instanceof ProductLogisticsValidationError
+          ? validationError.message
+          : "Los datos de envío no son válidos.",
+      )
       return
     }
 
@@ -435,7 +490,7 @@ export function useProductoForm({
     try {
       setSaving(true)
 
-      const nextPayload = payload
+      const nextPayload = { ...payload, ...logistics }
 
       if (producto) {
         await updateProducto(
@@ -487,6 +542,10 @@ export function useProductoForm({
         imagenes: string[]
         activo: boolean
         orden: number
+        peso_empaquetado_kg: number | null
+        alto_paquete_cm: number | null
+        ancho_paquete_cm: number | null
+        largo_paquete_cm: number | null
       }> = []
 
       for (const [
@@ -528,6 +587,7 @@ export function useProductoForm({
           imagenes: urls,
           activo: true,
           orden: index + 1,
+          ...parseOptionalProductLogistics(variant),
         })
       }
 

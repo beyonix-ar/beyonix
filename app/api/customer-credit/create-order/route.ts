@@ -82,6 +82,7 @@ interface CheckoutPayload {
     costReal?: number
     costCharged?: number
     freeShippingApplied?: boolean
+    quoted?: boolean
   }
 }
 
@@ -441,6 +442,9 @@ export async function POST(request: Request) {
         payment_method_id: "customer_credit",
         payment_type_id: null,
         payment_status: "pending_credit",
+        checkout_idempotency_key: payload.reservationSessionId?.trim()
+          ? `checkout:${payload.reservationSessionId.trim()}`
+          : null,
         financial_status: "pending_payment",
         transfer_alias:
           pricingPaymentMethod === "transferencia" ? TRANSFER_ALIAS : null,

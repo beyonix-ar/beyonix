@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server"
 
-import { getAndreaniDisabledResponse, isAndreaniReady } from "@/lib/andreani/client"
+import { getAndreaniDisabledResponse } from "@/lib/andreani/client"
+import { requireInternalUser } from "@/lib/auth/admin-api"
 
-export async function POST() {
-  if (!isAndreaniReady()) {
-    return NextResponse.json(getAndreaniDisabledResponse())
-  }
+export async function POST(request: Request) {
+  const authorization = await requireInternalUser(request, ["admin", "super_admin"])
+  if ("error" in authorization) return authorization.error
 
-  return NextResponse.json({
-    ok: false,
-    message:
-      "Tracking Andreani pendiente de implementar hasta confirmar URL, headers y payload oficiales",
-  })
+  return NextResponse.json(getAndreaniDisabledResponse(), { status: 503 })
 }

@@ -270,10 +270,47 @@ export async function PATCH(
     }
   }
 
+  if (sourceVariantId !== current.variant_id) {
+    if (!sourceVariantId) {
+      return Response.json(
+        {
+          error:
+            "No se puede desvincular una variante desde esta edición porque cambiaría el sublibro de stock.",
+        },
+        { status: 409 },
+      )
+    }
+
+    const { error: linkError } = await auth.admin.rpc(
+      "link_conditioned_stock_variant_idempotent",
+      {
+        p_return_id: current.id,
+        p_variant_id: sourceVariantId,
+        p_actor_id: auth.user.id,
+        p_idempotency_key: `conditioned-link:${current.id}:${sourceVariantId}`,
+        p_document_reference: `inventory-return:${current.id}`,
+      },
+    )
+
+    if (linkError) {
+      const missingMigration =
+        /link_conditioned_stock_variant_idempotent|PGRST202|schema cache/i.test(
+          linkError.message,
+        )
+      return Response.json(
+        {
+          error: missingMigration
+            ? "Falta aplicar la migración de integridad de inventario."
+            : "No se pudo vincular la variante sin alterar el inventario.",
+        },
+        { status: missingMigration ? 503 : 409 },
+      )
+    }
+  }
+
   const { data, error } = await auth.admin
     .from("inventory_return_movements")
     .update({
-      variant_id: sourceVariantId,
       discount_percent: discountPercent,
       discount_reason: discountReason,
       non_sellable_reason:

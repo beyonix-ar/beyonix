@@ -111,18 +111,24 @@ export async function POST(
   )
 
   if (error) {
+    const outdatedConditionConstraint =
+      /inventory_return_movements_condition_check/i.test(error.message)
     const missingMigration =
       /review_mercadolibre_return|mercadolibre_sale_id|occurred_at|schema cache|PGRST202/i.test(
         error.message,
       )
     return Response.json(
       {
-        error: missingMigration
-          ? "Falta aplicar la migración 20260801091000_mercadolibre_returns_and_bulk_delete.sql."
-          : error.message || "No se pudo guardar la revisión física.",
+        error: outdatedConditionConstraint
+          ? "La base de datos necesita la corrección de devoluciones 20260801103000 antes de guardar esta revisión."
+          : missingMigration
+            ? "Falta aplicar la migración 20260801091000_mercadolibre_returns_and_bulk_delete.sql."
+            : /STOCK_INSUFICIENTE/i.test(error.message)
+              ? "No hay stock suficiente para reclasificar esta devolución."
+              : "No se pudo guardar la revisión física.",
       },
       {
-        status: missingMigration
+        status: outdatedConditionConstraint || missingMigration
           ? 503
           : /STOCK_INSUFICIENTE/i.test(error.message)
             ? 409

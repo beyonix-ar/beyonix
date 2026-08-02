@@ -76,6 +76,7 @@ interface CheckoutPayload {
     type?: "sucursal" | "domicilio"
     costReal?: number
     costCharged?: number
+    quoted?: boolean
   }
 }
 
@@ -479,6 +480,9 @@ export async function POST(request: Request) {
       estado: "pendiente",
       payment_method_id: "mercadopago",
       payment_status: "pending_checkout",
+      checkout_idempotency_key: payload.reservationSessionId?.trim()
+        ? `checkout:${payload.reservationSessionId.trim()}`
+        : null,
       envio_proveedor: shipping.shipping_provider,
       store_benefit_id: storeBenefit?.id ?? null,
       store_benefit_code: storeBenefit?.code ?? null,
@@ -510,6 +514,9 @@ export async function POST(request: Request) {
         estado: "pendiente",
         payment_method_id: "mercadopago",
         payment_status: "pending_checkout",
+        checkout_idempotency_key: payload.reservationSessionId?.trim()
+          ? `checkout:${payload.reservationSessionId.trim()}`
+          : null,
         envio_proveedor: shipping.shipping_provider,
         andreani_costo: shipping.shipping_cost_charged,
         cliente_nombre: legacyCustomer.cliente_nombre,

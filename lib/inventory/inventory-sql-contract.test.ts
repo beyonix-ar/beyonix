@@ -28,6 +28,15 @@ const saleGuards = source(
 const webReturns = source(
   "supabase/migrations/20260801101000_web_return_classification.sql",
 )
+const returnConditionFix = source(
+  "supabase/migrations/20260801103000_fix_return_condition_validation.sql",
+)
+const singleSourceRepair = source(
+  "supabase/migrations/20260801104000_inventory_single_source_and_repair.sql",
+)
+const conditionedRoute = source(
+  "app/api/admin/conditioned-stock/[id]/route.ts",
+)
 
 test("las compras simples y con variante ingresan por una única RPC atómica", () => {
   assert.match(purchases, /save_product_purchase_atomic\s*\(/i)
@@ -107,4 +116,74 @@ test("las devoluciones web conservan las cuatro clasificaciones físicas", () =>
   assert.match(webReturns, /new\.sellable_quantity \+ new\.discounted_quantity/i)
   assert.match(webReturns, /new\.conditioned_active := false/i)
   assert.match(webReturns, /new\.non_sellable_quantity/i)
+})
+
+test("las devoluciones con descuento no se mezclan con el stock normal", () => {
+  assert.match(
+    returnConditionFix,
+    /new\.quantity\s*:=\s*new\.sellable_quantity\s*;/i,
+  )
+  assert.doesNotMatch(
+    returnConditionFix,
+    /new\.quantity\s*:=\s*new\.sellable_quantity\s*\+\s*new\.discounted_quantity/i,
+  )
+  assert.match(
+    returnConditionFix,
+    /sellable_quantity\s*\+\s*discounted_quantity\s*\+\s*non_sellable_quantity\s*\)\s*<=\s*received_quantity/i,
+  )
+  assert.match(returnConditionFix, /quantity\s*=\s*sellable_quantity/i)
+})
+
+test("mover una unidad a descuento conserva el total físico", () => {
+  assert.match(singleSourceRepair, /'physicalDelta',\s*0/i)
+  assert.match(singleSourceRepair, /'reclassification'/i)
+  assert.match(singleSourceRepair, /discountedQuantity/i)
+})
+
+test("repetir una reclasificación usa la misma clave y no duplica", () => {
+  assert.match(singleSourceRepair, /idempotency_key text not null unique/i)
+  assert.match(singleSourceRepair, /where operations\.idempotency_key = v_key/i)
+  assert.match(singleSourceRepair, /return v_return/i)
+  assert.match(conditionedRoute, /conditioned-link:\$\{current\.id\}:\$\{sourceVariantId\}/i)
+})
+
+test("una devolución con descuento no pasa primero por normal", () => {
+  assert.match(returnConditionFix, /new\.quantity\s*:=\s*new\.sellable_quantity/i)
+  assert.doesNotMatch(
+    returnConditionFix,
+    /new\.quantity\s*:=\s*new\.sellable_quantity\s*\+\s*new\.discounted_quantity/i,
+  )
+})
+
+test("reaperturas y ediciones establecen estado absoluto sin reaplicar deltas", () => {
+  assert.match(returnsAndDeletes, /on conflict \(source_key\) do update set/i)
+  assert.match(purchases, /where entries\.id = v_id\s+for update/i)
+  assert.match(purchases, /set\s+product_id = v_product_id/i)
+})
+
+test("trigger y backend comparten una única proyección derivada", () => {
+  assert.match(singleSourceRepair, /stock almacenado es una proyección de inventory_movements/i)
+  assert.match(singleSourceRepair, /create or replace view public\.inventory_movements/i)
+  assert.match(reservations, /perform public\.decrement_checkout_inventory\(p_items\)/i)
+  assert.doesNotMatch(reservations, /update public\.(productos|producto_variantes)\s+set stock/i)
+})
+
+test("doble clic y reintento HTTP no crean otra compra ni otra orden", () => {
+  assert.match(singleSourceRepair, /save_product_purchase_idempotent/i)
+  assert.match(singleSourceRepair, /pg_advisory_xact_lock\(hashtext\('inventory-purchase'/i)
+  assert.match(singleSourceRepair, /ordenes_checkout_idempotency_unique/i)
+})
+
+test("producto padre y variantes se comparan contra el mismo libro", () => {
+  assert.match(singleSourceRepair, /inventory_variant_diagnostics/i)
+  assert.match(singleSourceRepair, /inventory_stock_integrity integrity/i)
+  assert.match(singleSourceRepair, /inventory_movements movements/i)
+})
+
+test("el diagnóstico señala el movimiento y la reparación sólo baja la asignación duplicada", () => {
+  assert.match(singleSourceRepair, /possible_cause_movement_id/i)
+  assert.match(singleSourceRepair, /duplicated_allocation/i)
+  assert.match(singleSourceRepair, /quantity = quantity - v_diagnostic\.duplicated_allocation/i)
+  assert.match(singleSourceRepair, /insert into public\.audit_logs/i)
+  assert.doesNotMatch(singleSourceRepair, /delete from public\.inventory_return_movements/i)
 })

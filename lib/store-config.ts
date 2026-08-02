@@ -1,4 +1,4 @@
-import { SITE_SETTINGS } from "@/config/site-settings"
+import { SITE_SETTINGS } from "../config/site-settings.ts"
 
 // Bonificacion de envio a partir de este subtotal.
 const configuredFreeShippingMin = Number(

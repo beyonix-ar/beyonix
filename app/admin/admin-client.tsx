@@ -324,7 +324,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
       ...operational,
       {
         key: "modificaciones",
-        label: "Modificaciones",
+    label: "Configuración",
         description: "Envío, banners y ajustes globales",
         icon: <Settings2 className="size-4" />,
       },

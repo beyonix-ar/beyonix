@@ -73,6 +73,11 @@ export interface BusinessCostsData {
   expenses: BusinessExpense[]
 }
 
+const pendingCreates = new Map<
+  string,
+  Promise<Record<string, unknown> | null>
+>()
+
 async function request(path: string, init?: RequestInit) {
   const {
     data: { session },
@@ -107,10 +112,24 @@ export async function getBusinessCosts() {
 }
 
 export async function createBusinessCost(payload: Record<string, unknown>) {
-  return request("/api/admin/costs", {
+  const requestKey = JSON.stringify(payload)
+  const pending = pendingCreates.get(requestKey)
+  if (pending) return pending
+
+  const idempotencyKey = crypto.randomUUID()
+  const operation = request("/api/admin/costs", {
     method: "POST",
     body: JSON.stringify(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
   })
+  pendingCreates.set(requestKey, operation)
+  try {
+    return await operation
+  } finally {
+    if (pendingCreates.get(requestKey) === operation) {
+      pendingCreates.delete(requestKey)
+    }
+  }
 }
 
 export async function updateBusinessCost(payload: Record<string, unknown>) {

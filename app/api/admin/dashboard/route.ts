@@ -1,6 +1,6 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import { canViewSensitiveNumbers } from "@/lib/auth/roles"
-import { getAndreaniConfig, isAndreaniReady } from "@/lib/andreani/client"
+import { getAndreaniConfigurationStatus } from "@/lib/andreani/client"
 import { getWsfeHealth } from "@/lib/arca/wsfe"
 import { getSiteSettings } from "@/lib/site-settings"
 import {
@@ -517,25 +517,15 @@ const FINANCIAL_ORDER_SELECT = `
 `
 
 function getAndreaniStatus(): SystemStatusItem {
-  const config = getAndreaniConfig()
-  if (!config.enabled) {
-    return {
-      id: "andreani",
-      label: "Andreani",
-      status: "unknown",
-      detail: "Integración deshabilitada",
-    }
-  }
-
-  const ready = isAndreaniReady(config)
+  const integration = getAndreaniConfigurationStatus()
 
   return {
     id: "andreani",
     label: "Andreani",
-    status: ready ? "unknown" : "warning",
-    detail: ready
-      ? "Configurado, sin health check real implementado"
-      : "Configuración incompleta",
+    status: integration.configured ? "unknown" : "warning",
+    detail: integration.configured
+      ? "QA configurado; operación automática deshabilitada"
+      : integration.message,
   }
 }
 

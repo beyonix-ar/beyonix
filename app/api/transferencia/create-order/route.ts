@@ -78,6 +78,7 @@ interface CheckoutPayload {
     type?: "sucursal" | "domicilio"
     costReal?: number
     costCharged?: number
+    quoted?: boolean
   }
 }
 
@@ -430,6 +431,9 @@ export async function POST(request: Request) {
       payment_method_id: "transferencia",
       payment_type_id: null,
       payment_status: "pendiente_comprobante",
+      checkout_idempotency_key: payload.reservationSessionId?.trim()
+        ? `checkout:${payload.reservationSessionId.trim()}`
+        : null,
       transfer_alias: TRANSFER_ALIAS,
       transfer_discount_percent: TRANSFER_DISCOUNT_PERCENT,
       transfer_discount_amount: transferDiscountAmount,

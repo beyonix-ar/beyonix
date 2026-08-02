@@ -19,6 +19,10 @@ export interface ProductoFormState {
   categoria_id: string
   destacado: boolean
   activo: boolean
+  peso_empaquetado_kg: string
+  alto_paquete_cm: string
+  ancho_paquete_cm: string
+  largo_paquete_cm: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +107,10 @@ export interface DraftProductoVariante {
   sku: string
   color_hex: string
   imagenes: File[]
+  peso_empaquetado_kg: string
+  alto_paquete_cm: string
+  ancho_paquete_cm: string
+  largo_paquete_cm: string
 }
 
 export interface DraftProductoEspecificacion {

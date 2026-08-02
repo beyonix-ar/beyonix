@@ -8,6 +8,7 @@ import {
   Info,
   ListChecks,
   Loader2,
+  PackageCheck,
   Play,
   ToggleLeft,
   ToggleRight,
@@ -37,6 +38,10 @@ import {
   AdminSelect,
 } from "../../components/admin-controls"
 import { getProductVideoSource } from "@/lib/products/product-video"
+import {
+  normalizeLogisticsDecimalInput,
+  PRODUCT_LOGISTICS_FIELDS,
+} from "@/lib/shipping/logistics-validation"
 
 interface ProductoFormProps {
   producto?: SupabaseProducto | null
@@ -136,6 +141,18 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
             activo: true,
             orden: index + 1,
             created_at: now,
+            peso_empaquetado_kg: variant.peso_empaquetado_kg
+              ? Number(variant.peso_empaquetado_kg.replace(",", "."))
+              : null,
+            alto_paquete_cm: variant.alto_paquete_cm
+              ? Number(variant.alto_paquete_cm.replace(",", "."))
+              : null,
+            ancho_paquete_cm: variant.ancho_paquete_cm
+              ? Number(variant.ancho_paquete_cm.replace(",", "."))
+              : null,
+            largo_paquete_cm: variant.largo_paquete_cm
+              ? Number(variant.largo_paquete_cm.replace(",", "."))
+              : null,
           }
         })
 
@@ -185,6 +202,18 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
       destacado: form.destacado,
       activo: form.activo,
       imagen_principal: principalImage,
+      peso_empaquetado_kg: form.peso_empaquetado_kg
+        ? Number(form.peso_empaquetado_kg.replace(",", "."))
+        : null,
+      alto_paquete_cm: form.alto_paquete_cm
+        ? Number(form.alto_paquete_cm.replace(",", "."))
+        : null,
+      ancho_paquete_cm: form.ancho_paquete_cm
+        ? Number(form.ancho_paquete_cm.replace(",", "."))
+        : null,
+      largo_paquete_cm: form.largo_paquete_cm
+        ? Number(form.largo_paquete_cm.replace(",", "."))
+        : null,
       categorias: selectedCategory ?? null,
       producto_variantes: previewVariants,
       producto_especificaciones: previewSpecifications,
@@ -380,6 +409,46 @@ export function ProductoForm({ producto, onSaved, onCancel }: ProductoFormProps)
                   </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-cyan-400/14 bg-cyan-400/[0.035] p-3">
+                <div className="mb-2.5 flex items-center gap-2">
+                  <PackageCheck className="size-4 text-cyan-300" />
+                  <p className="text-10px font-semibold uppercase tracking-widest text-cyan-300/85">
+                    Datos de envío
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {PRODUCT_LOGISTICS_FIELDS.map(({ key, label, unit }) => (
+                    <label key={key} className="min-w-0">
+                      <span className={labelCls}>{label}</span>
+                      <span className="relative block">
+                        <input
+                          id={key}
+                          type="text"
+                          inputMode="decimal"
+                          value={form[key]}
+                          placeholder="Opcional"
+                          aria-label={`${label} en ${unit}`}
+                          onChange={(event) =>
+                            setField(
+                              key,
+                              normalizeLogisticsDecimalInput(event.target.value),
+                            )
+                          }
+                          className={`${inputCls} !pr-11`}
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-cyan-200/65">
+                          {unit}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2.5 text-10px font-medium leading-4 text-white/45">
+                  Ingresar peso y dimensiones del paquete final listo para
+                  despachar, incluyendo bolsa, caja, cartón y protección.
+                </p>
               </div>
 
               <div className="grid min-w-0 gap-2.5 sm:grid-cols-2">

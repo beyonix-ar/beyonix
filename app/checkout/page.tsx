@@ -80,9 +80,6 @@ import {
   type StoreBenefitType,
 } from "@/lib/customer-store-benefits"
 import {
-  calculateCartShippingPackage,
-} from "@/lib/cart/shipping-package"
-import {
   calculateCustomerShippingCost,
   calculateShippingBonus,
 } from "@/lib/store-config"
@@ -132,14 +129,6 @@ function formatPrice(
       minimumFractionDigits: 0,
     }
   ).format(safePrice)
-}
-
-function normalizeShippingOptionPrice(price: number, fallbackCost: number) {
-  const quotedPrice = Number(price)
-
-  return Number.isFinite(quotedPrice) && quotedPrice > 0
-    ? quotedPrice
-    : fallbackCost
 }
 
 function getShippingOptionLabel(type: ShippingType) {
@@ -271,6 +260,7 @@ interface ShippingOption {
   label: string
   price: number
   provider: "andreani"
+  quoteStatus: "quoted" | "pending"
 }
 
 interface CheckoutStoreBenefit {
@@ -388,6 +378,7 @@ export default function CheckoutPage() {
   const [redeemingGiftCard, setRedeemingGiftCard] = useState(false)
   const [shippingMessage, setShippingMessage] =
     useState("")
+  const [shippingLoading, setShippingLoading] = useState(false)
   const [
     selectedShippingType,
     setSelectedShippingType,
@@ -407,6 +398,7 @@ export default function CheckoutPage() {
   const [selectedStoreBenefitId, setSelectedStoreBenefitId] =
     useState("")
   const hasEditedCheckoutFormRef = useRef(false)
+  const submissionInFlightRef = useRef(false)
   const validationTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -616,8 +608,6 @@ export default function CheckoutPage() {
     (total, item) => total + item.quantity,
     0,
   )
-  const packageInfo = calculateCartShippingPackage(items)
-  const manualShippingCost = siteSettings.shipping.defaultShippingCost
   const selectedShippingOption =
     selectedShippingType
       ? shippingOptions.find(
@@ -628,13 +618,14 @@ export default function CheckoutPage() {
       : null
   const shippingCostReal =
     selectedShippingOption?.price ?? 0
+  const hasAndreaniQuote = selectedShippingOption?.quoteStatus === "quoted"
   const customerCreditIncludesShippingBenefit = customerCredit.balance > 0
   const customerCreditCoversShipping =
     customerCreditIncludesShippingBenefit &&
     selectedShippingOption != null &&
     shippingCostReal > 0
   const shippingBonus =
-    selectedShippingOption
+    hasAndreaniQuote
       ? customerCreditCoversShipping
         ? shippingCostReal
         : calculateShippingBonus(
@@ -644,7 +635,7 @@ export default function CheckoutPage() {
           )
       : 0
   const shippingCostCharged =
-    selectedShippingOption
+    selectedShippingOption && hasAndreaniQuote
       ? customerCreditCoversShipping
         ? 0
         : calculateCustomerShippingCost(
@@ -654,7 +645,7 @@ export default function CheckoutPage() {
           )
       : 0
   const freeShippingApplied =
-    selectedShippingOption != null &&
+    hasAndreaniQuote &&
     shippingCostReal > 0 &&
     shippingCostCharged === 0
   const totals = calculateCartTotals(items, {
@@ -721,123 +712,121 @@ export default function CheckoutPage() {
     maxApplicableCustomerCredit,
   ])
 
-  useEffect(() => {
-    const cpDestino = formData.cpDestino.trim()
-    const provincia = formData.provincia.trim()
-    const localidad = formData.localidad.trim()
+  const shippingQuotePayload = JSON.stringify({
+    cpDestino: formData.cpDestino.trim(),
+    items: items.map((item) => ({
+      productId: item.product.id,
+      quantity: item.quantity,
+      variantId: item.variantId,
+      conditionedStockId: item.conditionedStockId,
+    })),
+  })
 
-    if (!cpDestino || !provincia || !localidad || items.length === 0) {
-      setShippingOptions([
-        {
-          type: "sucursal",
-          label: getShippingOptionLabel("sucursal"),
-          price: manualShippingCost,
-          provider: "andreani",
-        },
-        {
-          type: "domicilio",
-          label: getShippingOptionLabel("domicilio"),
-          price: manualShippingCost,
-          provider: "andreani",
-        },
-      ])
-      setShippingMessage(
-        "Completá código postal, provincia y localidad para cotizar Andreani."
-      )
+  useEffect(() => {
+    const payload = JSON.parse(shippingQuotePayload) as {
+      cpDestino: string
+      items: Array<{
+        productId: number
+        quantity: number
+        variantId: number | null
+        conditionedStockId: string | null
+      }>
+    }
+
+    if (!/^(?:\d{4}|[A-Z]\d{4}[A-Z]{3})$/i.test(payload.cpDestino)) {
+      setShippingLoading(false)
+      setShippingOptions([])
+      setSelectedShippingType(null)
+      setShippingMessage("Ingresá el código postal para cotizar el envío.")
+      return
+    }
+    if (payload.items.length === 0) {
+      setShippingLoading(false)
+      setShippingOptions([])
+      setSelectedShippingType(null)
+      setShippingMessage("")
       return
     }
 
-    let cancelled = false
+    const controller = new AbortController()
+    setShippingLoading(true)
+    setShippingOptions([])
+    setSelectedShippingType(null)
+    setShippingMessage("Calculando envío...")
 
-    fetch("/api/andreani/cotizar", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        cpDestino,
-        provincia,
-        localidad,
-        ...packageInfo,
-      }),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (cancelled) return
+    const timer = setTimeout(() => {
+      fetch("/api/andreani/cotizar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: shippingQuotePayload,
+        signal: controller.signal,
+        cache: "no-store",
+      })
+        .then(async (response) => {
+          const data = (await response.json()) as {
+            options?: Array<{ type?: string; price?: number }>
+            message?: string
+          }
+          if (!response.ok) throw new Error(data.message || "QUOTE_FAILED")
 
-        if (Array.isArray(data.options) && data.options.length > 0) {
-          setShippingOptions(
-            data.options.map((option: ShippingOption) => ({
+          const options = (data.options ?? []).flatMap<ShippingOption>((option) => {
+            const price = Number(option.price)
+            if (
+              (option.type !== "domicilio" && option.type !== "sucursal") ||
+              !Number.isFinite(price) ||
+              price <= 0
+            ) {
+              return []
+            }
+            return [{
               type: option.type,
               label: getShippingOptionLabel(option.type),
-              price: normalizeShippingOptionPrice(
-                option.price,
-                manualShippingCost,
-              ),
-              provider: "andreani",
-            }))
+              price,
+              provider: "andreani" as const,
+              quoteStatus: "quoted" as const,
+            }]
+          })
+          if (!options.length) throw new Error("INVALID_QUOTE")
+
+          setShippingOptions(options)
+          setSelectedShippingType((current) =>
+            current && options.some((option) => option.type === current)
+              ? current
+              : options.find((option) => option.type === "domicilio")?.type ??
+                options[0].type,
           )
           setShippingMessage("")
-          return
-        }
-
-        setShippingOptions([
-          {
-            type: "sucursal",
-            label: getShippingOptionLabel("sucursal"),
-            price: manualShippingCost,
-            provider: "andreani",
-          },
-          {
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return
+          if (process.env.NODE_ENV === "development") {
+            console.info("[Andreani checkout] cotización no disponible", {
+              reason: error instanceof Error ? error.message.slice(0, 120) : "UNKNOWN",
+            })
+          }
+          const pendingOption: ShippingOption = {
             type: "domicilio",
-            label: getShippingOptionLabel("domicilio"),
-            price: manualShippingCost,
+            label: "Envío a coordinar",
+            price: 0,
             provider: "andreani",
-          },
-        ])
-        setShippingMessage(
-          data.message ||
-            "No pudimos cotizar Andreani en este momento. Intentá nuevamente o contactanos."
-        )
-      })
-      .catch((error) => {
-        if (cancelled) return
-
-        console.error("ANDREANI_QUOTE_ERROR", error)
-        setShippingOptions([
-          {
-            type: "sucursal",
-            label: getShippingOptionLabel("sucursal"),
-            price: manualShippingCost,
-            provider: "andreani",
-          },
-          {
-            type: "domicilio",
-            label: getShippingOptionLabel("domicilio"),
-            price: manualShippingCost,
-            provider: "andreani",
-          },
-        ])
-        setShippingMessage(
-          "No pudimos cotizar Andreani en este momento. Intentá nuevamente o contactanos."
-        )
-      })
+            quoteStatus: "pending",
+          }
+          setShippingOptions([pendingOption])
+          setSelectedShippingType(pendingOption.type)
+          setShippingMessage(
+            "No pudimos obtener la tarifa ahora. Podés continuar y coordinaremos el envío.",
+          )
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setShippingLoading(false)
+        })
+    }, 450)
 
     return () => {
-      cancelled = true
+      clearTimeout(timer)
+      controller.abort()
     }
-  }, [
-    formData.cpDestino,
-    formData.localidad,
-    formData.provincia,
-    items.length,
-    manualShippingCost,
-    packageInfo.altoCm,
-    packageInfo.anchoCm,
-    packageInfo.largoCm,
-    packageInfo.pesoGramos,
-    packageInfo.valorDeclarado,
-  ])
+  }, [shippingQuotePayload])
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement>
@@ -1030,6 +1019,7 @@ export default function CheckoutPage() {
   ) => {
     e.preventDefault()
 
+    if (submissionInFlightRef.current) return
     if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid) return
 
     if (hasBlockedWords(formData.direccion)) {
@@ -1037,6 +1027,7 @@ export default function CheckoutPage() {
       return
     }
 
+    submissionInFlightRef.current = true
     setIsProcessing(true)
     setCheckoutError("")
 
@@ -1073,6 +1064,7 @@ export default function CheckoutPage() {
             costReal: shippingCostReal,
             costCharged: shippingCostCharged,
             freeShippingApplied,
+            quoted: selectedShippingOption.quoteStatus === "quoted",
           },
           storeBenefitId: selectedStoreBenefit?.id ?? null,
           paymentMethodId: selectedPayment || "customer_credit",
@@ -1135,6 +1127,7 @@ export default function CheckoutPage() {
         STOCK_CHANGED_MESSAGE,
       )
     } finally {
+      submissionInFlightRef.current = false
       setIsProcessing(false)
     }
   }
@@ -1540,13 +1533,22 @@ export default function CheckoutPage() {
                         "shadow-[0_0_0_2px_rgba(248,113,113,0.12)]"
                     )}
                   >
+                    {shippingLoading && (
+                      <div className="flex items-center gap-2 rounded-xl border border-beyonix-blue-light/16 bg-[#10151C] px-4 py-3 text-sm font-semibold text-white/72">
+                        <Loader2 className="size-4 animate-spin text-beyonix-sky" />
+                        Calculando envío...
+                      </div>
+                    )}
                     {shippingOptions.map((option) => {
                       const selected =
                         selectedShippingType === option.type
+                      const optionHasQuote = option.quoteStatus === "quoted"
                       const optionShippingCoveredByBeyonix =
-                        customerCreditIncludesShippingBenefit
+                        optionHasQuote && customerCreditIncludesShippingBenefit
                       const optionShippingCostCharged =
-                        optionShippingCoveredByBeyonix
+                        !optionHasQuote
+                          ? 0
+                          : optionShippingCoveredByBeyonix
                           ? 0
                           : calculateCustomerShippingCost(
                               baseTotals.productsTotal,
@@ -1590,7 +1592,9 @@ export default function CheckoutPage() {
                               </span>
                             )}
                             <span className={optionShippingCostCharged === 0 ? "text-sm font-semibold text-emerald-400" : "text-sm font-semibold text-white"}>
-                              {optionShippingCoveredByBeyonix
+                              {!optionHasQuote
+                                ? "A confirmar"
+                                : optionShippingCoveredByBeyonix
                                 ? "GRATIS"
                                 : optionShippingCostCharged === 0
                                   ? "Sin cargo"
@@ -2021,7 +2025,11 @@ export default function CheckoutPage() {
                         ? "font-semibold text-emerald-400"
                         : "text-white"
                   }>
-                    {customerCreditIncludesShippingBenefit
+                    {shippingLoading
+                      ? "Calculando..."
+                      : selectedShippingOption?.quoteStatus === "pending"
+                        ? "A confirmar"
+                        : customerCreditIncludesShippingBenefit
                       ? "GRATIS"
                       : !selectedShippingOption
                       ? "A definir"

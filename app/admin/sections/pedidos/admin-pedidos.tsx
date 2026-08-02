@@ -1236,9 +1236,21 @@ function orderMatchesNotificationTone(
 }
 
 async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    return {
+      ok: false,
+      message: "No se pudo validar la sesión administrativa.",
+    }
+  }
+
   const response = await fetch(`/api/andreani/${action}`, {
     method: "POST",
     headers: {
+      Authorization: `Bearer ${session.access_token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ pedidoId }),

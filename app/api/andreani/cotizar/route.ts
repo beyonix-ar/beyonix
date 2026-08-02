@@ -1,47 +1,45 @@
 import { NextResponse } from "next/server"
 
 import {
-  AndreaniClient,
-  getAndreaniDisabledResponse,
-  isAndreaniReady,
-  parseAndreaniCotizarPayload,
+  normalizeAndreaniError,
 } from "@/lib/andreani/client"
+import { quoteAndreaniCheckout } from "@/lib/andreani/checkout-quote"
+
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+}
 
 export async function POST(request: Request) {
-  if (!isAndreaniReady()) {
-    return NextResponse.json(getAndreaniDisabledResponse())
-  }
-
   try {
-    const payload = parseAndreaniCotizarPayload(await request.json())
-    const client = new AndreaniClient()
-    const quote = await client.cotizar(payload)
+    const payload = await request.json()
+    const options = await quoteAndreaniCheckout(payload)
 
-    return NextResponse.json(quote)
+    return NextResponse.json(
+      { ok: true, environment: "QA", options },
+      { headers: NO_STORE_HEADERS },
+    )
   } catch (error) {
+    const safeError = normalizeAndreaniError(error)
+    const status =
+      safeError.code === "VALIDATION_ERROR"
+        ? 400
+        : safeError.code === "CONFIGURATION_ERROR" ||
+            safeError.code === "PRODUCTION_BLOCKED"
+          ? 503
+          : safeError.code === "TIMEOUT" || safeError.code === "SERVICE_UNAVAILABLE"
+            ? 504
+            : 502
+
     return NextResponse.json(
       {
         ok: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "No se pudo preparar la cotización Andreani",
-        expectedResponse: {
-          options: [
-            {
-              type: "sucursal",
-              label: "Retiro en sucursal Andreani",
-              price: 0,
-            },
-            {
-              type: "domicilio",
-              label: "Envío a domicilio",
-              price: 0,
-            },
-          ],
-        },
+        code: safeError.code,
+        message: safeError.message,
       },
-      { status: 400 }
+      { status, headers: NO_STORE_HEADERS },
     )
   }
 }

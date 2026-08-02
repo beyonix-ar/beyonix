@@ -175,6 +175,14 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
   const kind = body?.kind as CostKind | undefined
+  const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? ""
+
+  if (!/^[A-Za-z0-9._:-]{8,240}$/.test(idempotencyKey)) {
+    return Response.json(
+      { error: "La operación no tiene una clave de idempotencia válida." },
+      { status: 400 },
+    )
+  }
 
   if (kind === "product") {
     const productId = body?.productId ? positiveInteger(body.productId) : null
@@ -238,7 +246,7 @@ export async function POST(request: Request) {
     }
 
     const { data: inserted, error } = await auth.admin.rpc(
-      "save_product_purchase_atomic",
+      "save_product_purchase_idempotent",
       {
         p_purchase: {
           product_id: productId,
@@ -258,13 +266,14 @@ export async function POST(request: Request) {
           notes: text(body?.notes, 1000),
         },
         p_actor_id: auth.user.id,
+        p_idempotency_key: idempotencyKey,
       },
     )
 
     if (error) {
       const missingSkuMigration = /sku/i.test(error.message)
       const missingInventoryMigration =
-        /save_product_purchase_atomic|reception_status|received_quantity|PGRST202/i.test(
+        /save_product_purchase_idempotent|reception_status|received_quantity|PGRST202/i.test(
           error.message,
         )
       const missingMigration = /sku|article_name|product_id|received_quantity|null value|schema cache|PGRST202/i.test(
@@ -360,7 +369,7 @@ export async function POST(request: Request) {
         ? `${product.nombre} · ${variant.nombre}`
         : product.nombre
       const { data: inserted, error } = await auth.admin.rpc(
-        "create_product_business_expense",
+        "create_product_business_expense_idempotent",
         {
           p_expense_date: expenseDate,
           p_category: category,
@@ -377,6 +386,7 @@ export async function POST(request: Request) {
           p_quantity: quantity,
           p_notes: text(body?.notes, 1000),
           p_created_by: auth.user.id,
+          p_idempotency_key: idempotencyKey,
         },
       )
 
@@ -421,6 +431,7 @@ export async function POST(request: Request) {
         notes: text(body?.notes, 1000),
         expense_type: "money",
         created_by: auth.user.id,
+        idempotency_key: idempotencyKey,
       })
       .select("*")
       .single()

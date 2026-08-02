@@ -23,6 +23,7 @@ import {
   AdminTextInput,
 } from "../../components/admin-controls"
 import { AdminBanners } from "../banners/admin-banners"
+import { AndreaniIntegrationCard } from "./andreani-integration-card"
 
 interface SettingsResponse {
   settings?: {
@@ -277,7 +278,7 @@ export function AdminModificaciones() {
   return (
     <div className="space-y-4 p-4 sm:p-6 lg:p-8">
       <AdminPageHeader
-        title="Modificaciones"
+        title="Configuración"
         className="gap-2"
       />
 
@@ -285,6 +286,8 @@ export function AdminModificaciones() {
         <AdminInfoBlock tone="success">{message}</AdminInfoBlock>
       ) : null}
       {error ? <AdminInfoBlock tone="danger">{error}</AdminInfoBlock> : null}
+
+      <AndreaniIntegrationCard />
 
       <AdminCard className="space-y-3 p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

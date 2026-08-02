@@ -1,4 +1,10 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import {
+  parseOptionalProductLogistics,
+  ProductLogisticsValidationError,
+  PRODUCT_LOGISTICS_FIELDS,
+  type ProductLogisticsValues,
+} from "@/lib/shipping/logistics-validation"
 
 function parseId(value: string) {
   const parsed = Number(value)
@@ -54,6 +60,7 @@ function variantMetadata(value: unknown) {
     "color_hex",
     "imagenes",
     "orden",
+    ...PRODUCT_LOGISTICS_FIELDS.map(({ key }) => key),
   ])
   if (
     keys.length === 0 ||
@@ -68,7 +75,7 @@ function variantMetadata(value: unknown) {
     color_hex?: string
     imagenes?: string[]
     orden?: number
-  } = {}
+  } & Partial<ProductLogisticsValues> = {}
 
   if ("nombre" in record) {
     const name = requiredText(record.nombre, 160)
@@ -93,6 +100,14 @@ function variantMetadata(value: unknown) {
     const order = parseId(String(record.orden))
     if (!order) return null
     payload.orden = order
+  }
+  try {
+    const logistics = parseOptionalProductLogistics(record)
+    for (const { key } of PRODUCT_LOGISTICS_FIELDS) {
+      if (key in record) payload[key] = logistics[key]
+    }
+  } catch {
+    return null
   }
 
   return payload
@@ -195,6 +210,20 @@ export async function PATCH(
     const color = validColor(body.color)
     const quantity = nonNegativeInteger(body.quantity)
     const images = imageUrls(body.images)
+    let logistics
+    try {
+      logistics = parseOptionalProductLogistics(body)
+    } catch (validationError) {
+      return Response.json(
+        {
+          error:
+            validationError instanceof ProductLogisticsValidationError
+              ? validationError.message
+              : "Los datos de envío de la variante no son válidos.",
+        },
+        { status: 400 },
+      )
+    }
     if (!name || !color || quantity == null || !images) {
       return Response.json(
         { error: "Completá correctamente la variante y sus unidades." },
@@ -246,7 +275,7 @@ export async function PATCH(
     }
 
     const atomicResult = await auth.admin.rpc(
-      "update_product_variant_with_allocation",
+      "update_product_variant_with_allocation_v2",
       {
         p_product_id: productId,
         p_variant_id: variantId,
@@ -256,6 +285,10 @@ export async function PATCH(
         p_images: images,
         p_quantity: quantity,
         p_actor_id: auth.user.id,
+        p_peso_empaquetado_kg: logistics.peso_empaquetado_kg,
+        p_alto_paquete_cm: logistics.alto_paquete_cm,
+        p_ancho_paquete_cm: logistics.ancho_paquete_cm,
+        p_largo_paquete_cm: logistics.largo_paquete_cm,
       },
     )
     if (!atomicResult.error) {
@@ -265,13 +298,13 @@ export async function PATCH(
       return Response.json({ variant: updated })
     }
     const missingMigration =
-      /update_product_variant_with_allocation|schema cache|PGRST202/i.test(
+      /update_product_variant_with_allocation_v2|schema cache|PGRST202/i.test(
         atomicResult.error.message,
       )
     return Response.json(
       {
         error: missingMigration
-          ? "Falta aplicar la migración 20260730170000_inventory_integrity_and_variant_sales.sql."
+          ? "Falta aplicar la migración 20260801102000_product_shipping_data.sql."
           : atomicResult.error.message,
       },
       { status: missingMigration ? 503 : 409 },

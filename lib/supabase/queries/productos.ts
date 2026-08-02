@@ -34,6 +34,10 @@ export interface ProductoPayload {
   activo?: boolean
   imagen_principal?: string | null
   video_url?: string | null
+  peso_empaquetado_kg?: number | null
+  alto_paquete_cm?: number | null
+  ancho_paquete_cm?: number | null
+  largo_paquete_cm?: number | null
 }
 
 interface ProductoCompletoImagenPayload {
@@ -49,6 +53,10 @@ interface ProductoCompletoVariantePayload {
   imagenes?: string[]
   activo?: boolean
   orden?: number
+  peso_empaquetado_kg?: number | null
+  alto_paquete_cm?: number | null
+  ancho_paquete_cm?: number | null
+  largo_paquete_cm?: number | null
 }
 
 interface ProductoCompletoEspecificacionPayload {

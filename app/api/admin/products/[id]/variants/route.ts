@@ -1,4 +1,8 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import {
+  parseOptionalProductLogistics,
+  ProductLogisticsValidationError,
+} from "@/lib/shipping/logistics-validation"
 
 function positiveInteger(value: unknown) {
   const parsed = Number(value)
@@ -91,6 +95,20 @@ export async function POST(
   const color = validColor(body?.color)
   const quantity = nonNegativeInteger(body?.quantity)
   const images = imageUrls(body?.images)
+  let logistics
+  try {
+    logistics = parseOptionalProductLogistics(body ?? {})
+  } catch (validationError) {
+    return Response.json(
+      {
+        error:
+          validationError instanceof ProductLogisticsValidationError
+            ? validationError.message
+            : "Los datos de envío de la variante no son válidos.",
+      },
+      { status: 400 },
+    )
+  }
 
   if (!productId || !name || !color || quantity == null || !images) {
     return Response.json(
@@ -143,7 +161,7 @@ export async function POST(
   }
 
   const atomicResult = await auth.admin.rpc(
-    "create_product_variant_with_allocation",
+    "create_product_variant_with_allocation_v2",
     {
       p_product_id: productId,
       p_name: name,
@@ -152,6 +170,10 @@ export async function POST(
       p_images: images,
       p_quantity: quantity,
       p_actor_id: auth.user.id,
+      p_peso_empaquetado_kg: logistics.peso_empaquetado_kg,
+      p_alto_paquete_cm: logistics.alto_paquete_cm,
+      p_ancho_paquete_cm: logistics.ancho_paquete_cm,
+      p_largo_paquete_cm: logistics.largo_paquete_cm,
     },
   )
   if (!atomicResult.error) {
@@ -167,13 +189,13 @@ export async function POST(
     return Response.json({ variant: atomicVariant }, { status: 201 })
   }
   const missingMigration =
-    /create_product_variant_with_allocation|schema cache|PGRST202/i.test(
+    /create_product_variant_with_allocation_v2|schema cache|PGRST202/i.test(
       atomicResult.error.message,
     )
   return Response.json(
     {
       error: missingMigration
-        ? "Falta aplicar la migración 20260730170000_inventory_integrity_and_variant_sales.sql."
+        ? "Falta aplicar la migración 20260801102000_product_shipping_data.sql."
         : atomicResult.error.message,
     },
     { status: missingMigration ? 503 : 409 },

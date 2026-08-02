@@ -660,21 +660,44 @@ type InventoryIntegrityNotificationRow = {
   product_id: number | string
   product_name: string
   stored_normal_stock: number | string
+  calculated_normal_stock: number | string
   stored_variant_stock: number | string
+  calculated_variant_stock: number | string
   generic_balance: number | string
   allocation_overflow: number | string
   pending_review_stock: number | string
   issues?: string[] | null
 }
 
+type InventoryVariantDiagnosticNotificationRow = {
+  product_id: number | string
+  variant_id: number | string
+  variant_name: string
+  actual_stock: number | string
+  expected_stock: number | string
+  difference: number | string
+  duplicated_allocation: number | string
+  possible_cause_movement_id?: string | null
+}
+
 async function getInventoryIntegrityNotifications() {
-  const { data, error } = await supabase
-    .from("inventory_stock_integrity")
-    .select(
-      "product_id, product_name, stored_normal_stock, stored_variant_stock, generic_balance, allocation_overflow, pending_review_stock, issues",
-    )
-    .order("product_id", { ascending: true })
-    .limit(250)
+  const [integrityResult, diagnosticsResult] = await Promise.all([
+    supabase
+      .from("inventory_stock_integrity")
+      .select(
+        "product_id, product_name, stored_normal_stock, calculated_normal_stock, stored_variant_stock, calculated_variant_stock, generic_balance, allocation_overflow, pending_review_stock, issues",
+      )
+      .order("product_id", { ascending: true })
+      .limit(250),
+    supabase
+      .from("inventory_variant_diagnostics")
+      .select(
+        "product_id, variant_id, variant_name, actual_stock, expected_stock, difference, duplicated_allocation, possible_cause_movement_id",
+      )
+      .limit(500),
+  ])
+
+  const { data, error } = integrityResult
 
   if (error) {
     console.warn(
@@ -682,6 +705,18 @@ async function getInventoryIntegrityNotifications() {
       getSupabaseErrorDetails(error),
     )
     return []
+  }
+
+  const diagnosticByProduct = new Map<number, InventoryVariantDiagnosticNotificationRow>()
+  if (!diagnosticsResult.error) {
+    for (const diagnostic of (diagnosticsResult.data ?? []) as unknown as InventoryVariantDiagnosticNotificationRow[]) {
+      if (
+        Number(diagnostic.difference) !== 0 ||
+        Number(diagnostic.duplicated_allocation) > 0
+      ) {
+        diagnosticByProduct.set(Number(diagnostic.product_id), diagnostic)
+      }
+    }
   }
 
   const eventAt = new Date().toISOString()
@@ -695,16 +730,24 @@ async function getInventoryIntegrityNotifications() {
       Number(row.generic_balance) < 0
     const overflow = Math.max(0, Number(row.allocation_overflow ?? 0))
     const pendingReview = Math.max(0, Number(row.pending_review_stock ?? 0))
+    const diagnostic = diagnosticByProduct.get(Number(row.product_id))
     if (
       issues.length === 0 &&
       !hasNegativeStock &&
       overflow === 0 &&
-      pendingReview === 0
+      pendingReview === 0 &&
+      !diagnostic
     ) {
       return []
     }
 
     const details = [
+      diagnostic
+        ? `variante ${diagnostic.variant_name}: diferencia ${Number(diagnostic.difference) >= 0 ? "+" : ""}${Number(diagnostic.difference)}`
+        : null,
+      diagnostic
+        ? `esperado ${diagnostic.expected_stock}, actual ${diagnostic.actual_stock}`
+        : null,
       hasNegativeStock ? "stock negativo" : null,
       overflow > 0 ? `${overflow} unidades distribuidas de más` : null,
       pendingReview > 0 ? `${pendingReview} unidades sin clasificar` : null,
@@ -717,6 +760,9 @@ async function getInventoryIntegrityNotifications() {
       issues.includes("PRODUCT_AND_VARIANT_SKU")
         ? "SKU duplicado entre producto y variante"
         : null,
+      diagnostic?.possible_cause_movement_id
+        ? `posible movimiento ${diagnostic.possible_cause_movement_id}`
+        : null,
     ].filter(Boolean)
 
     return [{
@@ -726,8 +772,8 @@ async function getInventoryIntegrityNotifications() {
       eventAt,
       title: "Inventario requiere conciliación",
       body: `${row.product_name}: ${details.join(" · ")}.`,
-      actionLabel: "Revisar en Productos",
-      actionUrl: ADMIN_ROUTES.productos,
+      actionLabel: "Abrir diagnóstico",
+      actionUrl: `/admin/inventario?productId=${encodeURIComponent(String(row.product_id))}`,
       isRead: false,
       priority: "attention",
     }]

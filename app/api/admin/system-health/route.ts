@@ -1,5 +1,5 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
-import { getAndreaniConfig, isAndreaniReady } from "@/lib/andreani/client"
+import { getAndreaniConfigurationStatus } from "@/lib/andreani/client"
 import { getWsfeHealth } from "@/lib/arca/wsfe"
 
 type HealthStatus = "ok" | "warning" | "error" | "disabled" | "unknown"
@@ -172,29 +172,17 @@ async function checkMercadoPago(): Promise<HealthResult> {
 }
 
 function checkAndreani(): HealthResult {
-  const config = getAndreaniConfig()
-  const ready = isAndreaniReady(config)
-
-  if (!config.enabled) {
-    return result({
-      id: "andreani",
-      label: "Andreani",
-      status: "disabled",
-      detail: "Integración deshabilitada; no se realizan envíos por Andreani.",
-      latencyMs: null,
-      verified: true,
-    })
-  }
+  const integration = getAndreaniConfigurationStatus()
 
   return result({
     id: "andreani",
     label: "Andreani",
-    status: ready ? "warning" : "error",
-    detail: ready
-      ? "Configurada, pero la integración todavía no dispone de una prueba operativa real."
-      : "Integración habilitada con configuración incompleta.",
+    status: integration.configured ? "warning" : "error",
+    detail: integration.configured
+      ? "Andreani QA configurado; las operaciones automáticas siguen deshabilitadas."
+      : integration.message,
     latencyMs: null,
-    verified: false,
+    verified: integration.configured,
   })
 }
 

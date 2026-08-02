@@ -13,6 +13,10 @@ export interface ProductoVariantePayload {
   imagenes?: string[]
   activo?: boolean
   orden?: number
+  peso_empaquetado_kg?: number | null
+  alto_paquete_cm?: number | null
+  ancho_paquete_cm?: number | null
+  largo_paquete_cm?: number | null
 }
 
 export interface ProductVariantAllocation {
@@ -182,6 +186,10 @@ export async function createProductoVariantWithAllocation(
     color: string
     quantity: number
     images: string[]
+    peso_empaquetado_kg: number | null
+    alto_paquete_cm: number | null
+    ancho_paquete_cm: number | null
+    largo_paquete_cm: number | null
   },
 ) {
   const {
@@ -227,6 +235,10 @@ export async function updateProductoVariantWithAllocation(
     color: string
     quantity: number
     images: string[]
+    peso_empaquetado_kg: number | null
+    alto_paquete_cm: number | null
+    ancho_paquete_cm: number | null
+    largo_paquete_cm: number | null
   },
 ) {
   const {

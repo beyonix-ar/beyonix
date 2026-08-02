@@ -1,15 +1,15 @@
 import {
   calculateCustomerShippingCost,
   DEFAULT_SHIPPING_SETTINGS,
-  SHIPPING_COST,
   type ShippingBonusSettings,
-} from "@/lib/store-config"
+} from "../store-config.ts"
 
 export type CheckoutShippingType = "sucursal" | "domicilio"
 
 export interface CheckoutShippingInput {
   type?: CheckoutShippingType | null
   costReal?: number | null
+  quoted?: boolean
 }
 
 export interface NormalizedCheckoutShipping {
@@ -28,15 +28,13 @@ export function normalizeCheckoutShipping(
     settings?: Partial<ShippingBonusSettings> | null
   } = {},
 ): NormalizedCheckoutShipping {
-  const fallbackCost =
-    Number.isFinite(options.settings?.defaultShippingCost) &&
-    Number(options.settings?.defaultShippingCost) >= 0
-      ? Number(options.settings?.defaultShippingCost)
-      : SHIPPING_COST
   const realCost = Number(shipping?.costReal)
-  const costReal =
-    Number.isFinite(realCost) && realCost > 0 ? realCost : fallbackCost
-  const costCharged = options.customerCreditApplied
+  const quoted = shipping?.quoted === true
+  if (quoted && (!Number.isFinite(realCost) || realCost <= 0)) {
+    throw new Error("La cotización de envío no tiene un importe válido.")
+  }
+  const costReal = quoted ? realCost : 0
+  const costCharged = !quoted || options.customerCreditApplied
     ? 0
     : calculateCustomerShippingCost(
         productsTotal,

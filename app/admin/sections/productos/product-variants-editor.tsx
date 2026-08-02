@@ -46,6 +46,12 @@ import {
 } from "@/lib/supabase/queries/productos"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 import { adminControlClassName } from "../../components/admin-controls"
+import {
+  normalizeLogisticsDecimalInput,
+  parseOptionalProductLogistics,
+  ProductLogisticsValidationError,
+  PRODUCT_LOGISTICS_FIELDS,
+} from "@/lib/shipping/logistics-validation"
 
 interface ProductVariantsEditorProps {
   productoId?: number
@@ -101,6 +107,12 @@ export function ProductVariantsEditor({
     useState("#000000")
   const [cantidad, setCantidad] =
     useState("0")
+  const [shippingValues, setShippingValues] = useState({
+    peso_empaquetado_kg: "",
+    alto_paquete_cm: "",
+    ancho_paquete_cm: "",
+    largo_paquete_cm: "",
+  })
   const [distribution, setDistribution] =
     useState<ProductVariantDistribution | null>(null)
   const [allocations, setAllocations] =
@@ -197,6 +209,12 @@ export function ProductVariantsEditor({
     setSku("")
     setColorHex("#000000")
     setCantidad("0")
+    setShippingValues({
+      peso_empaquetado_kg: "",
+      alto_paquete_cm: "",
+      ancho_paquete_cm: "",
+      largo_paquete_cm: "",
+    })
     setVariantImages([])
     setPersistedVariantImages([])
     setDraggedImageIndex(null)
@@ -352,6 +370,18 @@ export function ProductVariantsEditor({
       return
     }
 
+    let logistics
+    try {
+      logistics = parseOptionalProductLogistics(shippingValues)
+    } catch (validationError) {
+      setError(
+        validationError instanceof ProductLogisticsValidationError
+          ? validationError.message
+          : "Los datos de envío de la variante no son válidos.",
+      )
+      return
+    }
+
     const nextVariant = {
       nombre: cleanName,
       sku: sku.trim() || null,
@@ -370,6 +400,7 @@ export function ProductVariantsEditor({
                 sku: nextVariant.sku ?? "",
                 imagenes:
                   variantImages,
+                ...shippingValues,
               }
             : variant
         )
@@ -389,6 +420,7 @@ export function ProductVariantsEditor({
             crypto.randomUUID(),
           imagenes:
             variantImages,
+          ...shippingValues,
         },
       ])
 
@@ -426,6 +458,7 @@ export function ProductVariantsEditor({
               ...persistedVariantImages,
               ...urls,
             ],
+            ...logistics,
           },
         )
         const nextVariantes =
@@ -482,6 +515,7 @@ export function ProductVariantsEditor({
             color: nextVariant.color_hex,
             quantity: allocationQuantity,
             images: urls,
+            ...logistics,
           },
         )
       } catch (createError) {
@@ -575,6 +609,12 @@ export function ProductVariantsEditor({
     setColorHex(variant.color_hex)
     setCantidad("0")
     setVariantImages(variant.imagenes)
+    setShippingValues({
+      peso_empaquetado_kg: variant.peso_empaquetado_kg,
+      alto_paquete_cm: variant.alto_paquete_cm,
+      ancho_paquete_cm: variant.ancho_paquete_cm,
+      largo_paquete_cm: variant.largo_paquete_cm,
+    })
     setPersistedVariantImages([])
     setEditingVariant({
       kind: "draft",
@@ -591,6 +631,22 @@ export function ProductVariantsEditor({
     setCantidad(String(allocations[variant.id] ?? 0))
     setVariantImages([])
     setPersistedVariantImages(variant.imagenes || [])
+    setShippingValues({
+      peso_empaquetado_kg:
+        variant.peso_empaquetado_kg == null
+          ? ""
+          : String(variant.peso_empaquetado_kg),
+      alto_paquete_cm:
+        variant.alto_paquete_cm == null ? "" : String(variant.alto_paquete_cm),
+      ancho_paquete_cm:
+        variant.ancho_paquete_cm == null
+          ? ""
+          : String(variant.ancho_paquete_cm),
+      largo_paquete_cm:
+        variant.largo_paquete_cm == null
+          ? ""
+          : String(variant.largo_paquete_cm),
+    })
     setEditingVariant({
       kind: "persisted",
       id: variant.id,
@@ -762,6 +818,45 @@ export function ProductVariantsEditor({
             className={`${inputCls} text-center`}
           />
         </label>
+      </div>
+
+      <div className="rounded-xl border border-cyan-400/12 bg-cyan-400/[0.025] p-2.5">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-1">
+          <p className="text-10px font-semibold uppercase tracking-wide text-cyan-100/65">
+            Datos de envío propios
+          </p>
+          <p className="text-10px text-white/38">
+            Vacío = hereda del producto
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
+          {PRODUCT_LOGISTICS_FIELDS.map(({ key, label, unit }) => (
+            <label key={key} className="min-w-0">
+              <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
+                {label}
+              </span>
+              <span className="relative block">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={shippingValues[key]}
+                  placeholder="Heredar"
+                  aria-label={`${label} propio de la variante en ${unit}`}
+                  onChange={(event) =>
+                    setShippingValues((current) => ({
+                      ...current,
+                      [key]: normalizeLogisticsDecimalInput(event.target.value),
+                    }))
+                  }
+                  className={`${inputCls} !pr-10`}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-cyan-200/60">
+                  {unit}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
 
       <p className="rounded-lg border border-amber-400/12 bg-amber-400/5 px-2.5 py-1.5 text-center text-10px font-semibold leading-4 text-amber-100/55">
