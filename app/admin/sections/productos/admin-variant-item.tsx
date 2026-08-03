@@ -14,6 +14,7 @@ interface AdminVariantItemProps {
   name: string
   subtitle?: string
   sku?: string | null
+  hideSku?: boolean
   colorHex?: string | null
   colorLabel?: string
   stock: number
@@ -84,6 +85,7 @@ export function AdminVariantItem({
   name,
   subtitle,
   sku,
+  hideSku = false,
   colorHex,
   colorLabel,
   stock,
@@ -157,8 +159,8 @@ export function AdminVariantItem({
         <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-white/8 pt-4 sm:grid-cols-3">
           <div className="min-w-0">
             <dt className="text-xs font-bold text-white/46">SKU</dt>
-            <dd className="mt-1 truncate text-sm font-black text-white/82" title={sku?.trim() || "Sin SKU"}>
-              {sku?.trim() || "Sin SKU"}
+            <dd className="mt-1 truncate text-sm font-black text-white/82" title={hideSku ? undefined : sku?.trim() || "Sin SKU"}>
+              {hideSku ? null : sku?.trim() || "Sin SKU"}
             </dd>
           </div>
           <div className="min-w-0">
@@ -222,8 +224,8 @@ export function AdminVariantItem({
       </div>
 
       <div data-label="SKU" className="min-w-0 justify-self-stretch text-center">
-        <p className="truncate text-xs font-bold text-white/68" title={sku?.trim() || "Sin SKU"}>
-          {sku?.trim() || "Sin SKU"}
+        <p className="truncate text-xs font-bold text-white/68" title={hideSku ? undefined : sku?.trim() || "Sin SKU"}>
+          {hideSku ? null : sku?.trim() || "Sin SKU"}
         </p>
       </div>
 
@@ -243,7 +245,7 @@ export function AdminVariantItem({
         {stateControl}
       </div>
 
-      <div className="admin-product-actions flex items-center justify-end gap-1.5">
+      <div className="admin-product-actions flex items-center justify-center gap-1.5">
         {actions}
       </div>
     </article>

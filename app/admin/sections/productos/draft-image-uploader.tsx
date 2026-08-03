@@ -17,6 +17,8 @@ interface DraftImageUploaderProps {
   files: File[]
   onChange: (files: File[]) => void
   emptyMessage?: string
+  compact?: boolean
+  maxFiles?: number
 }
 
 interface PreviewImage {
@@ -28,6 +30,8 @@ export function DraftImageUploader({
   files,
   onChange,
   emptyMessage = "Cargá imágenes antes de crear el producto.",
+  compact = false,
+  maxFiles,
 }: DraftImageUploaderProps) {
   const inputRef =
     useRef<HTMLInputElement>(null)
@@ -63,7 +67,15 @@ export function DraftImageUploader({
       return
     }
 
-    onChange([...files, ...validFiles])
+    const availableSlots = maxFiles == null
+      ? validFiles.length
+      : Math.max(0, maxFiles - files.length)
+
+    if (!availableSlots) {
+      return
+    }
+
+    onChange([...files, ...validFiles.slice(0, availableSlots)])
   }
 
   const removeFile = (
@@ -91,14 +103,20 @@ export function DraftImageUploader({
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className={compact ? "space-y-2" : "space-y-2.5"}>
       <div
-        onClick={() =>
-          inputRef.current?.click()
-        }
+        onClick={() => {
+          if (maxFiles == null || files.length < maxFiles) {
+            inputRef.current?.click()
+          }
+        }}
         onDrop={(event) => {
           event.preventDefault()
           setDragging(false)
+
+          if (maxFiles != null && files.length >= maxFiles) {
+            return
+          }
 
           addFiles(
             Array.from(
@@ -108,29 +126,48 @@ export function DraftImageUploader({
         }}
         onDragOver={(event) => {
           event.preventDefault()
-          setDragging(true)
+          if (maxFiles == null || files.length < maxFiles) {
+            setDragging(true)
+          }
         }}
         onDragLeave={() =>
           setDragging(false)
         }
-        className={`admin-ds-upload-zone admin-ds-upload-zone-compact flex cursor-pointer flex-col items-center justify-center gap-1.5 border border-dashed transition-colors ${
+        aria-disabled={maxFiles != null && files.length >= maxFiles}
+        className={`admin-ds-upload-zone admin-ds-upload-zone-compact flex items-center border border-dashed transition-colors ${
+          maxFiles != null && files.length >= maxFiles ? "cursor-not-allowed opacity-55" : "cursor-pointer"
+        } ${
+          compact
+            ? "min-h-14 w-full flex-row justify-start gap-2.5 px-3 py-2 sm:max-w-72"
+            : "flex-col justify-center gap-1.5"
+        } ${
           dragging ? "admin-ds-upload-zone-active" : ""
         }`}
       >
-        <Upload className="size-6 text-white/25" />
+        <Upload className={compact ? "size-4 text-white/35" : "size-6 text-white/25"} />
 
-        <div className="text-center">
-          <p className="text-sm font-medium text-white/75">
-            Arrastrá imágenes acá
+        <div className={compact ? "min-w-0 text-left" : "text-center"}>
+          <p className={compact ? "text-xs font-bold text-white/75" : "text-sm font-medium text-white/75"}>
+            {maxFiles != null && files.length >= maxFiles
+              ? `Máximo ${maxFiles} imágenes`
+              : compact
+                ? "Agregar imágenes"
+                : "Arrastrá imágenes acá"}
           </p>
 
           <p className="mt-0.5 line-clamp-1 text-10px text-white/40">
-            {files.length ? "Agregá más archivos" : emptyMessage}
+            {maxFiles != null
+              ? `${files.length} de ${maxFiles} imágenes`
+              : files.length
+                ? "Agregá más archivos"
+                : emptyMessage}
           </p>
 
-          <p className="mt-1 text-10px font-semibold uppercase tracking-widest text-beyonix-cyan/70">
-            PNG · 1:1 · 2000 × 2000 px
-          </p>
+          {!compact && (
+            <p className="mt-1 text-10px font-semibold uppercase tracking-widest text-beyonix-cyan/70">
+              PNG · 1:1 · 2000 × 2000 px
+            </p>
+          )}
         </div>
 
         <input
@@ -155,7 +192,7 @@ export function DraftImageUploader({
       </div>
 
       {!!files.length && (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        <div className={compact ? "grid grid-cols-3 gap-2" : "grid grid-cols-3 gap-2 sm:grid-cols-4"}>
           {previews.map((preview, index) => (
             <div
               key={`${preview.file.name}-${preview.file.lastModified}`}
@@ -177,7 +214,9 @@ export function DraftImageUploader({
                 setDraggedIndex(null)
               }}
               onDragEnd={() => setDraggedIndex(null)}
-              className="admin-ds-media-tile group relative aspect-square cursor-grab overflow-hidden p-1 transition-colors active:cursor-grabbing"
+              className={`admin-ds-media-tile group relative aspect-square cursor-grab overflow-hidden p-1 transition-colors active:cursor-grabbing ${
+                compact ? "w-full" : ""
+              }`}
             >
               <TransparencyAwareImage
                 alt={preview.file.name}
@@ -186,7 +225,9 @@ export function DraftImageUploader({
               />
 
               {index === 0 && (
-                <span className="absolute left-2.5 top-2.5 rounded-full border border-beyonix-sky/25 bg-beyonix-blue/80 px-2 py-1 text-9px font-semibold uppercase tracking-wider text-beyonix-sky backdrop-blur-sm">
+                <span className={`absolute rounded-full border border-beyonix-sky/25 bg-beyonix-blue/80 font-semibold uppercase tracking-wider text-beyonix-sky backdrop-blur-sm ${
+                  compact ? "left-1.5 top-1.5 px-1.5 py-0.5 text-8px" : "left-2.5 top-2.5 px-2 py-1 text-9px"
+                }`}>
                   Principal
                 </span>
               )}

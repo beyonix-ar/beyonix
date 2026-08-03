@@ -18,15 +18,17 @@ interface AdminProductPreviewModalProps {
   product: SupabaseProducto
   onClose: () => void
   readOnly?: boolean
+  initialVariantValue?: string
 }
 
 export function AdminProductPreviewModal({
   product,
   onClose,
   readOnly = false,
+  initialVariantValue,
 }: AdminProductPreviewModalProps) {
   const [selectedColor, setSelectedColor] = useState(() =>
-    getDefaultVariantValue(product)
+    initialVariantValue ?? getDefaultVariantValue(product)
   )
   const [selectedImage, setSelectedImage] = useState(0)
   const {

@@ -182,6 +182,10 @@ export function useProductoForm({
 
   const [form, setForm] = useState<ProductoFormState>({
     nombre: producto?.nombre ?? "",
+    sku:
+      [...(producto?.producto_variantes ?? [])]
+        .sort((left, right) => left.orden - right.orden || left.id - right.id)[0]
+        ?.sku ?? producto?.sku ?? "",
     slug: producto?.slug ?? "",
     descripcion:
       producto?.descripcion ?? "",
@@ -291,6 +295,11 @@ export function useProductoForm({
       nombre:
         form.nombre.trim(),
 
+      sku:
+        producto?.producto_variantes?.length
+          ? null
+          : form.sku.trim() || null,
+
       slug:
         form.slug.trim() ||
         slugify(form.nombre),
@@ -358,7 +367,7 @@ export function useProductoForm({
 
       ...logistics,
     }
-  }, [form])
+  }, [form, producto?.producto_variantes?.length])
 
   const submit = async ({
     draftVariants = [],
@@ -421,7 +430,7 @@ export function useProductoForm({
       setError(
         validationError instanceof ProductLogisticsValidationError
           ? validationError.message
-          : "Los datos de envío no son válidos.",
+          : "Las dimensiones y el peso no son válidos.",
       )
       return
     }
@@ -580,7 +589,7 @@ export function useProductoForm({
           nombre:
             variant.nombre.trim(),
           sku:
-            variant.sku.trim() ||
+            (index === 0 ? form.sku : variant.sku).trim() ||
             null,
           color_hex:
             variant.color_hex,
@@ -596,6 +605,7 @@ export function useProductoForm({
           await createProductoCompleto({
             producto: {
               ...nextPayload,
+              sku: variantes.length ? null : nextPayload.sku,
               imagen_principal:
                 principalImage,
             },

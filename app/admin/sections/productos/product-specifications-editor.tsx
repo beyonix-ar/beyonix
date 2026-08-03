@@ -45,7 +45,6 @@ import {
   AdminPrimaryButton,
   AdminSecondaryButton,
 } from "../../components/admin-controls"
-
 interface ProductSpecificationsEditorProps {
   productoId?: number
   draftSpecifications?: DraftProductoEspecificacion[]
@@ -449,10 +448,28 @@ export function ProductSpecificationsEditor({
 
   const visibleDrafts = sortSpecifications(draftSpecifications)
   const visibleSpecifications = sortSpecifications(specifications)
+  const visibleCount = productoId
+    ? visibleSpecifications.length
+    : visibleDrafts.length
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+    <section className="product-editor-panel min-w-0 rounded-xl border p-4">
+      <div className="product-editor-panel-heading mb-3">
+        <h2 className="text-base font-black text-white">Especificaciones</h2>
+        <p className="mt-1 text-xs leading-5 text-white/44">
+          Ícono, característica y estado visible en la tienda.
+        </p>
+      </div>
+
+      <div className="grid min-w-0 items-start gap-3 2xl:grid-cols-[minmax(16rem,0.68fr)_minmax(0,1.32fr)]">
+      <div className="product-editor-subpanel min-w-0 rounded-xl border p-3">
+        <div className="mb-3 border-b border-white/8 pb-3">
+          <h3 className="text-base font-black text-white">
+            {editingSpecification ? "Editar especificación" : "Agregar especificación"}
+          </h3>
+        </div>
+
+        <div className="grid min-w-0 gap-3">
         <div className="min-w-0">
           <p className="mb-2 text-sm font-black text-white/68">
             Ícono
@@ -476,26 +493,31 @@ export function ProductSpecificationsEditor({
           />
         </label>
 
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 border-t border-white/8 pt-3 sm:flex-row sm:items-center sm:justify-between">
         <AdminSecondaryButton
+          size="sm"
           aria-label={
             activo ? "Desactivar especificación" : "Activar especificación"
           }
           onClick={() => setActivo((current) => !current)}
-          className="w-full justify-start lg:col-span-2"
+          aria-pressed={activo}
+          className="justify-start"
         >
           {activo ? (
-            <ToggleRight className="size-6 text-beyonix-cyan" />
+            <ToggleRight className="size-5 text-white" />
           ) : (
-            <ToggleLeft className="size-6 text-white/45" />
+            <ToggleLeft className="size-5 text-white/45" />
           )}
-          <span className="text-sm text-white/80">
-            {activo ? "Especificación activa" : "Especificación inactiva"}
+          <span className="text-xs text-white/80">
+            {activo ? "Activa" : "Inactiva"}
           </span>
         </AdminSecondaryButton>
-      </div>
 
-      <div className="flex flex-wrap gap-2">
+        <div className="flex gap-2">
         <AdminPrimaryButton
+          size="sm"
           aria-label={
             editingSpecification
               ? "Guardar especificación"
@@ -503,36 +525,56 @@ export function ProductSpecificationsEditor({
           }
           onClick={saveSpecification}
           disabled={saving}
+          className="flex-1 sm:flex-none"
         >
           {saving ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Plus className="size-4" />
           )}
-          {editingSpecification ? "Guardar" : "Agregar"}
+          {editingSpecification ? "Guardar cambios" : "Agregar especificación"}
         </AdminPrimaryButton>
 
         {editingSpecification && (
           <AdminSecondaryButton
+            size="sm"
             aria-label="Cancelar edición"
             onClick={resetFields}
+            className="flex-1 sm:flex-none"
           >
             <X className="size-4" />
             Cancelar
           </AdminSecondaryButton>
         )}
+        </div>
       </div>
 
       {error && (
-        <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
+        <div className="mt-4">
+          <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
+        </div>
       )}
+      </div>
 
-      {loading ? (
-        <div className="mt-auto flex h-20 items-center justify-center text-white/45">
+      <div className="product-editor-subpanel min-w-0 rounded-xl border p-3">
+        <div className="mb-3 flex items-start justify-between gap-3 border-b border-white/8 pb-3">
+          <div className="min-w-0">
+            <h3 className="text-base font-black text-white">Características cargadas</h3>
+            <p className="mt-1 text-xs leading-5 text-white/44">
+              Arrastrá los elementos para definir el orden en la tienda.
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 rounded-md border border-white/12 bg-black/20 px-2.5 py-1 text-xs font-black text-white/70">
+            {visibleCount}
+          </span>
+        </div>
+
+        {loading ? (
+        <div className="flex h-16 items-center justify-center text-white/45">
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <div className="mt-auto space-y-2 border-t border-white/8 pt-3">
+        <div className="space-y-2">
           {productoId ? (
             visibleSpecifications.length ? (
               visibleSpecifications.map((specification, index) => (
@@ -620,7 +662,9 @@ export function ProductSpecificationsEditor({
           )}
         </div>
       )}
-    </div>
+      </div>
+      </div>
+    </section>
   )
 }
 
@@ -635,9 +679,12 @@ function reorderPersistedSpecifications(
 
 function EmptySpecifications() {
   return (
-    <div className="rounded-xl border border-white/7 bg-[#181818] px-4 py-4 text-center">
-      <p className="text-sm text-white/55">
+    <div className="product-editor-empty rounded-lg border border-dashed border-white/10 px-4 py-5 text-center">
+      <p className="text-sm font-bold text-white/58">
         Todavía no hay especificaciones cargadas.
+      </p>
+      <p className="mt-1 text-xs text-white/38">
+        Agregá la primera desde el formulario.
       </p>
     </div>
   )
@@ -689,10 +736,10 @@ function SpecificationRow({
         onDrop()
       }}
       onDragEnd={onDragEnd}
-      className={`rounded-xl border bg-[#181818] px-3 py-2.5 ${
+      className={`product-editor-spec-row rounded-lg border px-3 py-2.5 transition-colors ${
         draggedKey === dragKey
-          ? "border-beyonix-sky"
-          : "border-white/7"
+          ? "product-editor-spec-row-active border-white/35"
+          : "border-white/8 hover:border-white/18 hover:bg-white/[0.03]"
       }`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -701,7 +748,7 @@ function SpecificationRow({
             <GripVertical className="size-4" />
           </span>
 
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-[#444444] text-white">
+          <span className="product-editor-icon-cell flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/12 text-white">
             <Icon className="size-4 text-white" />
           </span>
 
@@ -717,9 +764,9 @@ function SpecificationRow({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center justify-end gap-1.5 border-t border-white/7 pt-2.5 sm:border-0 sm:pt-0">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 border-t border-white/7 pt-2.5 sm:border-0 sm:pt-0">
           <AdminSecondaryButton
-            size="icon"
+            size="sm"
             aria-label={
               activo ? "Desactivar especificación" : "Activar especificación"
             }
@@ -727,28 +774,31 @@ function SpecificationRow({
             onClick={onToggle}
           >
             {activo ? (
-              <ToggleRight className="size-4 text-beyonix-cyan" />
+              <ToggleRight className="size-4 text-white" />
             ) : (
               <ToggleLeft className="size-4" />
             )}
+            {activo ? "Activa" : "Inactiva"}
           </AdminSecondaryButton>
 
           <AdminSecondaryButton
-            size="icon"
+            size="sm"
             aria-label="Editar especificación"
             title="Editar especificación"
             onClick={onEdit}
           >
             <Pencil className="size-4" />
+            Editar
           </AdminSecondaryButton>
 
           <AdminDangerButton
-            size="icon"
+            size="sm"
             aria-label="Eliminar especificación"
             title="Eliminar especificación"
             onClick={onRemove}
           >
             <Trash2 className="size-4" />
+            Eliminar
           </AdminDangerButton>
         </div>
       </div>

@@ -6729,60 +6729,113 @@ span.admin-claim-status-finalized,
   isolation: isolate;
 }
 
-/* Edición de producto: composición compacta y sin desbordes. */
-.beyonix-admin-main > .admin-product-page {
+/* Editor de producto: una única superficie de trabajo, compacta y responsive. */
+.beyonix-admin-main > .product-editor-screen {
   max-width: none !important;
 }
 
-.admin-product-page .admin-product-header {
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.admin-product-page .admin-product-form,
-.admin-product-page .admin-product-section,
-.admin-product-page .admin-product-section > div {
+.product-editor-screen {
   min-width: 0;
 }
 
-.admin-product-page .admin-product-section {
-  isolation: isolate;
+.product-editor-screen .product-editor-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.65rem;
 }
 
-.admin-product-page .admin-product-section-info {
-  background:
-    radial-gradient(circle at 10% 0%, rgba(56, 189, 248, 0.09), transparent 16rem),
-    linear-gradient(145deg, rgba(8, 20, 32, 0.99), rgba(5, 13, 22, 0.99)) !important;
+.product-editor-screen .product-editor-actions,
+.product-editor-screen .product-editor-panel {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: #0a0f15 !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 
-.admin-product-page .admin-product-section-variants {
-  background:
-    radial-gradient(circle at 12% 0%, rgba(34, 211, 238, 0.08), transparent 18rem),
-    linear-gradient(145deg, rgba(7, 21, 31, 0.99), rgba(4, 14, 22, 0.99)) !important;
+.product-editor-screen :where(
+    .product-editor-metric,
+    .product-editor-subpanel,
+    .product-editor-spec-row,
+    .product-editor-icon-cell,
+    .product-editor-empty
+  ) {
+  border-color: rgba(255, 255, 255, 0.11) !important;
+  background: #0c1219 !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 
-.admin-product-page .admin-product-section-specs {
-  background:
-    radial-gradient(circle at 12% 0%, rgba(96, 165, 250, 0.1), transparent 16rem),
-    linear-gradient(145deg, rgba(14, 17, 32, 0.99), rgba(7, 11, 22, 0.99)) !important;
+.product-editor-screen .product-editor-spec-row-active {
+  border-color: rgba(255, 255, 255, 0.36) !important;
+  background: #171f29 !important;
 }
 
-.admin-product-page .admin-variant-color-control {
-  border-radius: 0.75rem !important;
-  background: #07111b !important;
+.product-editor-screen .product-editor-panel-heading {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.55rem;
 }
 
-.admin-product-page .admin-variant-color-control input[type="color"] {
+.product-editor-screen .product-editor-panel-heading h2 {
+  font-size: 0.875rem;
+  line-height: 1.2rem;
+}
+
+.product-editor-screen .product-editor-field-label {
+  margin-bottom: 0.35rem !important;
+  font-size: 0.7rem !important;
+  line-height: 1rem;
+}
+
+.product-editor-screen .product-editor-panel label > span[class~="mt-1.5"] {
+  margin-top: 0.25rem !important;
+  font-size: 0.65rem;
+  line-height: 1rem;
+}
+
+.product-editor-screen .product-editor-subpanel label > span:first-child {
+  margin-bottom: 0.35rem !important;
+  font-size: 0.7rem !important;
+  line-height: 1rem;
+}
+
+.product-editor-screen :where(.admin-control-input:not(textarea), .admin-control-select) {
+  height: 2.4rem !important;
+  padding-inline: 0.75rem !important;
+  font-size: 0.78rem !important;
+}
+
+.product-editor-screen .admin-control-select svg {
+  margin-right: 0 !important;
+}
+
+.product-editor-screen .admin-icon-picker-trigger {
+  min-height: 2.4rem !important;
+  padding-block: 0.4rem !important;
+}
+
+.product-editor-screen .admin-product-logistics-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.product-editor-screen .product-editor-toggle {
+  box-shadow: none !important;
+}
+
+.product-editor-screen .admin-variant-color-control {
+  border-radius: 0.65rem !important;
+  background: #0c1219 !important;
+}
+
+.product-editor-screen .admin-variant-color-control input[type="color"] {
   min-height: 0 !important;
   border: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
-.admin-product-page input.admin-variant-hex-input,
-.admin-product-page input.admin-variant-hex-input:hover,
-.admin-product-page input.admin-variant-hex-input:focus,
-.admin-product-page input.admin-variant-hex-input:focus-visible {
+.product-editor-screen input.admin-variant-hex-input,
+.product-editor-screen input.admin-variant-hex-input:hover,
+.product-editor-screen input.admin-variant-hex-input:focus,
+.product-editor-screen input.admin-variant-hex-input:focus-visible {
   min-height: 0 !important;
   height: 2.25rem !important;
   border: 0 !important;
@@ -6791,48 +6844,44 @@ span.admin-claim-status-finalized,
   box-shadow: none !important;
 }
 
-.admin-product-page input.admin-product-price-input {
+.product-editor-screen input.admin-product-price-input {
   padding-left: 2rem !important;
   appearance: textfield;
   -moz-appearance: textfield;
 }
 
-.admin-product-page input.admin-product-price-input::-webkit-inner-spin-button,
-.admin-product-page input.admin-product-price-input::-webkit-outer-spin-button {
+.product-editor-screen input.admin-product-price-input::-webkit-inner-spin-button,
+.product-editor-screen input.admin-product-price-input::-webkit-outer-spin-button {
   margin: 0;
   appearance: none;
   -webkit-appearance: none;
 }
 
-.admin-product-page .admin-icon-picker-trigger {
-  border-color: rgba(140, 200, 242, 0.24) !important;
-  background: #111820 !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
-}
-
-.admin-product-page .admin-icon-picker-trigger:hover {
-  border-color: rgba(140, 200, 242, 0.48) !important;
-  background: #152230 !important;
-}
-
-.admin-product-page .admin-icon-picker-popover {
-  border-color: rgba(140, 200, 242, 0.28) !important;
-  background: #07111b !important;
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.62),
-    0 0 0 1px rgba(140, 200, 242, 0.06) !important;
-}
-
-.admin-product-page .admin-icon-picker-search {
-  border-color: rgba(140, 200, 242, 0.26) !important;
-  background: #0b1622 !important;
+.product-editor-screen .admin-icon-picker-trigger,
+.product-editor-screen .admin-icon-picker-popover,
+.product-editor-screen .admin-icon-picker-search,
+.product-editor-screen .admin-icon-picker-option {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: #0c1219 !important;
+  background-image: none !important;
   box-shadow: none !important;
 }
 
-.admin-product-page input.admin-icon-picker-search-input,
-.admin-product-page input.admin-icon-picker-search-input:hover,
-.admin-product-page input.admin-icon-picker-search-input:focus,
-.admin-product-page input.admin-icon-picker-search-input:focus-visible {
+.product-editor-screen .admin-icon-picker-trigger:hover,
+.product-editor-screen .admin-icon-picker-option:hover {
+  border-color: rgba(255, 255, 255, 0.32) !important;
+  background: #151d26 !important;
+}
+
+.product-editor-screen .admin-icon-picker-option-selected {
+  border-color: rgba(255, 255, 255, 0.48) !important;
+  background: #112a43 !important;
+}
+
+.product-editor-screen input.admin-icon-picker-search-input,
+.product-editor-screen input.admin-icon-picker-search-input:hover,
+.product-editor-screen input.admin-icon-picker-search-input:focus,
+.product-editor-screen input.admin-icon-picker-search-input:focus-visible {
   min-height: 0 !important;
   height: 2.25rem !important;
   border: 0 !important;
@@ -6841,57 +6890,86 @@ span.admin-claim-status-finalized,
   box-shadow: none !important;
 }
 
-.admin-product-page .admin-icon-picker-option {
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  background: #242424 !important;
+.product-editor-screen .admin-variant-item {
+  border-color: rgba(255, 255, 255, 0.11) !important;
+  background: #0c1219 !important;
+  background-image: none !important;
   box-shadow: none !important;
 }
 
-.admin-product-page .admin-icon-picker-option:hover {
-  border-color: rgba(140, 200, 242, 0.38) !important;
-  background: #303b46 !important;
+.product-editor-screen .admin-variant-item:hover {
+  border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
-.admin-product-page .admin-icon-picker-option-selected {
-  border-color: rgba(140, 200, 242, 0.68) !important;
-  background: #112a43 !important;
+.product-editor-screen .product-editor-variant-card {
+  transition: border-color 140ms ease;
 }
 
-.admin-product-page .admin-icon-picker :where(svg) {
+.product-editor-screen .product-editor-variant-card:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.product-editor-screen .product-editor-variants-scroll {
+  scrollbar-color: rgba(89, 180, 255, 0.62) rgba(7, 17, 27, 0.92);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar-track {
+  border: 1px solid rgba(89, 180, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(7, 17, 27, 0.92);
+}
+
+.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(7, 17, 27, 0.92);
+  border-radius: 999px;
+  background: rgba(89, 180, 255, 0.62);
+}
+
+.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 200, 242, 0.86);
+}
+
+.product-editor-screen :where(svg) {
   color: #ffffff !important;
   stroke: #ffffff !important;
 }
 
-.admin-product-page .admin-ds-upload-zone-compact {
-  min-height: 5.25rem;
+.product-editor-screen .admin-ds-upload-zone-compact {
+  min-height: 5rem;
 }
 
-.admin-product-page .admin-product-save-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 20;
+.product-editor-screen .product-editor-variant-form .admin-ds-upload-zone-compact {
+  min-height: 3.5rem !important;
+  border-radius: 0.65rem !important;
+}
+
+.product-editor-screen .product-editor-variant-form .admin-variant-color-control {
+  height: 2.4rem !important;
+}
+
+.product-editor-screen .product-editor-actions {
+  position: static;
+  z-index: auto;
 }
 
 @media (max-width: 639px) {
-  .admin-product-page .admin-product-header {
+  .product-editor-screen .product-editor-header {
     align-items: stretch;
   }
 
-  .admin-product-page .admin-product-header > div:last-child,
-  .admin-product-page .admin-product-header > div:last-child button {
-    width: 100%;
+  .product-editor-screen .product-editor-actions {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 
-  .admin-product-page .admin-product-form {
-    overflow: visible;
-  }
-
-  .admin-product-page .admin-product-section {
-    padding: 0.75rem;
-  }
-
-  .admin-product-page .admin-product-save-actions {
-    position: static;
+  .product-editor-screen :where(.admin-control-input:not(textarea), .admin-control-select) {
+    height: 2.75rem !important;
+    font-size: 0.875rem !important;
   }
 }
 

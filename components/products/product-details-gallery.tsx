@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import Image from "next/image"
 
@@ -69,8 +69,10 @@ export function ProductDetailsGallery({
   onPrev,
   onSelectImage,
 }: ProductDetailsGalleryProps) {
-  const [isLoaded, setIsLoaded] =
-    useState(false)
+  const [loadedMediaKey, setLoadedMediaKey] = useState<string | null>(null)
+  const [thumbnailStart, setThumbnailStart] = useState(0)
+  const [thumbnailWindowSize, setThumbnailWindowSize] = useState(5)
+  const thumbnailCarouselRef = useRef<HTMLDivElement>(null)
 
   const videoSource = getProductVideoSource(videoUrl)
   const playableVideo =
@@ -115,12 +117,66 @@ export function ProductDetailsGallery({
   const safeCurrentImage =
     currentImage ||
     "/placeholder.png"
-  const visibleMedia = mediaItems.slice(0, 5)
+  const currentMediaKey = isVideoSelected
+    ? `video:${videoUrl || ""}`
+    : `image:${safeCurrentImage}`
+  const isLoaded = loadedMediaKey === currentMediaKey
+  const maxThumbnailStart = Math.max(0, mediaCount - thumbnailWindowSize)
+  const visibleMedia = mediaItems.slice(
+    thumbnailStart,
+    thumbnailStart + thumbnailWindowSize,
+  )
+  const hiddenRightCount = Math.max(
+    0,
+    mediaCount - (thumbnailStart + visibleMedia.length),
+  )
   const stockBadge = getStockBadge(selectedStock)
 
   useEffect(() => {
-    setIsLoaded(false)
-  }, [safeIndex])
+    const carousel = thumbnailCarouselRef.current
+    if (!carousel) return
+
+    const updateWindowSize = () => {
+      const width = carousel.clientWidth
+      const nextWindowSize =
+        width >= 530 ? 5 : width >= 450 ? 4 : width >= 285 ? 3 : 2
+
+      setThumbnailWindowSize(nextWindowSize)
+    }
+
+    updateWindowSize()
+
+    const resizeObserver = new ResizeObserver(updateWindowSize)
+    resizeObserver.observe(carousel)
+
+    return () => resizeObserver.disconnect()
+  }, [])
+
+  useEffect(() => {
+    setThumbnailStart((current) => {
+      const clampedCurrent = Math.min(current, maxThumbnailStart)
+
+      if (safeIndex < clampedCurrent) return safeIndex
+      if (safeIndex >= clampedCurrent + thumbnailWindowSize) {
+        return Math.min(
+          safeIndex - thumbnailWindowSize + 1,
+          maxThumbnailStart,
+        )
+      }
+
+      return clampedCurrent
+    })
+  }, [maxThumbnailStart, safeIndex, thumbnailWindowSize])
+
+  const handleNext = () => {
+    setThumbnailStart((current) => Math.min(current + 1, maxThumbnailStart))
+    onNext()
+  }
+
+  const handlePrev = () => {
+    setThumbnailStart((current) => Math.max(current - 1, 0))
+    onPrev()
+  }
 
   return (
     <div className="flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5 md:h-full">
@@ -133,7 +189,7 @@ export function ProductDetailsGallery({
               <ProductVideoPlayer
                 source={playableVideo}
                 productName={productName}
-                onLoaded={() => setIsLoaded(true)}
+                onLoaded={() => setLoadedMediaKey(currentMediaKey)}
               />
             ) : (
               <Image
@@ -147,7 +203,7 @@ export function ProductDetailsGallery({
                 height={2000}
                 priority
                 onLoad={() => {
-                  setIsLoaded(true)
+                  setLoadedMediaKey(currentMediaKey)
                 }}
                 className={`h-full w-full object-contain p-1.5 transition-opacity duration-300 sm:p-2 ${
                   isLoaded
@@ -162,7 +218,7 @@ export function ProductDetailsGallery({
                 <button
                   type="button"
                   aria-label="Imagen anterior"
-                  onClick={onPrev}
+                  onClick={handlePrev}
                   className="absolute left-3 top-1/2 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/65 bg-[#07121E]/92 text-white shadow-[0_10px_26px_rgba(0,0,0,0.42)] backdrop-blur-sm transition-all hover:border-white hover:bg-[#112A43] active:scale-95"
                 >
                   <ChevronLeft className="size-5 stroke-[2.6]" />
@@ -171,7 +227,7 @@ export function ProductDetailsGallery({
                 <button
                   type="button"
                   aria-label="Imagen siguiente"
-                  onClick={onNext}
+                  onClick={handleNext}
                   className="absolute right-3 top-1/2 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/65 bg-[#07121E]/92 text-white shadow-[0_10px_26px_rgba(0,0,0,0.42)] backdrop-blur-sm transition-all hover:border-white hover:bg-[#112A43] active:scale-95"
                 >
                   <ChevronRight className="size-5 stroke-[2.6]" />
@@ -198,37 +254,80 @@ export function ProductDetailsGallery({
         </span>
       </div>
 
-      {visibleMedia.length > 0 && (
+      {mediaItems.length > 0 && (
         <div className="flex h-78px shrink-0 items-end justify-center pt-2 sm:h-86px">
-          <div className="flex items-center justify-center gap-2.5">
-            {visibleMedia.map((media, index) => {
-              const isVideo = media.type === "video"
-              const image =
-                media.type === "image"
-                  ? images[media.imageIndex]
-                  : null
+          <div
+            ref={thumbnailCarouselRef}
+            className="flex w-full max-w-[560px] min-w-0 items-center justify-center gap-2"
+          >
+            {mediaCount > 1 && (
+              <button
+                type="button"
+                aria-label="Ver miniatura anterior"
+                title="Anterior"
+                onClick={handlePrev}
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/35 bg-[#07121E] text-white/80 transition hover:border-beyonix-sky hover:bg-[#112A43] hover:text-white active:scale-95 sm:size-9"
+              >
+                <ChevronLeft className="size-4 stroke-[2.6]" />
+              </button>
+            )}
 
-              return (
-                <ProductMediaThumbnail
-                  key={isVideo ? "product-video" : `${image}-${index}`}
-                  image={image}
-                  index={index}
-                  isActive={safeIndex === index}
-                  isVideo={isVideo}
-                  label={
-                    isVideo
-                      ? "Ver video"
-                      : `Ver imagen ${
-                          media.type === "image"
-                            ? media.imageIndex + 1
-                            : index + 1
-                        }`
-                  }
-                  productName={productName}
-                  onSelectImage={onSelectImage}
-                />
-              )
-            })}
+            <div className="flex min-w-0 items-center justify-center gap-2.5 px-1 py-1">
+              {visibleMedia.map((media, visibleIndex) => {
+                const index = thumbnailStart + visibleIndex
+                const isVideo = media.type === "video"
+                const image =
+                  media.type === "image"
+                    ? images[media.imageIndex]
+                    : null
+
+                return (
+                  <ProductMediaThumbnail
+                    key={isVideo ? "product-video" : `${image}-${index}`}
+                    image={image}
+                    index={index}
+                    isActive={safeIndex === index}
+                    isVideo={isVideo}
+                    label={
+                      isVideo
+                        ? "Ver video"
+                        : `Ver imagen ${
+                            media.type === "image"
+                              ? media.imageIndex + 1
+                              : index + 1
+                          }`
+                    }
+                    productName={productName}
+                    onSelectImage={onSelectImage}
+                  />
+                )
+              })}
+            </div>
+
+            <span
+              aria-label={
+                hiddenRightCount
+                  ? `${hiddenRightCount} ${hiddenRightCount === 1 ? "elemento más" : "elementos más"}`
+                  : undefined
+              }
+              className={`w-7 shrink-0 text-center text-xs font-bold tabular-nums text-white/38 ${
+                hiddenRightCount ? "visible" : "invisible"
+              }`}
+            >
+              +{hiddenRightCount}
+            </span>
+
+            {mediaCount > 1 && (
+              <button
+                type="button"
+                aria-label="Ver miniatura siguiente"
+                title="Siguiente"
+                onClick={handleNext}
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/35 bg-[#07121E] text-white/80 transition hover:border-beyonix-sky hover:bg-[#112A43] hover:text-white active:scale-95 sm:size-9"
+              >
+                <ChevronRight className="size-4 stroke-[2.6]" />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -259,6 +358,7 @@ function ProductVideoPlayer({
         controls
         preload="metadata"
         src={source.videoUrl}
+        aria-label={`Video de ${productName}`}
         onLoadedMetadata={onLoaded}
         className="size-full bg-black object-contain"
       />
@@ -268,6 +368,7 @@ function ProductVideoPlayer({
   return (
     <iframe
       src={source.embedUrl}
+      title={`Video de ${productName}`}
       loading="lazy"
       allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
       allowFullScreen
@@ -299,9 +400,10 @@ function ProductMediaThumbnail({
   return (
     <button
       type="button"
+      data-media-index={index}
       aria-label={label}
       onClick={() => onSelectImage(index)}
-      className={`group relative size-16 cursor-pointer overflow-hidden rounded-xl transition-all duration-200 sm:size-[72px] ${
+      className={`group relative size-12 cursor-pointer overflow-hidden rounded-xl transition-all duration-200 sm:size-16 md:size-[72px] ${
         isActive
           ? "scale-105 ring-2 ring-beyonix-sky ring-offset-2 ring-offset-[#080D13] shadow-[0_10px_24px_rgba(0,0,0,0.35)]"
           : "opacity-78 ring-1 ring-white/10 hover:scale-105 hover:opacity-100 hover:ring-beyonix-blue-light/55"

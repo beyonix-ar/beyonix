@@ -10,6 +10,7 @@ import type {
 
 export interface ProductoFormState {
   nombre: string
+  sku: string
   slug: string
   descripcion: string
   video_url: string

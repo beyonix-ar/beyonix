@@ -15,6 +15,7 @@ import { getAdminProductoVariantes } from "@/lib/supabase/queries/producto-varia
 
 export interface ProductoPayload {
   nombre: string
+  sku?: string | null
   slug: string
   descripcion?: string | null
   precio: number

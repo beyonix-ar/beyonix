@@ -16,7 +16,6 @@ import {
   Eye,
   GripVertical,
   ImageIcon,
-  Package,
   Pencil,
   Trash2,
   X,
@@ -32,6 +31,9 @@ import { calculateInventoryStock } from "@/lib/inventory/stock-metrics"
 import {
   firstUsableImage,
 } from "@/lib/products/admin-product-visuals"
+import {
+  getVariantValue,
+} from "@/lib/products/product-variants"
 
 import {
   deleteProductoVariante,
@@ -78,40 +80,33 @@ const stockColor = (stock: number, settings: StockSettings) => {
   return "text-green-400"
 }
 
-const stockStatus = (stock: number, settings: StockSettings) => {
-  if (stock <= 0) {
-    return {
-      label: "Sin stock",
-      className:
-        "border-red-400/35 bg-red-500/14 text-red-300 shadow-[0_0_16px_rgba(248,113,113,0.08)]",
-      dotClassName: "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]",
-    }
+const COLOR_NAMES_BY_HEX: Record<string, string> = {
+  "#000000": "Negro",
+  "#18181B": "Negro mate",
+  "#FFFFFF": "Blanco",
+  "#6B7280": "Gris",
+  "#D1D5DB": "Gris claro",
+  "#374151": "Gris oscuro",
+  "#2563EB": "Azul",
+  "#38BDF8": "Celeste",
+  "#EF4444": "Rojo",
+  "#22C55E": "Verde",
+  "#FACC15": "Amarillo",
+}
+
+const GENERIC_VARIANT_NAME = /^(principal|variante(?:\s+\d+)?)$/i
+
+function getColorName(colorHex: string | null | undefined, variantName?: string | null) {
+  const normalizedHex = colorHex?.trim().toUpperCase() || ""
+  const knownName = COLOR_NAMES_BY_HEX[normalizedHex]
+  if (knownName) return knownName
+
+  const cleanVariantName = variantName?.trim() || ""
+  if (cleanVariantName && !GENERIC_VARIANT_NAME.test(cleanVariantName)) {
+    return cleanVariantName
   }
 
-  if (stock <= settings.criticalStockThreshold) {
-    return {
-      label: "Stock crítico",
-      className:
-        "border-red-400/35 bg-red-500/14 text-red-300 shadow-[0_0_16px_rgba(248,113,113,0.08)]",
-      dotClassName: "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]",
-    }
-  }
-
-  if (stock <= settings.lowStockThreshold) {
-    return {
-      label: "Stock bajo",
-      className:
-        "border-amber-400/35 bg-amber-500/14 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.07)]",
-      dotClassName: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.75)]",
-    }
-  }
-
-  return {
-    label: "Disponible",
-    className:
-      "border-emerald-400/30 bg-emerald-500/12 text-emerald-300",
-    dotClassName: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]",
-  }
+  return "Color personalizado"
 }
 
 const formatProductPrice = (value: number | null | undefined) => {
@@ -207,12 +202,11 @@ export function ProductosRow({
   const [variantError, setVariantError] =
     useState("")
 
-  const [viewingVariant, setViewingVariant] =
-    useState<SupabaseProductoVariante | null>(
-      null
-    )
-  const [previewOpen, setPreviewOpen] =
-    useState(false)
+  const [previewTarget, setPreviewTarget] =
+    useState<{
+      product: SupabaseProducto
+      initialVariantValue?: string
+    } | null>(null)
 
   const [editColor, setEditColor] =
     useState("")
@@ -599,10 +593,68 @@ export function ProductosRow({
     }
   }
 
-  const viewVariant = (
-    variante: SupabaseProductoVariante
+  const currentPreviewProduct = (
+    previewVariants = variantes,
+    previewConditionedStock = conditionedStock,
+  ): SupabaseProducto => ({
+    ...producto,
+    imagen_principal: localPrincipalImage,
+    producto_variantes: previewVariants,
+    conditioned_stock: previewConditionedStock,
+  })
+
+  const viewProduct = () => {
+    setPreviewTarget({ product: currentPreviewProduct() })
+  }
+
+  const viewVariant = (variante: SupabaseProductoVariante) => {
+    const previewVariant = { ...variante, activo: true, orden: 1 }
+
+    setPreviewTarget({
+      product: currentPreviewProduct([previewVariant], []),
+      initialVariantValue: getVariantValue(variante),
+    })
+  }
+
+  const viewConditionedVariant = (
+    item: SupabaseConditionedStock,
+    linkedVariant?: SupabaseProductoVariante,
   ) => {
-    setViewingVariant(variante)
+    const previewVariant: SupabaseProductoVariante = {
+      id: linkedVariant?.id ?? producto.id,
+      producto_id: producto.id,
+      nombre:
+        item.conditioned_name?.trim() ||
+        `${linkedVariant?.nombre || "Variante"} · Con descuento`,
+      sku:
+        item.conditioned_sku?.trim() || linkedVariant?.sku?.trim() || "SKU pendiente",
+      color_hex:
+        item.conditioned_color_hex || linkedVariant?.color_hex || "#000000",
+      stock: item.quantity,
+      imagenes: item.conditioned_images.length
+        ? item.conditioned_images
+        : linkedVariant?.imagenes || [],
+      activo: true,
+      orden: 1,
+      created_at: linkedVariant?.created_at || producto.created_at,
+    }
+    const discountPercent =
+      item.discount_percent > 0 && item.discount_percent < 100
+        ? item.discount_percent
+        : 0
+    const previewPrice = discountPercent
+      ? Math.max(Math.round(producto.precio * (1 - discountPercent / 100)), 0)
+      : producto.precio
+
+    setPreviewTarget({
+      product: {
+        ...currentPreviewProduct([previewVariant], []),
+        precio: previewPrice,
+        precio_anterior: discountPercent ? producto.precio : producto.precio_anterior,
+        descuento: discountPercent || producto.descuento,
+      },
+      initialVariantValue: getVariantValue(previewVariant),
+    })
   }
 
   const reorderVariant = async (
@@ -825,19 +877,16 @@ export function ProductosRow({
           {visibleVariantCount}
         </span>
 
-        <span
-          data-label="Con descuento"
-          className={`inline-flex w-fit items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-bold ${
-            conditionedStockTotal > 0
-              ? "border-amber-300/22 bg-amber-300/9 text-amber-200"
-              : "border-white/8 bg-white/3 text-white/35"
-          }`}
-        >
-          {conditionedStockTotal > 0 && <BadgePercent className="size-3 shrink-0" />}
-          <span className="text-center leading-4">
-            {conditionedStockTotal} {conditionedStockTotal === 1 ? "unidad" : "unidades"} con descuento por falla
-          </span>
-        </span>
+        <div data-label="Con descuento" className="flex min-w-0 items-center justify-center">
+          {conditionedStockTotal > 0 && (
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-300/22 bg-amber-300/9 px-2.5 py-1 text-10px font-bold text-amber-200">
+              <BadgePercent className="size-3 shrink-0" />
+              <span className="text-center leading-4">
+                {conditionedStockTotal} {conditionedStockTotal === 1 ? "unidad" : "unidades"} con descuento por falla
+              </span>
+            </span>
+          )}
+        </div>
 
         <button
           type="button"
@@ -870,15 +919,15 @@ export function ProductosRow({
             : "Inactivo"}
         </button>
 
-        <div className="admin-product-actions flex items-center justify-end gap-1.5 pr-2">
+        <div className="admin-product-actions flex items-center justify-center gap-1.5">
           <button
             type="button"
             aria-label={`Ver producto ${producto.nombre}`}
             title={`Ver ${producto.nombre}`}
-            onClick={() => setPreviewOpen(true)}
+            onClick={viewProduct}
             className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400 cursor-pointer"
           >
-            <Package className="size-3.5" />
+            <Eye className="size-3.5" />
           </button>
 
           <button
@@ -925,8 +974,9 @@ export function ProductosRow({
                       name={variante.nombre}
                       subtitle={isPrincipal ? "Variante principal" : "Variante del producto"}
                       sku={variante.sku}
+                      hideSku={isPrincipal}
                       colorHex={variante.color_hex}
-                      colorLabel={variante.color_hex}
+                      colorLabel={getColorName(variante.color_hex, variante.nombre)}
                       stock={stock}
                       stateLabel={savingVariantId === variante.id ? "Guardando…" : variante.activo !== false ? "Activa" : "Inactiva"}
                       stateTone={variante.activo !== false ? "active" : "inactive"}
@@ -943,7 +993,7 @@ export function ProductosRow({
                             onPointerDown={(event) => handleVariantPointerDown(event, variante.id)}
                             onPointerUp={handleVariantPointerUp}
                             onPointerCancel={stopVariantReorder}
-                            className={`flex size-8 shrink-0 cursor-grab items-center justify-center rounded-lg border text-white/38 transition active:cursor-grabbing ${
+                            className={`flex size-10 shrink-0 cursor-grab items-center justify-center rounded-xl border text-white/38 transition active:cursor-grabbing ${
                               draggedVariantId === variante.id
                                 ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-200"
                                 : "border-white/8 hover:border-cyan-300/25 hover:text-cyan-200"
@@ -951,13 +1001,15 @@ export function ProductosRow({
                           >
                             <GripVertical className="size-3.5" />
                           </button>
-                        ) : undefined
+                        ) : (
+                          <span aria-hidden="true" className="size-10 shrink-0" />
+                        )
                       }
                       actions={
                         <>
                           <button
                             type="button"
-                            title={`Ver detalles de ${variante.nombre}`}
+                            title={`Ver vista previa de ${variante.nombre}`}
                             aria-label={`Ver variante ${variante.nombre}`}
                             onClick={() => viewVariant(variante)}
                             className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/55 transition hover:border-blue-400/30 hover:text-blue-300"
@@ -1007,7 +1059,7 @@ export function ProductosRow({
                           }
                           onPointerUp={handleVariantPointerUp}
                           onPointerCancel={stopVariantReorder}
-                          className={`flex size-9 shrink-0 cursor-grab items-center justify-center rounded-xl border text-white/45 transition-colors active:cursor-grabbing ${
+                          className={`flex size-10 shrink-0 cursor-grab items-center justify-center rounded-xl border text-white/45 transition-colors active:cursor-grabbing ${
                             draggedVariantId === variante.id
                               ? "border-beyonix-blue-light/40 bg-beyonix-blue/20 text-beyonix-cyan"
                               : "border-white/8 bg-black/30 hover:border-beyonix-blue-light/30 hover:text-beyonix-cyan"
@@ -1016,7 +1068,7 @@ export function ProductosRow({
                           <GripVertical className="size-4" />
                         </button>
                       ) : (
-                        <span className="size-9 shrink-0" />
+                        <span className="size-10 shrink-0" />
                       )}
                       <ProductThumbnail
                         image={firstUsableImage(variante.imagenes, productImage)}
@@ -1179,10 +1231,11 @@ export function ProductosRow({
                           : "Inactiva"}
                     </button>
 
-                    <div className="admin-product-actions flex items-center justify-end gap-1.5 pr-2">
+                    <div className="admin-product-actions flex items-center justify-center gap-1.5">
                       {!editing && (
                         <button
                           type="button"
+                          title={`Ver vista previa de ${variante.nombre}`}
                           aria-label={`Ver variante ${variante.nombre}`}
                           onClick={() => viewVariant(variante)}
                           className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400"
@@ -1276,14 +1329,14 @@ export function ProductosRow({
               const conditionedName =
                 item.conditioned_name?.trim() ||
                 `${linkedVariant?.nombre || "Variante"} · Con descuento`
-              const conditionedColorName =
-                linkedVariant?.nombre?.trim() ||
-                conditionedName.split("·", 1)[0]?.trim() ||
-                "Sin color"
               const conditionedSku =
                 item.conditioned_sku?.trim() || "SKU pendiente"
               const conditionedColor =
                 item.conditioned_color_hex || linkedVariant?.color_hex || "#000000"
+              const conditionedColorName = getColorName(
+                conditionedColor,
+                linkedVariant?.nombre,
+              )
               const conditionedImage = firstUsableImage(
                 item.conditioned_images,
                 linkedVariant?.imagenes,
@@ -1305,8 +1358,18 @@ export function ProductosRow({
                   stateTone={item.active ? "active" : "inactive"}
                   stateDisabled={savingConditionedId === item.id}
                   onToggleState={() => void toggleConditionedStock(item)}
+                  leadingAccessory={<span aria-hidden="true" className="size-10 shrink-0" />}
                   actions={
                     <>
+                      <button
+                        type="button"
+                        title={`Ver vista previa de ${conditionedName}`}
+                        aria-label={`Ver variante ${conditionedName}`}
+                        onClick={() => viewConditionedVariant(item, linkedVariant)}
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/55 transition hover:border-blue-400/30 hover:text-blue-300"
+                      >
+                        <Eye className="size-3.5" />
+                      </button>
                       <button
                         type="button"
                         title="Editar esta unidad con descuento"
@@ -1401,19 +1464,6 @@ export function ProductosRow({
           document.body,
         )}
 
-      {viewingVariant &&
-        createPortal(
-          <VariantModal
-            producto={producto}
-            variante={viewingVariant}
-            stockSettings={stockSettings}
-            onClose={() =>
-              setViewingVariant(null)
-            }
-          />,
-          document.body,
-        )}
-
       {editingConditionedStock &&
         createPortal(
           <ConditionedStockEditModal
@@ -1437,16 +1487,13 @@ export function ProductosRow({
           document.body,
         )}
 
-      {previewOpen &&
+      {previewTarget &&
         createPortal(
           <AdminProductPreviewModal
-            product={{
-              ...producto,
-              imagen_principal:
-                localPrincipalImage,
-              producto_variantes: variantes,
-            }}
-            onClose={() => setPreviewOpen(false)}
+            key={previewTarget.initialVariantValue || "product"}
+            product={previewTarget.product}
+            initialVariantValue={previewTarget.initialVariantValue}
+            onClose={() => setPreviewTarget(null)}
           />,
           document.body,
         )}
@@ -1870,131 +1917,5 @@ function ConditionedStockEditModal({
         )}
       </div>
     </AdminModal>
-  )
-}
-
-interface VariantModalProps {
-  producto: SupabaseProducto
-  variante: SupabaseProductoVariante
-  stockSettings: StockSettings
-  onClose: () => void
-}
-
-function VariantModal({
-  producto,
-  variante,
-  stockSettings,
-  onClose,
-}: VariantModalProps) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = "hidden"
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-    }
-  }, [])
-
-  const stock =
-    variante.stock ?? 0
-
-  const status =
-    stockStatus(stock, stockSettings)
-
-  const imagenes =
-    variante.imagenes || []
-
-  return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/80 px-6 py-8">
-      <button
-        type="button"
-        aria-label="Cerrar detalle de variante"
-        onClick={onClose}
-        className="absolute inset-0 cursor-default"
-      />
-
-      <div className="relative z-10 max-h-full w-full max-w-5xl overflow-y-auto rounded-3xl border border-white/10 bg-black p-6 shadow-2xl">
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
-            <p className="mb-1 text-10px font-semibold uppercase tracking-wide text-blue-300">
-              Variante
-            </p>
-
-            <h2 className="text-2xl font-bold text-white">
-              {producto.nombre} · {variante.nombre}
-            </h2>
-
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/8 p-1">
-                <span
-                  className="size-full rounded-full"
-                  style={{
-                    backgroundColor:
-                      variante.color_hex,
-                  }}
-                />
-              </span>
-
-              <span className="text-sm font-semibold text-white/70">
-                {variante.color_hex}
-              </span>
-
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/65">
-                SKU: {variante.sku?.trim() || "sin SKU"}
-              </span>
-
-              <span
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${status.className}`}
-              >
-                {status.label}
-              </span>
-
-              <span
-                className={`text-sm font-semibold ${stockColor(
-                  stock,
-                  stockSettings,
-                )}`}
-              >
-                Stock: {stock}
-              </span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            aria-label="Cerrar"
-            onClick={onClose}
-            className="min-h-44px min-w-120px rounded-2xl border border-white/10 px-5 py-2 text-sm font-semibold text-white/70 transition-colors hover:text-white cursor-pointer"
-          >
-            Cerrar
-          </button>
-        </div>
-
-        {imagenes.length ? (
-          <div className="grid grid-cols-3 gap-4">
-            {imagenes.map((imagen, index) => (
-              <div
-                key={`${imagen}-${index}`}
-                className="relative aspect-square overflow-hidden rounded-2xl border border-white/8 bg-white"
-              >
-                <Image
-                  src={imagen}
-                  alt={`${producto.nombre} ${variante.nombre} ${index + 1}`}
-                  fill
-                  sizes="(max-width: 768px) 33vw, 18rem"
-                  className="object-cover"
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-white/8 bg-black px-5 py-10 text-center">
-            <p className="text-sm text-white/55">
-              Esta variante no tiene imágenes cargadas.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
   )
 }
