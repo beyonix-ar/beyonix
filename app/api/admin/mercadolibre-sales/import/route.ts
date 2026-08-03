@@ -4,6 +4,10 @@ import {
   normalizeMercadoLibreSku,
 } from "@/lib/mercadolibre/sku-aliases"
 import {
+  buildUniqueCatalogTargetsBySku,
+  type CatalogSkuRow,
+} from "@/lib/mercadolibre/sku-reconciliation"
+import {
   getMercadoLibreSaleIdentity,
   validateMercadoLibreImportBatch,
 } from "@/lib/mercadolibre/import-integrity"
@@ -33,15 +37,6 @@ interface ExistingCostMappingRow {
   product_id: number | null
   unit_cost: number | null
   raw_data: Record<string, unknown> | null
-}
-
-interface CatalogSkuRow {
-  id: number
-  sku: string | null
-  producto_variantes: Array<{
-    id: number
-    sku: string | null
-  }> | null
 }
 
 function toNumber(value: unknown) {
@@ -223,40 +218,19 @@ export async function POST(request: Request) {
     return Response.json({ error: catalogError.message }, { status: 500 })
   }
 
-  const catalogTargetsBySku = new Map<
-    string,
-    Array<{ productId: number; variantId: number | null }>
-  >()
-  ;((catalogData ?? []) as CatalogSkuRow[]).forEach((product) => {
-    const variants = product.producto_variantes ?? []
-    const productSku = normalizeMercadoLibreSku(product.sku)
-
-    if (productSku && !variants.length) {
-      catalogTargetsBySku.set(productSku, [
-        ...(catalogTargetsBySku.get(productSku) ?? []),
-        { productId: product.id, variantId: null },
-      ])
-    }
-
-    variants.forEach((variant) => {
-      const variantSku = normalizeMercadoLibreSku(variant.sku)
-      if (!variantSku) return
-      catalogTargetsBySku.set(variantSku, [
-        ...(catalogTargetsBySku.get(variantSku) ?? []),
-        { productId: product.id, variantId: variant.id },
-      ])
-    })
-  })
+  const catalogTargetsBySku = buildUniqueCatalogTargetsBySku(
+    (catalogData ?? []) as CatalogSkuRow[],
+  )
 
   skus.forEach((incomingSku) => {
     const canonicalSku = getCanonicalCatalogSku(incomingSku)
-    const targets = catalogTargetsBySku.get(canonicalSku) ?? []
-    if (targets.length !== 1) return
+    const target = catalogTargetsBySku.get(canonicalSku)
+    if (!target) return
 
     const matchKey = mappingKey(incomingSku, "")
     automaticMappings.set(matchKey, {
-      product_id: targets[0].productId,
-      variant_id: targets[0].variantId,
+      product_id: target.productId,
+      variant_id: target.variantId,
       match_key: matchKey,
       mapped_at: new Date().toISOString(),
       mapped_by: auth.user.id,

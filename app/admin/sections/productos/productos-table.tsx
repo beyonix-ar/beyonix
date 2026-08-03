@@ -104,7 +104,7 @@ export function ProductosTable({
 
   return (
     <AdminTable className="admin-products-table">
-      <div className="admin-products-table-header grid grid-cols-admin-products gap-3 border-b border-white/6 bg-black px-4 py-2.5">
+      <div className="admin-products-table-header grid grid-cols-admin-product-summary gap-3 border-b border-white/6 bg-black px-4 py-2.5">
         <SortableHeader
           label="Producto"
           sortKey="nombre"
@@ -113,30 +113,20 @@ export function ProductosTable({
           onSort={onSort}
         />
         <SortableHeader
-          label="Cantidad"
+          label="Stock total"
           sortKey="stock"
           activeKey={sortBy}
           direction={sortDirection}
           centered
           onSort={onSort}
         />
-        <SortableHeader
-          label="SKU"
-          sortKey="sku"
-          activeKey={sortBy}
-          direction={sortDirection}
-          centered
-          onSort={onSort}
-        />
-        <SortableHeader
-          label="Color"
-          sortKey="color"
-          activeKey={sortBy}
-          direction={sortDirection}
-          centered
-          onSort={onSort}
-        />
-        {["Stock", "Precio", "Estado", "Acciones"].map((label) => (
+        <span className="text-center text-10px font-semibold uppercase tracking-widest text-white/45">
+          Variantes / SKU
+        </span>
+        <span className="text-center text-10px font-semibold uppercase tracking-widest text-white/45">
+          Con descuento / Color
+        </span>
+        {["Estado", "Acciones"].map((label) => (
           <span
             key={label}
             className="text-center text-10px font-semibold uppercase tracking-widest text-white/45"

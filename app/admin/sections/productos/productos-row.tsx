@@ -13,12 +13,11 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  CircleAlert,
   Eye,
   GripVertical,
+  ImageIcon,
   Package,
   Pencil,
-  Star,
   Trash2,
   X,
 } from "lucide-react"
@@ -30,6 +29,9 @@ import type {
 } from "@/lib/supabase/types"
 import type { StockSettings } from "@/lib/site-settings"
 import { calculateInventoryStock } from "@/lib/inventory/stock-metrics"
+import {
+  firstUsableImage,
+} from "@/lib/products/admin-product-visuals"
 
 import {
   deleteProductoVariante,
@@ -49,6 +51,7 @@ import {
 
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { DraftImageUploader } from "./draft-image-uploader"
+import { AdminVariantItem } from "./admin-variant-item"
 import {
   AdminModal,
   AdminSecondaryButton,
@@ -117,6 +120,42 @@ const formatProductPrice = (value: number | null | undefined) => {
   return `$${safePrice.toLocaleString("es-AR")}`
 }
 
+function ProductThumbnail({
+  image,
+  alt,
+  size = "md",
+  tone = "normal",
+}: {
+  image: string | null
+  alt: string
+  size?: "sm" | "md"
+  tone?: "normal" | "conditioned"
+}) {
+  return (
+    <span
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-black/30 ${
+        size === "sm" ? "size-9" : "size-10"
+      } ${
+        tone === "conditioned"
+          ? "border-amber-300/25"
+          : "border-white/10"
+      }`}
+    >
+      {image ? (
+        <Image
+          src={image}
+          alt={alt}
+          fill
+          sizes={size === "sm" ? "36px" : "40px"}
+          className="object-cover"
+        />
+      ) : (
+        <ImageIcon className="size-4 text-white/22" aria-hidden="true" />
+      )}
+    </span>
+  )
+}
+
 const sortVariantes = (
   variantes: SupabaseProductoVariante[]
 ) =>
@@ -144,26 +183,6 @@ const getPrincipalVariantImage = (
   sortVariantes(variantes).flatMap(
     (variante) => variante.imagenes || []
   )[0] || null
-
-const getInstallmentsLabel = (
-  producto: SupabaseProducto
-) => {
-  if (
-    producto.cuotas_sin_interes &&
-    producto.cuotas_maximas === 3
-  ) {
-    return "3 cuotas"
-  }
-
-  if (
-    producto.cuotas_sin_interes &&
-    producto.cuotas_maximas === 6
-  ) {
-    return "6 cuotas"
-  }
-
-  return "Sin cuotas"
-}
 
 export function ProductosRow({
   producto,
@@ -255,15 +274,14 @@ export function ProductosRow({
   const variantes =
     sortVariantes(localVariantes)
   const conditionedStock = localConditionedStock
-  const primaryVariant = variantes[0]
   const hasDetails = variantes.length > 0 || conditionedStock.length > 0
-  const skuTitle = variantes.length
-    ? "Los SKU se muestran en cada variante"
-    : producto.sku?.trim() || "Sin SKU"
-  const skuDisplay = variantes.length
-    ? ""
-    : producto.sku?.trim() || "—"
-
+  const visibleVariantCount = variantes.length + conditionedStock.length
+  const productImage = firstUsableImage(
+    localPrincipalImage,
+    [...(producto.imagenes_producto ?? [])]
+      .sort((left, right) => left.orden - right.orden || left.id - right.id)
+      .map((image) => image.url),
+  )
   const conditionedStockTotal = conditionedStock.reduce(
     (total, item) => total + item.quantity,
     0,
@@ -287,8 +305,6 @@ export function ProductosRow({
     `${conditionedStockTotal} con descuento`,
     `${stockMetrics.quarantine} en cuarentena`,
   ].join(" · ")
-  const productStockStatus = stockStatus(normalStockTotal, stockSettings)
-
   const replaceConditionedStock = (nextItem: SupabaseConditionedStock) => {
     setLocalConditionedStock((current) =>
       current.map((item) =>
@@ -738,7 +754,7 @@ export function ProductosRow({
           : ""
       }`}
     >
-      <div className="admin-product-row-grid relative z-[1] grid grid-cols-admin-products items-center gap-3 px-4 py-3">
+      <div className="admin-product-row-grid admin-product-summary-row relative z-[1] grid grid-cols-admin-product-summary items-center gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
@@ -747,14 +763,16 @@ export function ProductosRow({
                 ? `Ver detalle de ${producto.nombre}`
                 : `${producto.nombre} no tiene detalles`
             }
-            onClick={() =>
-              setOpen((value) => !value)
-            }
+            title={hasDetails ? (open ? "Ocultar variantes" : "Mostrar variantes") : "Este producto todavía no tiene variantes"}
+            disabled={!hasDetails}
+            onClick={() => {
+              if (hasDetails) setOpen((value) => !value)
+            }}
             className={`flex size-10 shrink-0 items-center justify-center rounded-xl border transition-colors cursor-pointer ${
               open
                 ? "border-blue-400/60 bg-blue-400/10 text-white"
                 : "border-white/20 bg-white/5 text-white/90 hover:border-blue-400/50 hover:bg-blue-400/10"
-            }`}
+            } disabled:cursor-default disabled:border-white/7 disabled:text-white/20 disabled:hover:bg-white/5`}
           >
             {open ? (
               <ChevronDown className="size-5" />
@@ -762,6 +780,11 @@ export function ProductosRow({
               <ChevronRight className="size-5" />
             )}
           </button>
+
+          <ProductThumbnail
+            image={productImage}
+            alt={`Imagen principal de ${producto.nombre}`}
+          />
 
           <div className="min-w-0">
             <p
@@ -771,59 +794,21 @@ export function ProductosRow({
               {producto.nombre}
             </p>
 
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              {producto.destacado && (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2 py-0.5 text-xs font-semibold text-beyonix-cyan">
-                  <Star className="size-3 fill-beyonix-cyan/70 text-beyonix-cyan" />
-                  Destacado
-                </span>
-              )}
-
-              {!!variantes.length && (
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs font-semibold text-white/65">
-                  {variantes.length} variantes
-                </span>
-              )}
-
-              {!!conditionedStock.length && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-0.5 text-xs font-semibold text-amber-200">
-                  <BadgePercent className="size-3" />
-                  {conditionedStockTotal}{" "}
-                  {conditionedStockTotal === 1
-                    ? "unidad con descuento"
-                    : "unidades con descuento"}
-                </span>
-              )}
-
-              {stockMetrics.pendingReview > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-red-300/25 bg-red-400/10 px-2.5 py-0.5 text-xs font-semibold text-red-200">
-                  <CircleAlert className="size-3" />
-                  {stockMetrics.pendingReview} sin clasificar
-                </span>
-              )}
-
-              {stockMetrics.nonSellable > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-orange-300/20 bg-orange-400/10 px-2.5 py-0.5 text-xs font-semibold text-orange-200">
-                  <Package className="size-3" />
-                  {stockMetrics.nonSellable} no vendible
-                </span>
-              )}
-
-            </div>
+            <p className="mt-1 truncate text-10px text-white/38">
+              Resumen del producto
+              {producto.destacado ? " · Destacado" : ""}
+            </p>
           </div>
         </div>
 
         <span
-          data-label="Cantidad"
+          data-label="Stock total"
           title={stockBreakdownTitle}
           aria-label={stockBreakdownTitle}
-          className="inline-flex min-w-14 flex-col items-center justify-center justify-self-center text-center"
+          className="inline-flex min-w-14 items-center justify-center justify-self-center text-center"
         >
-          <span className="text-9px font-semibold leading-none text-white/38">
-            Total:
-          </span>
           <span
-            className={`mt-1 text-sm font-black leading-none tabular-nums ${stockColor(
+            className={`text-base font-black leading-none tabular-nums ${stockColor(
               physicalStockTotal,
               stockSettings,
             )}`}
@@ -833,78 +818,31 @@ export function ProductosRow({
         </span>
 
         <span
-          data-label="SKU"
-          className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
-          title={skuTitle}
+          data-label="Variantes"
+          title={`${variantes.length} normales · ${conditionedStock.length} con descuento por falla`}
+          className="justify-self-center text-center text-sm font-black tabular-nums text-white/76"
         >
-          {skuDisplay}
+          {visibleVariantCount}
         </span>
-
-        <div
-          data-label="Color"
-          className="flex min-w-0 items-center justify-center gap-2"
-        >
-          {primaryVariant ? (
-            <>
-              <span
-                className="size-4 shrink-0 rounded-full border border-white/25"
-                style={{ backgroundColor: primaryVariant.color_hex }}
-              />
-              <span
-                className="truncate text-xs font-bold text-white/70"
-                title={primaryVariant.nombre}
-              >
-                {primaryVariant.nombre}
-              </span>
-              {variantes.length > 1 && (
-                <span className="shrink-0 text-10px font-bold text-white/35">
-                  +{variantes.length - 1}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-xs font-bold text-white/35">—</span>
-          )}
-        </div>
 
         <span
-          data-label="Stock"
-          title={`${productStockStatus.label}: ${normalStockTotal} unidades normales, ${conditionedStockTotal} con descuento y ${stockMetrics.quarantine} en cuarentena.`}
-          className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-center text-10px font-black ${productStockStatus.className}`}
+          data-label="Con descuento"
+          className={`inline-flex w-fit items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-bold ${
+            conditionedStockTotal > 0
+              ? "border-amber-300/22 bg-amber-300/9 text-amber-200"
+              : "border-white/8 bg-white/3 text-white/35"
+          }`}
         >
-          <span
-            className={`size-1.5 rounded-full ${productStockStatus.dotClassName}`}
-          />
-          {productStockStatus.label}
+          {conditionedStockTotal > 0 && <BadgePercent className="size-3 shrink-0" />}
+          <span className="text-center leading-4">
+            {conditionedStockTotal} {conditionedStockTotal === 1 ? "unidad" : "unidades"} con descuento por falla
+          </span>
         </span>
-
-        <div data-label="Precio" className="justify-self-stretch text-center">
-          <p className="text-base font-bold tabular-nums text-white">
-            {formatProductPrice(producto.precio)}
-          </p>
-
-          {!!producto.precio_anterior && (
-            <p className="text-xs tabular-nums text-white/45 line-through">
-              $
-              {producto.precio_anterior.toLocaleString(
-                "es-AR"
-              )}
-            </p>
-          )}
-
-          {!!producto.descuento && (
-            <p className="mt-0.5 text-xs font-semibold text-green-400">
-              -{producto.descuento}% OFF
-            </p>
-          )}
-          <p className="mt-0.5 text-10px font-semibold text-white/38">
-            {getInstallmentsLabel(producto)}
-          </p>
-        </div>
 
         <button
           type="button"
           data-label="Estado"
+          title={producto.activo ? "Desactivar producto" : "Activar producto"}
           aria-label={
             producto.activo
               ? "Desactivar producto"
@@ -936,6 +874,7 @@ export function ProductosRow({
           <button
             type="button"
             aria-label={`Ver producto ${producto.nombre}`}
+            title={`Ver ${producto.nombre}`}
             onClick={() => setPreviewOpen(true)}
             className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400 cursor-pointer"
           >
@@ -945,6 +884,7 @@ export function ProductosRow({
           <button
             type="button"
             aria-label="Editar"
+            title={`Editar ${producto.nombre}`}
             onClick={() =>
               onEdit(producto)
             }
@@ -956,6 +896,7 @@ export function ProductosRow({
           <button
             type="button"
             aria-label="Eliminar"
+            title={`Eliminar ${producto.nombre}`}
             onClick={() =>
               onDelete(producto.id)
             }
@@ -972,15 +913,89 @@ export function ProductosRow({
             {variantes.length ? (
               variantes.map((variante, index) => {
                 const stock = variante.stock ?? 0
-                const status = stockStatus(stock, stockSettings)
                 const isPrincipal = index === 0
                 const editing = editingVariantId === variante.id
+
+                if (!editing) {
+                  return (
+                    <AdminVariantItem
+                      key={variante.id}
+                      image={firstUsableImage(variante.imagenes, productImage)}
+                      imageCount={variante.imagenes?.length ?? 0}
+                      name={variante.nombre}
+                      subtitle={isPrincipal ? "Variante principal" : "Variante del producto"}
+                      sku={variante.sku}
+                      colorHex={variante.color_hex}
+                      colorLabel={variante.color_hex}
+                      stock={stock}
+                      stateLabel={savingVariantId === variante.id ? "Guardando…" : variante.activo !== false ? "Activa" : "Inactiva"}
+                      stateTone={variante.activo !== false ? "active" : "inactive"}
+                      stateDisabled={savingVariantId === variante.id}
+                      onToggleState={() => void toggleVariant(variante)}
+                      dropId={variante.id}
+                      leadingAccessory={
+                        variantes.length > 1 ? (
+                          <button
+                            type="button"
+                            title="Arrastrar para cambiar el orden"
+                            aria-label={`Reordenar variante ${variante.nombre}`}
+                            data-variant-drop-id={variante.id}
+                            onPointerDown={(event) => handleVariantPointerDown(event, variante.id)}
+                            onPointerUp={handleVariantPointerUp}
+                            onPointerCancel={stopVariantReorder}
+                            className={`flex size-8 shrink-0 cursor-grab items-center justify-center rounded-lg border text-white/38 transition active:cursor-grabbing ${
+                              draggedVariantId === variante.id
+                                ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-200"
+                                : "border-white/8 hover:border-cyan-300/25 hover:text-cyan-200"
+                            }`}
+                          >
+                            <GripVertical className="size-3.5" />
+                          </button>
+                        ) : undefined
+                      }
+                      actions={
+                        <>
+                          <button
+                            type="button"
+                            title={`Ver detalles de ${variante.nombre}`}
+                            aria-label={`Ver variante ${variante.nombre}`}
+                            onClick={() => viewVariant(variante)}
+                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/55 transition hover:border-blue-400/30 hover:text-blue-300"
+                          >
+                            <Eye className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title={`Editar únicamente ${variante.nombre}`}
+                            aria-label={`Editar variante ${variante.nombre}`}
+                            onClick={() => startEditVariant(variante)}
+                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/55 transition hover:border-white/20 hover:text-white"
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title={`Eliminar únicamente ${variante.nombre}`}
+                            aria-label={`Eliminar variante ${variante.nombre}`}
+                            onClick={() => {
+                              setVariantError("")
+                              setPendingVariantDelete(variante)
+                            }}
+                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/16 text-red-200/60 transition hover:border-red-400/35 hover:text-red-300"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </>
+                      }
+                    />
+                  )
+                }
 
                 return (
                   <div
                     key={variante.id}
                     data-variant-drop-id={variante.id}
-                    className="admin-product-variant-row grid grid-cols-admin-products items-center gap-3 rounded-xl border border-beyonix-blue-light/14 bg-[#07111b] px-4 py-2.5"
+                    className="admin-product-variant-row grid grid-cols-admin-product-summary items-center gap-3 rounded-xl border border-cyan-300/25 bg-[#07111b] px-4 py-2.5"
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
                       {variantes.length > 1 ? (
@@ -1003,6 +1018,11 @@ export function ProductosRow({
                       ) : (
                         <span className="size-9 shrink-0" />
                       )}
+                      <ProductThumbnail
+                        image={firstUsableImage(variante.imagenes, productImage)}
+                        alt={`Imagen de ${producto.nombre}, variante ${variante.nombre}`}
+                        size="sm"
+                      />
                       <div className="min-w-0">
                         <p
                           className="truncate text-xs font-bold text-white"
@@ -1122,27 +1142,6 @@ export function ProductosRow({
                       </div>
                     )}
 
-                    <span
-                      data-label="Stock"
-                      className={`inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-center text-10px font-black ${status.className}`}
-                    >
-                      <span
-                        className={`size-1.5 rounded-full ${status.dotClassName}`}
-                      />
-                      {status.label}
-                    </span>
-
-                    <div data-label="Precio" className="justify-self-stretch text-center">
-                      <p className="text-sm font-bold tabular-nums text-white">
-                        {formatProductPrice(producto.precio)}
-                      </p>
-                      {!!producto.precio_anterior && (
-                        <p className="text-10px tabular-nums text-white/38 line-through">
-                          ${producto.precio_anterior.toLocaleString("es-AR")}
-                        </p>
-                      )}
-                    </div>
-
                     <button
                       type="button"
                       data-label="Estado"
@@ -1247,7 +1246,7 @@ export function ProductosRow({
                 )
               })
             ) : conditionedStock.length ? null : (
-              <div className="mx-4 rounded-xl border border-white/7 bg-[#07111b] px-4 py-3">
+              <div className="rounded-xl border border-white/7 bg-[#07111b] px-4 py-3">
                 <p className="text-sm text-white/60">
                   Este producto no tiene variantes cargadas.
                 </p>
@@ -1255,13 +1254,13 @@ export function ProductosRow({
             )}
 
             {conditionedError && (
-              <div className="mx-4 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+              <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
                 {conditionedError}
               </div>
             )}
 
             {variantError && (
-              <div className="mx-4 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+              <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
                 {variantError}
               </div>
             )}
@@ -1285,131 +1284,55 @@ export function ProductosRow({
                 item.conditioned_sku?.trim() || "SKU pendiente"
               const conditionedColor =
                 item.conditioned_color_hex || linkedVariant?.color_hex || "#000000"
-              const conditionedPrice = Math.round(
-                producto.precio * (1 - item.discount_percent / 100),
+              const conditionedImage = firstUsableImage(
+                item.conditioned_images,
+                linkedVariant?.imagenes,
+                productImage,
               )
-
               return (
-                <div
+                <AdminVariantItem
                   key={`conditioned-${item.id}`}
-                  className="admin-product-variant-row grid grid-cols-admin-products items-center gap-3 rounded-xl border border-amber-300/22 bg-[linear-gradient(90deg,rgba(245,158,11,0.08),rgba(7,17,27,0.96))] px-4 py-2.5"
-                >
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/10">
-                      <BadgePercent className="size-4 text-white" />
-                    </span>
-                    <div className="min-w-0">
-                      <p
-                        className="truncate text-xs font-bold text-white"
-                        title={`${producto.nombre} · Con detalles`}
+                  image={conditionedImage}
+                  imageCount={item.conditioned_images?.length ?? 0}
+                  name={conditionedName}
+                  subtitle={`${item.discount_percent}% de descuento · ${item.reason || "Detalle por revisar"}`}
+                  sku={conditionedSku}
+                  colorHex={conditionedColor}
+                  colorLabel={conditionedColorName}
+                  stock={item.quantity}
+                  tone="discounted"
+                  stateLabel={savingConditionedId === item.id ? "Guardando…" : item.active ? "Activa" : "Inactiva"}
+                  stateTone={item.active ? "active" : "inactive"}
+                  stateDisabled={savingConditionedId === item.id}
+                  onToggleState={() => void toggleConditionedStock(item)}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        title="Editar esta unidad con descuento"
+                        aria-label="Editar unidad con descuento"
+                        disabled={savingConditionedId === item.id}
+                        onClick={() => {
+                          setConditionedError("")
+                          setEditingConditionedStock(item)
+                        }}
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-40"
                       >
-                        {producto.nombre}
-                      </p>
-                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-                        <span className="shrink-0 rounded-full border border-amber-300/25 bg-amber-300/12 px-1.5 py-0.5 text-9px font-black text-amber-200">
-                          {item.discount_percent}% OFF
-                        </span>
-                        <span
-                          className="truncate text-10px font-semibold text-white/48"
-                          title={`${conditionedName} · ${item.reason || "Motivo pendiente"}`}
-                        >
-                          {conditionedName}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <span
-                    data-label="Cantidad"
-                    className="justify-self-center text-sm font-black tabular-nums text-amber-300"
-                  >
-                    {item.quantity}
-                  </span>
-
-                  <span
-                    data-label="SKU"
-                    className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
-                    title={conditionedSku}
-                  >
-                    {conditionedSku}
-                  </span>
-
-                  <div
-                    data-label="Color"
-                    className="flex min-w-0 items-center justify-center gap-2"
-                  >
-                    <span
-                      className="size-4 shrink-0 rounded-full border border-white/25"
-                      style={{ backgroundColor: conditionedColor }}
-                    />
-                    <span
-                      className="truncate text-xs font-bold text-white/70"
-                      title={conditionedColorName}
-                    >
-                      {conditionedColorName}
-                    </span>
-                  </div>
-
-                  <span
-                    data-label="Stock"
-                    className="inline-flex w-fit items-center justify-self-center gap-2 whitespace-nowrap rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-10px font-black text-amber-200"
-                  >
-                    <span className="size-1.5 rounded-full bg-amber-300" />
-                    Con descuento
-                  </span>
-
-                  <div data-label="Precio" className="justify-self-stretch text-center">
-                    <p className="text-sm font-bold tabular-nums text-amber-200">
-                      ${conditionedPrice.toLocaleString("es-AR")}
-                    </p>
-                    <p className="text-10px tabular-nums text-white/38 line-through">
-                      {formatProductPrice(producto.precio)}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    data-label="Estado"
-                    disabled={savingConditionedId === item.id}
-                    onClick={() => void toggleConditionedStock(item)}
-                    className={`inline-flex w-fit cursor-pointer items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-semibold transition disabled:cursor-wait disabled:opacity-50 ${
-                      item.active
-                        ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
-                        : "border-white/10 bg-white/5 text-white/45 hover:border-emerald-400/20 hover:text-white/70"
-                    }`}
-                  >
-                    <span
-                      className={`size-1.5 rounded-full ${
-                        item.active ? "bg-emerald-400" : "bg-white/25"
-                      }`}
-                    />
-                    {item.active ? "Activa" : "Inactiva"}
-                  </button>
-
-                  <div className="admin-product-actions flex items-center justify-end gap-1.5 pr-2">
-                    <button
-                      type="button"
-                      aria-label="Editar unidad con descuento"
-                      disabled={savingConditionedId === item.id}
-                      onClick={() => {
-                        setConditionedError("")
-                        setEditingConditionedStock(item)
-                      }}
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/65 transition-colors hover:border-beyonix-blue-light/30 hover:text-white disabled:cursor-wait disabled:opacity-40"
-                    >
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Eliminar unidad con descuento"
-                      disabled={savingConditionedId === item.id}
-                      onClick={() => void removeConditionedStock(item)}
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/20 bg-red-400/7 text-red-300 transition-colors hover:border-red-400/40 hover:bg-red-400/12 disabled:cursor-wait disabled:opacity-40"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                </div>
+                        <Pencil className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Quitar esta unidad del inventario con descuento"
+                        aria-label="Eliminar unidad con descuento"
+                        disabled={savingConditionedId === item.id}
+                        onClick={() => void removeConditionedStock(item)}
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/18 text-red-200/65 transition hover:border-red-400/35 hover:text-red-300 disabled:cursor-wait disabled:opacity-40"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </>
+                  }
+                />
               )
             })}
           </div>

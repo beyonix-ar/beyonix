@@ -4,6 +4,7 @@ import {
   buildStandaloneCostItems,
   type StandaloneCostRow,
 } from "@/lib/business/standalone-cost-items"
+import { reconcileUnlinkedMercadoLibreSalesByExactSku } from "@/lib/mercadolibre/sku-reconciliation"
 
 type CostKind = "product" | "expense"
 
@@ -292,7 +293,25 @@ export async function POST(request: Request) {
         { status: missingMigration ? 503 : 500 },
       )
     }
-    return Response.json({ item: inserted }, { status: 201 })
+
+    const purchaseSku = text(body?.sku, 120)
+    const reconciliation = purchaseSku
+      ? await reconcileUnlinkedMercadoLibreSalesByExactSku(auth.admin, {
+          sku: purchaseSku,
+          actorId: auth.user.id,
+        })
+      : { linked: 0, errors: [] }
+
+    return Response.json(
+      {
+        item: inserted,
+        automaticallyLinkedSales: reconciliation.linked,
+        automaticLinkWarning: reconciliation.errors.length
+          ? "La compra se guardó, pero algunas ventas con el mismo SKU no pudieron vincularse automáticamente."
+          : null,
+      },
+      { status: 201 },
+    )
   }
 
   if (kind === "expense") {

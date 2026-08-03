@@ -34,6 +34,9 @@ const returnConditionFix = source(
 const singleSourceRepair = source(
   "supabase/migrations/20260801104000_inventory_single_source_and_repair.sql",
 )
+const primaryVariantMigration = source(
+  "supabase/migrations/20260802120000_materialize_conditioned_primary_variants.sql",
+)
 const conditionedRoute = source(
   "app/api/admin/conditioned-stock/[id]/route.ts",
 )
@@ -178,6 +181,24 @@ test("producto padre y variantes se comparan contra el mismo libro", () => {
   assert.match(singleSourceRepair, /inventory_variant_diagnostics/i)
   assert.match(singleSourceRepair, /inventory_stock_integrity integrity/i)
   assert.match(singleSourceRepair, /inventory_movements movements/i)
+})
+
+test("la variante principal real absorbe todas las fuentes sin inventar stock", () => {
+  assert.match(primaryVariantMigration, /insert into public\.producto_variantes/i)
+  assert.match(primaryVariantMigration, /'Principal'/i)
+  assert.match(primaryVariantMigration, /update public\.product_cost_entries/i)
+  assert.match(primaryVariantMigration, /update public\.mercadolibre_sales/i)
+  assert.match(primaryVariantMigration, /update public\.inventory_return_movements/i)
+  assert.match(primaryVariantMigration, /update public\.stock_reservations/i)
+  assert.doesNotMatch(primaryVariantMigration, /insert into public\.inventory_operation_log/i)
+})
+
+test("la migración principal es idempotente y valida padre igual a suma de variantes", () => {
+  assert.match(primaryVariantMigration, /where not exists[\s\S]*producto_variantes/i)
+  assert.match(primaryVariantMigration, /pg_advisory_xact_lock\(93000/i)
+  assert.match(primaryVariantMigration, /v_variants_after is distinct from v_parent_after/i)
+  assert.match(primaryVariantMigration, /v_parent_after is distinct from v_stock_before/i)
+  assert.match(primaryVariantMigration, /movements\.variant_id is null/i)
 })
 
 test("el diagnóstico señala el movimiento y la reparación sólo baja la asignación duplicada", () => {

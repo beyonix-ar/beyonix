@@ -1178,20 +1178,22 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               <Field label="Fecha compra"><AdminDatePicker title="Fecha compra" ariaLabel="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} centered /></Field>
               <Field label="Cantidad comprada"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
               <Field label="Recepción">
-                <select
+                <ModernSelect
                   value={purchaseReception}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     setPurchaseReception(
-                      event.target.value as typeof purchaseReception,
+                      value as typeof purchaseReception,
                     )
                   }
-                  className={inputClass}
-                >
-                  <option value="recibida">Recibida completa</option>
-                  <option value="parcial">Recibida parcialmente</option>
-                  <option value="pendiente">Pendiente de recepción</option>
-                  <option value="anulada">Compra anulada</option>
-                </select>
+                  centered
+                  ariaLabel="Estado de recepción"
+                  options={[
+                    { value: "recibida", label: "Recibida completa" },
+                    { value: "parcial", label: "Recibida parcialmente" },
+                    { value: "pendiente", label: "Pendiente de recepción" },
+                    { value: "anulada", label: "Compra anulada" },
+                  ]}
+                />
               </Field>
               {purchaseReception === "parcial" && (
                 <Field label="Cantidad recibida">
@@ -1352,7 +1354,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                     <th className="px-3 py-2.5 text-center">Acción</th>
                   </tr>
                 </thead>
-                <tbody>{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); const received = Number(item.received_quantity ?? item.quantity); const receptionLabel = item.reception_status === "anulada" ? "Anulada" : item.reception_status === "pendiente" ? "Pendiente" : item.reception_status === "parcial" ? "Parcial" : "Recibida"; return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3 text-center">{item.purchase_date}</td><td className="px-3 py-3 text-left font-bold text-white">{articleLabel}</td><td className="px-3 py-3 text-center font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 text-center tabular-nums"><span className="block">{received}/{item.quantity}</span><span className="text-10px font-bold text-white/40">{receptionLabel}</span></td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(Number(item.unit_cost))}</td><td className="px-3 py-3 text-center tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 text-center font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3 text-center">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
+                <tbody className="[&_td]:align-middle [&_td]:text-center [&_td:nth-child(2)]:text-left">{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); const received = Number(item.received_quantity ?? item.quantity); const receptionLabel = item.reception_status === "anulada" ? "Anulada" : item.reception_status === "pendiente" ? "Pendiente" : item.reception_status === "parcial" ? "Parcial" : "Recibida"; return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.purchase_date}</td><td className="px-3 py-3 font-bold text-white">{articleLabel}</td><td className="px-3 py-3 font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 tabular-nums"><span className="block">{received}/{item.quantity}</span><span className="text-10px font-bold text-white/40">{receptionLabel}</span></td><td className="px-3 py-3 tabular-nums"><span className="flex w-full items-center justify-center">{formatPrice(Number(item.unit_cost))}</span></td><td className="px-3 py-3 tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
               </table>
               {!sortedProductCosts.length && (
                 <p className="px-4 py-8 text-center text-sm text-white/42">

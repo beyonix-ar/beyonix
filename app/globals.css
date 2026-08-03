@@ -286,6 +286,10 @@
   grid-template-columns: minmax(280px, 1.45fr) 88px minmax(105px, 0.55fr) minmax(110px, 0.58fr) minmax(120px, 0.62fr) minmax(105px, 0.55fr) minmax(105px, 0.55fr) 112px;
 }
 
+@utility grid-cols-admin-product-summary {
+  grid-template-columns: minmax(300px, 1.65fr) 90px minmax(120px, 0.65fr) minmax(150px, 0.85fr) 118px 185px;
+}
+
 @utility grid-cols-admin-categories {
   grid-template-columns: minmax(0, 2.2fr) minmax(72px, 0.8fr) minmax(72px, 0.8fr) minmax(88px, 0.9fr) minmax(88px, 0.9fr) minmax(96px, 0.8fr);
 }
@@ -1322,7 +1326,7 @@
 
 .admin-ds-table,
 .beyonix-admin-main :where(table),
-.beyonix-admin-main :where(.admin-orders-table-header, .grid-cols-admin-products, .grid-cols-admin-categories, .grid-cols-admin-clients) {
+.beyonix-admin-main :where(.admin-orders-table-header, .grid-cols-admin-products, .grid-cols-admin-product-summary, .grid-cols-admin-categories, .grid-cols-admin-clients) {
   background-color: #07111b !important;
   border-color: var(--admin-border) !important;
   border-radius: var(--admin-radius-lg) !important;
@@ -1336,7 +1340,7 @@
   color: var(--admin-text-muted) !important;
 }
 
-.beyonix-admin-main :where(tr, .admin-orders-list-row, .grid-cols-admin-products, .grid-cols-admin-categories, .grid-cols-admin-clients) {
+.beyonix-admin-main :where(tr, .admin-orders-list-row, .grid-cols-admin-products, .grid-cols-admin-product-summary, .grid-cols-admin-categories, .grid-cols-admin-clients) {
   border-color: var(--admin-border-soft) !important;
 }
 
@@ -1375,7 +1379,7 @@
 
 .admin-products-table .admin-products-table-header,
 .admin-products-table .admin-product-row {
-  min-width: 1120px;
+  min-width: 980px;
 }
 
 .admin-products-table .admin-products-table-header {
@@ -5749,7 +5753,7 @@ div.claim-form-shell::after {
   font-size: 18px !important;
 }
 
-@media (max-width: 1279px) {
+@media (max-width: 1535px) {
   .beyonix-admin-main .admin-products-table {
     overflow-x: hidden !important;
   }
@@ -5786,12 +5790,12 @@ div.claim-form-shell::after {
     :where(.admin-product-row-grid, .admin-product-variant-row)
     > [data-label] {
     position: relative;
-    min-height: 64px;
+    min-height: 50px;
     width: 100% !important;
     align-self: stretch;
     justify-self: stretch !important;
     justify-content: flex-start !important;
-    padding: 29px 11px 10px !important;
+    padding: 23px 10px 8px !important;
     border: 1px solid rgba(140, 200, 242, 0.12) !important;
     border-radius: 12px !important;
     background: rgba(4, 12, 20, 0.56) !important;
@@ -5852,15 +5856,63 @@ div.claim-form-shell::after {
 @media (max-width: 479px) {
   .beyonix-admin-main .admin-products-table .admin-product-row-grid,
   .beyonix-admin-main .admin-products-table .admin-product-variant-row {
-    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     padding: 12px !important;
   }
 
-  .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
-    > [data-label],
   .beyonix-admin-main .admin-products-table .admin-product-actions {
-    grid-column: 1;
+    grid-column: 1 / -1;
+  }
+}
+
+/* Patrón compartido y compacto de variantes. */
+@media (max-width: 1535px) {
+  .beyonix-admin-main .admin-variant-compact {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0.5rem !important;
+  }
+
+  .beyonix-admin-main .admin-variant-compact > :first-child {
+    grid-column: 1 / -1;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(140, 200, 242, 0.1);
+  }
+
+  .beyonix-admin-main .admin-variant-compact > [data-label] {
+    min-width: 0;
+    justify-self: stretch !important;
+    text-align: left !important;
+  }
+
+  .beyonix-admin-main .admin-variant-compact > [data-label]::before {
+    display: block;
+    margin-bottom: 0.2rem;
+    color: rgba(191, 228, 255, 0.38);
+    content: attr(data-label);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .beyonix-admin-main .admin-variant-compact .admin-product-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding-top: 0.25rem;
+  }
+}
+
+.admin-product-tabs {
+  scrollbar-width: none;
+}
+
+.admin-product-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 599px) {
+  .beyonix-admin-main .admin-variant-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
@@ -6680,7 +6732,6 @@ span.admin-claim-status-finalized,
 /* Edición de producto: composición compacta y sin desbordes. */
 .beyonix-admin-main > .admin-product-page {
   max-width: none !important;
-  padding: clamp(0.75rem, 1.35vw, 1.25rem) !important;
 }
 
 .admin-product-page .admin-product-header {
@@ -6815,17 +6866,13 @@ span.admin-claim-status-finalized,
   min-height: 5.25rem;
 }
 
-.admin-product-page .admin-product-actions {
+.admin-product-page .admin-product-save-actions {
   position: sticky;
   bottom: 0;
   z-index: 20;
 }
 
 @media (max-width: 639px) {
-  .beyonix-admin-main > .admin-product-page {
-    padding: 0.75rem !important;
-  }
-
   .admin-product-page .admin-product-header {
     align-items: stretch;
   }
@@ -6843,7 +6890,7 @@ span.admin-claim-status-finalized,
     padding: 0.75rem;
   }
 
-  .admin-product-page .admin-product-actions {
+  .admin-product-page .admin-product-save-actions {
     position: static;
   }
 }

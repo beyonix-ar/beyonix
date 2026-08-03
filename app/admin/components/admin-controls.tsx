@@ -176,6 +176,7 @@ interface AdminFormFieldProps {
   help?: ReactNode
   error?: ReactNode
   className?: string
+  labelClassName?: string
 }
 
 interface AdminInfoBlockProps extends HTMLAttributes<HTMLDivElement> {
@@ -1021,10 +1022,11 @@ export function AdminFormField({
   help,
   error,
   className,
+  labelClassName,
 }: AdminFormFieldProps) {
   return (
     <label className={cn("block min-w-0", className)}>
-      <span className="mb-2 block text-11px font-black uppercase tracking-widest text-white/48">
+      <span className={cn("mb-2 block text-11px font-black uppercase tracking-widest text-white/48", labelClassName)}>
         {label}
       </span>
       {children}

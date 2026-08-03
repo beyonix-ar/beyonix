@@ -1,4 +1,5 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import { reconcileUnlinkedMercadoLibreSalesByExactSku } from "@/lib/mercadolibre/sku-reconciliation"
 
 function nonNegativeInteger(value: unknown) {
   const parsed = Number(value)
@@ -93,6 +94,51 @@ export async function POST(
     )
   }
 
+  const { data: currentSale, error: currentSaleError } = await auth.admin
+    .from("mercadolibre_sales")
+    .select("id, sku, product_id")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (currentSaleError) {
+    return Response.json(
+      { error: "No se pudo comprobar la vinculación de la venta." },
+      { status: 500 },
+    )
+  }
+  if (!currentSale) {
+    return Response.json(
+      { error: "La venta de Mercado Libre ya no existe." },
+      { status: 404 },
+    )
+  }
+
+  let linkedProductId = currentSale.product_id
+  if (!linkedProductId && currentSale.sku) {
+    await reconcileUnlinkedMercadoLibreSalesByExactSku(auth.admin, {
+      sku: currentSale.sku,
+      actorId: auth.user.id,
+    })
+    const { data: reconciledSale } = await auth.admin
+      .from("mercadolibre_sales")
+      .select("product_id")
+      .eq("id", id)
+      .maybeSingle()
+    linkedProductId = reconciledSale?.product_id ?? null
+  }
+
+  if (!linkedProductId) {
+    const skuLabel = currentSale.sku?.trim()
+      ? `el SKU ${currentSale.sku.trim()}`
+      : "esta venta"
+    return Response.json(
+      {
+        error: `Primero vinculá ${skuLabel} con un producto antes de guardar la revisión física.`,
+      },
+      { status: 409 },
+    )
+  }
+
   const { data: review, error } = await auth.admin.rpc(
     "review_mercadolibre_return",
     {
@@ -117,12 +163,16 @@ export async function POST(
       /review_mercadolibre_return|mercadolibre_sale_id|occurred_at|schema cache|PGRST202/i.test(
         error.message,
       )
+    const missingProductLink =
+      /Primero vinculá|debe estar vinculada a un producto/i.test(error.message)
     return Response.json(
       {
         error: outdatedConditionConstraint
           ? "La base de datos necesita la corrección de devoluciones 20260801103000 antes de guardar esta revisión."
           : missingMigration
             ? "Falta aplicar la migración 20260801091000_mercadolibre_returns_and_bulk_delete.sql."
+            : missingProductLink
+              ? "Primero vinculá el SKU de la venta con un producto antes de guardar la revisión física."
             : /STOCK_INSUFICIENTE/i.test(error.message)
               ? "No hay stock suficiente para reclasificar esta devolución."
               : "No se pudo guardar la revisión física.",
@@ -130,6 +180,8 @@ export async function POST(
       {
         status: outdatedConditionConstraint || missingMigration
           ? 503
+          : missingProductLink
+            ? 409
           : /STOCK_INSUFICIENTE/i.test(error.message)
             ? 409
             : 500,

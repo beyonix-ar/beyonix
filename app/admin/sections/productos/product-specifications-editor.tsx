@@ -38,7 +38,13 @@ import {
   isAllowedLucideIcon,
   LucideIconPicker,
 } from "./lucide-icon-picker"
-import { adminControlClassName } from "../../components/admin-controls"
+import {
+  adminControlClassName,
+  AdminDangerButton,
+  AdminInfoBlock,
+  AdminPrimaryButton,
+  AdminSecondaryButton,
+} from "../../components/admin-controls"
 
 interface ProductSpecificationsEditorProps {
   productoId?: number
@@ -63,7 +69,7 @@ type EditingSpecification =
   | null
 
 const inputCls =
-  adminControlClassName
+  `${adminControlClassName} text-base`
 
 function normalizeOrder(value: string, fallback: number) {
   const parsed = Number(value)
@@ -446,33 +452,36 @@ export function ProductSpecificationsEditor({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-      <div className="grid min-w-0 gap-3">
-        <LucideIconPicker
-          value={icono}
-          onChange={setIcono}
-        />
-
-        <div>
-          <input
-            type="text"
-            value={texto}
-            placeholder="Sonido estereo de alta fidelidad"
-            onChange={(event) => setTexto(event.target.value)}
-            className={inputCls}
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <div className="min-w-0">
+          <p className="mb-2 text-sm font-black text-white/68">
+            Ícono
+          </p>
+          <LucideIconPicker
+            value={icono}
+            onChange={setIcono}
           />
         </div>
 
-        <button
-          type="button"
+        <label className="min-w-0">
+          <span className="mb-2 block text-sm font-black text-white/68">
+            Característica
+          </span>
+          <input
+            type="text"
+            value={texto}
+            placeholder="Ej.: Sonido estéreo de alta fidelidad"
+            onChange={(event) => setTexto(event.target.value)}
+            className={inputCls}
+          />
+        </label>
+
+        <AdminSecondaryButton
           aria-label={
             activo ? "Desactivar especificación" : "Activar especificación"
           }
           onClick={() => setActivo((current) => !current)}
-          className={`flex min-h-10 cursor-pointer items-center gap-2.5 rounded-xl border px-3 text-left transition-colors ${
-            activo
-              ? "border-emerald-400/20 bg-emerald-400/8 hover:border-emerald-400/35"
-              : "border-amber-400/20 bg-amber-400/8 hover:border-amber-400/35"
-          }`}
+          className="w-full justify-start lg:col-span-2"
         >
           {activo ? (
             <ToggleRight className="size-6 text-beyonix-cyan" />
@@ -482,12 +491,11 @@ export function ProductSpecificationsEditor({
           <span className="text-sm text-white/80">
             {activo ? "Especificación activa" : "Especificación inactiva"}
           </span>
-        </button>
+        </AdminSecondaryButton>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
+        <AdminPrimaryButton
           aria-label={
             editingSpecification
               ? "Guardar especificación"
@@ -495,7 +503,6 @@ export function ProductSpecificationsEditor({
           }
           onClick={saveSpecification}
           disabled={saving}
-          className="inline-flex h-10 min-w-120px cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue px-4 text-sm font-bold text-white transition-colors hover:border-beyonix-sky/60 hover:bg-beyonix-blue-hover disabled:opacity-50"
         >
           {saving ? (
             <Loader2 className="size-4 animate-spin" />
@@ -503,25 +510,21 @@ export function ProductSpecificationsEditor({
             <Plus className="size-4" />
           )}
           {editingSpecification ? "Guardar" : "Agregar"}
-        </button>
+        </AdminPrimaryButton>
 
         {editingSpecification && (
-          <button
-            type="button"
-            aria-label="Cancelar edicion"
+          <AdminSecondaryButton
+            aria-label="Cancelar edición"
             onClick={resetFields}
-            className="inline-flex h-10 min-w-110px cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#181818] px-4 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             <X className="size-4" />
             Cancelar
-          </button>
+          </AdminSecondaryButton>
         )}
       </div>
 
       {error && (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
-          <p className="text-sm text-red-400">{error}</p>
-        </div>
+        <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
       )}
 
       {loading ? (
@@ -692,7 +695,7 @@ function SpecificationRow({
           : "border-white/7"
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-8 shrink-0 cursor-grab items-center justify-center rounded-xl border border-white/8 text-white/45 active:cursor-grabbing">
             <GripVertical className="size-4" />
@@ -714,39 +717,39 @@ function SpecificationRow({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
+        <div className="flex shrink-0 items-center justify-end gap-1.5 border-t border-white/7 pt-2.5 sm:border-0 sm:pt-0">
+          <AdminSecondaryButton
+            size="icon"
             aria-label={
               activo ? "Desactivar especificación" : "Activar especificación"
             }
+            title={activo ? "Desactivar especificación" : "Activar especificación"}
             onClick={onToggle}
-            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             {activo ? (
               <ToggleRight className="size-4 text-beyonix-cyan" />
             ) : (
               <ToggleLeft className="size-4" />
             )}
-          </button>
+          </AdminSecondaryButton>
 
-          <button
-            type="button"
+          <AdminSecondaryButton
+            size="icon"
             aria-label="Editar especificación"
+            title="Editar especificación"
             onClick={onEdit}
-            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             <Pencil className="size-4" />
-          </button>
+          </AdminSecondaryButton>
 
-          <button
-            type="button"
+          <AdminDangerButton
+            size="icon"
             aria-label="Eliminar especificación"
+            title="Eliminar especificación"
             onClick={onRemove}
-            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/60 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white"
           >
             <Trash2 className="size-4" />
-          </button>
+          </AdminDangerButton>
         </div>
       </div>
     </div>

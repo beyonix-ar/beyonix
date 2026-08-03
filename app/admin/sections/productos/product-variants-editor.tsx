@@ -3,9 +3,14 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "react"
 import {
+  AlertTriangle,
+  Boxes,
+  ChevronDown,
   Loader2,
   Pencil,
   Plus,
@@ -45,7 +50,17 @@ import {
   updateProducto,
 } from "@/lib/supabase/queries/productos"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
-import { adminControlClassName } from "../../components/admin-controls"
+import { AdminVariantItem } from "./admin-variant-item"
+import {
+  AdminDangerButton,
+  AdminCard,
+  AdminGhostButton,
+  AdminInfoBlock,
+  AdminModal,
+  AdminPrimaryButton,
+  AdminSecondaryButton,
+  adminControlClassName,
+} from "../../components/admin-controls"
 import {
   normalizeLogisticsDecimalInput,
   parseOptionalProductLogistics,
@@ -55,6 +70,7 @@ import {
 
 interface ProductVariantsEditorProps {
   productoId?: number
+  fallbackImage?: string | null
   draftVariants?: DraftProductoVariante[]
   onDraftVariantsChange?: (
     variants: DraftProductoVariante[]
@@ -65,7 +81,7 @@ interface ProductVariantsEditorProps {
 }
 
 const inputCls =
-  adminControlClassName
+  `${adminControlClassName} text-base`
 
 const normalizeHex = (value: string) => {
   const clean = value.trim()
@@ -89,8 +105,20 @@ type EditingVariant =
     }
   | null
 
+type PendingVariantDelete =
+  | {
+      kind: "persisted"
+      variant: SupabaseProductoVariante
+    }
+  | {
+      kind: "draft"
+      variant: DraftProductoVariante
+    }
+  | null
+
 export function ProductVariantsEditor({
   productoId,
+  fallbackImage = null,
   draftVariants = [],
   onDraftVariantsChange,
   onPersistedVariantsChange,
@@ -135,6 +163,19 @@ export function ProductVariantsEditor({
 
   const [saving, setSaving] =
     useState(false)
+
+  const [formOpen, setFormOpen] =
+    useState(false)
+
+  const [pendingDelete, setPendingDelete] =
+    useState<PendingVariantDelete>(null)
+
+  const [deleting, setDeleting] =
+    useState(false)
+
+  const [selectedVariantKey, setSelectedVariantKey] =
+    useState<string | null>(null)
+  const formPanelRef = useRef<HTMLElement>(null)
 
   const [error, setError] =
     useState("")
@@ -204,6 +245,16 @@ export function ProductVariantsEditor({
     }
   }, [loading, onPersistedVariantsChange, productoId, variantes])
 
+  useEffect(() => {
+    if (!formOpen) return
+
+    const frame = window.requestAnimationFrame(() => {
+      formPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [editingVariant, formOpen])
+
   const resetFields = () => {
     setNombre("")
     setSku("")
@@ -219,6 +270,7 @@ export function ProductVariantsEditor({
     setPersistedVariantImages([])
     setDraggedImageIndex(null)
     setEditingVariant(null)
+    setFormOpen(false)
   }
 
   const syncPrincipalImage = async (
@@ -565,9 +617,10 @@ export function ProductVariantsEditor({
 
   const removePersistedVariant =
     async (id: number) => {
-      if (!productoId) return
+      if (!productoId) return false
 
       try {
+        setDeleting(true)
         setError("")
         await deleteProductoVariante(productoId, id)
 
@@ -582,11 +635,17 @@ export function ProductVariantsEditor({
           nextVariantes
         )
         await loadVariantes()
+        return true
       } catch (err) {
         console.error(err)
         setError(
-          "No se pudo eliminar la variante."
+          err instanceof Error
+            ? err.message
+            : "No se pudo eliminar la variante."
         )
+        return false
+      } finally {
+        setDeleting(false)
       }
     }
 
@@ -604,6 +663,7 @@ export function ProductVariantsEditor({
   const editDraftVariant = (
     variant: DraftProductoVariante
   ) => {
+    setSelectedVariantKey(`draft-${variant.tempId}`)
     setNombre(variant.nombre)
     setSku(variant.sku)
     setColorHex(variant.color_hex)
@@ -620,11 +680,13 @@ export function ProductVariantsEditor({
       kind: "draft",
       id: variant.tempId,
     })
+    setFormOpen(true)
   }
 
   const editPersistedVariant = (
     variant: SupabaseProductoVariante
   ) => {
+    setSelectedVariantKey(`persisted-${variant.id}`)
     setNombre(variant.nombre)
     setSku(variant.sku ?? "")
     setColorHex(variant.color_hex)
@@ -653,355 +715,475 @@ export function ProductVariantsEditor({
       imagenes:
         variant.imagenes || [],
     })
+    setFormOpen(true)
   }
 
+  const openCreateForm = () => {
+    resetFields()
+    setFormOpen(true)
+  }
+
+  const confirmVariantDelete = async () => {
+    if (!pendingDelete) return
+
+    if (pendingDelete.kind === "draft") {
+      removeDraftVariant(pendingDelete.variant.tempId)
+      setPendingDelete(null)
+      return
+    }
+
+    const removed = await removePersistedVariant(pendingDelete.variant.id)
+    if (removed) setPendingDelete(null)
+  }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-      {productoId && distribution && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:grid-cols-8">
-          {[
-            {
-              label: "Existencia física",
-              value: distribution.physicalStock,
-              className: "border-sky-400/20 bg-sky-400/8 text-sky-200",
-            },
-            {
-              label: "Reservado",
-              value: distribution.reservedStock,
-              className: "border-violet-400/20 bg-violet-400/8 text-violet-200",
-            },
-            {
-              label: "Disponible",
-              value: distribution.availableStock,
-              className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
-            },
-            {
-              label: "Stock normal",
-              value: distribution.normalStock,
-              className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
-            },
-            {
-              label: "Con descuento",
-              value: distribution.discountedStock,
-              className: distribution.discountedStock > 0
-                ? "border-amber-400/25 bg-amber-400/8 text-amber-200"
-                : "border-white/8 bg-white/3 text-white/65",
-            },
-            {
-              label: "En cuarentena",
-              value: distribution.quarantineStock,
-              className: distribution.quarantineStock > 0
-                ? "border-red-400/25 bg-red-400/8 text-red-200"
-                : "border-white/8 bg-white/3 text-white/65",
-            },
-            {
-              label: "Normal distribuido",
-              value: distribution.allocatedQuantity,
-              className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
-            },
-            {
-              label: "Normal sin distribuir",
-              value: distribution.unassignedQuantity,
-              className: distribution.unassignedQuantity > 0
-                ? "border-amber-400/25 bg-amber-400/8 text-amber-200"
-                : "border-white/8 bg-white/3 text-white/65",
-            },
-          ].map(({ label, value, className }) => (
-            <div
-              key={label}
-              className={`flex min-h-18 flex-col items-center justify-center rounded-xl border px-2 py-2.5 text-center ${className}`}
-            >
-              <p
-                title={label}
-                className="flex min-h-6 w-full items-center justify-center text-9px font-black uppercase leading-3 tracking-wide text-white/52"
-              >
-                {label}
+      <AdminCard className="min-w-0 space-y-4 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/22 bg-beyonix-blue/24 text-beyonix-cyan">
+              <Boxes className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-beyonix-cyan">
+                Inventario
               </p>
-              <p className="mt-1 text-base font-black leading-none">
-                {value}
+              <h2 id="product-variants-title" className="mt-0.5 text-lg font-black text-white">
+                Resumen de stock
+              </h2>
+              <p className="mt-1 text-sm leading-5 text-white/54">
+                Estado actual de todas las opciones del producto.
               </p>
             </div>
-          ))}
+          </div>
+          {!formOpen && (
+            <AdminPrimaryButton
+              title="Agregar una nueva opción de venta"
+              aria-label="Crear una variante"
+              onClick={openCreateForm}
+              className="w-full sm:w-auto"
+            >
+              <Plus className="size-4" />
+              Crear variante
+            </AdminPrimaryButton>
+          )}
         </div>
-      )}
+
+        <div
+          id="variant-stock-summary"
+          aria-label="Resumen del inventario"
+          className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,14rem),1fr))] gap-3"
+        >
+          <StockSummaryItem
+            label="Stock total"
+            value={distribution?.physicalStock}
+            help="Todas las unidades registradas."
+            tone="sky"
+          />
+          <StockSummaryItem
+            label="Stock normal"
+            value={distribution?.normalStock}
+            help="Se vende al precio habitual."
+            tone="green"
+          />
+          <StockSummaryItem
+            label="Con descuento"
+            value={distribution?.discountedStock}
+            help="Producto con detalle estético o similar."
+            tone="amber"
+          />
+          {!!distribution?.quarantineStock && (
+            <StockSummaryItem
+              label="En cuarentena"
+              value={distribution.quarantineStock}
+              help="Pendiente de revisión."
+              tone="red"
+            />
+          )}
+          {!!distribution?.nonSellableStock && (
+            <StockSummaryItem
+              label="No vendibles"
+              value={distribution.nonSellableStock}
+              help="No pueden venderse."
+              tone="red"
+            />
+          )}
+        </div>
+      </AdminCard>
 
       {distribution && distribution.allocationOverflow > 0 && (
-        <p className="rounded-lg border border-red-400/25 bg-red-400/10 px-2.5 py-2 text-center text-xs font-bold text-red-200">
-          Inconsistencia detectada: hay {distribution.allocationOverflow} unidades distribuidas que no existen en el pool normal.
-        </p>
+        <AdminInfoBlock tone="danger" icon={<AlertTriangle className="size-4" />}>
+          <p>
+            Hay {distribution.allocationOverflow} {distribution.allocationOverflow === 1 ? "unidad asignada" : "unidades asignadas"} de más. No edites el stock hasta revisar esta diferencia.
+          </p>
+        </AdminInfoBlock>
       )}
-
-      <div className="grid min-w-0 gap-2 sm:grid-cols-2 2xl:grid-cols-[minmax(150px,1.1fr)_minmax(115px,0.8fr)_minmax(165px,1fr)_minmax(120px,0.72fr)]">
-        <label className="min-w-0">
-          <span className="mb-1 flex min-h-3 items-end text-9px font-black uppercase tracking-wider text-white/38">
-            Nombre
-          </span>
-          <input
-            type="text"
-            value={nombre}
-            placeholder="Negro, azul, rosa..."
-            onChange={(e) =>
-              setNombre(e.target.value)
-            }
-            className={inputCls}
-          />
-        </label>
-
-        <label className="min-w-0">
-          <span className="mb-1 flex min-h-3 items-end text-9px font-black uppercase tracking-wider text-white/38">
-            SKU
-          </span>
-          <input
-            type="text"
-            value={sku}
-            placeholder="Opcional"
-            aria-label="SKU de la variante"
-            maxLength={120}
-            onChange={(event) => setSku(event.target.value)}
-            className={inputCls}
-          />
-        </label>
-
-        <label className="min-w-0">
-          <span className="mb-1 flex min-h-3 items-end text-9px font-black uppercase tracking-wider text-white/38">
-            Color
-          </span>
-          <span className="admin-variant-color-control flex h-11 min-w-0 items-center gap-2 rounded-xl border border-beyonix-blue-light/28 bg-[#07111b] px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/60">
-            <span
-              className="relative size-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 border-white/20 shadow-[0_0_0_3px_rgba(140,200,242,0.06)]"
-              style={{ backgroundColor: normalizeHex(colorHex) }}
-            >
-              <input
-                type="color"
-                value={normalizeHex(colorHex)}
-                aria-label="Elegir color de la variante"
-                onChange={(e) =>
-                  setColorHex(
-                    normalizeHex(
-                      e.target.value
-                    )
-                  )
-                }
-                className="absolute inset-0 size-full cursor-pointer opacity-0"
-              />
-            </span>
-            <input
-              type="text"
-              value={colorHex}
-              placeholder="#000000"
-              onChange={(e) =>
-                setColorHex(e.target.value)
-              }
-              onBlur={() =>
-                setColorHex(
-                  normalizeHex(colorHex)
-                )
-              }
-              className="admin-variant-hex-input min-w-0 flex-1 bg-transparent px-1 text-sm font-bold text-white outline-none"
-            />
-          </span>
-        </label>
-
-        <label className="min-w-0">
-          <span className="mb-1 flex min-h-3 items-end whitespace-nowrap text-9px font-black uppercase tracking-wider text-white/38">
-            Asignación normal
-          </span>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={cantidad}
-            placeholder="0"
-            aria-label="Unidades del pool normal asignadas a la variante"
-            onChange={(event) =>
-              setCantidad(event.target.value.replace(/\D/g, ""))
-            }
-            className={`${inputCls} text-center`}
-          />
-        </label>
-      </div>
-
-      <div className="rounded-xl border border-cyan-400/12 bg-cyan-400/[0.025] p-2.5">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-1">
-          <p className="text-10px font-semibold uppercase tracking-wide text-cyan-100/65">
-            Datos de envío propios
-          </p>
-          <p className="text-10px text-white/38">
-            Vacío = hereda del producto
-          </p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
-          {PRODUCT_LOGISTICS_FIELDS.map(({ key, label, unit }) => (
-            <label key={key} className="min-w-0">
-              <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/38">
-                {label}
-              </span>
-              <span className="relative block">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={shippingValues[key]}
-                  placeholder="Heredar"
-                  aria-label={`${label} propio de la variante en ${unit}`}
-                  onChange={(event) =>
-                    setShippingValues((current) => ({
-                      ...current,
-                      [key]: normalizeLogisticsDecimalInput(event.target.value),
-                    }))
-                  }
-                  className={`${inputCls} !pr-10`}
-                />
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-cyan-200/60">
-                  {unit}
-                </span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <p className="rounded-lg border border-amber-400/12 bg-amber-400/5 px-2.5 py-1.5 text-center text-10px font-semibold leading-4 text-amber-100/55">
-        Distribuí únicamente el stock normal sin asignar. Las unidades con descuento o en cuarentena mantienen su clasificación.
-      </p>
-
-      <div className="rounded-xl border border-cyan-400/12 bg-cyan-400/3 p-2.5">
-        <p className="mb-2 text-10px font-semibold uppercase tracking-wide text-cyan-100/55">
-          Imágenes de esta variante
-        </p>
-
-        {editingVariant?.kind === "persisted" && (
-          <PersistedVariantImages
-            images={persistedVariantImages}
-            draggedIndex={draggedImageIndex}
-            onDragStart={setDraggedImageIndex}
-            onMove={movePersistedImage}
-            onDragEnd={() => setDraggedImageIndex(null)}
-            onRemove={removePersistedImage}
-          />
-        )}
-
-        <DraftImageUploader
-          files={variantImages}
-          onChange={setVariantImages}
-          emptyMessage={
-            editingVariant?.kind === "persisted"
-              ? "Agregá imágenes nuevas para esta variante."
-              : "Cargá imágenes antes de crear el producto."
-          }
-        />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          aria-label="Crear variante"
-          onClick={addVariant}
-          disabled={saving}
-          className="inline-flex h-10 min-w-150px items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-black transition-colors hover:bg-[#112A43] hover:text-white cursor-pointer disabled:opacity-50"
-        >
-          {saving ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          {editingVariant
-            ? "Guardar variante"
-            : "Crear variante"}
-        </button>
-
-        {editingVariant && (
-          <button
-            type="button"
-            aria-label="Cancelar edición"
-            onClick={resetFields}
-            className="inline-flex h-10 min-w-120px items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#181818] px-5 text-sm text-white/70 transition-colors hover:border-[#112A43] hover:bg-[#112A43] hover:text-white cursor-pointer"
-          >
-            <X className="size-4" />
-            Cancelar
-          </button>
-        )}
-      </div>
 
       {error && (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-4 py-3">
-          <p className="text-sm text-red-400">
-            {error}
-          </p>
-        </div>
+        <AdminInfoBlock role="alert" tone="danger">{error}</AdminInfoBlock>
       )}
 
-      {loading ? (
-        <div className="mt-auto flex h-20 items-center justify-center text-white/45">
-          <Loader2 className="size-5 animate-spin" />
+      <AdminCard className="min-w-0 space-y-4 p-4 sm:p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/8 text-emerald-300">
+            <Boxes className="size-4.5" />
+          </span>
+          <div>
+            <h2 className="text-base font-black text-white">Opciones del producto</h2>
+            <p className="mt-0.5 text-sm text-white/52">Imagen, identificación, stock y estado de cada variante.</p>
+          </div>
         </div>
-      ) : (
-        <div className="mt-auto grid gap-2 border-t border-white/8 pt-3 sm:grid-cols-2">
-          {productoId ? (
-            variantes.length ? (
-              variantes.map((variante) => (
-                <VariantRow
-                  key={variante.id}
-                  nombre={variante.nombre}
-                  sku={variante.sku}
-                  colorHex={variante.color_hex}
-                  stock={variante.stock}
-                  allocated={allocations[variante.id] ?? 0}
-                  imageCount={
-                    variante.imagenes?.length || 0
-                  }
-                  onEdit={() =>
-                    editPersistedVariant(
-                      variante
-                    )
-                  }
-                  onRemove={() =>
-                    removePersistedVariant(
-                      variante.id
-                    )
-                  }
+        {loading ? (
+          <div className="flex h-32 items-center justify-center rounded-2xl border border-white/8 bg-black/15 text-white/45">
+            <Loader2 className="size-5 animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,28rem),1fr))] gap-4">
+            {productoId ? (
+              variantes.length ? (
+                variantes.map((variante) => (
+                  <VariantCard
+                    key={variante.id}
+                    nombre={variante.nombre}
+                    sku={variante.sku}
+                    colorHex={variante.color_hex}
+                    stock={variante.stock}
+                    active={variante.activo !== false}
+                    images={variante.imagenes ?? []}
+                    fallbackImage={fallbackImage}
+                    density="comfortable"
+                    selected={selectedVariantKey === `persisted-${variante.id}`}
+                    onSelect={() => setSelectedVariantKey(`persisted-${variante.id}`)}
+                    onEdit={() => editPersistedVariant(variante)}
+                    onRemove={() => setPendingDelete({ kind: "persisted", variant: variante })}
+                  />
+                ))
+              ) : (
+                <EmptyVariants />
+              )
+            ) : draftVariants.length ? (
+              draftVariants.map((variant) => (
+                <VariantCard
+                  key={variant.tempId}
+                  nombre={variant.nombre}
+                  sku={variant.sku}
+                  colorHex={variant.color_hex}
+                  stock={null}
+                  active
+                  draftImages={variant.imagenes}
+                  fallbackImage={fallbackImage}
+                  density="comfortable"
+                  selected={selectedVariantKey === `draft-${variant.tempId}`}
+                  onSelect={() => setSelectedVariantKey(`draft-${variant.tempId}`)}
+                  onEdit={() => editDraftVariant(variant)}
+                  onRemove={() => setPendingDelete({ kind: "draft", variant })}
                 />
               ))
             ) : (
               <EmptyVariants />
-            )
-          ) : draftVariants.length ? (
-            draftVariants.map((variant) => (
-              <VariantRow
-                key={variant.tempId}
-                nombre={variant.nombre}
-                sku={variant.sku}
-                colorHex={variant.color_hex}
-                stock={0}
-                allocated={0}
-                imageCount={
-                  variant.imagenes.length
-                }
-                onEdit={() =>
-                  editDraftVariant(
-                    variant
-                  )
-                }
-                onRemove={() =>
-                  removeDraftVariant(
-                    variant.tempId
-                  )
-                }
+            )}
+          </div>
+        )}
+      </AdminCard>
+
+      {formOpen && (
+        <section ref={formPanelRef} className="admin-ds-card scroll-mt-6 p-4 sm:p-5">
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-widest text-beyonix-cyan">
+                {editingVariant ? "Edición" : "Nueva opción"}
+              </p>
+              <h2 className="mt-1 text-xl font-black text-white sm:text-2xl">
+                {editingVariant ? "Editar variante" : "Crear variante"}
+              </h2>
+              <p className="mt-1.5 text-sm leading-6 text-white/52">
+                Este panel modifica únicamente la opción seleccionada.
+              </p>
+            </div>
+            <AdminGhostButton
+              title="Cerrar sin guardar"
+              aria-label="Cerrar formulario de variante"
+              size="icon"
+              onClick={resetFields}
+            >
+              <X className="size-4" />
+            </AdminGhostButton>
+          </div>
+
+          <div className="space-y-6 border-t border-white/8 pt-5">
+            <div>
+              <p className="mb-4 text-sm font-black text-white/78">
+                Datos de la variante
+              </p>
+              <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                <label className="min-w-0">
+                  <span className="mb-2 block text-sm font-black text-white/68">Nombre *</span>
+                  <input
+                    type="text"
+                    value={nombre}
+                    placeholder="Ej.: Negro"
+                    onChange={(event) => setNombre(event.target.value)}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-2 block text-sm font-black text-white/68">SKU</span>
+                  <input
+                    type="text"
+                    value={sku}
+                    placeholder="Opcional"
+                    aria-label="SKU de la variante"
+                    maxLength={120}
+                    onChange={(event) => setSku(event.target.value)}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="min-w-0 lg:col-span-2">
+                  <span className="mb-2 block text-sm font-black text-white/68">Color</span>
+                  <span className="admin-variant-color-control flex h-11 min-w-0 items-center gap-2 rounded-xl border border-beyonix-blue-light/28 bg-[#07111b] px-2 transition hover:border-beyonix-sky/45 focus-within:border-beyonix-sky/60">
+                    <span
+                      className="relative size-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 border-white/20"
+                      style={{ backgroundColor: normalizeHex(colorHex) }}
+                    >
+                      <input
+                        type="color"
+                        value={normalizeHex(colorHex)}
+                        aria-label="Elegir color de la variante"
+                        onChange={(event) => setColorHex(normalizeHex(event.target.value))}
+                        className="absolute inset-0 size-full cursor-pointer opacity-0"
+                      />
+                    </span>
+                    <input
+                      type="text"
+                      value={colorHex}
+                      placeholder="#000000"
+                      aria-label="Código del color"
+                      onChange={(event) => setColorHex(event.target.value)}
+                      onBlur={() => setColorHex(normalizeHex(colorHex))}
+                      className="admin-variant-hex-input min-w-0 flex-1 bg-transparent px-1 text-sm font-bold text-white outline-none"
+                    />
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="border-t border-white/8 pt-5">
+              <h3 className="mb-1 text-sm font-black text-white/78">Imágenes</h3>
+              <p className="mb-4 text-xs leading-5 text-white/42">
+                La primera imagen será la principal de esta variante.
+              </p>
+              {editingVariant?.kind === "persisted" && (
+                <PersistedVariantImages
+                  images={persistedVariantImages}
+                  draggedIndex={draggedImageIndex}
+                  onDragStart={setDraggedImageIndex}
+                  onMove={movePersistedImage}
+                  onDragEnd={() => setDraggedImageIndex(null)}
+                  onRemove={removePersistedImage}
+                />
+              )}
+              <DraftImageUploader
+                files={variantImages}
+                onChange={setVariantImages}
+                emptyMessage={editingVariant?.kind === "persisted" ? "Agregá imágenes nuevas si las necesitás." : "Podés agregar imágenes ahora o más adelante."}
               />
-            ))
-          ) : (
-            <EmptyVariants />
-          )}
-        </div>
+            </div>
+
+            <details className="group overflow-hidden rounded-2xl border border-white/8 bg-black/15">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 text-sm font-black text-white/72">
+                <span className="min-w-0">
+                  <span className="block">Opciones avanzadas</span>
+                  <span className="mt-0.5 block text-xs font-normal text-white/38">Stock inicial y datos de envío de esta variante.</span>
+                </span>
+                <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="space-y-5 border-t border-white/7 p-4 sm:p-5">
+                {productoId && (
+                  <label className="block max-w-sm">
+                    <span className="mb-2 block text-sm font-black text-white/68">Unidades a asignar</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={cantidad}
+                      placeholder="0"
+                      aria-label="Unidades normales asignadas a la variante"
+                      onChange={(event) => setCantidad(event.target.value.replace(/\D/g, ""))}
+                      className={`${inputCls} text-center`}
+                    />
+                    <span className="mt-1.5 block text-xs leading-5 text-white/40">
+                      Solo usa stock normal que todavía no está asignado.
+                    </span>
+                  </label>
+                )}
+                <div>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-black text-white/72">Datos de envío propios</p>
+                    <p className="text-xs text-white/38">Si quedan vacíos, usa los datos generales.</p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {PRODUCT_LOGISTICS_FIELDS.map(({ key, label, unit }) => (
+                      <label key={key} className="min-w-0">
+                        <span className="mb-2 block text-sm font-black text-white/68">{label}</span>
+                        <span className="relative block">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={shippingValues[key]}
+                            placeholder="Usar general"
+                            aria-label={`${label} propio de la variante en ${unit}`}
+                            onChange={(event) => setShippingValues((current) => ({
+                              ...current,
+                              [key]: normalizeLogisticsDecimalInput(event.target.value),
+                            }))}
+                            className={`${inputCls} !pr-10`}
+                          />
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-cyan-200/60">{unit}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-white/8 pt-5 sm:flex-row sm:justify-end">
+              <AdminSecondaryButton
+                title="Cerrar sin guardar los cambios"
+                aria-label="Cancelar edición de variante"
+                onClick={resetFields}
+                disabled={saving}
+                className="w-full sm:w-auto"
+              >
+                Cancelar
+              </AdminSecondaryButton>
+              <AdminPrimaryButton
+                title={editingVariant ? "Guardar los cambios de esta variante" : "Agregar esta variante al producto"}
+                aria-label={editingVariant ? "Guardar variante" : "Crear variante"}
+                onClick={addVariant}
+                disabled={saving}
+                className="w-full sm:w-auto"
+              >
+                {saving ? <Loader2 className="size-4 animate-spin" /> : editingVariant ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+                {editingVariant ? "Guardar cambios" : "Crear variante"}
+              </AdminPrimaryButton>
+            </div>
+          </div>
+        </section>
       )}
+
+      {productoId && distribution && (
+        <details className="admin-ds-card group overflow-hidden">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 sm:px-5">
+            <span className="min-w-0">
+              <span className="block text-sm font-black text-white/74">Opciones avanzadas</span>
+              <span className="mt-0.5 block text-xs text-white/38">Distribución y métricas internas del inventario.</span>
+            </span>
+            <ChevronDown className="size-4 shrink-0 text-white/45 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="border-t border-white/7 p-4 sm:p-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <AdvancedMetric label="Stock normal" value={distribution.normalStock} />
+              <AdvancedMetric label="Reservado" value={distribution.reservedStock} />
+              <AdvancedMetric label="Disponible ahora" value={distribution.availableStock} />
+              <AdvancedMetric label="Asignado" value={distribution.allocatedQuantity} />
+              <AdvancedMetric label="Sin asignar" value={distribution.unassignedQuantity} />
+              <AdvancedMetric label="Saldo sin variante" value={distribution.genericBalance} />
+            </div>
+            <p className="mt-3 rounded-lg border border-white/7 bg-white/3 px-3 py-2 text-xs leading-5 text-white/45">
+              Stock normal: se vende al precio habitual. Las unidades con descuento, en cuarentena o no vendibles mantienen su clasificación y no se distribuyen desde acá.
+            </p>
+          </div>
+        </details>
+      )}
+
+      <AdminModal
+        open={Boolean(pendingDelete)}
+        compact
+        title="Eliminar variante"
+        description="Esta acción afecta únicamente a la variante seleccionada."
+        onClose={() => {
+          if (!deleting) setPendingDelete(null)
+        }}
+        footer={
+          <div className="flex justify-center gap-2">
+            <AdminSecondaryButton
+              size="sm"
+              disabled={deleting}
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancelar
+            </AdminSecondaryButton>
+            <AdminDangerButton
+              size="sm"
+              disabled={!pendingDelete || deleting}
+              onClick={() => void confirmVariantDelete()}
+            >
+              {deleting ? "Eliminando…" : "Eliminar variante"}
+            </AdminDangerButton>
+          </div>
+        }
+      >
+        <div className="rounded-xl border border-red-400/18 bg-red-400/7 p-4 text-center">
+          <p className="text-sm font-black text-white">
+            {pendingDelete?.variant.nombre}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-white/55">
+            {pendingDelete?.kind === "persisted"
+              ? "Si tiene compras, ventas o movimientos asociados, el sistema impedirá eliminarla para proteger el inventario."
+              : "Esta variante todavía no fue guardada y se quitará del formulario."}
+          </p>
+        </div>
+      </AdminModal>
     </div>
   )
 }
 
 function EmptyVariants() {
   return (
-    <div className="rounded-xl border border-white/7 bg-[#181818] px-4 py-4 text-center xl:col-span-2">
-      <p className="text-sm text-white/55">
+    <div className="rounded-xl border border-dashed border-white/10 bg-black/15 px-5 py-8 text-center">
+      <p className="text-base font-bold text-white/70">
         Todavía no hay variantes cargadas.
       </p>
+      <p className="mt-1.5 text-sm text-white/44">
+        Usá “Crear variante” para agregar la primera.
+      </p>
+    </div>
+  )
+}
+
+function StockSummaryItem({
+  label,
+  value,
+  help,
+  tone,
+}: {
+  label: string
+  value?: number
+  help: string
+  tone: "sky" | "green" | "amber" | "red"
+}) {
+  const tones = {
+    sky: "bg-sky-400/[0.045] ring-sky-400/20 text-sky-200",
+    green: "bg-emerald-400/[0.045] ring-emerald-400/20 text-emerald-200",
+    amber: "bg-amber-400/[0.045] ring-amber-400/20 text-amber-200",
+    red: "bg-red-400/[0.045] ring-red-400/20 text-red-200",
+  }
+
+  return (
+    <div className={`flex min-h-28 min-w-0 flex-col justify-center rounded-xl px-4 py-3 ring-1 ring-inset ${tones[tone]}`}>
+      <p className="truncate text-sm font-black text-white/72">{label}</p>
+      <p className="mt-1.5 text-2xl font-black leading-none tabular-nums">
+        {value ?? "—"}
+      </p>
+      <p className="mt-2 text-xs leading-4 text-white/46">{help}</p>
+    </div>
+  )
+}
+
+function AdvancedMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-white/8 bg-white/3 px-3 py-3 text-center">
+      <p className="text-xs font-bold text-white/48">{label}</p>
+      <p className="mt-1 text-lg font-black tabular-nums text-white/78">{value}</p>
     </div>
   )
 }
@@ -1028,10 +1210,11 @@ function PersistedVariantImages({
 }: PersistedVariantImagesProps) {
   if (!images.length) {
     return (
-      <div className="mb-3 rounded-xl border border-white/6 bg-[#181818] px-4 py-4 text-center">
-        <ImageIcon className="mx-auto mb-2 size-7 text-white/15" />
-
-        <p className="text-sm text-white/55">
+      <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-white/6 bg-black/15 px-3 py-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/7 bg-white/3">
+          <ImageIcon className="size-3.5 text-white/20" />
+        </span>
+        <p className="text-xs text-white/48">
           Esta variante no tiene imágenes cargadas.
         </p>
       </div>
@@ -1070,7 +1253,7 @@ function PersistedVariantImages({
           />
 
           {index === 0 && (
-            <span className="absolute left-2 top-2 rounded-full border border-beyonix-sky/25 bg-beyonix-blue/70 px-2 py-1 text-10px font-semibold uppercase tracking-wide text-beyonix-sky">
+            <span className="absolute left-2 top-2 rounded-full border border-beyonix-sky/25 bg-beyonix-blue/70 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-beyonix-sky">
               Principal
             </span>
           )}
@@ -1080,14 +1263,14 @@ function PersistedVariantImages({
               <GripVertical className="size-4" />
             </span>
 
-            <button
-              type="button"
+            <AdminDangerButton
+              size="icon"
               aria-label={`Eliminar imagen ${index + 1}`}
+              title={`Eliminar imagen ${index + 1}`}
               onClick={() => onRemove(image)}
-              className="flex size-9 cursor-pointer items-center justify-center rounded-xl bg-red-500/90 transition-colors hover:bg-[#112A43]"
             >
-              <Trash2 className="size-4 text-white" />
-            </button>
+              <Trash2 className="size-4" />
+            </AdminDangerButton>
           </div>
         </div>
       ))}
@@ -1095,75 +1278,97 @@ function PersistedVariantImages({
   )
 }
 
-interface VariantRowProps {
+interface VariantCardProps {
   nombre: string
   sku?: string | null
   colorHex: string
   stock: number | null
-  allocated: number
-  imageCount: number
+  active: boolean
+  images?: string[]
+  draftImages?: File[]
+  fallbackImage?: string | null
+  density?: "compact" | "comfortable"
+  selected: boolean
+  onSelect: () => void
   onEdit: () => void
   onRemove: () => void
 }
 
-function VariantRow({
+function VariantCard({
   nombre,
   sku,
   colorHex,
   stock,
-  allocated,
-  imageCount,
+  active,
+  images = [],
+  draftImages = [],
+  fallbackImage = null,
+  density = "compact",
+  selected,
+  onSelect,
   onEdit,
   onRemove,
-}: VariantRowProps) {
+}: VariantCardProps) {
+  const draftUrls = useMemo(
+    () => draftImages.map((file) => URL.createObjectURL(file)),
+    [draftImages],
+  )
+
+  useEffect(() => {
+    return () => draftUrls.forEach((url) => URL.revokeObjectURL(url))
+  }, [draftUrls])
+
+  const availableImages = [...images, ...draftUrls]
+
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-cyan-400/12 bg-cyan-400/4 px-2.5 py-2">
-      <div className="flex min-w-0 items-center gap-2.5">
-        <span
-          className="size-5 shrink-0 rounded-full border border-white/25 shadow-[0_0_0_3px_rgba(255,255,255,0.035)]"
-          style={{
-            backgroundColor: colorHex,
-          }}
-        />
-
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <p className="truncate text-xs font-bold text-white">
-              {nombre}
-            </p>
-            <span className="shrink-0 rounded-md border border-beyonix-sky/15 bg-beyonix-blue/35 px-1.5 py-0.5 text-9px font-bold text-beyonix-sky/75">
-              {sku?.trim() || "Sin SKU"}
-            </span>
-          </div>
-
-          <p className="mt-0.5 truncate text-10px text-white/42">
-            {`Asignadas ${allocated}`}
-            {typeof stock === "number" &&
-              ` · Stock ${stock}`}
-            {` · ${imageCount} imágenes`}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          aria-label={`Editar variante ${nombre}`}
-          onClick={onEdit}
-          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-sky-400/15 bg-sky-400/5 text-sky-200/65 transition-colors hover:border-sky-400/35 hover:bg-sky-400/12 hover:text-white"
-        >
-          <Pencil className="size-4" />
-        </button>
-
-        <button
-          type="button"
-          aria-label={`Eliminar variante ${nombre}`}
-          onClick={onRemove}
-          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/15 bg-red-400/5 text-red-200/65 transition-colors hover:border-red-400/35 hover:bg-red-400/12 hover:text-white"
-        >
-          <Trash2 className="size-4" />
-        </button>
-      </div>
-    </div>
+    <AdminVariantItem
+      image={availableImages[0] ?? fallbackImage}
+      imageCount={availableImages.length}
+      name={nombre}
+      subtitle={
+        availableImages.length
+          ? `${availableImages.length} ${availableImages.length === 1 ? "imagen" : "imágenes"}`
+          : fallbackImage
+            ? "Imagen del producto"
+            : "Sin imagen"
+      }
+      sku={sku}
+      colorHex={colorHex}
+      colorLabel={colorHex}
+      stock={typeof stock === "number" ? stock : 0}
+      stateLabel={typeof stock === "number" ? (active ? "Activa" : "Inactiva") : "Sin guardar"}
+      stateTone={typeof stock === "number" ? (active ? "active" : "inactive") : "warning"}
+      selected={selected}
+      density={density}
+      actions={
+        <>
+          <AdminSecondaryButton
+            size="sm"
+            title={selected ? "Variante seleccionada" : `Seleccionar ${nombre}`}
+            aria-label={selected ? `${nombre} seleccionada` : `Seleccionar variante ${nombre}`}
+            onClick={onSelect}
+            className={selected ? "border-cyan-300/35 bg-cyan-300/12 text-cyan-100" : ""}
+          >
+            {selected ? "Seleccionada" : "Seleccionar"}
+          </AdminSecondaryButton>
+          <AdminSecondaryButton
+            size="icon"
+            title={`Abrir el formulario completo de ${nombre}`}
+            aria-label={`Editar variante ${nombre}`}
+            onClick={onEdit}
+          >
+            <Pencil className="size-3.5" />
+          </AdminSecondaryButton>
+          <AdminDangerButton
+            size="icon"
+            title={`Eliminar únicamente la variante ${nombre}`}
+            aria-label={`Eliminar variante ${nombre}`}
+            onClick={onRemove}
+          >
+            <Trash2 className="size-3.5" />
+          </AdminDangerButton>
+        </>
+      }
+    />
   )
 }

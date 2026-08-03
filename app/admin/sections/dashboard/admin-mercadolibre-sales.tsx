@@ -551,6 +551,18 @@ export function AdminMercadoLibreSales() {
   }
 
   const openReturnReview = useCallback((sale: StoredMercadoLibreSale) => {
+    if (!sale.product_id) {
+      const skuLabel = sale.sku?.trim()
+        ? `el SKU ${sale.sku.trim()}`
+        : "esta venta"
+      setReviewingReturn(null)
+      setSuccess("")
+      setError(
+        `Primero vinculá ${skuLabel} con un producto antes de registrar la revisión física.`,
+      )
+      return
+    }
+
     const review = sale.return_review
     setReviewingReturn(sale)
     setReceivedReturnQuantity(

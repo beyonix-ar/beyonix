@@ -16,6 +16,7 @@ import {
   getMercadoLibreCostMapping,
   type MercadoLibreCostMapping,
 } from "@/lib/mercadolibre/sale-costing"
+import { reconcileUnlinkedMercadoLibreSalesByExactSku } from "@/lib/mercadolibre/sku-reconciliation"
 
 const SELECT = [
   "id",
@@ -59,6 +60,11 @@ async function authorize(request: Request) {
 export async function GET(request: Request) {
   const auth = await authorize(request)
   if ("error" in auth) return auth.error
+
+  const reconciliation = await reconcileUnlinkedMercadoLibreSalesByExactSku(
+    auth.admin,
+    { actorId: auth.user.id },
+  )
 
   const rows: Record<string, unknown>[] = []
   for (let from = 0; ; from += 1000) {
@@ -262,7 +268,9 @@ export async function GET(request: Request) {
     catalog,
     costingError: productCostsResult.error
       ? "No se pudieron consultar los costos históricos de los productos."
-      : null,
+      : reconciliation.errors.length
+        ? "Algunas ventas con SKU coincidente no pudieron vincularse automáticamente."
+        : null,
   })
 }
 
