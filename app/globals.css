@@ -7138,5 +7138,11 @@ span.admin-claim-status-finalized,
   }
 }
 
+/* Mantiene una lectura uniforme de las acciones del panel sin alterar los SVG de datos. */
+.beyonix-admin-shell svg.lucide {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
 
 
