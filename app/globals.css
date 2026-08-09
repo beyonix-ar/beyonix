@@ -68,6 +68,8 @@
   --beyonix-danger: #ef4444;
   --beyonix-shadow-subtle: 0 18px 44px rgba(0, 0, 0, 0.22);
   --beyonix-glow-subtle: 0 0 0 1px rgba(30, 77, 123, 0.22);
+  --font-body: var(--font-montserrat), "Montserrat", sans-serif;
+  --font-heading: var(--font-montserrat), "Montserrat", sans-serif;
 }
 
 .dark {
@@ -109,9 +111,9 @@
    THEME TOKENS
 ========================= */
 @theme inline {
-  --font-sans: var(--font-body);
-  --font-heading: var(--font-heading);
-  --font-mono: "Geist Mono", "Geist Mono Fallback";
+  --font-sans: var(--font-montserrat), "Montserrat", sans-serif;
+  --font-heading: var(--font-montserrat), "Montserrat", sans-serif;
+  --font-mono: var(--font-montserrat), "Montserrat", sans-serif;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -287,7 +289,11 @@
 }
 
 @utility grid-cols-admin-product-summary {
-  grid-template-columns: minmax(300px, 1.65fr) 90px minmax(120px, 0.65fr) minmax(150px, 0.85fr) 118px 185px;
+  grid-template-columns: minmax(300px, 1.9fr) minmax(100px, 0.65fr) 90px minmax(110px, 0.7fr) 120px 110px 120px;
+}
+
+@utility grid-cols-admin-product-parent {
+  grid-template-columns: minmax(300px, 1.9fr) minmax(100px, 0.65fr) 90px minmax(110px, 0.7fr) 120px 110px 120px;
 }
 
 @utility grid-cols-admin-categories {
@@ -656,6 +662,27 @@
     overflow-x: hidden;
     position: relative;
     text-size-adjust: 100%;
+  }
+
+  input,
+  textarea,
+  select,
+  option,
+  optgroup,
+  button,
+  label,
+  table,
+  code,
+  pre,
+  kbd,
+  samp,
+  svg text,
+  dialog,
+  [role="dialog"],
+  [role="menu"],
+  [role="listbox"],
+  [role="tooltip"] {
+    font-family: var(--font-body);
   }
 
   img,
@@ -6738,9 +6765,65 @@ span.admin-claim-status-finalized,
   min-width: 0;
 }
 
+.product-editor-screen .product-editor-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1024px) {
+  .product-editor-screen .product-editor-workspace {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .product-editor-screen .product-editor-specifications-column {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1440px) {
+  .product-editor-screen .product-editor-workspace {
+    grid-template-columns: minmax(0, 30fr) minmax(0, 45fr) minmax(260px, 25fr);
+  }
+
+  .product-editor-screen .product-editor-specifications-column {
+    grid-column: auto;
+  }
+
+  .product-editor-screen {
+    display: grid;
+    height: 100dvh;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0.5rem;
+    overflow: hidden;
+  }
+
+  .product-editor-screen > * + *,
+  .product-editor-screen .product-editor-form > * + * {
+    margin-top: 0 !important;
+  }
+
+  .product-editor-screen .product-editor-form {
+    display: grid;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    gap: 0.5rem;
+    overflow: hidden;
+  }
+
+  .product-editor-screen .product-editor-workspace {
+    min-height: 0;
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 0.125rem;
+    scrollbar-color: rgba(89, 180, 255, 0.52) transparent;
+    scrollbar-width: thin;
+  }
+}
+
 .product-editor-screen .product-editor-header {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding-bottom: 0.65rem;
+  padding-bottom: 0.45rem;
 }
 
 .product-editor-screen .product-editor-actions,
@@ -6771,7 +6854,7 @@ span.admin-claim-status-finalized,
 
 .product-editor-screen .product-editor-panel-heading {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 0.55rem;
+  padding-bottom: 0.4rem;
 }
 
 .product-editor-screen .product-editor-panel-heading h2 {
@@ -6798,7 +6881,7 @@ span.admin-claim-status-finalized,
 }
 
 .product-editor-screen :where(.admin-control-input:not(textarea), .admin-control-select) {
-  height: 2.4rem !important;
+  height: 2.25rem !important;
   padding-inline: 0.75rem !important;
   font-size: 0.78rem !important;
 }
@@ -6808,8 +6891,8 @@ span.admin-claim-status-finalized,
 }
 
 .product-editor-screen .admin-icon-picker-trigger {
-  min-height: 2.4rem !important;
-  padding-block: 0.4rem !important;
+  min-height: 2.25rem !important;
+  padding-block: 0.3rem !important;
 }
 
 .product-editor-screen .admin-product-logistics-fields {
@@ -6818,6 +6901,132 @@ span.admin-claim-status-finalized,
 
 .product-editor-screen .product-editor-toggle {
   box-shadow: none !important;
+}
+
+.product-editor-screen .product-editor-toggle-active,
+.product-editor-screen .product-editor-spec-toggle-active {
+  border-color: rgba(52, 211, 153, 0.28) !important;
+  background-color: rgba(52, 211, 153, 0.07) !important;
+}
+
+.product-editor-screen .product-editor-toggle-active:hover,
+.product-editor-screen .product-editor-spec-toggle-active:hover {
+  border-color: rgba(52, 211, 153, 0.42) !important;
+  background-color: rgba(52, 211, 153, 0.11) !important;
+}
+
+.product-editor-screen :where(
+    .product-editor-toggle-active,
+    .product-editor-spec-toggle-active,
+    .product-editor-spec-action-active
+  ) .product-editor-active-icon,
+.product-editor-screen .product-editor-toggle-active .product-editor-toggle-icon {
+  color: rgb(110, 231, 183) !important;
+  stroke: rgb(110, 231, 183) !important;
+}
+
+.product-editor-screen .product-editor-inactive-icon {
+  color: rgba(255, 255, 255, 0.42) !important;
+  stroke: rgba(255, 255, 255, 0.42) !important;
+}
+
+.product-editor-screen .product-editor-specifications {
+  container-type: inline-size;
+}
+
+.product-editor-screen .product-editor-specifications-column {
+  container-type: inline-size;
+}
+
+.product-editor-screen .product-editor-logistics-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 15rem) {
+  .product-editor-screen .product-editor-logistics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.product-editor-screen .product-editor-specifications .admin-icon-picker-popover {
+  max-width: min(22rem, calc(100vw - 2rem));
+}
+
+.product-editor-screen .product-editor-spec-drag {
+  border-color: rgba(140, 200, 242, 0.2) !important;
+  background: rgba(17, 42, 67, 0.28) !important;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.product-editor-screen .product-editor-spec-drag:hover {
+  border-color: rgba(140, 200, 242, 0.42) !important;
+  background: rgba(17, 42, 67, 0.48) !important;
+}
+
+.product-editor-screen .product-editor-spec-icon {
+  border-color: rgba(140, 200, 242, 0.24) !important;
+  background: rgba(8, 25, 41, 0.92) !important;
+}
+
+.product-editor-screen .product-editor-spec-action {
+  border-radius: 0.625rem !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease !important;
+}
+
+.product-editor-screen .product-editor-spec-action-visibility {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: rgba(30, 41, 59, 0.42) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-visibility:hover {
+  border-color: rgba(148, 163, 184, 0.4) !important;
+  background: rgba(51, 65, 85, 0.58) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-active {
+  border-color: rgba(52, 211, 153, 0.34) !important;
+  background: rgba(6, 78, 59, 0.3) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-active:hover {
+  border-color: rgba(52, 211, 153, 0.52) !important;
+  background: rgba(6, 95, 70, 0.42) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-edit {
+  border-color: rgba(89, 180, 255, 0.3) !important;
+  background: rgba(17, 42, 67, 0.54) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-edit:hover {
+  border-color: rgba(140, 200, 242, 0.52) !important;
+  background: rgba(24, 59, 94, 0.72) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-edit svg {
+  color: rgba(191, 228, 255, 0.92) !important;
+  stroke: rgba(191, 228, 255, 0.92) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-delete {
+  border-color: rgba(248, 113, 113, 0.3) !important;
+  background: rgba(89, 24, 34, 0.38) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-delete:hover {
+  border-color: rgba(252, 165, 165, 0.48) !important;
+  background: rgba(112, 30, 43, 0.54) !important;
+}
+
+.product-editor-screen .product-editor-spec-action-delete svg {
+  color: rgba(252, 165, 165, 0.9) !important;
+  stroke: rgba(252, 165, 165, 0.9) !important;
 }
 
 .product-editor-screen .admin-variant-color-control {
@@ -6954,8 +7163,12 @@ span.admin-claim-status-finalized,
 }
 
 .product-editor-screen .product-editor-actions {
-  position: static;
-  z-index: auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  border-color: rgba(140, 200, 242, 0.2) !important;
+  background: rgba(6, 14, 23, 0.98) !important;
+  backdrop-filter: blur(10px);
 }
 
 @media (max-width: 639px) {

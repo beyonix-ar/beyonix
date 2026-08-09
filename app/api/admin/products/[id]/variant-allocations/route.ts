@@ -39,6 +39,34 @@ async function loadDistribution(
   admin: SupabaseClient,
   productId: number,
 ) {
+  const atomicResult = await admin.rpc(
+    "get_product_inventory_distribution",
+    { p_product_id: productId },
+  )
+  if (!atomicResult.error && atomicResult.data) {
+    return { data: atomicResult.data }
+  }
+  if (
+    atomicResult.error &&
+    !/get_product_inventory_distribution|schema cache|PGRST202/i.test(
+      atomicResult.error.message,
+    )
+  ) {
+    return {
+      error: Response.json(
+        {
+          error:
+            atomicResult.error.message ||
+            "No se pudo cargar la distribución del inventario.",
+        },
+        { status: 409 },
+      ),
+    }
+  }
+
+  // Compatibilidad de lectura mientras la migración nueva todavía no fue
+  // aplicada. Una vez disponible la RPC, toda la fotografía se obtiene bajo
+  // el mismo bloqueo y snapshot transaccional.
   const [
     productResult,
     variantsResult,

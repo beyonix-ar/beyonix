@@ -1,6 +1,6 @@
 "use client"
 
-import { FolderOpen, Package, Plus, Search } from "lucide-react"
+import { FolderOpen, Package, Plus, Search, TriangleAlert } from "lucide-react"
 
 import type { ProductColorOption } from "@/lib/supabase/queries/productos"
 
@@ -231,34 +231,39 @@ export function ProductosToolbar({
                 <option value="normales">No destacados</option>
               </AdminSelect>
 
-              <div className="relative min-w-0">
-                <AdminSelect
-                  title="Filtrar por variantes"
-                  ariaLabel={
-                    variantIssues.hasIssues
-                      ? `Filtrar por variantes. Hay ${variantIssues.count} ${
-                          variantIssues.count === 1
-                            ? "producto sin variantes o con algún SKU faltante"
-                            : "productos sin variantes o con algún SKU faltante"
-                        }.`
-                      : "Filtrar por variantes"
-                  }
-                  value={variantFilter}
-                  centered
-                  optionClassName="admin-products-filter-option"
-                  onChange={(value) =>
-                    onVariantFilterChange(value as VariantFilter)
-                  }
-                >
-                  <option value="todas">Todas las variantes</option>
-                  <option value="sin_variantes">Sin variantes</option>
-                </AdminSelect>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <AdminSelect
+                    title="Filtrar por variantes"
+                    ariaLabel="Filtrar por variantes"
+                    value={variantFilter}
+                    centered
+                    optionClassName="admin-products-filter-option"
+                    onChange={(value) =>
+                      onVariantFilterChange(value as VariantFilter)
+                    }
+                  >
+                    <option value="todas">Todas las variantes</option>
+                    <option value="sin_variantes">Sin variantes</option>
+                  </AdminSelect>
+                </div>
                 {variantIssues.hasIssues && (
                   <span
-                    className="pointer-events-none absolute left-3 top-1/2 z-10 size-2.5 -translate-y-1/2 rounded-full border border-red-200/70 bg-red-500 shadow-[0_0_9px_rgba(239,68,68,1)]"
-                    title="Hay productos sin variantes o con SKU faltante."
-                    aria-hidden="true"
-                  />
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-amber-300/25 bg-amber-400/10 px-2.5 text-11px font-bold tabular-nums text-amber-100"
+                    title={`${variantIssues.count} ${
+                      variantIssues.count === 1
+                        ? "producto requiere revisar sus variantes o SKU"
+                        : "productos requieren revisar sus variantes o SKU"
+                    }.`}
+                    aria-label={`${variantIssues.count} ${
+                      variantIssues.count === 1
+                        ? "producto con variantes pendientes"
+                        : "productos con variantes pendientes"
+                    }`}
+                  >
+                    <TriangleAlert className="size-3.5" aria-hidden="true" />
+                    {variantIssues.count}
+                  </span>
                 )}
               </div>
             </div>

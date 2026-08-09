@@ -1,13 +1,15 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowLeft,
+  Check,
   Eye,
   Loader2,
   Play,
   ToggleLeft,
   ToggleRight,
+  X,
 } from "lucide-react"
 
 import type {
@@ -36,11 +38,11 @@ import {
 } from "../../components/admin-controls"
 import { getProductVideoSource } from "@/lib/products/product-video"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
+import { getProductActivationStatus } from "@/lib/products/product-activation"
 import {
   normalizeLogisticsDecimalInput,
   PRODUCT_LOGISTICS_FIELDS,
 } from "@/lib/shipping/logistics-validation"
-import { updateProductoVariante } from "@/lib/supabase/queries/producto-variantes"
 
 interface ProductoFormProps {
   producto?: SupabaseProducto | null
@@ -55,8 +57,10 @@ const productFieldLabelClassName =
   "product-editor-field-label text-xs normal-case tracking-normal text-white/68"
 
 const productPriceFormatter = new Intl.NumberFormat("es-AR", {
-  maximumFractionDigits: 2,
+  style: "currency",
+  currency: "ARS",
   minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
 })
 
 export function ProductoForm({
@@ -75,10 +79,21 @@ export function ProductoForm({
   const [persistedSpecifications, setPersistedSpecifications] = useState<
     SupabaseProductoEspecificacion[]
   >(producto?.producto_especificaciones ?? [])
+  const [persistedVariantAllocations, setPersistedVariantAllocations] = useState<
+    Record<number, number>
+  >({})
+  const [pendingVariantStates, setPendingVariantStates] = useState<
+    Record<number, boolean>
+  >(() =>
+    Object.fromEntries(
+      (producto?.producto_variantes ?? []).map((variant) => [
+        variant.id,
+        variant.activo !== false,
+      ]),
+    ),
+  )
   const [previewProduct, setPreviewProduct] =
     useState<SupabaseProducto | null>(null)
-  const [primarySkuError, setPrimarySkuError] = useState("")
-  const [savingPrimarySku, setSavingPrimarySku] = useState(false)
   const previewObjectUrls = useRef<string[]>([])
   const leaveEditor = onCancel
   const finishProductSave = onSaved
@@ -91,6 +106,7 @@ export function ProductoForm({
     savedId,
     categorias,
     setField,
+    showError,
     submit,
     handleNombreChange,
   } = useProductoForm({
@@ -99,6 +115,20 @@ export function ProductoForm({
   })
 
   const currentProductoId = producto?.id || savedId
+  const handlePersistedVariantsChange = useCallback(
+    (variants: SupabaseProductoVariante[]) => {
+      setPersistedVariants(variants)
+      setPendingVariantStates((current) =>
+        Object.fromEntries(
+          variants.map((variant) => [
+            variant.id,
+            current[variant.id] ?? variant.activo !== false,
+          ]),
+        ),
+      )
+    },
+    [],
+  )
   const productFallbackImage = firstUsableImage(
     producto?.imagen_principal,
     [...(producto?.imagenes_producto ?? [])]
@@ -108,55 +138,110 @@ export function ProductoForm({
   const videoSource = getProductVideoSource(form.video_url)
   const canPreviewVideo =
     videoSource && videoSource.kind !== "unsupported"
-  const selectedCategoryName =
-    categorias.find((category) => String(category.id) === form.categoria_id)
-      ?.nombre ?? "Sin categoría"
-  const numericPrice = Number(form.precio)
-  const formattedPrice =
-    form.precio.trim() && Number.isFinite(numericPrice)
-      ? `$ ${productPriceFormatter.format(numericPrice)}`
-      : "Precio pendiente"
+  const selectedCategoryName = categorias.find(
+    (category) => String(category.id) === form.categoria_id,
+  )?.nombre
+  const currentPrice = Number(form.precio)
+  const productSubtitle = [
+    selectedCategoryName,
+    form.sku.trim() || null,
+    form.precio.trim() && Number.isFinite(currentPrice)
+      ? productPriceFormatter.format(currentPrice)
+      : null,
+    form.cuotas === "3"
+      ? "3 cuotas sin interés"
+      : form.cuotas === "6"
+        ? "6 cuotas sin interés"
+        : null,
+  ].filter((item): item is string => Boolean(item))
+  const activationStatus = useMemo(() => {
+    const parseLogisticsValue = (value: string) => {
+      if (!value.trim()) return null
+      const parsed = Number(value.replace(",", "."))
+      return Number.isFinite(parsed) ? parsed : null
+    }
+    const sourceVariants = currentProductoId
+      ? persistedVariants.map((variant) => ({
+          id: variant.id,
+          orden: variant.orden,
+          active: pendingVariantStates[variant.id] ?? variant.activo !== false,
+          nombre: variant.nombre,
+          sku: variant.sku ?? null,
+          colorHex: variant.color_hex,
+          images: variant.imagenes ?? [],
+          assignedStock: persistedVariantAllocations[variant.id] ?? 0,
+        }))
+      : draftVariants.map((variant, index) => ({
+          id: variant.tempId,
+          orden: index + 1,
+          active: false,
+          nombre: variant.nombre,
+          sku: index === 0 ? form.sku : variant.sku,
+          colorHex: variant.color_hex,
+          images: variant.imagenes,
+          assignedStock: 0,
+        }))
+    const primaryVariant = [...sourceVariants].sort((left, right) => {
+      if (left.orden !== right.orden) return left.orden - right.orden
+      return typeof left.id === "number" && typeof right.id === "number"
+        ? left.id - right.id
+        : 0
+    })[0]
+    const variants = sourceVariants.map((variant) =>
+      primaryVariant && variant.id === primaryVariant.id
+        ? { ...variant, sku: form.sku }
+        : variant,
+    )
 
-  const primaryVariant = [...persistedVariants].sort(
-    (left, right) => left.orden - right.orden || left.id - right.id,
-  )[0]
-  const busy = saving || savingPrimarySku
+    return getProductActivationStatus({
+      title: form.nombre,
+      sku: form.sku,
+      price: Number(form.precio),
+      categoryId: form.categoria_id ? Number(form.categoria_id) : null,
+      categoryExists: categorias.some(
+        (category) => String(category.id) === form.categoria_id,
+      ),
+      description: form.descripcion,
+      specifications: (currentProductoId
+        ? persistedSpecifications
+        : draftSpecifications
+      ).map((specification) => ({
+        activo: specification.activo,
+        icono: specification.icono,
+        texto: specification.texto,
+      })),
+      logistics: {
+        weight: parseLogisticsValue(form.peso_empaquetado_kg),
+        depth: parseLogisticsValue(form.alto_paquete_cm),
+        width: parseLogisticsValue(form.ancho_paquete_cm),
+        length: parseLogisticsValue(form.largo_paquete_cm),
+      },
+      variants,
+    })
+  }, [
+    categorias,
+    currentProductoId,
+    draftSpecifications,
+    draftVariants,
+    form,
+    persistedSpecifications,
+    persistedVariantAllocations,
+    persistedVariants,
+    pendingVariantStates,
+  ])
+  const busy = saving
 
   const saveProduct = async () => {
-    setPrimarySkuError("")
-
-    if (
-      currentProductoId &&
-      primaryVariant &&
-      (primaryVariant.sku?.trim() || "") !== form.sku.trim()
-    ) {
-      try {
-        setSavingPrimarySku(true)
-        const updated = await updateProductoVariante(
-          currentProductoId,
-          primaryVariant.id,
-          { sku: form.sku.trim() || null },
-        )
-        setPersistedVariants((current) =>
-          current.map((variant) =>
-            variant.id === updated.id ? updated : variant,
-          ),
-        )
-      } catch (skuError) {
-        setPrimarySkuError(
-          skuError instanceof Error
-            ? skuError.message
-            : "No se pudo guardar el SKU principal.",
-        )
-        return
-      } finally {
-        setSavingPrimarySku(false)
-      }
+    if (form.activo && !activationStatus.ready) {
+      showError(activationStatus.firstError ?? "Revisá los requisitos para activar el producto.")
+      return
     }
 
     await submit({
       draftVariants,
       draftSpecifications,
+      primarySku: form.sku,
+      variantStates: pendingVariantStates,
       onDraftSaved: () => {
         setDraftVariants([])
         setDraftSpecifications([])
@@ -195,7 +280,11 @@ export function ProductoForm({
     )
 
     const previewVariants: SupabaseProductoVariante[] = currentProductoId
-      ? persistedVariants
+      ? persistedVariants.map((variant) => ({
+          ...variant,
+          activo:
+            pendingVariantStates[variant.id] ?? variant.activo !== false,
+        }))
       : draftVariants.map((variant, index) => {
           const images = variant.imagenes.map((file) => {
             const url = URL.createObjectURL(file)
@@ -211,7 +300,7 @@ export function ProductoForm({
             color_hex: variant.color_hex || "#000000",
             stock: 0,
             imagenes: images,
-            activo: true,
+            activo: false,
             orden: index + 1,
             created_at: now,
             peso_empaquetado_kg: variant.peso_empaquetado_kg
@@ -300,7 +389,7 @@ export function ProductoForm({
   }
 
   return (
-    <div className={`${adminPageClassName} product-editor-screen !space-y-3 !p-3 sm:!p-4 lg:!p-5`}>
+    <div className={`${adminPageClassName} product-editor-screen !space-y-2 !p-2.5 sm:!p-3 lg:!p-4`}>
       <header className="product-editor-header flex min-w-0 items-center gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <AdminSecondaryButton
@@ -318,9 +407,11 @@ export function ProductoForm({
             <h1 className="truncate text-xl font-black text-white sm:text-2xl">
               {form.nombre.trim() || "Producto sin nombre"}
             </h1>
-            <p className="mt-0.5 truncate text-10px text-white/50 sm:text-xs">
-              {selectedCategoryName} · {formattedPrice}
-            </p>
+            {productSubtitle.length > 0 && (
+              <p className="mt-0.5 truncate text-10px text-white/50 sm:text-xs">
+                {productSubtitle.join(" · ")}
+              </p>
+            )}
           </div>
         </div>
       </header>
@@ -330,18 +421,21 @@ export function ProductoForm({
           event.preventDefault()
           void saveProduct()
         }}
-        className="product-editor-form min-w-0 space-y-3"
+        className="product-editor-form min-w-0 space-y-2"
       >
-        <div className="product-editor-workspace grid min-w-0 items-start gap-3 xl:grid-cols-[minmax(30rem,0.78fr)_minmax(0,1.22fr)]">
-          <section aria-labelledby="product-information-title" className="min-w-0 space-y-3">
-            <AdminCard className="product-editor-panel space-y-4 p-4">
+        <div className="product-editor-workspace min-w-0 items-start gap-2.5">
+          <section
+            aria-labelledby="product-information-title"
+            className="product-editor-primary-column min-w-0 space-y-2"
+          >
+            <AdminCard className="product-editor-panel space-y-2 p-2.5">
               <div className="product-editor-panel-heading">
                 <h2 id="product-information-title" className="text-base font-black text-white">
                   Información del producto
                 </h2>
               </div>
 
-              <div className="grid min-w-0 gap-x-3 gap-y-3 sm:grid-cols-2">
+              <div className="grid min-w-0 gap-x-2.5 gap-y-2 sm:grid-cols-2">
                 <AdminFormField label="Nombre del producto" labelClassName={productFieldLabelClassName}>
                   <input
                     id="nombre"
@@ -417,11 +511,11 @@ export function ProductoForm({
               </div>
             </AdminCard>
 
-            <AdminCard className="product-editor-panel space-y-3 p-4">
+            <AdminCard className="product-editor-panel space-y-2 p-2.5">
               <div className="product-editor-panel-heading">
                 <h2 className="text-base font-black text-white">Contenido</h2>
               </div>
-              <AdminFormField label="URL del video" help="Opcional · YouTube, Vimeo o archivo HTTPS." labelClassName={productFieldLabelClassName}>
+              <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
                 <input
                   id="video_url"
                   type="url"
@@ -434,7 +528,7 @@ export function ProductoForm({
 
               {canPreviewVideo ? (
                 <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
-                  <div className="relative aspect-video w-full sm:h-40 sm:aspect-auto">
+                  <div className="relative aspect-video w-full sm:h-28 sm:aspect-auto">
                     {videoSource.kind === "direct" ? (
                       <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
                     ) : (
@@ -462,55 +556,141 @@ export function ProductoForm({
                   value={form.descripcion}
                   placeholder="Describí el producto y, si agregaste un video, su contenido."
                   onChange={(event) => setField("descripcion", event.target.value)}
-                  className={`${inputCls} h-20 min-h-20 resize-y py-2.5 leading-5 sm:h-24 sm:min-h-24`}
+                  className={`${inputCls} h-14 min-h-14 resize-y py-2 leading-5 sm:h-16 sm:min-h-16`}
                 />
               </AdminFormField>
             </AdminCard>
 
-            <div className="grid min-w-0 gap-3 2xl:grid-cols-[minmax(15rem,0.78fr)_minmax(0,1.22fr)]">
-            <AdminCard className="product-editor-panel space-y-3 p-4">
+            <AdminCard className="product-editor-panel space-y-2 p-2.5">
               <div className="product-editor-panel-heading">
                 <h2 className="text-base font-black text-white">Estado comercial</h2>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              <div className="grid gap-2">
                 {[
                   {
                     key: "activo" as const,
-                    label: form.activo ? "Producto activo" : "Producto inactivo",
-                    description: "Disponible para ver y comprar.",
+                    label: "Estado",
+                    value: form.activo ? "Activo" : "Inactivo",
+                    description: "Define si el producto puede mostrarse y venderse.",
                     active: form.activo,
                   },
                   {
                     key: "destacado" as const,
-                    label: form.destacado ? "Producto destacado" : "Producto no destacado",
+                    label: "Destacado",
+                    value: form.destacado ? "Sí" : "No",
                     description: "Visible en espacios promocionales.",
                     active: form.destacado,
                   },
                 ].map((toggle) => (
                   <AdminSecondaryButton
                     key={toggle.key}
-                    title={toggle.label}
-                    aria-label={toggle.label}
+                    title={`${toggle.label}: ${toggle.value}`}
+                    aria-label={`${toggle.label}: ${toggle.value}`}
                     aria-pressed={toggle.active}
-                    onClick={() => setField(toggle.key, !toggle.active)}
-                    className={`product-editor-toggle min-h-11 w-full justify-start border px-3 py-2 text-left ${toggle.active ? "border-white/20 bg-white/6" : "border-white/8 bg-transparent"}`}
+                    onClick={() => {
+                      if (toggle.key === "activo" && toggle.active) {
+                        setPendingVariantStates(
+                          Object.fromEntries(
+                            persistedVariants.map((variant) => [
+                              variant.id,
+                              false,
+                            ]),
+                          ),
+                        )
+                      }
+
+                      setField(toggle.key, !toggle.active)
+                    }}
+                    className={`product-editor-toggle grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_4.5rem] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${toggle.active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
                   >
-                    {toggle.active ? <ToggleRight className="size-5 shrink-0 text-white" /> : <ToggleLeft className="size-5 shrink-0 text-white" />}
-                    <span className="min-w-0">
+                    {toggle.active ? (
+                      <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
+                    ) : (
+                      <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
+                    )}
+                    <span className="min-w-0 self-center">
                       <span className="block text-xs font-black text-white/82">{toggle.label}</span>
                       <span className="mt-0.5 block text-10px font-medium leading-4 text-white/46">{toggle.description}</span>
+                    </span>
+                    <span className={`w-full text-right text-xs font-black ${toggle.active ? "text-emerald-300" : "text-white/52"}`}>
+                      {toggle.value}
                     </span>
                   </AdminSecondaryButton>
                 ))}
               </div>
+              {producto && form.activo !== producto.activo && (
+                <p className="rounded-lg border border-amber-300/18 bg-amber-300/7 px-3 py-2 text-10px font-semibold leading-4 text-amber-100/80">
+                  El cambio de estado está pendiente. Se aplicará al guardar el producto.
+                </p>
+              )}
+              {!activationStatus.ready && (
+                <div className="rounded-lg border border-white/8 bg-black/18 px-2.5 py-2">
+                  <p className="text-10px font-black uppercase tracking-[0.12em] text-white/45">
+                    Requisitos para activar
+                  </p>
+                  <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1">
+                    {activationStatus.requirements.map((requirement) => (
+                      <span
+                        key={requirement.key}
+                        className={`flex min-w-0 items-center gap-1.5 text-10px font-semibold ${
+                          requirement.complete ? "text-emerald-200/75" : "text-white/48"
+                        }`}
+                      >
+                        {requirement.complete ? (
+                          <Check className="size-3 shrink-0 text-emerald-300" aria-hidden="true" />
+                        ) : (
+                          <X className="size-3 shrink-0 text-rose-300/80" aria-hidden="true" />
+                        )}
+                        <span className="truncate">{requirement.label}</span>
+                      </span>
+                    ))}
+                  </div>
+                  {activationStatus.firstError && (
+                    <p className="mt-1.5 text-10px font-semibold leading-4 text-amber-100/72">
+                      {activationStatus.firstError}
+                    </p>
+                  )}
+                </div>
+              )}
             </AdminCard>
 
-            <AdminCard className="product-editor-panel space-y-3 p-4">
+          </section>
+
+          <main className="product-editor-inventory-column min-w-0">
+            <ProductVariantsEditor
+              productoId={currentProductoId || undefined}
+              productActive={form.activo}
+              primarySku={form.sku}
+              videoUrl={form.video_url}
+              onPrimarySkuChange={(value) => setField("sku", value)}
+              fallbackImage={productFallbackImage}
+              draftVariants={draftVariants}
+              onDraftVariantsChange={setDraftVariants}
+              persistedVariantStates={pendingVariantStates}
+              onPersistedVariantStatesChange={setPendingVariantStates}
+              onPersistedVariantsChange={handlePersistedVariantsChange}
+              onVariantAllocationsChange={setPersistedVariantAllocations}
+            />
+          </main>
+
+          <aside className="product-editor-specifications-column min-w-0 space-y-2">
+            <ProductSpecificationsEditor
+              productoId={currentProductoId || undefined}
+              draftSpecifications={draftSpecifications}
+              onDraftSpecificationsChange={setDraftSpecifications}
+              onPersistedSpecificationsChange={setPersistedSpecifications}
+            />
+
+            <AdminCard className="product-editor-panel space-y-2 p-2.5">
               <div className="product-editor-panel-heading">
-                <h2 className="text-base font-black text-white">Dimensiones y peso</h2>
-                <p className="mt-0.5 text-10px leading-4 text-white/44">Andreani utiliza estos datos para calcular el costo del paquete.</p>
+                <h2 className="text-base font-black text-white">
+                  Dimensiones y peso
+                </h2>
+                <p className="mt-0.5 text-10px leading-4 text-white/44">
+                  Andreani utiliza estos datos para calcular el costo del paquete.
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="product-editor-logistics-grid grid gap-1.5">
                 {PRODUCT_LOGISTICS_FIELDS.map(({ key, unit }) => {
                   const label = {
                     peso_empaquetado_kg: "Peso",
@@ -520,7 +700,11 @@ export function ProductoForm({
                   }[key]
 
                   return (
-                    <AdminFormField key={key} label={label} labelClassName={productFieldLabelClassName}>
+                    <AdminFormField
+                      key={key}
+                      label={label}
+                      labelClassName={productFieldLabelClassName}
+                    >
                       <span className="relative block">
                         <input
                           id={key}
@@ -529,49 +713,34 @@ export function ProductoForm({
                           value={form[key]}
                           placeholder="Opcional"
                           aria-label={`${label} en ${unit}`}
-                          onChange={(event) => setField(key, normalizeLogisticsDecimalInput(event.target.value))}
-                          className={`${inputCls} !pr-11`}
+                          onChange={(event) =>
+                            setField(
+                              key,
+                              normalizeLogisticsDecimalInput(event.target.value),
+                            )
+                          }
+                          className={`${inputCls} !pr-9`}
                         />
-                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-white/50">{unit}</span>
+                        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-10px font-black text-white/50">
+                          {unit}
+                        </span>
                       </span>
                     </AdminFormField>
                   )
                 })}
               </div>
             </AdminCard>
-            </div>
-          </section>
-
-          <main className="min-w-0 space-y-4">
-            <ProductVariantsEditor
-              productoId={currentProductoId || undefined}
-              productActive={producto?.activo === true}
-              primarySku={form.sku}
-              videoUrl={form.video_url}
-              onPrimarySkuChange={(value) => setField("sku", value)}
-              fallbackImage={productFallbackImage}
-              draftVariants={draftVariants}
-              onDraftVariantsChange={setDraftVariants}
-              onPersistedVariantsChange={setPersistedVariants}
-            />
-            <ProductSpecificationsEditor
-              productoId={currentProductoId || undefined}
-              draftSpecifications={draftSpecifications}
-              onDraftSpecificationsChange={setDraftSpecifications}
-              onPersistedSpecificationsChange={setPersistedSpecifications}
-            />
-          </main>
+          </aside>
         </div>
 
-        {(error || primarySkuError || success) && (
+        {(error || success) && (
           <div aria-live="polite" className="space-y-2">
             {error && <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>}
-            {primarySkuError && <AdminInfoBlock tone="danger">{primarySkuError}</AdminInfoBlock>}
             {success && <AdminInfoBlock tone="success">{success}</AdminInfoBlock>}
           </div>
         )}
 
-        <div className="product-editor-actions flex flex-col-reverse gap-2 rounded-xl border p-2 sm:flex-row sm:items-center sm:justify-end">
+        <div className="product-editor-actions flex flex-col-reverse gap-2 rounded-xl border p-1.5 sm:flex-row sm:items-center sm:justify-end">
             <AdminSecondaryButton
               title="Cancelar"
               aria-label="Cancelar"

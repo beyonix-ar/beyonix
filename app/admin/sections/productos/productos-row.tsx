@@ -9,7 +9,6 @@ import { createPortal } from "react-dom"
 import Image from "next/image"
 
 import {
-  BadgePercent,
   Check,
   ChevronDown,
   ChevronRight,
@@ -37,13 +36,13 @@ import {
 
 import {
   deleteProductoVariante,
+  reorderProductoVariantes,
   setProductoVarianteActivo,
   updateProductoVariante,
 } from "@/lib/supabase/queries/producto-variantes"
 
 import {
   deleteConditionedStock,
-  updateProducto,
   updateConditionedStock,
 } from "@/lib/supabase/queries/productos"
 import {
@@ -269,7 +268,6 @@ export function ProductosRow({
     sortVariantes(localVariantes)
   const conditionedStock = localConditionedStock
   const hasDetails = variantes.length > 0 || conditionedStock.length > 0
-  const visibleVariantCount = variantes.length + conditionedStock.length
   const productImage = firstUsableImage(
     localPrincipalImage,
     [...(producto.imagenes_producto ?? [])]
@@ -299,6 +297,12 @@ export function ProductosRow({
     `${conditionedStockTotal} con descuento`,
     `${stockMetrics.quarantine} en cuarentena`,
   ].join(" · ")
+  const categoryLabel = producto.categorias?.nombre?.trim() || "Sin categoría"
+  const installmentsLabel =
+    producto.cuotas_sin_interes && producto.cuotas_maximas
+      ? `${producto.cuotas_maximas} cuotas sin interés`
+      : "Sin cuotas"
+  const commercialSubtitle = `${categoryLabel} · ${installmentsLabel}`
   const replaceConditionedStock = (nextItem: SupabaseConditionedStock) => {
     setLocalConditionedStock((current) =>
       current.map((item) =>
@@ -416,7 +420,7 @@ export function ProductosRow({
     }
   }
 
-  const syncProductSummary = async (
+  const syncProductSummary = (
     nextVariantes: SupabaseProductoVariante[]
   ) => {
     const imagenPrincipal =
@@ -428,20 +432,6 @@ export function ProductosRow({
       imagenPrincipal
     )
 
-    if (
-      imagenPrincipal === localPrincipalImage
-    ) {
-      return
-    }
-
-    await updateProducto(producto.id, {
-      ...(imagenPrincipal !== localPrincipalImage
-        ? {
-            imagen_principal:
-              imagenPrincipal,
-          }
-        : {}),
-    })
   }
 
   const startEditVariant = (
@@ -506,7 +496,7 @@ export function ProductosRow({
       )
 
       setLocalVariantes(nextVariantes)
-      await syncProductSummary(nextVariantes)
+      syncProductSummary(nextVariantes)
       cancelEditVariant()
     } catch (error) {
       setVariantError(
@@ -525,9 +515,7 @@ export function ProductosRow({
     const nextActive = variante.activo === false
 
     if (nextActive && !producto.activo) {
-      setVariantError(
-        "Activá primero el producto principal para habilitar sus variantes.",
-      )
+      setVariantError("No podés activar esta variante porque el producto está inactivo.")
       return
     }
 
@@ -584,13 +572,7 @@ export function ProductosRow({
     setLocalVariantes(nextVariantes)
     setPendingVariantDelete(null)
 
-    try {
-      await syncProductSummary(nextVariantes)
-    } catch {
-      setVariantError(
-        "La variante se eliminó, pero no se pudo actualizar la imagen principal.",
-      )
-    }
+    syncProductSummary(nextVariantes)
   }
 
   const currentPreviewProduct = (
@@ -701,21 +683,12 @@ export function ProductosRow({
     setLocalVariantes(nextVariantes)
 
     try {
-      await Promise.all(
-        nextVariantes.map((item) =>
-          updateProductoVariante(
-            producto.id,
-            item.id,
-            {
-              orden: item.orden,
-            }
-          )
-        )
+      const persistedOrder = await reorderProductoVariantes(
+        producto.id,
+        nextVariantes.map((item) => item.id),
       )
-
-      await syncProductSummary(
-        nextVariantes
-      )
+      setLocalVariantes(persistedOrder)
+      syncProductSummary(persistedOrder)
     } catch (err) {
       console.error(err)
       setLocalVariantes(
@@ -806,7 +779,7 @@ export function ProductosRow({
           : ""
       }`}
     >
-      <div className="admin-product-row-grid admin-product-summary-row relative z-[1] grid grid-cols-admin-product-summary items-center gap-3 px-4 py-3">
+      <div className="admin-product-row-grid admin-product-summary-row relative z-[1] grid grid-cols-admin-product-parent items-center gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
@@ -847,14 +820,15 @@ export function ProductosRow({
             </p>
 
             <p className="mt-1 truncate text-10px text-white/38">
-              Resumen del producto
-              {producto.destacado ? " · Destacado" : ""}
+              {commercialSubtitle}
             </p>
           </div>
         </div>
 
+        <span data-label="SKU" aria-hidden="true" />
+
         <span
-          data-label="Stock total"
+          data-label="Cantidad"
           title={stockBreakdownTitle}
           aria-label={stockBreakdownTitle}
           className="inline-flex min-w-14 items-center justify-center justify-self-center text-center"
@@ -869,24 +843,14 @@ export function ProductosRow({
           </span>
         </span>
 
-        <span
-          data-label="Variantes"
-          title={`${variantes.length} normales · ${conditionedStock.length} con descuento por falla`}
-          className="justify-self-center text-center text-sm font-black tabular-nums text-white/76"
-        >
-          {visibleVariantCount}
-        </span>
+        <span data-label="Color" aria-hidden="true" />
 
-        <div data-label="Con descuento" className="flex min-w-0 items-center justify-center">
-          {conditionedStockTotal > 0 && (
-            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-300/22 bg-amber-300/9 px-2.5 py-1 text-10px font-bold text-amber-200">
-              <BadgePercent className="size-3 shrink-0" />
-              <span className="text-center leading-4">
-                {conditionedStockTotal} {conditionedStockTotal === 1 ? "unidad" : "unidades"} con descuento por falla
-              </span>
-            </span>
-          )}
-        </div>
+        <span
+          data-label="Precio"
+          className="justify-self-center text-center text-sm font-black tabular-nums text-white/82"
+        >
+          {formatProductPrice(producto.precio)}
+        </span>
 
         <button
           type="button"
@@ -964,6 +928,7 @@ export function ProductosRow({
                 const stock = variante.stock ?? 0
                 const isPrincipal = index === 0
                 const editing = editingVariantId === variante.id
+                const commerciallyActive = producto.activo && variante.activo !== false
 
                 if (!editing) {
                   return (
@@ -974,12 +939,17 @@ export function ProductosRow({
                       name={variante.nombre}
                       subtitle={isPrincipal ? "Variante principal" : "Variante del producto"}
                       sku={variante.sku}
-                      hideSku={isPrincipal}
                       colorHex={variante.color_hex}
                       colorLabel={getColorName(variante.color_hex, variante.nombre)}
                       stock={stock}
-                      stateLabel={savingVariantId === variante.id ? "Guardando…" : variante.activo !== false ? "Activa" : "Inactiva"}
-                      stateTone={variante.activo !== false ? "active" : "inactive"}
+                      stateLabel={
+                        savingVariantId === variante.id
+                          ? "Guardando…"
+                            : commerciallyActive
+                              ? "Activa"
+                              : "Inactiva"
+                      }
+                      stateTone={commerciallyActive ? "active" : "inactive"}
                       stateDisabled={savingVariantId === variante.id}
                       onToggleState={() => void toggleVariant(variante)}
                       dropId={variante.id}
@@ -1047,68 +1017,52 @@ export function ProductosRow({
                   <div
                     key={variante.id}
                     data-variant-drop-id={variante.id}
-                    className="admin-product-variant-row grid grid-cols-admin-product-summary items-center gap-3 rounded-xl border border-cyan-300/25 bg-[#07111b] px-4 py-2.5"
+                    className="mx-2 rounded-xl border border-cyan-300/25 bg-[#07111b] p-4"
                   >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      {variantes.length > 1 ? (
-                        <button
-                          type="button"
-                          aria-label={`Reordenar variante ${variante.nombre}`}
-                          onPointerDown={(event) =>
-                            handleVariantPointerDown(event, variante.id)
-                          }
-                          onPointerUp={handleVariantPointerUp}
-                          onPointerCancel={stopVariantReorder}
-                          className={`flex size-10 shrink-0 cursor-grab items-center justify-center rounded-xl border text-white/45 transition-colors active:cursor-grabbing ${
-                            draggedVariantId === variante.id
-                              ? "border-beyonix-blue-light/40 bg-beyonix-blue/20 text-beyonix-cyan"
-                              : "border-white/8 bg-black/30 hover:border-beyonix-blue-light/30 hover:text-beyonix-cyan"
-                          }`}
-                        >
-                          <GripVertical className="size-4" />
-                        </button>
-                      ) : (
-                        <span className="size-10 shrink-0" />
-                      )}
-                      <ProductThumbnail
-                        image={firstUsableImage(variante.imagenes, productImage)}
-                        alt={`Imagen de ${producto.nombre}, variante ${variante.nombre}`}
-                        size="sm"
-                      />
+                    <div className="mb-3 flex items-center justify-between gap-3 border-b border-white/8 pb-3">
                       <div className="min-w-0">
-                        <p
-                          className="truncate text-xs font-bold text-white"
-                          title={`${producto.nombre} · ${variante.nombre}`}
-                        >
-                          {producto.nombre}
+                        <p className="text-xs font-black text-white">Editar variante</p>
+                        <p className="mt-0.5 truncate text-10px text-white/45">
+                          {variante.nombre}{isPrincipal ? " · Principal" : ""} · {stock} unidades disponibles
                         </p>
-                        <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-                          <span className="truncate text-10px font-semibold text-white/48">
-                            Variante {variante.nombre}
-                          </span>
-                          {isPrincipal && (
-                            <span className="shrink-0 rounded-full border border-beyonix-blue-light/25 bg-beyonix-blue/20 px-1.5 py-0.5 text-9px font-semibold text-beyonix-cyan">
-                              Principal
-                            </span>
-                          )}
-                        </div>
                       </div>
+                      <button
+                        type="button"
+                        disabled={savingVariantId === variante.id}
+                        aria-label={`Cancelar edición de ${variante.nombre}`}
+                        title="Cancelar edición"
+                        onClick={cancelEditVariant}
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/55 transition-colors hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <X className="size-3.5" />
+                      </button>
                     </div>
 
-                    <span
-                      data-label="Cantidad"
-                      className={`justify-self-center text-sm font-black tabular-nums ${stockColor(
-                        stock,
-                        stockSettings,
-                      )}`}
-                    >
-                      {stock}
-                    </span>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <label className="min-w-0">
+                        <span className="mb-1.5 block text-10px font-bold uppercase tracking-wider text-white/48">Nombre</span>
+                        <input
+                          type="text"
+                          value={editVariantName}
+                          maxLength={160}
+                          placeholder="Ej.: Negro"
+                          aria-label={`Editar nombre de ${variante.nombre}`}
+                          onChange={(event) => setEditVariantName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault()
+                              void saveVariant(variante)
+                            }
+                            if (event.key === "Escape") cancelEditVariant()
+                          }}
+                          className="h-10 w-full min-w-0 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-3 text-sm font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                        />
+                      </label>
 
-                    {editing ? (
+                      <label className="min-w-0">
+                        <span className="mb-1.5 block text-10px font-bold uppercase tracking-wider text-white/48">SKU</span>
                       <input
                         type="text"
-                        data-label="SKU"
                         value={editVariantSku}
                         maxLength={120}
                         placeholder="Sin SKU"
@@ -1121,27 +1075,14 @@ export function ProductosRow({
                           }
                           if (event.key === "Escape") cancelEditVariant()
                         }}
-                        className="h-9 min-w-0 justify-self-stretch rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 text-center text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                          className="h-10 w-full min-w-0 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-3 text-sm font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
                       />
-                    ) : (
-                      <span
-                        data-label="SKU"
-                        className="justify-self-stretch truncate text-center text-xs font-bold text-white/70"
-                        title={variante.sku?.trim() || "Sin SKU"}
-                      >
-                        {variante.sku?.trim() || "—"}
-                      </span>
-                    )}
+                      </label>
 
-                    {editing ? (
-                      <div
-                        data-label="Color"
-                        className="flex h-9 min-w-0 items-center gap-1.5 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-2 transition-colors hover:border-beyonix-sky/40 focus-within:border-beyonix-sky/55"
-                      >
-                        <label
-                          title={`Seleccionar color (${editColor})`}
-                          className="relative flex size-5 shrink-0 cursor-pointer items-center justify-center"
-                        >
+                      <label className="min-w-0">
+                        <span className="mb-1.5 block text-10px font-bold uppercase tracking-wider text-white/48">Color</span>
+                        <span className="flex h-10 min-w-0 items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-3 transition-colors hover:border-beyonix-sky/40 focus-within:border-beyonix-sky/55">
+                          <span className="relative flex size-5 shrink-0 cursor-pointer items-center justify-center">
                           <span
                             className="size-4 rounded-full border border-white/28"
                             style={{ backgroundColor: editColor }}
@@ -1153,17 +1094,14 @@ export function ProductosRow({
                             onChange={(event) => setEditColor(event.target.value)}
                             className="absolute inset-0 size-full cursor-pointer opacity-0"
                           />
-                        </label>
+                          </span>
                         <input
                           type="text"
-                          value={editVariantName}
-                          maxLength={160}
-                          placeholder="Nombre del color"
-                          title={`${editVariantName || "Sin nombre"} · ${editColor}`}
-                          aria-label={`Editar nombre del color de ${variante.nombre}`}
-                          onChange={(event) =>
-                            setEditVariantName(event.target.value)
-                          }
+                            value={editColor}
+                            maxLength={7}
+                            placeholder="#000000"
+                            aria-label={`Editar color de ${variante.nombre}`}
+                            onChange={(event) => setEditColor(event.target.value.toUpperCase())}
                           onKeyDown={(event) => {
                             if (event.key === "Enter") {
                               event.preventDefault()
@@ -1171,129 +1109,31 @@ export function ProductosRow({
                             }
                             if (event.key === "Escape") cancelEditVariant()
                           }}
-                          className="h-full w-full min-w-0 border-0 bg-transparent p-0 text-center text-xs font-bold text-white outline-none placeholder:text-white/28"
+                            className="h-full w-full min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-white outline-none placeholder:text-white/28"
                         />
-                      </div>
-                    ) : (
-                      <div
-                        data-label="Color"
-                        className="flex min-w-0 items-center justify-center gap-2"
-                      >
-                        <span
-                          className="size-4 shrink-0 rounded-full border border-white/25"
-                          style={{ backgroundColor: variante.color_hex }}
-                        />
-                        <span className="min-w-0 text-center">
-                          <span className="block truncate text-xs font-bold text-white/70">
-                            {variante.nombre}
-                          </span>
-                          <span className="block truncate text-9px font-semibold uppercase text-white/35">
-                            {variante.color_hex}
-                          </span>
                         </span>
-                      </div>
-                    )}
+                      </label>
+                    </div>
 
-                    <button
-                      type="button"
-                      data-label="Estado"
-                      disabled={savingVariantId === variante.id}
-                      aria-label={
-                        variante.activo !== false
-                          ? `Desactivar variante ${variante.nombre}`
-                          : `Activar variante ${variante.nombre}`
-                      }
-                      title={
-                        !producto.activo && variante.activo === false
-                          ? "Activá primero el producto principal"
-                          : variante.activo !== false
-                            ? "Desactivar variante"
-                            : "Activar variante"
-                      }
-                      onClick={() => void toggleVariant(variante)}
-                      className={`inline-flex w-fit items-center justify-self-center gap-1.5 rounded-full border px-2.5 py-1 text-10px font-semibold ${
-                        variante.activo !== false
-                          ? "border-green-500/20 bg-green-500/10 text-green-400"
-                          : "border-white/10 bg-white/5 text-white/45"
-                      } cursor-pointer transition-colors hover:border-beyonix-sky/35 disabled:cursor-wait disabled:opacity-55`}
-                    >
-                      <span
-                        className={`size-1.5 rounded-full ${
-                          variante.activo !== false
-                            ? "bg-green-400"
-                            : "bg-white/25"
-                        }`}
-                      />
-                      {savingVariantId === variante.id
-                        ? "Guardando…"
-                        : variante.activo !== false
-                          ? "Activa"
-                          : "Inactiva"}
-                    </button>
-
-                    <div className="admin-product-actions flex items-center justify-center gap-1.5">
-                      {!editing && (
-                        <button
-                          type="button"
-                          title={`Ver vista previa de ${variante.nombre}`}
-                          aria-label={`Ver variante ${variante.nombre}`}
-                          onClick={() => viewVariant(variante)}
-                          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400"
-                        >
-                          <Eye className="size-3.5" />
-                        </button>
-                      )}
-
+                    <div className="mt-3 flex flex-col-reverse gap-2 border-t border-white/8 pt-3 sm:flex-row sm:items-center sm:justify-end">
                       <button
                         type="button"
                         disabled={savingVariantId === variante.id}
-                        aria-label={
-                          editing
-                            ? `Guardar variante ${variante.nombre}`
-                            : `Editar variante ${variante.nombre}`
-                        }
-                        onClick={() =>
-                          editing
-                            ? void saveVariant(variante)
-                            : startEditVariant(variante)
-                        }
-                        className={`flex size-8 cursor-pointer items-center justify-center rounded-xl border transition-colors ${
-                          editing
-                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18"
-                            : "border-white/8 text-white/60 hover:border-white/20 hover:text-white"
-                        } disabled:cursor-wait disabled:opacity-50`}
+                        onClick={cancelEditVariant}
+                        className="inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-xs font-black text-white/65 transition hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
                       >
-                        {editing ? (
-                          <Check className="size-3.5" />
-                        ) : (
-                          <Pencil className="size-3.5" />
-                        )}
+                        Cancelar
                       </button>
-
-                      {editing ? (
-                        <button
-                          type="button"
-                          disabled={savingVariantId === variante.id}
-                          aria-label={`Cancelar edición de ${variante.nombre}`}
-                          title="Cancelar edición"
-                          onClick={cancelEditVariant}
-                          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/55 transition-colors hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          aria-label={`Eliminar variante ${variante.nombre}`}
-                          onClick={() => {
-                            setVariantError("")
-                            setPendingVariantDelete(variante)
-                          }}
-                          className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        disabled={savingVariantId === variante.id}
+                        aria-label={`Guardar variante ${variante.nombre}`}
+                        onClick={() => void saveVariant(variante)}
+                        className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 text-xs font-black text-emerald-300 transition hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <Check className="size-3.5" />
+                        {savingVariantId === variante.id ? "Guardando…" : "Guardar"}
+                      </button>
                     </div>
                   </div>
                 )

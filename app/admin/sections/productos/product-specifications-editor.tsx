@@ -453,216 +453,225 @@ export function ProductSpecificationsEditor({
     : visibleDrafts.length
 
   return (
-    <section className="product-editor-panel min-w-0 rounded-xl border p-4">
-      <div className="product-editor-panel-heading mb-3">
+    <section className="product-editor-panel product-editor-specifications min-w-0 overflow-visible rounded-xl border p-2.5">
+      <div className="product-editor-panel-heading mb-2.5">
         <h2 className="text-base font-black text-white">Especificaciones</h2>
-        <p className="mt-1 text-xs leading-5 text-white/44">
-          Ícono, característica y estado visible en la tienda.
+        <p className="mt-0.5 text-10px leading-4 text-white/44">
+          Características visibles en la tienda.
         </p>
       </div>
 
-      <div className="grid min-w-0 items-start gap-3 2xl:grid-cols-[minmax(16rem,0.68fr)_minmax(0,1.32fr)]">
-      <div className="product-editor-subpanel min-w-0 rounded-xl border p-3">
-        <div className="mb-3 border-b border-white/8 pb-3">
-          <h3 className="text-base font-black text-white">
-            {editingSpecification ? "Editar especificación" : "Agregar especificación"}
-          </h3>
-        </div>
-
-        <div className="grid min-w-0 gap-3">
+      <div className="min-w-0 space-y-2.5">
         <div className="min-w-0">
-          <p className="mb-2 text-sm font-black text-white/68">
-            Ícono
-          </p>
-          <LucideIconPicker
-            value={icono}
-            onChange={setIcono}
-          />
-        </div>
-
-        <label className="min-w-0">
-          <span className="mb-2 block text-sm font-black text-white/68">
-            Característica
-          </span>
-          <input
-            type="text"
-            value={texto}
-            placeholder="Ej.: Sonido estéreo de alta fidelidad"
-            onChange={(event) => setTexto(event.target.value)}
-            className={inputCls}
-          />
-        </label>
-
-      </div>
-
-      <div className="mt-3 flex flex-col gap-2 border-t border-white/8 pt-3 sm:flex-row sm:items-center sm:justify-between">
-        <AdminSecondaryButton
-          size="sm"
-          aria-label={
-            activo ? "Desactivar especificación" : "Activar especificación"
-          }
-          onClick={() => setActivo((current) => !current)}
-          aria-pressed={activo}
-          className="justify-start"
-        >
-          {activo ? (
-            <ToggleRight className="size-5 text-white" />
-          ) : (
-            <ToggleLeft className="size-5 text-white/45" />
-          )}
-          <span className="text-xs text-white/80">
-            {activo ? "Activa" : "Inactiva"}
-          </span>
-        </AdminSecondaryButton>
-
-        <div className="flex gap-2">
-        <AdminPrimaryButton
-          size="sm"
-          aria-label={
-            editingSpecification
-              ? "Guardar especificación"
-              : "Agregar especificación"
-          }
-          onClick={saveSpecification}
-          disabled={saving}
-          className="flex-1 sm:flex-none"
-        >
-          {saving ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          {editingSpecification ? "Guardar cambios" : "Agregar especificación"}
-        </AdminPrimaryButton>
-
-        {editingSpecification && (
-          <AdminSecondaryButton
-            size="sm"
-            aria-label="Cancelar edición"
-            onClick={resetFields}
-            className="flex-1 sm:flex-none"
-          >
-            <X className="size-4" />
-            Cancelar
-          </AdminSecondaryButton>
-        )}
-        </div>
-      </div>
-
-      {error && (
-        <div className="mt-4">
-          <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
-        </div>
-      )}
-      </div>
-
-      <div className="product-editor-subpanel min-w-0 rounded-xl border p-3">
-        <div className="mb-3 flex items-start justify-between gap-3 border-b border-white/8 pb-3">
-          <div className="min-w-0">
-            <h3 className="text-base font-black text-white">Características cargadas</h3>
-            <p className="mt-1 text-xs leading-5 text-white/44">
-              Arrastrá los elementos para definir el orden en la tienda.
-            </p>
+          <div className="mb-2">
+            <h3 className="text-xs font-black text-white/82">
+              {editingSpecification
+                ? "Editar especificación"
+                : "Agregar especificación"}
+            </h3>
           </div>
-          <span className="inline-flex shrink-0 rounded-md border border-white/12 bg-black/20 px-2.5 py-1 text-xs font-black text-white/70">
-            {visibleCount}
-          </span>
-        </div>
 
-        {loading ? (
-        <div className="flex h-16 items-center justify-center text-white/45">
-          <Loader2 className="size-5 animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {productoId ? (
-            visibleSpecifications.length ? (
-              visibleSpecifications.map((specification, index) => (
-                <SpecificationRow
-                  key={specification.id}
-                  icono={specification.icono}
-                  texto={specification.texto}
-                  orden={specification.orden}
-                  activo={specification.activo}
-                  dragKey={`persisted-${specification.id}`}
-                  draggedKey={draggedSpecificationKey}
-                  onDragStart={setDraggedSpecificationKey}
-                  onDragEnd={() => setDraggedSpecificationKey(null)}
-                  onDrop={() => {
-                    if (!draggedSpecificationKey?.startsWith("persisted-")) {
-                      return
-                    }
+          <div className="grid min-w-0 gap-2">
+            <div className="min-w-0">
+              <p className="mb-1 text-10px font-black uppercase tracking-wide text-white/52">
+                Ícono
+              </p>
+              <LucideIconPicker value={icono} onChange={setIcono} />
+            </div>
 
-                    const draggedId = Number(
-                      draggedSpecificationKey.replace("persisted-", "")
-                    )
-                    const draggedIndex = visibleSpecifications.findIndex(
-                      (item) => item.id === draggedId
-                    )
-
-                    if (draggedIndex >= 0) {
-                      movePersistedSpecification(
-                        draggedId,
-                        index - draggedIndex
-                      )
-                    }
-
-                    setDraggedSpecificationKey(null)
-                  }}
-                  onEdit={() => editPersistedSpecification(specification)}
-                  onRemove={() =>
-                    removePersistedSpecification(specification.id)
-                  }
-                  onToggle={() => togglePersistedSpecification(specification)}
-                />
-              ))
-            ) : (
-              <EmptySpecifications />
-            )
-          ) : visibleDrafts.length ? (
-            visibleDrafts.map((specification, index) => (
-              <SpecificationRow
-                key={specification.tempId}
-                icono={specification.icono}
-                texto={specification.texto}
-                orden={specification.orden}
-                  activo={specification.activo}
-                dragKey={`draft-${specification.tempId}`}
-                draggedKey={draggedSpecificationKey}
-                onDragStart={setDraggedSpecificationKey}
-                onDragEnd={() => setDraggedSpecificationKey(null)}
-                onDrop={() => {
-                  if (!draggedSpecificationKey?.startsWith("draft-")) {
-                    return
-                  }
-
-                  const draggedId = draggedSpecificationKey.replace("draft-", "")
-                  const draggedIndex = visibleDrafts.findIndex(
-                    (item) => item.tempId === draggedId
-                  )
-
-                  if (draggedIndex >= 0) {
-                    moveDraftSpecification(
-                      draggedId,
-                      index - draggedIndex
-                    )
-                  }
-
-                  setDraggedSpecificationKey(null)
-                }}
-                onEdit={() => editDraftSpecification(specification)}
-                onRemove={() =>
-                  removeDraftSpecification(specification.tempId)
-                }
-                onToggle={() => toggleDraftSpecification(specification)}
+            <label className="min-w-0">
+              <span className="mb-1 block text-10px font-black uppercase tracking-wide text-white/52">
+                Característica
+              </span>
+              <input
+                type="text"
+                value={texto}
+                placeholder="Ej.: Construcción reforzada"
+                onChange={(event) => setTexto(event.target.value)}
+                className={inputCls}
               />
-            ))
-          ) : (
-            <EmptySpecifications />
+            </label>
+          </div>
+
+          <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 border-t border-white/8 pt-2">
+            <AdminSecondaryButton
+              size="sm"
+              aria-label={
+                activo ? "Desactivar especificación" : "Activar especificación"
+              }
+              onClick={() => setActivo((current) => !current)}
+              aria-pressed={activo}
+              className={`product-editor-spec-toggle min-w-0 justify-start px-2.5 ${activo ? "product-editor-spec-toggle-active" : ""}`}
+            >
+              {activo ? (
+                <ToggleRight className="product-editor-active-icon size-4 text-emerald-300" />
+              ) : (
+                <ToggleLeft className="product-editor-inactive-icon size-4 text-white/45" />
+              )}
+              <span
+                className={
+                  activo ? "text-xs text-emerald-300" : "text-xs text-white/60"
+                }
+              >
+                {activo ? "Activa" : "Inactiva"}
+              </span>
+            </AdminSecondaryButton>
+
+            <div className="flex min-w-0 justify-end gap-1.5">
+              <AdminPrimaryButton
+                size="sm"
+                aria-label={
+                  editingSpecification
+                    ? "Guardar especificación"
+                    : "Agregar especificación"
+                }
+                onClick={saveSpecification}
+                disabled={saving}
+                className="min-w-0 flex-1 px-2.5"
+              >
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plus className="size-4" />
+                )}
+                {editingSpecification ? "Guardar" : "Agregar"}
+              </AdminPrimaryButton>
+
+              {editingSpecification && (
+                <AdminSecondaryButton
+                  size="sm"
+                  aria-label="Cancelar edición"
+                  onClick={resetFields}
+                  title="Cancelar edición"
+                  className="!size-8 !min-h-0 shrink-0 px-0 py-0"
+                >
+                  <X className="size-4" />
+                </AdminSecondaryButton>
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div className="mt-3">
+              <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
+            </div>
           )}
         </div>
-      )}
-      </div>
+
+        <div className="min-w-0 border-t border-white/8 pt-2.5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="text-xs font-black text-white/82">
+                Características cargadas
+              </h3>
+              <p className="mt-0.5 text-10px leading-4 text-white/40">
+                Arrastrá para reordenar.
+              </p>
+            </div>
+            <span className="inline-flex shrink-0 rounded-md border border-white/12 bg-black/20 px-2 py-0.5 text-10px font-black text-white/70">
+              {visibleCount}
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="flex h-16 items-center justify-center text-white/45">
+              <Loader2 className="size-5 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {productoId ? (
+                visibleSpecifications.length ? (
+                  visibleSpecifications.map((specification, index) => (
+                    <SpecificationRow
+                      key={specification.id}
+                      icono={specification.icono}
+                      texto={specification.texto}
+                      orden={specification.orden}
+                      activo={specification.activo}
+                      dragKey={`persisted-${specification.id}`}
+                      draggedKey={draggedSpecificationKey}
+                      onDragStart={setDraggedSpecificationKey}
+                      onDragEnd={() => setDraggedSpecificationKey(null)}
+                      onDrop={() => {
+                        if (!draggedSpecificationKey?.startsWith("persisted-")) {
+                          return
+                        }
+
+                        const draggedId = Number(
+                          draggedSpecificationKey.replace("persisted-", ""),
+                        )
+                        const draggedIndex = visibleSpecifications.findIndex(
+                          (item) => item.id === draggedId,
+                        )
+
+                        if (draggedIndex >= 0) {
+                          movePersistedSpecification(
+                            draggedId,
+                            index - draggedIndex,
+                          )
+                        }
+
+                        setDraggedSpecificationKey(null)
+                      }}
+                      onEdit={() => editPersistedSpecification(specification)}
+                      onRemove={() =>
+                        removePersistedSpecification(specification.id)
+                      }
+                      onToggle={() =>
+                        togglePersistedSpecification(specification)
+                      }
+                    />
+                  ))
+                ) : (
+                  <EmptySpecifications />
+                )
+              ) : visibleDrafts.length ? (
+                visibleDrafts.map((specification, index) => (
+                  <SpecificationRow
+                    key={specification.tempId}
+                    icono={specification.icono}
+                    texto={specification.texto}
+                    orden={specification.orden}
+                    activo={specification.activo}
+                    dragKey={`draft-${specification.tempId}`}
+                    draggedKey={draggedSpecificationKey}
+                    onDragStart={setDraggedSpecificationKey}
+                    onDragEnd={() => setDraggedSpecificationKey(null)}
+                    onDrop={() => {
+                      if (!draggedSpecificationKey?.startsWith("draft-")) {
+                        return
+                      }
+
+                      const draggedId = draggedSpecificationKey.replace(
+                        "draft-",
+                        "",
+                      )
+                      const draggedIndex = visibleDrafts.findIndex(
+                        (item) => item.tempId === draggedId,
+                      )
+
+                      if (draggedIndex >= 0) {
+                        moveDraftSpecification(
+                          draggedId,
+                          index - draggedIndex,
+                        )
+                      }
+
+                      setDraggedSpecificationKey(null)
+                    }}
+                    onEdit={() => editDraftSpecification(specification)}
+                    onRemove={() =>
+                      removeDraftSpecification(specification.tempId)
+                    }
+                    onToggle={() => toggleDraftSpecification(specification)}
+                  />
+                ))
+              ) : (
+                <EmptySpecifications />
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   )
@@ -679,11 +688,11 @@ function reorderPersistedSpecifications(
 
 function EmptySpecifications() {
   return (
-    <div className="product-editor-empty rounded-lg border border-dashed border-white/10 px-4 py-5 text-center">
-      <p className="text-sm font-bold text-white/58">
+    <div className="product-editor-empty rounded-lg border border-dashed border-white/10 px-3 py-3.5 text-center">
+      <p className="text-xs font-bold text-white/58">
         Todavía no hay especificaciones cargadas.
       </p>
-      <p className="mt-1 text-xs text-white/38">
+      <p className="mt-0.5 text-10px leading-4 text-white/38">
         Agregá la primera desde el formulario.
       </p>
     </div>
@@ -736,69 +745,73 @@ function SpecificationRow({
         onDrop()
       }}
       onDragEnd={onDragEnd}
-      className={`product-editor-spec-row rounded-lg border px-3 py-2.5 transition-colors ${
+      className={`product-editor-spec-row rounded-lg border px-2 py-1.5 transition-colors ${
         draggedKey === dragKey
           ? "product-editor-spec-row-active border-white/35"
           : "border-white/8 hover:border-white/18 hover:bg-white/[0.03]"
       }`}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex size-8 shrink-0 cursor-grab items-center justify-center rounded-xl border border-white/8 text-white/45 active:cursor-grabbing">
-            <GripVertical className="size-4" />
-          </span>
+      <div className="flex min-w-0 items-center gap-2">
+        <span
+          title="Arrastrar para reordenar"
+          aria-label="Arrastrar para reordenar"
+          className="product-editor-spec-drag flex size-8 shrink-0 cursor-grab items-center justify-center rounded-lg border text-white/55 active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </span>
 
-          <span className="product-editor-icon-cell flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/12 text-white">
-            <Icon className="size-4 text-white" />
-          </span>
+        <span className="product-editor-icon-cell product-editor-spec-icon flex size-8 shrink-0 items-center justify-center rounded-md border text-white">
+          <Icon className="size-4 text-white" />
+        </span>
 
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-white">
-              {texto}
-            </p>
-            <p className="text-xs text-white/50">
-              {`Orden ${orden} - ${getFriendlyIconName(icono)} - ${
-                activo ? "Activo" : "Inactivo"
-              }`}
-            </p>
-          </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-10px font-black uppercase tracking-wide text-white/72">
+            {getFriendlyIconName(icono)}
+          </p>
+          <p
+            className="mt-0.5 truncate text-xs font-medium leading-4 text-white"
+            title={texto}
+          >
+            {texto}
+          </p>
+          <p className="mt-0.5 text-10px text-white/38">Orden {orden}</p>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 border-t border-white/7 pt-2.5 sm:border-0 sm:pt-0">
+        <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
           <AdminSecondaryButton
-            size="sm"
+            size="icon"
             aria-label={
               activo ? "Desactivar especificación" : "Activar especificación"
             }
             title={activo ? "Desactivar especificación" : "Activar especificación"}
             onClick={onToggle}
+            className={`product-editor-spec-action product-editor-spec-action-visibility !size-8 !min-h-0 px-0 py-0 ${activo ? "product-editor-spec-action-active" : ""}`}
           >
             {activo ? (
-              <ToggleRight className="size-4 text-white" />
+              <ToggleRight className="product-editor-active-icon size-4 text-emerald-300" />
             ) : (
-              <ToggleLeft className="size-4" />
+              <ToggleLeft className="product-editor-inactive-icon size-4 text-white/45" />
             )}
-            {activo ? "Activa" : "Inactiva"}
           </AdminSecondaryButton>
 
           <AdminSecondaryButton
-            size="sm"
+            size="icon"
             aria-label="Editar especificación"
             title="Editar especificación"
             onClick={onEdit}
+            className="product-editor-spec-action product-editor-spec-action-edit !size-8 !min-h-0 px-0 py-0"
           >
             <Pencil className="size-4" />
-            Editar
           </AdminSecondaryButton>
 
           <AdminDangerButton
-            size="sm"
+            size="icon"
             aria-label="Eliminar especificación"
             title="Eliminar especificación"
             onClick={onRemove}
+            className="product-editor-spec-action product-editor-spec-action-delete !size-8 !min-h-0 px-0 py-0"
           >
             <Trash2 className="size-4" />
-            Eliminar
           </AdminDangerButton>
         </div>
       </div>

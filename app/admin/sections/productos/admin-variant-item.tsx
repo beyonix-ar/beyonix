@@ -219,14 +219,14 @@ export function AdminVariantItem({
         </div>
       </div>
 
-      <div data-label="Stock" className="justify-self-center text-center">
-        <p className="text-sm font-black tabular-nums text-white">{stock}</p>
-      </div>
-
       <div data-label="SKU" className="min-w-0 justify-self-stretch text-center">
         <p className="truncate text-xs font-bold text-white/68" title={hideSku ? undefined : sku?.trim() || "Sin SKU"}>
           {hideSku ? null : sku?.trim() || "Sin SKU"}
         </p>
+      </div>
+
+      <div data-label="Cantidad" className="justify-self-center text-center">
+        <p className="text-sm font-black tabular-nums text-white">{stock}</p>
       </div>
 
       <div data-label="Color" className="flex min-w-0 items-center justify-center gap-1.5">
@@ -240,6 +240,8 @@ export function AdminVariantItem({
           {colorLabel || colorHex || "Sin color"}
         </span>
       </div>
+
+      <div data-label="Precio" aria-hidden="true" />
 
       <div data-label="Estado" className="justify-self-center">
         {stateControl}

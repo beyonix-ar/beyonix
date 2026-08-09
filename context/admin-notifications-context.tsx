@@ -8,7 +8,6 @@ const EMPTY_ADMIN_NOTIFICATION_GROUPS: AdminNotificationGroups = {
   order: 0,
   message: 0,
   payment: 0,
-  giftcard: 0,
   invoice: 0,
   shipping: 0,
   cancellation: 0,

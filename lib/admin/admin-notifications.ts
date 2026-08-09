@@ -11,7 +11,6 @@ import {
   isAdminSensitiveNotification,
 } from "@/lib/admin/admin-sensitive-visuals"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
-import { formatARS } from "@/lib/customer-credit"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
 import {
   getMercadoLibrePendingReturnUnits,
@@ -25,7 +24,6 @@ export type AdminNotificationType =
   | "order"
   | "message"
   | "payment"
-  | "giftcard"
   | "invoice"
   | "shipping"
   | "cancellation"
@@ -84,20 +82,10 @@ type CustomerCreditTopupNotificationRow = {
   created_at: string
 }
 
-type CustomerGiftCardMovementRow = {
-  id: string
-  user_id: string
-  amount: number | string
-  description?: string | null
-  created_at: string
-  metadata?: Record<string, unknown> | null
-}
-
 const EMPTY_GROUPS: AdminNotificationGroups = {
   order: 0,
   message: 0,
   payment: 0,
-  giftcard: 0,
   invoice: 0,
   shipping: 0,
   cancellation: 0,
@@ -394,14 +382,6 @@ function formatProfileDetails(profile?: CreditAdminProfile | null) {
     .join(" · ")
 }
 
-function getMetadataText(
-  metadata: Record<string, unknown> | null | undefined,
-  key: string,
-) {
-  const value = metadata?.[key]
-  return typeof value === "string" ? value : ""
-}
-
 async function loadCreditProfiles(userIds: string[]) {
   const uniqueUserIds = [...new Set(userIds.filter(Boolean))]
   const profiles = new Map<string, CreditAdminProfile>()
@@ -429,24 +409,13 @@ async function loadCreditProfiles(userIds: string[]) {
 }
 
 async function getCreditAdminNotifications() {
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const notifications: AdminNotification[] = []
-  const [{ data: topups, error: topupsError }, { data: movements, error: movementsError }] =
-    await Promise.all([
-      supabase
-        .from("customer_credit_topups")
-        .select("id, user_id, amount, customer_name, customer_dni, proof_file_name, status, created_at")
-        .eq("status", "en_revision")
-        .order("created_at", { ascending: false })
-        .limit(60),
-      supabase
-        .from("customer_credit_movements")
-        .select("id, user_id, amount, description, created_at, metadata")
-        .eq("movement_type", "debit")
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(80),
-    ])
+  const { data: topups, error: topupsError } = await supabase
+    .from("customer_credit_topups")
+    .select("id, user_id, amount, customer_name, customer_dni, proof_file_name, status, created_at")
+    .eq("status", "en_revision")
+    .order("created_at", { ascending: false })
+    .limit(60)
 
   if (topupsError) {
     console.warn(
@@ -455,57 +424,10 @@ async function getCreditAdminNotifications() {
     )
   }
 
-  if (movementsError) {
-    console.warn(
-      "ADMIN_GIFT_CARD_MOVEMENTS_LOAD_ERROR",
-      getSupabaseErrorDetails(movementsError),
-    )
-  }
-
   const topupRows = (topups ?? []) as CustomerCreditTopupNotificationRow[]
-  const giftCardRows = ((movements ?? []) as CustomerGiftCardMovementRow[]).filter(
-    (movement) =>
-      movement.metadata?.source_kind === "gift_card" &&
-      movement.metadata?.created_from === "customer_gift_card",
+  const profiles = await loadCreditProfiles(
+    topupRows.map((topup) => topup.user_id),
   )
-  const claimableGiftCardIds = giftCardRows
-    .map((movement) => getMetadataText(movement.metadata, "gift_card_id"))
-    .filter(Boolean)
-  const cancelledGiftCardIds = new Set<string>()
-
-  if (claimableGiftCardIds.length) {
-    const { data: giftCards, error: giftCardsError } = await supabase
-      .from("customer_gift_cards")
-      .select("id, status")
-      .in("id", [...new Set(claimableGiftCardIds)])
-      .eq("status", "cancelled")
-
-    if (giftCardsError) {
-      console.warn(
-        "ADMIN_GIFT_CARDS_STATUS_LOAD_ERROR",
-        getSupabaseErrorDetails(giftCardsError),
-      )
-    } else {
-      for (const giftCard of giftCards ?? []) {
-        cancelledGiftCardIds.add(String(giftCard.id))
-      }
-    }
-  }
-
-  const deliveredGiftCardRows = giftCardRows.filter(
-    (movement) =>
-      !cancelledGiftCardIds.has(
-        getMetadataText(movement.metadata, "gift_card_id"),
-      ),
-  )
-  const profileIds = [
-    ...topupRows.map((topup) => topup.user_id),
-    ...deliveredGiftCardRows.map((movement) => movement.user_id),
-    ...deliveredGiftCardRows
-      .map((movement) => getMetadataText(movement.metadata, "recipient_user_id"))
-      .filter(Boolean),
-  ]
-  const profiles = await loadCreditProfiles(profileIds)
 
   for (const topup of topupRows) {
     const profile = profiles.get(topup.user_id)
@@ -518,25 +440,6 @@ async function getCreditAdminNotifications() {
       body: `${formatProfileDetails(profile)} · Revisá la transferencia e ingresá el monto recibido${topup.proof_file_name ? ` · Archivo: ${topup.proof_file_name}` : ""}`,
       actionLabel: "Revisar en Clientes",
       actionUrl: ADMIN_ROUTES.clientes,
-      isRead: false,
-    })
-  }
-
-  for (const movement of deliveredGiftCardRows) {
-    const senderProfile = profiles.get(movement.user_id)
-    const recipientId = getMetadataText(movement.metadata, "recipient_user_id")
-    const recipientProfile = profiles.get(recipientId)
-    const message = getMetadataText(movement.metadata, "message")
-
-    notifications.push({
-      id: `gift-card-sent:${movement.id}`,
-      type: "giftcard",
-      eventKey: `gift-card-sent:${movement.id}`,
-      eventAt: String(movement.created_at),
-      title: "Gift Card enviada",
-      body: `${formatARS(Number(movement.amount ?? 0))} · De: ${formatProfileDetails(senderProfile)} · Para: ${formatProfileDetails(recipientProfile)}${message ? ` · Mensaje: ${message}` : ""}`,
-      actionLabel: "Ver GiftCard",
-      actionUrl: ADMIN_ROUTES.giftcard,
       isRead: false,
     })
   }
@@ -864,7 +767,6 @@ function dedupeNotifications(notifications: AdminNotification[]) {
 function isPendingAdminTask(notification: AdminNotification) {
   return (
     notification.type === "payment" ||
-    notification.type === "giftcard" ||
     notification.type === "shipping" ||
     notification.type === "invoice" ||
     notification.type === "cancellation" ||
@@ -879,7 +781,6 @@ function getOperationalPriority(notification: AdminNotification) {
   if (notification.type === "mercadolibre_return") return 5
   if (notification.type === "inventory") return 5
   if (notification.type === "payment") return 4
-  if (notification.type === "giftcard") return 4
   if (notification.type === "shipping") return 3
   if (notification.type === "message") return 2
   if (notification.type === "invoice") return 1

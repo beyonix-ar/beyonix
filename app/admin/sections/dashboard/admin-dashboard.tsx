@@ -3116,7 +3116,7 @@ export function AdminDashboard() {
                   ? [
                       ["externas", "Ventas externas"],
                       ["ml", "Ventas ML"],
-                      ["costos", "Costos reales"],
+                      ["costos", "Compras"],
                     ]
                   : []),
               ].map(([key, label]) => (

@@ -418,10 +418,9 @@ export default async function TerminosPage() {
               <LegalList>
                 <LegalListItem>Las ofertas pueden estar limitadas por tiempo, stock, producto, categoría o alcance informado.</LegalListItem>
                 <LegalListItem>Los cupones y el descuento por transferencia no son acumulables sobre el mismo importe, salvo que el cupón indique expresamente lo contrario.</LegalListItem>
-                <LegalListItem>Las gift cards y el saldo a favor funcionan como medio de pago. Pueden combinarse con cupones o transferencia, siempre que estén vigentes y asociados a la cuenta.</LegalListItem>
-                <LegalListItem>Si una compra combina gift card o saldo a favor con transferencia, el descuento por transferencia se calcula únicamente sobre el importe restante de productos efectivamente abonado por transferencia.</LegalListItem>
+                <LegalListItem>El saldo a favor funciona como medio de pago. Puede combinarse con cupones o transferencia cuando esté vigente y asociado a la cuenta.</LegalListItem>
+                <LegalListItem>Si una compra combina saldo a favor con transferencia, el descuento por transferencia se calcula únicamente sobre el importe restante de productos efectivamente abonado por transferencia.</LegalListItem>
                 <LegalListItem>El costo de envío nunca recibe el descuento por transferencia.</LegalListItem>
-                <LegalListItem>Las gift cards tienen una vigencia de 12 meses desde su acreditación. Vencido ese plazo, dejan de computar como saldo disponible.</LegalListItem>
                 <LegalListItem>Los beneficios asignados a una cuenta son personales, se validan al pagar y pueden tener condiciones o vencimiento visibles antes de utilizarlos.</LegalListItem>
                 <LegalListItem>Los errores manifiestos de publicación serán revisados antes de confirmar la operación y nunca habilitan cobros distintos de los aceptados por el cliente.</LegalListItem>
               </LegalList>

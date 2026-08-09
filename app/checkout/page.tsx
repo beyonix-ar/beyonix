@@ -23,7 +23,6 @@ import {
   Home,
   IdCard,
   Instagram,
-  Gift,
   Landmark,
   Loader2,
   Mail,
@@ -373,9 +372,6 @@ export default function CheckoutPage() {
     useState("")
   const [checkoutError, setCheckoutError] =
     useState("")
-  const [giftCardCode, setGiftCardCode] = useState("")
-  const [giftCardMessage, setGiftCardMessage] = useState("")
-  const [redeemingGiftCard, setRedeemingGiftCard] = useState(false)
   const [shippingMessage, setShippingMessage] =
     useState("")
   const [shippingLoading, setShippingLoading] = useState(false)
@@ -1131,28 +1127,6 @@ export default function CheckoutPage() {
       setIsProcessing(false)
     }
   }
-  async function redeemGiftCardCode() {
-    if (!giftCardCode.trim()) return
-    setRedeemingGiftCard(true)
-    setGiftCardMessage("")
-    try {
-      const response = await fetch("/api/gift-cards/redeem-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: giftCardCode }),
-      })
-      const data = (await response.json()) as { claimed?: boolean; alreadyClaimed?: boolean; error?: string }
-      if (!response.ok || !data.claimed) throw new Error(data.error || "No pudimos usar la Gift Card.")
-      await customerCredit.reload()
-      setGiftCardMessage(data.alreadyClaimed ? "Esta Gift Card ya estaba acreditada en tu saldo." : "Gift Card acreditada. Tu saldo ya está disponible para esta compra.")
-      setGiftCardCode("")
-    } catch (error) {
-      setGiftCardMessage(error instanceof Error ? error.message : "No pudimos usar la Gift Card.")
-    } finally {
-      setRedeemingGiftCard(false)
-    }
-  }
-
   if (!mounted || isLoading || !isCartReady) {
     return null
   }
@@ -1920,35 +1894,6 @@ export default function CheckoutPage() {
                 })}
               </div>
 
-              <div className="mt-2 rounded-lg border border-beyonix-blue-light/18 bg-[#10151C] px-3 py-2.5">
-                <label htmlFor="gift-card-code" className="mb-1 block text-10px font-bold uppercase tracking-widest text-white/62">
-                  Código de Gift Card
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative min-w-0 flex-1">
-                    <Gift className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-beyonix-cyan" />
-                    <input
-                      id="gift-card-code"
-                      value={giftCardCode}
-                      onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())}
-                      onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void redeemGiftCardCode() } }}
-                      placeholder="BX-GIFT-XXXX-XXXX-XXXX"
-                      className="h-10 w-full rounded-lg border border-beyonix-blue-light/24 bg-[#0B1118] pl-10 pr-3 text-xs font-bold uppercase tracking-wide text-white outline-none focus:border-beyonix-blue-light/70"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void redeemGiftCardCode()}
-                    disabled={!giftCardCode.trim() || redeemingGiftCard}
-                    className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/40 bg-[#112A43] px-4 text-xs font-black text-white hover:bg-[#183B5E] disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {redeemingGiftCard ? <Loader2 className="size-4 animate-spin" /> : null}
-                    Usar
-                  </button>
-                </div>
-                {giftCardMessage ? <p className="mt-1.5 text-11px font-semibold leading-5 text-beyonix-cyan">{giftCardMessage}</p> : null}
-              </div>
-
               {storeBenefits.length > 0 && (
                 <div className="mt-2 rounded-lg border border-beyonix-blue-light/18 bg-[#10151C] px-3 py-2.5">
                   <label
@@ -1968,7 +1913,7 @@ export default function CheckoutPage() {
                     >
                       {storeBenefits.map((benefit) => (
                         <option key={benefit.id} value={benefit.id}>
-                          {getStoreBenefitLabel(benefit.benefit_type)}{" "}
+                          {getStoreBenefitLabel()}{" "}
                           {benefit.percent}% · {benefit.code}
                         </option>
                       ))}
@@ -1999,7 +1944,7 @@ export default function CheckoutPage() {
                 {selectedStoreBenefit && storeBenefitDiscountAmount > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
-                      {getStoreBenefitLabel(selectedStoreBenefit.benefit_type)}{" "}
+                      {getStoreBenefitLabel()}{" "}
                       {selectedStoreBenefit.percent}%
                     </span>
                     <span className="font-semibold text-emerald-400">

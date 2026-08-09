@@ -735,6 +735,55 @@ export async function updateProducto(
   return data as SupabaseProducto
 }
 
+export async function updateProductoCatalog(
+  id: number,
+  catalog: ProductoPayload,
+  primarySku: string | null,
+  variantStates: Record<number, boolean>,
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const requestedVariantStates = Object.entries(variantStates)
+    .map(([variantId, active]) => ({
+      id: Number(variantId),
+      active,
+    }))
+    .sort((left, right) => left.id - right.id)
+
+  const response = await fetch(`/api/admin/products/${id}/catalog`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      catalog,
+      primarySku,
+      variantStates: requestedVariantStates,
+    }),
+    cache: "no-store",
+  })
+  const result = (await response.json().catch(() => null)) as
+    | { product?: SupabaseProducto; error?: string }
+    | null
+
+  if (!response.ok || !result?.product) {
+    throw new Error(
+      result?.error || "No se pudo actualizar el producto.",
+    )
+  }
+
+  return result.product
+}
+
 async function conditionedStockRequest(
   id: string,
   init: RequestInit,

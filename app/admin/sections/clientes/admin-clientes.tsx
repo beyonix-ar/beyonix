@@ -656,7 +656,7 @@ function ClientCard({
                 </h3>
               </div>
               <p className="mt-1.5 text-xs leading-5 text-white/50">
-                Acreditá o debitá saldo manualmente. Este movimiento no genera una Gift Card.
+                Acreditá o debitá saldo manualmente. Cada ajuste queda registrado en el historial de la cuenta.
               </p>
             </div>
             <p className="text-sm font-black text-beyonix-sky">

@@ -3,6 +3,7 @@ import {
   parseOptionalProductLogistics,
   ProductLogisticsValidationError,
 } from "@/lib/shipping/logistics-validation"
+import { catalogSkuConflictMessage } from "@/lib/products/catalog-sku-conflict"
 
 function positiveInteger(value: unknown) {
   const parsed = Number(value)
@@ -154,7 +155,13 @@ export async function POST(
       registry.data?.variant_id == null
     if (registry.data && !ownedByCurrentSimpleProduct) {
       return Response.json(
-        { error: `El SKU ${sku} ya está asignado a otro artículo.` },
+        {
+          error: await catalogSkuConflictMessage(
+            auth.admin,
+            sku ?? skuKey,
+            registry.data,
+          ),
+        },
         { status: 409 },
       )
     }
@@ -200,4 +207,55 @@ export async function POST(
     },
     { status: missingMigration ? 503 : 409 },
   )
+}
+
+export async function PUT(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const auth = await requireInternalUser(request, ["admin", "super_admin"])
+  if ("error" in auth) return auth.error
+
+  const productId = positiveInteger((await context.params).id)
+  const body = (await request.json().catch(() => null)) as
+    | { variantIds?: unknown }
+    | null
+  const variantIds = Array.isArray(body?.variantIds)
+    ? body.variantIds.map(Number)
+    : null
+
+  if (
+    !productId ||
+    !variantIds ||
+    variantIds.some((id) => !Number.isInteger(id) || id <= 0)
+  ) {
+    return Response.json(
+      { error: "El orden de variantes no es válido." },
+      { status: 400 },
+    )
+  }
+
+  const { data, error } = await auth.admin.rpc(
+    "reorder_product_variants_atomic",
+    {
+      p_product_id: productId,
+      p_variant_ids: variantIds,
+      p_actor_id: auth.user.id,
+    },
+  )
+
+  if (error) {
+    const missingMigration =
+      /reorder_product_variants_atomic|schema cache|PGRST202/i.test(error.message)
+    return Response.json(
+      {
+        error: missingMigration
+          ? "Falta aplicar la migración 20260808120000_atomic_product_catalog_workflow.sql."
+          : error.message || "No se pudo reordenar las variantes.",
+      },
+      { status: missingMigration ? 503 : 409 },
+    )
+  }
+
+  return Response.json({ variants: data ?? [] })
 }

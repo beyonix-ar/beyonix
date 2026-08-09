@@ -383,7 +383,7 @@ export async function PATCH(request: Request) {
   ).filter((row) => !standaloneKey || standaloneCostKey(row) === standaloneKey)
   if (!clearMapping && standaloneKey && !selectedCostRows.length) {
     return Response.json(
-      { error: "El artículo de Costos reales seleccionado ya no está disponible." },
+      { error: "El artículo de Compras seleccionado ya no está disponible." },
       { status: 400 },
     )
   }

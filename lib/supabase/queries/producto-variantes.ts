@@ -352,3 +352,17 @@ export async function deleteProductoVariante(
 
   return true
 }
+
+export async function reorderProductoVariantes(
+  productId: number,
+  variantIds: number[],
+) {
+  const result = await variantRequest<{
+    variants: SupabaseProductoVariante[]
+  }>(`/api/admin/products/${productId}/variants`, {
+    method: "PUT",
+    body: JSON.stringify({ variantIds }),
+  })
+
+  return result.variants
+}

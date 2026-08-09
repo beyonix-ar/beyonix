@@ -1,4 +1,4 @@
-export type StoreBenefitType = "gift_card" | "discount"
+export type StoreBenefitType = "discount"
 
 export interface StoreBenefitRow {
   id: string
@@ -9,19 +9,8 @@ export interface StoreBenefitRow {
   status: "active" | "used" | "cancelled"
 }
 
-export function getStoreBenefitTypeFromRefundMethod(
-  method: string,
-): StoreBenefitType | null {
-  const normalized = method.trim().toLowerCase()
-
-  if (normalized === "gift card") return "gift_card"
-  if (normalized === "descuento") return "discount"
-
-  return null
-}
-
-export function getStoreBenefitLabel(type: StoreBenefitType) {
-  return type === "gift_card" ? "Gift card" : "Descuento"
+export function getStoreBenefitLabel() {
+  return "Descuento"
 }
 
 export function parseStoreBenefitPercent(value: unknown) {
@@ -46,19 +35,6 @@ export function calculateStoreBenefitDiscount(
   )
 }
 
-export function buildStoreBenefitCode({
-  orderId,
-  type,
-}: {
-  orderId: number
-  type: StoreBenefitType
-}) {
-  const prefix = type === "gift_card" ? "GIFT" : "DESC"
-  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase()
-
-  return `BX-${prefix}-${1000 + orderId}-${suffix}`
-}
-
 export async function findActiveStoreBenefit(
   admin: any,
   userId: string,
@@ -71,6 +47,7 @@ export async function findActiveStoreBenefit(
     .select("id, user_id, benefit_type, code, percent, status")
     .eq("id", benefitId)
     .eq("user_id", userId)
+    .eq("benefit_type", "discount")
     .eq("status", "active")
     .maybeSingle()
 

@@ -5,6 +5,7 @@ import {
   PRODUCT_LOGISTICS_FIELDS,
   type ProductLogisticsValues,
 } from "@/lib/shipping/logistics-validation"
+import { catalogSkuConflictMessage } from "@/lib/products/catalog-sku-conflict"
 
 function parseId(value: string) {
   const parsed = Number(value)
@@ -170,30 +171,43 @@ export async function PATCH(
         Number(registry.data?.variant_id) === variantId
       if (registry.data && !belongsToCurrentVariant) {
         return Response.json(
-          { error: `El SKU ${metadata.sku} ya está asignado a otro artículo.` },
+          {
+            error: await catalogSkuConflictMessage(
+              auth.admin,
+              metadata.sku,
+              registry.data,
+            ),
+          },
           { status: 409 },
         )
       }
     }
 
-    const { data: updated, error: updateError } = await auth.admin
-      .from("producto_variantes")
-      .update(metadata)
-      .eq("id", variantId)
-      .eq("producto_id", productId)
-      .select("*")
-      .maybeSingle()
+    const { data: atomicData, error: updateError } = await auth.admin.rpc(
+      "update_product_variant_metadata_atomic",
+      {
+        p_product_id: productId,
+        p_variant_id: variantId,
+        p_metadata: metadata,
+        p_actor_id: auth.user.id,
+      },
+    )
 
     if (updateError) {
+      const missingMigration =
+        /update_product_variant_metadata_atomic|schema cache|PGRST202/i.test(
+          updateError.message,
+        )
       return Response.json(
         {
-          error:
-            updateError.message ||
-            "No se pudo actualizar la variante.",
+          error: missingMigration
+            ? "Falta aplicar la migración 20260808120000_atomic_product_catalog_workflow.sql."
+            : updateError.message || "No se pudo actualizar la variante.",
         },
-        { status: 409 },
+        { status: missingMigration ? 503 : 409 },
       )
     }
+    const updated = Array.isArray(atomicData) ? atomicData[0] : atomicData
     if (!updated) {
       return Response.json(
         { error: "La variante ya no existe." },
@@ -268,7 +282,13 @@ export async function PATCH(
         Number(registry.data?.variant_id) !== variantId
       if (duplicate) {
         return Response.json(
-          { error: `El SKU ${sku} ya está asignado a otro artículo.` },
+          {
+            error: await catalogSkuConflictMessage(
+              auth.admin,
+              sku ?? skuKey,
+              registry.data!,
+            ),
+          },
           { status: 409 },
         )
       }
@@ -311,57 +331,35 @@ export async function PATCH(
     )
   }
 
-  const { data: variant, error: variantError } = await auth.admin
-    .from("producto_variantes")
-    .select("id, producto_id, productos(activo)")
-    .eq("id", variantId)
-    .eq("producto_id", productId)
-    .maybeSingle()
+  const { data: stateData, error: updateError } = await auth.admin.rpc(
+    "set_product_variant_state_atomic",
+    {
+      p_product_id: productId,
+      p_variant_id: variantId,
+      p_active: body.activo,
+      p_actor_id: auth.user.id,
+    },
+  )
 
-  if (variantError) {
+  if (updateError) {
+    const missingMigration =
+      /set_product_variant_state_atomic|schema cache|PGRST202/i.test(
+        updateError.message,
+      )
     return Response.json(
-      { error: "No se pudo consultar la variante." },
-      { status: 500 },
+      {
+        error: missingMigration
+          ? "Falta aplicar la migración 20260808120000_atomic_product_catalog_workflow.sql."
+          : updateError.message || "No se pudo cambiar el estado de la variante.",
+      },
+      { status: missingMigration ? 503 : 409 },
     )
   }
-
-  if (!variant) {
+  const updated = Array.isArray(stateData) ? stateData[0] : stateData
+  if (!updated) {
     return Response.json(
       { error: "La variante ya no existe." },
       { status: 404 },
-    )
-  }
-
-  const relatedProduct = Array.isArray(variant.productos)
-    ? variant.productos[0]
-    : variant.productos
-  const updates = { activo: body.activo }
-
-  if (updates.activo === true && relatedProduct?.activo === false) {
-    return Response.json(
-      {
-        error:
-          "Activá primero el producto principal para habilitar esta variante.",
-      },
-      { status: 409 },
-    )
-  }
-
-  const { data: updated, error: updateError } = await auth.admin
-    .from("producto_variantes")
-    .update(updates)
-    .eq("id", variantId)
-    .eq("producto_id", productId)
-    .select("*")
-    .single()
-
-  if (updateError) {
-    return Response.json(
-      {
-        error:
-          updateError.message || "No se pudo cambiar el estado de la variante.",
-      },
-      { status: 500 },
     )
   }
 
@@ -395,13 +393,16 @@ export async function DELETE(
 
   if (deleteError) {
     const isReferenced = deleteError.code === "23503"
+    const protectedInventory = /unidades vinculadas|movimientos históricos/i.test(
+      deleteError.message,
+    )
     return Response.json(
       {
         error: isReferenced
           ? "La variante tiene movimientos asociados y no puede eliminarse."
           : deleteError.message || "No se pudo eliminar la variante.",
       },
-      { status: isReferenced ? 409 : 500 },
+      { status: isReferenced || protectedInventory ? 409 : 500 },
     )
   }
   if (!deleted) {

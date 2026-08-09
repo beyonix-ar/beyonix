@@ -30,7 +30,7 @@ import {
 import {
   createProductoCompleto,
   getCategorias,
-  updateProducto,
+  updateProductoCatalog,
 } from "@/lib/supabase/queries/productos"
 
 import { slugify } from "./helpers"
@@ -51,6 +51,8 @@ interface Props {
 interface SubmitOptions {
   draftVariants?: DraftProductoVariante[]
   draftSpecifications?: DraftProductoEspecificacion[]
+  primarySku?: string
+  variantStates?: Record<number, boolean>
   onDraftSaved?: () => void
 }
 
@@ -250,6 +252,11 @@ export function useProductoForm({
     }))
   }
 
+  const showError = (message: string) => {
+    setSuccess("")
+    setError(message)
+  }
+
   const handleNombreChange = (
     value: string
   ) => {
@@ -372,6 +379,8 @@ export function useProductoForm({
   const submit = async ({
     draftVariants = [],
     draftSpecifications = [],
+    primarySku = form.sku,
+    variantStates = {},
     onDraftSaved,
   }: SubmitOptions = {}) => {
     setError("")
@@ -467,18 +476,6 @@ export function useProductoForm({
       return
     }
 
-    if (
-      !producto &&
-      !savedId &&
-      !draftVariants.length
-    ) {
-      setError(
-        "Agregá al menos una variante."
-      )
-
-      return
-    }
-
     const hasInvalidDraftVariant =
       draftVariants.some(
         (variant) =>
@@ -502,9 +499,11 @@ export function useProductoForm({
       const nextPayload = { ...payload, ...logistics }
 
       if (producto) {
-        await updateProducto(
+        await updateProductoCatalog(
           producto.id,
-          nextPayload
+          nextPayload,
+          primarySku.trim() || null,
+          variantStates,
         )
 
         setSuccess(
@@ -516,9 +515,11 @@ export function useProductoForm({
       }
 
       if (savedId) {
-        await updateProducto(
+        await updateProductoCatalog(
           savedId,
-          nextPayload
+          nextPayload,
+          primarySku.trim() || null,
+          variantStates,
         )
 
         if (draftSpecifications.length) {
@@ -594,7 +595,7 @@ export function useProductoForm({
           color_hex:
             variant.color_hex,
           imagenes: urls,
-          activo: true,
+          activo: false,
           orden: index + 1,
           ...parseOptionalProductLogistics(variant),
         })
@@ -659,9 +660,7 @@ export function useProductoForm({
         errorDetails
       )
 
-      setError(
-        `Error guardando producto: ${message}`
-      )
+      setError(message)
     } finally {
       setSaving(false)
     }
@@ -676,6 +675,7 @@ export function useProductoForm({
     categorias,
 
     setField,
+    showError,
 
     submit,
 

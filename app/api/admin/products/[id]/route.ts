@@ -32,56 +32,37 @@ export async function PATCH(
     )
   }
 
-  const { data: existingProduct, error: productError } = await auth.admin
-    .from("productos")
-    .select("id")
-    .eq("id", productId)
-    .maybeSingle()
+  const { data: stateResult, error: updateError } = await auth.admin.rpc(
+    "set_product_commercial_state_atomic",
+    {
+      p_product_id: productId,
+      p_active: body.activo,
+      p_actor_id: auth.user.id,
+    },
+  )
 
-  if (productError) {
+  if (updateError) {
+    const missingMigration =
+      /set_product_commercial_state_atomic|schema cache|PGRST202/i.test(
+        updateError.message,
+      )
     return Response.json(
-      { error: "No se pudo consultar el producto." },
-      { status: 500 },
+      {
+        error: missingMigration
+          ? "Falta aplicar la migración 20260808120000_atomic_product_catalog_workflow.sql."
+          : updateError.message || "No se pudo cambiar el estado del producto.",
+      },
+      { status: missingMigration ? 503 : 409 },
     )
   }
 
-  if (!existingProduct) {
+  const updatedProduct = Array.isArray(stateResult)
+    ? stateResult[0]
+    : stateResult
+  if (!updatedProduct) {
     return Response.json(
       { error: "El producto ya no existe." },
       { status: 404 },
-    )
-  }
-
-  const { data: updatedProduct, error: updateError } = await auth.admin
-    .from("productos")
-    .update({ activo: body.activo })
-    .eq("id", productId)
-    .select("*")
-    .single()
-
-  if (updateError) {
-    return Response.json(
-      {
-        error:
-          updateError.message || "No se pudo cambiar el estado del producto.",
-      },
-      { status: 500 },
-    )
-  }
-
-  const { error: variantsUpdateError } = await auth.admin
-    .from("producto_variantes")
-    .update({ activo: body.activo })
-    .eq("producto_id", productId)
-
-  if (variantsUpdateError) {
-    return Response.json(
-      {
-        error:
-          variantsUpdateError.message ||
-          "No se pudo aplicar el estado a todas las variantes.",
-      },
-      { status: 500 },
     )
   }
 
@@ -94,7 +75,7 @@ export async function PATCH(
 
   if (variantsError) {
     return Response.json(
-      { error: "El producto se actualizó, pero no se pudieron recargar sus variantes." },
+      { error: "No se pudo verificar el estado persistido de las variantes." },
       { status: 500 },
     )
   }
@@ -220,6 +201,10 @@ export async function DELETE(
         .from("imagenes_producto")
         .delete()
         .eq("producto_id", productId),
+      auth.admin
+        .from("inventory_variant_allocations")
+        .delete()
+        .eq("product_id", productId),
       auth.admin
         .from("producto_variantes")
         .delete()

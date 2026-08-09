@@ -16,6 +16,7 @@ export async function GET() {
     .from("customer_store_benefits")
     .select("id, benefit_type, code, percent, created_at")
     .eq("user_id", user.id)
+    .eq("benefit_type", "discount")
     .eq("status", "active")
     .order("created_at", { ascending: false })
 

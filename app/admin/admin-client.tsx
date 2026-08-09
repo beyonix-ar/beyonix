@@ -7,7 +7,6 @@ import {
   BarChart3,
   BellRing,
   CalendarDays,
-  Coins,
   FileText,
   GripVertical,
   History,
@@ -272,7 +271,6 @@ export function AdminClient({ children }: { children: ReactNode }) {
   }, [loadInvoicePendingCount])
 
   const navigation = useMemo<NavigationItem[]>(() => {
-    const giftCardNotificationCount = notificationGroups.giftcard ?? 0
     const mercadoLibreReturnNotificationCount =
       notificationGroups.mercadolibre_return ?? 0
     const clientNotificationCount = notifications.filter((notification) =>
@@ -286,7 +284,6 @@ export function AdminClient({ children }: { children: ReactNode }) {
     const orderNotificationCount = Math.max(
       0,
       notificationCount -
-        giftCardNotificationCount -
         clientNotificationCount -
         mercadoLibreReturnNotificationCount -
         productNotificationCount,
@@ -363,14 +360,6 @@ export function AdminClient({ children }: { children: ReactNode }) {
         notificationTone: "payment",
       },
       {
-        key: "giftcard",
-        label: "GiftCard",
-        description: "Envíos y regalos",
-        icon: <Coins className="size-4" />,
-        notificationCount: giftCardNotificationCount,
-        notificationTone: "giftcard",
-      },
-      {
         key: "usuarios-roles",
         label: "Usuarios / Roles",
         description: "Permisos de acceso",
@@ -387,7 +376,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           ]
         : []),
     ]
-  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.giftcard, notificationGroups.mercadolibre_return, notificationTone, notifications])
+  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.mercadolibre_return, notificationTone, notifications])
 
   useEffect(() => {
     if (!isSuperAdmin) {

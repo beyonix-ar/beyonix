@@ -6,10 +6,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react"
 import {
   AlertTriangle,
+  GripVertical,
+  ImageIcon,
   Loader2,
+  Pencil,
   Play,
   Plus,
   X,
@@ -37,16 +43,14 @@ import {
   deleteProductoVariante,
   getProductVariantDistribution,
   getProductoVariantes,
-  setProductoVarianteActivo,
+  reorderProductoVariantes,
   updateProductoVariantWithAllocation,
   updateProductoVariante,
   type ProductVariantDistribution,
 } from "@/lib/supabase/queries/producto-variantes"
 
-import {
-  updateProducto,
-} from "@/lib/supabase/queries/productos"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
+import { getVariantActivationError } from "@/lib/products/product-activation"
 import {
   AdminDangerButton,
   AdminCard,
@@ -75,12 +79,29 @@ interface ProductVariantsEditorProps {
   onPersistedVariantsChange?: (
     variants: SupabaseProductoVariante[]
   ) => void
+  onVariantAllocationsChange?: (allocations: Record<number, number>) => void
+  persistedVariantStates?: Record<number, boolean>
+  onPersistedVariantStatesChange?: (states: Record<number, boolean>) => void
 }
 
 const inputCls =
   `${adminControlClassName} text-base`
 
 const MAX_VARIANT_IMAGES = 9
+
+type VariantCommercialState = "active" | "inactive"
+
+const VARIANT_COMMERCIAL_STATE_LABELS: Record<VariantCommercialState, string> = {
+  active: "Activa",
+  inactive: "Inactiva",
+}
+
+const getVariantCommercialState = (
+  variantActive: boolean,
+  productActive: boolean,
+): VariantCommercialState => {
+  return variantActive && productActive ? "active" : "inactive"
+}
 
 const normalizeHex = (value: string) => {
   const clean = value.trim()
@@ -113,6 +134,9 @@ export function ProductVariantsEditor({
   draftVariants = [],
   onDraftVariantsChange,
   onPersistedVariantsChange,
+  onVariantAllocationsChange,
+  persistedVariantStates = {},
+  onPersistedVariantStatesChange,
 }: ProductVariantsEditorProps) {
   const [variantes, setVariantes] =
     useState<SupabaseProductoVariante[]>([])
@@ -142,6 +166,8 @@ export function ProductVariantsEditor({
 
   const [loading, setLoading] =
     useState(Boolean(productoId))
+  const [variantsLoaded, setVariantsLoaded] =
+    useState(!productoId)
 
   const [saving, setSaving] =
     useState(false)
@@ -154,17 +180,19 @@ export function ProductVariantsEditor({
 
   const [deleting, setDeleting] =
     useState(false)
-  const [savingVariantStateId, setSavingVariantStateId] =
-    useState<number | null>(null)
   const [uploadingVariantId, setUploadingVariantId] =
     useState<number | null>(null)
   const [savingVariantImagesId, setSavingVariantImagesId] =
     useState<number | null>(null)
   const [savingVariantDetailsId, setSavingVariantDetailsId] =
     useState<number | null>(null)
+  const [draggedVariantKey, setDraggedVariantKey] = useState<string | null>(null)
+  const [reorderingVariants, setReorderingVariants] = useState(false)
   const formPanelRef = useRef<HTMLElement>(null)
 
   const [error, setError] =
+    useState("")
+  const [successMessage, setSuccessMessage] =
     useState("")
   const orderedVariantes = useMemo(
     () =>
@@ -173,17 +201,24 @@ export function ProductVariantsEditor({
       ),
     [variantes],
   )
+  const hasVariants = productoId
+    ? orderedVariantes.length > 0
+    : draftVariants.length > 0
+  const showCreateForm =
+    formOpen || (!loading && variantsLoaded && !hasVariants)
   const primaryVariantId = orderedVariantes[0]?.id
 
   const loadVariantes =
     useCallback(async () => {
       if (!productoId) {
         setLoading(false)
+        setVariantsLoaded(true)
         return
       }
 
       try {
         setLoading(true)
+        setVariantsLoaded(false)
         setError("")
 
         const [data, stockDistribution] = await Promise.all([
@@ -210,6 +245,7 @@ export function ProductVariantsEditor({
         }
 
         setVariantes(data)
+        setVariantsLoaded(true)
         setDistribution(stockDistribution)
         setAllocations(
           Object.fromEntries(
@@ -220,6 +256,7 @@ export function ProductVariantsEditor({
           ),
         )
       } catch (err) {
+        setVariantsLoaded(false)
         setError(
           err instanceof Error
             ? err.message
@@ -241,14 +278,18 @@ export function ProductVariantsEditor({
   }, [loading, onPersistedVariantsChange, productoId, variantes])
 
   useEffect(() => {
-    if (!formOpen) return
+    onVariantAllocationsChange?.(allocations)
+  }, [allocations, onVariantAllocationsChange])
+
+  useEffect(() => {
+    if (!formOpen || !hasVariants) return
 
     const frame = window.requestAnimationFrame(() => {
       formPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
     })
 
     return () => window.cancelAnimationFrame(frame)
-  }, [formOpen])
+  }, [formOpen, hasVariants])
 
   const resetFields = () => {
     setNombre("")
@@ -265,39 +306,13 @@ export function ProductVariantsEditor({
     setFormOpen(false)
   }
 
-  const syncPrincipalImage = async (
-    nextVariantes: SupabaseProductoVariante[]
-  ) => {
-    if (!productoId) {
-      return
-    }
-
-    const principalImage =
-      [...nextVariantes]
-        .sort((a, b) => {
-          if (a.orden !== b.orden) return a.orden - b.orden
-          return a.id - b.id
-        })
-        .flatMap((variante) => variante.imagenes || [])[0] || null
-    const currentPrincipalImage =
-      [...variantes]
-        .sort((a, b) => {
-          if (a.orden !== b.orden) return a.orden - b.orden
-          return a.id - b.id
-        })
-        .flatMap((variante) => variante.imagenes || [])[0] || null
-
-    if (principalImage === currentPrincipalImage) {
-      return
-    }
-
-    await updateProducto(productoId, {
-      imagen_principal: principalImage,
-    })
+  const closeCreateForm = () => {
+    resetFields()
   }
 
   const addVariant = async () => {
     setError("")
+    setSuccessMessage("")
     const cleanName =
       nombre.trim()
 
@@ -351,6 +366,7 @@ export function ProductVariantsEditor({
       if (!draftVariants.length) onPrimarySkuChange?.(nextVariant.sku ?? "")
 
       resetFields()
+      setSuccessMessage("Variante agregada al borrador.")
       return
     }
 
@@ -406,19 +422,8 @@ export function ProductVariantsEditor({
         [created.id]: allocationQuantity,
       }))
       resetFields()
-      let secondaryUpdateWarning = ""
-      try {
-        await syncPrincipalImage(nextVariantes)
-      } catch (secondaryError) {
-        console.error(
-          "VARIANT_SECONDARY_SYNC_ERROR",
-          secondaryError,
-        )
-        secondaryUpdateWarning =
-          "La variante se guardó, pero no se pudo sincronizar su imagen principal."
-      }
       await loadVariantes()
-      if (secondaryUpdateWarning) setError(secondaryUpdateWarning)
+      setSuccessMessage("Variante creada correctamente.")
     } catch (err) {
       setError(
         err instanceof Error
@@ -437,6 +442,7 @@ export function ProductVariantsEditor({
       try {
         setDeleting(true)
         setError("")
+        setSuccessMessage("")
         await deleteProductoVariante(productoId, id)
 
         const nextVariantes =
@@ -452,10 +458,8 @@ export function ProductVariantsEditor({
           )[0]
           onPrimarySkuChange?.(nextPrimary?.sku ?? "")
         }
-        await syncPrincipalImage(
-          nextVariantes
-        )
         await loadVariantes()
+        setSuccessMessage("Variante eliminada correctamente.")
         return true
       } catch (err) {
         console.error(err)
@@ -525,14 +529,6 @@ export function ProductVariantsEditor({
         item.id === updated.id ? updated : item,
       )
       setVariantes(nextVariantes)
-      try {
-        await syncPrincipalImage(nextVariantes)
-      } catch (syncError) {
-        console.error("No se pudo sincronizar la imagen principal:", syncError)
-        setError(
-          "Las imágenes se cargaron, pero no se pudo sincronizar la imagen principal.",
-        )
-      }
     } catch (uploadError) {
       for (const url of uploadedUrls) {
         try {
@@ -580,7 +576,6 @@ export function ProductVariantsEditor({
         item.id === updated.id ? updated : item,
       )
       setVariantes(nextVariants)
-      await syncPrincipalImage(nextVariants)
     } catch (moveError) {
       setVariantes((current) =>
         current.map((item) =>
@@ -607,6 +602,10 @@ export function ProductVariantsEditor({
     const imageUrl = previousImages[imageIndex]
     if (!imageUrl) return
     const nextImages = previousImages.filter((_, index) => index !== imageIndex)
+    if (productActive && variant.activo !== false && nextImages.length === 0) {
+      setError("La variante necesita al menos una imagen.")
+      return
+    }
 
     try {
       setSavingVariantImagesId(variant.id)
@@ -619,7 +618,6 @@ export function ProductVariantsEditor({
         item.id === updated.id ? updated : item,
       )
       setVariantes(nextVariants)
-      await syncPrincipalImage(nextVariants)
     } catch (removeError) {
       setError(
         removeError instanceof Error
@@ -693,17 +691,21 @@ export function ProductVariantsEditor({
 
   const openCreateForm = () => {
     resetFields()
-    setNombre(`Variante ${variantes.length + draftVariants.length + 1}`)
+    setNombre("")
     if (!variantes.length && !draftVariants.length) setSku(primarySku)
     setFormOpen(true)
   }
 
   const saveVariantDetails = async (
     variant: SupabaseProductoVariante,
-    details: { sku: string; colorHex: string; stock: number },
+    details: { name: string; sku: string; colorHex: string; stock: number },
   ) => {
     if (!productoId) return
 
+    if (!details.name.trim()) {
+      setError("El nombre de la variante es obligatorio.")
+      return
+    }
     if (!Number.isInteger(details.stock) || details.stock < 0) {
       setError("El stock debe ser un número entero igual o mayor que cero.")
       return
@@ -712,11 +714,12 @@ export function ProductVariantsEditor({
     try {
       setSavingVariantDetailsId(variant.id)
       setError("")
+      setSuccessMessage("")
       const updated = await updateProductoVariantWithAllocation(
         productoId,
         variant.id,
         {
-          name: variant.nombre,
+          name: details.name.trim(),
           sku: details.sku.trim() || null,
           color: normalizeHex(details.colorHex),
           quantity: details.stock,
@@ -739,6 +742,7 @@ export function ProductVariantsEditor({
         onPrimarySkuChange?.(updated.sku ?? "")
       }
       await loadVariantes()
+      setSuccessMessage("Variante actualizada correctamente.")
     } catch (detailsError) {
       setError(
         detailsError instanceof Error
@@ -763,60 +767,213 @@ export function ProductVariantsEditor({
     if (removed) setPendingDelete(null)
   }
 
-  const toggleVariantState = async (variant: SupabaseProductoVariante) => {
+  const toggleVariantState = (variant: SupabaseProductoVariante) => {
     if (!productoId) return
 
-    const nextActive = variant.activo === false
+    const currentActive =
+      persistedVariantStates[variant.id] ?? variant.activo !== false
+    const nextActive = !currentActive
     if (nextActive && !productActive) {
-      setError("Activá primero el producto principal para habilitar esta variante.")
+      setSuccessMessage("")
+      setError(
+        "No podés activar esta variante mientras el producto esté configurado como inactivo.",
+      )
+      return
+    }
+    if (nextActive) {
+      const activationError = getVariantActivationError({
+        id: variant.id,
+        orden: variant.orden,
+        nombre: variant.nombre,
+        sku: variant.sku ?? null,
+        colorHex: variant.color_hex,
+        images: variant.imagenes ?? [],
+        assignedStock: allocations[variant.id] ?? 0,
+      })
+      if (activationError) {
+        setSuccessMessage("")
+        setError(activationError)
+        return
+      }
+    }
+
+    onPersistedVariantStatesChange?.({
+      ...persistedVariantStates,
+      [variant.id]: nextActive,
+    })
+    setError("")
+    setSuccessMessage("El cambio de estado está pendiente de guardar.")
+  }
+
+  const reorderVariant = async (sourceKey: string, targetKey: string) => {
+    if (sourceKey === targetKey) return
+
+    if (!productoId) {
+      const sourceIndex = draftVariants.findIndex(
+        (variant) => variant.tempId === sourceKey,
+      )
+      const targetIndex = draftVariants.findIndex(
+        (variant) => variant.tempId === targetKey,
+      )
+      if (sourceIndex < 0 || targetIndex < 0) return
+
+      const reordered = [...draftVariants]
+      const [moved] = reordered.splice(sourceIndex, 1)
+      if (!moved) return
+      reordered.splice(targetIndex, 0, moved)
+      onDraftVariantsChange?.(reordered)
+      onPrimarySkuChange?.(reordered[0]?.sku ?? "")
       return
     }
 
+    const sourceId = Number(sourceKey)
+    const targetId = Number(targetKey)
+    const sourceIndex = orderedVariantes.findIndex((variant) => variant.id === sourceId)
+    const targetIndex = orderedVariantes.findIndex((variant) => variant.id === targetId)
+    if (sourceIndex < 0 || targetIndex < 0) return
+
+    const previousVariants = variantes
+    const reordered = [...orderedVariantes]
+    const [moved] = reordered.splice(sourceIndex, 1)
+    if (!moved) return
+    reordered.splice(targetIndex, 0, moved)
+    const optimisticVariants = reordered.map((variant, index) => ({
+      ...variant,
+      orden: index + 1,
+    }))
+
     try {
-      setSavingVariantStateId(variant.id)
+      setReorderingVariants(true)
       setError("")
-      const updated = await setProductoVarianteActivo(
+      setSuccessMessage("")
+      setVariantes(optimisticVariants)
+      const persisted = await reorderProductoVariantes(
         productoId,
-        variant.id,
-        nextActive,
+        optimisticVariants.map((variant) => variant.id),
       )
-      setVariantes((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      )
-    } catch (stateError) {
+      setVariantes(persisted)
+      onPrimarySkuChange?.(persisted[0]?.sku ?? "")
+      setSuccessMessage("Orden de variantes actualizado.")
+    } catch (reorderError) {
+      setVariantes(previousVariants)
       setError(
-        stateError instanceof Error
-          ? stateError.message
-          : "No se pudo cambiar el estado de la variante.",
+        reorderError instanceof Error
+          ? reorderError.message
+          : "No se pudo actualizar el orden de las variantes.",
       )
     } finally {
-      setSavingVariantStateId(null)
+      setReorderingVariants(false)
     }
   }
 
-  const renderPersistedVariant = (variante: SupabaseProductoVariante) => (
-    <VariantCard
+  const stopVariantReorder = () => {
+    setDraggedVariantKey(null)
+    document.body.style.cursor = ""
+  }
+
+  const handleVariantPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    variantKey: string,
+  ) => {
+    event.preventDefault()
+    setDraggedVariantKey(variantKey)
+    document.body.style.cursor = "grabbing"
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handleVariantPointerUp = async (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault()
+    const sourceKey = draggedVariantKey
+    stopVariantReorder()
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-variant-drop-key]")
+    const targetKey = target?.dataset.variantDropKey
+    if (!sourceKey || !targetKey) return
+
+    await reorderVariant(sourceKey, targetKey)
+  }
+
+  const renderVariantHandle = (variantKey: string, variantName: string) => {
+    const orderedKeys = productoId
+      ? orderedVariantes.map((variant) => String(variant.id))
+      : draftVariants.map((variant) => variant.tempId)
+    if (orderedKeys.length <= 1) {
+      return null
+    }
+    const currentIndex = orderedKeys.indexOf(variantKey)
+    const handleVariantKeyDown = (
+      event: ReactKeyboardEvent<HTMLButtonElement>,
+    ) => {
+      const direction = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0
+      if (!direction) return
+      const targetKey = orderedKeys[currentIndex + direction]
+      if (!targetKey) return
+      event.preventDefault()
+      void reorderVariant(variantKey, targetKey)
+    }
+
+    return (
+      <button
+        type="button"
+        title="Arrastrar para cambiar el orden"
+        aria-label={`Reordenar variante ${variantName}. Usá las flechas arriba y abajo.`}
+        onPointerDown={(event) => handleVariantPointerDown(event, variantKey)}
+        onPointerUp={handleVariantPointerUp}
+        onPointerCancel={stopVariantReorder}
+        onKeyDown={handleVariantKeyDown}
+        disabled={reorderingVariants}
+        className={`flex size-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg border transition active:cursor-grabbing ${
+          draggedVariantKey === variantKey
+            ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-200"
+            : "border-white/8 text-white/38 hover:border-cyan-300/25 hover:text-cyan-200"
+        }`}
+      >
+        <GripVertical className="size-3.5" aria-hidden="true" />
+      </button>
+    )
+  }
+
+  const renderPersistedVariant = (variante: SupabaseProductoVariante) => {
+    const desiredActive =
+      persistedVariantStates[variante.id] ?? variante.activo !== false
+
+    return (
+      <VariantCard
       key={variante.id}
       nombre={variante.nombre}
       sku={variante.sku}
       colorHex={variante.color_hex}
       stock={allocations[variante.id] ?? 0}
-      active={variante.activo !== false}
+      availableStock={variante.stock ?? 0}
+      active={desiredActive}
+      parentActive={productActive}
+      statePending={desiredActive !== (variante.activo !== false)}
       images={variante.imagenes ?? []}
       videoUrl={videoUrl}
       fallbackImage={fallbackImage}
       onRemove={() => setPendingDelete({ kind: "persisted", variant: variante })}
-      onToggleState={() => void toggleVariantState(variante)}
+      onToggleState={() => toggleVariantState(variante)}
       onUploadImages={(files) => void uploadImagesToVariant(variante, files)}
       onMoveImage={(fromIndex, toIndex) => void moveVariantImage(variante, fromIndex, toIndex)}
       onRemoveImage={(imageIndex) => void removeVariantImage(variante, imageIndex)}
       onDetailsChange={(details) => void saveVariantDetails(variante, details)}
       uploadingImages={uploadingVariantId === variante.id}
       savingImages={savingVariantImagesId === variante.id}
-      changingState={savingVariantStateId === variante.id}
+      changingState={false}
       savingDetails={savingVariantDetailsId === variante.id}
-    />
-  )
+      dropKey={String(variante.id)}
+      leadingAccessory={renderVariantHandle(String(variante.id), variante.nombre)}
+      />
+    )
+  }
 
   const renderDraftVariant = (variant: DraftProductoVariante) => (
     <VariantCard
@@ -825,7 +982,9 @@ export function ProductVariantsEditor({
       sku={variant.sku}
       colorHex={variant.color_hex}
       stock={null}
+      availableStock={0}
       active
+      parentActive={productActive}
       draftImages={variant.imagenes}
       videoUrl={videoUrl}
       fallbackImage={fallbackImage}
@@ -839,6 +998,7 @@ export function ProductVariantsEditor({
             item.tempId === variant.tempId
               ? {
                   ...item,
+                  nombre: details.name.trim(),
                   sku: details.sku,
                   color_hex: normalizeHex(details.colorHex),
                 }
@@ -850,12 +1010,14 @@ export function ProductVariantsEditor({
       savingImages={false}
       changingState={false}
       savingDetails={false}
+      dropKey={variant.tempId}
+      leadingAccessory={renderVariantHandle(variant.tempId, variant.nombre)}
     />
   )
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-      <AdminCard className="product-editor-panel min-w-0 space-y-3 p-4">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+      <AdminCard className="product-editor-panel min-w-0 space-y-2 p-2.5">
         <div className="product-editor-panel-heading">
           <h2 id="product-variants-title" className="text-base font-black text-white">
             Stock
@@ -865,11 +1027,19 @@ export function ProductVariantsEditor({
         <div
           id="variant-stock-summary"
           aria-label="Resumen del inventario"
-          className="grid grid-cols-2 gap-2 2xl:grid-cols-4"
+          className="grid grid-cols-2 gap-1.5 sm:grid-cols-3"
         >
           <StockSummaryItem
-            label="Stock total"
+            label="Stock físico"
             value={distribution?.physicalStock}
+          />
+          <StockSummaryItem
+            label="Asignado a variantes"
+            value={distribution?.allocatedQuantity}
+          />
+          <StockSummaryItem
+            label="Pendiente de asignar"
+            value={distribution?.unassignedQuantity}
           />
           <StockSummaryItem
             label="Stock normal"
@@ -880,7 +1050,7 @@ export function ProductVariantsEditor({
             value={distribution?.discountedStock}
           />
           <StockSummaryItem
-            label="Stock pendiente de resolver"
+            label="Pendiente de revisión"
             value={distribution?.pendingReviewStock}
           />
         </div>
@@ -898,19 +1068,30 @@ export function ProductVariantsEditor({
 
       {error && (
         <div className="col-span-full">
-        <AdminInfoBlock role="alert" tone="danger">{error}</AdminInfoBlock>
+          <AdminInfoBlock role="alert" tone="danger">
+            {error}
+          </AdminInfoBlock>
         </div>
       )}
 
-      <AdminCard className="product-editor-panel min-w-0 space-y-3 p-4">
-        <div className="product-editor-panel-heading flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {successMessage && (
+        <div className="col-span-full">
+          <AdminInfoBlock role="status" tone="success">
+            {successMessage}
+          </AdminInfoBlock>
+        </div>
+      )}
+
+      <AdminCard className="product-editor-panel min-w-0 space-y-2 p-2.5">
+        <div className="product-editor-panel-heading flex items-center justify-between gap-2">
           <h2 className="text-base font-black text-white">Variantes</h2>
-          {!formOpen && (
+          {!showCreateForm && hasVariants && (
             <AdminPrimaryButton
               title="Agregar una nueva variante"
               aria-label="Agregar una variante"
               onClick={openCreateForm}
-              className="w-full sm:w-auto"
+              size="sm"
+              className="shrink-0 px-2.5"
             >
               <Plus className="size-4 text-white" />
               Agregar variante
@@ -921,54 +1102,50 @@ export function ProductVariantsEditor({
           <div className="flex h-20 items-center justify-center rounded-xl border border-white/8 bg-black/15 text-white/45">
             <Loader2 className="size-5 animate-spin" />
           </div>
-        ) : (
-          <div className="grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]">
-            <div className="min-w-0">
-              {productoId
-                ? orderedVariantes[0]
-                  ? renderPersistedVariant(orderedVariantes[0])
-                  : <EmptyVariants />
-                : draftVariants[0]
-                  ? renderDraftVariant(draftVariants[0])
-                  : <EmptyVariants />}
-            </div>
-
-            <div
-              className="product-editor-variants-scroll max-h-96 min-w-0 space-y-2 overflow-y-auto pr-2"
-              aria-label="Variantes adicionales"
-            >
-              {productoId
-                ? orderedVariantes.slice(1).map(renderPersistedVariant)
-                : draftVariants.slice(1).map(renderDraftVariant)}
-            </div>
+        ) : hasVariants ? (
+          <div
+            className="product-editor-variants-scroll max-h-[32rem] min-w-0 space-y-1.5 overflow-y-auto pr-1"
+            aria-label="Variantes del producto"
+          >
+            {productoId
+              ? orderedVariantes.map(renderPersistedVariant)
+              : draftVariants.map(renderDraftVariant)}
           </div>
-        )}
-      {formOpen && (
-        <section ref={formPanelRef} className="product-editor-variant-form scroll-mt-6 border-t border-white/8 pt-3">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        ) : null}
+        {showCreateForm && (
+          <section
+            ref={formPanelRef}
+            className="product-editor-variant-form scroll-mt-6 border-t border-white/8 pt-2.5"
+          >
+          <div className="mb-2 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-base font-black text-white">
                 Nueva variante
               </h2>
               <p className="mt-0.5 text-xs text-white/42">
-                Completá los tres datos básicos y agregá sus imágenes.
+                Completá los datos básicos y agregá sus imágenes.
               </p>
             </div>
-            <AdminGhostButton
-              title="Cerrar sin guardar"
-              aria-label="Cerrar formulario de variante"
-              size="icon"
-              onClick={resetFields}
-            >
-              <X className="size-4 text-white" />
-            </AdminGhostButton>
+            {hasVariants && (
+              <AdminGhostButton
+                title="Cerrar sin guardar"
+                aria-label="Cerrar formulario de variante"
+                size="icon"
+                onClick={closeCreateForm}
+              >
+                <X className="size-4 text-white" />
+              </AdminGhostButton>
+            )}
           </div>
 
-          <div className="space-y-3 border-t border-white/8 pt-3">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,15rem)_minmax(220px,20rem)] lg:justify-start">
-                <div className="min-w-0 rounded-xl border border-white/8 bg-black/15 p-3">
+            <div className="space-y-2.5 border-t border-white/8 pt-2.5">
+              <div className="grid min-w-0 gap-2.5 md:grid-cols-[minmax(180px,0.8fr)_minmax(0,2fr)]">
+                <div className="min-w-0 rounded-xl border border-white/8 bg-black/15 p-2.5">
                   <p className="mb-2 text-xs font-black text-white/72">
-                    Imágenes <span className="font-normal text-white/38">({variantImages.length}/{MAX_VARIANT_IMAGES})</span>
+                    Imágenes{" "}
+                    <span className="font-normal text-white/38">
+                      ({variantImages.length}/{MAX_VARIANT_IMAGES})
+                    </span>
                   </p>
                   <DraftImageUploader
                     compact
@@ -979,11 +1156,14 @@ export function ProductVariantsEditor({
                   />
                 </div>
 
-                <div className="grid content-start gap-3 rounded-xl border border-white/8 bg-black/15 p-3">
+                <div className="grid min-w-0 content-start rounded-xl border border-white/8 bg-black/15 p-2.5">
                   <VariantFields
+                    twoColumn
+                    name={nombre}
                     sku={sku}
                     colorHex={colorHex}
                     stock={cantidad}
+                    onNameChange={setNombre}
                     onSkuChange={setSku}
                     onColorChange={setColorHex}
                     onStockChange={setCantidad}
@@ -991,16 +1171,18 @@ export function ProductVariantsEditor({
                 </div>
               </div>
 
-            <div className="flex flex-col-reverse gap-2 border-t border-white/8 pt-3 sm:flex-row sm:justify-end">
-              <AdminSecondaryButton
-                title="Cerrar sin guardar los cambios"
-                aria-label="Cancelar edición de variante"
-                onClick={resetFields}
-                disabled={saving}
-                className="w-full sm:w-auto"
-              >
-                Cancelar
-              </AdminSecondaryButton>
+            <div className="flex flex-col-reverse gap-2 border-t border-white/8 pt-2.5 sm:flex-row sm:justify-end">
+              {hasVariants && (
+                <AdminSecondaryButton
+                  title="Cerrar sin guardar los cambios"
+                  aria-label="Cancelar edición de variante"
+                  onClick={closeCreateForm}
+                  disabled={saving}
+                  className="w-full sm:w-auto"
+                >
+                  Cancelar
+                </AdminSecondaryButton>
+              )}
               <AdminPrimaryButton
                 title="Agregar esta variante al producto"
                 aria-label="Crear variante"
@@ -1008,13 +1190,17 @@ export function ProductVariantsEditor({
                 disabled={saving}
                 className="w-full sm:w-auto"
               >
-                {saving ? <Loader2 className="size-4 animate-spin text-white" /> : <Plus className="size-4 text-white" />}
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin text-white" />
+                ) : (
+                  <Plus className="size-4 text-white" />
+                )}
                 Crear variante
               </AdminPrimaryButton>
             </div>
           </div>
-        </section>
-      )}
+          </section>
+        )}
       </AdminCard>
 
       <AdminModal
@@ -1059,19 +1245,6 @@ export function ProductVariantsEditor({
   )
 }
 
-function EmptyVariants() {
-  return (
-    <div className="product-editor-empty rounded-lg border border-dashed border-white/10 px-4 py-5 text-center">
-      <p className="text-base font-bold text-white/70">
-        Todavía no hay variantes cargadas.
-      </p>
-      <p className="mt-1.5 text-sm text-white/44">
-        Usá “Crear variante” para agregar la primera.
-      </p>
-    </div>
-  )
-}
-
 function StockSummaryItem({
   label,
   value,
@@ -1080,9 +1253,9 @@ function StockSummaryItem({
   value?: number
 }) {
   return (
-    <div className="product-editor-metric min-w-0 rounded-lg border border-white/9 px-3 py-2.5">
-      <p className="truncate text-10px font-bold text-white/50 sm:text-xs">{label}</p>
-      <p className="mt-1 text-xl font-black leading-none tabular-nums text-white">
+    <div className="product-editor-metric min-w-0 rounded-lg border border-white/9 px-2.5 py-2">
+      <p className="truncate text-10px font-bold leading-4 text-white/50">{label}</p>
+      <p className="mt-0.5 text-lg font-black leading-none tabular-nums text-white">
         {value ?? "—"}
       </p>
     </div>
@@ -1094,7 +1267,10 @@ interface VariantCardProps {
   sku?: string | null
   colorHex: string
   stock: number | null
+  availableStock: number
   active: boolean
+  parentActive?: boolean
+  statePending?: boolean
   images?: string[]
   draftImages?: File[]
   videoUrl?: string
@@ -1105,6 +1281,7 @@ interface VariantCardProps {
   onMoveImage: (fromIndex: number, toIndex: number) => void
   onRemoveImage: (imageIndex: number) => void
   onDetailsChange: (details: {
+    name: string
     sku: string
     colorHex: string
     stock: number
@@ -1113,6 +1290,8 @@ interface VariantCardProps {
   savingImages: boolean
   changingState: boolean
   savingDetails: boolean
+  dropKey?: string
+  leadingAccessory?: ReactNode
 }
 
 function VariantCard({
@@ -1120,7 +1299,10 @@ function VariantCard({
   sku,
   colorHex,
   stock,
+  availableStock,
   active,
+  parentActive = true,
+  statePending = false,
   images = [],
   draftImages = [],
   videoUrl = "",
@@ -1135,8 +1317,12 @@ function VariantCard({
   savingImages,
   changingState,
   savingDetails,
+  dropKey,
+  leadingAccessory,
 }: VariantCardProps) {
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [localName, setLocalName] = useState(nombre)
   const [localSku, setLocalSku] = useState(sku ?? "")
   const [localColor, setLocalColor] = useState(normalizeHex(colorHex))
   const [localStock, setLocalStock] = useState(String(stock ?? 0))
@@ -1151,10 +1337,11 @@ function VariantCard({
   }, [draftUrls])
 
   useEffect(() => {
+    setLocalName(nombre)
     setLocalSku(sku ?? "")
     setLocalColor(normalizeHex(colorHex))
     setLocalStock(String(stock ?? 0))
-  }, [colorHex, sku, stock])
+  }, [colorHex, nombre, sku, stock])
 
   const ownImageCount = images.length + draftUrls.length
   const availableImages = [...images, ...draftUrls].slice(0, MAX_VARIANT_IMAGES)
@@ -1162,21 +1349,124 @@ function VariantCard({
   const hasOwnImages = ownImageCount > 0
   const hasVideo = Boolean(videoUrl.trim())
   const canAddImages = ownImageCount < MAX_VARIANT_IMAGES
+  const commercialState = getVariantCommercialState(active, parentActive)
+  const commerciallyActive = commercialState === "active"
+  const stateTooltip = !parentActive
+    ? "No podés activar esta variante mientras el producto esté configurado como inactivo."
+    : statePending
+      ? "El cambio de estado se aplicará al guardar el producto."
+      : `${commerciallyActive ? "Desactivar" : "Activar"} variante ${nombre}`
+  const stateTextClassName =
+    commercialState === "active"
+      ? "text-emerald-300"
+      : "text-white/55"
+  const stateDotClassName =
+    commercialState === "active"
+      ? "bg-emerald-300"
+      : "bg-white/35"
   const stateLabel =
     !onToggleState
       ? "Sin guardar"
       : changingState
         ? "Guardando…"
-        : active
-          ? "Activa"
-          : "Inactiva"
+        : `${VARIANT_COMMERCIAL_STATE_LABELS[commercialState]}${
+            statePending ? " · Pendiente" : ""
+          }`
 
   const commitDetails = () => {
     onDetailsChange({
+      name: localName,
       sku: localSku,
       colorHex: normalizeHex(localColor),
       stock: Number(localStock || 0),
     })
+  }
+
+  if (!isEditing) {
+    const summaryImage = availableImages[0] || fallbackImage
+
+    return (
+      <article
+        data-variant-drop-key={dropKey}
+        className="product-editor-variant-card grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2.5 rounded-xl border border-white/10 bg-[#0c1219] p-3 sm:grid-cols-[auto_auto_minmax(0,1.3fr)_minmax(7rem,0.8fr)_minmax(6rem,0.65fr)_auto_auto]"
+      >
+        <span className="flex size-8 shrink-0 items-center justify-center" aria-hidden={!leadingAccessory}>
+          {leadingAccessory}
+        </span>
+        <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#07111b]">
+          {summaryImage ? (
+            <TransparencyAwareImage
+              src={summaryImage}
+              alt={`Imagen de ${nombre}`}
+              className="size-full object-contain"
+            />
+          ) : (
+            <ImageIcon className="size-4 text-white/25" />
+          )}
+        </span>
+
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-white" title={nombre}>
+            {nombre}
+          </p>
+          <p className="mt-0.5 truncate text-10px font-semibold text-white/42">
+            {sku?.trim() || "SKU pendiente"}
+          </p>
+        </div>
+
+        <div className="hidden min-w-0 items-center gap-2 sm:flex">
+          <span
+            className="size-3.5 shrink-0 rounded-full border border-white/25"
+            style={{ backgroundColor: normalizeHex(colorHex) }}
+          />
+          <span className="truncate text-xs font-bold text-white/62">{normalizeHex(colorHex)}</span>
+        </div>
+
+        <div className="hidden text-center sm:block">
+          <p className="text-10px font-bold text-white/38">Stock / asignado</p>
+          <p className="mt-0.5 text-sm font-black tabular-nums text-white">
+            {availableStock} <span className="text-white/30">/</span> {stock ?? 0}
+          </p>
+        </div>
+
+        {onToggleState ? (
+          <AdminSecondaryButton
+            size="sm"
+            title={stateTooltip}
+            aria-label={`${commerciallyActive ? "Desactivar" : "Activar"} variante ${nombre}`}
+            onClick={onToggleState}
+            disabled={changingState}
+            className="col-span-1 shrink-0"
+          >
+            <span className={`size-1.5 rounded-full ${stateDotClassName}`} />
+            <span className={stateTextClassName}>{stateLabel}</span>
+          </AdminSecondaryButton>
+        ) : (
+          <span className="rounded-lg border border-white/10 px-2.5 py-1.5 text-center text-xs font-bold text-white/48">
+            {stateLabel}
+          </span>
+        )}
+
+        <div className="flex items-center justify-end gap-1.5">
+          <AdminSecondaryButton
+            size="icon"
+            title={`Editar variante ${nombre}`}
+            aria-label={`Editar variante ${nombre}`}
+            onClick={() => setIsEditing(true)}
+          >
+            <Pencil className="size-3.5 text-white" />
+          </AdminSecondaryButton>
+          <AdminDangerButton
+            size="icon"
+            title={`Eliminar variante ${nombre}`}
+            aria-label={`Eliminar variante ${nombre}`}
+            onClick={onRemove}
+          >
+            <Trash2 className="size-3.5 text-white" />
+          </AdminDangerButton>
+        </div>
+      </article>
+    )
   }
 
   return (
@@ -1199,14 +1489,14 @@ function VariantCard({
         {onToggleState ? (
           <AdminSecondaryButton
             size="sm"
-            title={`${active ? "Desactivar" : "Activar"} variante ${nombre}`}
-            aria-label={`${active ? "Desactivar" : "Activar"} variante ${nombre}`}
+            title={stateTooltip}
+            aria-label={`${commerciallyActive ? "Desactivar" : "Activar"} variante ${nombre}`}
             onClick={onToggleState}
             disabled={changingState}
             className="shrink-0"
           >
-            <span className={`size-1.5 rounded-full ${active ? "bg-emerald-300" : "bg-white/35"}`} />
-            {stateLabel}
+            <span className={`size-1.5 rounded-full ${stateDotClassName}`} />
+            <span className={stateTextClassName}>{stateLabel}</span>
           </AdminSecondaryButton>
         ) : (
           <span className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-bold text-white/48">
@@ -1337,10 +1627,12 @@ function VariantCard({
 
         <div className="min-w-0 border-t border-white/8 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
           <VariantFields
+            name={localName}
             sku={localSku}
             colorHex={localColor}
             stock={localStock}
             disabled={savingDetails}
+            onNameChange={setLocalName}
             onSkuChange={setLocalSku}
             onColorChange={setLocalColor}
             onStockChange={setLocalStock}
@@ -1360,7 +1652,7 @@ function VariantCard({
         </div>
       </div>
 
-      <div className="mt-3 flex justify-end border-t border-white/8 pt-2.5">
+      <div className="mt-3 flex flex-col-reverse gap-2 border-t border-white/8 pt-2.5 sm:flex-row sm:items-center sm:justify-between">
         <AdminDangerButton
           size="sm"
           title={`Eliminar variante ${nombre}`}
@@ -1370,6 +1662,13 @@ function VariantCard({
           <Trash2 className="size-3.5 text-white" />
           Eliminar variante
         </AdminDangerButton>
+        <AdminSecondaryButton
+          size="sm"
+          onClick={() => setIsEditing(false)}
+          disabled={savingDetails || savingImages || uploadingImages}
+        >
+          Cerrar edición
+        </AdminSecondaryButton>
       </div>
 
       <input
@@ -1389,10 +1688,13 @@ function VariantCard({
 }
 
 interface VariantFieldsProps {
+  name: string
   sku: string
   colorHex: string
   stock: string
   disabled?: boolean
+  twoColumn?: boolean
+  onNameChange: (value: string) => void
   onSkuChange: (value: string) => void
   onColorChange: (value: string) => void
   onStockChange: (value: string) => void
@@ -1400,10 +1702,13 @@ interface VariantFieldsProps {
 }
 
 function VariantFields({
+  name,
   sku,
   colorHex,
   stock,
   disabled = false,
+  twoColumn = false,
+  onNameChange,
   onSkuChange,
   onColorChange,
   onStockChange,
@@ -1415,11 +1720,31 @@ function VariantFields({
       onCommit?.()
     }
   }
+  const fieldClassName = twoColumn
+    ? "block min-w-0"
+    : "grid min-w-0 grid-cols-[64px_minmax(0,1fr)] items-center gap-3"
+  const fieldLabelClassName = twoColumn
+    ? "mb-1 block text-xs font-black text-white/62"
+    : "text-sm font-black text-white/72"
 
   return (
-    <div className="grid gap-2.5">
-      <label className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)] items-center gap-3">
-        <span className="text-sm font-black text-white/72">SKU</span>
+    <div className={`grid gap-2.5 ${twoColumn ? "sm:grid-cols-2" : ""}`}>
+      <label className={fieldClassName}>
+        <span className={fieldLabelClassName}>Nombre</span>
+        <input
+          type="text"
+          value={name}
+          maxLength={160}
+          placeholder="Ej.: Negro"
+          disabled={disabled}
+          onChange={(event) => onNameChange(event.target.value)}
+          onKeyDown={commitOnEnter}
+          className={`${inputCls} !h-10 !text-sm`}
+        />
+      </label>
+
+      <label className={fieldClassName}>
+        <span className={fieldLabelClassName}>SKU</span>
         <input
           type="text"
           value={sku}
@@ -1432,8 +1757,8 @@ function VariantFields({
         />
       </label>
 
-      <label className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)] items-center gap-3">
-        <span className="text-sm font-black text-white/72">Color</span>
+      <label className={fieldClassName}>
+        <span className={fieldLabelClassName}>Color</span>
         <span className="relative block min-w-0">
           <input
             type="text"
@@ -1461,8 +1786,8 @@ function VariantFields({
         </span>
       </label>
 
-      <label className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)] items-center gap-3">
-        <span className="text-sm font-black text-white/72">Stock</span>
+      <label className={fieldClassName}>
+        <span className={fieldLabelClassName}>Asignación</span>
         <input
           type="text"
           inputMode="numeric"

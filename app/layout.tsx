@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import Script from "next/script"
-import { Montserrat, Manrope } from "next/font/google"
+import { Montserrat } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
 import { AuthProvider } from "@/context/auth-context"
@@ -13,14 +13,8 @@ import "./globals.css"
 
 const montserrat = Montserrat({
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
-  variable: "--font-heading",
-})
-
-const manrope = Manrope({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-body",
+  weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-montserrat",
 })
 
 export const metadata: Metadata = {
@@ -64,8 +58,12 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es" data-scroll-behavior="smooth">
-      <body className={`${montserrat.variable} ${manrope.variable} antialiased`}>
+    <html
+      lang="es"
+      data-scroll-behavior="smooth"
+      className={montserrat.variable}
+    >
+      <body className="antialiased">
         <Script id="beyonix-scroll-restoration" strategy="beforeInteractive">
           {`if ("scrollRestoration" in history) history.scrollRestoration = "manual";`}
         </Script>

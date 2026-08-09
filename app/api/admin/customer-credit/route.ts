@@ -12,13 +12,7 @@ import type { createAdminClient } from "@/lib/supabase/admin"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
-type CreditAction = "issue" | "reverse" | "transfer"
-
-function getGiftCardExpirationDate() {
-  const date = new Date()
-  date.setUTCFullYear(date.getUTCFullYear() + 1)
-  return date.toISOString()
-}
+type CreditAction = "issue" | "reverse"
 
 function normalizeAmount(value: unknown) {
   const parsed =
@@ -30,7 +24,7 @@ function normalizeAmount(value: unknown) {
 }
 
 function isCreditAction(value: unknown): value is CreditAction {
-  return value === "issue" || value === "reverse" || value === "transfer"
+  return value === "issue" || value === "reverse"
 }
 
 function isMovementType(value: unknown): value is CustomerCreditMovementType {
@@ -150,94 +144,11 @@ export async function POST(request: Request) {
     movementType?: unknown
     amount?: unknown
     description?: unknown
-    destinationUserId?: unknown
     expiresAt?: unknown
   }
   const action = isCreditAction(body.action) ? body.action : "issue"
 
   try {
-    if (action === "transfer") {
-      const sourceUserId =
-        typeof body.userId === "string" ? body.userId.trim() : ""
-      const destinationUserId =
-        typeof body.destinationUserId === "string"
-          ? body.destinationUserId.trim()
-          : ""
-      const amount = normalizeAmount(body.amount)
-      const description =
-        typeof body.description === "string" ? body.description.trim() : ""
-
-      if (!sourceUserId || !destinationUserId) {
-        return NextResponse.json(
-          { error: "Indicá cuenta de origen y destino." },
-          { status: 400 },
-        )
-      }
-
-      if (sourceUserId === destinationUserId) {
-        return NextResponse.json(
-          { error: "La cuenta de origen y destino no puede ser la misma." },
-          { status: 400 },
-        )
-      }
-
-      if (amount <= 0) {
-        return NextResponse.json(
-          { error: "Ingresá un monto mayor a cero." },
-          { status: 400 },
-        )
-      }
-
-      if (description.length < 3) {
-        return NextResponse.json(
-          { error: "Ingresá un mensaje para la GiftCard." },
-          { status: 400 },
-        )
-      }
-
-      const transferId = crypto.randomUUID()
-
-      await createCustomerCreditMovement(auth.admin, {
-        userId: sourceUserId,
-        movementType: "debit",
-        amount,
-        description: `Transferencia GiftCard enviada: ${description}`,
-        sourceType: "admin_adjustment",
-        createdBy: auth.user.id,
-        metadata: {
-          created_from: "admin_gift_card_transfer",
-          source_kind: "gift_card",
-          transfer_id: transferId,
-          destination_user_id: destinationUserId,
-        },
-        sourceKey: `gift-card-transfer:${transferId}:debit`,
-      })
-
-      await createCustomerCreditMovement(auth.admin, {
-        userId: destinationUserId,
-        movementType: "credit",
-        amount,
-        description: `GiftCard recibida: ${description}`,
-        sourceType: "admin_adjustment",
-        createdBy: auth.user.id,
-        metadata: {
-          created_from: "admin_gift_card_transfer",
-          source_kind: "gift_card",
-          transfer_id: transferId,
-          source_user_id: sourceUserId,
-        },
-        expiresAt: getGiftCardExpirationDate(),
-        sourceKey: `gift-card-transfer:${transferId}:credit`,
-      })
-
-      const [balance, movements] = await Promise.all([
-        getCustomerCreditBalance(auth.admin, sourceUserId),
-        listCustomerCreditMovements(auth.admin, sourceUserId),
-      ])
-
-      return NextResponse.json({ balance, movements })
-    }
-
     if (action === "reverse") {
       const movementId =
         typeof body.movementId === "string" ? body.movementId.trim() : ""

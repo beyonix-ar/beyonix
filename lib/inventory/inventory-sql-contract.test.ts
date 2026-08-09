@@ -37,15 +37,32 @@ const singleSourceRepair = source(
 const primaryVariantMigration = source(
   "supabase/migrations/20260802120000_materialize_conditioned_primary_variants.sql",
 )
+const catalogWorkflow = source(
+  "supabase/migrations/20260808120000_atomic_product_catalog_workflow.sql",
+)
+const productActivationRequirements = source(
+  "supabase/migrations/20260808210000_product_activation_requirements.sql",
+)
+const atomicCommercialSave = source(
+  "supabase/migrations/20260808220000_atomic_product_variant_commercial_save.sql",
+)
+const productCatalogRoute = source(
+  "app/api/admin/products/[id]/catalog/route.ts",
+)
 const conditionedRoute = source(
   "app/api/admin/conditioned-stock/[id]/route.ts",
 )
+const costsRoute = source("app/api/admin/costs/route.ts")
 
 test("las compras simples y con variante ingresan por una única RPC atómica", () => {
   assert.match(purchases, /save_product_purchase_atomic\s*\(/i)
   assert.match(purchases, /variants\.producto_id\s*=\s*v_product_id/i)
   assert.match(purchases, /received_quantity,\s*reception_status/i)
   assert.match(purchases, /v_status = 'parcial'/i)
+  assert.match(
+    costsRoute,
+    /if \(!variantId\)[\s\S]{0,400}from\("productos"\)[\s\S]{0,250}return !error && data \? "valid"/i,
+  )
 })
 
 test("editar una compra bloquea el registro y los productos afectados", () => {
@@ -207,4 +224,116 @@ test("el diagnóstico señala el movimiento y la reparación sólo baja la asign
   assert.match(singleSourceRepair, /quantity = quantity - v_diagnostic\.duplicated_allocation/i)
   assert.match(singleSourceRepair, /insert into public\.audit_logs/i)
   assert.doesNotMatch(singleSourceRepair, /delete from public\.inventory_return_movements/i)
+})
+
+test("producto y SKU principal se guardan en una única transacción", () => {
+  assert.match(catalogWorkflow, /update_product_catalog_atomic\s*\(/i)
+  assert.match(catalogWorkflow, /pg_advisory_xact_lock\(93000/i)
+  assert.match(catalogWorkflow, /update public\.producto_variantes[\s\S]*set sku/i)
+  assert.match(catalogWorkflow, /update public\.productos products[\s\S]*returning \* into v_product/i)
+})
+
+test("las reglas de activación viven en una migración posterior e independiente", () => {
+  assert.doesNotMatch(catalogWorkflow, /product_activation_error\s*\(/i)
+  assert.match(
+    productActivationRequirements,
+    /posteriores a 20260808120000_atomic_product_catalog_workflow\.sql/i,
+  )
+})
+
+test("desactivar el producto apaga variantes sin borrar su configuración", () => {
+  assert.match(catalogWorkflow, /drop trigger if exists deactivate_product_variants_trigger/i)
+  assert.match(productActivationRequirements, /set_product_commercial_state_atomic\s*\(/i)
+  assert.match(productActivationRequirements, /sync_product_variant_commercial_state/i)
+  assert.match(
+    productActivationRequirements,
+    /update public\.producto_variantes variants\s+set activo = false/i,
+  )
+  const synchronizationFunction = productActivationRequirements.match(
+    /create or replace function public\.sync_product_variant_commercial_state[\s\S]*?\n\$\$;/i,
+  )?.[0] ?? ""
+  assert.doesNotMatch(
+    synchronizationFunction,
+    /imagenes\s*=|sku\s*=|stock\s*=|orden\s*=/i,
+  )
+})
+
+test("producto y variantes reutilizan validaciones comerciales de base de datos", () => {
+  assert.match(productActivationRequirements, /product_activation_error\s*\(/i)
+  assert.match(productActivationRequirements, /product_variant_activation_error\s*\(/i)
+  assert.match(productActivationRequirements, /assert_product_can_activate\s*\(/i)
+  assert.match(productActivationRequirements, /assert_product_variant_can_activate\s*\(/i)
+  assert.match(productActivationRequirements, /No podés activar esta variante porque el producto está inactivo\./i)
+  assert.match(productActivationRequirements, /Completá la descripción\./i)
+  assert.match(productActivationRequirements, /Completá peso, profundidad, ancho y largo\./i)
+  assert.match(productActivationRequirements, /'La variante principal'/i)
+  assert.match(productActivationRequirements, /necesita stock asignado\./i)
+})
+
+test("los triggers diferidos impiden estados comerciales inválidos por acceso directo", () => {
+  assert.match(productActivationRequirements, /create constraint trigger validate_product_commercial_state/i)
+  assert.match(productActivationRequirements, /create constraint trigger validate_variant_commercial_state/i)
+  assert.match(productActivationRequirements, /create constraint trigger validate_variant_allocation_commercial_state/i)
+  assert.match(productActivationRequirements, /deferrable initially deferred/i)
+})
+
+test("las variantes nuevas quedan inactivas y el orden define la principal", () => {
+  assert.match(
+    productActivationRequirements,
+    /create or replace function public\.create_product_variant_with_allocation_v2[\s\S]*?set activo = false/i,
+  )
+  assert.match(productActivationRequirements, /order by variants\.orden, variants\.id/i)
+  assert.match(productActivationRequirements, /reorder_product_variants_atomic[\s\S]*?sync_product_primary_variant_image/i)
+})
+
+test("producto y variantes se confirman mediante una única RPC comercial", () => {
+  assert.match(
+    atomicCommercialSave,
+    /create or replace function public\.update_product_commercial_configuration_atomic/i,
+  )
+  assert.match(atomicCommercialSave, /pg_advisory_xact_lock\(93000/i)
+  assert.match(atomicCommercialSave, /update_product_catalog_atomic\s*\(/i)
+  assert.match(
+    atomicCommercialSave,
+    /update public\.producto_variantes variants\s+set activo = requested\.active/i,
+  )
+  assert.match(atomicCommercialSave, /Activá al menos una variante\./i)
+  assert.match(
+    atomicCommercialSave,
+    /Los estados deben incluir exactamente todas las variantes del producto\./i,
+  )
+  assert.match(
+    productCatalogRoute,
+    /update_product_commercial_configuration_atomic/i,
+  )
+  assert.match(productCatalogRoute, /p_variant_states: variantStates/i)
+})
+
+test("el stock se fotografía bajo el mismo bloqueo y no desde seis lecturas independientes", () => {
+  assert.match(catalogWorkflow, /get_product_inventory_distribution\s*\(/i)
+  assert.match(catalogWorkflow, /'physicalStock'/i)
+  assert.match(catalogWorkflow, /'allocatedQuantity'/i)
+  assert.match(catalogWorkflow, /'unassignedQuantity'/i)
+  assert.match(catalogWorkflow, /'allocationOverflow'/i)
+})
+
+test("una sobreasignación concurrente se bloquea con cantidades explicativas", () => {
+  assert.match(catalogWorkflow, /set_product_variant_allocations\s*\(/i)
+  assert.match(catalogWorkflow, /v_requested_quantity > greatest\(v_assignable_quantity, 0\)/i)
+  assert.match(catalogWorkflow, /Solo quedan % unidades sin asignar/i)
+})
+
+test("variantes con stock o historial no se eliminan y el orden es atómico", () => {
+  assert.match(catalogWorkflow, /guard_product_variant_delete\s*\(/i)
+  assert.match(catalogWorkflow, /inventory_variant_allocations/i)
+  assert.match(catalogWorkflow, /inventory_movements/i)
+  assert.match(catalogWorkflow, /reorder_product_variants_atomic\s*\(/i)
+})
+
+test("una compra libre crea o reutiliza un producto base sin publicarlo", () => {
+  assert.match(catalogWorkflow, /ensure_cost_catalog_product\s*\(/i)
+  assert.match(catalogWorkflow, /hashtext\('cost-catalog-product'\)/i)
+  assert.match(catalogWorkflow, /created_from_costs/i)
+  assert.match(catalogWorkflow, /false,\s*false,\s*null,\s*null,/i)
+  assert.match(catalogWorkflow, /catalog_sku_registry/i)
 })

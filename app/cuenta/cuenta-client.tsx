@@ -15,8 +15,6 @@ import {
   CreditCard,
   Download,
   Eye,
-  FileText,
-  Gift,
   Heart,
   IdCard,
   Landmark,
@@ -26,11 +24,8 @@ import {
   MessageCircle,
   ShieldCheck,
   ShoppingBag,
-  Sparkles,
-  Truck,
   UploadCloud,
   User,
-  X,
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
@@ -61,7 +56,6 @@ import {
 } from "@/lib/customer-credit"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import {
-  formatCuentaInvoiceNumber,
   formatCuentaPrice,
   formatOrderCardDate,
   formatPublicOrderId,
@@ -78,7 +72,6 @@ import {
   TRANSFER_ACCOUNT_HOLDER,
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
-import { BEYONIX_SUPPORT_HOURS } from "@/lib/legal-contact"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
@@ -97,32 +90,6 @@ const CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES = [
   "en_revision",
   "rechazado",
 ]
-
-function formatGiftCardExpiration(value?: string | null) {
-  if (!value) return null
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "America/Argentina/Buenos_Aires",
-  }).format(date)
-}
-
-function formatGiftCardEmission(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return "Fecha no disponible"
-
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "America/Argentina/Buenos_Aires",
-  }).format(date)
-}
 
 function isOrderPaymentConfirmed(order: SupabasePedido) {
   const paymentStatus = (order.payment_status ?? "").toLowerCase()
@@ -310,462 +277,103 @@ function MiSaldo({
   onLoadBalance: () => void
 }) {
   const customerCredit = useCustomerCredit()
-  const loadCustomerCreditMovements = customerCredit.loadMovements
-  const [giftRecipientName, setGiftRecipientName] = useState("")
-  const [giftRecipientLookup, setGiftRecipientLookup] = useState("")
-  const [giftAmount, setGiftAmount] = useState("")
-  const [giftMessage, setGiftMessage] = useState("")
-  const [giftSaving, setGiftSaving] = useState(false)
-  const [giftNotice, setGiftNotice] = useState("")
-  const [giftError, setGiftError] = useState("")
-  const [showReceivedGiftCards, setShowReceivedGiftCards] = useState(false)
-  const giftCardMovements = customerCredit.movements.filter((movement) => {
-    const metadata = movement.metadata ?? {}
-
-    return (
-      movement.movement_type === "credit" &&
-      (metadata.source_kind === "gift_card" ||
-        metadata.created_from === "admin_gift_card_panel" ||
-        metadata.created_from === "admin_gift_card_transfer" ||
-      movement.description.toLowerCase().includes("giftcard"))
-    )
-  })
-  const normalizedGiftAmount = Number(
-    giftAmount.replace(/\./g, "").replace(",", "."),
-  )
-  const previewGiftAmount =
-    Number.isFinite(normalizedGiftAmount) && normalizedGiftAmount > 0
-      ? normalizedGiftAmount
-      : 0
-  const hasAvailableBalance = customerCredit.balance > 0
-  const previewRecipientName =
-    giftRecipientName.trim() || "Nombre de la persona"
-  const previewRecipientLookup =
-    giftRecipientLookup.trim() || "Email del destinatario"
-
-  useEffect(() => {
-    void loadCustomerCreditMovements()
-  }, [loadCustomerCreditMovements])
-
-  async function submitGiftCard() {
-    setGiftNotice("")
-    setGiftError("")
-    setGiftSaving(true)
-
-    try {
-      const response = await fetch("/api/customer-credit/gift-card", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          recipientName: giftRecipientName,
-          recipientEmail: giftRecipientLookup,
-          amount: giftAmount,
-          message: giftMessage,
-        }),
-      })
-      const data = (await response.json()) as {
-        balance?: number
-        movements?: typeof customerCredit.movements
-        emailSent?: boolean
-        emailMessage?: string
-        creditedImmediately?: boolean
-        error?: string
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "No se pudo enviar la Gift Card.")
-      }
-
-      setGiftRecipientName("")
-      setGiftRecipientLookup("")
-      setGiftAmount("")
-      setGiftMessage("")
-      setGiftNotice(data.emailMessage || (
-        data.creditedImmediately
-          ? data.emailSent
-            ? "Gift Card acreditada. También enviamos la presentación por email."
-            : "Gift Card acreditada correctamente, pero el email quedó pendiente de reintento."
-          : data.emailSent
-            ? "Gift Card creada. Enviamos el enlace de acreditación por email."
-            : "Gift Card creada. El email quedó pendiente de reintento administrativo."
-      ))
-      await Promise.all([
-        customerCredit.reload(),
-        loadCustomerCreditMovements(),
-      ])
-    } catch (error) {
-      setGiftError(
-        error instanceof Error ? error.message : "No se pudo enviar la Gift Card.",
-      )
-    } finally {
-      setGiftSaving(false)
-    }
-  }
 
   return (
-    <AccountPageContainer className="max-w-6xl space-y-3 pb-10">
+    <AccountPageContainer className="max-w-4xl space-y-4 pb-10">
       <AccountBackButton
         onClick={onBack}
         label="Volver a mi cuenta"
         className="h-10 rounded-full border-[#2A4B6C] bg-[#132033] px-4 text-xs font-medium text-white/82 shadow-sm shadow-black/25 hover:border-[#4B78A4] hover:bg-[#1A2C44] hover:text-white"
       />
 
-      <div className="space-y-4 rounded-2xl border border-[#172633] bg-[#070C12] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.24)] sm:p-5">
-      <header className="border-b border-[#192936] px-1 pb-4">
-        <p className="text-9px font-medium uppercase tracking-[0.18em] text-beyonix-sky/70">
-          Mi cuenta
-        </p>
-        <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-white/95 sm:text-3xl">
-            BEYONIX Gift Card
-          </h1>
-          <button
-            type="button"
-            aria-pressed={showReceivedGiftCards}
-            onClick={() => setShowReceivedGiftCards((current) => !current)}
-            className={cn(
-              "group inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-semibold transition-all duration-200",
-              showReceivedGiftCards
-                ? "border-beyonix-sky/70 bg-[linear-gradient(135deg,#1C5279,#14324C)] text-white shadow-[0_0_22px_rgba(77,167,224,0.2)]"
-                : "border-[#4F82A8] bg-[linear-gradient(135deg,#183C59,#10263A)] text-white/90 shadow-[0_8px_22px_rgba(0,0,0,0.2)] hover:-translate-y-px hover:border-beyonix-sky/75 hover:text-white hover:shadow-[0_10px_28px_rgba(56,145,205,0.18)]",
-            )}
-          >
-            <Gift className="size-4 transition-transform duration-200 group-hover:-rotate-6 group-hover:scale-110" />
-            Tus Gift!
-            {giftCardMovements.length ? (
-              <span className="flex size-5 items-center justify-center rounded-full border border-white/15 bg-black/20 text-9px tabular-nums text-white/90">
-                {giftCardMovements.length}
-              </span>
-            ) : null}
-          </button>
-        </div>
-        <p className="mt-1.5 max-w-2xl text-sm font-normal leading-6 text-white/48">
-          {showReceivedGiftCards
-            ? "Consultá las Gift Cards que recibiste."
-            : "Cargá saldo en tu cuenta y prepará una tarjeta personalizada para otra persona."}
-        </p>
-      </header>
+      <AccountCard padding="lg" className="overflow-hidden">
+        <AccountPageHeader
+          eyebrow="Mi cuenta"
+          title="Saldo de cuenta"
+          description="Cargá saldo en tu cuenta y usalo cuando quieras para comprar en BEYONIX."
+          className="border-transparent bg-transparent p-0 shadow-none"
+        />
 
-      {!showReceivedGiftCards ? (
-        <>
-      <section className="rounded-xl border border-[#294B68] bg-[#1C1C1C] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-beyonix-blue-light/25 bg-[linear-gradient(135deg,#112A43,#0B1724)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <div>
-            <p className="text-9px font-medium uppercase tracking-[0.18em] text-beyonix-sky/70">
-              Antes de enviar
+            <p className="text-10px font-semibold uppercase tracking-widest text-beyonix-sky/75">
+              Disponible
             </p>
-            <h2 className="mt-1 text-base font-medium text-white/92">
-              Primero necesitás saldo validado en tu cuenta
-            </h2>
-            <p className="mt-1 max-w-2xl text-xs font-normal leading-5 text-white/62">
-              Realizá una transferencia, enviá el comprobante y esperá la validación. Cuando el saldo esté disponible, vas a poder entregar la Gift Card.
-            </p>
+            <div className="mt-2">
+              <p className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+                {customerCredit.loading ? "Cargando…" : formatARS(customerCredit.balance)}
+              </p>
+              {customerCredit.error ? (
+                <p className="mt-2 text-xs text-red-200">{customerCredit.error}</p>
+              ) : (
+                <p className="mt-2 text-xs leading-5 text-white/55">
+                  Tu saldo se aplica directamente al momento de pagar.
+                </p>
+              )}
+            </div>
           </div>
           <button
             type="button"
             onClick={onLoadBalance}
-            className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-[#5B91BB]/38 bg-[#132B40] px-4 text-xs font-medium text-white/92 transition hover:border-[#77ADD5]/52 hover:bg-[#173750]"
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-beyonix-blue-light/40 bg-[#173C5A] px-5 text-sm font-semibold text-white transition hover:border-beyonix-sky/60 hover:bg-[#1C486B] sm:self-auto"
           >
-            {hasAvailableBalance ? "Administrar carga" : "Cargar saldo"}
+            <Landmark className="size-4" aria-hidden="true" />
+            Cargar saldo
           </button>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          {[
-            ["1", "Transferí el dinero", "Usá los datos bancarios disponibles en Cargar saldo."],
-            ["2", "Esperá la validación", "El saldo aparecerá cuando confirmemos el comprobante."],
-            ["3", "Enviá la tarjeta", "Completá los datos de la persona y elegí el importe."],
-          ].map(([step, title, description]) => (
-            <div key={step} className="flex gap-3 rounded-lg border border-[#31506F] bg-[#282828] p-3">
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/25 bg-beyonix-blue/24 text-10px font-medium text-beyonix-sky">
-                {step}
-              </span>
-              <div>
-                <p className="text-xs font-medium text-white/92">{title}</p>
-                <p className="mt-1 text-10px font-normal leading-4 text-white/56">
-                  {description}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+        <section className="mt-4 overflow-hidden rounded-2xl border border-[var(--account-border)] bg-[linear-gradient(135deg,rgba(17,42,67,0.46),rgba(8,15,23,0.72))] px-4 py-4 sm:px-5">
+          <p className="text-sm font-semibold text-white">¿Cómo funciona?</p>
 
-      <div className="grid gap-4 lg:grid-cols-[0.96fr_1.04fr]">
-        <section className="rounded-xl border border-[#294B68] bg-[#181818] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-9px font-medium uppercase tracking-[0.18em] text-white/52">
-                Vista previa
-              </p>
-              <p className="mt-1 text-xs font-normal text-white/64">
-                La tarjeta se completa con los datos del formulario.
-              </p>
-            </div>
-            <span className="rounded-full border border-emerald-300/15 bg-emerald-400/[0.06] px-2.5 py-1 text-10px font-normal text-emerald-100/70">
-              Saldo: {formatARS(customerCredit.balance)}
-            </span>
-          </div>
-
-          <div className="relative mt-4 min-h-[270px] overflow-hidden rounded-2xl border border-[#6AA9D2]/28 bg-[#07131F] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_18px_42px_rgba(0,0,0,0.26)] sm:p-6">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(58,151,218,0.25),transparent_38%),radial-gradient(circle_at_100%_100%,rgba(24,76,114,0.2),transparent_42%),linear-gradient(135deg,#12324b_0%,#081725_48%,#040a11_100%)]" />
-            <div className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full border border-white/[0.055]" />
-            <div className="pointer-events-none absolute -right-8 -top-12 size-48 rounded-full border border-white/[0.035]" />
-            <div className="pointer-events-none absolute -bottom-16 -left-10 size-44 rounded-full bg-beyonix-blue/10 blur-2xl" />
-            <div className="pointer-events-none absolute bottom-12 right-[-4rem] h-px w-72 rotate-[-27deg] bg-gradient-to-r from-transparent via-beyonix-sky/22 to-transparent" />
-
-            <div className="relative flex min-h-[222px] flex-col justify-between">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-base font-semibold tracking-[0.1em] text-white/94">
-                  BEYONIX
-                </p>
-                <span className="rounded-md border border-white/[0.1] bg-black/15 px-2.5 py-1.5 text-8px font-medium uppercase tracking-[0.2em] text-beyonix-sky/76">
-                  Gift Card
-                </span>
-              </div>
-
-              <div>
-                <p className="text-9px font-normal uppercase tracking-[0.18em] text-white/34">
-                  Importe de la tarjeta
-                </p>
-                <p className="mt-1 text-3xl font-medium tracking-tight text-white">
-                  {formatARS(previewGiftAmount)}
-                </p>
-                <p className="mt-2 line-clamp-1 max-w-[85%] text-xs font-normal text-white/48">
-                  {giftMessage.trim() || "Un regalo especial para vos"}
-                </p>
-              </div>
-
-              <div className="flex items-end justify-between gap-5 border-t border-white/[0.07] pt-3">
-                <div className="min-w-0">
-                  <p className="text-8px font-normal uppercase tracking-[0.18em] text-white/28">
-                    Para
+          <div className="relative mt-4 grid gap-5 sm:grid-cols-3 sm:gap-0">
+            <div className="pointer-events-none absolute left-[16.66%] right-[16.66%] top-6 hidden h-px bg-emerald-400/65 sm:block" />
+            {[
+              {
+                number: "01",
+                title: "Cargá saldo",
+                description: "Hacé clic en “Cargar saldo” y seguí las instrucciones.",
+                icon: Coins,
+              },
+              {
+                number: "02",
+                title: "Lo acreditamos",
+                description: "Cuando confirmemos tu pago, el saldo aparecerá en tu cuenta.",
+                icon: CheckCircle2,
+              },
+              {
+                number: "03",
+                title: "Usalo en tus compras",
+                description: "Elegí tu saldo disponible al momento de pagar.",
+                icon: ShoppingBag,
+              },
+            ].map((step) => (
+              <div
+                key={step.number}
+                className="relative z-10 flex min-w-0 items-start gap-3.5 sm:flex-col sm:items-center sm:px-5 sm:text-center"
+              >
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-full border border-emerald-400/70 bg-[#10263A] text-white shadow-sm shadow-black/30">
+                  <step.icon className="size-5.5" strokeWidth={2.1} aria-hidden="true" />
+                </div>
+                <div className="min-w-0 sm:mt-2.5">
+                  <p className="text-xs font-bold tabular-nums tracking-[0.14em] text-emerald-300">
+                    {step.number}
                   </p>
-                  <p className="mt-1 truncate text-sm font-medium text-white/88">
-                    {previewRecipientName}
-                  </p>
-                  <p className="mt-0.5 truncate text-10px font-normal text-white/38">
-                    {previewRecipientLookup}
+                  <h2 className="mt-1 text-sm font-semibold text-white">
+                    {step.title}
+                  </h2>
+                  <p className="mt-1.5 text-xs leading-5 text-white/62">
+                    {step.description}
                   </p>
                 </div>
-                <span className="shrink-0 text-8px font-normal uppercase tracking-[0.17em] text-white/24">
-                  BX · GIFT
-                </span>
               </div>
-            </div>
+            ))}
           </div>
         </section>
-
-        <section className="rounded-xl border border-[#294B68] bg-[#181818] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
-          <div>
-            <h2 className="text-base font-medium text-white/92">Preparar la Gift Card</h2>
-            <p className="mt-1 text-xs font-normal leading-5 text-white/62">
-              Completá los datos exactos de la persona que va a recibirla.
-            </p>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="block sm:col-span-2">
-              <span className="text-xs font-medium text-white/88">
-                Nombre y apellido de la persona que recibirá la tarjeta
-              </span>
-              <input
-                value={giftRecipientName}
-                onChange={(event) => setGiftRecipientName(event.target.value)}
-                placeholder="Ej.: María González"
-                className="mt-1.5 h-11 w-full rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 text-sm font-medium text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
-              />
-              <span className="mt-1 block text-10px font-normal text-white/52">
-                Este nombre aparecerá impreso en la Gift Card.
-              </span>
-            </label>
-
-            <label className="block">
-              <span className="text-xs font-medium text-white/88">
-                Email de la persona
-              </span>
-              <input
-                value={giftRecipientLookup}
-                onChange={(event) => setGiftRecipientLookup(event.target.value)}
-                type="email"
-                autoComplete="email"
-                placeholder="nombre@email.com"
-                className="mt-1.5 h-11 w-full rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 text-sm font-medium text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-xs font-medium text-white/88">
-                Importe que querés entregar
-              </span>
-              <input
-                value={giftAmount}
-                onChange={(event) => setGiftAmount(event.target.value)}
-                inputMode="decimal"
-                placeholder="Monto"
-                className="mt-1.5 h-11 w-full rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 text-sm font-medium text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
-              />
-            </label>
-
-            <label className="block sm:col-span-2">
-              <span className="text-xs font-medium text-white/88">
-                Mensaje para la persona <span className="font-normal text-white/52">(opcional)</span>
-              </span>
-              <textarea
-                value={giftMessage}
-                onChange={(event) => setGiftMessage(event.target.value)}
-                maxLength={240}
-                placeholder="Escribí una dedicatoria breve"
-                className="mt-1.5 min-h-[82px] w-full resize-none rounded-lg border border-[#3A6283] bg-[#303030] px-3.5 py-3 text-sm font-medium leading-5 text-[#F4F5F6] caret-white outline-none transition placeholder:font-normal placeholder:text-[#B5B5B5] focus:border-beyonix-sky focus:bg-[#393939]"
-              />
-            </label>
-          </div>
-
-          {giftNotice ? (
-            <p className="mt-2 text-11px font-normal text-emerald-300/80">{giftNotice}</p>
-          ) : null}
-          {giftError ? (
-            <p className="mt-2 text-11px font-normal text-red-200/85">{giftError}</p>
-          ) : null}
-
-          <div className="mt-4">
-            <button
-              type="button"
-              disabled={giftSaving || !hasAvailableBalance}
-              onClick={() => void submitGiftCard()}
-              className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-[#5B91BB]/38 bg-[#12304A] px-4 text-sm font-medium text-white/94 transition hover:border-[#77ADD5]/52 hover:bg-[#173C5A] disabled:cursor-not-allowed disabled:border-[#3A3F46] disabled:bg-[#282C31] disabled:text-white/58"
-            >
-              {giftSaving
-                ? "Enviando..."
-                : hasAvailableBalance
-                  ? "Enviar Gift Card"
-                  : "Primero cargá saldo"}
-            </button>
-            <p className="mt-2 text-center text-10px font-normal leading-4 text-white/32">
-              El importe se reservará al confirmar. La persona recibirá un enlace personal para acreditarlo, tenga o no una cuenta.
-            </p>
-          </div>
-        </section>
-      </div>
-        </>
-      ) : null}
-
-      {showReceivedGiftCards ? (
-        <section className="overflow-hidden rounded-2xl border border-[#315B7D] bg-[#181818] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_22px_50px_rgba(0,0,0,0.2)] sm:p-6">
-          {customerCredit.movementsLoading ? (
-            <div className="flex min-h-72 items-center justify-center">
-              <Loader2 className="size-6 animate-spin text-beyonix-sky/65" />
-            </div>
-          ) : giftCardMovements.length ? (
-            <div className="grid gap-5">
-              {giftCardMovements.map((movement) => {
-                const message = movement.description
-                  .replace(/^GiftCard recibida:\s*/i, "")
-                  .replace(/^Transferencia GiftCard enviada:\s*/i, "")
-                const senderName =
-                  typeof movement.metadata?.sender_name === "string" &&
-                  movement.metadata.sender_name.trim()
-                    ? movement.metadata.sender_name.trim()
-                    : "BEYONIX"
-                const expirationDate = formatGiftCardExpiration(
-                  movement.expires_at,
-                )
-                const emissionDate = formatGiftCardEmission(
-                  movement.created_at,
-                )
-
-                return (
-                  <article
-                    key={movement.id}
-                    className="group relative isolate w-full min-h-[340px] overflow-hidden rounded-2xl border border-[#5B91BB]/55 bg-[radial-gradient(circle_at_8%_0%,rgba(91,145,187,0.34),transparent_40%),radial-gradient(circle_at_100%_100%,rgba(17,42,67,0.88),transparent_48%),linear-gradient(135deg,#1B4565_0%,#112A43_48%,#091827_100%)] p-5 shadow-[inset_0_1px_0_rgba(143,199,235,0.14),0_22px_44px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#75B3DA]/65 hover:shadow-[inset_0_1px_0_rgba(143,199,235,0.18),0_28px_55px_rgba(0,0,0,0.34)] sm:min-h-[365px] sm:p-7"
-                  >
-                    <div className="pointer-events-none absolute inset-x-5 top-7 z-0 overflow-hidden text-center sm:inset-x-8 sm:top-8">
-                      <span className="font-heading block whitespace-nowrap text-[clamp(3.5rem,10vw,8.5rem)] font-black leading-none tracking-[0.11em] text-white/[0.13]">
-                        BEYONIX
-                      </span>
-                    </div>
-                    <div className="pointer-events-none absolute -right-20 -top-24 size-64 rounded-full border border-[#75B3DA]/[0.12] transition-transform duration-500 group-hover:scale-105" />
-                    <div className="pointer-events-none absolute -right-8 -top-12 size-48 rounded-full border border-[#75B3DA]/[0.08]" />
-                    <div className="pointer-events-none absolute -right-16 top-16 h-12 w-64 rotate-45 bg-[#75B3DA]/[0.035]" />
-
-                    <div className="relative z-10 flex min-h-[300px] flex-col sm:min-h-[309px]">
-                      <div className="mt-auto grid gap-6 pt-28 sm:grid-cols-[minmax(210px,0.72fr)_minmax(0,1.28fr)] sm:items-end sm:pt-32 lg:gap-10">
-                        <div className="self-center sm:self-end sm:pb-3">
-                          <p className="text-10px font-medium uppercase tracking-[0.2em] text-white/45">
-                            Un regalo para vos
-                          </p>
-                          <p className="mt-2 text-4xl font-semibold tracking-tight text-white drop-shadow-sm sm:text-5xl">
-                            {formatARS(Number(movement.amount ?? 0))}
-                          </p>
-                        </div>
-
-                        <div className="rounded-2xl border border-[#5B91BB]/25 bg-[#0A1D30]/90 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] backdrop-blur-md sm:p-5">
-                          <div className="border-l-2 border-beyonix-sky/65 pl-4">
-                            <p className="text-9px font-semibold uppercase tracking-[0.2em] text-beyonix-sky/70">
-                              Dedicatoria
-                            </p>
-                            <p className="mt-2 line-clamp-3 min-h-6 text-sm font-normal italic leading-6 text-white/90 sm:text-base">
-                              “{message}”
-                            </p>
-                          </div>
-                          <div className="mt-5 grid gap-4 border-t border-white/[0.09] pt-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end sm:gap-7">
-                            <div className="min-w-0">
-                              <p className="text-9px font-medium uppercase tracking-[0.17em] text-white/42">
-                                Te la envió
-                              </p>
-                              <p className="mt-1 truncate text-sm font-medium text-white/82">
-                                {senderName}
-                              </p>
-                            </div>
-                            <div className="sm:text-right">
-                              <p className="text-9px font-medium uppercase tracking-[0.16em] text-white/42">
-                                Emitida
-                              </p>
-                              <p className="mt-1 text-sm font-semibold text-white/82">
-                                {emissionDate}
-                              </p>
-                            </div>
-                            <div className="sm:text-right">
-                              <p className="text-9px font-medium uppercase tracking-[0.16em] text-beyonix-sky/65">
-                                Vence
-                              </p>
-                              <p className="mt-1 text-sm font-semibold text-beyonix-sky">
-                                {expirationDate
-                                  ? expirationDate
-                                  : "Sin vencimiento informado"}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="mt-6 flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-[#31506F] bg-[#242424] px-6 text-center">
-              <div className="flex size-14 items-center justify-center rounded-2xl border border-[#4F82A8] bg-[#132B40] text-beyonix-sky">
-                <Gift className="size-6" />
-              </div>
-              <h3 className="mt-4 text-base font-medium text-white/88">
-                Todavía no recibiste Gift Cards
-              </h3>
-              <p className="mt-1.5 max-w-sm text-xs font-normal leading-5 text-white/50">
-                Cuando alguien te envíe un regalo, vas a encontrarlo acá con su dedicatoria.
-              </p>
-            </div>
-          )}
-        </section>
-      ) : null}
-      </div>
+      </AccountCard>
     </AccountPageContainer>
   )
 }
 
-const TOPUPS_PER_PAGE = 10
 const MERCADOPAGO_ACTIVE_TOPUP_KEY = "beyonix:mercadopago-active-topup"
 
 function CargarSaldo({ onBack }: { onBack: () => void }) {
@@ -796,9 +404,6 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
     mercadopago_status?: string | null
     created_at: string
   }>>([])
-  const [topupPage, setTopupPage] = useState(1)
-  const [topupTotal, setTopupTotal] = useState(0)
-  const [topupsError, setTopupsError] = useState("")
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<"transfer" | "mercadopago">("transfer")
@@ -809,14 +414,6 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
   >("idle")
   const reconciledReturnRef = useRef<string | null>(null)
   const abandoningTopupRef = useRef(false)
-  const [mercadoPagoDetailTopupId, setMercadoPagoDetailTopupId] = useState<string | null>(null)
-  const statusLabels: Record<string, string> = {
-    en_revision: "En revisión",
-    acreditado: "Acreditado",
-    rechazado: "Rechazado",
-    pendiente_pago: "Pendiente de pago",
-    cancelado: "Cancelado",
-  }
   const mercadoPagoSurchargePercent =
     customerCreditPayments.mercadoPagoSurchargePercent
   const mercadoPagoMinimumAmount =
@@ -834,10 +431,6 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
   const mercadoPagoReturnTopupId = searchParams.get("topup")
   const mercadoPagoReturnPaymentId =
     searchParams.get("payment_id") || searchParams.get("collection_id")
-  const mercadoPagoDetailTopup = topups.find(
-    (topup) => topup.id === mercadoPagoDetailTopupId,
-  )
-  const topupTotalPages = Math.max(1, Math.ceil(topupTotal / TOPUPS_PER_PAGE))
   const latestTopup = topups.find(
     (topup) => topup.payment_method !== "mercadopago",
   )
@@ -848,28 +441,24 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
   const timelineSteps = [
     {
       title: "Transferí",
-      description: "Usá los datos bancarios",
       icon: Landmark,
       completed: true,
       current: !hasSubmittedProof,
     },
     {
       title: "Subí el comprobante",
-      description: "Adjuntá JPG, PNG o PDF",
       icon: UploadCloud,
       completed: hasSubmittedProof,
       current: false,
     },
     {
-      title: "Esperá la validación",
-      description: "Revisamos la transferencia",
+      title: "Validamos",
       icon: Clock3,
       completed: validationFinished,
       current: hasSubmittedProof && !validationFinished,
     },
     {
       title: "Saldo acreditado",
-      description: "Listo para usar en BEYONIX",
       icon: Coins,
       completed: latestTopup?.status === "acreditado",
       current: false,
@@ -881,7 +470,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
     loadingTopupsRef.current = true
 
     try {
-      const response = await fetch(`/api/customer-credit/topups?page=${topupPage}`, {
+      const response = await fetch("/api/customer-credit/topups?page=1", {
         cache: "no-store",
       })
       const data = (await response.json()) as {
@@ -894,7 +483,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
       }
 
       if (!response.ok) {
-        throw new Error(data.error ?? "No pudimos cargar el historial.")
+        throw new Error(data.error ?? "No pudimos actualizar el estado de la carga.")
       }
 
       const nextTopups = data.topups ?? []
@@ -909,30 +498,19 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
 
       creditedTopupIdsRef.current = nextCreditedIds
       setTopups(nextTopups)
-      setTopupTotal(Number(data.pagination?.total ?? 0))
-      setTopupsError("")
-
       if (hasNewAccreditedTopup) void reloadCustomerCredit()
     } catch (loadError) {
-      setTopupsError(
-        loadError instanceof Error
-          ? loadError.message
-          : "No pudimos cargar el historial de cargas.",
-      )
+      console.error("No se pudo actualizar el estado de las cargas", loadError)
     } finally {
       loadingTopupsRef.current = false
     }
-  }, [reloadCustomerCredit, topupPage])
+  }, [reloadCustomerCredit])
 
   useEffect(() => {
     void loadTopups()
     const intervalId = window.setInterval(() => void loadTopups(), 5000)
     return () => window.clearInterval(intervalId)
   }, [loadTopups])
-
-  useEffect(() => {
-    if (topupPage > topupTotalPages) setTopupPage(topupTotalPages)
-  }, [topupPage, topupTotalPages])
 
   useEffect(() => {
     function clearStoredTopup() {
@@ -1130,11 +708,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
 
       setLastSubmittedTopupId(data.topup?.id ?? replaceTopupId)
       if (proofInputRef.current) proofInputRef.current.value = ""
-      if (topupPage === 1) {
-        await loadTopups()
-      } else {
-        setTopupPage(1)
-      }
+      await loadTopups()
     } catch (submitError) {
       setProofFile(previousProofFile)
       setError(
@@ -1214,22 +788,19 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <AccountPageContainer className="max-w-[1120px] space-y-3 pb-6">
+    <AccountPageContainer className="max-w-[1120px] space-y-4 pb-6">
       <div className="flex flex-col gap-3 sm:relative sm:block">
         <AccountBackButton
           onClick={onBack}
           label="Volver a mi cuenta"
           className="h-9 w-fit rounded-full border-[#2A4B6C] bg-[#112A43]/55 px-3.5 text-xs font-semibold text-white/82 shadow-sm shadow-black/25 transition hover:-translate-y-0.5 hover:border-[#4B78A4] hover:bg-[#112A43] hover:text-white sm:absolute sm:right-0 sm:top-0"
         />
-
         <header className="px-1 pb-0.5 sm:pr-48">
           <p className="text-9px font-bold uppercase tracking-[0.2em] text-beyonix-sky/70">
             Saldo de tu cuenta
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              Cargar saldo
-            </h1>
+            <h1 className="text-2xl font-black tracking-tight text-white">Cargar saldo</h1>
             <span className="inline-flex h-7 items-center rounded-full border border-[#4F82A8]/45 bg-[#112A43]/55 px-3 text-xs font-bold text-white/82">
               Saldo actual: {formatARS(customerCreditBalance)}
             </span>
@@ -1241,14 +812,16 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
       </div>
 
       {mercadoPagoReturnStatus ? (
-        <div className={cn(
-          "rounded-xl border px-4 py-3 text-xs font-semibold",
-          mercadoPagoReturnStatus === "success"
-            ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
-            : mercadoPagoReturnStatus === "pending"
-              ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
-              : "border-red-300/25 bg-red-400/10 text-red-100",
-        )}>
+        <div
+          className={cn(
+            "rounded-xl border px-4 py-3 text-xs font-semibold",
+            mercadoPagoReturnStatus === "success"
+              ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
+              : mercadoPagoReturnStatus === "pending"
+                ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
+                : "border-red-300/25 bg-red-400/10 text-red-100",
+          )}
+        >
           {mercadoPagoReconciliation === "checking"
             ? "Estamos verificando el pago directamente con Mercado Pago."
             : mercadoPagoReconciliation === "credited"
@@ -1256,17 +829,22 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
               : mercadoPagoReconciliation === "error"
                 ? "Mercado Pago informó el regreso, pero la verificación sigue pendiente. No vuelvas a pagar: el sistema reintentará automáticamente."
                 : mercadoPagoReturnStatus === "success"
-            ? "Mercado Pago recibió el pago. El saldo se actualizará automáticamente al confirmarse la aprobación."
-            : mercadoPagoReturnStatus === "pending"
-              ? "El pago quedó pendiente en Mercado Pago. Se acreditará automáticamente si luego resulta aprobado."
-              : "Mercado Pago no aprobó el pago. No se acreditó saldo en tu cuenta."}
+                  ? "Mercado Pago recibió el pago. El saldo se actualizará automáticamente al confirmarse la aprobación."
+                  : mercadoPagoReturnStatus === "pending"
+                    ? "El pago quedó pendiente en Mercado Pago. Se acreditará automáticamente si luego resulta aprobado."
+                    : "Mercado Pago no aprobó el pago. No se acreditó saldo en tu cuenta."}
         </div>
       ) : null}
 
-      <div className="customer-credit-master-surface space-y-3 rounded-3xl border border-[#203A50] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.48)] sm:p-5">
-        <div className="grid gap-2 rounded-2xl border border-white/8 bg-[#0D0E10] p-2 sm:grid-cols-2">
+      <div className="customer-credit-master-surface space-y-4 rounded-3xl border border-[#203A50] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.48)] sm:p-5">
+        <div
+          className="grid grid-cols-2 gap-2 rounded-2xl border border-white/8 bg-[#0D0E10] p-2"
+          role="group"
+          aria-label="Método para cargar saldo"
+        >
           <button
             type="button"
+            aria-pressed={paymentMethod === "transfer"}
             onClick={() => {
               setPaymentMethod("transfer")
               setError("")
@@ -1274,7 +852,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
             className={cn(
               "flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
               paymentMethod === "transfer"
-                ? "border-beyonix-sky/70 bg-[#112A43] shadow-[0_0_24px_rgba(79,130,168,0.14)]"
+                ? "border-beyonix-sky/70 bg-[#112A43] shadow-[0_0_20px_rgba(79,130,168,0.12)]"
                 : "border-transparent bg-white/[0.025] hover:border-white/12 hover:bg-white/[0.04]",
             )}
           >
@@ -1283,11 +861,14 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
             </span>
             <span>
               <span className="block text-sm font-black text-white">Transferencia</span>
-              <span className="mt-0.5 block text-xs font-semibold text-emerald-300">Sin recargo</span>
+              <span className="mt-0.5 block text-[13px] font-semibold text-emerald-300">
+                SIN RECARGO
+              </span>
             </span>
           </button>
           <button
             type="button"
+            aria-pressed={paymentMethod === "mercadopago"}
             onClick={() => {
               setPaymentMethod("mercadopago")
               setError("")
@@ -1295,7 +876,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
             className={cn(
               "flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
               paymentMethod === "mercadopago"
-                ? "border-[#49A9E8]/75 bg-[#0D2D43] shadow-[0_0_24px_rgba(73,169,232,0.16)]"
+                ? "border-[#49A9E8]/75 bg-[#0D2D43] shadow-[0_0_20px_rgba(73,169,232,0.13)]"
                 : "border-transparent bg-white/[0.025] hover:border-white/12 hover:bg-white/[0.04]",
             )}
           >
@@ -1312,265 +893,239 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
         </div>
 
         {paymentMethod === "transfer" ? (
-        <section className="customer-credit-topup-surface overflow-hidden rounded-2xl border border-white/8 bg-[#101114] shadow-[0_24px_64px_rgba(0,0,0,0.34)]">
-        <div className="border-b border-white/7 px-4 py-4 sm:px-5">
-          <ol className="grid gap-0 md:grid-cols-4">
-            {timelineSteps.map((step, index) => {
-              const StepIcon = step.icon
-              const active = step.completed || step.current
-              const nextStep = timelineSteps[index + 1]
-              const connectsToActive = Boolean(
-                nextStep && (nextStep.completed || nextStep.current),
-              )
-
-              return (
-                <li key={step.title} className="flex min-w-0 gap-3 md:block">
-                  <div className="flex shrink-0 flex-col items-center md:flex-row">
-                    <span className={cn(
-                      "hidden h-px flex-1 md:block",
-                      index === 0
-                        ? "bg-transparent"
-                        : active
-                          ? "bg-[#4F82A8]"
-                          : "bg-white/10",
-                    )} />
-                    <span className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors",
-                      active
-                        ? "border-[#4F82A8] bg-[#112A43] text-white shadow-[0_0_18px_rgba(79,130,168,0.18)]"
-                        : "border-white/12 bg-[#141414] text-white/30",
-                    )}>
-                      <StepIcon className="size-[18px]" />
+          <>
+            <ol className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/7 bg-white/7 sm:grid-cols-4">
+              {timelineSteps.map((step) => {
+                const StepIcon = step.icon
+                const active = step.completed || step.current
+                return (
+                  <li
+                    key={step.title}
+                    className="flex min-h-12 items-center gap-2 bg-[#101114] px-3 py-2.5 sm:justify-center"
+                  >
+                    <span
+                      className={cn(
+                        "flex size-7 shrink-0 items-center justify-center rounded-full border",
+                        active
+                          ? "border-[#4F82A8] bg-[#112A43] text-white"
+                          : "border-white/12 bg-[#141414] text-white/32",
+                      )}
+                    >
+                      <StepIcon className="size-3.5" />
                     </span>
-                    {index < timelineSteps.length - 1 ? (
-                      <span className={cn(
-                        "w-px flex-1 md:hidden",
-                        connectsToActive ? "bg-[#4F82A8]" : "bg-white/10",
-                      )} />
-                    ) : null}
-                    <span className={cn(
-                      "hidden h-px flex-1 md:block",
-                      index === timelineSteps.length - 1
-                        ? "bg-transparent"
-                        : connectsToActive
-                          ? "bg-[#4F82A8]"
-                          : "bg-white/10",
-                    )} />
-                  </div>
-                  <div className={cn(
-                    "min-w-0 pt-0.5 md:px-1.5 md:pt-1 md:text-center",
-                    index < timelineSteps.length - 1 ? "pb-3 md:pb-0" : "pb-0",
-                  )}>
-                    <p className={cn(
-                      "customer-credit-timeline-title font-bold",
-                      active ? "text-white" : "text-white/38",
-                    )}>
+                    <span
+                      className={cn(
+                        "text-[11px] font-bold leading-4",
+                        active ? "text-white/82" : "text-white/38",
+                      )}
+                    >
                       {step.title}
-                    </p>
-                    <p className={cn(
-                      "customer-credit-timeline-description mt-0.5 truncate",
-                      active ? "text-white/48" : "text-white/25",
-                    )}>
-                      {step.description}
-                    </p>
-                  </div>
-                </li>
-              )
-            })}
-          </ol>
-        </div>
-
-        <div className="grid lg:grid-cols-2">
-          <section className="p-4 sm:p-5 lg:border-r lg:border-white/7">
-            <div className="flex items-center gap-3">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white shadow-[0_10px_24px_rgba(17,42,67,0.32)]">
-                <Landmark className="size-4" />
-              </span>
-              <div>
-                <p className="text-10px font-bold uppercase tracking-[0.18em] text-beyonix-sky/65">
-                  Transferencia
-                </p>
-                <h2 className="mt-0.5 text-base font-bold text-white">
-                  Datos bancarios
-                </h2>
-              </div>
-            </div>
-
-            <div className="mt-4 overflow-hidden rounded-xl bg-[#141414] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07),0_14px_32px_rgba(0,0,0,0.18)]">
-              {[
-                { label: "Alias", value: TRANSFER_ALIAS, field: "alias" as const },
-                { label: "CVU", value: TRANSFER_CVU, field: "cvu" as const },
-                { label: "Titular", value: TRANSFER_ACCOUNT_HOLDER, field: null },
-              ].map((item, index) => (
-                <div
-                  key={item.label}
-                  className={cn(
-                    "group flex min-h-13 items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.035]",
-                    index > 0 && "border-t border-white/6",
-                  )}
-                >
-                  <span className="text-xs font-semibold text-white/42">{item.label}</span>
-                  <div className="flex min-w-0 items-center justify-end gap-3">
-                    <span className={cn(
-                      "truncate text-right text-sm font-semibold text-white/88",
-                      item.field === "cvu" && "tabular-nums",
-                      item.label === "Titular" && "uppercase",
-                    )}>
-                      {item.value}
                     </span>
-                    {item.field ? (
-                      <button
-                        type="button"
-                        onClick={() => void copyTransferValue(item.field, item.value)}
-                        className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-white/72 transition-all hover:-translate-y-0.5 hover:border-[#4F82A8] hover:bg-[#112A43] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55"
-                        aria-label={`Copiar ${item.label.toLowerCase()}`}
-                        title={copiedTransferField === item.field ? "Copiado" : `Copiar ${item.label}`}
-                      >
-                        {copiedTransferField === item.field ? (
-                          <CheckCircle2 className="size-3.5" />
-                        ) : (
-                          <Copy className="size-3.5" />
-                        )}
-                      </button>
-                    ) : null}
+                  </li>
+                )
+              })}
+            </ol>
+
+            <div className="grid items-stretch overflow-hidden rounded-2xl border border-white/8 bg-[#101114] lg:grid-cols-2">
+              <section className="flex min-h-[280px] flex-col p-4 sm:p-5 lg:border-r lg:border-white/7">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white">
+                    <Landmark className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-beyonix-sky/65">
+                      Transferencia
+                    </p>
+                    <h2 className="mt-0.5 text-base font-bold text-white">Datos bancarios</h2>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
+                <div className="mt-4 flex-1 overflow-hidden rounded-xl bg-[#141414] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
+                  {[
+                    { label: "Alias", value: TRANSFER_ALIAS, field: "alias" as const },
+                    { label: "CVU", value: TRANSFER_CVU, field: "cvu" as const },
+                    { label: "Titular", value: TRANSFER_ACCOUNT_HOLDER, field: null },
+                  ].map((item, index) => (
+                    <div
+                      key={item.label}
+                      className={cn(
+                        "group flex min-h-[58px] items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-white/[0.035]",
+                        index > 0 && "border-t border-white/6",
+                      )}
+                    >
+                      <span className="text-xs font-semibold text-white/42">{item.label}</span>
+                      <div className="flex min-w-0 items-center justify-end gap-3">
+                        <span
+                          className={cn(
+                            "truncate text-right text-sm font-semibold text-white/88",
+                            item.field === "cvu" && "tabular-nums",
+                            item.label === "Titular" && "uppercase",
+                          )}
+                        >
+                          {item.value}
+                        </span>
+                        {item.field ? (
+                          <button
+                            type="button"
+                            onClick={() => void copyTransferValue(item.field, item.value)}
+                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-white/72 transition-all hover:border-[#4F82A8] hover:bg-[#112A43] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55"
+                            aria-label={`Copiar ${item.label.toLowerCase()}`}
+                            title={copiedTransferField === item.field ? "Copiado" : `Copiar ${item.label}`}
+                          >
+                            {copiedTransferField === item.field ? (
+                              <CheckCircle2 className="size-3.5" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="size-8 shrink-0" aria-hidden="true" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
-          <section className="flex min-h-full flex-col border-t border-white/7 p-4 sm:p-5 lg:border-t-0">
-            <div className="flex items-center gap-3">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white shadow-[0_10px_24px_rgba(17,42,67,0.32)]">
-                <UploadCloud className="size-4" />
-              </span>
-              <div>
-                <p className="text-10px font-bold uppercase tracking-[0.18em] text-beyonix-sky/65">
-                  Comprobante
-                </p>
-                <h2 className="mt-0.5 text-base font-bold text-white">
-                  Confirmá tu transferencia
-                </h2>
-              </div>
-            </div>
-
-            <input
-              ref={proofInputRef}
-              type="file"
-              accept="image/*,.pdf"
-              className="hidden"
-              onChange={(event) => selectAndUploadProof(event.target.files?.[0])}
-            />
-
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => proofInputRef.current?.click()}
-              onDragEnter={(event) => {
-                event.preventDefault()
-                proofDragDepthRef.current += 1
-                setIsDraggingProof(true)
-              }}
-              onDragOver={(event) => {
-                event.preventDefault()
-                event.dataTransfer.dropEffect = "copy"
-              }}
-              onDragLeave={(event) => {
-                event.preventDefault()
-                proofDragDepthRef.current = Math.max(0, proofDragDepthRef.current - 1)
-                if (proofDragDepthRef.current === 0) setIsDraggingProof(false)
-              }}
-              onDrop={(event) => {
-                event.preventDefault()
-                proofDragDepthRef.current = 0
-                setIsDraggingProof(false)
-                selectAndUploadProof(event.dataTransfer.files?.[0])
-              }}
-              className={cn(
-                "group mt-4 flex min-h-36 w-full flex-1 flex-col items-center justify-center rounded-xl border border-dashed bg-[#141414] px-5 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55 disabled:cursor-wait disabled:hover:translate-y-0",
-                isDraggingProof
-                  ? "border-beyonix-sky bg-[#112A43]/45 shadow-[0_0_28px_rgba(79,130,168,0.14)]"
-                  : "border-[#31506F] hover:border-beyonix-sky hover:bg-[#112A43]/22",
-              )}
-            >
-              <span className="flex size-10 items-center justify-center rounded-xl bg-[#112A43]/70 text-white transition-transform duration-200 group-hover:scale-105">
-                {saving ? (
-                  <Loader2 className="size-5 animate-spin" />
-                ) : lastSubmittedTopupId && proofFile ? (
-                  <CheckCircle2 className="size-5" />
-                ) : (
-                  <UploadCloud className="size-5" />
-                )}
-              </span>
-              <span className="mt-2 max-w-full truncate text-sm font-bold text-white">
-                {saving
-                  ? "Enviando comprobante..."
-                  : proofFile?.name ?? "Subí tu comprobante"}
-              </span>
-              <span className="mt-1.5 text-xs text-white/48">
-                {lastSubmittedTopupId && proofFile && !saving
-                  ? "Comprobante enviado correctamente"
-                  : "Arrastrá el archivo o hacé clic"}
-              </span>
-              {!lastSubmittedTopupId || !proofFile ? (
-                <span className="mt-2 text-9px font-semibold uppercase tracking-[0.16em] text-white/28">
-                  JPG · PNG · PDF
-                </span>
-              ) : null}
-            </button>
-
-            {lastSubmittedTopupId && !saving ? (
-              <div className="mt-3 flex items-center justify-center gap-2 text-center">
-                <span className="text-xs text-white/42">¿Archivo incorrecto?</span>
+              <section className="flex min-h-[280px] flex-col border-t border-white/7 p-4 sm:p-5 lg:border-t-0">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white">
+                    <UploadCloud className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-beyonix-sky/65">
+                      Comprobante
+                    </p>
+                    <h2 className="mt-0.5 text-base font-bold text-white">Subí tu comprobante</h2>
+                  </div>
+                </div>
+                <input
+                  ref={proofInputRef}
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={(event) => selectAndUploadProof(event.target.files?.[0])}
+                />
                 <button
                   type="button"
+                  disabled={saving}
                   onClick={() => proofInputRef.current?.click()}
-                  className="text-xs font-bold text-beyonix-sky transition hover:text-white focus-visible:outline-none focus-visible:underline"
+                  onDragEnter={(event) => {
+                    event.preventDefault()
+                    proofDragDepthRef.current += 1
+                    setIsDraggingProof(true)
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = "copy"
+                  }}
+                  onDragLeave={(event) => {
+                    event.preventDefault()
+                    proofDragDepthRef.current = Math.max(0, proofDragDepthRef.current - 1)
+                    if (proofDragDepthRef.current === 0) setIsDraggingProof(false)
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    proofDragDepthRef.current = 0
+                    setIsDraggingProof(false)
+                    selectAndUploadProof(event.dataTransfer.files?.[0])
+                  }}
+                  className={cn(
+                    "group mt-4 flex min-h-36 w-full flex-1 flex-col items-center justify-center rounded-xl border border-dashed bg-[#141414] px-5 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55 disabled:cursor-wait disabled:hover:translate-y-0",
+                    isDraggingProof
+                      ? "border-beyonix-sky bg-[#112A43]/45 shadow-[0_0_28px_rgba(79,130,168,0.14)]"
+                      : "border-[#31506F] hover:border-beyonix-sky hover:bg-[#112A43]/22",
+                  )}
                 >
-                  Cambiarlo
+                  <span className="flex size-10 items-center justify-center rounded-xl bg-[#112A43]/70 text-white transition-transform duration-200 group-hover:scale-105">
+                    {saving ? (
+                      <Loader2 className="size-5 animate-spin" />
+                    ) : lastSubmittedTopupId && proofFile ? (
+                      <CheckCircle2 className="size-5" />
+                    ) : (
+                      <UploadCloud className="size-5" />
+                    )}
+                  </span>
+                  <span className="mt-2 max-w-full truncate text-sm font-bold text-white">
+                    {saving
+                      ? "Enviando comprobante..."
+                      : proofFile?.name ?? "Arrastrá el archivo o hacé clic"}
+                  </span>
+                  <span className="mt-1.5 text-xs text-white/48">
+                    {lastSubmittedTopupId && proofFile && !saving
+                      ? "Comprobante enviado correctamente"
+                      : "Seleccioná tu comprobante de transferencia"}
+                  </span>
+                  {!lastSubmittedTopupId || !proofFile ? (
+                    <span className="mt-2 text-9px font-semibold uppercase tracking-[0.16em] text-white/28">
+                      JPG · PNG · PDF
+                    </span>
+                  ) : null}
                 </button>
-              </div>
-            ) : null}
-
-            {error ? (
-              <p className="mt-3 text-center text-xs text-red-200/85">{error}</p>
-            ) : null}
-          </section>
-        </div>
-        </section>
-        ) : (
-          <section className="customer-credit-topup-surface overflow-hidden rounded-2xl border border-[#244C68] bg-[#101114] shadow-[0_24px_64px_rgba(0,0,0,0.34)]">
-            <div className="grid border-b border-white/7 sm:grid-cols-3">
-              {[
-                ["1", "Ingresá el saldo", "Elegí cuánto querés acreditar"],
-                ["2", "Pagá en Mercado Pago", "El total incluye la comisión"],
-                ["3", "Acreditación automática", "Al recibir la aprobación"],
-              ].map(([number, title, description]) => (
-                <div key={number} className="flex items-center gap-3 border-white/7 px-4 py-3 sm:border-r sm:last:border-r-0">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#4F9AC8] bg-[#103653] text-xs font-black text-white">
-                    {number}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold text-white">{title}</span>
-                    <span className="mt-0.5 block truncate text-10px text-white/42">{description}</span>
-                  </span>
-                </div>
-              ))}
+                {lastSubmittedTopupId && !saving ? (
+                  <div className="mt-3 flex items-center justify-center gap-2 text-center">
+                    <span className="text-xs text-white/42">¿Archivo incorrecto?</span>
+                    <button
+                      type="button"
+                      onClick={() => proofInputRef.current?.click()}
+                      className="text-xs font-bold text-beyonix-sky transition hover:text-white focus-visible:outline-none focus-visible:underline"
+                    >
+                      Cambiarlo
+                    </button>
+                  </div>
+                ) : null}
+                {error ? (
+                  <p className="mt-3 text-center text-xs text-red-200/85">{error}</p>
+                ) : null}
+              </section>
             </div>
 
-            <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.8fr)]">
-              <div>
+            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl bg-[#112A43]/42 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(79,130,168,0.2)] sm:items-center">
+              <Clock3 className="mt-0.5 size-4.5 shrink-0 text-white sm:mt-0" />
+              <p className="text-xs leading-5 text-white/64">
+                Validamos transferencias de lunes a viernes, de 8:00 a 20:00 h.
+                Fuera de ese horario se procesan el próximo día hábil.
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <ol className="grid gap-px overflow-hidden rounded-xl border border-white/7 bg-white/7 sm:grid-cols-3">
+              {[
+                ["1", "Ingresá el saldo"],
+                ["2", "Pagá en Mercado Pago"],
+                ["3", "Acreditación automática"],
+              ].map(([number, title]) => (
+                <li
+                  key={number}
+                  className="flex min-h-12 items-center gap-2 bg-[#101114] px-3 py-2.5 sm:justify-center"
+                >
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#4F9AC8] bg-[#103653] text-[11px] font-black text-white">
+                    {number}
+                  </span>
+                  <span className="text-[11px] font-bold leading-4 text-white/82">{title}</span>
+                </li>
+              ))}
+            </ol>
+
+            <div className="grid items-stretch overflow-hidden rounded-2xl border border-white/8 bg-[#101114] lg:grid-cols-2">
+              <section className="flex min-h-[300px] flex-col p-4 sm:p-5 lg:border-r lg:border-white/7">
                 <div className="flex items-center gap-3">
                   <span className="flex size-9 items-center justify-center rounded-xl bg-[#0E4D73] text-white">
                     <CreditCard className="size-4.5" />
                   </span>
                   <div>
-                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[#78C9F5]">Mercado Pago</p>
-                    <h2 className="mt-0.5 text-base font-bold text-white">¿Cuánto saldo querés cargar?</h2>
+                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[#78C9F5]">
+                      Mercado Pago
+                    </p>
+                    <h2 className="mt-0.5 text-base font-bold text-white">
+                      ¿Cuánto saldo querés cargar?
+                    </h2>
                   </div>
                 </div>
-
-                <label className="mt-4 flex items-center justify-between gap-3 text-xs font-bold text-white/70" htmlFor="mercadopago-credit-amount">
+                <label
+                  className="mt-5 flex items-center justify-between gap-3 text-xs font-bold text-white/70"
+                  htmlFor="mercadopago-credit-amount"
+                >
                   <span>Saldo a acreditar</span>
                   <span className="rounded-full border border-[#315A7A] bg-[#0B2233] px-2.5 py-1 text-10px font-black text-[#78C9F5]">
                     Mínimo: {formatARS(mercadoPagoMinimumAmount)}
@@ -1581,41 +1136,41 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                   <input
                     id="mercadopago-credit-amount"
                     value={mercadoPagoAmount}
-                    onChange={(event) => setMercadoPagoAmount(event.target.value.replace(/[^\d.,]/g, ""))}
+                    onChange={(event) =>
+                      setMercadoPagoAmount(event.target.value.replace(/[^\d.,]/g, ""))
+                    }
                     inputMode="decimal"
                     placeholder="100.000"
                     className="min-w-0 flex-1 bg-transparent text-base font-bold text-white outline-none placeholder:text-white/25"
                   />
                 </div>
-
-                {mercadoPagoCreditAmount > 0 && mercadoPagoCreditAmount < mercadoPagoMinimumAmount ? (
+                {mercadoPagoCreditAmount > 0 &&
+                mercadoPagoCreditAmount < mercadoPagoMinimumAmount ? (
                   <p className="mt-2 text-xs font-semibold text-amber-200">
                     Ingresá al menos {formatARS(mercadoPagoMinimumAmount)} para continuar.
                   </p>
                 ) : null}
+                {error ? <p className="mt-3 text-xs text-red-200/85">{error}</p> : null}
+              </section>
 
-                <p className="mt-3 text-xs leading-5 text-white/48">
-                  La aprobación o el rechazo dependen exclusivamente de Mercado Pago y, cuando corresponda, de la entidad emisora; <strong className="text-white/80">BEYONIX no interviene en esa decisión</strong>. El saldo se acredita automáticamente solo cuando Mercado Pago informa el pago como aprobado.
+              <section className="flex min-h-[300px] flex-col border-t border-white/7 bg-[#0B151F]/45 p-4 sm:p-5 lg:border-t-0">
+                <p className="text-10px font-black uppercase tracking-[0.18em] text-[#78C9F5]">
+                  Resumen
                 </p>
-              </div>
-
-              <div className="rounded-2xl border border-[#2A536F] bg-[#0B151F] p-4">
-                <p className="text-10px font-black uppercase tracking-[0.18em] text-[#78C9F5]">Resumen</p>
-                <dl className="mt-3 space-y-2.5 text-xs">
+                <dl className="mt-5 space-y-3 text-xs">
                   <div className="flex items-center justify-between gap-4 text-white/58">
                     <dt>Saldo a acreditar</dt>
                     <dd className="font-bold text-white">{formatARS(mercadoPagoCreditAmount)}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4 text-white/58">
-                    <dt>Comisión de Mercado Pago ({mercadoPagoSurchargePercent}%)</dt>
+                    <dt>Comisión Mercado Pago ({mercadoPagoSurchargePercent}%)</dt>
                     <dd className="font-bold text-white">{formatARS(mercadoPagoSurchargeAmount)}</dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
+                  <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-4">
                     <dt className="font-bold text-white">Total a pagar</dt>
-                    <dd className="text-base font-black text-[#78C9F5]">{formatARS(mercadoPagoTotal)}</dd>
+                    <dd className="text-lg font-black text-[#78C9F5]">{formatARS(mercadoPagoTotal)}</dd>
                   </div>
                 </dl>
-
                 <button
                   type="button"
                   disabled={
@@ -1623,267 +1178,27 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                     mercadoPagoCreditAmount < mercadoPagoMinimumAmount
                   }
                   onClick={() => void startMercadoPagoTopup()}
-                  className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#69A5D0] bg-[#146B9B] px-4 text-sm font-black text-white shadow-[0_0_20px_rgba(73,169,232,0.18)] transition hover:-translate-y-0.5 hover:bg-[#197DB3] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
+                  className="mt-auto inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#69A5D0] bg-[#146B9B] px-4 text-sm font-black text-white shadow-[0_0_20px_rgba(73,169,232,0.18)] transition hover:-translate-y-0.5 hover:bg-[#197DB3] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
                 >
-                  {redirectingToMercadoPago ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
+                  {redirectingToMercadoPago ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <CreditCard className="size-4" />
+                  )}
                   {redirectingToMercadoPago ? "Abriendo Mercado Pago..." : "Continuar en Mercado Pago"}
                 </button>
-                <p className="mt-3 text-center text-10px leading-4 text-white/38">
-                  La comisión corresponde al costo de este canal y no integra el saldo acreditado por BEYONIX.
-                </p>
-              </div>
+              </section>
             </div>
 
-            {error ? <p className="border-t border-red-300/10 px-5 py-3 text-center text-xs text-red-200/85">{error}</p> : null}
-          </section>
-        )}
-
-        <div className="grid gap-3 md:grid-cols-2">
-        <section className="customer-credit-info-blue flex min-h-16 items-center gap-3 rounded-xl bg-[#112A43]/42 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(79,130,168,0.2)]">
-          <Clock3 className="size-4.5 shrink-0 text-white" />
-          <p className="min-w-0 text-xs leading-5 text-white/64">
-            <strong className="mr-2 text-white/90">
-              {paymentMethod === "transfer" ? "Validación" : "Acreditación automática"}
-            </strong>
-            {paymentMethod === "transfer"
-              ? `${BEYONIX_SUPPORT_HOURS}; fuera de horario, el próximo día hábil.`
-              : "Se realiza cuando Mercado Pago confirma correctamente el pago como aprobado."}
-          </p>
-        </section>
-
-        <section className="customer-credit-info-warning flex min-h-16 items-center gap-3 rounded-xl bg-[#141414] px-4 py-3 shadow-[inset_0_0_0_1px_rgba(252,211,77,0.2)]">
-          <AlertTriangle className="size-4.5 shrink-0 text-white" />
-          <p className="min-w-0 text-xs leading-5 text-white/60">
-            <strong className="mr-2 text-amber-50/90">Importante</strong>
-            {paymentMethod === "transfer"
-              ? "Solo acreditamos transferencias recibidas con comprobantes válidos."
-              : `La comisión de Mercado Pago es del ${mercadoPagoSurchargePercent}% y no se acredita como saldo.`}
-          </p>
-        </section>
-        </div>
-
-        <section className="customer-credit-topup-surface rounded-2xl bg-[#101114] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07),0_20px_52px_rgba(0,0,0,0.22)] sm:p-5">
-        <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-[#112A43]/70 text-white">
-            <FileText className="size-4" />
-          </span>
-          <div>
-            <h2 className="text-base font-bold text-white">Comprobantes enviados</h2>
-            <p className="mt-0.5 text-xs text-white/40">Historial de tus cargas de saldo</p>
-          </div>
-        </div>
-
-        {topupsError ? (
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-red-300/18 bg-red-400/8 px-4 py-3 text-xs text-red-100/85">
-            <span>{topupsError}</span>
-            <button
-              type="button"
-              onClick={() => void loadTopups()}
-              className="shrink-0 font-black text-white transition hover:text-red-100"
-            >
-              Reintentar
-            </button>
-          </div>
-        ) : null}
-
-        {topups.length ? (
-          <div className="mt-3 space-y-2">
-            {topups.map((topup) => (
-              <article
-                key={topup.id}
-                className="grid gap-3 rounded-xl bg-[#141414] px-4 py-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#171717] hover:shadow-[inset_0_0_0_1px_rgba(79,130,168,0.28),0_12px_26px_rgba(0,0,0,0.18)] sm:grid-cols-[minmax(105px,0.8fr)_minmax(125px,1fr)_minmax(130px,1fr)_minmax(130px,1fr)_auto] sm:items-center"
-              >
-                <div className="min-w-0">
-                  <p className="text-10px font-semibold uppercase tracking-wider text-white/35">Monto</p>
-                  <p className="mt-1 text-sm font-bold text-white">
-                    {topup.payment_method === "mercadopago" && Number(topup.amount ?? 0) > 0
-                      ? formatARS(Number(topup.amount))
-                      : topup.status === "acreditado" && Number(topup.amount ?? 0) > 0
-                      ? formatARS(Number(topup.amount))
-                      : topup.status === "rechazado"
-                        ? "Sin acreditar"
-                        : "A confirmar"}
-                  </p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-10px font-semibold uppercase tracking-wider text-white/35">Fecha</p>
-                  <p className="mt-1 text-sm font-semibold text-white/78">
-                    {formatOrderCardDate(topup.created_at)}
-                  </p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-10px font-semibold uppercase tracking-wider text-white/35">Método de pago</p>
-                  <span className="mt-1 inline-flex items-center gap-2 text-sm font-semibold text-white/78">
-                    {topup.payment_method === "mercadopago" ? (
-                      <CreditCard className="size-3.5 text-[#78C9F5]" />
-                    ) : (
-                      <Landmark className="size-3.5 text-beyonix-sky" />
-                    )}
-                    {topup.payment_method === "mercadopago" ? "Mercado Pago" : "Transferencia"}
-                  </span>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-10px font-semibold uppercase tracking-wider text-white/35">Estado</p>
-                  <span className={cn(
-                    "mt-1 inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold",
-                    topup.status === "acreditado"
-                      ? "bg-emerald-400/10 text-emerald-300"
-                      : ["rechazado", "cancelado"].includes(topup.status)
-                        ? "bg-red-400/10 text-red-200"
-                        : "bg-amber-300/10 text-amber-200",
-                  )}>
-                    {topup.status === "acreditado" ? (
-                      <CheckCircle2 className="size-3.5" />
-                    ) : ["rechazado", "cancelado"].includes(topup.status) ? (
-                      <X className="size-3.5" />
-                    ) : (
-                      <Clock3 className="size-3.5" />
-                    )}
-                    {statusLabels[topup.status] ?? topup.status}
-                  </span>
-                </div>
-                <div className="sm:justify-self-end">
-                  {topup.proof_signed_url ? (
-                    <a
-                      href={topup.proof_signed_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-[#4F82A8] bg-[#112A43]/75 px-3 text-xs font-bold text-white shadow-[0_0_14px_rgba(79,130,168,0.12)] transition-all hover:-translate-y-0.5 hover:border-beyonix-sky hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(79,130,168,0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55"
-                    >
-                      <Eye className="size-3.5" />
-                      Ver comprobante
-                    </a>
-                  ) : topup.payment_method === "mercadopago" ? (
-                    <button
-                      type="button"
-                      onClick={() => setMercadoPagoDetailTopupId(topup.id)}
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-[#4F82A8] bg-[#112A43]/75 px-3 text-xs font-bold text-white shadow-[0_0_14px_rgba(79,130,168,0.12)] transition-all hover:-translate-y-0.5 hover:border-beyonix-sky hover:bg-[#183B5E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55"
-                    >
-                      <Eye className="size-3.5" />
-                      Ver detalle
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-
-            {topupTotalPages > 1 ? (
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-[#203A50] bg-[#0B151F] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-                <span aria-hidden="true" />
-                <div className="flex items-center justify-center gap-3">
-                  <button
-                    type="button"
-                    disabled={topupPage <= 1}
-                    onClick={() => setTopupPage((current) => Math.max(1, current - 1))}
-                    aria-label="Página anterior de comprobantes"
-                    className="inline-flex size-9 items-center justify-center rounded-lg border border-[#315A7A] bg-[#112A43]/75 text-beyonix-sky shadow-sm transition hover:border-[#69A5D0] hover:bg-[#173750] hover:text-white disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.025] disabled:text-white/30"
-                  >
-                    <ChevronLeft className="size-4.5" />
-                  </button>
-                  <p className="min-w-20 text-center text-xs font-semibold text-white/72">
-                    Página <span className="font-bold text-beyonix-sky">{topupPage}</span>
-                    <span className="px-0.5 text-white/42">/</span>
-                    <span className="font-bold text-white/88">{topupTotalPages}</span>
-                  </p>
-                  <button
-                    type="button"
-                    disabled={topupPage >= topupTotalPages}
-                    onClick={() => setTopupPage((current) => Math.min(topupTotalPages, current + 1))}
-                    aria-label="Página siguiente de comprobantes"
-                    className="inline-flex size-9 items-center justify-center rounded-lg border border-[#315A7A] bg-[#112A43]/75 text-beyonix-sky shadow-sm transition hover:border-[#69A5D0] hover:bg-[#173750] hover:text-white disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.025] disabled:text-white/30"
-                  >
-                    <ChevronRight className="size-4.5" />
-                  </button>
-                </div>
-                <p className="justify-self-end whitespace-nowrap text-right text-xs font-semibold text-white/68">
-                  {topupTotal} comprobante{topupTotal === 1 ? "" : "s"}
-                </p>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-[#141414] px-5 py-7 text-center">
-            <FileText className="mx-auto size-5 text-white/28" />
-            <p className="mt-3 text-sm font-semibold text-white/58">
-              Todavía no enviaste comprobantes
-            </p>
-          </div>
-        )}
-        </section>
-      </div>
-
-      {mercadoPagoDetailTopup ? (
-        <div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/78 p-4 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="mercadopago-detail-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setMercadoPagoDetailTopupId(null)
-            }
-          }}
-        >
-          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-[#315A7A] bg-[#0B1118] shadow-[0_30px_90px_rgba(0,0,0,0.7)]">
-            <div className="flex items-start justify-between gap-4 border-b border-white/8 bg-[#10283A] px-5 py-4">
-              <div className="flex items-center gap-3">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-[#146B9B] text-white">
-                  <CreditCard className="size-4.5" />
-                </span>
-                <div>
-                  <p className="text-10px font-black uppercase tracking-[0.18em] text-[#78C9F5]">Mercado Pago</p>
-                  <h2 id="mercadopago-detail-title" className="mt-0.5 text-base font-black text-white">
-                    Detalle de acreditación
-                  </h2>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMercadoPagoDetailTopupId(null)}
-                className="inline-flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/20 text-white/65 transition hover:border-white/25 hover:text-white"
-                aria-label="Cerrar detalle"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="p-5">
-              <p className="text-xs leading-5 text-white/52">
-                Este detalle confirma la acreditación en BEYONIX. El comprobante oficial del pago se consulta desde la actividad de tu cuenta de Mercado Pago.
+            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl bg-[#112A43]/42 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(79,130,168,0.2)] sm:items-center">
+              <CheckCircle2 className="mt-0.5 size-4.5 shrink-0 text-white sm:mt-0" />
+              <p className="text-xs leading-5 text-white/64">
+                El saldo se acredita cuando Mercado Pago confirma el pago.
               </p>
-
-              <dl className="mt-4 overflow-hidden rounded-xl border border-white/8 bg-[#141414] text-xs">
-                {[
-                  ["Saldo acreditado", formatARS(Number(mercadoPagoDetailTopup.amount ?? 0))],
-                  [
-                    `Comisión de Mercado Pago (${Number(mercadoPagoDetailTopup.surcharge_percent ?? 0)}%)`,
-                    formatARS(Number(mercadoPagoDetailTopup.surcharge_amount ?? 0)),
-                  ],
-                  ["Total pagado", formatARS(Number(mercadoPagoDetailTopup.gross_amount ?? 0))],
-                  ["Fecha", formatOrderCardDate(mercadoPagoDetailTopup.created_at)],
-                  ["Estado", statusLabels[mercadoPagoDetailTopup.status] ?? mercadoPagoDetailTopup.status],
-                  ["ID de operación", mercadoPagoDetailTopup.mercadopago_payment_id ?? "Pendiente de confirmación"],
-                ].map(([label, value], index) => (
-                  <div key={label} className={cn("flex items-center justify-between gap-4 px-4 py-3", index > 0 && "border-t border-white/7")}>
-                    <dt className="text-white/42">{label}</dt>
-                    <dd className="max-w-[60%] break-all text-right font-bold text-white/88">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-
-              <a
-                href="https://www.mercadopago.com.ar/activities"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#4F82A8] bg-[#112A43] px-4 text-xs font-black text-white transition hover:border-[#78C9F5] hover:bg-[#173B5C]"
-              >
-                <Eye className="size-3.5" />
-                Consultar actividad en Mercado Pago
-              </a>
             </div>
-          </div>
-        </div>
-      ) : null}
+          </>
+        )}
+      </div>
     </AccountPageContainer>
   )
 }
@@ -1935,7 +1250,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
     href?: string
   }> = [
     { icon: ShoppingBag, label: "Mis compras", sub: "Historial de compras", view: "ordenes" as ProfileView },
-    { icon: CreditCard, label: "BEYONIX Gift Card", sub: "Enviá y recibí regalos", view: "saldo" as ProfileView },
+    { icon: CreditCard, label: "Saldo de cuenta", sub: "Disponible para tus compras", view: "saldo" as ProfileView },
     { icon: Heart, label: "Favoritos", sub: "Productos guardados", filled: true, href: "/cuenta/favoritos" },
     { icon: IdCard, label: "Mis datos", sub: "Nombre, email y dirección", view: "datos" as ProfileView },
     { icon: LockKeyhole, label: "Seguridad", sub: "Contraseña y acceso", view: "seguridad" as ProfileView },

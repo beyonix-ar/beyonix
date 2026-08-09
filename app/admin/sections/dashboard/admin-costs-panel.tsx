@@ -338,7 +338,7 @@ function ProductSelect({
             const hasVariants = Boolean(product.producto_variantes?.length)
             const availableStock = Number(product.stock ?? 0)
             const productDisabled =
-              hasVariants || (inventoryMode && availableStock <= 0)
+              inventoryMode && (hasVariants || availableStock <= 0)
             return (
               <div key={product.id}>
                 <button
@@ -360,7 +360,9 @@ function ProductSelect({
                   </span>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-10px font-black ${product.activo ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-300" : "border-white/10 bg-white/5 text-white/38"}`}>
                     {hasVariants
-                      ? "Elegí una variante"
+                      ? inventoryMode
+                        ? "Elegí una variante"
+                        : "Ingreso sin asignar"
                       : inventoryMode
                         ? `${availableStock} disponibles`
                         : product.activo ? "Activo" : "Inactivo"}
@@ -1091,8 +1093,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">Contabilidad interna</p>
-            <h2 className="mt-1 text-xl font-black text-white">Costos reales</h2>
-            <p className="mt-1 text-xs font-semibold text-white/45">Compras, impuestos y gastos con historial.</p>
+            <h2 className="mt-1 text-xl font-black text-white">Compras</h2>
+            <p className="mt-1 text-xs font-semibold text-white/45">Adquisiciones, recepción, impuestos y gastos con historial.</p>
           </div>
           <div className="inline-flex rounded-2xl border border-beyonix-blue-light/20 bg-black/30 p-1">
             <button type="button" onClick={() => setMode("product")} className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl px-4 text-xs font-black transition ${mode === "product" ? "bg-beyonix-blue/60 text-white" : "text-white/55 hover:text-white"}`}><Boxes className="size-4" /> Mercadería</button>
