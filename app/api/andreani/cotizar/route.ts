@@ -32,12 +32,21 @@ export async function POST(request: Request) {
           : safeError.code === "TIMEOUT" || safeError.code === "SERVICE_UNAVAILABLE"
             ? 504
             : 502
+    const message =
+      safeError.code === "VALIDATION_ERROR"
+        ? safeError.message
+        : safeError.code === "TIMEOUT"
+          ? "La cotización tardó demasiado. Intentá nuevamente."
+          : safeError.code === "CONFIGURATION_ERROR" ||
+              safeError.code === "PRODUCTION_BLOCKED"
+            ? "El envío no está disponible temporalmente."
+            : "No pudimos calcular el envío. Intentá nuevamente."
 
     return NextResponse.json(
       {
         ok: false,
         code: safeError.code,
-        message: safeError.message,
+        message,
       },
       { status, headers: NO_STORE_HEADERS },
     )

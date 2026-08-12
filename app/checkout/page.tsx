@@ -320,7 +320,7 @@ function getFirstInvalidCheckoutField(
   if (!/^\d{7,8}$/.test(dni)) return "dni"
   if (calle.length < 2 || calle.length > FIELD_LIMITS.street || !hasLetters(calle)) return "calle"
   if (numero.length < 1) return "numero"
-  if (!/^\d{4,8}$/.test(cpDestino)) return "cpDestino"
+  if (!/^\d{4}$/.test(cpDestino)) return "cpDestino"
   if (localidad.length < 2 || !hasLetters(localidad)) return "localidad"
   if (provincia.length < 2 || !hasLetters(provincia)) return "provincia"
 
@@ -374,6 +374,8 @@ export default function CheckoutPage() {
     useState("")
   const [shippingMessage, setShippingMessage] =
     useState("")
+  const [shippingMessageTone, setShippingMessageTone] =
+    useState<"info" | "error">("info")
   const [shippingLoading, setShippingLoading] = useState(false)
   const [
     selectedShippingType,
@@ -710,6 +712,8 @@ export default function CheckoutPage() {
 
   const shippingQuotePayload = JSON.stringify({
     cpDestino: formData.cpDestino.trim(),
+    localidad: formData.localidad.trim(),
+    provincia: formData.provincia.trim(),
     items: items.map((item) => ({
       productId: item.product.id,
       quantity: item.quantity,
@@ -721,6 +725,8 @@ export default function CheckoutPage() {
   useEffect(() => {
     const payload = JSON.parse(shippingQuotePayload) as {
       cpDestino: string
+      localidad: string
+      provincia: string
       items: Array<{
         productId: number
         quantity: number
@@ -729,11 +735,25 @@ export default function CheckoutPage() {
       }>
     }
 
-    if (!/^(?:\d{4}|[A-Z]\d{4}[A-Z]{3})$/i.test(payload.cpDestino)) {
+    if (!/^\d{4}$/.test(payload.cpDestino)) {
       setShippingLoading(false)
       setShippingOptions([])
       setSelectedShippingType(null)
+      setShippingMessageTone("info")
       setShippingMessage("Ingresá el código postal para cotizar el envío.")
+      return
+    }
+    if (
+      payload.localidad.trim().length < 2 ||
+      payload.provincia.trim().length < 2
+    ) {
+      setShippingLoading(false)
+      setShippingOptions([])
+      setSelectedShippingType(null)
+      setShippingMessageTone("info")
+      setShippingMessage(
+        "Completá localidad y provincia para validar el destino.",
+      )
       return
     }
     if (payload.items.length === 0) {
@@ -748,9 +768,19 @@ export default function CheckoutPage() {
     setShippingLoading(true)
     setShippingOptions([])
     setSelectedShippingType(null)
-    setShippingMessage("Calculando envío...")
+    setShippingMessageTone("info")
+    setShippingMessage("")
+
+    let disposed = false
+    let requestTimedOut = false
+    let requestTimeout: ReturnType<typeof setTimeout> | null = null
 
     const timer = setTimeout(() => {
+      requestTimeout = setTimeout(() => {
+        requestTimedOut = true
+        controller.abort()
+      }, 12_000)
+
       fetch("/api/andreani/cotizar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -763,6 +793,7 @@ export default function CheckoutPage() {
             options?: Array<{ type?: string; price?: number }>
             message?: string
           }
+          if (disposed) return
           if (!response.ok) throw new Error(data.message || "QUOTE_FAILED")
 
           const options = (data.options ?? []).flatMap<ShippingOption>((option) => {
@@ -791,35 +822,37 @@ export default function CheckoutPage() {
               : options.find((option) => option.type === "domicilio")?.type ??
                 options[0].type,
           )
-          setShippingMessage("")
+          setShippingMessageTone("info")
+          setShippingMessage("Destino validado y tarifa actualizada.")
         })
         .catch((error: unknown) => {
-          if (controller.signal.aborted) return
+          if (disposed) return
           if (process.env.NODE_ENV === "development") {
             console.info("[Andreani checkout] cotización no disponible", {
               reason: error instanceof Error ? error.message.slice(0, 120) : "UNKNOWN",
             })
           }
-          const pendingOption: ShippingOption = {
-            type: "domicilio",
-            label: "Envío a coordinar",
-            price: 0,
-            provider: "andreani",
-            quoteStatus: "pending",
-          }
-          setShippingOptions([pendingOption])
-          setSelectedShippingType(pendingOption.type)
+          setShippingOptions([])
+          setSelectedShippingType(null)
+          setShippingMessageTone("error")
           setShippingMessage(
-            "No pudimos obtener la tarifa ahora. Podés continuar y coordinaremos el envío.",
+            requestTimedOut
+              ? "La cotización tardó demasiado. Intentá nuevamente."
+              : error instanceof Error && error.message !== "QUOTE_FAILED"
+                ? error.message
+                : "No pudimos calcular el envío. Intentá nuevamente.",
           )
         })
         .finally(() => {
-          if (!controller.signal.aborted) setShippingLoading(false)
+          if (requestTimeout) clearTimeout(requestTimeout)
+          if (!disposed) setShippingLoading(false)
         })
     }, 450)
 
     return () => {
+      disposed = true
       clearTimeout(timer)
+      if (requestTimeout) clearTimeout(requestTimeout)
       controller.abort()
     }
   }, [shippingQuotePayload])
@@ -851,7 +884,7 @@ export default function CheckoutPage() {
     }
 
     if (name === "cpDestino") {
-      normalizedValue = value.replace(/\D/g, "").slice(0, FIELD_LIMITS.postalCode)
+      normalizedValue = value.replace(/\D/g, "").slice(0, 4)
     }
 
     if (name === "calle") {
@@ -1482,7 +1515,7 @@ export default function CheckoutPage() {
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Código postal *
                           </Label>
-                          <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} maxLength={FIELD_LIMITS.postalCode} required />
+                          <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} maxLength={4} required />
                         </div>
                         <div className="space-y-0.5 sm:col-span-2">
                           <Label htmlFor="referencias" className="text-white/75">Referencias opcionales</Label>
@@ -1581,7 +1614,7 @@ export default function CheckoutPage() {
                   </div>
 
                   {shippingMessage && (
-                    <CheckoutNotice>
+                    <CheckoutNotice tone={shippingMessageTone}>
                       {shippingMessage}
                     </CheckoutNotice>
                   )}

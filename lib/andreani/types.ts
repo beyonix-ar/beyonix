@@ -22,6 +22,31 @@ export interface AndreaniAuthenticationResponse {
   refreshToken?: string
 }
 
+export interface AndreaniLocalityFilters {
+  localidad?: string
+  provincia?: string
+  idprovincia?: string
+  partido?: string
+  /** Códigos postales separados por comas. */
+  codigosPostales?: string
+  /** Número de página; Andreani informa hasta 2000 localidades por página. */
+  p?: string
+}
+
+export interface AndreaniLocality {
+  idDeProvLocalidad: number
+  localidad: string
+  provincia: string
+  codigosPostales: string[]
+}
+
+export type AndreaniPreShipmentStatus =
+  | "Pendiente"
+  | "Solicitado"
+  | "Creado"
+  | "Creada"
+  | "Rechazado"
+
 export interface AndreaniProductQuoteInput {
   codigoPostalOrigen: string
   codigoPostalDestino: string
@@ -47,6 +72,25 @@ export interface AndreaniPackageQuoteInput {
   largoCm?: number
 }
 
+export interface AndreaniTariffPackage {
+  valorDeclarado?: number
+  volumen: number
+  kilos?: number
+  altoCm?: number
+  largoCm?: number
+  anchoCm?: number
+}
+
+export interface AndreaniTariffRequest {
+  cpDestino: string
+  contrato: string
+  cliente: string
+  sucursalOrigen?: string
+  bultos: [AndreaniTariffPackage]
+}
+
+export type AndreaniTariffResponse = AndreaniQuoteResponse
+
 export interface AndreaniCheckoutQuoteItem {
   productId: number
   quantity: number
@@ -56,6 +100,8 @@ export interface AndreaniCheckoutQuoteItem {
 
 export interface AndreaniCheckoutQuoteRequest {
   cpDestino: string
+  localidad: string
+  provincia: string
   items: AndreaniCheckoutQuoteItem[]
 }
 
@@ -90,6 +136,15 @@ export interface AndreaniBranchFilters {
   numero?: string
 }
 
+export interface AndreaniThirdPartyPointFilters
+  extends AndreaniBranchFilters {
+  contrato: string
+  admiteEnvios?: boolean
+  entregaEnvios?: boolean
+  id?: string
+  atencionPorCodigoPostal?: string
+}
+
 export interface AndreaniBranch {
   id: number
   codigo: string
@@ -114,6 +169,8 @@ export interface AndreaniBranch {
     seHaceAtencionAlCliente?: boolean
     conBuzonInteligente?: boolean
     tipo?: string
+    admiteEnvios?: boolean
+    entregaEnvios?: boolean
   }
   telefonos?: string[]
   codigosPostalesAtendidos?: string[]
@@ -124,10 +181,14 @@ export interface AndreaniMetadata {
   contenido: string
 }
 
-export interface AndreaniPhone {
-  tipo: number
+export interface AndreaniPhone<PhoneType extends number = number> {
+  tipo: PhoneType
   numero: string
 }
+
+export type AndreaniSenderPhoneType = 0 | 1 | 2 | 3
+
+export type AndreaniRecipientPhoneType = 1 | 2 | 3 | 4
 
 export interface AndreaniPostalAddress {
   codigoPostal: string
@@ -142,21 +203,22 @@ export interface AndreaniPostalAddress {
   componentesDeDireccion?: AndreaniMetadata[]
 }
 
-export interface AndreaniLocation {
-  postal?: AndreaniPostalAddress
-  sucursal?: {
-    id: string
-    nomenclatura?: string
-    descripcion?: string
-  }
+export interface AndreaniOfficeLocation {
+  id: string
+  nomenclatura?: string
+  descripcion?: string
 }
 
-export interface AndreaniPerson {
+export type AndreaniLocation =
+  | { postal: AndreaniPostalAddress; sucursal?: never }
+  | { postal?: never; sucursal: AndreaniOfficeLocation }
+
+export interface AndreaniPerson<PhoneType extends number = number> {
   nombreCompleto: string
   email?: string
   documentoTipo?: string
   documentoNumero?: string
-  telefonos?: AndreaniPhone[]
+  telefonos?: AndreaniPhone<PhoneType>[]
 }
 
 export interface AndreaniPackage {
@@ -178,17 +240,38 @@ export interface AndreaniCreateShipmentRequest {
   contrato: string
   tipoDeServicio?: string
   sucursalClienteID?: number
+  remitoPDF?: number[]
   origen: AndreaniLocation
   destino: AndreaniLocation
   idPedido?: string
-  remitente: AndreaniPerson
-  destinatario: AndreaniPerson[]
+  remitente: AndreaniPerson<AndreaniSenderPhoneType>
+  destinatario: AndreaniPerson<AndreaniRecipientPhoneType>[]
   centroDeCostos?: string
+  productoAEntregar?: string
+  productoARetirar?: string
+  tipoProducto?: string
+  categoriaFacturacion?: string
   pagoDestino?: number
   valorACobrar?: number
   codigoVerificadorDeEntrega?: string
+  remito?: {
+    numeroRemito: string
+    complementarios: string[]
+  }
+  fechaDeEntrega?: {
+    fecha: string
+    horaDesde: string
+    horaHasta: string
+  }
   bultos: AndreaniPackage[]
   pagoPendienteEnMostrador?: boolean
+}
+
+export type AndreaniB2COrderRequest = Omit<
+  AndreaniCreateShipmentRequest,
+  "bultos"
+> & {
+  bultos: [AndreaniPackage]
 }
 
 export interface AndreaniShipmentBranch {
@@ -198,14 +281,19 @@ export interface AndreaniShipmentBranch {
 }
 
 export interface AndreaniCreateShipmentResponse {
-  estado: string
+  estado: AndreaniPreShipmentStatus
   tipo: string
   sucursalDeDistribucion?: AndreaniShipmentBranch
   sucursalDeRendicion?: AndreaniShipmentBranch
   sucursalDeImposicion?: AndreaniShipmentBranch
+  sucursalAbastecedora?: AndreaniShipmentBranch
   fechaCreacion?: string
+  fechaEstimadaDeEntrega?: string
+  zonaDeReparto?: string
   numeroDePermisionaria?: string
   descripcionServicio?: string
+  etiquetaRemito?: string
+  etiquetasDocumentoDeCambio?: string
   bultos: Array<{
     numeroDeBulto: string
     numeroDeEnvio: string
@@ -214,6 +302,14 @@ export interface AndreaniCreateShipmentResponse {
   }>
   agrupadorDeBultos?: string
   etiquetasPorAgrupador?: string
+  motivo?: string
+  gastoEnergetico?: string
+  huellaDeCarbono?: string
+}
+
+export interface AndreaniOrderStatusResponse
+  extends AndreaniCreateShipmentResponse {
+  creada: boolean
 }
 
 export interface AndreaniCreateShipmentInput {
@@ -244,13 +340,141 @@ export interface AndreaniLabelResponse {
   data: ArrayBuffer
 }
 
+export interface AndreaniShipmentDistributionBranch {
+  nomenclatura?: string
+  descripcion?: string
+  id?: number
+}
+
+export interface AndreaniShipmentPostalDestination {
+  localidad: string
+  region?: string
+  pais: string
+  direccion: string
+  codigoPostal: string
+}
+
+export interface AndreaniShipmentParty {
+  nombreYApellido?: string
+  tipoYNumeroDeDocumento?: string
+  eMail?: string
+}
+
+export interface AndreaniShipmentPackage {
+  kilos: number
+  valorDeclaradoConImpuestos?: number
+  IdDeProducto?: string
+  volumen: number
+}
+
+export interface AndreaniShipmentStatusResponse {
+  numeroDeTracking: string
+  contrato: string
+  ciclo: string
+  estado: string
+  estadoId?: number
+  fechaEstado: string
+  servicio?: string
+  sucursalDeDistribucion: AndreaniShipmentDistributionBranch
+  fechaCreacion: string
+  destino: {
+    Postal: AndreaniShipmentPostalDestination
+  }
+  remitente: AndreaniShipmentParty
+  destinatario: AndreaniShipmentParty
+  bultos: AndreaniShipmentPackage[]
+  idDeProducto?: string
+  referencias: string[]
+}
+
+export interface AndreaniShipmentSearchFilters {
+  numeroDeDocumentoDestinatario?: string
+  fechaCreacionDesde?: string
+  fechaCreacionHasta?: string
+  contrato?: string
+  limit?: string
+  codigoCliente?: string
+  idDeProducto?: string
+  actualizadoDesde?: string
+  actualizadoHasta?: string
+  /** BEYONIX consume únicamente el formato JSON documentado. */
+  format?: "JSON"
+}
+
+export const ANDREANI_TRACKING_CYCLES = [
+  "Distribution",
+  "DEVOLUCION",
+  "DIRECTO",
+  "Drop",
+  "Resend",
+  "REENVIO",
+  "SINIESTRO",
+  "LOGISTICA INVERSA",
+  "RESCATE",
+] as const
+
+export type AndreaniTrackingCycle =
+  (typeof ANDREANI_TRACKING_CYCLES)[number]
+
+export const ANDREANI_TRACKING_EVENTS = [
+  "Admision",
+  "AltaAutomatica",
+  "AltaManual",
+  "AltaRemota",
+  "AsignacionACaja",
+  "CambioDeDestino",
+  "CierreDeEntidad",
+  "ComienzoCustodiaEnSucursal",
+  "Destruccion",
+  "Distribucion",
+  "EnvioAnulado",
+  "EnvioConsolidado",
+  "EnvioDespachado",
+  "EnvioEnInformeDeRendicion",
+  "EnvioEntregado",
+  "EnvioNoEntregado",
+  "EnvioRendido",
+  "ExpedicionHojaDeRutaCabecera",
+  "ExpedicionHojaDeRutaDeViaje",
+  "FaltanBultos",
+  "FaltaRemito",
+  "FinCustodiaEnSucursal",
+  "Impresion",
+  "IncorporarMarcaDeCustodia",
+  "InicioCicloDeRendicion",
+  "InicioEtapaDeGestionTelefonica",
+  "IntroduccionDeMotivo",
+  "NuevaFechaDeEntregaPactada",
+  "NuevaFechaDeEntregaRepactada",
+  "OrdenDeEnvioCreada",
+  "OrdenDeEnvioRechazada",
+  "OrdenDeEnvioSolicitada",
+  "PedidoDeDestruccion",
+  "RecepcionEnSucursalDestino",
+  "RectificacionDeMotivo",
+  "Reenvio",
+  "RemitoDigitalizado",
+  "Rescate",
+  "RoturaParcial",
+  "RoturaTotal",
+  "Siniestro",
+  "SolicitudDeRescate",
+  "Visita",
+  "GestionTelefonica",
+] as const
+
+export type AndreaniTrackingEventName =
+  (typeof ANDREANI_TRACKING_EVENTS)[number]
+
 export interface AndreaniTrackingEvent {
   Fecha: string
-  Ciclo: string
-  Evento: string
+  /** El maestro deja el ciclo vacío para los tres eventos de pre-envío. */
+  Ciclo?: AndreaniTrackingCycle
+  Evento: AndreaniTrackingEventName
   Motivo?: string
   Submotivo?: string
   Estado?: string
+  EstadoId?: number
   Sucursal?: string
   SucursalId?: string
   Comentario?: string

@@ -14,10 +14,14 @@ import {
   type AndreaniClientOptions,
 } from "./client.ts"
 import type {
+  AndreaniBranch,
+  AndreaniBranchFilters,
   AndreaniCheckoutQuoteOption,
   AndreaniCheckoutQuoteRequest,
-  AndreaniPackageQuoteInput,
-  AndreaniQuoteResponse,
+  AndreaniLocality,
+  AndreaniLocalityFilters,
+  AndreaniTariffRequest,
+  AndreaniTariffResponse,
 } from "./types.ts"
 
 const PRODUCT_SELECT =
@@ -69,9 +73,15 @@ interface CheckoutQuoteDependencies {
   loadItems?: (
     request: AndreaniCheckoutQuoteRequest,
   ) => Promise<LoadedCheckoutQuoteItem[]>
-  quotePackage?: (
-    input: AndreaniPackageQuoteInput,
-  ) => Promise<AndreaniQuoteResponse>
+  getLocalities?: (
+    filters: AndreaniLocalityFilters,
+  ) => Promise<AndreaniLocality[]>
+  getBranches?: (
+    filters: AndreaniBranchFilters,
+  ) => Promise<AndreaniBranch[]>
+  quoteTariff?: (
+    input: AndreaniTariffRequest,
+  ) => Promise<AndreaniTariffResponse>
   clientOptions?: AndreaniClientOptions
 }
 
@@ -87,6 +97,28 @@ function requiredText(value: string | undefined) {
 function optionalText(value: string | undefined) {
   const normalized = requiredText(value)
   return normalized || undefined
+}
+
+function normalizeLocationKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("es-AR")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+}
+
+function normalizeProvinceKey(value: string) {
+  const key = normalizeLocationKey(value)
+
+  if (
+    key === "CABA" ||
+    key === "CAPITALFEDERAL" ||
+    key === "CIUDADAUTONOMADEBUENOSAIRES"
+  ) {
+    return "CABA"
+  }
+
+  return key
 }
 
 export function resolveAndreaniCheckoutConfig(
@@ -133,8 +165,25 @@ export function normalizeCheckoutQuoteRequest(
     typeof record.cpDestino === "string"
       ? record.cpDestino.trim().toUpperCase()
       : ""
-  if (!/^(?:\d{4}|[A-Z]\d{4}[A-Z]{3})$/.test(cpDestino)) {
+  const localidad =
+    typeof record.localidad === "string" ? record.localidad.trim() : ""
+  const provincia =
+    typeof record.provincia === "string" ? record.provincia.trim() : ""
+  if (!/^\d{4}$/.test(cpDestino)) {
     throw new AndreaniError("VALIDATION_ERROR", "Ingresá un código postal válido.")
+  }
+  if (
+    localidad.length < 2 ||
+    localidad.length > 80 ||
+    !/\p{L}/u.test(localidad) ||
+    provincia.length < 2 ||
+    provincia.length > 40 ||
+    !/\p{L}/u.test(provincia)
+  ) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "Ingresá una localidad y una provincia válidas.",
+    )
   }
   if (!Array.isArray(record.items) || record.items.length === 0 || record.items.length > 50) {
     throw new AndreaniError("VALIDATION_ERROR", "El carrito no es válido para cotizar.")
@@ -171,7 +220,33 @@ export function normalizeCheckoutQuoteRequest(
     return { productId, quantity, variantId, conditionedStockId }
   })
 
-  return { cpDestino, items }
+  return { cpDestino, localidad, provincia, items }
+}
+
+export function matchAndreaniCheckoutLocality(
+  request: Pick<
+    AndreaniCheckoutQuoteRequest,
+    "cpDestino" | "localidad" | "provincia"
+  >,
+  localities: AndreaniLocality[],
+) {
+  const localityKey = normalizeLocationKey(request.localidad)
+  const provinceKey = normalizeProvinceKey(request.provincia)
+  const match = localities.find(
+    (locality) =>
+      locality.codigosPostales.includes(request.cpDestino) &&
+      normalizeLocationKey(locality.localidad) === localityKey &&
+      normalizeProvinceKey(locality.provincia) === provinceKey,
+  )
+
+  if (!match) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La localidad o provincia no coincide con el código postal.",
+    )
+  }
+
+  return match
 }
 
 async function loadCheckoutItems(
@@ -321,7 +396,7 @@ export function aggregateAndreaniPackage(
   }
 }
 
-function readQuotePrice(response: AndreaniQuoteResponse) {
+function readQuotePrice(response: AndreaniTariffResponse) {
   const price = Number(response?.tarifaConIva?.total)
   if (!Number.isFinite(price) || price <= 0) {
     throw new AndreaniError(
@@ -346,29 +421,85 @@ export async function quoteAndreaniCheckout(
   }
 
   const promise = (async () => {
+    const client = new AndreaniClient({ env, ...dependencies.clientOptions })
+    const getLocalities =
+      dependencies.getLocalities ??
+      ((filters: AndreaniLocalityFilters) => client.getLocalidades(filters))
+    let localities: AndreaniLocality[]
+
+    try {
+      localities = await getLocalities({
+        codigosPostales: request.cpDestino,
+      })
+    } catch (error) {
+      if (error instanceof AndreaniError && error.status === 404) {
+        throw new AndreaniError(
+          "VALIDATION_ERROR",
+          "No encontramos el código postal indicado.",
+        )
+      }
+      throw error
+    }
+
+    matchAndreaniCheckoutLocality(request, localities)
+
+    let branchAvailable = false
+    if (config.sucursalContrato) {
+      const getBranches =
+        dependencies.getBranches ??
+        ((filters: AndreaniBranchFilters) => client.getSucursales(filters))
+      try {
+        const branches = await getBranches({
+          codigoPostal: request.cpDestino,
+          canal: "B2C",
+          seHaceAtencionAlCliente: true,
+        })
+        branchAvailable = branches.length > 0
+      } catch (error) {
+        if (!(error instanceof AndreaniError && error.status === 404)) {
+          throw error
+        }
+      }
+    }
+
     const items = await (dependencies.loadItems ?? loadCheckoutItems)(request)
     const packageData = aggregateAndreaniPackage(items)
-    const client = dependencies.quotePackage
-      ? null
-      : new AndreaniClient({ env, ...dependencies.clientOptions })
-    const quote = dependencies.quotePackage ?? ((input) => client!.cotizarPaquete(input))
+    const quote =
+      dependencies.quoteTariff ??
+      ((input: AndreaniTariffRequest) => client.cotizarEnvio(input))
     const contracts = [
       config.domicilioContrato
         ? { type: "domicilio" as const, contrato: config.domicilioContrato }
         : null,
-      config.sucursalContrato
+      config.sucursalContrato && branchAvailable
         ? { type: "sucursal" as const, contrato: config.sucursalContrato }
         : null,
     ].filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 
+    if (!contracts.length) {
+      throw new AndreaniError(
+        "VALIDATION_ERROR",
+        "No encontramos una sucursal Andreani disponible para ese código postal.",
+      )
+    }
+
     return Promise.all(
       contracts.map(async ({ type, contrato }) => {
         const response = await quote({
-          codigoPostalDestino: request.cpDestino,
+          cpDestino: request.cpDestino,
           contrato,
           cliente: config.cliente,
-          codigoSucursalOrigen: config.sucursalOrigen,
-          ...packageData,
+          sucursalOrigen: config.sucursalOrigen,
+          bultos: [
+            {
+              valorDeclarado: packageData.valorDeclarado,
+              volumen: packageData.volumenCm3,
+              kilos: packageData.pesoKg,
+              altoCm: packageData.altoCm,
+              anchoCm: packageData.anchoCm,
+              largoCm: packageData.largoCm,
+            },
+          ],
         })
         return { type, price: readQuotePrice(response) }
       }),

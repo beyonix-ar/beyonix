@@ -12,11 +12,26 @@ import type {
   AndreaniIntegrationStatus,
   AndreaniLabelRequest,
   AndreaniLabelResponse,
+  AndreaniLocality,
+  AndreaniLocalityFilters,
+  AndreaniOrderStatusResponse,
   AndreaniPackageQuoteInput,
   AndreaniProductQuoteInput,
   AndreaniQuoteResponse,
   AndreaniSafeError,
+  AndreaniShipmentSearchFilters,
+  AndreaniShipmentStatusResponse,
+  AndreaniTariffRequest,
+  AndreaniTariffResponse,
+  AndreaniThirdPartyPointFilters,
+  AndreaniTrackingCycle,
+  AndreaniTrackingEvent,
+  AndreaniTrackingEventName,
   AndreaniTrackingResponse,
+} from "./types.ts"
+import {
+  ANDREANI_TRACKING_CYCLES,
+  ANDREANI_TRACKING_EVENTS,
 } from "./types.ts"
 import {
   IncompleteProductLogisticsError,
@@ -63,13 +78,22 @@ interface RequestOptions {
   authenticated?: boolean
   headers?: HeadersInit
   body?: unknown
-  responseType?: "json" | "binary"
-  retryAuthentication?: boolean
+  responseType?: "json" | "binary" | "authentication"
 }
 
 interface CachedToken {
   value: string
   expiresAt: number
+}
+
+interface AndreaniTariffQueryInput
+  extends Omit<AndreaniPackageQuoteInput, "valorDeclarado" | "pesoKg"> {
+  valorDeclarado?: number
+  pesoKg?: number
+}
+
+export interface AndreaniAuthenticationOptions {
+  forceRefresh?: boolean
 }
 
 export interface AndreaniDisabledResponse {
@@ -79,6 +103,8 @@ export interface AndreaniDisabledResponse {
 
 const tokenCache = new Map<string, CachedToken>()
 const authenticationRequests = new Map<string, Promise<string>>()
+const trackingCycles = new Set<string>(ANDREANI_TRACKING_CYCLES)
+const trackingEvents = new Set<string>(ANDREANI_TRACKING_EVENTS)
 let testRequest: Promise<AndreaniConnectionTestResult> | null = null
 let lastTestResult: AndreaniConnectionTestResult | null = null
 let lastTestStartedAt = 0
@@ -317,6 +343,69 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
+function assertText(value: unknown, fieldName: string, maxLength = 200) {
+  const normalized = getRequiredString(value)
+  if (!normalized || normalized.length > maxLength) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      `El campo ${fieldName} no es válido.`,
+    )
+  }
+  return normalized
+}
+
+function optionalText(value: unknown, fieldName: string, maxLength = 200) {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === "string" && !value.trim()) return undefined
+  return assertText(value, fieldName, maxLength)
+}
+
+function requiredResponseString(
+  record: Record<string, unknown>,
+  key: string,
+  message: string,
+) {
+  const value = getRequiredString(record[key])
+  if (!value) throw new AndreaniError("INVALID_RESPONSE", message)
+  return value
+}
+
+function optionalResponseString(record: Record<string, unknown>, key: string) {
+  const value = getRequiredString(record[key])
+  return value || undefined
+}
+
+function requiredResponseNumber(
+  record: Record<string, unknown>,
+  key: string,
+  message: string,
+) {
+  const value = record[key]
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new AndreaniError("INVALID_RESPONSE", message)
+  }
+  return value
+}
+
+function optionalResponseNumber(record: Record<string, unknown>, key: string) {
+  const value = record[key]
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined
+}
+
+function requiredRecord(value: unknown, message: string) {
+  if (!isRecord(value)) throw new AndreaniError("INVALID_RESPONSE", message)
+  return value
+}
+
+function requiredStringArray(value: unknown, message: string) {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new AndreaniError("INVALID_RESPONSE", message)
+  }
+  return value
+}
+
 function readAuthenticationResponse(
   payload: unknown,
   response: Response,
@@ -342,6 +431,753 @@ function readAuthenticationResponse(
       getRequiredString(record.refresh_token) ||
       undefined,
   }
+}
+
+function parseLocalities(payload: unknown): AndreaniLocality[] {
+  if (!Array.isArray(payload)) {
+    throw new AndreaniError(
+      "INVALID_RESPONSE",
+      "Andreani devolvió un listado de localidades inválido.",
+    )
+  }
+
+  return payload.map((item) => {
+    const record = requiredRecord(
+      item,
+      "Andreani devolvió una localidad inválida.",
+    )
+    const id = requiredResponseNumber(
+      record,
+      "idDeProvLocalidad",
+      "Andreani devolvió una localidad sin identificador.",
+    )
+    if (!Number.isSafeInteger(id)) {
+      throw new AndreaniError(
+        "INVALID_RESPONSE",
+        "Andreani devolvió una localidad con identificador inválido.",
+      )
+    }
+
+    return {
+      idDeProvLocalidad: id,
+      localidad: requiredResponseString(
+        record,
+        "localidad",
+        "Andreani devolvió una localidad sin nombre.",
+      ),
+      provincia: requiredResponseString(
+        record,
+        "provincia",
+        "Andreani devolvió una localidad sin provincia.",
+      ),
+      codigosPostales: requiredStringArray(
+        record.codigosPostales,
+        "Andreani devolvió códigos postales inválidos.",
+      ),
+    }
+  })
+}
+
+function parseTariffResponse(payload: unknown): AndreaniTariffResponse {
+  const record = requiredRecord(
+    payload,
+    "Andreani devolvió una cotización inválida.",
+  )
+  const withoutTax = requiredRecord(
+    record.tarifaSinIva,
+    "Andreani devolvió una tarifa sin IVA inválida.",
+  )
+  const withTax = requiredRecord(
+    record.tarifaConIva,
+    "Andreani devolvió una tarifa con IVA inválida.",
+  )
+  const parseBreakdown = (
+    value: Record<string, unknown>,
+    message: string,
+  ) => ({
+    seguroDistribucion: requiredResponseString(
+      value,
+      "seguroDistribucion",
+      message,
+    ),
+    distribucion: requiredResponseString(value, "distribucion", message),
+    total: requiredResponseString(value, "total", message),
+  })
+
+  return {
+    pesoAforado: requiredResponseString(
+      record,
+      "pesoAforado",
+      "Andreani devolvió una cotización sin peso aforado.",
+    ),
+    tarifaSinIva: parseBreakdown(
+      withoutTax,
+      "Andreani devolvió una tarifa sin IVA incompleta.",
+    ),
+    tarifaConIva: parseBreakdown(
+      withTax,
+      "Andreani devolvió una tarifa con IVA incompleta.",
+    ),
+  }
+}
+
+function parseBranches(payload: unknown): AndreaniBranch[] {
+  if (!Array.isArray(payload)) {
+    throw new AndreaniError(
+      "INVALID_RESPONSE",
+      "Andreani devolvió un listado de sucursales inválido.",
+    )
+  }
+
+  return payload.map((item) => {
+    const record = requiredRecord(
+      item,
+      "Andreani devolvió una sucursal inválida.",
+    )
+    const address = requiredRecord(
+      record.direccion,
+      "Andreani devolvió una sucursal sin dirección.",
+    )
+    const coordinates = isRecord(record.coordenadas)
+      ? {
+          latitud: requiredResponseString(
+            record.coordenadas,
+            "latitud",
+            "Andreani devolvió coordenadas inválidas.",
+          ),
+          longitud: requiredResponseString(
+            record.coordenadas,
+            "longitud",
+            "Andreani devolvió coordenadas inválidas.",
+          ),
+        }
+      : undefined
+    const additionalData = isRecord(record.datosAdicionales)
+      ? {
+          seHaceAtencionAlCliente:
+            typeof record.datosAdicionales.seHaceAtencionAlCliente === "boolean"
+              ? record.datosAdicionales.seHaceAtencionAlCliente
+              : undefined,
+          conBuzonInteligente:
+            typeof record.datosAdicionales.conBuzonInteligente === "boolean"
+              ? record.datosAdicionales.conBuzonInteligente
+              : undefined,
+          tipo: optionalResponseString(record.datosAdicionales, "tipo"),
+          admiteEnvios:
+            typeof record.datosAdicionales.admiteEnvios === "boolean"
+              ? record.datosAdicionales.admiteEnvios
+              : undefined,
+          entregaEnvios:
+            typeof record.datosAdicionales.entregaEnvios === "boolean"
+              ? record.datosAdicionales.entregaEnvios
+              : undefined,
+        }
+      : undefined
+    const id = requiredResponseNumber(
+      record,
+      "id",
+      "Andreani devolvió una sucursal sin identificador.",
+    )
+    if (!Number.isSafeInteger(id)) {
+      throw new AndreaniError(
+        "INVALID_RESPONSE",
+        "Andreani devolvió una sucursal con identificador inválido.",
+      )
+    }
+
+    return {
+      id,
+      codigo: requiredResponseString(
+        record,
+        "codigo",
+        "Andreani devolvió una sucursal sin código.",
+      ),
+      numero: requiredResponseString(
+        record,
+        "numero",
+        "Andreani devolvió una sucursal sin número.",
+      ),
+      descripcion: requiredResponseString(
+        record,
+        "descripcion",
+        "Andreani devolvió una sucursal sin descripción.",
+      ),
+      canal: requiredResponseString(
+        record,
+        "canal",
+        "Andreani devolvió una sucursal sin canal.",
+      ),
+      direccion: {
+        calle: requiredResponseString(
+          address,
+          "calle",
+          "Andreani devolvió una dirección sin calle.",
+        ),
+        numero: requiredResponseString(
+          address,
+          "numero",
+          "Andreani devolvió una dirección sin número.",
+        ),
+        provincia: requiredResponseString(
+          address,
+          "provincia",
+          "Andreani devolvió una dirección sin provincia.",
+        ),
+        localidad: requiredResponseString(
+          address,
+          "localidad",
+          "Andreani devolvió una dirección sin localidad.",
+        ),
+        region: requiredResponseString(
+          address,
+          "region",
+          "Andreani devolvió una dirección sin región.",
+        ),
+        pais: requiredResponseString(
+          address,
+          "pais",
+          "Andreani devolvió una dirección sin país.",
+        ),
+        codigoPostal: requiredResponseString(
+          address,
+          "codigoPostal",
+          "Andreani devolvió una dirección sin código postal.",
+        ),
+      },
+      coordenadas: coordinates,
+      horarioDeAtencion: optionalResponseString(record, "horarioDeAtencion"),
+      datosAdicionales: additionalData,
+      telefonos:
+        record.telefonos === undefined
+          ? undefined
+          : requiredStringArray(
+              record.telefonos,
+              "Andreani devolvió teléfonos inválidos.",
+            ),
+      codigosPostalesAtendidos:
+        record.codigosPostalesAtendidos === undefined
+          ? undefined
+          : requiredStringArray(
+              record.codigosPostalesAtendidos,
+              "Andreani devolvió códigos postales atendidos inválidos.",
+            ),
+    }
+  })
+}
+
+function parseShipmentBranch(value: unknown) {
+  if (!isRecord(value)) return undefined
+  const id = optionalResponseString(value, "id")
+  const nomenclatura = optionalResponseString(value, "nomenclatura")
+  const descripcion = optionalResponseString(value, "descripcion")
+  if (!id && !nomenclatura && !descripcion) return {}
+  return { id, nomenclatura, descripcion }
+}
+
+function parseShipmentPackages(value: unknown) {
+  if (!Array.isArray(value)) {
+    throw new AndreaniError(
+      "INVALID_RESPONSE",
+      "Andreani devolvió una orden sin bultos válidos.",
+    )
+  }
+  return value.map((item) => {
+    const record = requiredRecord(
+      item,
+      "Andreani devolvió un bulto inválido.",
+    )
+    const linking = Array.isArray(record.linking)
+      ? record.linking.map((link) => {
+          const linkRecord = requiredRecord(
+            link,
+            "Andreani devolvió un enlace de etiqueta inválido.",
+          )
+          return {
+            meta: requiredResponseString(
+              linkRecord,
+              "meta",
+              "Andreani devolvió un enlace sin tipo.",
+            ),
+            contenido: requiredResponseString(
+              linkRecord,
+              "contenido",
+              "Andreani devolvió un enlace sin contenido.",
+            ),
+          }
+        })
+      : undefined
+    return {
+      numeroDeBulto: requiredResponseString(
+        record,
+        "numeroDeBulto",
+        "Andreani devolvió un bulto sin número.",
+      ),
+      numeroDeEnvio: requiredResponseString(
+        record,
+        "numeroDeEnvio",
+        "Andreani devolvió un bulto sin número de envío.",
+      ),
+      totalizador: optionalResponseString(record, "totalizador"),
+      linking,
+    }
+  })
+}
+
+function parseCreateShipmentResponse(
+  payload: unknown,
+): AndreaniCreateShipmentResponse {
+  const record = requiredRecord(
+    payload,
+    "Andreani devolvió una orden de envío inválida.",
+  )
+  const estado = requiredResponseString(
+    record,
+    "estado",
+    "Andreani devolvió una orden sin estado.",
+  )
+  if (!["Pendiente", "Solicitado", "Creado", "Creada", "Rechazado"].includes(estado)) {
+    throw new AndreaniError(
+      "INVALID_RESPONSE",
+      "Andreani devolvió un estado de pre-envío desconocido.",
+    )
+  }
+
+  return {
+    estado: estado as AndreaniCreateShipmentResponse["estado"],
+    tipo: requiredResponseString(
+      record,
+      "tipo",
+      "Andreani devolvió una orden sin tipo.",
+    ),
+    sucursalDeDistribucion: parseShipmentBranch(record.sucursalDeDistribucion),
+    sucursalDeRendicion: parseShipmentBranch(record.sucursalDeRendicion),
+    sucursalDeImposicion: parseShipmentBranch(record.sucursalDeImposicion),
+    sucursalAbastecedora: parseShipmentBranch(record.sucursalAbastecedora),
+    fechaCreacion: optionalResponseString(record, "fechaCreacion"),
+    fechaEstimadaDeEntrega: optionalResponseString(
+      record,
+      "fechaEstimadaDeEntrega",
+    ),
+    zonaDeReparto: optionalResponseString(record, "zonaDeReparto"),
+    numeroDePermisionaria: optionalResponseString(
+      record,
+      "numeroDePermisionaria",
+    ),
+    descripcionServicio: optionalResponseString(record, "descripcionServicio"),
+    etiquetaRemito: optionalResponseString(record, "etiquetaRemito"),
+    etiquetasDocumentoDeCambio: optionalResponseString(
+      record,
+      "etiquetasDocumentoDeCambio",
+    ),
+    bultos: parseShipmentPackages(record.bultos),
+    agrupadorDeBultos: optionalResponseString(record, "agrupadorDeBultos"),
+    etiquetasPorAgrupador: optionalResponseString(
+      record,
+      "etiquetasPorAgrupador",
+    ),
+    motivo: optionalResponseString(record, "motivo"),
+    gastoEnergetico: optionalResponseString(record, "gastoEnergetico"),
+    huellaDeCarbono: optionalResponseString(record, "huellaDeCarbono"),
+  }
+}
+
+function parseShipmentStatus(payload: unknown): AndreaniShipmentStatusResponse {
+  const record = requiredRecord(
+    payload,
+    "Andreani devolvió un estado de envío inválido.",
+  )
+  const destination = requiredRecord(
+    record.destino,
+    "Andreani devolvió un destino inválido.",
+  )
+  const postal = requiredRecord(
+    destination.Postal,
+    "Andreani devolvió un destino postal inválido.",
+  )
+  const packages = Array.isArray(record.bultos)
+    ? record.bultos.map((item) => {
+        const packageRecord = requiredRecord(
+          item,
+          "Andreani devolvió un bulto de tracking inválido.",
+        )
+        return {
+          kilos: requiredResponseNumber(
+            packageRecord,
+            "kilos",
+            "Andreani devolvió un peso inválido.",
+          ),
+          valorDeclaradoConImpuestos: optionalResponseNumber(
+            packageRecord,
+            "valorDeclaradoConImpuestos",
+          ),
+          IdDeProducto: optionalResponseString(packageRecord, "IdDeProducto"),
+          volumen: requiredResponseNumber(
+            packageRecord,
+            "volumen",
+            "Andreani devolvió un volumen inválido.",
+          ),
+        }
+      })
+    : (() => {
+        throw new AndreaniError(
+          "INVALID_RESPONSE",
+          "Andreani devolvió bultos de tracking inválidos.",
+        )
+      })()
+  const distributionBranch = requiredRecord(
+    record.sucursalDeDistribucion,
+    "Andreani devolvió una sucursal de distribución inválida.",
+  )
+  const sender = requiredRecord(
+    record.remitente,
+    "Andreani devolvió un remitente inválido.",
+  )
+  const recipient = requiredRecord(
+    record.destinatario,
+    "Andreani devolvió un destinatario inválido.",
+  )
+
+  return {
+    numeroDeTracking: requiredResponseString(
+      record,
+      "numeroDeTracking",
+      "Andreani devolvió un envío sin tracking.",
+    ),
+    contrato: requiredResponseString(
+      record,
+      "contrato",
+      "Andreani devolvió un envío sin contrato.",
+    ),
+    ciclo: requiredResponseString(
+      record,
+      "ciclo",
+      "Andreani devolvió un envío sin ciclo.",
+    ),
+    estado: requiredResponseString(
+      record,
+      "estado",
+      "Andreani devolvió un envío sin estado.",
+    ),
+    estadoId: optionalResponseNumber(record, "estadoId"),
+    fechaEstado: requiredResponseString(
+      record,
+      "fechaEstado",
+      "Andreani devolvió un envío sin fecha de estado.",
+    ),
+    servicio: optionalResponseString(record, "servicio"),
+    sucursalDeDistribucion: {
+      nomenclatura: optionalResponseString(distributionBranch, "nomenclatura"),
+      descripcion: optionalResponseString(distributionBranch, "descripcion"),
+      id: optionalResponseNumber(distributionBranch, "id"),
+    },
+    fechaCreacion: requiredResponseString(
+      record,
+      "fechaCreacion",
+      "Andreani devolvió un envío sin fecha de creación.",
+    ),
+    destino: {
+      Postal: {
+        localidad: requiredResponseString(
+          postal,
+          "localidad",
+          "Andreani devolvió un destino sin localidad.",
+        ),
+        region: optionalResponseString(postal, "region"),
+        pais: requiredResponseString(
+          postal,
+          "pais",
+          "Andreani devolvió un destino sin país.",
+        ),
+        direccion: requiredResponseString(
+          postal,
+          "direccion",
+          "Andreani devolvió un destino sin dirección.",
+        ),
+        codigoPostal: requiredResponseString(
+          postal,
+          "codigoPostal",
+          "Andreani devolvió un destino sin código postal.",
+        ),
+      },
+    },
+    remitente: {
+      nombreYApellido: optionalResponseString(sender, "nombreYApellido"),
+      tipoYNumeroDeDocumento: optionalResponseString(
+        sender,
+        "tipoYNumeroDeDocumento",
+      ),
+      eMail: optionalResponseString(sender, "eMail"),
+    },
+    destinatario: {
+      nombreYApellido: optionalResponseString(recipient, "nombreYApellido"),
+      tipoYNumeroDeDocumento: optionalResponseString(
+        recipient,
+        "tipoYNumeroDeDocumento",
+      ),
+      eMail: optionalResponseString(recipient, "eMail"),
+    },
+    bultos: packages,
+    idDeProducto: optionalResponseString(record, "idDeProducto"),
+    referencias: requiredStringArray(
+      record.referencias,
+      "Andreani devolvió referencias inválidas.",
+    ),
+  }
+}
+
+function parseTrackingResponse(payload: unknown): AndreaniTrackingResponse {
+  const record = requiredRecord(
+    payload,
+    "Andreani devolvió un seguimiento inválido.",
+  )
+  if (!Array.isArray(record.eventos)) {
+    throw new AndreaniError(
+      "INVALID_RESPONSE",
+      "Andreani devolvió eventos de seguimiento inválidos.",
+    )
+  }
+
+  const eventos: AndreaniTrackingEvent[] = record.eventos.map((item) => {
+    const event = requiredRecord(
+      item,
+      "Andreani devolvió un evento de seguimiento inválido.",
+    )
+    const ciclo = optionalResponseString(event, "Ciclo")
+    const evento = requiredResponseString(
+      event,
+      "Evento",
+      "Andreani devolvió un evento sin nombre.",
+    )
+    if ((ciclo && !trackingCycles.has(ciclo)) || !trackingEvents.has(evento)) {
+      throw new AndreaniError(
+        "INVALID_RESPONSE",
+        "Andreani devolvió un evento fuera del maestro documentado.",
+      )
+    }
+
+    return {
+      Fecha: requiredResponseString(
+        event,
+        "Fecha",
+        "Andreani devolvió un evento sin fecha.",
+      ),
+      Ciclo: ciclo as AndreaniTrackingCycle | undefined,
+      Evento: evento as AndreaniTrackingEventName,
+      Motivo: optionalResponseString(event, "Motivo"),
+      Submotivo: optionalResponseString(event, "Submotivo"),
+      Estado: optionalResponseString(event, "Estado"),
+      EstadoId: optionalResponseNumber(event, "EstadoId"),
+      Sucursal: optionalResponseString(event, "Sucursal"),
+      SucursalId: optionalResponseString(event, "SucursalId"),
+      Comentario: optionalResponseString(event, "Comentario"),
+    }
+  })
+
+  return { eventos }
+}
+
+function validateOrderLocation(value: unknown, fieldName: string) {
+  const location = isRecord(value) ? value : null
+  if (!location) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      `El campo ${fieldName} no es válido.`,
+    )
+  }
+  const hasPostal = isRecord(location.postal)
+  const hasOffice = isRecord(location.sucursal)
+  if (hasPostal === hasOffice) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      `${fieldName} debe indicar un domicilio postal o una sucursal.`,
+    )
+  }
+
+  if (hasPostal) {
+    const postal = location.postal as Record<string, unknown>
+    const postalCode = assertText(
+      postal.codigoPostal,
+      `${fieldName}.codigoPostal`,
+      12,
+    )
+    if (fieldName === "origen" && !/^\d{4}$/.test(postalCode)) {
+      throw new AndreaniError(
+        "VALIDATION_ERROR",
+        "El código postal de origen debe tener cuatro dígitos.",
+      )
+    }
+    assertText(postal.calle, `${fieldName}.calle`, 40)
+    assertText(postal.numero, `${fieldName}.numero`, 40)
+    assertText(postal.localidad, `${fieldName}.localidad`, 40)
+    optionalText(postal.piso, `${fieldName}.piso`)
+    optionalText(postal.departamento, `${fieldName}.departamento`)
+    optionalText(postal.region, `${fieldName}.region`)
+    optionalText(postal.pais, `${fieldName}.pais`)
+    optionalText(postal.casillaDeCorreo, `${fieldName}.casillaDeCorreo`)
+    return
+  }
+
+  const office = location.sucursal as Record<string, unknown>
+  assertText(office.id, `${fieldName}.sucursal.id`)
+}
+
+function validateOrderPerson(
+  value: unknown,
+  fieldName: string,
+  phoneTypes: readonly number[],
+) {
+  const person = isRecord(value) ? value : null
+  if (!person) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      `El campo ${fieldName} no es válido.`,
+    )
+  }
+  assertText(person.nombreCompleto, `${fieldName}.nombreCompleto`, 40)
+  optionalText(person.email, `${fieldName}.email`, 40)
+  optionalText(person.documentoTipo, `${fieldName}.documentoTipo`)
+  optionalText(person.documentoNumero, `${fieldName}.documentoNumero`, 20)
+
+  if (person.telefonos === undefined) return
+  if (!Array.isArray(person.telefonos)) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      `El campo ${fieldName}.telefonos no es válido.`,
+    )
+  }
+  for (const phone of person.telefonos) {
+    if (
+      !isRecord(phone) ||
+      typeof phone.tipo !== "number" ||
+      !phoneTypes.includes(phone.tipo)
+    ) {
+      throw new AndreaniError(
+        "VALIDATION_ERROR",
+        `El tipo de teléfono de ${fieldName} no es válido.`,
+      )
+    }
+    assertText(phone.numero, `${fieldName}.telefonos.numero`, 15)
+  }
+}
+
+function validateB2COrderInput(input: AndreaniCreateShipmentInput) {
+  assertIdentifier(input.envio.contrato, "contrato")
+  validateOrderLocation(input.envio.origen, "origen")
+  validateOrderLocation(input.envio.destino, "destino")
+  validateOrderPerson(input.envio.remitente, "remitente", [0, 1, 2, 3])
+
+  if (
+    !Array.isArray(input.envio.destinatario) ||
+    input.envio.destinatario.length < 1 ||
+    input.envio.destinatario.length > 2
+  ) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La orden B2C debe incluir uno o dos destinatarios.",
+    )
+  }
+  input.envio.destinatario.forEach((person, index) =>
+    validateOrderPerson(person, `destinatario[${index}]`, [1, 2, 3, 4]),
+  )
+
+  if (!Array.isArray(input.items) || input.items.length !== 1) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La orden B2C debe incluir exactamente un bulto.",
+    )
+  }
+}
+
+function buildSearchQuery(filters: AndreaniShipmentSearchFilters) {
+  const contrato = optionalText(filters.contrato, "contrato")
+  const codigoCliente = optionalText(filters.codigoCliente, "codigoCliente")
+  if (!contrato && !codigoCliente) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La búsqueda requiere contrato o código de cliente.",
+    )
+  }
+
+  const fechaCreacionDesde = optionalText(
+    filters.fechaCreacionDesde,
+    "fechaCreacionDesde",
+  )
+  const fechaCreacionHasta = optionalText(
+    filters.fechaCreacionHasta,
+    "fechaCreacionHasta",
+  )
+  const actualizadoDesde = optionalText(
+    filters.actualizadoDesde,
+    "actualizadoDesde",
+  )
+  const actualizadoHasta = optionalText(
+    filters.actualizadoHasta,
+    "actualizadoHasta",
+  )
+  if (Boolean(fechaCreacionDesde) !== Boolean(fechaCreacionHasta)) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "Las fechas de creación deben informarse juntas.",
+    )
+  }
+  if (Boolean(actualizadoDesde) !== Boolean(actualizadoHasta)) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "Las fechas de actualización deben informarse juntas.",
+    )
+  }
+  const datePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/
+  for (const value of [
+    fechaCreacionDesde,
+    fechaCreacionHasta,
+    actualizadoDesde,
+    actualizadoHasta,
+  ]) {
+    if (value && !datePattern.test(value)) {
+      throw new AndreaniError(
+        "VALIDATION_ERROR",
+        "El formato de fecha para buscar envíos no es válido.",
+      )
+    }
+  }
+
+  const limit = optionalText(filters.limit, "limit")
+  if (
+    limit &&
+    (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 1_000)
+  ) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "El límite de búsqueda debe estar entre 1 y 1000.",
+    )
+  }
+  if (filters.format !== undefined && filters.format !== "JSON") {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "BEYONIX admite únicamente el formato JSON para buscar envíos.",
+    )
+  }
+
+  const query = new URLSearchParams()
+  const values: AndreaniShipmentSearchFilters = {
+    numeroDeDocumentoDestinatario: optionalText(
+      filters.numeroDeDocumentoDestinatario,
+      "numeroDeDocumentoDestinatario",
+    ),
+    fechaCreacionDesde,
+    fechaCreacionHasta,
+    contrato,
+    limit,
+    codigoCliente,
+    idDeProducto: optionalText(filters.idDeProducto, "idDeProducto"),
+    actualizadoDesde,
+    actualizadoHasta,
+    format: filters.format,
+  }
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) query.set(key, value)
+  }
+  return query
 }
 
 function assertJsonResponse(payload: unknown) {
@@ -374,12 +1210,11 @@ export class AndreaniClient {
   }
 
   private async performFetch(path: string, options: RequestOptions = {}) {
-    const startedAt = this.now()
     const method = options.method ?? "GET"
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
     const headers = new Headers(options.headers)
-    headers.set("Accept", headers.get("Accept") ?? "application/json")
+    if (!headers.has("Accept") && options.responseType !== "binary") {
+      headers.set("Accept", "application/json")
+    }
 
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json")
@@ -388,6 +1223,10 @@ export class AndreaniClient {
     if (options.authenticated) {
       headers.set("x-authorization-token", await this.authenticate())
     }
+
+    const startedAt = this.now()
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
 
     if (this.developmentLogs) {
       console.info("[Andreani] request", {
@@ -445,6 +1284,21 @@ export class AndreaniClient {
         return { response, payload: await response.arrayBuffer() }
       }
 
+      if (options.responseType === "authentication") {
+        const responseBody = await response.text()
+        let payload: unknown = {}
+
+        if (responseBody.trim()) {
+          try {
+            payload = JSON.parse(responseBody)
+          } catch {
+            payload = {}
+          }
+        }
+
+        return { response, payload }
+      }
+
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? ""
       if (!contentType.includes("json")) {
         throw new AndreaniError(
@@ -496,9 +1350,13 @@ export class AndreaniClient {
     }
   }
 
-  async authenticate() {
+  async authenticate(options: AndreaniAuthenticationOptions = {}) {
     const cached = tokenCache.get(this.cacheKey)
-    if (cached && cached.expiresAt > this.now() + TOKEN_REFRESH_MARGIN_MS) {
+    if (
+      !options.forceRefresh &&
+      cached &&
+      cached.expiresAt > this.now() + TOKEN_REFRESH_MARGIN_MS
+    ) {
       return cached.value
     }
 
@@ -519,10 +1377,7 @@ export class AndreaniClient {
       const { response, payload } = await this.performFetch("/login", {
         method: "POST",
         headers: { Authorization: `Basic ${credentials}` },
-        body: {
-          userName: this.config.username,
-          password: this.config.password,
-        },
+        responseType: "authentication",
       })
       const authentication = readAuthenticationResponse(payload, response)
       tokenCache.set(this.cacheKey, {
@@ -542,6 +1397,65 @@ export class AndreaniClient {
 
   async testConnection() {
     await this.authenticate()
+  }
+
+  async getLocalidades(
+    filters: AndreaniLocalityFilters = {},
+  ): Promise<AndreaniLocality[]> {
+    const query = new URLSearchParams()
+    for (const key of [
+      "localidad",
+      "provincia",
+      "idprovincia",
+      "partido",
+      "codigosPostales",
+      "p",
+    ] as const) {
+      const value = filters[key]
+      if (value !== undefined) query.set(key, assertText(value, key, 500))
+    }
+    if (filters.p && !/^\d+$/.test(filters.p)) {
+      throw new AndreaniError(
+        "VALIDATION_ERROR",
+        "El número de página de localidades no es válido.",
+      )
+    }
+    const suffix = query.size ? `?${query}` : ""
+    const { payload } = await this.performFetch(`/v1/localidades${suffix}`)
+    return parseLocalities(payload)
+  }
+
+  async getSucursales(
+    filters: AndreaniBranchFilters = {},
+  ): Promise<AndreaniBranch[]> {
+    return this.consultarSucursales(filters)
+  }
+
+  async getPuntosDeTercero(
+    filters: AndreaniThirdPartyPointFilters,
+  ): Promise<AndreaniBranch[]> {
+    const query = new URLSearchParams()
+    for (const [key, rawValue] of Object.entries(filters)) {
+      if (rawValue !== undefined && rawValue !== "") {
+        query.set(
+          key,
+          typeof rawValue === "boolean"
+            ? String(rawValue)
+            : assertText(rawValue, key),
+        )
+      }
+    }
+    if (!query.has("contrato")) {
+      throw new AndreaniError(
+        "VALIDATION_ERROR",
+        "El contrato es obligatorio para consultar puntos de tercero.",
+      )
+    }
+    const { payload } = await this.performFetch(
+      `/v2/puntos-de-tercero?${query}`,
+      { authenticated: true },
+    )
+    return parseBranches(payload)
   }
 
   async cotizar(
@@ -567,7 +1481,7 @@ export class AndreaniClient {
     // El contrato oficial no recibe el CP de origen ni la modalidad como query:
     // se validan aquí y se usan para seleccionar contrato/sucursal en el servidor.
     void codigoPostalOrigen
-    return this.cotizarPaquete({
+    return this.requestTariff({
       codigoPostalDestino: input.codigoPostalDestino,
       contrato: input.contrato,
       cliente: input.cliente,
@@ -581,9 +1495,39 @@ export class AndreaniClient {
     })
   }
 
+  async cotizarEnvio(
+    input: AndreaniTariffRequest,
+  ): Promise<AndreaniTariffResponse> {
+    if (!Array.isArray(input.bultos) || input.bultos.length !== 1) {
+      throw new AndreaniError(
+        "VALIDATION_ERROR",
+        "El cotizador documentado requiere el bulto en la posición cero.",
+      )
+    }
+    const bulto = input.bultos[0]
+    return this.requestTariff({
+      codigoPostalDestino: input.cpDestino,
+      contrato: input.contrato,
+      cliente: input.cliente,
+      codigoSucursalOrigen: input.sucursalOrigen,
+      valorDeclarado: bulto.valorDeclarado,
+      pesoKg: bulto.kilos,
+      volumenCm3: bulto.volumen,
+      altoCm: bulto.altoCm,
+      largoCm: bulto.largoCm,
+      anchoCm: bulto.anchoCm,
+    })
+  }
+
   async cotizarPaquete(
     input: AndreaniPackageQuoteInput,
   ): Promise<AndreaniQuoteResponse> {
+    return this.requestTariff(input)
+  }
+
+  private async requestTariff(
+    input: AndreaniTariffQueryInput,
+  ): Promise<AndreaniTariffResponse> {
     const codigoPostalDestino = assertPostalCode(
       input.codigoPostalDestino,
       "código postal de destino",
@@ -593,12 +1537,18 @@ export class AndreaniClient {
     const codigoSucursalOrigen = input.codigoSucursalOrigen
       ? assertIdentifier(input.codigoSucursalOrigen, "sucursal de origen")
       : undefined
-    const valorDeclarado = assertPositiveNumber(
-      input.valorDeclarado,
-      "valor declarado",
-      1_000_000_000,
-    )
-    const pesoKg = assertPositiveNumber(input.pesoKg, "peso", 1_000)
+    const valorDeclarado =
+      input.valorDeclarado === undefined
+        ? undefined
+        : assertPositiveNumber(
+            input.valorDeclarado,
+            "valor declarado",
+            1_000_000_000,
+          )
+    const pesoKg =
+      input.pesoKg === undefined
+        ? undefined
+        : assertPositiveNumber(input.pesoKg, "peso", 1_000)
     const volumenCm3 = assertPositiveNumber(
       input.volumenCm3,
       "volumen",
@@ -608,10 +1558,14 @@ export class AndreaniClient {
       cpDestino: codigoPostalDestino,
       contrato,
       cliente,
-      "bultos[0][valorDeclarado]": String(valorDeclarado),
       "bultos[0][volumen]": String(volumenCm3),
-      "bultos[0][kilos]": String(pesoKg),
     })
+    if (valorDeclarado !== undefined) {
+      query.set("bultos[0][valorDeclarado]", String(valorDeclarado))
+    }
+    if (pesoKg !== undefined) {
+      query.set("bultos[0][kilos]", String(pesoKg))
+    }
     if (input.altoCm !== undefined) {
       query.set(
         "bultos[0][altoCm]",
@@ -634,13 +1588,7 @@ export class AndreaniClient {
       query.set("sucursalOrigen", codigoSucursalOrigen)
     }
     const { payload } = await this.performFetch(`/v1/tarifas?${query}`)
-    if (!isRecord(payload)) {
-      throw new AndreaniError(
-        "INVALID_RESPONSE",
-        "Andreani devolvió una cotización inválida.",
-      )
-    }
-    return payload as unknown as AndreaniQuoteResponse
+    return parseTariffResponse(payload)
   }
 
   async consultarSucursales(
@@ -652,29 +1600,24 @@ export class AndreaniClient {
     }
     const suffix = query.size > 0 ? `?${query}` : ""
     const { payload } = await this.performFetch(`/v2/sucursales${suffix}`)
-    if (!Array.isArray(payload)) {
-      throw new AndreaniError(
-        "INVALID_RESPONSE",
-        "Andreani devolvió un listado de sucursales inválido.",
-      )
-    }
-    return payload as AndreaniBranch[]
+    return parseBranches(payload)
   }
 
   async crearEnvio(
     input: AndreaniCreateShipmentInput,
   ): Promise<AndreaniCreateShipmentResponse> {
-    if (!input.items.length) {
-      throw new AndreaniError(
-        "VALIDATION_ERROR",
-        "El envío debe incluir al menos un producto.",
-      )
-    }
+    validateB2COrderInput(input)
     const bultos = input.items.map((item) => {
       const logistics = resolveAndreaniProductLogistics(
         item.producto,
         item.variante,
       )
+      if (logistics.pesoKg > 50) {
+        throw new AndreaniError(
+          "VALIDATION_ERROR",
+          "El bulto B2C no puede superar los 50 kg.",
+        )
+      }
       return {
         ...item.bulto,
         kilos: logistics.pesoKg,
@@ -689,13 +1632,25 @@ export class AndreaniClient {
       authenticated: true,
       body: { ...input.envio, bultos },
     })
-    if (!isRecord(payload)) {
-      throw new AndreaniError(
-        "INVALID_RESPONSE",
-        "Andreani devolvió una orden de envío inválida.",
-      )
+    return parseCreateShipmentResponse(payload)
+  }
+
+  async getEstadoOrden(
+    numeroAndreani: string,
+  ): Promise<AndreaniOrderStatusResponse> {
+    const identifier = encodeURIComponent(
+      assertIdentifier(numeroAndreani, "número de Andreani"),
+    )
+    const { payload } = await this.performFetch(
+      `/v2/ordenes-de-envio/${identifier}`,
+      { authenticated: true },
+    )
+    const response = parseCreateShipmentResponse(payload)
+
+    return {
+      ...response,
+      creada: ["Creado", "Creada"].includes(response.estado),
     }
-    return payload as unknown as AndreaniCreateShipmentResponse
   }
 
   async obtenerEtiqueta(
@@ -715,9 +1670,10 @@ export class AndreaniClient {
       {
         authenticated: true,
         responseType: "binary",
-        headers: {
-          Accept: request.formato === "zpl" ? "application/zpl" : "application/pdf",
-        },
+        headers:
+          request.formato === "zpl"
+            ? { Accept: "application/zpl" }
+            : undefined,
       },
     )
     return {
@@ -726,6 +1682,35 @@ export class AndreaniClient {
         (request.formato === "zpl" ? "application/zpl" : "application/pdf"),
       data: payload as ArrayBuffer,
     }
+  }
+
+  async getEtiquetas(
+    numeroAndreaniOAgrupador: string,
+    formato: AndreaniLabelRequest["formato"] = "pdf",
+  ): Promise<AndreaniLabelResponse> {
+    return this.obtenerEtiqueta({ numeroAndreaniOAgrupador, formato })
+  }
+
+  async getEstadoEnvio(
+    numeroAndreani: string,
+  ): Promise<AndreaniShipmentStatusResponse> {
+    const identifier = encodeURIComponent(
+      assertIdentifier(numeroAndreani, "número de Andreani"),
+    )
+    const { payload } = await this.performFetch(`/v2/envios/${identifier}`, {
+      authenticated: true,
+    })
+    return parseShipmentStatus(payload)
+  }
+
+  async buscarEnvio(
+    filters: AndreaniShipmentSearchFilters,
+  ): Promise<AndreaniShipmentStatusResponse> {
+    const query = buildSearchQuery(filters)
+    const { payload } = await this.performFetch(`/v2/envios?${query}`, {
+      authenticated: true,
+    })
+    return parseShipmentStatus(payload)
   }
 
   async consultarSeguimiento(
@@ -738,14 +1723,95 @@ export class AndreaniClient {
       `/v3/envios/${identifier}/trazas`,
       { authenticated: true },
     )
-    if (!isRecord(payload) || !Array.isArray(payload.eventos)) {
-      throw new AndreaniError(
-        "INVALID_RESPONSE",
-        "Andreani devolvió un seguimiento inválido.",
-      )
-    }
-    return payload as unknown as AndreaniTrackingResponse
+    return parseTrackingResponse(payload)
   }
+
+  async getTrackingPullV3(
+    numeroAndreani: string,
+  ): Promise<AndreaniTrackingResponse> {
+    return this.consultarSeguimiento(numeroAndreani)
+  }
+}
+
+export async function getLocalidades(
+  filters: AndreaniLocalityFilters = {},
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniLocality[]> {
+  return new AndreaniClient(options).getLocalidades(filters)
+}
+
+export async function getSucursales(
+  filters: AndreaniBranchFilters = {},
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniBranch[]> {
+  return new AndreaniClient(options).getSucursales(filters)
+}
+
+export async function getPuntosDeTercero(
+  filters: AndreaniThirdPartyPointFilters,
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniBranch[]> {
+  return new AndreaniClient(options).getPuntosDeTercero(filters)
+}
+
+export async function cotizarEnvio(
+  input: AndreaniTariffRequest,
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniTariffResponse> {
+  return new AndreaniClient(options).cotizarEnvio(input)
+}
+
+export async function crearOrdenEnvio(
+  input: AndreaniCreateShipmentInput,
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniCreateShipmentResponse> {
+  return new AndreaniClient(options).crearEnvio(input)
+}
+
+export async function getEstadoOrden(
+  numeroAndreani: string,
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniOrderStatusResponse> {
+  return new AndreaniClient(options).getEstadoOrden(numeroAndreani)
+}
+
+export async function getEtiquetas(
+  numeroAndreaniOAgrupador: string,
+  formato: AndreaniLabelRequest["formato"] = "pdf",
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniLabelResponse> {
+  return new AndreaniClient(options).getEtiquetas(
+    numeroAndreaniOAgrupador,
+    formato,
+  )
+}
+
+export async function getEstadoEnvio(
+  numeroAndreani: string,
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniShipmentStatusResponse> {
+  return new AndreaniClient(options).getEstadoEnvio(numeroAndreani)
+}
+
+export async function getTrackingPullV3(
+  numeroAndreani: string,
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniTrackingResponse> {
+  return new AndreaniClient(options).getTrackingPullV3(numeroAndreani)
+}
+
+export async function buscarEnvio(
+  filters: AndreaniShipmentSearchFilters,
+  options: AndreaniClientOptions = {},
+): Promise<AndreaniShipmentStatusResponse> {
+  return new AndreaniClient(options).buscarEnvio(filters)
+}
+
+export async function getAndreaniToken(
+  options: AndreaniClientOptions = {},
+  authenticationOptions: AndreaniAuthenticationOptions = {},
+): Promise<string> {
+  return new AndreaniClient(options).authenticate(authenticationOptions)
 }
 
 export function getAndreaniDisabledResponse(): AndreaniDisabledResponse {
