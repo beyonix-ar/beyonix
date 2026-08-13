@@ -243,7 +243,7 @@ test("acepta una respuesta de autenticación exitosa", async () => {
   assert.equal(result.status, "success")
   assert.equal(result.environment, "QA")
   assert.equal(requestedUrl, "https://apisqa.andreani.com/login")
-  assert.equal(requestedMethod, "POST")
+  assert.equal(requestedMethod, "GET")
   assert.equal(
     authorizationHeader,
     `Basic ${Buffer.from(

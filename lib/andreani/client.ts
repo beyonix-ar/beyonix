@@ -1375,7 +1375,7 @@ export class AndreaniClient {
         "utf8",
       ).toString("base64")
       const { response, payload } = await this.performFetch("/login", {
-        method: "POST",
+        method: "GET",
         headers: { Authorization: `Basic ${credentials}` },
         responseType: "authentication",
       })
