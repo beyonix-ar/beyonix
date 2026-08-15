@@ -72,6 +72,23 @@ const provinceLocalityRequests = new Map<
 const postalCodeCache = new Map<string, TimedCacheEntry<string[]>>()
 const postalCodeRequests = new Map<string, Promise<string[]>>()
 
+export function isCheckoutDestinationCached(
+  province: string,
+  locality: string,
+  postalCode: string,
+): boolean {
+  const resolvedProvince = resolveProvince(province)
+  const localityKey = normalizeArgentineLocationKey(locality)
+  if (!localityKey || !/^\d{4}$/.test(postalCode)) return false
+
+  const cached = postalCodeCache.get(`${resolvedProvince.key}:${localityKey}`)
+  return Boolean(
+    cached &&
+      cached.expiresAt > Date.now() &&
+      cached.data.includes(postalCode),
+  )
+}
+
 async function getCachedTerritorialData<T>(
   key: string,
   cache: Map<string, TimedCacheEntry<T>>,

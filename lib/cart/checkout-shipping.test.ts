@@ -1,13 +1,50 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { normalizeCheckoutShipping } from "./checkout-shipping.ts"
+import {
+  CheckoutShippingQuoteError,
+  createCheckoutShippingQuoteToken,
+  normalizeCheckoutShipping,
+  type CheckoutShippingQuoteBinding,
+} from "./checkout-shipping.ts"
 
-test("usa la tarifa real de Andreani para calcular la bonificación", () => {
+const TEST_SECRET = "beyonix-checkout-shipping-test-secret-2026"
+const NOW = Date.UTC(2026, 7, 15, 12)
+const binding: CheckoutShippingQuoteBinding = {
+  cpDestino: "3230",
+  localidad: "Paso de los Libres",
+  provincia: "Corrientes",
+  items: [
+    { productId: 10, quantity: 2, variantId: 4 },
+    {
+      productId: 12,
+      quantity: 1,
+      conditionedStockId: "123e4567-e89b-12d3-a456-426614174000",
+    },
+  ],
+}
+
+function createQuoteToken(price = 18_000) {
+  return createCheckoutShippingQuoteToken(
+    binding,
+    { type: "domicilio", price },
+    { secret: TEST_SECRET, now: NOW },
+  )
+}
+
+test("el costo real proviene de la cotización firmada y no del navegador", () => {
   const shipping = normalizeCheckoutShipping(
-    { type: "domicilio", costReal: 18_000, quoted: true },
+    {
+      provider: "andreani",
+      type: "domicilio",
+      quoteToken: createQuoteToken(),
+      costReal: 1,
+    },
+    binding,
     100_000,
     {
+      secret: TEST_SECRET,
+      now: NOW,
       settings: {
         defaultShippingCost: 12_000,
         freeShippingMinAmount: 80_000,
@@ -21,20 +58,101 @@ test("usa la tarifa real de Andreani para calcular la bonificación", () => {
   assert.equal(shipping.costCharged, 13_000)
 })
 
-test("una cotización pendiente no usa un costo fijo oculto", () => {
-  const shipping = normalizeCheckoutShipping(
-    { type: "domicilio", costReal: 12_000, quoted: false },
-    100_000,
-  )
+test("todos los medios de pago consumen la misma cotización verificada", () => {
+  const quoteToken = createQuoteToken(12_345.67)
+  const paymentMethods = [
+    "mercadopago",
+    "transferencia",
+    "customer_credit",
+  ] as const
 
-  assert.equal(shipping.costReal, 0)
-  assert.equal(shipping.costCharged, 0)
-  assert.equal(shipping.freeShippingApplied, false)
+  const results = paymentMethods.map((paymentMethod) => ({
+    paymentMethod,
+    shipping: normalizeCheckoutShipping(
+      { provider: "andreani", type: "domicilio", quoteToken },
+      binding,
+      20_000,
+      {
+        secret: TEST_SECRET,
+        now: NOW,
+        customerCreditApplied: paymentMethod === "customer_credit",
+        settings: {
+          defaultShippingCost: 0,
+          freeShippingMinAmount: 999_999,
+          shippingBonusMax: 0,
+          freeShippingMode: "off",
+        },
+      },
+    ),
+  }))
+
+  assert.deepEqual(
+    results.map(({ shipping }) => shipping.costReal),
+    [12_345.67, 12_345.67, 12_345.67],
+  )
+  assert.deepEqual(
+    results.map(({ shipping }) => shipping.costCharged),
+    [12_345.67, 12_345.67, 0],
+  )
 })
 
-test("rechaza una supuesta cotización sin importe válido", () => {
+test("rechaza una firma alterada aunque el cliente envíe un costo positivo", () => {
+  const quoteToken = createQuoteToken()
+  const alteredToken = `${quoteToken.slice(0, -1)}${quoteToken.endsWith("a") ? "b" : "a"}`
+
   assert.throws(
-    () => normalizeCheckoutShipping({ costReal: 0, quoted: true }, 100_000),
-    /importe válido/,
+    () =>
+      normalizeCheckoutShipping(
+        {
+          type: "domicilio",
+          quoteToken: alteredToken,
+          costReal: 99_999,
+        },
+        binding,
+        100_000,
+        { secret: TEST_SECRET, now: NOW },
+      ),
+    CheckoutShippingQuoteError,
+  )
+})
+
+test("rechaza reutilizar una cotización con otro carrito o destino", () => {
+  const shipping = { type: "domicilio" as const, quoteToken: createQuoteToken() }
+
+  assert.throws(
+    () =>
+      normalizeCheckoutShipping(
+        shipping,
+        { ...binding, cpDestino: "3400" },
+        100_000,
+        { secret: TEST_SECRET, now: NOW },
+      ),
+    CheckoutShippingQuoteError,
+  )
+  assert.throws(
+    () =>
+      normalizeCheckoutShipping(
+        shipping,
+        {
+          ...binding,
+          items: [{ productId: 10, quantity: 1, variantId: 4 }],
+        },
+        100_000,
+        { secret: TEST_SECRET, now: NOW },
+      ),
+    CheckoutShippingQuoteError,
+  )
+})
+
+test("rechaza cotizaciones vencidas", () => {
+  assert.throws(
+    () =>
+      normalizeCheckoutShipping(
+        { type: "domicilio", quoteToken: createQuoteToken() },
+        binding,
+        100_000,
+        { secret: TEST_SECRET, now: NOW + 31 * 60 * 1000 },
+      ),
+    CheckoutShippingQuoteError,
   )
 })

@@ -7,6 +7,7 @@ import {
   type ShippingBonusSettings,
 } from "@/lib/store-config"
 import {
+  CheckoutShippingQuoteError,
   normalizeCheckoutShipping,
 } from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
@@ -18,6 +19,7 @@ import {
   calculateCustomerCreditApplication,
   getPaymentComposition,
   normalizeMoney,
+  roundMoney,
 } from "@/lib/customer-credit"
 import {
   applyCustomerCreditToOrder,
@@ -74,9 +76,7 @@ interface CheckoutPayload {
   shipping?: {
     provider?: string
     type?: "sucursal" | "domicilio"
-    costReal?: number
-    costCharged?: number
-    quoted?: boolean
+    quoteToken?: string
   }
 }
 
@@ -183,12 +183,20 @@ function validateCustomer(customer: CheckoutPayload["customer"]) {
 
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
+  customer: CheckoutPayload["customer"],
+  items: NormalizedItem[],
   productsTotal: number,
   customerCreditApplied = false,
   shippingSettings: ShippingBonusSettings,
 ) {
   const normalizedShipping = normalizeCheckoutShipping(
     shipping,
+    {
+      cpDestino: customer?.cpDestino,
+      localidad: customer?.localidad,
+      provincia: customer?.provincia,
+      items,
+    },
     productsTotal,
     { customerCreditApplied, settings: shippingSettings },
   )
@@ -210,17 +218,6 @@ function getUnitPrice(
     getConditionedUnitPrice(product.precio, conditioned) *
       (1 - getProductDiscount(product.id)),
   )
-}
-
-function getUnitPriceWithStoreBenefit(
-  product: ProductRow,
-  percent?: number | null,
-  conditioned?: ConditionedCheckoutRow | null,
-) {
-  const unitPrice = getUnitPrice(product, conditioned)
-  if (!percent) return unitPrice
-
-  return Math.max(Math.round(unitPrice * (1 - percent / 100)), 1)
 }
 
 async function insertOrderItems(
@@ -391,6 +388,8 @@ export async function POST(request: Request) {
     const siteSettings = await getSiteSettings()
     const shipping = normalizeShipping(
       payload.shipping,
+      payload.customer,
+      items,
       baseTotals.productsTotal,
       requestedCredit > 0,
       siteSettings.shipping,
@@ -425,9 +424,10 @@ export async function POST(request: Request) {
       totals.productsTotal,
       storeBenefit?.percent,
     )
-    const totalAfterStoreBenefit =
+    const totalAfterStoreBenefit = roundMoney(
       Math.max(totals.productsTotal - storeBenefitDiscountAmount, 0) +
-      totals.shipping
+        totals.shipping,
+    )
     const customerCreditApplication =
       requestedCredit > 0
         ? calculateCustomerCreditApplication({
@@ -576,10 +576,13 @@ export async function POST(request: Request) {
       "http://localhost:3000"
 
     const preference = new Preference(mercadoPagoClient)
-    const creditPreferenceItems = [
+    const preferenceItems = [
       {
-        id: `order-${order.id}-external-balance`,
-        title: "Diferencia a pagar BEYONIX",
+        id: `order-${order.id}`,
+        title:
+          customerCreditApplication.appliedAmount > 0
+            ? "Diferencia a pagar BEYONIX"
+            : `Pedido BEYONIX BX-${1000 + order.id}`,
         quantity: 1,
         unit_price: customerCreditApplication.externalAmountDue,
         currency_id: "ARS",
@@ -588,36 +591,7 @@ export async function POST(request: Request) {
     const result = await preference.create({
       body: {
         external_reference: String(order.id),
-        items: customerCreditApplication.appliedAmount > 0 ? creditPreferenceItems : [
-          ...items.map((item) => {
-            const product = productRows.find((row) => row.id === item.productId)!
-
-            return {
-              id: String(product.id),
-              title: product.nombre,
-              quantity: item.quantity,
-              unit_price: getUnitPriceWithStoreBenefit(
-                product,
-                storeBenefit?.percent,
-                item.conditionedStockId
-                  ? conditionedRows.get(item.conditionedStockId)
-                  : null,
-              ),
-              currency_id: "ARS",
-            }
-          }),
-          ...(totals.shipping > 0
-            ? [
-                {
-                  id: "shipping",
-                  title: "Envío",
-                  quantity: 1,
-                  unit_price: totals.shipping,
-                  currency_id: "ARS",
-                },
-              ]
-            : []),
-        ],
+        items: preferenceItems,
         payer: {
           name: payload.customer?.nombre,
           email: payload.customer?.email,
@@ -664,6 +638,7 @@ export async function POST(request: Request) {
     console.error("Error creando preferencia de Mercado Pago", error)
     const stockConflict =
       error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
+    const quoteConflict = error instanceof CheckoutShippingQuoteError
 
     return NextResponse.json(
       {
@@ -672,7 +647,7 @@ export async function POST(request: Request) {
             ? error.message
             : "No pudimos iniciar el pago.",
       },
-      { status: stockConflict ? 409 : 500 },
+      { status: stockConflict || quoteConflict ? 409 : 500 },
     )
   }
 }

@@ -245,7 +245,7 @@ export function GeographicSelect({
               }}
               placeholder="Buscar localidad…"
               aria-label="Buscar localidad"
-              className="min-w-0 flex-1 cursor-text bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/36"
+              className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/36"
             />
             {query && (
               <button
@@ -341,7 +341,7 @@ export function GeographicSelect({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={cn(
-          "beyonix-checkout-input flex h-10 w-full min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border bg-[#10151C] px-3 text-left font-heading text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2",
+          "beyonix-checkout-input flex h-10 w-full min-w-0 items-center justify-between gap-3 rounded-lg border bg-[#10151C] px-3 text-left font-heading text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2",
           open
             ? "border-beyonix-blue-light/65 text-[#D7ECFF] ring-2 ring-beyonix-blue-light/18"
             : "border-beyonix-blue-light/18 text-white hover:border-beyonix-blue-light/35",
@@ -349,6 +349,7 @@ export function GeographicSelect({
           invalid &&
             "border-red-400/70 shadow-[0_0_0_2px_rgba(248,113,113,0.1)]",
           (disabled || loading) && "cursor-not-allowed opacity-60",
+          locked && "cursor-default",
         )}
       >
         <span className="min-w-0 truncate">

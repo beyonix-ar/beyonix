@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 
-import { normalizeCheckoutShipping } from "@/lib/cart/checkout-shipping"
+import {
+  CheckoutShippingQuoteError,
+  normalizeCheckoutShipping,
+} from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import {
   STOCK_CHANGED_MESSAGE,
@@ -10,6 +13,7 @@ import {
   calculateCustomerCreditApplication,
   getPaymentComposition,
   normalizeMoney,
+  roundMoney,
 } from "@/lib/customer-credit"
 import {
   applyCustomerCreditToOrder,
@@ -79,10 +83,7 @@ interface CheckoutPayload {
   shipping?: {
     provider?: string
     type?: "sucursal" | "domicilio"
-    costReal?: number
-    costCharged?: number
-    freeShippingApplied?: boolean
-    quoted?: boolean
+    quoteToken?: string
   }
 }
 
@@ -183,14 +184,26 @@ function validateCustomer(customer: CheckoutPayload["customer"]) {
 
 function normalizeShipping(
   shipping: CheckoutPayload["shipping"],
+  customer: CheckoutPayload["customer"],
+  items: NormalizedItem[],
   productsTotal: number,
   customerCreditApplied = false,
   shippingSettings: ShippingBonusSettings,
 ) {
-  const normalizedShipping = normalizeCheckoutShipping(shipping, productsTotal, {
-    customerCreditApplied,
-    settings: shippingSettings,
-  })
+  const normalizedShipping = normalizeCheckoutShipping(
+    shipping,
+    {
+      cpDestino: customer?.cpDestino,
+      localidad: customer?.localidad,
+      provincia: customer?.provincia,
+      items,
+    },
+    productsTotal,
+    {
+      customerCreditApplied,
+      settings: shippingSettings,
+    },
+  )
 
   return {
     shipping_provider: normalizedShipping.provider,
@@ -369,6 +382,8 @@ export async function POST(request: Request) {
     const siteSettings = await getSiteSettings()
     const shipping = normalizeShipping(
       payload.shipping,
+      payload.customer,
+      items,
       baseTotals.productsTotal,
       requestedCredit > 0,
       siteSettings.shipping,
@@ -400,12 +415,13 @@ export async function POST(request: Request) {
       shipping: totals.shipping,
       customerCreditAmount: creditBeforeTransferDiscount.appliedAmount,
     })
-    const orderTotal =
+    const orderTotal = roundMoney(
       pricingPaymentMethod === "transferencia"
         ? productsTotalAfterStoreBenefit +
           totals.shipping -
           transferPaymentTotals.discount
         : productsTotalAfterStoreBenefit + totals.shipping
+    )
     const creditApplication = calculateCustomerCreditApplication({
       availableBalance: balance,
       eligibleTotal: orderTotal,
@@ -569,6 +585,7 @@ export async function POST(request: Request) {
     console.error("Error creando orden con saldo a favor", error)
     const stockConflict =
       error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
+    const quoteConflict = error instanceof CheckoutShippingQuoteError
 
     return NextResponse.json(
       {
@@ -577,7 +594,7 @@ export async function POST(request: Request) {
             ? error.message
             : "No pudimos registrar el pedido con saldo a favor.",
       },
-      { status: stockConflict ? 409 : 500 }
+      { status: stockConflict || quoteConflict ? 409 : 500 }
     )
   }
 }

@@ -263,6 +263,7 @@ interface ShippingOption {
   type: ShippingType
   label: string
   price: number
+  quoteToken: string
   provider: "andreani"
   quoteStatus: "quoted" | "pending"
 }
@@ -703,10 +704,6 @@ export default function CheckoutPage() {
             siteSettings.shipping,
           )
       : 0
-  const freeShippingApplied =
-    hasAndreaniQuote &&
-    shippingCostReal > 0 &&
-    shippingCostCharged === 0
   const totals = calculateCartTotals(items, {
     shippingCost: shippingCostCharged,
   })
@@ -1088,7 +1085,11 @@ export default function CheckoutPage() {
     })
         .then(async (response) => {
           const data = (await response.json()) as {
-            options?: Array<{ type?: string; price?: number }>
+            options?: Array<{
+              type?: string
+              price?: number
+              quoteToken?: string
+            }>
             message?: string
           }
           if (disposed) return
@@ -1099,7 +1100,9 @@ export default function CheckoutPage() {
             if (
               (option.type !== "domicilio" && option.type !== "sucursal") ||
               !Number.isFinite(price) ||
-              price <= 0
+              price <= 0 ||
+              typeof option.quoteToken !== "string" ||
+              !option.quoteToken
             ) {
               return []
             }
@@ -1107,6 +1110,7 @@ export default function CheckoutPage() {
               type: option.type,
               label: getShippingOptionLabel(option.type),
               price,
+              quoteToken: option.quoteToken,
               provider: "andreani" as const,
               quoteStatus: "quoted" as const,
             }]
@@ -1408,10 +1412,7 @@ export default function CheckoutPage() {
           shipping: {
             provider: selectedShippingOption.provider,
             type: selectedShippingOption.type,
-            costReal: shippingCostReal,
-            costCharged: shippingCostCharged,
-            freeShippingApplied,
-            quoted: selectedShippingOption.quoteStatus === "quoted",
+            quoteToken: selectedShippingOption.quoteToken,
           },
           storeBenefitId: selectedStoreBenefit?.id ?? null,
           paymentMethodId: selectedPayment || "customer_credit",

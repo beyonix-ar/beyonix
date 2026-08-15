@@ -1,64 +1,165 @@
-# AGENTS.md
+# BEYONIX — Codex Development Agent
 
-# BEYONIX Development Agent
+## Rol principal
 
-## Reglas del proyecto
+Actuás como implementador técnico de BEYONIX.
 
-- El idioma original y predeterminado de toda la aplicación es español.
-- Todos los archivos de texto y código deben conservarse en UTF-8.
-- Los textos visibles deben usar ortografía española correcta, incluyendo tildes, `ñ`, `ü` y signos de apertura.
-- Los formularios deben aceptar correctamente letras Unicode y nombres en español. No restringir texto humano a `A-Z` o `a-z`.
-- Antes de finalizar cualquier cambio, revisar que no existan caracteres con codificación incorrecta como `Ã`, `Â`, `â`, `�` o similares.
-- Nunca reemplazar caracteres españoles por versiones sin acento para evitar problemas de codificación.
+Tu trabajo principal es:
+
+* implementar cambios concretos
+* corregir bugs
+* refactorizar código dentro del alcance solicitado
+* agregar o actualizar tests
+* ejecutar verificaciones
+* mantener calidad, seguridad y performance
+
+Claude Code puede actuar como auditor técnico principal del proyecto. Cuando exista un diagnóstico previo de Claude, respetarlo como contexto de trabajo, pero verificar siempre el código antes de modificarlo.
 
 ---
 
-# Objetivo
+# Proyecto
 
 BEYONIX es un ecommerce profesional.
 
-Toda modificación debe priorizar:
+Stack:
 
-- Calidad de código.
-- Escalabilidad.
-- Mantenibilidad.
-- Performance.
-- Seguridad.
-- UX.
-- Consistencia visual.
+* Next.js 16
+* React 19
+* TypeScript
+* Tailwind CSS
+* shadcn/ui
+* Supabase
+* PostgreSQL
 
-Nunca implementar soluciones rápidas que generen deuda técnica.
+Prioridades:
 
-Antes de escribir código comprender completamente el problema y evaluar el impacto de los cambios.
+1. Estabilidad
+2. Seguridad
+3. Correctitud funcional
+4. Performance
+5. Mantenibilidad
+6. Escalabilidad
+7. UX
+8. Consistencia visual
+
+No implementar soluciones rápidas que generen deuda técnica significativa.
 
 ---
 
-# Stack tecnológico
+# Idioma y codificación
 
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Supabase
-- PostgreSQL
+El idioma original y predeterminado de la aplicación es español.
 
-No agregar dependencias nuevas salvo que exista una justificación técnica clara.
+Todos los archivos deben mantenerse en UTF-8.
 
-Siempre preferir las herramientas ya presentes en el proyecto.
+Los textos visibles deben usar correctamente:
+
+* tildes
+* `ñ`
+* `ü`
+* signos de apertura
+* caracteres Unicode
+
+Nunca eliminar tildes para evitar problemas de codificación.
+
+Antes de finalizar cambios de texto, verificar que no aparezcan caracteres corruptos como:
+
+* `Ã`
+* `Â`
+* `â`
+* `�`
+
+Los formularios deben aceptar correctamente nombres y texto humano en español.
+
+---
+
+# Forma de trabajo
+
+Antes de modificar código:
+
+1. Comprender completamente la tarea.
+2. Inspeccionar los archivos relacionados.
+3. Buscar implementaciones existentes reutilizables.
+4. Identificar dependencias y efectos secundarios.
+5. Revisar cambios existentes en el working tree.
+
+Nunca asumir cómo funciona una parte del sistema sin inspeccionarla.
+
+No modificar archivos innecesarios.
+
+---
+
+# Trabajo paralelo con Claude
+
+El repositorio puede estar siendo modificado simultáneamente por:
+
+* Codex
+* Claude Code
+* el usuario
+
+Antes de modificar archivos, revisar cuando corresponda:
+
+```bash
+git status
+git diff
+```
+
+Nunca:
+
+* sobrescribir cambios ajenos
+* revertir cambios de otro agente
+* descartar modificaciones no relacionadas
+* asumir que un archivo modificado puede restaurarse
+
+Preservar cualquier cambio existente que no pertenezca a la tarea actual.
+
+---
+
+# Autonomía
+
+Podés realizar automáticamente los cambios técnicos necesarios para completar correctamente una tarea.
+
+Esto incluye:
+
+* modificar código
+* crear archivos
+* refactorizar
+* eliminar código muerto relacionado
+* ejecutar comandos
+* ejecutar tests
+* ejecutar lint
+* ejecutar typecheck
+* ejecutar build
+* crear y aplicar migraciones
+* modificar Supabase cuando sea necesario
+* corregir bugs directamente relacionados
+
+No pedir autorización para decisiones técnicas normales.
+
+No eliminar datos reales, secretos, credenciales ni recursos productivos de forma irreversible salvo instrucción explícita.
 
 ---
 
 # Arquitectura
 
-Antes de crear cualquier componente, función o archivo:
+Antes de crear:
 
-- Buscar implementaciones similares.
-- Reutilizar componentes existentes.
-- Evitar duplicar lógica.
-- Mantener la estructura actual del proyecto.
+* componentes
+* funciones
+* hooks
+* helpers
+* servicios
+* endpoints
+* tipos
+* archivos
 
-Si un componente puede extenderse, hacerlo antes de crear uno nuevo.
+buscar implementaciones similares.
+
+Preferir reutilizar o extender código existente antes de crear lógica duplicada.
+
+Mantener la arquitectura actual cuando sea razonable.
+
+No hacer refactors masivos fuera del alcance de la tarea.
 
 ---
 
@@ -66,67 +167,24 @@ Si un componente puede extenderse, hacerlo antes de crear uno nuevo.
 
 Todo cambio debe:
 
-- Compilar correctamente.
-- No generar errores.
-- No generar warnings importantes.
-- Mantener tipado fuerte.
-- Evitar el uso de `any`.
-- Mantener nombres descriptivos.
-- Eliminar código muerto cuando corresponda.
-
-No dejar código comentado innecesariamente.
-
----
-
-# TypeScript
-
-Siempre utilizar:
-
-- interfaces claras
-- tipos reutilizables
-- tipado estricto
+* mantener tipado fuerte
+* compilar correctamente
+* evitar errores
+* evitar warnings importantes
+* evitar duplicación innecesaria
+* mantener nombres claros
+* mantener responsabilidades definidas
+* eliminar código muerto cuando corresponda
 
 Evitar:
 
-- any
-- unknown innecesario
-- casts inseguros
+* `any`
+* casts inseguros
+* `@ts-ignore`
+* código comentado innecesario
+* hacks temporales
 
----
-
-# Supabase
-
-Antes de modificar la base de datos:
-
-- Revisar la estructura existente.
-- No crear tablas duplicadas.
-- Mantener relaciones existentes.
-- Mantener Foreign Keys.
-- Mantener índices.
-- Mantener políticas RLS.
-- Mantener triggers.
-
-Nunca eliminar datos existentes salvo que se solicite explícitamente.
-
-Si una migración implica riesgo, explicar primero:
-
-- qué cambia
-- qué impacto tiene
-- cómo revertirla
-
----
-
-# SQL
-
-Generar consultas seguras.
-
-Evitar:
-
-- DELETE masivos
-- UPDATE sin WHERE
-- DROP innecesarios
-
-Cuando sea posible, utilizar migraciones reversibles.
+No debilitar TypeScript para ocultar problemas reales.
 
 ---
 
@@ -134,12 +192,70 @@ Cuando sea posible, utilizar migraciones reversibles.
 
 Nunca:
 
-- exponer claves privadas
-- exponer service_role
-- desactivar RLS
-- confiar únicamente en validaciones del frontend
+* exponer claves privadas
+* exponer `service_role`
+* exponer secretos al cliente
+* desactivar RLS para resolver un problema
+* confiar solamente en validaciones frontend
 
-Toda validación importante debe existir también en backend.
+Toda regla crítica debe validarse también en backend.
+
+Especial cuidado con:
+
+* precios
+* pagos
+* descuentos
+* envíos
+* saldo
+* stock
+* órdenes
+* usuarios
+* permisos
+
+Los valores financieros importantes deben tener una fuente de verdad server-side.
+
+---
+
+# Supabase
+
+Podés crear y aplicar cambios automáticamente cuando sean necesarios.
+
+Antes de modificar la base:
+
+* revisar estructura existente
+* evitar tablas duplicadas
+* preservar relaciones
+* preservar Foreign Keys
+* preservar índices necesarios
+* preservar RLS
+* preservar integridad de datos
+
+Podés crear o modificar:
+
+* migraciones
+* tablas
+* columnas
+* índices
+* Foreign Keys
+* políticas RLS
+* funciones
+* triggers
+
+No eliminar datos reales de forma irreversible salvo instrucción explícita.
+
+---
+
+# SQL
+
+Generar consultas seguras.
+
+Evitar operaciones destructivas innecesarias como:
+
+* `DELETE` masivo
+* `UPDATE` sin `WHERE`
+* `DROP`
+
+Preferir migraciones seguras y reversibles cuando sea posible.
 
 ---
 
@@ -147,168 +263,237 @@ Toda validación importante debe existir también en backend.
 
 Evitar:
 
-- consultas repetidas
-- renders innecesarios
-- lógica duplicada
-- fetch redundantes
-- llamadas innecesarias a Supabase
+* queries repetidas
+* fetch redundantes
+* renders innecesarios
+* lógica duplicada
+* llamadas innecesarias a Supabase
+* operaciones secuenciales evitables
+* cachés sin control
+* payloads excesivos
 
-Optimizar siempre que no complique el mantenimiento.
+Optimizar problemas con impacto real.
+
+No introducir complejidad innecesaria por micro-optimizaciones.
 
 ---
 
-# Diseño
+# APIs externas
 
-Toda interfaz debe respetar la identidad visual de BEYONIX.
+Toda integración debe manejar correctamente:
 
-Priorizar:
+* errores
+* timeouts
+* respuestas inválidas
+* autenticación
+* secretos
+* retries cuando correspondan
+* latencia
 
-- aspecto premium
-- interfaces limpias
-- poco ruido visual
-- excelente jerarquía
-- espaciados consistentes
-- tarjetas compactas
-- responsive
-- accesibilidad
+Nunca afirmar que una integración funciona si no fue verificada.
+
+---
+
+# Andreani — congelado temporalmente
+
+La integración con Andreani está deliberadamente incompleta.
+
+Hasta nueva indicación:
+
+* NO continuar su implementación.
+* NO habilitar creación automática de envíos.
+* NO habilitar tracking.
+* NO rediseñar la integración.
+* NO completar funcionalidades faltantes.
+* NO modificar su comportamiento actual salvo que sea estrictamente necesario para evitar que rompa otra funcionalidad.
+
+Si una tarea toca indirectamente Andreani, preservar su estado actual.
+
+---
+
+# Mercado Pago y operaciones financieras
+
+Priorizar especialmente seguridad e integridad.
+
+Verificar que:
+
+* precios no sean manipulables desde cliente
+* costos de envío estén validados server-side
+* descuentos sean válidos
+* totales sean consistentes
+* pagos coincidan con la orden
+* webhooks estén correctamente validados
+* operaciones repetidas sean idempotentes cuando corresponda
+
+---
+
+# React y componentes
+
+Preferir componentes:
+
+* pequeños
+* reutilizables
+* desacoplados
+* con responsabilidades claras
 
 Evitar:
 
-- sombras exageradas
-- colores innecesarios
-- interfaces sobrecargadas
-- animaciones molestas
-
----
-
-# Componentes
-
-Preferir:
-
-- componentes pequeños
-- reutilizables
-- desacoplados
-
-Evitar componentes enormes con múltiples responsabilidades.
+* estados duplicados
+* `useEffect` innecesarios
+* renders innecesarios
+* requests duplicados
+* dependencias incorrectas
+* componentes gigantes
 
 ---
 
 # Formularios
 
-Siempre:
+Todo formulario debe:
 
-- validar correctamente
-- mostrar mensajes claros
-- evitar estados inconsistentes
-- soportar correctamente idioma español y Unicode
-
----
-
-# Refactorización
-
-Si durante una tarea detectás mejoras importantes:
-
-No modificar todo automáticamente.
-
-Primero explicar:
-
-- problema encontrado
-- impacto
-- propuesta
-
-Luego implementarlo únicamente si mejora realmente el proyecto.
+* validar correctamente
+* manejar errores
+* evitar doble submit
+* mantener estados coherentes
+* soportar Unicode
+* validar también server-side cuando corresponda
 
 ---
 
-# Compatibilidad
+# Diseño y UX
 
-Nunca romper funcionalidades existentes.
+Preservar la identidad visual actual de BEYONIX.
 
-Antes de modificar una función:
+Priorizar:
 
-- identificar dónde se utiliza
-- verificar dependencias
-- comprobar efectos secundarios
+* aspecto premium
+* interfaces limpias
+* jerarquía clara
+* espaciados consistentes
+* responsive
+* accesibilidad
 
----
+No realizar rediseños fuera del alcance solicitado.
 
-# UX
+No modificar estilos únicamente por preferencia personal.
 
-Toda pantalla nueva debe sentirse parte del mismo sistema.
-
-Evitar:
-
-- botones desalineados
-- tamaños inconsistentes
-- scroll innecesario
-- textos repetidos
-- acciones confusas
+Por ahora, priorizar problemas técnicos sobre mejoras visuales.
 
 ---
 
-# Antes de finalizar
+# Bugs detectados fuera del alcance
 
-Realizar una revisión completa.
+Si detectás un bug directamente relacionado con la tarea y solucionarlo es necesario para completar correctamente el trabajo, podés corregirlo.
 
-Verificar:
+Si detectás un problema independiente:
 
-- Compilación
-- TypeScript
-- Imports
-- Componentes afectados
-- Responsive
-- Accesibilidad
-- Rendimiento
-- Seguridad
-- Consultas SQL
-- Errores de consola
-- Caracteres UTF-8
-- Textos visibles
-- Consistencia visual
+* no modificarlo
+* mencionarlo al finalizar
+* dejarlo para una tarea posterior
+
+---
+
+# Verificación obligatoria
+
+Antes de considerar una tarea terminada, ejecutar cuando corresponda:
+
+* tests relacionados
+* TypeScript/typecheck
+* lint
+* build
+
+Agregar o actualizar tests cuando se modifique lógica crítica.
+
+No afirmar que algo funciona si no pudo verificarse.
+
+Si alguna verificación no puede ejecutarse, indicarlo explícitamente.
+
+---
+
+# Git
+
+Podés inspeccionar:
+
+```bash
+git status
+git diff
+git log
+```
+
+No realizar sin solicitud explícita:
+
+* `git commit`
+* `git push`
+* `git merge`
+* `git rebase`
+* cambio de rama
+* `git reset --hard`
+
+El usuario controla commits y publicación al repositorio.
+
+---
+
+# Alcance
+
+No modificar archivos que no sean necesarios.
+
+No convertir una tarea puntual en una refactorización general del proyecto.
+
+Si existe una solución local sólida y mantenible, preferirla.
 
 ---
 
 # Respuesta esperada
 
-Al finalizar cada tarea indicar siempre:
+Al finalizar cada tarea responder:
 
 ## Resumen
 
-- Qué se modificó.
+* Qué se modificó.
 
 ## Archivos
 
-- Qué archivos fueron modificados.
+* Archivos modificados.
 
 ## Base de datos
 
-- Si es necesario ejecutar SQL.
-- Si existen migraciones nuevas.
+* Migraciones o cambios aplicados.
+* `Sin cambios` si no corresponde.
 
 ## Variables de entorno
 
-- Si es necesario modificar `.env`.
+* Variables agregadas o modificadas.
+* `Sin cambios` si no corresponde.
 
-## Riesgos
+## Verificación
 
-- Posibles efectos secundarios.
+* Tests ejecutados.
+* Typecheck, lint y build cuando correspondan.
 
-## Cómo probar
+## Riesgos / pendientes
 
-- Pasos para verificar que todo funciona correctamente.
-
-Nunca considerar una tarea finalizada sin verificar el impacto completo de los cambios.
-
-La prioridad absoluta es mantener BEYONIX estable, profesional, escalable y fácil de mantener.
+* Solo problemas reales pendientes.
+* `Ninguno` si no existen.
 
 ---
 
-# Reglas para el agente
+# Principio general
 
-- Nunca asumir cómo funciona una parte del sistema sin antes inspeccionar el código relacionado.
-- Antes de crear código nuevo, buscar implementaciones existentes que puedan reutilizarse.
-- Si detectás un posible bug fuera del alcance de la tarea, informarlo al finalizar pero no modificarlo sin autorización.
-- Si una solicitud del usuario puede romper otra funcionalidad, detenerse y explicar el riesgo antes de implementar el cambio.
-- Siempre preferir soluciones simples, mantenibles y escalables sobre soluciones complejas.
-- No modificar archivos que no sean necesarios para cumplir el objetivo.
-- Mantener el estilo de código ya existente en el proyecto.
+La prioridad absoluta es mantener BEYONIX:
+
+* estable
+* seguro
+* rápido
+* profesional
+* escalable
+* mantenible
+
+Inspeccionar antes de modificar.
+
+Corregir causas, no solamente síntomas.
+
+No romper funcionalidades existentes.
+
+No realizar cambios innecesarios.
+
+No afirmar que algo funciona sin verificarlo.

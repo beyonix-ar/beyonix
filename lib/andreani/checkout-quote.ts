@@ -17,6 +17,7 @@ import {
   AndreaniError,
   type AndreaniClientOptions,
 } from "./client.ts"
+import { isCheckoutDestinationCached } from "./checkout-destinations.ts"
 import type {
   AndreaniBranch,
   AndreaniBranchFilters,
@@ -88,6 +89,12 @@ interface CheckoutQuoteDependencies {
   quoteTariff?: (
     input: AndreaniTariffRequest,
   ) => Promise<AndreaniTariffResponse>
+  isDestinationCached?: (
+    request: Pick<
+      AndreaniCheckoutQuoteRequest,
+      "cpDestino" | "localidad" | "provincia"
+    >,
+  ) => boolean
   clientOptions?: AndreaniClientOptions
 }
 
@@ -476,11 +483,21 @@ export async function quoteAndreaniCheckout(
           branchRequests,
           () => referenceClient.getSucursales(filters),
         ))
-    const localitiesPromise = (async () => {
+    const destinationIsCached =
+      dependencies.isDestinationCached?.(request) ??
+      isCheckoutDestinationCached(
+        request.provincia,
+        request.localidad,
+        request.cpDestino,
+      )
+    const validateDestinationPromise = (async () => {
+      if (destinationIsCached) return
+
       try {
-        return await getLocalities({
+        const localities = await getLocalities({
           codigosPostales: request.cpDestino,
         })
+        matchAndreaniCheckoutProvince(request, localities)
       } catch (error) {
         if (error instanceof AndreaniError && error.status === 404) {
           throw new AndreaniError(
@@ -491,6 +508,8 @@ export async function quoteAndreaniCheckout(
         throw error
       }
     })()
+    await validateDestinationPromise
+
     const branchesPromise = (async () => {
       if (!config.sucursalContrato) return []
       try {
@@ -504,71 +523,88 @@ export async function quoteAndreaniCheckout(
         throw error
       }
     })()
-    const [localities, branches] = await Promise.all([
-      localitiesPromise,
-      branchesPromise,
-    ])
-
-    matchAndreaniCheckoutProvince(request, localities)
-    const branchAvailable = branches.length > 0
-    const items = await (dependencies.loadItems ?? loadCheckoutItems)(request)
-    const packageData = aggregateAndreaniPackage(items)
+    const authenticationPromise = dependencies.quoteTariff
+      ? Promise.resolve()
+      : client.authenticate()
+    const packagePromise = (dependencies.loadItems ?? loadCheckoutItems)(request)
+      .then(aggregateAndreaniPackage)
     const quote =
       dependencies.quoteTariff ??
       ((input: AndreaniTariffRequest) => client.cotizarEnvio(input))
-    const contracts = [
-      config.domicilioContrato
-        ? { type: "domicilio" as const, contrato: config.domicilioContrato }
-        : null,
-      config.sucursalContrato && branchAvailable
-        ? { type: "sucursal" as const, contrato: config.sucursalContrato }
-        : null,
-    ].filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    const quoteContract = async (
+      type: AndreaniCheckoutQuoteOption["type"],
+      contrato: string,
+      packageData: AggregatedAndreaniPackage,
+    ) => {
+      try {
+        const response = await quote({
+          cpDestino: request.cpDestino,
+          contrato,
+          cliente: config.cliente,
+          sucursalOrigen: config.sucursalOrigen,
+          bultos: [
+            {
+              valorDeclarado: packageData.valorDeclarado,
+              volumen: packageData.volumenCm3,
+              kilos: packageData.pesoKg,
+              altoCm: packageData.altoCm,
+              anchoCm: packageData.anchoCm,
+              largoCm: packageData.largoCm,
+            },
+          ],
+        })
+        return { type, price: readQuotePrice(response) }
+      } catch (error) {
+        if (
+          error instanceof AndreaniError &&
+          (error.code === "INVALID_RESPONSE" ||
+            (error.code === "REQUEST_FAILED" &&
+              error.status !== null &&
+              [400, 404, 422].includes(error.status)))
+        ) {
+          throw new AndreaniError(
+            "VALIDATION_ERROR",
+            ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
+          )
+        }
+        throw error
+      }
+    }
+    const domicilioContrato = config.domicilioContrato
+    const sucursalContrato = config.sucursalContrato
+    const homeQuotePromise = domicilioContrato
+      ? Promise.all([packagePromise, authenticationPromise]).then(
+          ([packageData]) =>
+            quoteContract("domicilio", domicilioContrato, packageData),
+        )
+      : Promise.resolve(null)
+    const branchQuotePromise = sucursalContrato
+      ? Promise.all([
+          packagePromise,
+          branchesPromise,
+          authenticationPromise,
+        ]).then(
+          ([packageData, branches]) =>
+            branches.length > 0
+              ? quoteContract("sucursal", sucursalContrato, packageData)
+              : null,
+        )
+      : Promise.resolve(null)
 
-    if (!contracts.length) {
+    const [homeQuote, branchQuote] = await Promise.all([
+      homeQuotePromise,
+      branchQuotePromise,
+    ])
+    const options = [homeQuote, branchQuote].filter(
+      (option): option is AndreaniCheckoutQuoteOption => option !== null,
+    )
+    if (!options.length) {
       throw new AndreaniError(
         "VALIDATION_ERROR",
         ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
       )
     }
-
-    return Promise.all(
-      contracts.map(async ({ type, contrato }) => {
-        try {
-          const response = await quote({
-            cpDestino: request.cpDestino,
-            contrato,
-            cliente: config.cliente,
-            sucursalOrigen: config.sucursalOrigen,
-            bultos: [
-              {
-                valorDeclarado: packageData.valorDeclarado,
-                volumen: packageData.volumenCm3,
-                kilos: packageData.pesoKg,
-                altoCm: packageData.altoCm,
-                anchoCm: packageData.anchoCm,
-                largoCm: packageData.largoCm,
-              },
-            ],
-          })
-          return { type, price: readQuotePrice(response) }
-        } catch (error) {
-          if (
-            error instanceof AndreaniError &&
-            (error.code === "INVALID_RESPONSE" ||
-              (error.code === "REQUEST_FAILED" &&
-                error.status !== null &&
-                [400, 404, 422].includes(error.status)))
-          ) {
-            throw new AndreaniError(
-              "VALIDATION_ERROR",
-              ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
-            )
-          }
-          throw error
-        }
-      }),
-    )
+    return options
   })()
 
   pendingQuotes.set(key, promise)

@@ -4,6 +4,7 @@ import {
   normalizeAndreaniError,
 } from "@/lib/andreani/client"
 import { quoteAndreaniCheckout } from "@/lib/andreani/checkout-quote"
+import { createCheckoutShippingQuoteToken } from "@/lib/cart/checkout-shipping"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -15,7 +16,11 @@ const NO_STORE_HEADERS = {
 export async function POST(request: Request) {
   try {
     const payload = await request.json()
-    const options = await quoteAndreaniCheckout(payload)
+    const quotedOptions = await quoteAndreaniCheckout(payload)
+    const options = quotedOptions.map((option) => ({
+      ...option,
+      quoteToken: createCheckoutShippingQuoteToken(payload, option),
+    }))
     const environment =
       (process.env.ANDREANI_TARIFF_ENV || process.env.ANDREANI_ENV)
         ?.trim()

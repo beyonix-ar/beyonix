@@ -7,8 +7,11 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import {
   getMercadoPagoPayment,
   processCustomerCreditTopupPayment,
-  type MercadoPagoPayment,
 } from "@/lib/mercadopago/customer-credit-topups"
+import {
+  isMercadoPagoOrderAlreadyConfirmed,
+  processApprovedMercadoPagoOrderPayment,
+} from "@/lib/mercadopago/order-payment"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -21,6 +24,7 @@ interface OrderRow {
   cliente_email: string | null
   cliente_nombre: string | null
   financial_status?: string | null
+  payment_method_id?: string | null
 }
 
 function getPaymentId(url: URL, body: unknown) {
@@ -125,7 +129,7 @@ async function handleWebhook(request: Request) {
 
     const { data: order, error: orderError } = await supabase
       .from("ordenes")
-      .select("id, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status")
+      .select("id, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id")
       .eq("id", orderId)
       .single()
 
@@ -135,7 +139,16 @@ async function handleWebhook(request: Request) {
 
     const orderRow = order as OrderRow
 
-    if (orderRow.estado === "pagado") {
+    if (orderRow.payment_method_id !== "mercadopago") {
+      console.warn("Webhook de Mercado Pago para una orden de otro medio", {
+        orderId,
+        paymentId: payment.id,
+        paymentMethodId: orderRow.payment_method_id,
+      })
+      return NextResponse.json({ ok: true, ignored: true })
+    }
+
+    if (isMercadoPagoOrderAlreadyConfirmed(orderRow)) {
       return NextResponse.json({ ok: true, duplicated: true })
     }
 
@@ -147,7 +160,6 @@ async function handleWebhook(request: Request) {
         payment.payment_method_id ??
         payment.payment_type_id ??
         null,
-      paid_at: payment.date_approved ?? null,
     }
 
     if (payment.status !== "approved") {
@@ -155,6 +167,11 @@ async function handleWebhook(request: Request) {
         .from("ordenes")
         .update(paymentPayload as never)
         .eq("id", orderId)
+        .eq("estado", orderRow.estado)
+        .eq(
+          "financial_status",
+          orderRow.financial_status ?? "pending_payment",
+        )
 
       if (
         ["cancelled", "rejected"].includes(payment.status) &&
@@ -169,21 +186,71 @@ async function handleWebhook(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    const { error: updateError } = await supabase
-      .from("ordenes")
-      .update({
-        ...paymentPayload,
-        estado: "pagado",
-        financial_status: "payment_confirmed",
-        payment_confirmed_at: payment.date_approved ?? new Date().toISOString(),
-        payment_confirmed_amount: Number(
-          orderRow.external_amount_due ?? orderRow.total ?? 0
-        ),
-      } as never)
-      .eq("id", orderId)
+    const paymentResult = await processApprovedMercadoPagoOrderPayment(
+      orderRow,
+      payment,
+      async (confirmedAmount) => {
+        const { data: updatedOrders, error: updateError } = await supabase
+          .from("ordenes")
+          .update({
+            ...paymentPayload,
+            paid_at: payment.date_approved ?? new Date().toISOString(),
+            estado: "pagado",
+            financial_status: "payment_confirmed",
+            payment_confirmed_at:
+              payment.date_approved ?? new Date().toISOString(),
+            payment_confirmed_amount: confirmedAmount,
+          } as never)
+          .eq("id", orderId)
+          .eq("estado", orderRow.estado)
+          .eq(
+            "financial_status",
+            orderRow.financial_status ?? "pending_payment",
+          )
+          .select("id")
 
-    if (updateError) {
-      throw updateError
+        if (updateError) throw updateError
+        return updatedOrders?.length === 1
+      },
+    )
+
+    if (paymentResult.kind === "duplicate") {
+      return NextResponse.json({ ok: true, duplicated: true })
+    }
+
+    if (
+      paymentResult.kind === "amount_mismatch" ||
+      paymentResult.kind === "currency_mismatch"
+    ) {
+      const mismatchStatus =
+        paymentResult.kind === "amount_mismatch"
+          ? "approved_amount_mismatch"
+          : "approved_currency_mismatch"
+      const { error: mismatchUpdateError } = await supabase
+        .from("ordenes")
+        .update({
+          ...paymentPayload,
+          payment_status: mismatchStatus,
+        } as never)
+        .eq("id", orderId)
+        .eq("estado", orderRow.estado)
+        .eq(
+          "financial_status",
+          orderRow.financial_status ?? "pending_payment",
+        )
+
+      if (mismatchUpdateError) throw mismatchUpdateError
+
+      console.warn("Pago de Mercado Pago no confirmado por discrepancia", {
+        orderId,
+        paymentId: payment.id,
+        result: paymentResult,
+      })
+      return NextResponse.json({
+        ok: true,
+        paymentConfirmed: false,
+        reason: paymentResult.kind,
+      })
     }
 
     await appendOrderAuditEvent(supabase, {
@@ -196,6 +263,7 @@ async function handleWebhook(request: Request) {
         provider: "mercadopago",
         paymentId: payment.id,
         paymentStatus: payment.status,
+        confirmedAmount: paymentResult.confirmedAmount,
       },
     })
 

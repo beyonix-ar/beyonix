@@ -323,6 +323,91 @@ test("reutiliza localidades estables para el mismo código postal", async () => 
   assert.equal(localityRequests, 1)
 })
 
+test("reutiliza el destino ya resuelto antes de cotizar", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  resetCheckoutDestinationStateForTests()
+  await getCheckoutPostalCodes("Corrientes", "Paso de los Libres", {
+    fetch: async () =>
+      Response.json({
+        asentamientos: [{ id: "18021010", nombre: "Paso de los Libres" }],
+      }),
+    getAndreaniLocalities: async () => officialLocalityResponse,
+  })
+
+  let duplicateLocalityRequests = 0
+  const options = await quoteAndreaniCheckout(
+    {
+      cpDestino: "3230",
+      localidad: "Paso de los Libres",
+      provincia: "Corrientes",
+      items: [{ productId: 10, quantity: 1 }],
+    },
+    {
+      env: qaQuoteEnvironment(),
+      getLocalities: async () => {
+        duplicateLocalityRequests += 1
+        return officialLocalityResponse
+      },
+      loadItems: async () => [
+        {
+          product: completeProduct,
+          variant: null,
+          quantity: 1,
+          discountPercent: 0,
+        },
+      ],
+      quoteTariff: async () => ({
+        pesoAforado: "1",
+        tarifaSinIva: { seguroDistribucion: "0", distribucion: "100", total: "100" },
+        tarifaConIva: { seguroDistribucion: "0", distribucion: "121", total: "121" },
+      }),
+    },
+  )
+
+  assert.equal(duplicateLocalityRequests, 0)
+  assert.deepEqual(options, [{ type: "domicilio", price: 121 }])
+})
+
+test("deduplica cotizaciones simultáneas idénticas", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  let tariffRequests = 0
+  const request = {
+    cpDestino: "3230",
+    localidad: "Paso de los Libres",
+    provincia: "Corrientes",
+    items: [{ productId: 10, quantity: 1 }],
+  }
+  const dependencies = {
+    env: qaQuoteEnvironment(),
+    isDestinationCached: () => true,
+    loadItems: async () => [
+      {
+        product: completeProduct,
+        variant: null,
+        quantity: 1,
+        discountPercent: 0,
+      },
+    ],
+    quoteTariff: async () => {
+      tariffRequests += 1
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      return {
+        pesoAforado: "1",
+        tarifaSinIva: { seguroDistribucion: "0", distribucion: "100", total: "100" },
+        tarifaConIva: { seguroDistribucion: "0", distribucion: "121", total: "121" },
+      }
+    },
+  }
+
+  const [first, second] = await Promise.all([
+    quoteAndreaniCheckout(request, dependencies),
+    quoteAndreaniCheckout(request, dependencies),
+  ])
+
+  assert.equal(tariffRequests, 1)
+  assert.deepEqual(second, first)
+})
+
 test("valida provincia y código postal ignorando diferencias de mayúsculas", () => {
   const locality = matchAndreaniCheckoutProvince(
     {
