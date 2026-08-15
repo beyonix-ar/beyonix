@@ -2,22 +2,11 @@ import { MercadoPagoConfig, Preference } from "mercadopago"
 import { NextResponse } from "next/server"
 
 import { createClient } from "@/lib/supabase/server"
-import {
-  getProductDiscount,
-  type ShippingBonusSettings,
-} from "@/lib/store-config"
-import {
-  CheckoutShippingQuoteError,
-  normalizeCheckoutShipping,
-} from "@/lib/cart/checkout-shipping"
+import { CheckoutShippingQuoteError } from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
-import {
-  STOCK_CHANGED_MESSAGE,
-  assertCatalogStock,
-} from "@/lib/cart/stock-status"
+import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import {
   calculateCustomerCreditApplication,
-  getPaymentComposition,
   normalizeMoney,
   roundMoney,
 } from "@/lib/customer-credit"
@@ -27,21 +16,16 @@ import {
   reverseCustomerCreditForOrder,
 } from "@/lib/customer-credit/server"
 import {
-  validateCheckoutInventory,
-  deleteIncompleteCheckoutOrder,
-} from "@/lib/orders/checkout-inventory"
-import {
-  getConditionedStockIdFromValue,
-  getVariantIdFromValue,
-} from "@/lib/products/product-variants"
-import {
-  assertConditionedCheckoutStock,
-  getConditionedOrderItemFields,
-  getConditionedUnitPrice,
-  loadConditionedCheckoutRows,
-  normalizeConditionedStockId,
-  type ConditionedCheckoutRow,
-} from "@/lib/orders/conditioned-checkout"
+  buildCheckoutOrderBase,
+  getCheckoutOrderCustomerValidationError,
+  getCheckoutOrderShippingFields,
+  insertCheckoutOrderItemsAndValidateInventory,
+  loadAndValidateCheckoutOrderCatalog,
+  normalizeCheckoutOrderCustomer,
+  normalizeCheckoutOrderItems,
+  normalizeCheckoutOrderShipping,
+  type CheckoutOrderRequestPayload,
+} from "@/lib/orders/checkout-order-creation"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
   calculateStoreBenefitDiscount,
@@ -50,205 +34,13 @@ import {
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
 
-interface CheckoutItemPayload {
-  productId?: number
-  quantity?: number
-  variantId?: number | null
-  conditionedStockId?: string | null
-  color?: string | null
-}
-
-interface CheckoutPayload {
-  items?: CheckoutItemPayload[]
-  reservationSessionId?: string | null
-  storeBenefitId?: string | null
-  customerCreditAmount?: number | string | null
-  customer?: {
-    nombre?: string
-    email?: string
-    telefono?: string
-    dni?: string
-    direccion?: string
-    cpDestino?: string
-    localidad?: string
-    provincia?: string
-  }
-  shipping?: {
-    provider?: string
-    type?: "sucursal" | "domicilio"
-    quoteToken?: string
-  }
-}
-
-interface ProductRow {
-  id: number
-  nombre: string
-  precio: number
-  stock: number
-  activo: boolean
-}
-
-interface VariantRow {
-  id: number
-  producto_id: number
-  nombre: string
-  stock: number | null
-  activo: boolean
-  orden: number | null
-}
-
-interface NormalizedItem {
-  productId: number
-  quantity: number
-  variantId: number | null
-  conditionedStockId: string | null
-}
+type CheckoutPayload = CheckoutOrderRequestPayload
 
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
 
 const mercadoPagoClient = accessToken
   ? new MercadoPagoConfig({ accessToken })
   : null
-
-function normalizeItems(items: CheckoutPayload["items"]) {
-  if (!Array.isArray(items)) return []
-
-  return items
-    .map((item) => {
-      const conditionedStockId =
-        normalizeConditionedStockId(item.conditionedStockId) ||
-        getConditionedStockIdFromValue(item.color)
-
-      return {
-        productId: Number(item.productId),
-        quantity: Math.trunc(Number(item.quantity)),
-        variantId: conditionedStockId
-          ? null
-          : Number(item.variantId) ||
-            getVariantIdFromValue(item.color) ||
-            null,
-        conditionedStockId,
-      }
-    })
-    .filter(
-      (item) =>
-        Number.isFinite(item.productId) &&
-        Number.isFinite(item.quantity) &&
-        item.quantity > 0,
-    )
-}
-
-function normalizeCustomer(customer: CheckoutPayload["customer"]) {
-  return {
-    cliente_nombre: customer?.nombre?.trim() || null,
-    cliente_email: customer?.email?.trim() || null,
-    cliente_telefono: customer?.telefono?.trim() || null,
-    cliente_dni: customer?.dni?.replace(/\D/g, "").trim() || null,
-    cliente_direccion: customer?.direccion?.trim() || null,
-    cp_destino: customer?.cpDestino?.trim() || null,
-    localidad: customer?.localidad?.trim() || null,
-    provincia: customer?.provincia?.trim() || null,
-  }
-}
-
-function validateCustomer(customer: CheckoutPayload["customer"]) {
-  const normalized = normalizeCustomer(customer)
-
-  if (!normalized.cliente_nombre || normalized.cliente_nombre.length < 3) {
-    return "Ingresá el nombre de quien recibe."
-  }
-
-  if (
-    !normalized.cliente_email ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.cliente_email)
-  ) {
-    return "Ingresá un email válido."
-  }
-
-  const phone = normalized.cliente_telefono?.replace(/\D/g, "") ?? ""
-  if (phone.length < 8 || phone.length > 15) {
-    return "Ingresá un teléfono válido."
-  }
-
-  if (!/^\d{7,8}$/.test(normalized.cliente_dni ?? "")) {
-    return "Ingresá un DNI válido."
-  }
-
-  if (!normalized.cliente_direccion || normalized.cliente_direccion.length < 5) {
-    return "Ingresá una dirección válida."
-  }
-
-  return ""
-}
-
-function normalizeShipping(
-  shipping: CheckoutPayload["shipping"],
-  customer: CheckoutPayload["customer"],
-  items: NormalizedItem[],
-  productsTotal: number,
-  customerCreditApplied = false,
-  shippingSettings: ShippingBonusSettings,
-) {
-  const normalizedShipping = normalizeCheckoutShipping(
-    shipping,
-    {
-      cpDestino: customer?.cpDestino,
-      localidad: customer?.localidad,
-      provincia: customer?.provincia,
-      items,
-    },
-    productsTotal,
-    { customerCreditApplied, settings: shippingSettings },
-  )
-
-  return {
-    shipping_provider: normalizedShipping.provider,
-    shipping_type: normalizedShipping.type,
-    shipping_cost_real: normalizedShipping.costReal,
-    shipping_cost_charged: normalizedShipping.costCharged,
-    free_shipping_applied: normalizedShipping.freeShippingApplied,
-  }
-}
-
-function getUnitPrice(
-  product: ProductRow,
-  conditioned?: ConditionedCheckoutRow | null,
-) {
-  return Math.round(
-    getConditionedUnitPrice(product.precio, conditioned) *
-      (1 - getProductDiscount(product.id)),
-  )
-}
-
-async function insertOrderItems(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  orderId: number,
-  items: NormalizedItem[],
-  products: ProductRow[],
-  conditionedRows: Map<string, ConditionedCheckoutRow>,
-) {
-  const payload = items.map((item) => {
-    const product = products.find((row) => row.id === item.productId)
-    const conditioned = item.conditionedStockId
-      ? conditionedRows.get(item.conditionedStockId)
-      : null
-
-    return {
-      orden_id: orderId,
-      producto_id: item.productId,
-      ...(!conditioned ? { variante_id: item.variantId } : {}),
-      ...getConditionedOrderItemFields(conditioned),
-      cantidad: item.quantity,
-      precio: product ? getUnitPrice(product, conditioned) : 0,
-    }
-  })
-
-  const { error } = await supabase.from("orden_items").insert(payload as never)
-
-  if (error) {
-    throw new Error(error.message || "No se pudieron crear los ítems de la orden.")
-  }
-}
 
 function isSchemaCacheColumnError(error: { message?: string } | null) {
   return Boolean(
@@ -283,8 +75,9 @@ export async function POST(request: Request) {
     }
 
     const payload = (await request.json()) as CheckoutPayload
-    const items = normalizeItems(payload.items)
-    const customerError = validateCustomer(payload.customer)
+    const items = normalizeCheckoutOrderItems(payload.items)
+    const customer = normalizeCheckoutOrderCustomer(payload.customer)
+    const customerError = getCheckoutOrderCustomerValidationError(customer)
 
     if (!items.length) {
       return NextResponse.json({ error: "El carrito está vacío." }, { status: 400 })
@@ -300,115 +93,25 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    const productIds = [...new Set(items.map((item) => item.productId))]
-
-    const { data: products, error: productsError } = await supabase
-      .from("productos")
-      .select("id, nombre, precio, stock, activo")
-      .in("id", productIds)
-
-    if (productsError) {
-      throw new Error("No se pudieron validar los productos.")
-    }
-
-    const productRows = (products ?? []) as ProductRow[]
-
-    if (productRows.length !== productIds.length) {
-      throw new Error("Hay productos que ya no están disponibles.")
-    }
-
-    const { data: variants, error: variantsError } = await supabase
-      .from("producto_variantes")
-      .select("id, producto_id, nombre, stock, activo, orden")
-      .in("producto_id", productIds)
-
-    if (variantsError) {
-      throw new Error("No se pudieron validar las variantes.")
-    }
-
-    const variantRows = (variants ?? []) as VariantRow[]
-    const conditionedRows = await loadConditionedCheckoutRows(admin, items)
-    const variantsById = new Map(variantRows.map((variant) => [variant.id, variant]))
-    const variantsByProductId = new Map<number, VariantRow[]>()
-
-    for (const variant of variantRows) {
-      const list = variantsByProductId.get(variant.producto_id) ?? []
-      list.push(variant)
-      list.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || a.id - b.id)
-      variantsByProductId.set(variant.producto_id, list)
-    }
-
-    for (const item of items) {
-      if (!item.variantId && !item.conditionedStockId) {
-        const activeVariants =
-          variantsByProductId
-            .get(item.productId)
-            ?.filter((variant) => variant.activo) ?? []
-        if (activeVariants.length === 1) {
-          item.variantId = activeVariants[0].id
-        } else if (activeVariants.length > 1) {
-          throw new Error(
-            "Elegí la variante exacta antes de confirmar la compra.",
-          )
-        }
-      }
-
-      const product = productRows.find((row) => row.id === item.productId)
-      if (!product) throw new Error("Producto inexistente.")
-
-      const variant = item.variantId ? variantsById.get(item.variantId) : undefined
-      const conditioned = assertConditionedCheckoutStock(item, conditionedRows)
-
-      if (item.variantId && (!variant || variant.producto_id !== product.id)) {
-        throw new Error(`Variante inválida para ${product.nombre}.`)
-      }
-
-      if (!conditioned) {
-        assertCatalogStock(item.quantity, product, variant)
-      }
-    }
-
-    const baseTotals = calculateCartTotals(
-      items.map((item) => {
-        const product = productRows.find((row) => row.id === item.productId)!
-
-        return {
-          product,
-          quantity: item.quantity,
-          unitPrice: getConditionedUnitPrice(
-            product.precio,
-            item.conditionedStockId
-              ? conditionedRows.get(item.conditionedStockId)
-              : null,
-          ),
-        }
-      }),
+    const catalog = await loadAndValidateCheckoutOrderCatalog(
+      supabase,
+      admin,
+      items,
     )
+    const baseTotals = calculateCartTotals(catalog.cartRows)
     const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const siteSettings = await getSiteSettings()
-    const shipping = normalizeShipping(
-      payload.shipping,
-      payload.customer,
+    const normalizedShipping = normalizeCheckoutOrderShipping({
+      shipping: payload.shipping,
+      customer: payload.customer,
       items,
-      baseTotals.productsTotal,
-      requestedCredit > 0,
-      siteSettings.shipping,
-    )
+      productsTotal: baseTotals.productsTotal,
+      customerCreditApplied: requestedCredit > 0,
+      settings: siteSettings.shipping,
+    })
+    const shipping = getCheckoutOrderShippingFields(normalizedShipping)
     const totals = calculateCartTotals(
-      items.map((item) => {
-        const product = productRows.find((row) => row.id === item.productId)!
-
-        return {
-          product,
-          quantity: item.quantity,
-          unitPrice: getConditionedUnitPrice(
-            product.precio,
-            item.conditionedStockId
-              ? conditionedRows.get(item.conditionedStockId)
-              : null,
-          ),
-        }
-      }),
+      catalog.cartRows,
       {
         shippingCost: shipping.shipping_cost_charged,
       },
@@ -467,30 +170,21 @@ export async function POST(request: Request) {
     }
 
     const orderPayload = {
-      usuario_id: user?.id ?? null,
-      total: totalAfterStoreBenefit,
-      original_total: totalAfterStoreBenefit,
-      credit_balance_used: 0,
-      external_amount_due: customerCreditApplication.externalAmountDue,
-      payment_composition: getPaymentComposition({
-        paymentMethodId: "mercadopago",
-        creditBalanceUsed: customerCreditApplication.appliedAmount,
+      ...buildCheckoutOrderBase({
+        userId: user?.id ?? null,
+        total: totalAfterStoreBenefit,
         externalAmountDue: customerCreditApplication.externalAmountDue,
+        creditBalanceUsed: customerCreditApplication.appliedAmount,
+        paymentMethodId: "mercadopago",
+        reservationSessionId: payload.reservationSessionId,
+        storeBenefit,
+        storeBenefitDiscountAmount,
+        customer,
       }),
-      estado: "pendiente",
       payment_method_id: "mercadopago",
       payment_status: "pending_checkout",
-      checkout_idempotency_key: payload.reservationSessionId?.trim()
-        ? `checkout:${payload.reservationSessionId.trim()}`
-        : null,
       envio_proveedor: shipping.shipping_provider,
-      store_benefit_id: storeBenefit?.id ?? null,
-      store_benefit_code: storeBenefit?.code ?? null,
-      store_benefit_type: storeBenefit?.benefit_type ?? null,
-      store_benefit_percent: storeBenefit?.percent ?? null,
-      store_benefit_discount_amount: storeBenefitDiscountAmount || null,
       ...shipping,
-      ...normalizeCustomer(payload.customer),
     }
 
     const orderClient = user ? supabase : admin
@@ -506,8 +200,6 @@ export async function POST(request: Request) {
         throw new Error("La base de datos todavía no reconoce el saldo a favor. Reintentá en unos segundos.")
       }
 
-      const legacyCustomer = normalizeCustomer(payload.customer)
-
       const legacyPayload = {
         usuario_id: user?.id ?? null,
         total: totalAfterStoreBenefit,
@@ -519,10 +211,10 @@ export async function POST(request: Request) {
           : null,
         envio_proveedor: shipping.shipping_provider,
         andreani_costo: shipping.shipping_cost_charged,
-        cliente_nombre: legacyCustomer.cliente_nombre,
-        cliente_email: legacyCustomer.cliente_email,
-        cliente_telefono: legacyCustomer.cliente_telefono,
-        cliente_direccion: legacyCustomer.cliente_direccion,
+        cliente_nombre: customer.cliente_nombre,
+        cliente_email: customer.cliente_email,
+        cliente_telefono: customer.cliente_telefono,
+        cliente_direccion: customer.cliente_direccion,
       }
 
       const fallbackOrder = await orderClient
@@ -539,25 +231,15 @@ export async function POST(request: Request) {
       throw new Error(orderError?.message || "No se pudo crear la orden.")
     }
 
-    await insertOrderItems(
-      orderClient as never,
-      order.id,
+    await insertCheckoutOrderItemsAndValidateInventory({
+      orderClient,
+      admin,
+      orderId: order.id,
       items,
-      productRows,
-      conditionedRows,
-    )
-
-    try {
-      await validateCheckoutInventory(
-        admin,
-        items,
-        payload.reservationSessionId,
-        order.id,
-      )
-    } catch (inventoryError) {
-      await deleteIncompleteCheckoutOrder(admin, order.id)
-      throw inventoryError
-    }
+      products: catalog.products,
+      conditionedRows: catalog.conditionedRows,
+      reservationSessionId: payload.reservationSessionId,
+    })
 
     if (user && customerCreditApplication.appliedAmount > 0) {
       await applyCustomerCreditToOrder(admin, {

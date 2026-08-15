@@ -1,7 +1,7 @@
 import {
   getVariantOptionByValue,
-} from "@/lib/products/product-variants"
-import type { SupabaseProducto } from "@/lib/supabase/types"
+} from "../products/product-variants.ts"
+import type { SupabaseProducto } from "../supabase/types.ts"
 
 export type StockStatus = "available" | "low" | "out"
 

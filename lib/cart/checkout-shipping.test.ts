@@ -97,7 +97,7 @@ test("todos los medios de pago consumen la misma cotización verificada", () => 
   )
 })
 
-test("las tres rutas de órdenes exigen el token mediante el helper común", () => {
+test("las tres rutas de órdenes validan el token mediante el helper común", () => {
   const routes = [
     "../../app/api/mercadopago/create-preference/route.ts",
     "../../app/api/transferencia/create-order/route.ts",
@@ -106,8 +106,7 @@ test("las tres rutas de órdenes exigen el token mediante el helper común", () 
 
   for (const route of routes) {
     const source = readFileSync(new URL(route, import.meta.url), "utf8")
-    assert.match(source, /normalizeCheckoutShipping\(/)
-    assert.match(source, /quoteToken\?: string/)
+    assert.match(source, /normalizeCheckoutOrderShipping\(/)
     assert.doesNotMatch(source, /costReal\?: number/)
     assert.doesNotMatch(source, /quoted\?: boolean/)
   }

@@ -1,5 +1,5 @@
-import type { createAdminClient } from "@/lib/supabase/admin"
-import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
+import type { createAdminClient } from "../supabase/admin.ts"
+import { STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
 
 export interface CheckoutConditionedItem {
   productId: number

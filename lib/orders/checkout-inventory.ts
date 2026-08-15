@@ -1,5 +1,5 @@
-import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
+import type { createAdminClient } from "../supabase/admin.ts"
 
 export interface CheckoutInventoryItem {
   productId: number

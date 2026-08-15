@@ -2,16 +2,11 @@ import { NextResponse } from "next/server"
 
 import {
   CheckoutShippingQuoteError,
-  normalizeCheckoutShipping,
 } from "@/lib/cart/checkout-shipping"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
-import {
-  STOCK_CHANGED_MESSAGE,
-  assertCatalogStock,
-} from "@/lib/cart/stock-status"
+import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import {
   calculateCustomerCreditApplication,
-  getPaymentComposition,
   normalizeMoney,
   roundMoney,
 } from "@/lib/customer-credit"
@@ -26,10 +21,6 @@ import {
   markStoreBenefitAsUsed,
 } from "@/lib/customer-store-benefits"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
-import {
-  validateCheckoutInventory,
-  deleteIncompleteCheckoutOrder,
-} from "@/lib/orders/checkout-inventory"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import {
   TRANSFER_ALIAS,
@@ -37,221 +28,22 @@ import {
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
 import {
-  getConditionedStockIdFromValue,
-  getVariantIdFromValue,
-} from "@/lib/products/product-variants"
-import {
-  assertConditionedCheckoutStock,
-  getConditionedOrderItemFields,
-  getConditionedUnitPrice,
-  loadConditionedCheckoutRows,
-  normalizeConditionedStockId,
-  type ConditionedCheckoutRow,
-} from "@/lib/orders/conditioned-checkout"
+  buildCheckoutOrderBase,
+  getCheckoutOrderCustomerValidationError,
+  getCheckoutOrderShippingFields,
+  insertCheckoutOrderItemsAndValidateInventory,
+  loadAndValidateCheckoutOrderCatalog,
+  normalizeCheckoutOrderCustomer,
+  normalizeCheckoutOrderItems,
+  normalizeCheckoutOrderShipping,
+  type CheckoutOrderRequestPayload,
+} from "@/lib/orders/checkout-order-creation"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-import {
-  getProductDiscount,
-  type ShippingBonusSettings,
-} from "@/lib/store-config"
 import { getSiteSettings } from "@/lib/site-settings"
 
-interface CheckoutItemPayload {
-  productId?: number
-  quantity?: number
-  variantId?: number | null
-  conditionedStockId?: string | null
-  color?: string | null
-}
-
-interface CheckoutPayload {
-  items?: CheckoutItemPayload[]
-  reservationSessionId?: string | null
-  storeBenefitId?: string | null
+interface CheckoutPayload extends CheckoutOrderRequestPayload {
   paymentMethodId?: string | null
-  customerCreditAmount?: number | string | null
-  customer?: {
-    nombre?: string
-    email?: string
-    telefono?: string
-    dni?: string
-    direccion?: string
-    cpDestino?: string
-    localidad?: string
-    provincia?: string
-  }
-  shipping?: {
-    provider?: string
-    type?: "sucursal" | "domicilio"
-    quoteToken?: string
-  }
-}
-
-interface ProductRow {
-  id: number
-  nombre: string
-  precio: number
-  stock: number
-  activo: boolean
-}
-
-interface VariantRow {
-  id: number
-  producto_id: number
-  nombre: string
-  stock: number | null
-  activo: boolean
-  orden: number | null
-}
-
-interface NormalizedItem {
-  productId: number
-  quantity: number
-  variantId: number | null
-  conditionedStockId: string | null
-}
-
-function normalizeItems(items: CheckoutPayload["items"]) {
-  if (!Array.isArray(items)) return []
-
-  return items
-    .map((item) => {
-      const conditionedStockId =
-        normalizeConditionedStockId(item.conditionedStockId) ||
-        getConditionedStockIdFromValue(item.color)
-
-      return {
-        productId: Number(item.productId),
-        quantity: Math.trunc(Number(item.quantity)),
-        variantId: conditionedStockId
-          ? null
-          : Number(item.variantId) ||
-            getVariantIdFromValue(item.color) ||
-            null,
-        conditionedStockId,
-      }
-    })
-    .filter(
-      (item) =>
-        Number.isFinite(item.productId) &&
-        Number.isFinite(item.quantity) &&
-        item.quantity > 0
-    )
-}
-
-function normalizeCustomer(customer: CheckoutPayload["customer"]) {
-  return {
-    cliente_nombre: customer?.nombre?.trim() || null,
-    cliente_email: customer?.email?.trim() || null,
-    cliente_telefono: customer?.telefono?.trim() || null,
-    cliente_dni: customer?.dni?.replace(/\D/g, "").trim() || null,
-    cliente_direccion: customer?.direccion?.trim() || null,
-    cp_destino: customer?.cpDestino?.trim() || null,
-    localidad: customer?.localidad?.trim() || null,
-    provincia: customer?.provincia?.trim() || null,
-  }
-}
-
-function validateCustomer(customer: CheckoutPayload["customer"]) {
-  const normalized = normalizeCustomer(customer)
-
-  if (!normalized.cliente_nombre || normalized.cliente_nombre.length < 3) {
-    return "Ingresá el nombre de quien recibe."
-  }
-
-  if (
-    !normalized.cliente_email ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.cliente_email)
-  ) {
-    return "Ingresá un email válido."
-  }
-
-  const phone = normalized.cliente_telefono?.replace(/\D/g, "") ?? ""
-  if (phone.length < 8 || phone.length > 15) {
-    return "Ingresá un teléfono válido."
-  }
-
-  if (!/^\d{7,8}$/.test(normalized.cliente_dni ?? "")) {
-    return "Ingresá un DNI válido."
-  }
-
-  if (!normalized.cliente_direccion || normalized.cliente_direccion.length < 5) {
-    return "Ingresá una dirección válida."
-  }
-
-  return ""
-}
-
-function normalizeShipping(
-  shipping: CheckoutPayload["shipping"],
-  customer: CheckoutPayload["customer"],
-  items: NormalizedItem[],
-  productsTotal: number,
-  customerCreditApplied = false,
-  shippingSettings: ShippingBonusSettings,
-) {
-  const normalizedShipping = normalizeCheckoutShipping(
-    shipping,
-    {
-      cpDestino: customer?.cpDestino,
-      localidad: customer?.localidad,
-      provincia: customer?.provincia,
-      items,
-    },
-    productsTotal,
-    {
-      customerCreditApplied,
-      settings: shippingSettings,
-    },
-  )
-
-  return {
-    shipping_provider: normalizedShipping.provider,
-    shipping_type: normalizedShipping.type,
-    shipping_cost_real: normalizedShipping.costReal,
-    shipping_cost_charged: normalizedShipping.costCharged,
-    free_shipping_applied: normalizedShipping.freeShippingApplied,
-  }
-}
-
-function getUnitPrice(
-  product: ProductRow,
-  conditioned?: ConditionedCheckoutRow | null,
-) {
-  return Math.round(
-    getConditionedUnitPrice(product.precio, conditioned) *
-      (1 - getProductDiscount(product.id)),
-  )
-}
-
-async function insertOrderItems(
-  admin: ReturnType<typeof createAdminClient>,
-  orderId: number,
-  items: NormalizedItem[],
-  products: ProductRow[],
-  conditionedRows: Map<string, ConditionedCheckoutRow>,
-) {
-  const payload = items.map((item) => {
-    const product = products.find((row) => row.id === item.productId)
-    const conditioned = item.conditionedStockId
-      ? conditionedRows.get(item.conditionedStockId)
-      : null
-
-    return {
-      orden_id: orderId,
-      producto_id: item.productId,
-      ...(!conditioned ? { variante_id: item.variantId } : {}),
-      ...getConditionedOrderItemFields(conditioned),
-      cantidad: item.quantity,
-      precio: product ? getUnitPrice(product, conditioned) : 0,
-    }
-  })
-
-  const { error } = await admin.from("orden_items").insert(payload as never)
-
-  if (error) {
-    throw new Error(error.message || "No se pudieron crear los ítems de la orden.")
-  }
 }
 
 export async function POST(request: Request) {
@@ -273,8 +65,9 @@ export async function POST(request: Request) {
 
   try {
     const payload = (await request.json()) as CheckoutPayload
-    const items = normalizeItems(payload.items)
-    const customerError = validateCustomer(payload.customer)
+    const items = normalizeCheckoutOrderItems(payload.items)
+    const customer = normalizeCheckoutOrderCustomer(payload.customer)
+    const customerError = getCheckoutOrderCustomerValidationError(customer)
     const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const pricingPaymentMethod =
       payload.paymentMethodId === "transferencia" ? "transferencia" : "customer_credit"
@@ -297,98 +90,23 @@ export async function POST(request: Request) {
       )
     }
 
-    const productIds = [...new Set(items.map((item) => item.productId))]
-    const { data: products, error: productsError } = await admin
-      .from("productos")
-      .select("id, nombre, precio, stock, activo")
-      .in("id", productIds)
-
-    if (productsError) {
-      throw new Error("No se pudieron validar los productos.")
-    }
-
-    const productRows = (products ?? []) as ProductRow[]
-
-    if (productRows.length !== productIds.length) {
-      throw new Error("Hay productos que ya no están disponibles.")
-    }
-
-    const { data: variants, error: variantsError } = await admin
-      .from("producto_variantes")
-      .select("id, producto_id, nombre, stock, activo, orden")
-      .in("producto_id", productIds)
-
-    if (variantsError) {
-      throw new Error("No se pudieron validar las variantes.")
-    }
-
-    const variantRows = (variants ?? []) as VariantRow[]
-    const conditionedRows = await loadConditionedCheckoutRows(admin, items)
-    const variantsById = new Map(variantRows.map((variant) => [variant.id, variant]))
-    const variantsByProductId = new Map<number, VariantRow[]>()
-
-    for (const variant of variantRows) {
-      const list = variantsByProductId.get(variant.producto_id) ?? []
-      list.push(variant)
-      list.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || a.id - b.id)
-      variantsByProductId.set(variant.producto_id, list)
-    }
-
-    for (const item of items) {
-      if (!item.variantId && !item.conditionedStockId) {
-        const activeVariants =
-          variantsByProductId
-            .get(item.productId)
-            ?.filter((variant) => variant.activo) ?? []
-        if (activeVariants.length === 1) {
-          item.variantId = activeVariants[0].id
-        } else if (activeVariants.length > 1) {
-          throw new Error(
-            "Elegí la variante exacta antes de confirmar la compra.",
-          )
-        }
-      }
-
-      const product = productRows.find((row) => row.id === item.productId)
-      if (!product) throw new Error("Producto inexistente.")
-
-      const variant = item.variantId ? variantsById.get(item.variantId) : undefined
-      const conditioned = assertConditionedCheckoutStock(item, conditionedRows)
-
-      if (item.variantId && (!variant || variant.producto_id !== product.id)) {
-        throw new Error(`Variante inválida para ${product.nombre}.`)
-      }
-
-      if (!conditioned) {
-        assertCatalogStock(item.quantity, product, variant)
-      }
-    }
-
-    const cartRows = items.map((item) => {
-      const product = productRows.find((row) => row.id === item.productId)!
-
-      return {
-        product,
-        quantity: item.quantity,
-        unitPrice: getConditionedUnitPrice(
-          product.precio,
-          item.conditionedStockId
-            ? conditionedRows.get(item.conditionedStockId)
-            : null,
-        ),
-      }
-    })
-    const baseTotals = calculateCartTotals(cartRows)
-    const siteSettings = await getSiteSettings()
-    const shipping = normalizeShipping(
-      payload.shipping,
-      payload.customer,
+    const catalog = await loadAndValidateCheckoutOrderCatalog(
+      admin,
+      admin,
       items,
-      baseTotals.productsTotal,
-      requestedCredit > 0,
-      siteSettings.shipping,
     )
-    const totals = calculateCartTotals(cartRows, {
+    const baseTotals = calculateCartTotals(catalog.cartRows)
+    const siteSettings = await getSiteSettings()
+    const normalizedShipping = normalizeCheckoutOrderShipping({
+      shipping: payload.shipping,
+      customer: payload.customer,
+      items,
+      productsTotal: baseTotals.productsTotal,
+      customerCreditApplied: requestedCredit > 0,
+      settings: siteSettings.shipping,
+    })
+    const shipping = getCheckoutOrderShippingFields(normalizedShipping)
+    const totals = calculateCartTotals(catalog.cartRows, {
       shippingCost: shipping.shipping_cost_charged,
     })
     const storeBenefit = await findActiveStoreBenefit(
@@ -442,25 +160,22 @@ export async function POST(request: Request) {
     const { data: order, error: orderError } = await admin
       .from("ordenes")
       .insert({
-        usuario_id: user.id,
-        total: orderTotal,
-        original_total: orderTotal,
-        credit_balance_used: 0,
-        external_amount_due: 0,
-        payment_composition: getPaymentComposition({
-          paymentMethodId: "customer_credit",
-          creditBalanceUsed: creditApplication.appliedAmount,
+        ...buildCheckoutOrderBase({
+          userId: user.id,
+          total: orderTotal,
           externalAmountDue: 0,
+          creditBalanceUsed: creditApplication.appliedAmount,
+          paymentMethodId: "customer_credit",
+          reservationSessionId: payload.reservationSessionId,
+          storeBenefit,
+          storeBenefitDiscountAmount,
+          customer,
         }),
-        estado: "pendiente",
         envio_proveedor: shipping.shipping_provider,
         andreani_costo: shipping.shipping_cost_charged,
         payment_method_id: "customer_credit",
         payment_type_id: null,
         payment_status: "pending_credit",
-        checkout_idempotency_key: payload.reservationSessionId?.trim()
-          ? `checkout:${payload.reservationSessionId.trim()}`
-          : null,
         financial_status: "pending_payment",
         transfer_alias:
           pricingPaymentMethod === "transferencia" ? TRANSFER_ALIAS : null,
@@ -472,13 +187,7 @@ export async function POST(request: Request) {
           pricingPaymentMethod === "transferencia"
             ? transferPaymentTotals.discount
             : 0,
-        store_benefit_id: storeBenefit?.id ?? null,
-        store_benefit_code: storeBenefit?.code ?? null,
-        store_benefit_type: storeBenefit?.benefit_type ?? null,
-        store_benefit_percent: storeBenefit?.percent ?? null,
-        store_benefit_discount_amount: storeBenefitDiscountAmount || null,
         ...shipping,
-        ...normalizeCustomer(payload.customer),
       } as never)
       .select()
       .single()
@@ -488,26 +197,15 @@ export async function POST(request: Request) {
     }
 
     orderId = order.id
-    await insertOrderItems(
+    await insertCheckoutOrderItemsAndValidateInventory({
+      orderClient: admin,
       admin,
-      order.id,
+      orderId: order.id,
       items,
-      productRows,
-      conditionedRows,
-    )
-
-    try {
-      await validateCheckoutInventory(
-        admin,
-        items,
-        payload.reservationSessionId,
-        order.id,
-      )
-    } catch (inventoryError) {
-      await deleteIncompleteCheckoutOrder(admin, order.id)
-      orderId = null
-      throw inventoryError
-    }
+      products: catalog.products,
+      conditionedRows: catalog.conditionedRows,
+      reservationSessionId: payload.reservationSessionId,
+    })
 
     await applyCustomerCreditToOrder(admin, {
       userId: user.id,
