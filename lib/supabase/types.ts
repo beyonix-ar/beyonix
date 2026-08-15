@@ -230,6 +230,15 @@ export interface SupabasePedido {
   payment_status?: string | null
   payment_method_id?: string | null
   payment_type_id?: string | null
+  checkout_idempotency_key?: string | null
+  mercadopago_checkout_fingerprint?: string | null
+  mercadopago_request_fingerprint?: string | null
+  mercadopago_preference_id?: string | null
+  mercadopago_init_point?: string | null
+  mercadopago_preference_expires_at?: string | null
+  mercadopago_preference_claim_token?: string | null
+  mercadopago_preference_claimed_at?: string | null
+  mercadopago_preference_generation?: number
   transfer_alias?: string | null
   transfer_discount_percent?: number | null
   transfer_discount_amount?: number | null

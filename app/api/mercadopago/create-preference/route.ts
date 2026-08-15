@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import { MercadoPagoConfig, Preference } from "mercadopago"
 import { NextResponse } from "next/server"
 
@@ -26,6 +28,21 @@ import {
   normalizeCheckoutOrderShipping,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
+import { deleteIncompleteCheckoutOrder } from "@/lib/orders/checkout-inventory"
+import {
+  MERCADOPAGO_MAX_ATTEMPTS_PER_DAY,
+  MERCADOPAGO_MAX_ATTEMPTS_PER_HOUR,
+  MERCADOPAGO_MAX_ATTEMPTS_PER_IP_PER_HOUR,
+  MERCADOPAGO_MAX_GLOBAL_ATTEMPTS_PER_HOUR,
+  createMercadoPagoCheckoutFingerprint,
+  getMercadoPagoCheckoutAttemptDecision,
+  getMercadoPagoCheckoutIdempotencyKey,
+  getMercadoPagoPreferenceExpiration,
+  getMercadoPagoRequestFingerprint,
+  isPostgresUniqueViolation,
+  normalizeMercadoPagoCheckoutSessionId,
+  type MercadoPagoCheckoutAttemptRow,
+} from "@/lib/mercadopago/checkout-attempt"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
   calculateStoreBenefitDiscount,
@@ -36,22 +53,24 @@ import { getSiteSettings } from "@/lib/site-settings"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
 
+interface MercadoPagoCheckoutOrderRow
+  extends MercadoPagoCheckoutAttemptRow {
+  external_amount_due?: number | null
+  credit_balance_used?: number | null
+  cliente_email?: string | null
+  cliente_nombre?: string | null
+  mercadopago_preference_generation?: number | null
+}
+
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
 
 const mercadoPagoClient = accessToken
   ? new MercadoPagoConfig({ accessToken })
   : null
 
-function isSchemaCacheColumnError(error: { message?: string } | null) {
-  return Boolean(
-    error?.message?.includes("schema cache") ||
-      error?.message?.includes("Could not find the") ||
-      error?.message?.includes("column")
-  )
-}
-
 export async function POST(request: Request) {
   let creditAppliedOrderId: number | null = null
+  let createdOrderId: number | null = null
 
   try {
     if (!mercadoPagoClient) {
@@ -75,9 +94,19 @@ export async function POST(request: Request) {
     }
 
     const payload = (await request.json()) as CheckoutPayload
+    const checkoutSessionId = normalizeMercadoPagoCheckoutSessionId(
+      payload.reservationSessionId,
+    )
     const items = normalizeCheckoutOrderItems(payload.items)
     const customer = normalizeCheckoutOrderCustomer(payload.customer)
     const customerError = getCheckoutOrderCustomerValidationError(customer)
+
+    if (!checkoutSessionId) {
+      return NextResponse.json(
+        { error: "La sesión del carrito venció. Actualizá la página." },
+        { status: 400 },
+      )
+    }
 
     if (!items.length) {
       return NextResponse.json({ error: "El carrito está vacío." }, { status: 400 })
@@ -110,6 +139,116 @@ export async function POST(request: Request) {
       settings: siteSettings.shipping,
     })
     const shipping = getCheckoutOrderShippingFields(normalizedShipping)
+    const checkoutFingerprint = createMercadoPagoCheckoutFingerprint({
+      sessionId: checkoutSessionId,
+      userId: user?.id ?? null,
+      items,
+      customer: { ...customer },
+      productsTotal: baseTotals.productsTotal,
+      shipping: {
+        provider: normalizedShipping.provider,
+        type: normalizedShipping.type,
+        costReal: normalizedShipping.costReal,
+        costCharged: normalizedShipping.costCharged,
+        freeShippingApplied: normalizedShipping.freeShippingApplied,
+      },
+      storeBenefitId: payload.storeBenefitId?.trim() || null,
+      requestedCredit,
+    })
+    const existingAttempts = await loadMercadoPagoCheckoutAttempts(
+      admin,
+      checkoutFingerprint,
+    )
+    const paidAttempt = existingAttempts.find(
+      (attempt) =>
+        getMercadoPagoCheckoutAttemptDecision(attempt).kind ===
+        "already_paid",
+    )
+
+    if (paidAttempt) {
+      return NextResponse.json(
+        { error: "Esta compra ya fue pagada y no puede iniciarse nuevamente." },
+        { status: 409 },
+      )
+    }
+
+    const activeAttempt = existingAttempts.find((attempt) => {
+      const decision = getMercadoPagoCheckoutAttemptDecision(attempt)
+      return ["reuse", "in_progress", "claim_preference"].includes(
+        decision.kind,
+      )
+    })
+
+    if (activeAttempt) {
+      const decision = getMercadoPagoCheckoutAttemptDecision(activeAttempt)
+
+      if (decision.kind === "reuse") {
+        return NextResponse.json({
+          init_point: decision.initPoint,
+          order_id: activeAttempt.id,
+          reused: true,
+        })
+      }
+
+      if (decision.kind === "in_progress") {
+        return checkoutAttemptInProgressResponse()
+      }
+
+      const claimToken = randomUUID()
+      const { data: generation, error: claimError } = await admin.rpc(
+        "claim_mercadopago_order_preference",
+        {
+          p_order_id: activeAttempt.id,
+          p_checkout_fingerprint: checkoutFingerprint,
+          p_claim_token: claimToken,
+        },
+      )
+
+      if (claimError) {
+        throw new Error(
+          claimError.message || "No se pudo renovar el intento de pago.",
+        )
+      }
+
+      const preferenceGeneration = Number(generation ?? 0)
+      if (preferenceGeneration <= 0) {
+        return checkoutAttemptInProgressResponse()
+      }
+
+      try {
+        const result = await createAndPersistMercadoPagoPreference({
+          client: mercadoPagoClient,
+          admin,
+          order: activeAttempt,
+          payload,
+          request,
+          checkoutFingerprint,
+          claimToken,
+          preferenceGeneration,
+        })
+
+        return NextResponse.json({
+          init_point: result.initPoint,
+          order_id: activeAttempt.id,
+          reused: true,
+        })
+      } catch (error) {
+        await releaseMercadoPagoPreferenceClaim(
+          admin,
+          activeAttempt.id,
+          claimToken,
+        )
+        throw error
+      }
+    }
+
+    const rateLimitResponse = await enforceMercadoPagoCheckoutRateLimits({
+      admin,
+      userId: user?.id ?? null,
+      requestFingerprint: getMercadoPagoRequestFingerprint(request),
+    })
+    if (rateLimitResponse) return rateLimitResponse
+
     const totals = calculateCartTotals(
       catalog.cartRows,
       {
@@ -169,6 +308,7 @@ export async function POST(request: Request) {
       )
     }
 
+    const newPreferenceClaimToken = randomUUID()
     const orderPayload = {
       ...buildCheckoutOrderBase({
         userId: user?.id ?? null,
@@ -176,11 +316,21 @@ export async function POST(request: Request) {
         externalAmountDue: customerCreditApplication.externalAmountDue,
         creditBalanceUsed: customerCreditApplication.appliedAmount,
         paymentMethodId: "mercadopago",
-        reservationSessionId: payload.reservationSessionId,
+        reservationSessionId: checkoutSessionId,
         storeBenefit,
         storeBenefitDiscountAmount,
         customer,
       }),
+      checkout_idempotency_key: getMercadoPagoCheckoutIdempotencyKey(
+        checkoutFingerprint,
+        existingAttempts[0]?.id ?? null,
+      ),
+      mercadopago_checkout_fingerprint: checkoutFingerprint,
+      mercadopago_request_fingerprint:
+        getMercadoPagoRequestFingerprint(request),
+      mercadopago_preference_claim_token: newPreferenceClaimToken,
+      mercadopago_preference_claimed_at: new Date().toISOString(),
+      mercadopago_preference_generation: 1,
       payment_method_id: "mercadopago",
       payment_status: "pending_checkout",
       envio_proveedor: shipping.shipping_provider,
@@ -189,47 +339,21 @@ export async function POST(request: Request) {
 
     const orderClient = user ? supabase : admin
 
-    let { data: order, error: orderError } = await orderClient
+    const { data: order, error: orderError } = await orderClient
       .from("ordenes")
       .insert(orderPayload as never)
       .select()
       .single()
 
-    if (orderError && isSchemaCacheColumnError(orderError)) {
-      if (customerCreditApplication.appliedAmount > 0) {
-        throw new Error("La base de datos todavía no reconoce el saldo a favor. Reintentá en unos segundos.")
-      }
-
-      const legacyPayload = {
-        usuario_id: user?.id ?? null,
-        total: totalAfterStoreBenefit,
-        estado: "pendiente",
-        payment_method_id: "mercadopago",
-        payment_status: "pending_checkout",
-        checkout_idempotency_key: payload.reservationSessionId?.trim()
-          ? `checkout:${payload.reservationSessionId.trim()}`
-          : null,
-        envio_proveedor: shipping.shipping_provider,
-        andreani_costo: shipping.shipping_cost_charged,
-        cliente_nombre: customer.cliente_nombre,
-        cliente_email: customer.cliente_email,
-        cliente_telefono: customer.cliente_telefono,
-        cliente_direccion: customer.cliente_direccion,
-      }
-
-      const fallbackOrder = await orderClient
-        .from("ordenes")
-        .insert(legacyPayload as never)
-        .select()
-        .single()
-
-      order = fallbackOrder.data
-      orderError = fallbackOrder.error
-    }
-
     if (orderError || !order) {
+      if (isPostgresUniqueViolation(orderError)) {
+        return checkoutAttemptInProgressResponse()
+      }
+
       throw new Error(orderError?.message || "No se pudo crear la orden.")
     }
+
+    createdOrderId = order.id
 
     await insertCheckoutOrderItemsAndValidateInventory({
       orderClient,
@@ -238,7 +362,7 @@ export async function POST(request: Request) {
       items,
       products: catalog.products,
       conditionedRows: catalog.conditionedRows,
-      reservationSessionId: payload.reservationSessionId,
+      reservationSessionId: checkoutSessionId,
     })
 
     if (user && customerCreditApplication.appliedAmount > 0) {
@@ -252,47 +376,21 @@ export async function POST(request: Request) {
       creditAppliedOrderId = order.id
     }
 
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      request.headers.get("origin") ||
-      "http://localhost:3000"
-
-    const preference = new Preference(mercadoPagoClient)
-    const preferenceItems = [
-      {
-        id: `order-${order.id}`,
-        title:
-          customerCreditApplication.appliedAmount > 0
-            ? "Diferencia a pagar BEYONIX"
-            : `Pedido BEYONIX BX-${1000 + order.id}`,
-        quantity: 1,
-        unit_price: customerCreditApplication.externalAmountDue,
-        currency_id: "ARS",
+    const preferenceResult = await createAndPersistMercadoPagoPreference({
+      client: mercadoPagoClient,
+      admin,
+      order: {
+        ...(order as MercadoPagoCheckoutOrderRow),
+        external_amount_due: customerCreditApplication.externalAmountDue,
+        credit_balance_used: customerCreditApplication.appliedAmount,
       },
-    ]
-    const result = await preference.create({
-      body: {
-        external_reference: String(order.id),
-        items: preferenceItems,
-        payer: {
-          name: payload.customer?.nombre,
-          email: payload.customer?.email,
-          phone: {
-            number: payload.customer?.telefono,
-          },
-        },
-        back_urls: {
-          success: `${siteUrl}/checkout/success`,
-          failure: `${siteUrl}/checkout/failure`,
-          pending: `${siteUrl}/checkout/pending`,
-        },
-        notification_url: `${siteUrl}/api/mercadopago/webhook?source_news=webhooks`,
-      },
+      payload,
+      request,
+      checkoutFingerprint,
+      claimToken: newPreferenceClaimToken,
+      preferenceGeneration: 1,
     })
-
-    if (!result.init_point) {
-      throw new Error("Mercado Pago no devolvió init_point.")
-    }
+    createdOrderId = null
 
     if (storeBenefit) {
       await markStoreBenefitAsUsed(admin, {
@@ -302,8 +400,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      init_point: result.init_point,
+      init_point: preferenceResult.initPoint,
       order_id: order.id,
+      reused: false,
     })
   } catch (error) {
     if (creditAppliedOrderId) {
@@ -315,6 +414,10 @@ export async function POST(request: Request) {
       } catch (reversalError) {
         console.error("MERCADOPAGO_CREDIT_REVERSAL_ERROR", reversalError)
       }
+    }
+
+    if (createdOrderId) {
+      await deleteIncompleteCheckoutOrder(createAdminClient(), createdOrderId)
     }
 
     console.error("Error creando preferencia de Mercado Pago", error)
@@ -332,4 +435,237 @@ export async function POST(request: Request) {
       { status: stockConflict || quoteConflict ? 409 : 500 },
     )
   }
+}
+
+const MERCADOPAGO_ATTEMPT_SELECT =
+  "id, estado, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_init_point, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation" as const
+
+async function loadMercadoPagoCheckoutAttempts(
+  admin: ReturnType<typeof createAdminClient>,
+  checkoutFingerprint: string,
+) {
+  const { data, error } = await admin
+    .from("ordenes")
+    .select(MERCADOPAGO_ATTEMPT_SELECT)
+    .eq("mercadopago_checkout_fingerprint", checkoutFingerprint)
+    .order("created_at", { ascending: false })
+
+  if (error) {
+    throw new Error(
+      error.message || "No se pudo verificar el intento de pago anterior.",
+    )
+  }
+
+  return (data ?? []) as MercadoPagoCheckoutOrderRow[]
+}
+
+async function releaseMercadoPagoPreferenceClaim(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: number,
+  claimToken: string,
+) {
+  await admin
+    .from("ordenes")
+    .update({
+      payment_status: "preference_error",
+      mercadopago_preference_claim_token: null,
+      mercadopago_preference_claimed_at: null,
+    } as never)
+    .eq("id", orderId)
+    .eq("mercadopago_preference_claim_token", claimToken)
+}
+
+async function createAndPersistMercadoPagoPreference({
+  client,
+  admin,
+  order,
+  payload,
+  request,
+  checkoutFingerprint,
+  claimToken,
+  preferenceGeneration,
+}: {
+  client: MercadoPagoConfig
+  admin: ReturnType<typeof createAdminClient>
+  order: MercadoPagoCheckoutOrderRow
+  payload: CheckoutPayload
+  request: Request
+  checkoutFingerprint: string
+  claimToken: string
+  preferenceGeneration: number
+}) {
+  const externalAmountDue = Number(order.external_amount_due)
+  if (!Number.isFinite(externalAmountDue) || externalAmountDue <= 0) {
+    throw new Error("El monto pendiente de la orden no es válido.")
+  }
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    request.headers.get("origin") ||
+    "http://localhost:3000"
+  const createdAt = new Date()
+  const expiresAt = getMercadoPagoPreferenceExpiration(createdAt)
+  const preference = new Preference(client)
+  const result = await preference.create({
+    body: {
+      external_reference: String(order.id),
+      items: [
+        {
+          id: `order-${order.id}`,
+          title:
+            Number(order.credit_balance_used ?? 0) > 0
+              ? "Diferencia a pagar BEYONIX"
+              : `Pedido BEYONIX BX-${1000 + order.id}`,
+          quantity: 1,
+          unit_price: externalAmountDue,
+          currency_id: "ARS",
+        },
+      ],
+      payer: {
+        name: payload.customer?.nombre,
+        email: payload.customer?.email,
+        phone: {
+          number: payload.customer?.telefono,
+        },
+      },
+      back_urls: {
+        success: `${siteUrl}/checkout/success`,
+        failure: `${siteUrl}/checkout/failure`,
+        pending: `${siteUrl}/checkout/pending`,
+      },
+      expires: true,
+      expiration_date_from: createdAt.toISOString(),
+      expiration_date_to: expiresAt.toISOString(),
+      notification_url: `${siteUrl}/api/mercadopago/webhook?source_news=webhooks`,
+      metadata: {
+        flow: "checkout_order",
+        order_id: order.id,
+        checkout_fingerprint: checkoutFingerprint,
+      },
+    },
+    requestOptions: {
+      idempotencyKey: `beyonix-order-${order.id}-preference-${preferenceGeneration}`,
+    },
+  })
+
+  if (!result.init_point || !result.id) {
+    throw new Error("Mercado Pago no devolvió una preferencia válida.")
+  }
+
+  const { data: persistedPreference, error } = await admin
+    .from("ordenes")
+    .update({
+      mercadopago_preference_id: result.id,
+      mercadopago_init_point: result.init_point,
+      mercadopago_preference_expires_at: expiresAt.toISOString(),
+      mercadopago_preference_claim_token: null,
+      mercadopago_preference_claimed_at: null,
+      payment_status: "preference_created",
+    } as never)
+    .eq("id", order.id)
+    .eq("mercadopago_preference_claim_token", claimToken)
+    .select("id")
+    .maybeSingle()
+
+  if (error || !persistedPreference) {
+    throw new Error(
+      error?.message || "No se pudo guardar la preferencia de Mercado Pago.",
+    )
+  }
+
+  return {
+    initPoint: result.init_point,
+    preferenceId: result.id,
+    expiresAt: expiresAt.toISOString(),
+  }
+}
+
+async function enforceMercadoPagoCheckoutRateLimits({
+  admin,
+  userId,
+  requestFingerprint,
+}: {
+  admin: ReturnType<typeof createAdminClient>
+  userId: string | null
+  requestFingerprint: string | null
+}) {
+  const now = Date.now()
+  const oneHourAgo = new Date(now - 60 * 60 * 1000).toISOString()
+  const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString()
+
+  const userHourlyQuery = userId
+    ? admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("payment_method_id", "mercadopago")
+        .eq("usuario_id", userId)
+        .gte("created_at", oneHourAgo)
+    : Promise.resolve({ count: 0 })
+  const userDailyQuery = userId
+    ? admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("payment_method_id", "mercadopago")
+        .eq("usuario_id", userId)
+        .gte("created_at", oneDayAgo)
+    : Promise.resolve({ count: 0 })
+  const ipHourlyQuery = requestFingerprint
+    ? admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .eq("payment_method_id", "mercadopago")
+        .eq("mercadopago_request_fingerprint", requestFingerprint)
+        .gte("created_at", oneHourAgo)
+    : Promise.resolve({ count: 0 })
+
+  const [
+    { count: userHourlyAttempts },
+    { count: userDailyAttempts },
+    { count: ipHourlyAttempts },
+    { count: globalHourlyAttempts },
+  ] = await Promise.all([
+    userHourlyQuery,
+    userDailyQuery,
+    ipHourlyQuery,
+    admin
+      .from("ordenes")
+      .select("id", { count: "exact", head: true })
+      .eq("payment_method_id", "mercadopago")
+      .gte("created_at", oneHourAgo),
+  ])
+
+  if (
+    Number(userHourlyAttempts ?? 0) >= MERCADOPAGO_MAX_ATTEMPTS_PER_HOUR ||
+    Number(userDailyAttempts ?? 0) >= MERCADOPAGO_MAX_ATTEMPTS_PER_DAY ||
+    Number(ipHourlyAttempts ?? 0) >=
+      MERCADOPAGO_MAX_ATTEMPTS_PER_IP_PER_HOUR ||
+    Number(globalHourlyAttempts ?? 0) >=
+      MERCADOPAGO_MAX_GLOBAL_ATTEMPTS_PER_HOUR
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Alcanzaste temporalmente el límite de intentos de pago. Esperá antes de volver a intentarlo.",
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": "3600" },
+      },
+    )
+  }
+
+  return null
+}
+
+function checkoutAttemptInProgressResponse() {
+  return NextResponse.json(
+    {
+      error:
+        "El pago ya se está iniciando. Esperá unos segundos y volvé a intentarlo.",
+    },
+    {
+      status: 409,
+      headers: { "Retry-After": "3" },
+    },
+  )
 }

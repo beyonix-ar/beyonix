@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/expire-transfer-orders",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/expire-mercadopago-orders",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

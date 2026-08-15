@@ -196,6 +196,7 @@ async function handleWebhook(request: Request) {
             ...paymentPayload,
             paid_at: payment.date_approved ?? new Date().toISOString(),
             estado: "pagado",
+            cancelled_at: null,
             financial_status: "payment_confirmed",
             payment_confirmed_at:
               payment.date_approved ?? new Date().toISOString(),
