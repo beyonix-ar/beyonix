@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
@@ -94,6 +95,22 @@ test("todos los medios de pago consumen la misma cotización verificada", () => 
     results.map(({ shipping }) => shipping.costCharged),
     [12_345.67, 12_345.67, 0],
   )
+})
+
+test("las tres rutas de órdenes exigen el token mediante el helper común", () => {
+  const routes = [
+    "../../app/api/mercadopago/create-preference/route.ts",
+    "../../app/api/transferencia/create-order/route.ts",
+    "../../app/api/customer-credit/create-order/route.ts",
+  ]
+
+  for (const route of routes) {
+    const source = readFileSync(new URL(route, import.meta.url), "utf8")
+    assert.match(source, /normalizeCheckoutShipping\(/)
+    assert.match(source, /quoteToken\?: string/)
+    assert.doesNotMatch(source, /costReal\?: number/)
+    assert.doesNotMatch(source, /quoted\?: boolean/)
+  }
 })
 
 test("rechaza una firma alterada aunque el cliente envíe un costo positivo", () => {
