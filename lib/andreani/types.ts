@@ -1,5 +1,8 @@
 export type AndreaniEnvironment = "QA" | "PROD"
 
+export const ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE =
+  "No encontramos envío disponible para este destino."
+
 export type AndreaniErrorCode =
   | "CONFIGURATION_ERROR"
   | "PRODUCTION_BLOCKED"

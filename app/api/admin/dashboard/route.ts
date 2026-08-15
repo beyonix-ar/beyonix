@@ -1,7 +1,6 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import { canViewSensitiveNumbers } from "@/lib/auth/roles"
 import { getAndreaniConfigurationStatus } from "@/lib/andreani/client"
-import { getWsfeHealth } from "@/lib/arca/wsfe"
 import { getSiteSettings } from "@/lib/site-settings"
 import {
   getStandaloneHistoricalUnitCost,
@@ -246,72 +245,6 @@ function groupItemsByOrder(items: SupabasePedidoItem[]) {
   }, new Map<number, SupabasePedidoItem[]>())
 }
 
-async function getMercadoPagoStatus(): Promise<SystemStatusItem> {
-  const token = process.env.MERCADOPAGO_ACCESS_TOKEN
-  if (!token) {
-    return {
-      id: "mercadopago",
-      label: "Mercado Pago",
-      status: "unknown",
-      detail: "Sin token configurado",
-    }
-  }
-
-  try {
-    const response = await fetch("https://api.mercadopago.com/users/me", {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(2500),
-    })
-
-    if (!response.ok) {
-      return {
-        id: "mercadopago",
-        label: "Mercado Pago",
-        status: "error",
-        detail: `API respondió HTTP ${response.status}`,
-      }
-    }
-
-    return {
-      id: "mercadopago",
-      label: "Mercado Pago",
-      status: "ok",
-      detail: "API accesible con credenciales",
-    }
-  } catch {
-    return {
-      id: "mercadopago",
-      label: "Mercado Pago",
-      status: "error",
-      detail: "No se pudo verificar la API",
-    }
-  }
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  fallback: T,
-  ms: number,
-  label: string
-) {
-  let timer: ReturnType<typeof setTimeout> | undefined
-
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((resolve) => {
-        timer = setTimeout(() => resolve(fallback), ms)
-      }),
-    ])
-  } catch (error) {
-    console.warn(`DASHBOARD_${label}_TIMEOUT_FALLBACK`, getErrorLogDetails(error))
-    return fallback
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
-
 function getErrorLogDetails(error: unknown) {
   if (!error || typeof error !== "object") {
     return {
@@ -529,30 +462,6 @@ function getAndreaniStatus(): SystemStatusItem {
   }
 }
 
-async function getArcaStatus(): Promise<SystemStatusItem> {
-  try {
-    const health = await getWsfeHealth()
-    const values = [health.appServer, health.dbServer, health.authServer]
-    const allOk = values.every((value) => value === "OK")
-
-    return {
-      id: "arca",
-      label: "ARCA / Facturación electrónica",
-      status: allOk ? "ok" : "warning",
-      detail: allOk
-        ? "WSFEv1 FEDummy respondió OK"
-        : `FEDummy: app ${health.appServer || "-"}, db ${health.dbServer || "-"}, auth ${health.authServer || "-"}`,
-    }
-  } catch {
-    return {
-      id: "arca",
-      label: "ARCA / Facturación electrónica",
-      status: "unknown",
-      detail: "No verificable en este momento",
-    }
-  }
-}
-
 export async function GET(request: Request) {
   const auth = await requireInternalUser(request)
   if ("error" in auth) return auth.error
@@ -571,29 +480,7 @@ export async function GET(request: Request) {
   const paidOrderFilter =
     "estado.in.(pagado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado,approved),payment_status.eq.approved"
 
-  const [
-    productsCountResult,
-    activeProductsCountResult,
-    inactiveProductsCountResult,
-    clientsCountResult,
-    totalOrdersCountResult,
-    recentOrdersResult,
-    pendingOrdersCountResult,
-    paymentReviewCountResult,
-    waitingProofCountResult,
-    paidOrdersCountResult,
-    cancelledOrdersCountResult,
-    pendingDispatchResult,
-    pendingInvoiceResult,
-    lowStockProductsResult,
-    lowStockVariantsResult,
-    searchProductsResult,
-    searchOrdersResult,
-    searchClientsResult,
-    mercadoLibreResult,
-    mercadoPagoStatus,
-    arcaStatus,
-  ] = await Promise.all([
+  const primaryDataPromise = Promise.all([
     safeDashboardQuery(
       "productos_total_count",
       auth.admin.from("productos").select("id", { count: "exact", head: true }),
@@ -760,46 +647,9 @@ export async function GET(request: Request) {
         .limit(sensitive ? 250 : 25),
       EMPTY_ROWS_RESULT
     ),
-    withTimeout(
-      getMercadoPagoStatus(),
-      {
-        id: "mercadopago",
-        label: "Mercado Pago",
-        status: "unknown",
-        detail: "Sin datos en este momento",
-      },
-      3000,
-      "MERCADOPAGO"
-    ),
-    withTimeout(
-      getArcaStatus(),
-      {
-        id: "arca",
-        label: "ARCA / Facturación electrónica",
-        status: "unknown",
-        detail: "Sin datos en este momento",
-      },
-      3000,
-      "ARCA"
-    ),
   ])
 
-  const [
-    financialOrdersScan,
-    orderItemsScan,
-    marketplaceScan,
-    externalSalesScan,
-    negativeProductsResult,
-    negativeVariantsResult,
-    pendingDispatchCountResult,
-    pendingInvoiceCountResult,
-    pendingRefundCountResult,
-    invoiceErrorCountResult,
-    creditNotePendingCountResult,
-    productCostsScan,
-    expensesScan,
-    authorizedCreditNotesScan,
-  ] = await Promise.all([
+  const financialDataPromise = Promise.all([
     sensitive
       ? fetchAllDashboardRows<SupabasePedido>(
           "ordenes_financieras",
@@ -833,7 +683,7 @@ export async function GET(request: Request) {
               .range(from, to),
         )
       : Promise.resolve({
-          rows: (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>,
+          rows: [] as Array<Record<string, unknown>>,
           complete: true,
         }),
     sensitive
@@ -950,11 +800,53 @@ export async function GET(request: Request) {
         }),
   ])
 
+  const [
+    [
+      productsCountResult,
+      activeProductsCountResult,
+      inactiveProductsCountResult,
+      clientsCountResult,
+      totalOrdersCountResult,
+      recentOrdersResult,
+      pendingOrdersCountResult,
+      paymentReviewCountResult,
+      waitingProofCountResult,
+      paidOrdersCountResult,
+      cancelledOrdersCountResult,
+      pendingDispatchResult,
+      pendingInvoiceResult,
+      lowStockProductsResult,
+      lowStockVariantsResult,
+      searchProductsResult,
+      searchOrdersResult,
+      searchClientsResult,
+      mercadoLibreResult,
+    ],
+    [
+      financialOrdersScan,
+      orderItemsScan,
+      marketplaceScan,
+      externalSalesScan,
+      negativeProductsResult,
+      negativeVariantsResult,
+      pendingDispatchCountResult,
+      pendingInvoiceCountResult,
+      pendingRefundCountResult,
+      invoiceErrorCountResult,
+      creditNotePendingCountResult,
+      productCostsScan,
+      expensesScan,
+      authorizedCreditNotesScan,
+    ],
+  ] = await Promise.all([primaryDataPromise, financialDataPromise])
+
   const recentOrders = (recentOrdersResult.data ?? []) as SupabasePedido[]
   const pendingDispatchOrders = (pendingDispatchResult.data ?? []) as SupabasePedido[]
   const pendingInvoiceOrders = (pendingInvoiceResult.data ?? []) as SupabasePedido[]
   const products = (searchProductsResult.data ?? []) as unknown as SupabaseProducto[]
-  const mlRows = marketplaceScan.rows
+  const mlRows = sensitive
+    ? marketplaceScan.rows
+    : (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>
   const externalRows = externalSalesScan.rows
   const financialOrders = financialOrdersScan.rows
   const paidCandidateOrders = sensitive
@@ -1605,9 +1497,19 @@ export async function GET(request: Request) {
       status: "ok",
       detail: "Base de datos accesible",
     },
-    mercadoPagoStatus as SystemStatusItem,
+    {
+      id: "mercadopago",
+      label: "Mercado Pago",
+      status: "unknown",
+      detail: "Comprobación en segundo plano",
+    },
     getAndreaniStatus(),
-    arcaStatus as SystemStatusItem,
+    {
+      id: "arca",
+      label: "ARCA / Facturación electrónica",
+      status: "unknown",
+      detail: "Comprobación en segundo plano",
+    },
   ]
   const searchOrders = (searchOrdersResult.data ?? []) as unknown as SupabasePedido[]
   const searchClients = (searchClientsResult.data ?? []) as Array<{

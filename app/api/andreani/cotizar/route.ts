@@ -16,9 +16,15 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json()
     const options = await quoteAndreaniCheckout(payload)
+    const environment =
+      (process.env.ANDREANI_TARIFF_ENV || process.env.ANDREANI_ENV)
+        ?.trim()
+        .toUpperCase() === "PROD"
+        ? "PROD"
+        : "QA"
 
     return NextResponse.json(
-      { ok: true, environment: "QA", options },
+      { ok: true, environment, options },
       { headers: NO_STORE_HEADERS },
     )
   } catch (error) {

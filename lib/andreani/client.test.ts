@@ -26,7 +26,7 @@ function qaEnvironment(
 
 const officialLocalityResponse = [
   {
-    idDeProvLocalidad: 107362,
+    idDeProvLocalidad: "107362",
     localidad: "PASO DE LOS LIBRES",
     provincia: "CORRIENTES",
     codigosPostales: ["3230"],
@@ -181,6 +181,32 @@ test("bloquea el uso accidental de PROD", () => {
     (error) =>
       error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
   )
+})
+
+test("en PROD bloquea cualquier endpoint fuera de login y tarifas", async () => {
+  resetAndreaniRuntimeStateForTests()
+  let networkCalls = 0
+  const client = new AndreaniClient({
+    env: {
+      NODE_ENV: "test",
+      ANDREANI_ENV: "PROD",
+      ANDREANI_PROD_API_URL: "https://apis.andreani.com",
+      ANDREANI_PROD_USERNAME: "usuario-prod-prueba",
+      ANDREANI_PROD_PASSWORD: "clave-prod-prueba",
+    },
+    productionAccess: "tariffs-only",
+    fetch: async () => {
+      networkCalls += 1
+      return Response.json([])
+    },
+  })
+
+  await assert.rejects(
+    () => client.getLocalidades({ codigosPostales: "3013" }),
+    (error) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
+  )
+  assert.equal(networkCalls, 0)
 })
 
 test("normaliza una autenticación rechazada sin exponer la respuesta", async () => {
@@ -338,7 +364,9 @@ test("construye los QueryParams oficiales de localidades sin autenticación", as
     ],
   )
   assert.equal(authorizationToken, null)
-  assert.deepEqual(localidades, officialLocalityResponse)
+  assert.deepEqual(localidades, [
+    { ...officialLocalityResponse[0], idDeProvLocalidad: 107362 },
+  ])
 })
 
 test("consulta sucursales QA sin enviar autenticación", async () => {
@@ -737,10 +765,15 @@ test("la ruta de prueba exige autorización administrativa", async () => {
 test("Andreani cotiza usando únicamente la resolución logística central", async () => {
   resetAndreaniRuntimeStateForTests()
   let requestedUrl = ""
+  let requestedToken: string | null = null
   const client = new AndreaniClient({
     env: qaEnvironment(),
-    fetch: async (input) => {
+    fetch: async (input, init) => {
+      if (String(input).endsWith("/login")) {
+        return Response.json({ token: "token-tarifa" })
+      }
       requestedUrl = String(input)
+      requestedToken = new Headers(init?.headers).get("x-authorization-token")
       return Response.json({
         pesoAforado: "70.00",
         tarifaSinIva: {
@@ -762,6 +795,7 @@ test("Andreani cotiza usando únicamente la resolución logística central", asy
     codigoPostalDestino: "5000",
     contrato: "CONTRATO-QA",
     cliente: "CLIENTE-QA",
+    codigoSucursalOrigen: "RAC",
     valorDeclarado: 25_000,
     modalidadEntrega: "domicilio",
     producto: {
@@ -786,6 +820,8 @@ test("Andreani cotiza usando únicamente la resolución logística central", asy
   assert.equal(url.searchParams.get("bultos[0][anchoCm]"), "20")
   assert.equal(url.searchParams.get("bultos[0][largoCm]"), "30")
   assert.equal(url.searchParams.get("bultos[0][volumen]"), "6000")
+  assert.equal(url.searchParams.get("sucursalOrigen"), "RAC")
+  assert.equal(requestedToken, "token-tarifa")
 })
 
 test("cotiza con el contrato oficial y omite parámetros opcionales", async () => {
@@ -794,6 +830,9 @@ test("cotiza con el contrato oficial y omite parámetros opcionales", async () =
   const client = new AndreaniClient({
     env: qaEnvironment(),
     fetch: async (input) => {
+      if (String(input).endsWith("/login")) {
+        return Response.json({ token: "token-tarifa-opcional" })
+      }
       requestedUrl = String(input)
       return Response.json({
         pesoAforado: "1.00",
@@ -831,7 +870,10 @@ test("rechaza una respuesta incompleta del cotizador", async () => {
   resetAndreaniRuntimeStateForTests()
   const client = new AndreaniClient({
     env: qaEnvironment(),
-    fetch: async () => Response.json({ pesoAforado: "1.00" }),
+    fetch: async (input) =>
+      String(input).endsWith("/login")
+        ? Response.json({ token: "token-tarifa-invalida" })
+        : Response.json({ pesoAforado: "1.00" }),
   })
 
   await assert.rejects(

@@ -3,8 +3,13 @@ import test from "node:test"
 
 import { AndreaniError } from "./client.ts"
 import {
+  getCheckoutPostalCodes,
+  getCheckoutProvinceLocalities,
+  resetCheckoutDestinationStateForTests,
+} from "./checkout-destinations.ts"
+import {
   aggregateAndreaniPackage,
-  matchAndreaniCheckoutLocality,
+  matchAndreaniCheckoutProvince,
   normalizeCheckoutQuoteRequest,
   quoteAndreaniCheckout,
   resetAndreaniCheckoutQuoteStateForTests,
@@ -58,6 +63,7 @@ function qaQuoteEnvironment(): NodeJS.ProcessEnv {
     ANDREANI_QA_PASSWORD: "clave-prueba",
     ANDREANI_QA_CLIENT: "CLIENTE-QA",
     ANDREANI_QA_HOME_CONTRACT: "CONTRATO-QA",
+    ANDREANI_QA_ORIGIN_BRANCH: "RAC",
   }
 }
 
@@ -134,7 +140,7 @@ test("no cotiza un producto con logística incompleta", () => {
   )
 })
 
-test("la cotización usa el paquete agregado y el endpoint central", async () => {
+test("la cotización usa el paquete agregado sin exigir coincidencia textual de localidad", async () => {
   resetAndreaniCheckoutQuoteStateForTests()
   let receivedWeight = 0
   let receivedVolume = 0
@@ -145,7 +151,7 @@ test("la cotización usa el paquete agregado y el endpoint central", async () =>
   const options = await quoteAndreaniCheckout(
     {
       cpDestino: "3230",
-      localidad: "Paso de los Libres",
+      localidad: "  otra   localidad  ",
       provincia: "Corrientes",
       items: [{ productId: 10, quantity: 2 }],
     },
@@ -155,12 +161,16 @@ test("la cotización usa el paquete agregado y el endpoint central", async () =>
         assert.deepEqual(filters, { codigosPostales: "3230" })
         return officialLocalityResponse
       },
-      loadItems: async () => loadedItems,
+      loadItems: async (request) => {
+        assert.equal(request.localidad, "OTRA LOCALIDAD")
+        return loadedItems
+      },
       quoteTariff: async (input) => {
         receivedWeight = input.bultos[0].kilos ?? 0
         receivedVolume = input.bultos[0].volumen
         assert.equal(input.cpDestino, "3230")
         assert.equal(input.contrato, "CONTRATO-QA")
+        assert.equal(input.sucursalOrigen, "RAC")
         return {
           pesoAforado: "2",
           tarifaSinIva: { seguroDistribucion: "0", distribucion: "100", total: "100" },
@@ -175,11 +185,148 @@ test("la cotización usa el paquete agregado y el endpoint central", async () =>
   assert.deepEqual(options, [{ type: "domicilio", price: 121 }])
 })
 
-test("valida localidad y provincia ignorando diferencias de mayúsculas", () => {
-  const locality = matchAndreaniCheckoutLocality(
+test("el checkout valida en QA y limita PROD a login y GET de tarifas", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  const requests: Array<{ url: string; method: string; token: string | null }> = []
+  const options = await quoteAndreaniCheckout(
+    {
+      cpDestino: "3013",
+      localidad: "San Carlos Centro",
+      provincia: "Santa Fe",
+      items: [{ productId: 50, quantity: 1 }],
+    },
+    {
+      env: {
+        NODE_ENV: "test",
+        ANDREANI_ENV: "QA",
+        ANDREANI_TARIFF_ENV: "PROD",
+        ANDREANI_QA_API_URL: "https://apisqa.andreani.com",
+        ANDREANI_QA_USERNAME: "usuario-qa-prueba",
+        ANDREANI_QA_PASSWORD: "clave-qa-prueba",
+        ANDREANI_PROD_API_URL: "https://apis.andreani.com",
+        ANDREANI_PROD_USERNAME: "usuario-prod-prueba",
+        ANDREANI_PROD_PASSWORD: "clave-prod-prueba",
+        ANDREANI_PROD_CLIENT: "CLIENTE-PROD",
+        ANDREANI_PROD_HOME_CONTRACT: "CONTRATO-PROD",
+        ANDREANI_PROD_ORIGIN_BRANCH: "RAC",
+      },
+      loadItems: async () => [
+        {
+          product: {
+            id: 50,
+            nombre: "Producto de prueba",
+            precio: 50_000,
+            peso_empaquetado_kg: 10,
+            alto_paquete_cm: 10,
+            ancho_paquete_cm: 10,
+            largo_paquete_cm: 10,
+          },
+          variant: null,
+          quantity: 1,
+          discountPercent: 0,
+        },
+      ],
+      clientOptions: {
+        fetch: async (input, init) => {
+          const url = String(input)
+          requests.push({
+            url,
+            method: init?.method ?? "GET",
+            token: new Headers(init?.headers).get("x-authorization-token"),
+          })
+          if (url.endsWith("/login")) {
+            return Response.json({ token: "token-prod-prueba" })
+          }
+          if (new URL(url).pathname === "/v1/localidades") {
+            return Response.json([
+              {
+                idDeProvLocalidad: 1,
+                localidad: "SAN CARLOS CENTRO",
+                provincia: "SANTA FE",
+                codigosPostales: ["3013"],
+              },
+            ])
+          }
+          return Response.json({
+            pesoAforado: "10000.00",
+            tarifaSinIva: {
+              seguroDistribucion: "0.00",
+              distribucion: "18481.54",
+              total: "18481.54",
+            },
+            tarifaConIva: {
+              seguroDistribucion: "0.00",
+              distribucion: "22362.66",
+              total: "22362.66",
+            },
+          })
+        },
+      },
+    },
+  )
+
+  assert.equal(requests.length, 3)
+  assert.equal(new URL(requests[0].url).hostname, "apisqa.andreani.com")
+  assert.equal(new URL(requests[0].url).pathname, "/v1/localidades")
+  assert.equal(requests[0].method, "GET")
+  assert.equal(new URL(requests[1].url).pathname, "/login")
+  assert.equal(requests[1].method, "GET")
+  const tariffUrl = new URL(requests[2].url)
+  assert.equal(tariffUrl.pathname, "/v1/tarifas")
+  assert.equal(requests[2].method, "GET")
+  assert.equal(requests[2].token, "token-prod-prueba")
+  assert.equal(tariffUrl.searchParams.get("contrato"), "CONTRATO-PROD")
+  assert.equal(tariffUrl.searchParams.get("cliente"), "CLIENTE-PROD")
+  assert.equal(tariffUrl.searchParams.get("sucursalOrigen"), "RAC")
+  assert.equal(tariffUrl.searchParams.get("cpDestino"), "3013")
+  assert.equal(tariffUrl.searchParams.get("bultos[0][kilos]"), "10")
+  assert.equal(tariffUrl.searchParams.get("bultos[0][volumen]"), "1000")
+  assert.equal(tariffUrl.searchParams.get("bultos[0][valorDeclarado]"), "50000")
+  assert.deepEqual(options, [{ type: "domicilio", price: 22_362.66 }])
+})
+
+test("reutiliza localidades estables para el mismo código postal", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  let localityRequests = 0
+  const request = {
+    cpDestino: "3230",
+    localidad: "Paso de los Libres",
+    provincia: "Corrientes",
+    items: [{ productId: 10, quantity: 1 }],
+  }
+  const dependencies = {
+    env: qaQuoteEnvironment(),
+    loadItems: async () => [
+      {
+        product: completeProduct,
+        variant: null,
+        quantity: 1,
+        discountPercent: 0,
+      },
+    ],
+    quoteTariff: async () => ({
+      pesoAforado: "1",
+      tarifaSinIva: { seguroDistribucion: "0", distribucion: "100", total: "100" },
+      tarifaConIva: { seguroDistribucion: "0", distribucion: "121", total: "121" },
+    }),
+    clientOptions: {
+      fetch: async () => {
+        localityRequests += 1
+        return Response.json(officialLocalityResponse)
+      },
+    },
+  }
+
+  await quoteAndreaniCheckout(request, dependencies)
+  await quoteAndreaniCheckout(request, dependencies)
+
+  assert.equal(localityRequests, 1)
+})
+
+test("valida provincia y código postal ignorando diferencias de mayúsculas", () => {
+  const locality = matchAndreaniCheckoutProvince(
     {
       cpDestino: "3230",
-      localidad: "Paso de los Libres",
       provincia: "Corrientes",
     },
     officialLocalityResponse,
@@ -245,7 +392,7 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
   ])
 })
 
-test("no accede al carrito si la localidad no coincide con el código postal", async () => {
+test("bloquea Tierra del Fuego con CP 9400 antes de acceder al carrito", async () => {
   resetAndreaniCheckoutQuoteStateForTests()
   let itemsWereLoaded = false
 
@@ -253,14 +400,21 @@ test("no accede al carrito si la localidad no coincide con el código postal", a
     () =>
       quoteAndreaniCheckout(
         {
-          cpDestino: "3230",
-          localidad: "PASO DE LOS LIBRES",
-          provincia: "SANTA FE",
+          cpDestino: "9400",
+          localidad: "RÍO GRANDE",
+          provincia: "TIERRA DEL FUEGO",
           items: [{ productId: 10, quantity: 1 }],
         },
         {
           env: qaQuoteEnvironment(),
-          getLocalities: async () => officialLocalityResponse,
+          getLocalities: async () => [
+            {
+              idDeProvLocalidad: 24899,
+              localidad: "RÍO GALLEGOS",
+              provincia: "SANTA CRUZ",
+              codigosPostales: ["9400"],
+            },
+          ],
           loadItems: async () => {
             itemsWereLoaded = true
             return []
@@ -268,9 +422,162 @@ test("no accede al carrito si la localidad no coincide con el código postal", a
         },
       ),
     (error) =>
-      error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      error.message ===
+        "El código postal no corresponde a la provincia seleccionada.",
   )
   assert.equal(itemsWereLoaded, false)
+})
+
+test("bloquea con destino no disponible cuando Andreani no devuelve tarifa", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+
+  await assert.rejects(
+    () =>
+      quoteAndreaniCheckout(
+        {
+          cpDestino: "3230",
+          localidad: "Paso de los Libres",
+          provincia: "Corrientes",
+          items: [{ productId: 10, quantity: 1 }],
+        },
+        {
+          env: qaQuoteEnvironment(),
+          getLocalities: async () => officialLocalityResponse,
+          loadItems: async () => [
+            {
+              product: completeProduct,
+              variant: null,
+              quantity: 1,
+              discountPercent: 0,
+            },
+          ],
+          quoteTariff: async () => ({
+            pesoAforado: "1",
+            tarifaSinIva: {
+              seguroDistribucion: "0",
+              distribucion: "0",
+              total: "0",
+            },
+            tarifaConIva: {
+              seguroDistribucion: "0",
+              distribucion: "0",
+              total: "0",
+            },
+          }),
+        },
+      ),
+    (error) =>
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      error.message ===
+        "No encontramos envío disponible para este destino.",
+  )
+})
+
+test("normaliza la localidad para guardar y mostrar sin quitar tildes", () => {
+  const request = normalizeCheckoutQuoteRequest({
+    cpDestino: "9420",
+    localidad: "  río   grande  ",
+    provincia: "Tierra del Fuego",
+    items: [{ productId: 10, quantity: 1 }],
+  })
+
+  assert.equal(request.localidad, "RÍO GRANDE")
+
+  const quoteWithoutLocality = normalizeCheckoutQuoteRequest({
+    cpDestino: "9420",
+    provincia: "Tierra del Fuego",
+    items: [{ productId: 10, quantity: 1 }],
+  })
+  assert.equal(quoteWithoutLocality.localidad, "")
+})
+
+test("Georef aporta localidades por provincia y se cachea durante la sesión", async () => {
+  resetCheckoutDestinationStateForTests()
+  let georefRequests = 0
+  const dependencies = {
+    fetch: async () => {
+      georefRequests += 1
+      return Response.json({
+        asentamientos: [
+          { id: "94015020", nombre: "Ushuaia" },
+          { id: "94008010", nombre: "Río Grande" },
+          { id: "94008011", nombre: "RIO GRANDE" },
+        ],
+      })
+    },
+  }
+
+  const [first, second] = await Promise.all([
+    getCheckoutProvinceLocalities("Tierra del Fuego", dependencies),
+    getCheckoutProvinceLocalities("TIERRA DEL FUEGO", dependencies),
+  ])
+
+  assert.equal(georefRequests, 1)
+  assert.deepEqual(first, [
+    { id: "94008010", name: "RÍO GRANDE" },
+    { id: "94015020", name: "USHUAIA" },
+  ])
+  assert.deepEqual(second, first)
+})
+
+test("Andreani define los CP de la localidad y descarta otras provincias", async () => {
+  resetCheckoutDestinationStateForTests()
+  let andreaniRequests = 0
+  const dependencies = {
+    fetch: async () =>
+      Response.json({
+        asentamientos: [{ id: "94015020", nombre: "Ushuaia" }],
+      }),
+    getAndreaniLocalities: async () => {
+      andreaniRequests += 1
+      return [
+        {
+          idDeProvLocalidad: 1,
+          localidad: "USHUAIA",
+          provincia: "TIERRA DEL FUEGO",
+          codigosPostales: ["9413", "9410"],
+        },
+        {
+          idDeProvLocalidad: 2,
+          localidad: "USHUAIA",
+          provincia: "SANTA CRUZ",
+          codigosPostales: ["9400"],
+        },
+      ]
+    },
+  }
+
+  const [first, second] = await Promise.all([
+    getCheckoutPostalCodes("Tierra del Fuego", "Ushuaia", dependencies),
+    getCheckoutPostalCodes("Tierra del Fuego", "USHUAIA", dependencies),
+  ])
+
+  assert.equal(andreaniRequests, 1)
+  assert.deepEqual(first, {
+    locality: "USHUAIA",
+    postalCodes: ["9410", "9413"],
+  })
+  assert.deepEqual(second, first)
+})
+
+test("CABA se presenta como una única ciudad compatible con Andreani", async () => {
+  resetCheckoutDestinationStateForTests()
+  const localities = await getCheckoutProvinceLocalities("CABA", {
+    fetch: async () =>
+      Response.json({
+        asentamientos: [
+          { id: "02007010", nombre: "CABA - Comuna 1" },
+          { id: "02014010", nombre: "CABA - Comuna 2" },
+        ],
+      }),
+  })
+
+  assert.deepEqual(localities, [
+    { id: "02", name: "CIUDAD AUTÓNOMA DE BUENOS AIRES" },
+  ])
 })
 
 test("valida el código postal y las cantidades antes de acceder a Supabase", () => {

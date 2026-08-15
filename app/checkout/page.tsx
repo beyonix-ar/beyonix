@@ -3,6 +3,7 @@
 import {
   type ReactNode,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -53,7 +54,7 @@ import {
 import {
   Label,
 } from "@/components/ui/label"
-import { ProvinceSelect } from "@/components/province-select"
+import { GeographicSelect } from "@/components/checkout/geographic-select"
 
 import {
   Separator,
@@ -90,8 +91,12 @@ import {
   hasBlockedWords,
 } from "@/lib/validation/content-filter"
 import {
+  ARGENTINA_PROVINCES,
   FIELD_LIMITS,
+  normalizeArgentineLocality,
+  normalizeArgentineLocationKey,
 } from "@/lib/validation/account-fields"
+import { ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE } from "@/lib/andreani/types"
 import {
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotalAfterCustomerCredit,
@@ -262,6 +267,23 @@ interface ShippingOption {
   quoteStatus: "quoted" | "pending"
 }
 
+interface CheckoutLocalityOption {
+  id: string
+  name: string
+}
+
+interface CheckoutPostalCodeResult {
+  locality: string
+  postalCodes: string[]
+}
+
+type DestinationSelectionStatus =
+  | "incomplete"
+  | "loading"
+  | "ready"
+  | "unavailable"
+  | "error"
+
 interface CheckoutStoreBenefit {
   id: string
   benefit_type: StoreBenefitType
@@ -367,6 +389,14 @@ export default function CheckoutPage() {
 
   const [formData, setFormData] =
     useState(initialCheckoutFormData)
+  const [localityOptions, setLocalityOptions] =
+    useState<CheckoutLocalityOption[]>([])
+  const [postalCodeOptions, setPostalCodeOptions] = useState<string[]>([])
+  const [localitiesLoading, setLocalitiesLoading] = useState(false)
+  const [localityLoadError, setLocalityLoadError] = useState("")
+  const [postalCodesLoading, setPostalCodesLoading] = useState(false)
+  const [destinationSelectionStatus, setDestinationSelectionStatus] =
+    useState<DestinationSelectionStatus>("incomplete")
 
   const [stockError, setStockError] =
     useState("")
@@ -377,6 +407,7 @@ export default function CheckoutPage() {
   const [shippingMessageTone, setShippingMessageTone] =
     useState<"info" | "error">("info")
   const [shippingLoading, setShippingLoading] = useState(false)
+  const [shippingQuoteCurrent, setShippingQuoteCurrent] = useState(false)
   const [
     selectedShippingType,
     setSelectedShippingType,
@@ -399,6 +430,36 @@ export default function CheckoutPage() {
   const submissionInFlightRef = useRef(false)
   const validationTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null)
+  const localityOptionsCacheRef = useRef(
+    new Map<string, CheckoutLocalityOption[]>(),
+  )
+  const postalCodeOptionsCacheRef = useRef(
+    new Map<string, CheckoutPostalCodeResult>(),
+  )
+  const provinceSelectOptions = useMemo(
+    () =>
+      ARGENTINA_PROVINCES.map((province) => ({
+        value: province.toLocaleUpperCase("es-AR"),
+        label: province.toLocaleUpperCase("es-AR"),
+      })),
+    [],
+  )
+  const localitySelectOptions = useMemo(
+    () =>
+      localityOptions.map((option) => ({
+        value: option.name,
+        label: option.name,
+      })),
+    [localityOptions],
+  )
+  const postalCodeSelectOptions = useMemo(
+    () =>
+      postalCodeOptions.map((postalCode) => ({
+        value: postalCode,
+        label: postalCode,
+      })),
+    [postalCodeOptions],
+  )
 
   useEffect(() => {
     setMounted(true)
@@ -710,6 +771,231 @@ export default function CheckoutPage() {
     maxApplicableCustomerCredit,
   ])
 
+  useEffect(() => {
+    const province = formData.provincia.trim()
+    if (!province) {
+      setLocalityOptions([])
+      setLocalitiesLoading(false)
+      setLocalityLoadError("")
+      return
+    }
+
+    const cacheKey = normalizeArgentineLocationKey(province)
+    const controller = new AbortController()
+
+    const applyLocalities = (localities: CheckoutLocalityOption[]) => {
+      setLocalityOptions(localities)
+
+      setFormData((prev) => {
+        if (normalizeArgentineLocationKey(prev.provincia) !== cacheKey) return prev
+        if (!prev.localidad) return prev
+
+        const selectedKey = normalizeArgentineLocationKey(prev.localidad)
+        const canonical = localities.find(
+          (option) => normalizeArgentineLocationKey(option.name) === selectedKey,
+        )
+        if (
+          (canonical?.name ?? "") === prev.localidad &&
+          (canonical || !prev.cpDestino)
+        ) {
+          return prev
+        }
+
+        const next = {
+          ...prev,
+          localidad: canonical?.name ?? "",
+          cpDestino: canonical ? prev.cpDestino : "",
+        }
+        next.direccion = formatDeliveryAddress({
+          street: next.calle,
+          streetNumber: next.numero,
+          floor: next.piso,
+          apartment: next.departamento,
+          locality: next.localidad,
+          region: next.provincia,
+          postalCode: next.cpDestino,
+        })
+        return next
+      })
+    }
+
+    const cached = localityOptionsCacheRef.current.get(cacheKey)
+    if (cached) {
+      setLocalityLoadError("")
+      applyLocalities(cached)
+      setLocalitiesLoading(false)
+      return () => controller.abort()
+    }
+
+    setLocalitiesLoading(true)
+    setLocalityLoadError("")
+    fetch(
+      `/api/andreani/destinos?provincia=${encodeURIComponent(province)}&catalogo=asentamientos-v1`,
+      { signal: controller.signal },
+    )
+      .then(async (response) => {
+        const data = (await response.json()) as {
+          localities?: CheckoutLocalityOption[]
+          message?: string
+        }
+        if (!response.ok || !Array.isArray(data.localities)) {
+          throw new Error(data.message || "No pudimos cargar las localidades.")
+        }
+
+        const localities = data.localities.filter(
+          (option) =>
+            typeof option?.id === "string" && typeof option?.name === "string",
+        )
+        localityOptionsCacheRef.current.set(cacheKey, localities)
+        setLocalityLoadError("")
+        applyLocalities(localities)
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setLocalityOptions([])
+        setLocalityLoadError("No pudimos cargar las localidades. Intentá nuevamente.")
+        setDestinationSelectionStatus("error")
+        setShippingMessageTone("error")
+        setShippingMessage(
+          error instanceof Error
+            ? error.message
+            : "No pudimos cargar las localidades.",
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLocalitiesLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [formData.provincia])
+
+  useEffect(() => {
+    if (formData.provincia && !formData.localidad && !localitiesLoading) {
+      setDestinationSelectionStatus("incomplete")
+    }
+  }, [formData.localidad, formData.provincia, localitiesLoading])
+
+  useEffect(() => {
+    const province = formData.provincia.trim()
+    const locality = formData.localidad.trim()
+    if (!province || !locality) {
+      setPostalCodeOptions([])
+      setPostalCodesLoading(false)
+      setDestinationSelectionStatus("incomplete")
+      return
+    }
+
+    const provinceKey = normalizeArgentineLocationKey(province)
+    const localityKey = normalizeArgentineLocationKey(locality)
+    const cacheKey = `${provinceKey}:${localityKey}`
+    const controller = new AbortController()
+
+    const applyPostalCodes = (result: CheckoutPostalCodeResult) => {
+      const postalCodes = result.postalCodes.filter((code) => /^\d{4}$/.test(code))
+      const currentPostalCode = formData.cpDestino.trim()
+      const nextPostalCode = postalCodes.includes(currentPostalCode)
+        ? currentPostalCode
+        : postalCodes.length === 1
+          ? postalCodes[0]
+          : ""
+
+      setPostalCodeOptions(postalCodes)
+      setFormData((prev) => {
+        if (
+          normalizeArgentineLocationKey(prev.provincia) !== provinceKey ||
+          normalizeArgentineLocationKey(prev.localidad) !== localityKey
+        ) {
+          return prev
+        }
+
+        const next = {
+          ...prev,
+          localidad: normalizeArgentineLocality(result.locality),
+          cpDestino: nextPostalCode,
+        }
+        if (
+          next.localidad === prev.localidad &&
+          next.cpDestino === prev.cpDestino
+        ) {
+          return prev
+        }
+        next.direccion = formatDeliveryAddress({
+          street: next.calle,
+          streetNumber: next.numero,
+          floor: next.piso,
+          apartment: next.departamento,
+          locality: next.localidad,
+          region: next.provincia,
+          postalCode: next.cpDestino,
+        })
+        return next
+      })
+
+      if (postalCodes.length === 0) {
+        setDestinationSelectionStatus("unavailable")
+        setShippingLoading(false)
+        setShippingQuoteCurrent(false)
+        setShippingOptions([])
+        setSelectedShippingType(null)
+        setShippingMessageTone("error")
+        setShippingMessage(ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE)
+      } else {
+        setDestinationSelectionStatus(nextPostalCode ? "ready" : "incomplete")
+      }
+    }
+
+    const cached = postalCodeOptionsCacheRef.current.get(cacheKey)
+    if (cached) {
+      applyPostalCodes(cached)
+      setPostalCodesLoading(false)
+      return () => controller.abort()
+    }
+
+    setDestinationSelectionStatus("loading")
+    setPostalCodesLoading(true)
+    fetch(
+      `/api/andreani/destinos?provincia=${encodeURIComponent(province)}&localidad=${encodeURIComponent(locality)}`,
+      { signal: controller.signal },
+    )
+      .then(async (response) => {
+        const data = (await response.json()) as {
+          locality?: string
+          postalCodes?: string[]
+          message?: string
+        }
+        if (
+          !response.ok ||
+          typeof data.locality !== "string" ||
+          !Array.isArray(data.postalCodes)
+        ) {
+          throw new Error(data.message || "No pudimos cargar los códigos postales.")
+        }
+
+        const result = {
+          locality: data.locality,
+          postalCodes: data.postalCodes,
+        }
+        postalCodeOptionsCacheRef.current.set(cacheKey, result)
+        applyPostalCodes(result)
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setPostalCodeOptions([])
+        setDestinationSelectionStatus("error")
+        setShippingMessageTone("error")
+        setShippingMessage(
+          error instanceof Error
+            ? error.message
+            : "No pudimos cargar los códigos postales.",
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPostalCodesLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [formData.cpDestino, formData.localidad, formData.provincia])
+
   const shippingQuotePayload = JSON.stringify({
     cpDestino: formData.cpDestino.trim(),
     localidad: formData.localidad.trim(),
@@ -735,29 +1021,43 @@ export default function CheckoutPage() {
       }>
     }
 
-    if (!/^\d{4}$/.test(payload.cpDestino)) {
+    if (destinationSelectionStatus !== "ready") {
       setShippingLoading(false)
-      setShippingOptions([])
-      setSelectedShippingType(null)
-      setShippingMessageTone("info")
-      setShippingMessage("Ingresá el código postal para cotizar el envío.")
+      setShippingQuoteCurrent(false)
+
+      if (destinationSelectionStatus === "unavailable") {
+        setShippingOptions([])
+        setSelectedShippingType(null)
+        setShippingMessageTone("error")
+        setShippingMessage(ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE)
+      } else if (destinationSelectionStatus === "error") {
+        return
+      } else {
+        setShippingMessageTone("info")
+        setShippingMessage(
+          destinationSelectionStatus === "loading"
+            ? "Cargando destino…"
+            : !payload.provincia
+              ? "Seleccioná una provincia."
+              : !payload.localidad
+                ? "Seleccioná una localidad."
+                : "Seleccioná un código postal.",
+        )
+      }
       return
     }
-    if (
-      payload.localidad.trim().length < 2 ||
-      payload.provincia.trim().length < 2
-    ) {
+    if (!/^\d{4}$/.test(payload.cpDestino)) {
       setShippingLoading(false)
+      setShippingQuoteCurrent(false)
       setShippingOptions([])
       setSelectedShippingType(null)
       setShippingMessageTone("info")
-      setShippingMessage(
-        "Completá localidad y provincia para validar el destino.",
-      )
+      setShippingMessage("Seleccioná un código postal.")
       return
     }
     if (payload.items.length === 0) {
       setShippingLoading(false)
+      setShippingQuoteCurrent(false)
       setShippingOptions([])
       setSelectedShippingType(null)
       setShippingMessage("")
@@ -766,8 +1066,7 @@ export default function CheckoutPage() {
 
     const controller = new AbortController()
     setShippingLoading(true)
-    setShippingOptions([])
-    setSelectedShippingType(null)
+    setShippingQuoteCurrent(false)
     setShippingMessageTone("info")
     setShippingMessage("")
 
@@ -775,19 +1074,18 @@ export default function CheckoutPage() {
     let requestTimedOut = false
     let requestTimeout: ReturnType<typeof setTimeout> | null = null
 
-    const timer = setTimeout(() => {
-      requestTimeout = setTimeout(() => {
-        requestTimedOut = true
-        controller.abort()
-      }, 12_000)
+    requestTimeout = setTimeout(() => {
+      requestTimedOut = true
+      controller.abort()
+    }, 12_000)
 
-      fetch("/api/andreani/cotizar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: shippingQuotePayload,
-        signal: controller.signal,
-        cache: "no-store",
-      })
+    fetch("/api/andreani/cotizar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: shippingQuotePayload,
+      signal: controller.signal,
+      cache: "no-store",
+    })
         .then(async (response) => {
           const data = (await response.json()) as {
             options?: Array<{ type?: string; price?: number }>
@@ -813,9 +1111,12 @@ export default function CheckoutPage() {
               quoteStatus: "quoted" as const,
             }]
           })
-          if (!options.length) throw new Error("INVALID_QUOTE")
+          if (!options.length) {
+            throw new Error(ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE)
+          }
 
           setShippingOptions(options)
+          setShippingQuoteCurrent(true)
           setSelectedShippingType((current) =>
             current && options.some((option) => option.type === current)
               ? current
@@ -827,35 +1128,40 @@ export default function CheckoutPage() {
         })
         .catch((error: unknown) => {
           if (disposed) return
+          const errorMessage =
+            error instanceof Error ? error.message : "QUOTE_FAILED"
           if (process.env.NODE_ENV === "development") {
             console.info("[Andreani checkout] cotización no disponible", {
-              reason: error instanceof Error ? error.message.slice(0, 120) : "UNKNOWN",
+              reason: errorMessage.slice(0, 120),
             })
           }
-          setShippingOptions([])
-          setSelectedShippingType(null)
+          setShippingQuoteCurrent(false)
           setShippingMessageTone("error")
+          if (
+            errorMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE ||
+            errorMessage.startsWith("El código postal")
+          ) {
+            setDestinationSelectionStatus("unavailable")
+          }
           setShippingMessage(
             requestTimedOut
               ? "La cotización tardó demasiado. Intentá nuevamente."
-              : error instanceof Error && error.message !== "QUOTE_FAILED"
-                ? error.message
+              : errorMessage !== "QUOTE_FAILED"
+                ? errorMessage
                 : "No pudimos calcular el envío. Intentá nuevamente.",
           )
-        })
-        .finally(() => {
-          if (requestTimeout) clearTimeout(requestTimeout)
-          if (!disposed) setShippingLoading(false)
-        })
-    }, 450)
+      })
+      .finally(() => {
+        if (requestTimeout) clearTimeout(requestTimeout)
+        if (!disposed) setShippingLoading(false)
+      })
 
     return () => {
       disposed = true
-      clearTimeout(timer)
       if (requestTimeout) clearTimeout(requestTimeout)
       controller.abort()
     }
-  }, [shippingQuotePayload])
+  }, [destinationSelectionStatus, shippingQuotePayload])
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement>
@@ -942,10 +1248,17 @@ export default function CheckoutPage() {
       setInvalidField(null)
     }
 
+    setLocalityOptions([])
+    setLocalityLoadError("")
+    setPostalCodeOptions([])
+    setDestinationSelectionStatus(normalizedValue ? "loading" : "incomplete")
+
     setFormData((prev) => {
       const next = {
         ...prev,
         provincia: normalizedValue,
+        localidad: "",
+        cpDestino: "",
       }
 
       next.direccion = formatDeliveryAddress({
@@ -965,7 +1278,12 @@ export default function CheckoutPage() {
   const isRecipientStepValid =
     isValidCheckoutForm(formData)
   const isShippingStepValid =
-    Boolean(selectedShippingOption)
+    Boolean(
+      selectedShippingOption &&
+        shippingQuoteCurrent &&
+        !shippingLoading &&
+        destinationSelectionStatus === "ready",
+    )
   const isFormValid = Boolean(
     isRecipientStepValid &&
       isShippingStepValid
@@ -1159,6 +1477,53 @@ export default function CheckoutPage() {
       submissionInFlightRef.current = false
       setIsProcessing(false)
     }
+  }
+
+  const handleLocalityChange = (value: string) => {
+    const normalizedValue = normalizeArgentineLocality(value)
+    hasEditedCheckoutFormRef.current = true
+
+    if (invalidField === "localidad") setInvalidField(null)
+    setPostalCodeOptions([])
+    setDestinationSelectionStatus(normalizedValue ? "loading" : "incomplete")
+
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        localidad: normalizedValue,
+        cpDestino: "",
+      }
+      next.direccion = formatDeliveryAddress({
+        street: next.calle,
+        streetNumber: next.numero,
+        floor: next.piso,
+        apartment: next.departamento,
+        locality: next.localidad,
+        region: next.provincia,
+        postalCode: next.cpDestino,
+      })
+      return next
+    })
+  }
+
+  const handlePostalCodeChange = (value: string) => {
+    hasEditedCheckoutFormRef.current = true
+    if (invalidField === "cpDestino") setInvalidField(null)
+    setDestinationSelectionStatus(/^\d{4}$/.test(value) ? "ready" : "incomplete")
+
+    setFormData((prev) => {
+      const next = { ...prev, cpDestino: value }
+      next.direccion = formatDeliveryAddress({
+        street: next.calle,
+        streetNumber: next.numero,
+        floor: next.piso,
+        apartment: next.departamento,
+        locality: next.localidad,
+        region: next.provincia,
+        postalCode: next.cpDestino,
+      })
+      return next
+    })
   }
   if (!mounted || isLoading || !isCartReady) {
     return null
@@ -1492,10 +1857,14 @@ export default function CheckoutPage() {
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Provincia *
                           </Label>
-                          <ProvinceSelect
+                          <GeographicSelect
+                            id="provincia"
                             value={formData.provincia}
+                            options={provinceSelectOptions}
                             onChange={handleProvinceChange}
-                            appearance="checkout"
+                            placeholder="Seleccioná una provincia"
+                            ariaLabel="Seleccionar provincia"
+                            invalid={invalidField === "provincia"}
                           />
                           {invalidField === "provincia" && (
                             <p className="text-xs font-semibold text-red-300">
@@ -1508,14 +1877,51 @@ export default function CheckoutPage() {
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Localidad *
                           </Label>
-                          <Input id="localidad" name="localidad" className={getCheckoutInputClassName("localidad")} value={formData.localidad} onChange={handleInputChange} maxLength={60} required />
+                          <GeographicSelect
+                            id="localidad"
+                            value={formData.localidad}
+                            options={localitySelectOptions}
+                            onChange={handleLocalityChange}
+                            placeholder="Seleccioná una localidad"
+                            loading={localitiesLoading}
+                            loadingLabel="Cargando localidades…"
+                            disabled={!formData.provincia || localitiesLoading}
+                            searchable
+                            emptyLabel="No hay localidades disponibles para esta provincia."
+                            errorMessage={localityLoadError}
+                            ariaLabel="Seleccionar localidad"
+                            invalid={invalidField === "localidad"}
+                          />
                         </div>
                         <div className="space-y-0.5">
                           <Label htmlFor="cpDestino" className="text-white/75">
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Código postal *
                           </Label>
-                          <Input id="cpDestino" name="cpDestino" inputMode="numeric" className={getCheckoutInputClassName("cpDestino")} value={formData.cpDestino} onChange={handleInputChange} maxLength={4} required />
+                          <GeographicSelect
+                            id="cpDestino"
+                            value={formData.cpDestino}
+                            options={postalCodeSelectOptions}
+                            onChange={handlePostalCodeChange}
+                            placeholder={
+                              formData.localidad &&
+                              !postalCodesLoading &&
+                              postalCodeOptions.length === 0
+                                ? "Sin códigos postales disponibles"
+                                : "Seleccioná un código postal"
+                            }
+                            loading={postalCodesLoading}
+                            loadingLabel="Cargando códigos postales…"
+                            disabled={
+                              !formData.localidad ||
+                              postalCodesLoading ||
+                              postalCodeOptions.length === 0
+                            }
+                            locked={postalCodeOptions.length === 1}
+                            compact
+                            ariaLabel="Seleccionar código postal"
+                            invalid={invalidField === "cpDestino"}
+                          />
                         </div>
                         <div className="space-y-0.5 sm:col-span-2">
                           <Label htmlFor="referencias" className="text-white/75">Referencias opcionales</Label>
@@ -1540,11 +1946,23 @@ export default function CheckoutPage() {
                         "shadow-[0_0_0_2px_rgba(248,113,113,0.12)]"
                     )}
                   >
-                    {shippingLoading && (
-                      <div className="flex items-center gap-2 rounded-xl border border-beyonix-blue-light/16 bg-[#10151C] px-4 py-3 text-sm font-semibold text-white/72">
-                        <Loader2 className="size-4 animate-spin text-beyonix-sky" />
-                        Calculando envío...
-                      </div>
+                    {shippingLoading && shippingOptions.length === 0 && (
+                      <p
+                        role="status"
+                        className="flex items-center gap-2 text-xs font-semibold text-white/55"
+                      >
+                        <Loader2 className="size-3.5 animate-spin text-beyonix-sky" />
+                        Consultando tarifa Andreani…
+                      </p>
+                    )}
+                    {shippingLoading && shippingOptions.length > 0 && (
+                      <p
+                        role="status"
+                        className="flex items-center gap-2 text-xs font-semibold text-white/55"
+                      >
+                        <Loader2 className="size-3.5 animate-spin text-beyonix-sky" />
+                        Actualizando tarifa…
+                      </p>
                     )}
                     {shippingOptions.map((option) => {
                       const selected =
@@ -1994,8 +2412,11 @@ export default function CheckoutPage() {
                         : "Envío"}
                   </span>
                   <span className={
-                    customerCreditIncludesShippingBenefit
-                      ? "font-semibold text-emerald-400"
+                    !selectedShippingOption &&
+                      shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
+                      ? "font-semibold text-red-400"
+                      : customerCreditIncludesShippingBenefit
+                        ? "font-semibold text-emerald-400"
                       : !selectedShippingOption
                       ? "text-white/45"
                       : totals.shipping === 0 &&
@@ -2003,11 +2424,12 @@ export default function CheckoutPage() {
                         ? "font-semibold text-emerald-400"
                         : "text-white"
                   }>
-                    {shippingLoading
-                      ? "Calculando..."
-                      : selectedShippingOption?.quoteStatus === "pending"
-                        ? "A confirmar"
-                        : customerCreditIncludesShippingBenefit
+                    {selectedShippingOption?.quoteStatus === "pending"
+                      ? "A confirmar"
+                      : !selectedShippingOption &&
+                          shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
+                        ? "No disponible"
+                      : customerCreditIncludesShippingBenefit
                       ? "GRATIS"
                       : !selectedShippingOption
                       ? "A definir"

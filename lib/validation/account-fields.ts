@@ -1,4 +1,4 @@
-import { hasBlockedWords, validateUsername } from "@/lib/validation/content-filter"
+import { hasBlockedWords, validateUsername } from "./content-filter.ts"
 
 export const ARGENTINA_PROVINCES = [
   "Buenos Aires",
@@ -40,6 +40,38 @@ export const FIELD_LIMITS = {
   password: 20,
   loginIdentifier: 120,
   references: 80,
+}
+
+export function normalizeArgentineLocality(value: string) {
+  return value
+    .normalize("NFC")
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLocaleUpperCase("es-AR")
+}
+
+export function normalizeArgentineLocationKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("es-AR")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+}
+
+export function normalizeArgentineProvinceKey(value: string) {
+  const key = normalizeArgentineLocationKey(value)
+
+  if (
+    key === "CABA" ||
+    key === "CAPITALFEDERAL" ||
+    key === "CIUDADAUTONOMADEBUENOSAIRES"
+  ) {
+    return "CABA"
+  }
+
+  if (key.startsWith("TIERRADELFUEGO")) return "TIERRADELFUEGO"
+
+  return key
 }
 
 function isArgentinaProvince(value: string) {

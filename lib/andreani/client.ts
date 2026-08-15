@@ -71,6 +71,7 @@ export interface AndreaniClientOptions {
   fetch?: typeof fetch
   timeoutMs?: number
   now?: () => number
+  productionAccess?: "tariffs-only"
 }
 
 interface RequestOptions {
@@ -162,10 +163,11 @@ function resolveBaseUrl(rawValue: string, environment: AndreaniEnvironment) {
 
 export function resolveAndreaniConfig(
   env: NodeJS.ProcessEnv = process.env,
+  productionAccess?: AndreaniClientOptions["productionAccess"],
 ): AndreaniResolvedConfig {
   const environment = parseEnvironment(env)
 
-  if (environment === "PROD") {
+  if (environment === "PROD" && productionAccess !== "tariffs-only") {
     throw new AndreaniError(
       "PRODUCTION_BLOCKED",
       "El acceso a Andreani PROD está bloqueado durante esta etapa.",
@@ -179,15 +181,16 @@ export function resolveAndreaniConfig(
   if (missingVariables.length > 0) {
     throw new AndreaniError(
       "CONFIGURATION_ERROR",
-      "La configuración de Andreani QA está incompleta.",
+      `La configuración de Andreani ${environment} está incompleta.`,
     )
   }
 
+  const prefix = `ANDREANI_${environment}`
   return {
     environment,
-    baseUrl: resolveBaseUrl(nonEmpty(env.ANDREANI_QA_API_URL), environment),
-    username: secretValue(env.ANDREANI_QA_USERNAME),
-    password: secretValue(env.ANDREANI_QA_PASSWORD),
+    baseUrl: resolveBaseUrl(nonEmpty(env[`${prefix}_API_URL`]), environment),
+    username: secretValue(env[`${prefix}_USERNAME`]),
+    password: secretValue(env[`${prefix}_PASSWORD`]),
   }
 }
 
@@ -380,8 +383,14 @@ function requiredResponseNumber(
   key: string,
   message: string,
 ) {
-  const value = record[key]
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  const rawValue = record[key]
+  const value =
+    typeof rawValue === "number"
+      ? rawValue
+      : typeof rawValue === "string" && /^-?\d+(?:\.\d+)?$/.test(rawValue.trim())
+        ? Number(rawValue)
+        : Number.NaN
+  if (!Number.isFinite(value)) {
     throw new AndreaniError("INVALID_RESPONSE", message)
   }
   return value
@@ -1196,9 +1205,11 @@ export class AndreaniClient {
   private readonly timeoutMs: number
   private readonly now: () => number
   private readonly developmentLogs: boolean
+  private readonly productionAccess?: AndreaniClientOptions["productionAccess"]
 
   constructor(options: AndreaniClientOptions = {}) {
-    this.config = resolveAndreaniConfig(options.env)
+    this.productionAccess = options.productionAccess
+    this.config = resolveAndreaniConfig(options.env, this.productionAccess)
     this.fetchImpl = options.fetch ?? fetch
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.now = options.now ?? Date.now
@@ -1211,6 +1222,19 @@ export class AndreaniClient {
 
   private async performFetch(path: string, options: RequestOptions = {}) {
     const method = options.method ?? "GET"
+    const pathname = path.split("?")[0]
+    const productionRequestAllowed =
+      this.productionAccess === "tariffs-only" &&
+      method === "GET" &&
+      (pathname === "/login" || pathname === "/v1/tarifas")
+
+    if (this.config.environment === "PROD" && !productionRequestAllowed) {
+      throw new AndreaniError(
+        "PRODUCTION_BLOCKED",
+        "Andreani PROD solo admite autenticación y consulta de tarifas.",
+      )
+    }
+
     const headers = new Headers(options.headers)
     if (!headers.has("Accept") && options.responseType !== "binary") {
       headers.set("Accept", "application/json")
@@ -1587,7 +1611,9 @@ export class AndreaniClient {
     if (codigoSucursalOrigen) {
       query.set("sucursalOrigen", codigoSucursalOrigen)
     }
-    const { payload } = await this.performFetch(`/v1/tarifas?${query}`)
+    const { payload } = await this.performFetch(`/v1/tarifas?${query}`, {
+      authenticated: true,
+    })
     return parseTariffResponse(payload)
   }
 
