@@ -37,6 +37,10 @@ import {
   uniqueAutocompleteValues,
   withoutTrailingProductColor,
 } from "@/lib/admin/product-name-autocomplete"
+import {
+  getOrCreateIdempotencyAttempt,
+  type IdempotencyAttempt,
+} from "@/lib/business/idempotency-attempt"
 import { formatPrice } from "../productos/helpers"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 
@@ -489,6 +493,8 @@ function ModernSelect({
 
 export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const productFormRef = useRef<HTMLElement>(null)
+  const productCreateAttemptRef = useRef<IdempotencyAttempt | null>(null)
+  const expenseCreateAttemptRef = useRef<IdempotencyAttempt | null>(null)
   const [data, setData] = useState<BusinessCostsData | null>(null)
   const [mode, setMode] = useState<CostMode>("product")
   const [loading, setLoading] = useState(true)
@@ -824,6 +830,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   ) ?? 0
 
   const resetProductForm = () => {
+    productCreateAttemptRef.current = null
     setEditingProductId(null)
     setArticle("")
     setCustomArticleName("")
@@ -958,7 +965,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       if (editingProductId) {
         await updateBusinessCost(payload)
       } else {
-        await createBusinessCost(payload)
+        const attempt = getOrCreateIdempotencyAttempt(
+          productCreateAttemptRef.current,
+          payload,
+        )
+        productCreateAttemptRef.current = attempt
+        await createBusinessCost(payload, attempt.key)
+        productCreateAttemptRef.current = null
       }
       const successMessage = editingProductId
         ? "Compra actualizada correctamente."
@@ -1017,7 +1030,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       setSaving(true)
       setError("")
       setMessage("")
-      await createBusinessCost({
+      const payload = {
         kind: "expense",
         expenseDate,
         category: expenseCategory,
@@ -1041,7 +1054,14 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         documentNumber: expenseDocumentNumber,
         taxDeductible: expenseTaxDeductible,
         notes: expenseNotes,
-      })
+      }
+      const attempt = getOrCreateIdempotencyAttempt(
+        expenseCreateAttemptRef.current,
+        payload,
+      )
+      expenseCreateAttemptRef.current = attempt
+      await createBusinessCost(payload, attempt.key)
+      expenseCreateAttemptRef.current = null
       setExpenseDescription("")
       setExpenseCategoryDetail("")
       setExpenseRecipient("")

@@ -111,23 +111,28 @@ export async function getBusinessCosts() {
   return (await request("/api/admin/costs")) as unknown as BusinessCostsData
 }
 
-export async function createBusinessCost(payload: Record<string, unknown>) {
-  const requestKey = JSON.stringify(payload)
-  const pending = pendingCreates.get(requestKey)
+export async function createBusinessCost(
+  payload: Record<string, unknown>,
+  idempotencyKey: string,
+) {
+  if (!/^[A-Za-z0-9._:-]{8,240}$/.test(idempotencyKey)) {
+    throw new Error("La operación no tiene una clave de idempotencia válida.")
+  }
+
+  const pending = pendingCreates.get(idempotencyKey)
   if (pending) return pending
 
-  const idempotencyKey = crypto.randomUUID()
   const operation = request("/api/admin/costs", {
     method: "POST",
     body: JSON.stringify(payload),
     headers: { "Idempotency-Key": idempotencyKey },
   })
-  pendingCreates.set(requestKey, operation)
+  pendingCreates.set(idempotencyKey, operation)
   try {
     return await operation
   } finally {
-    if (pendingCreates.get(requestKey) === operation) {
-      pendingCreates.delete(requestKey)
+    if (pendingCreates.get(idempotencyKey) === operation) {
+      pendingCreates.delete(idempotencyKey)
     }
   }
 }

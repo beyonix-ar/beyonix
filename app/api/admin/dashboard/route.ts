@@ -7,6 +7,11 @@ import {
   type StandaloneCostRow,
 } from "@/lib/business/standalone-cost-items"
 import {
+  calculateExternalSaleProfitability,
+  getExternalSaleMerchandiseCost,
+  resolveExternalSaleUnitCost,
+} from "@/lib/business/external-sale-profitability"
+import {
   getMercadoLibreCostableUnits,
   getMercadoLibreCostMapping,
   getMercadoLibreRefundAmount,
@@ -701,7 +706,7 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("external_sales")
-              .select("id, sale_date, product_name, sku, quantity, unit_cost, gross_amount, fee_amount, shipping_amount, other_expense_amount, net_amount, payment_method, reference")
+              .select("id, sale_date, product_id, variant_id, product_name, sku, quantity, unit_cost, gross_amount, fee_amount, shipping_amount, other_expense_amount, net_amount, payment_method, reference")
               .order("id", { ascending: true })
               .range(from, to),
         )
@@ -967,13 +972,39 @@ export async function GET(request: Request) {
   })
 
   let externalUnits = 0
+  const externalMerchandiseCosts = new Map<string, number | null>()
   externalRows.forEach((row) => {
     const quantity = Math.max(Number(row.quantity ?? 0), 0)
+    const saleDate = String(row.sale_date ?? "")
+    const productIdValue = Number(row.product_id)
+    const productId = Number.isInteger(productIdValue) && productIdValue > 0
+      ? productIdValue
+      : null
+    const variantIdValue = Number(row.variant_id)
+    const variantId = Number.isInteger(variantIdValue) && variantIdValue > 0
+      ? variantIdValue
+      : null
+    // El costo se recalcula contra el libro de compras en la fecha real de la
+    // venta, igual que web y ML, para no depender de un unit_cost tipeado a
+    // mano que puede quedar desactualizado respecto de compras posteriores.
+    // Sólo se usa el valor cargado a mano cuando la venta no está catalogada.
+    const historicalUnitCost =
+      productId && saleDate
+        ? getUnitCost(costLedgers, productId, variantId, saleDate)
+        : null
+    const unitCost = resolveExternalSaleUnitCost({
+      productId,
+      historicalUnitCost,
+      manualUnitCost: row.unit_cost,
+    })
+    const merchandiseCost = getExternalSaleMerchandiseCost(unitCost, quantity)
+
     externalUnits += quantity
-    if (row.unit_cost != null) {
+    if (merchandiseCost != null) {
       coveredUnits += quantity
-      costOfGoodsSold += Number(row.unit_cost) * quantity
+      costOfGoodsSold += merchandiseCost
     }
+    externalMerchandiseCosts.set(String(row.id), merchandiseCost)
   })
 
   const totalCostableUnits =
@@ -1398,10 +1429,18 @@ export async function GET(request: Request) {
         ...externalRows.map((row) => {
           const quantity = Number(row.quantity ?? 0)
           const grossAmount = Number(row.gross_amount ?? 0)
-          const costAmount = Number(row.unit_cost ?? 0) * quantity
-          const netAmount = Number(row.net_amount ?? grossAmount - costAmount)
-          const profitAmount =
-            row.net_amount != null ? netAmount : grossAmount - costAmount
+          const feeAmount = Number(row.fee_amount ?? 0)
+          const shippingAmount = Number(row.shipping_amount ?? 0)
+          const otherExpenseAmount = Number(row.other_expense_amount ?? 0)
+          const costAmount =
+            externalMerchandiseCosts.get(String(row.id)) ?? null
+          const profitability = calculateExternalSaleProfitability({
+            grossAmount,
+            feeAmount,
+            shippingAmount,
+            otherExpenseAmount,
+            merchandiseCost: costAmount,
+          })
 
           return {
             id: `external-${String(row.id)}`,
@@ -1414,9 +1453,8 @@ export async function GET(request: Request) {
             quantity,
             grossAmount,
             costAmount,
-            profitAmount,
-            marginPercent:
-              grossAmount > 0 ? (profitAmount / grossAmount) * 100 : null,
+            profitAmount: profitability.profitAmount,
+            marginPercent: profitability.marginPercent,
             orderId: row.reference ? String(row.reference) : null,
           }
         }),
