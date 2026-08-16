@@ -12,10 +12,16 @@ import {
 } from "@/lib/admin/admin-sensitive-visuals"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
+import type { SupabasePedido } from "@/lib/supabase/types"
 import {
   getMercadoLibrePendingReturnUnits,
   isMercadoLibreReturn,
 } from "@/lib/mercadolibre/returns"
+import {
+  getAdminNewOrderEventAt,
+  getAdminNewOrderEventKey,
+  isAdminOrderVisible,
+} from "@/lib/orders/admin-order-visibility"
 
 export const ADMIN_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:admin-notifications-changed"
@@ -212,8 +218,8 @@ async function getOrderLastSeenAt(adminId: string) {
   return typeof data?.last_seen_at === "string" ? data.last_seen_at : null
 }
 
-function isOrderVisible(order: { id?: number | null }) {
-  return typeof order.id === "number" && Number.isFinite(order.id)
+function isOrderVisible(order: SupabasePedido) {
+  return isAdminOrderVisible(order)
 }
 
 function isOrderPaidForInvoice(order: {
@@ -965,14 +971,19 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
 
     for (const order of orders) {
       const orderId = Number(order.id)
-      const createdAt = String(order.created_at)
+      const newOrderEventAt = getAdminNewOrderEventAt(order)
 
-      if (!orderLastSeenAt || getTime(createdAt) > getTime(orderLastSeenAt)) {
+      if (
+        newOrderEventAt &&
+        (!orderLastSeenAt ||
+          getTime(newOrderEventAt) > getTime(orderLastSeenAt))
+      ) {
+        const eventKey = getAdminNewOrderEventKey(orderId)
         notifications.push({
-          id: `order:${orderId}`,
+          id: eventKey,
           type: "order",
-          eventKey: `order:${orderId}`,
-          eventAt: createdAt,
+          eventKey,
+          eventAt: newOrderEventAt,
           title: "Pedido nuevo",
           body: `Ingresó el pedido ${formatOrderId(orderId)}.`,
           actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}`,

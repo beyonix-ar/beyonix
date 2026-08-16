@@ -239,6 +239,7 @@ export interface SupabasePedido {
   mercadopago_preference_claim_token?: string | null
   mercadopago_preference_claimed_at?: string | null
   mercadopago_preference_generation?: number
+  admin_visible_at?: string | null
   transfer_alias?: string | null
   transfer_discount_percent?: number | null
   transfer_discount_amount?: number | null

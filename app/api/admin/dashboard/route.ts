@@ -16,6 +16,7 @@ import type {
   SupabasePedidoItem,
   SupabaseProducto,
 } from "@/lib/supabase/types"
+import { isAdminOrderVisible } from "@/lib/orders/admin-order-visibility"
 
 const DISPATCHED_STATES = [
   "enviado",
@@ -384,6 +385,7 @@ const ORDER_SELECT = `
   payment_proof_file_name,
   payment_proof_uploaded_at,
   paid_at,
+  admin_visible_at,
   tracking_number,
   tracking_url,
   andreani_tracking,
@@ -512,7 +514,10 @@ export async function GET(request: Request) {
     ),
     safeDashboardQuery(
       "ordenes_total_count",
-      auth.admin.from("ordenes").select("id", { count: "exact", head: true }),
+      auth.admin
+        .from("ordenes")
+        .select("id", { count: "exact", head: true })
+        .not("admin_visible_at", "is", null),
       EMPTY_COUNT_RESULT
     ),
     safeDashboardQuery(
@@ -520,7 +525,8 @@ export async function GET(request: Request) {
       auth.admin
         .from("ordenes")
         .select(ORDER_SELECT)
-        .order("created_at", { ascending: false })
+        .not("admin_visible_at", "is", null)
+        .order("admin_visible_at", { ascending: false })
         .limit(8),
       EMPTY_ROWS_RESULT
     ),
@@ -529,6 +535,7 @@ export async function GET(request: Request) {
       auth.admin
         .from("ordenes")
         .select("id", { count: "exact", head: true })
+        .not("admin_visible_at", "is", null)
         .eq("estado", "pendiente"),
       EMPTY_COUNT_RESULT
     ),
@@ -563,6 +570,7 @@ export async function GET(request: Request) {
       auth.admin
         .from("ordenes")
         .select("id", { count: "exact", head: true })
+        .not("admin_visible_at", "is", null)
         .eq("estado", "cancelado"),
       EMPTY_COUNT_RESULT
     ),
@@ -624,7 +632,8 @@ export async function GET(request: Request) {
       auth.admin
         .from("ordenes")
         .select(ORDER_SELECT)
-        .order("created_at", { ascending: false })
+        .not("admin_visible_at", "is", null)
+        .order("admin_visible_at", { ascending: false })
         .limit(150),
       EMPTY_ROWS_RESULT
     ),
@@ -840,7 +849,9 @@ export async function GET(request: Request) {
     ],
   ] = await Promise.all([primaryDataPromise, financialDataPromise])
 
-  const recentOrders = (recentOrdersResult.data ?? []) as SupabasePedido[]
+  const recentOrders = (
+    (recentOrdersResult.data ?? []) as SupabasePedido[]
+  ).filter(isAdminOrderVisible)
   const pendingDispatchOrders = (pendingDispatchResult.data ?? []) as SupabasePedido[]
   const pendingInvoiceOrders = (pendingInvoiceResult.data ?? []) as SupabasePedido[]
   const products = (searchProductsResult.data ?? []) as unknown as SupabaseProducto[]
@@ -1425,7 +1436,7 @@ export async function GET(request: Request) {
         : `Orden #${order.id}`,
       meta: getPaymentMethodLabel(order),
       secondary: `Orden #${order.id}`,
-      created_at: order.paid_at || order.created_at,
+      created_at: order.admin_visible_at || order.paid_at || order.created_at,
     }
   })
   const recentMercadoLibreSales: RecentActivity[] = mlRows
@@ -1449,7 +1460,7 @@ export async function GET(request: Request) {
       title: "Pago confirmado",
       detail: `Orden #${order.id}`,
       meta: `${getPaymentMethodLabel(order)} aprobado`,
-      created_at: order.paid_at || order.created_at,
+      created_at: order.admin_visible_at || order.paid_at || order.created_at,
     }))
   const recentActivity: RecentActivity[] = [
     ...recentWebSales,
@@ -1461,7 +1472,7 @@ export async function GET(request: Request) {
       title: "Pedido listo para despacho",
       detail: `Orden #${order.id}`,
       meta: getOrderCustomerLabel(order),
-      created_at: order.paid_at || order.created_at,
+      created_at: order.admin_visible_at || order.paid_at || order.created_at,
     })),
     ...recentOrders
       .filter((order) => !isPaidOrder(order))
@@ -1472,7 +1483,7 @@ export async function GET(request: Request) {
         title: "Cambio de estado de pedido",
         detail: `Orden #${order.id}`,
         meta: `${getOrderCustomerLabel(order)} · ${order.estado}`,
-        created_at: order.created_at,
+        created_at: order.admin_visible_at || order.created_at,
       })),
     ...recentOrders.filter((order) => PAYMENT_REVIEW_STATES.has(order.payment_status ?? "")).slice(0, 5).map((order) => ({
       id: `pago-${order.id}`,

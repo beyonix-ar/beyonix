@@ -7,6 +7,11 @@ import {
 } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
+import {
+  getAdminNewOrderEventAt,
+  isAdminOrderVisible,
+  type AdminOrderVisibilityRow,
+} from "@/lib/orders/admin-order-visibility"
 
 export const ORDER_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:order-notifications-changed"
@@ -125,7 +130,7 @@ function getTime(value?: string | null) {
 
 export function getOrderAttentionAt(order: SupabasePedido) {
   const dates = [
-    order.created_at,
+    getAdminNewOrderEventAt(order),
     order.return_requested_at,
     order.payment_proof_uploaded_at,
     order.cancellation_requested_at,
@@ -195,13 +200,8 @@ export function hasOrderAttentionAfter(
   return getTime(attentionAt) > getTime(lastSeenAt)
 }
 
-function isVisibleAdminOrderNotification(order: {
-  id?: number
-  payment_method_id?: string | null
-  payment_id?: string | null
-  payment_status?: string | null
-}) {
-  return typeof order.id === "number" && Number.isFinite(order.id)
+function isVisibleAdminOrderNotification(order: AdminOrderVisibilityRow) {
+  return isAdminOrderVisible(order)
 }
 
 export type AdminOrderNotificationTone = "order" | "message" | "issue" | "invoice"
@@ -243,8 +243,9 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
     const { data: orders, error } = await supabase
       .from("ordenes")
       .select(
-        "id, created_at, return_requested_at, cancellation_requested_at, refund_pending_at, refund_uploaded_at, refunded_at, estado, total, payment_method_id, payment_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_confirmed_amount, paid_at, financial_status, invoice_status"
+        "id, created_at, admin_visible_at, return_requested_at, cancellation_requested_at, refund_pending_at, refund_uploaded_at, refunded_at, estado, total, payment_method_id, payment_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_confirmed_amount, payment_confirmed_at, paid_at, financial_status, invoice_status"
       )
+      .not("admin_visible_at", "is", null)
 
     if (error) {
       console.error(
@@ -263,7 +264,10 @@ export async function getNewOrderNotificationSummary(): Promise<AdminOrderNotifi
       (orders ?? [])
         .filter(isVisibleAdminOrderNotification)
         .filter((order) =>
-          isOrderNewerThanLastSeen(order.created_at, view.last_seen_at)
+          isOrderNewerThanLastSeen(
+            getAdminNewOrderEventAt(order),
+            view.last_seen_at,
+          )
         )
         .map((order) => order.id)
     )

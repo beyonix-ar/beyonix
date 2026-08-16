@@ -32,10 +32,14 @@ export async function GET(request: Request) {
   const notificationColumns = [
     "id",
     "created_at",
+    "admin_visible_at",
     "estado",
     "financial_status",
+    "payment_method_id",
+    "payment_id",
     "payment_status",
     "paid_at",
+    "payment_confirmed_at",
     "payment_confirmed_amount",
     "total",
     "payment_proof_url",
@@ -57,14 +61,19 @@ export async function GET(request: Request) {
     .select(notificationView ? notificationColumns : "*", {
       count: notificationView ? undefined : "exact",
     })
-    .order("created_at", { ascending: false })
 
   if (notificationView) {
-    ordersQuery = ordersQuery.limit(500)
+    ordersQuery = ordersQuery
+      .not("admin_visible_at", "is", null)
+      .order("admin_visible_at", { ascending: false })
+      .limit(500)
   } else if (Number.isInteger(orderId) && orderId > 0) {
     ordersQuery = ordersQuery.eq("id", orderId)
   } else {
-    ordersQuery = ordersQuery.range(offset, offset + limit - 1)
+    ordersQuery = ordersQuery
+      .not("admin_visible_at", "is", null)
+      .order("admin_visible_at", { ascending: false })
+      .range(offset, offset + limit - 1)
   }
 
   const { data: orderRows, error: ordersError, count } = await ordersQuery

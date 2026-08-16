@@ -71,6 +71,10 @@ import {
   calculatePartialLineAmount,
   roundCreditMoney,
 } from "@/lib/orders/credit-note-calculations"
+import {
+  getAdminNewOrderEventAt,
+  isAdminOrderVisible,
+} from "@/lib/orders/admin-order-visibility"
 import { cn } from "@/lib/utils"
 import type {
   OrderClaimResolution,
@@ -460,7 +464,7 @@ function needsShippingReminder(pedido: SupabasePedido) {
 }
 
 function isVisibleAdminOrder(pedido: SupabasePedido) {
-  return Number.isFinite(pedido.id)
+  return isAdminOrderVisible(pedido)
 }
 
 function getPaymentStatusLabel(status?: string | null) {
@@ -1232,7 +1236,10 @@ function orderMatchesNotificationTone(
   if (tone === "invoice") return needsInvoiceReminder(pedido)
   if (tone === "shipping") return needsShippingReminder(pedido)
 
-  return isOrderNewerThanLastSeen(pedido.created_at, lastSeenAt)
+  return isOrderNewerThanLastSeen(
+    getAdminNewOrderEventAt(pedido),
+    lastSeenAt,
+  )
 }
 
 async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
@@ -6991,7 +6998,10 @@ export function AdminPedidos({
               .filter(
                 (pedido) =>
                   isVisibleAdminOrder(pedido) &&
-                  (isOrderNewerThanLastSeen(pedido.created_at, lastSeenAt) ||
+                  (isOrderNewerThanLastSeen(
+                    getAdminNewOrderEventAt(pedido),
+                    lastSeenAt,
+                  ) ||
                     orderMatchesNotificationTone(pedido, "payment", lastSeenAt) ||
                     orderMatchesNotificationTone(pedido, "invoice", lastSeenAt) ||
                     orderMatchesNotificationTone(pedido, "shipping", lastSeenAt) ||

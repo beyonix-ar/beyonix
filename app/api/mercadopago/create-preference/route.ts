@@ -331,6 +331,7 @@ export async function POST(request: Request) {
       mercadopago_preference_claim_token: newPreferenceClaimToken,
       mercadopago_preference_claimed_at: new Date().toISOString(),
       mercadopago_preference_generation: 1,
+      admin_visible_at: null,
       payment_method_id: "mercadopago",
       payment_status: "pending_checkout",
       envio_proveedor: shipping.shipping_provider,

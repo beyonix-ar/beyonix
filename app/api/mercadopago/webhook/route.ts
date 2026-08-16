@@ -190,17 +190,19 @@ async function handleWebhook(request: Request) {
       orderRow,
       payment,
       async (confirmedAmount) => {
+        const confirmedAt =
+          payment.date_approved ?? new Date().toISOString()
         const { data: updatedOrders, error: updateError } = await supabase
           .from("ordenes")
           .update({
             ...paymentPayload,
-            paid_at: payment.date_approved ?? new Date().toISOString(),
+            paid_at: confirmedAt,
             estado: "pagado",
             cancelled_at: null,
             financial_status: "payment_confirmed",
-            payment_confirmed_at:
-              payment.date_approved ?? new Date().toISOString(),
+            payment_confirmed_at: confirmedAt,
             payment_confirmed_amount: confirmedAmount,
+            admin_visible_at: confirmedAt,
           } as never)
           .eq("id", orderId)
           .eq("estado", orderRow.estado)
