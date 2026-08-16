@@ -144,8 +144,14 @@ export async function updateBusinessCost(payload: Record<string, unknown>) {
   })
 }
 
-export async function deleteBusinessCost(kind: "product" | "expense", id: string) {
-  return request(`/api/admin/costs?kind=${kind}&id=${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  })
+export async function deleteBusinessCost(
+  kind: "product" | "expense",
+  id: string,
+  options: { force?: boolean } = {},
+) {
+  const query = options.force ? "&force=true" : ""
+  return request(
+    `/api/admin/costs?kind=${kind}&id=${encodeURIComponent(id)}${query}`,
+    { method: "DELETE" },
+  )
 }

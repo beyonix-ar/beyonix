@@ -89,3 +89,72 @@ export function getMercadoLibreRefundAmount(
   const parsed = rawObject(rawObject(row.raw_data).parsed)
   return Math.abs(Math.min(number(parsed.cancellations_refunds), 0))
 }
+
+export interface MercadoLibreCostingSummaryRow {
+  net_amount: unknown
+  costing?: {
+    costable_units?: unknown
+    merchandise_cost?: number | null
+  } | null
+}
+
+export interface MercadoLibreCostingSummary {
+  totalCostableUnits: number
+  coveredUnits: number
+  merchandiseCost: number
+  /** true cuando el costo de mercadería ya se conoce para el 100% de las filas. */
+  exact: boolean
+  /** true cuando hay ganancia calculable pero todavía quedan filas sin costo. */
+  isPartial: boolean
+  /**
+   * Ganancia acumulada de las filas con costo histórico ya conocido
+   * (ingresos netos - costo de mercadería, ambos limitados a esas filas).
+   * null únicamente cuando ninguna fila tiene costo determinado todavía:
+   * las unidades pendientes nunca se computan con costo 0 ni invalidan
+   * la porción ya conocida.
+   */
+  profit: number | null
+}
+
+/**
+ * Resume la rentabilidad de ventas de Mercado Libre con la información
+ * disponible hasta el momento. Cada fila aporta su ganancia sólo si su
+ * costo histórico de mercadería ya se determinó (ver getHistoricalUnitCost /
+ * getStandaloneHistoricalUnitCost); las filas pendientes se cuentan pero no
+ * se mezclan en el cálculo. El resultado se recalcula solo apenas una fila
+ * antes pendiente pasa a tener `merchandise_cost` no nulo.
+ */
+export function summarizeMercadoLibreCosting(
+  rows: MercadoLibreCostingSummaryRow[],
+  costingError: boolean = false,
+): MercadoLibreCostingSummary {
+  let totalCostableUnits = 0
+  let coveredUnits = 0
+  let merchandiseCost = 0
+  let coveredRevenue = 0
+  let coveredRows = 0
+
+  rows.forEach((row) => {
+    const units = number(row.costing?.costable_units)
+    totalCostableUnits += units
+
+    if (row.costing?.merchandise_cost == null) return
+
+    coveredUnits += units
+    merchandiseCost += number(row.costing.merchandise_cost)
+    coveredRevenue += number(row.net_amount)
+    coveredRows += 1
+  })
+
+  const exact = !costingError && coveredRows === rows.length
+  const hasKnownCost = !costingError && coveredRows > 0
+
+  return {
+    totalCostableUnits,
+    coveredUnits,
+    merchandiseCost,
+    exact,
+    isPartial: hasKnownCost && !exact,
+    profit: hasKnownCost ? coveredRevenue - merchandiseCost : null,
+  }
+}

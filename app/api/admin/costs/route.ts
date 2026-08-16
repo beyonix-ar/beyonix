@@ -597,9 +597,42 @@ export async function DELETE(request: Request) {
   const kind = url.searchParams.get("kind") as CostKind | null
   const id = url.searchParams.get("id")
   const table = kind === "product" ? "product_cost_entries" : null
+  const force = url.searchParams.get("force") === "true"
 
   if ((!table && kind !== "expense") || !id) {
     return Response.json({ error: "Movimiento inválido." }, { status: 400 })
+  }
+
+  if (force && auth.profile.rol !== "super_admin") {
+    return Response.json(
+      { error: "Solamente un SUPER ADMIN puede forzar la eliminación de una compra." },
+      { status: 403 },
+    )
+  }
+
+  if (force && kind === "product") {
+    const { error: forceError } = await auth.admin.rpc(
+      "force_delete_purchase_super_admin",
+      {
+        p_purchase_id: id,
+        p_actor_id: auth.user.id,
+      },
+    )
+    if (forceError) {
+      const missingMigration =
+        /force_delete_purchase_super_admin|schema cache|PGRST202/i.test(
+          forceError.message,
+        )
+      return Response.json(
+        {
+          error: missingMigration
+            ? "Falta aplicar la migración 20260817140000_fix_force_delete_article_name_and_purchase_delete.sql."
+            : forceError.message || "No se pudo eliminar definitivamente la compra.",
+        },
+        { status: missingMigration ? 503 : 409 },
+      )
+    }
+    return Response.json({ success: true })
   }
 
   if (kind === "expense") {

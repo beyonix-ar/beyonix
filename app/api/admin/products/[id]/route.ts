@@ -137,92 +137,46 @@ export async function DELETE(
     .eq("producto_id", productId)
 
   if (force) {
-    const unlinkOperations = [
-      auth.admin
-        .from("orden_items")
-        .update({ producto_id: null, variante_id: null })
-        .eq("producto_id", productId),
-      auth.admin
-        .from("resenas")
-        .update({ producto_id: null })
-        .eq("producto_id", productId),
-      auth.admin
-        .from("reviews")
-        .update({ product_id: null })
-        .eq("product_id", productId),
-    ]
-    for (const operation of unlinkOperations) {
-      const { error } = await operation
-      if (error) {
-        return Response.json(
-          {
-            error:
-              "No se pudieron desvincular todos los pedidos y comprobantes históricos.",
-          },
-          { status: 500 },
+    const { error: forceError } = await auth.admin.rpc(
+      "force_delete_product_super_admin",
+      {
+        p_product_id: productId,
+        p_actor_id: auth.user.id,
+      },
+    )
+
+    if (forceError) {
+      const missingMigration =
+        /force_delete_product_super_admin|schema cache|PGRST202/i.test(
+          forceError.message,
         )
-      }
+      return Response.json(
+        {
+          error: missingMigration
+            ? "Falta aplicar la migración 20260817100000_super_admin_force_delete.sql."
+            : forceError.message ||
+              "No se pudo eliminar definitivamente el producto.",
+        },
+        { status: missingMigration ? 503 : 409 },
+      )
     }
 
-    const purgeOperations = [
-      auth.admin
-        .from("inventory_return_movements")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("inventory_opening_balances")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("business_expenses")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("external_sales")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("mercadolibre_sales")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("product_cost_entries")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("product_favorites")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("producto_especificaciones")
-        .delete()
-        .eq("producto_id", productId),
-      auth.admin
-        .from("imagenes_producto")
-        .delete()
-        .eq("producto_id", productId),
-      auth.admin
-        .from("inventory_variant_allocations")
-        .delete()
-        .eq("product_id", productId),
-      auth.admin
-        .from("producto_variantes")
-        .delete()
-        .eq("producto_id", productId),
-    ]
-    for (const operation of purgeOperations) {
-      const { error } = await operation
-      if (error) {
-        return Response.json(
-          {
-            error:
-              error.message ||
-              "No se pudo purgar el historial de inventario.",
-          },
-          { status: 500 },
-        )
-      }
+    const paths = (images ?? [])
+      .map((image) =>
+        typeof image.url === "string"
+          ? image.url.split("/imagenes-productos/")[1]
+          : null,
+      )
+      .filter((path): path is string => Boolean(path))
+
+    if (paths.length > 0) {
+      await auth.admin.storage.from("imagenes-productos").remove(paths)
     }
+
+    return Response.json({
+      mode: "deleted",
+      message: `Se eliminó definitivamente “${product.nombre}”. Las compras, ventas y devoluciones asociadas se conservan desvinculadas para mantener la trazabilidad.`,
+    })
   }
 
   const { error: deleteError } = await auth.admin
@@ -245,21 +199,8 @@ export async function DELETE(
 
     return Response.json({
       mode: "deleted",
-      message: force
-        ? `Se eliminó definitivamente “${product.nombre}” y su historial de inventario.`
-        : `Se eliminó “${product.nombre}”.`,
+      message: `Se eliminó “${product.nombre}”.`,
     })
-  }
-
-  if (force) {
-    return Response.json(
-      {
-        error:
-          deleteError.message ||
-          "Persisten referencias que impiden la eliminación definitiva.",
-      },
-      { status: 409 },
-    )
   }
 
   if (deleteError.code !== "23503") {

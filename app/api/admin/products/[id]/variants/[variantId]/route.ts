@@ -6,6 +6,7 @@ import {
   type ProductLogisticsValues,
 } from "@/lib/shipping/logistics-validation"
 import { catalogSkuConflictMessage } from "@/lib/products/catalog-sku-conflict"
+import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
 
 function parseId(value: string) {
   const parsed = Number(value)
@@ -56,7 +57,6 @@ function variantMetadata(value: unknown) {
   const record = value as Record<string, unknown>
   const keys = Object.keys(record)
   const allowedKeys = new Set([
-    "nombre",
     "sku",
     "color_hex",
     "imagenes",
@@ -78,11 +78,6 @@ function variantMetadata(value: unknown) {
     orden?: number
   } & Partial<ProductLogisticsValues> = {}
 
-  if ("nombre" in record) {
-    const name = requiredText(record.nombre, 160)
-    if (!name) return null
-    payload.nombre = name
-  }
   if ("sku" in record) {
     if (record.sku != null && typeof record.sku !== "string") return null
     payload.sku = optionalText(record.sku ?? "", 120)
@@ -91,6 +86,9 @@ function variantMetadata(value: unknown) {
     const color = validColor(record.color_hex)
     if (!color) return null
     payload.color_hex = color
+    // producto_variantes.nombre no es editable: se deriva siempre del color
+    // que se está guardando, nunca de un valor enviado por el cliente.
+    payload.nombre = deriveVariantNameFromColor(color)
   }
   if ("imagenes" in record) {
     const images = imageUrls(record.imagenes)
@@ -219,7 +217,6 @@ export async function PATCH(
   }
 
   if (typeof body.activo !== "boolean") {
-    const name = requiredText(body.name, 160)
     const sku = optionalText(body.sku, 120)
     const color = validColor(body.color)
     const quantity = nonNegativeInteger(body.quantity)
@@ -238,12 +235,16 @@ export async function PATCH(
         { status: 400 },
       )
     }
-    if (!name || !color || quantity == null || !images) {
+    if (!color || quantity == null || !images) {
       return Response.json(
         { error: "Completá correctamente la variante y sus unidades." },
         { status: 400 },
       )
     }
+
+    // producto_variantes.nombre no es editable: se deriva siempre del color,
+    // nunca del valor que envíe el cliente.
+    const name = deriveVariantNameFromColor(color)
 
     const currentResult = await auth.admin
       .from("producto_variantes")
@@ -381,6 +382,61 @@ export async function DELETE(
       { error: "La variante indicada no es válida." },
       { status: 400 },
     )
+  }
+
+  const force = new URL(request.url).searchParams.get("force") === "true"
+  if (force && auth.profile.rol !== "super_admin") {
+    return Response.json(
+      { error: "Solamente un SUPER ADMIN puede eliminar el historial asociado." },
+      { status: 403 },
+    )
+  }
+
+  if (force) {
+    const existing = await auth.admin
+      .from("producto_variantes")
+      .select("id")
+      .eq("id", variantId)
+      .eq("producto_id", productId)
+      .maybeSingle()
+
+    if (existing.error) {
+      return Response.json(
+        { error: "No se pudo verificar la variante." },
+        { status: 500 },
+      )
+    }
+    if (!existing.data) {
+      return Response.json(
+        { error: "La variante ya no existe." },
+        { status: 404 },
+      )
+    }
+
+    const { error: forceError } = await auth.admin.rpc(
+      "force_delete_product_variant_super_admin",
+      {
+        p_variant_id: variantId,
+        p_actor_id: auth.user.id,
+      },
+    )
+
+    if (forceError) {
+      const missingMigration =
+        /force_delete_product_variant_super_admin|schema cache|PGRST202/i.test(
+          forceError.message,
+        )
+      return Response.json(
+        {
+          error: missingMigration
+            ? "Falta aplicar la migración 20260817100000_super_admin_force_delete.sql."
+            : forceError.message || "No se pudo eliminar definitivamente la variante.",
+        },
+        { status: missingMigration ? 503 : 409 },
+      )
+    }
+
+    return Response.json({ deleted: true })
   }
 
   const { data: deleted, error: deleteError } = await auth.admin

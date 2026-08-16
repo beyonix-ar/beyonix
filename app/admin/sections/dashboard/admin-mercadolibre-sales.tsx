@@ -39,6 +39,7 @@ import {
   getMercadoLibrePendingReturnUnits,
   isMercadoLibreReturn,
 } from "@/lib/mercadolibre/returns"
+import { summarizeMercadoLibreCosting } from "@/lib/mercadolibre/sale-costing"
 import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 import {
   deleteAllMercadoLibreSales,
@@ -392,39 +393,10 @@ export function AdminMercadoLibreSales() {
     () => summarizeMercadoLibreRows(importedRows),
     [importedRows],
   )
-  const costSummary = useMemo(() => {
-    const totalCostableUnits = sales.reduce(
-      (total, row) => total + number(row.costing?.costable_units),
-      0,
-    )
-    const coveredUnits = sales.reduce(
-      (total, row) =>
-        total +
-        (row.costing?.merchandise_cost == null
-          ? 0
-          : number(row.costing.costable_units)),
-      0,
-    )
-    const merchandiseCost = sales.reduce(
-      (total, row) => total + number(row.costing?.merchandise_cost),
-      0,
-    )
-    const exact =
-      !costingError &&
-      sales.every(
-        (row) =>
-          number(row.costing?.costable_units) === 0 ||
-          row.costing?.merchandise_cost != null,
-      )
-
-    return {
-      totalCostableUnits,
-      coveredUnits,
-      merchandiseCost,
-      exact,
-      profit: exact ? summary.total - merchandiseCost : null,
-    }
-  }, [costingError, sales, summary.total])
+  const costSummary = useMemo(
+    () => summarizeMercadoLibreCosting(sales, Boolean(costingError)),
+    [costingError, sales],
+  )
   const pendingReturnUnitsTotal = useMemo(
     () =>
       sales.reduce(
@@ -888,7 +860,9 @@ export function AdminMercadoLibreSales() {
             helper={
               costSummary.profit == null
                 ? `${costSummary.coveredUnits}/${costSummary.totalCostableUnits} unidades con costo`
-                : `ML ${formatPrice(summary.total)} − mercadería ${formatPrice(costSummary.merchandiseCost)}`
+                : costSummary.exact
+                  ? `ML ${formatPrice(summary.total)} − mercadería ${formatPrice(costSummary.merchandiseCost)}`
+                  : `Parcial · ${costSummary.coveredUnits}/${costSummary.totalCostableUnits} unidades con costo`
             }
             icon={<CircleDollarSign className="size-4" />}
             tone={

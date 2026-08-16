@@ -40,7 +40,9 @@ import {
 } from "@/lib/products/product-video"
 import {
   parseOptionalProductLogistics,
+  parseRequiredProductLogistics,
   ProductLogisticsValidationError,
+  type ProductLogisticsField,
 } from "@/lib/shipping/logistics-validation"
 
 interface Props {
@@ -174,6 +176,9 @@ export function useProductoForm({
   const [error, setError] =
     useState("")
 
+  const [logisticsFieldError, setLogisticsFieldError] =
+    useState<{ field: ProductLogisticsField; message: string } | null>(null)
+
   const [success, setSuccess] =
     useState("")
 
@@ -255,6 +260,7 @@ export function useProductoForm({
   const showError = (message: string) => {
     setSuccess("")
     setError(message)
+    setLogisticsFieldError(null)
   }
 
   const handleNombreChange = (
@@ -385,6 +391,7 @@ export function useProductoForm({
   }: SubmitOptions = {}) => {
     setError("")
     setSuccess("")
+    setLogisticsFieldError(null)
 
     if (!form.nombre.trim()) {
       setError(
@@ -431,16 +438,20 @@ export function useProductoForm({
 
     let logistics
     try {
-      logistics = parseOptionalProductLogistics(form)
+      logistics = parseRequiredProductLogistics(form)
       for (const variant of draftVariants) {
         parseOptionalProductLogistics(variant)
       }
     } catch (validationError) {
-      setError(
-        validationError instanceof ProductLogisticsValidationError
-          ? validationError.message
-          : "Las dimensiones y el peso no son válidos.",
-      )
+      if (validationError instanceof ProductLogisticsValidationError) {
+        setLogisticsFieldError({
+          field: validationError.field,
+          message: validationError.message,
+        })
+        setError(validationError.message)
+      } else {
+        setError("El peso y las dimensiones del producto son obligatorios.")
+      }
       return
     }
 
@@ -479,7 +490,6 @@ export function useProductoForm({
     const hasInvalidDraftVariant =
       draftVariants.some(
         (variant) =>
-          !variant.nombre.trim() ||
           !/^#[0-9A-F]{6}$/i.test(
             variant.color_hex
           )
@@ -487,7 +497,7 @@ export function useProductoForm({
 
     if (hasInvalidDraftVariant) {
       setError(
-        "Completá correctamente el nombre y el color de todas las variantes."
+        "Completá correctamente el color de todas las variantes."
       )
 
       return
@@ -673,6 +683,7 @@ export function useProductoForm({
     saving,
     savedId,
     categorias,
+    logisticsFieldError,
 
     setField,
     showError,

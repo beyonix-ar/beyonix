@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { ImageIcon } from "lucide-react"
 
+import { useAuth } from "@/context/auth-context"
 import { useCategorias } from "@/hooks/use-categorias"
 import { useProductColors } from "@/hooks/use-product-colors"
 import { useSiteSettings } from "@/hooks/use-site-settings"
@@ -77,6 +78,7 @@ function mergeProductColors(
 }
 
 export function AdminProductos() {
+  const { isSuperAdmin } = useAuth()
   const { stock: stockSettings } = useSiteSettings()
   const { categorias } = useCategorias()
   const storedColorOptions = useProductColors()
@@ -216,7 +218,7 @@ export function AdminProductos() {
   const confirmDelete = async () => {
     if (!pendingDelete) return
     setDeletingId(pendingDelete.id)
-    const deleted = await deleteProducto(pendingDelete.id, true)
+    const deleted = await deleteProducto(pendingDelete.id, isSuperAdmin)
     setDeletingId(null)
     if (deleted) setPendingDelete(null)
   }
@@ -312,6 +314,7 @@ export function AdminProductos() {
             loading={loading}
             sortBy={sortBy}
             sortDirection={sortDirection}
+            isSuperAdmin={isSuperAdmin}
             onSort={handleSort}
             onEdit={(producto) => void handleEdit(producto)}
             onDelete={handleDelete}
@@ -405,10 +408,20 @@ export function AdminProductos() {
           </div>
         </div>
         <div className="mt-3 px-2 text-center text-xs leading-5 text-white/52">
-          <p>
-            Se borrarán el producto, sus compras, ventas importadas,
-            devoluciones y movimientos de stock.
-          </p>
+          {isSuperAdmin ? (
+            <p>
+              Como SUPER ADMIN vas a eliminar el producto y todas sus
+              variantes aunque tengan stock, compras, ventas o devoluciones
+              asociadas. El historial comercial se conserva desvinculado
+              (sin borrarse) para mantener la trazabilidad.
+            </p>
+          ) : (
+            <p>
+              Si el producto no tiene movimientos se elimina. Si tiene
+              compras, ventas o devoluciones asociadas, se archiva para
+              conservar la trazabilidad del inventario.
+            </p>
+          )}
           <p className="mt-1.5 text-xs font-bold text-red-300/82">
             Esta acción no se puede deshacer.
           </p>

@@ -1,4 +1,8 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import {
+  parseRequiredProductLogistics,
+  ProductLogisticsValidationError,
+} from "@/lib/shipping/logistics-validation"
 
 function parseProductId(value: string) {
   const parsed = Number(value)
@@ -49,11 +53,28 @@ export async function PATCH(
     )
   }
 
+  let logistics
+  try {
+    logistics = parseRequiredProductLogistics(
+      body.catalog as Record<string, unknown>,
+    )
+  } catch (validationError) {
+    return Response.json(
+      {
+        error:
+          validationError instanceof ProductLogisticsValidationError
+            ? validationError.message
+            : "El peso y las dimensiones del producto son obligatorios.",
+      },
+      { status: 400 },
+    )
+  }
+
   const { data, error } = await auth.admin.rpc(
     "update_product_commercial_configuration_atomic",
     {
       p_product_id: productId,
-      p_catalog: body.catalog,
+      p_catalog: { ...body.catalog, ...logistics },
       p_primary_sku: body.primarySku ?? null,
       p_variant_states: variantStates,
       p_actor_id: auth.user.id,

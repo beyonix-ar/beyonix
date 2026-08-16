@@ -51,6 +51,7 @@ import {
 
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 import { getVariantActivationError } from "@/lib/products/product-activation"
+import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
 import {
   AdminDangerButton,
   AdminCard,
@@ -67,6 +68,7 @@ import {
 } from "@/lib/shipping/logistics-validation"
 interface ProductVariantsEditorProps {
   productoId?: number
+  productName?: string
   productActive?: boolean
   primarySku?: string
   videoUrl?: string
@@ -126,6 +128,7 @@ type PendingVariantDelete =
 
 export function ProductVariantsEditor({
   productoId,
+  productName = "",
   productActive = false,
   primarySku = "",
   videoUrl = "",
@@ -141,8 +144,6 @@ export function ProductVariantsEditor({
   const [variantes, setVariantes] =
     useState<SupabaseProductoVariante[]>([])
 
-  const [nombre, setNombre] =
-    useState("")
   const [sku, setSku] =
     useState("")
 
@@ -292,7 +293,6 @@ export function ProductVariantsEditor({
   }, [formOpen, hasVariants])
 
   const resetFields = () => {
-    setNombre("")
     setSku("")
     setColorHex("#000000")
     setCantidad("0")
@@ -313,15 +313,9 @@ export function ProductVariantsEditor({
   const addVariant = async () => {
     setError("")
     setSuccessMessage("")
-    const cleanName =
-      nombre.trim()
+    const normalizedColor = normalizeHex(colorHex)
+    const cleanName = deriveVariantNameFromColor(normalizedColor)
 
-    if (!cleanName) {
-      setError(
-        "El nombre de la variante es obligatorio."
-      )
-      return
-    }
     const allocationQuantity = Number(cantidad)
     if (
       !Number.isInteger(allocationQuantity) ||
@@ -346,8 +340,7 @@ export function ProductVariantsEditor({
     const nextVariant = {
       nombre: cleanName,
       sku: sku.trim() || null,
-      color_hex:
-        normalizeHex(colorHex),
+      color_hex: normalizedColor,
     }
 
     if (!productoId) {
@@ -691,25 +684,22 @@ export function ProductVariantsEditor({
 
   const openCreateForm = () => {
     resetFields()
-    setNombre("")
     if (!variantes.length && !draftVariants.length) setSku(primarySku)
     setFormOpen(true)
   }
 
   const saveVariantDetails = async (
     variant: SupabaseProductoVariante,
-    details: { name: string; sku: string; colorHex: string; stock: number },
+    details: { sku: string; colorHex: string; stock: number },
   ) => {
     if (!productoId) return
 
-    if (!details.name.trim()) {
-      setError("El nombre de la variante es obligatorio.")
-      return
-    }
     if (!Number.isInteger(details.stock) || details.stock < 0) {
       setError("El stock debe ser un número entero igual o mayor que cero.")
       return
     }
+
+    const normalizedColor = normalizeHex(details.colorHex)
 
     try {
       setSavingVariantDetailsId(variant.id)
@@ -719,9 +709,9 @@ export function ProductVariantsEditor({
         productoId,
         variant.id,
         {
-          name: details.name.trim(),
+          name: deriveVariantNameFromColor(normalizedColor),
           sku: details.sku.trim() || null,
-          color: normalizeHex(details.colorHex),
+          color: normalizedColor,
           quantity: details.stock,
           images: variant.imagenes ?? [],
           peso_empaquetado_kg: variant.peso_empaquetado_kg ?? null,
@@ -949,6 +939,8 @@ export function ProductVariantsEditor({
       <VariantCard
       key={variante.id}
       nombre={variante.nombre}
+      productName={productName}
+      isPrincipal={variante.id === primaryVariantId}
       sku={variante.sku}
       colorHex={variante.color_hex}
       stock={allocations[variante.id] ?? 0}
@@ -979,6 +971,8 @@ export function ProductVariantsEditor({
     <VariantCard
       key={variant.tempId}
       nombre={variant.nombre}
+      productName={productName}
+      isPrincipal={draftVariants[0]?.tempId === variant.tempId}
       sku={variant.sku}
       colorHex={variant.color_hex}
       stock={null}
@@ -993,14 +987,15 @@ export function ProductVariantsEditor({
       onMoveImage={(fromIndex, toIndex) => moveDraftVariantImage(variant.tempId, fromIndex, toIndex)}
       onRemoveImage={(imageIndex) => removeDraftVariantImage(variant.tempId, imageIndex)}
       onDetailsChange={(details) => {
+        const normalizedColor = normalizeHex(details.colorHex)
         onDraftVariantsChange?.(
           draftVariants.map((item) =>
             item.tempId === variant.tempId
               ? {
                   ...item,
-                  nombre: details.name.trim(),
+                  nombre: deriveVariantNameFromColor(normalizedColor),
                   sku: details.sku,
-                  color_hex: normalizeHex(details.colorHex),
+                  color_hex: normalizedColor,
                 }
               : item,
           ),
@@ -1159,11 +1154,9 @@ export function ProductVariantsEditor({
                 <div className="grid min-w-0 content-start rounded-xl border border-white/8 bg-black/15 p-2.5">
                   <VariantFields
                     twoColumn
-                    name={nombre}
                     sku={sku}
                     colorHex={colorHex}
                     stock={cantidad}
-                    onNameChange={setNombre}
                     onSkuChange={setSku}
                     onColorChange={setColorHex}
                     onStockChange={setCantidad}
@@ -1264,6 +1257,8 @@ function StockSummaryItem({
 
 interface VariantCardProps {
   nombre: string
+  productName: string
+  isPrincipal?: boolean
   sku?: string | null
   colorHex: string
   stock: number | null
@@ -1281,7 +1276,6 @@ interface VariantCardProps {
   onMoveImage: (fromIndex: number, toIndex: number) => void
   onRemoveImage: (imageIndex: number) => void
   onDetailsChange: (details: {
-    name: string
     sku: string
     colorHex: string
     stock: number
@@ -1296,6 +1290,8 @@ interface VariantCardProps {
 
 function VariantCard({
   nombre,
+  productName,
+  isPrincipal = false,
   sku,
   colorHex,
   stock,
@@ -1322,7 +1318,6 @@ function VariantCard({
 }: VariantCardProps) {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [isEditing, setIsEditing] = useState(false)
-  const [localName, setLocalName] = useState(nombre)
   const [localSku, setLocalSku] = useState(sku ?? "")
   const [localColor, setLocalColor] = useState(normalizeHex(colorHex))
   const [localStock, setLocalStock] = useState(String(stock ?? 0))
@@ -1337,12 +1332,15 @@ function VariantCard({
   }, [draftUrls])
 
   useEffect(() => {
-    setLocalName(nombre)
     setLocalSku(sku ?? "")
     setLocalColor(normalizeHex(colorHex))
     setLocalStock(String(stock ?? 0))
-  }, [colorHex, nombre, sku, stock])
+  }, [colorHex, sku, stock])
 
+  // El nombre visible de la variante es siempre el del producto general; el
+  // "nombre" propio de la variante (nombre/color) sólo identifica atributos
+  // como color o SKU, nunca reemplaza el título.
+  const displayName = productName.trim() || nombre
   const ownImageCount = images.length + draftUrls.length
   const availableImages = [...images, ...draftUrls].slice(0, MAX_VARIANT_IMAGES)
   const galleryImages = availableImages
@@ -1375,7 +1373,6 @@ function VariantCard({
 
   const commitDetails = () => {
     onDetailsChange({
-      name: localName,
       sku: localSku,
       colorHex: normalizeHex(localColor),
       stock: Number(localStock || 0),
@@ -1407,10 +1404,11 @@ function VariantCard({
 
         <div className="min-w-0">
           <p className="truncate text-sm font-black text-white" title={nombre}>
-            {nombre}
+            {displayName}
           </p>
           <p className="mt-0.5 truncate text-10px font-semibold text-white/42">
             {sku?.trim() || "SKU pendiente"}
+            {isPrincipal ? " · Principal" : ""}
           </p>
         </div>
 
@@ -1473,7 +1471,7 @@ function VariantCard({
     <article className="product-editor-variant-card rounded-xl border border-white/10 bg-[#0c1219] p-3">
       <div className="mb-3 flex min-w-0 items-center justify-between gap-3 border-b border-white/8 pb-2.5">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black text-white" title={nombre}>{nombre}</p>
+          <p className="truncate text-sm font-black text-white" title={nombre}>{displayName}</p>
           <p className="mt-0.5 text-10px text-white/42">
             {hasOwnImages
               ? ownImageCount > MAX_VARIANT_IMAGES
@@ -1627,12 +1625,10 @@ function VariantCard({
 
         <div className="min-w-0 border-t border-white/8 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
           <VariantFields
-            name={localName}
             sku={localSku}
             colorHex={localColor}
             stock={localStock}
             disabled={savingDetails}
-            onNameChange={setLocalName}
             onSkuChange={setLocalSku}
             onColorChange={setLocalColor}
             onStockChange={setLocalStock}
@@ -1688,13 +1684,11 @@ function VariantCard({
 }
 
 interface VariantFieldsProps {
-  name: string
   sku: string
   colorHex: string
   stock: string
   disabled?: boolean
   twoColumn?: boolean
-  onNameChange: (value: string) => void
   onSkuChange: (value: string) => void
   onColorChange: (value: string) => void
   onStockChange: (value: string) => void
@@ -1702,13 +1696,11 @@ interface VariantFieldsProps {
 }
 
 function VariantFields({
-  name,
   sku,
   colorHex,
   stock,
   disabled = false,
   twoColumn = false,
-  onNameChange,
   onSkuChange,
   onColorChange,
   onStockChange,
@@ -1729,20 +1721,6 @@ function VariantFields({
 
   return (
     <div className={`grid gap-2.5 ${twoColumn ? "sm:grid-cols-2" : ""}`}>
-      <label className={fieldClassName}>
-        <span className={fieldLabelClassName}>Nombre</span>
-        <input
-          type="text"
-          value={name}
-          maxLength={160}
-          placeholder="Ej.: Negro"
-          disabled={disabled}
-          onChange={(event) => onNameChange(event.target.value)}
-          onKeyDown={commitOnEnter}
-          className={`${inputCls} !h-10 !text-sm`}
-        />
-      </label>
-
       <label className={fieldClassName}>
         <span className={fieldLabelClassName}>SKU</span>
         <input

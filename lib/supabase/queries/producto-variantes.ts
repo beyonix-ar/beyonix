@@ -344,9 +344,11 @@ export async function setProductoVarianteActivo(
 export async function deleteProductoVariante(
   productId: number,
   id: number,
+  options: { force?: boolean } = {},
 ) {
+  const query = options.force ? "?force=true" : ""
   await variantRequest<{ deleted: boolean }>(
-    `/api/admin/products/${productId}/variants/${id}`,
+    `/api/admin/products/${productId}/variants/${id}${query}`,
     { method: "DELETE" },
   )
 

@@ -105,6 +105,7 @@ export function ProductoForm({
     saving,
     savedId,
     categorias,
+    logisticsFieldError,
     setField,
     showError,
     submit,
@@ -659,6 +660,7 @@ export function ProductoForm({
           <main className="product-editor-inventory-column min-w-0">
             <ProductVariantsEditor
               productoId={currentProductoId || undefined}
+              productName={form.nombre}
               productActive={form.activo}
               primarySku={form.sku}
               videoUrl={form.video_url}
@@ -687,7 +689,7 @@ export function ProductoForm({
                   Dimensiones y peso
                 </h2>
                 <p className="mt-0.5 text-10px leading-4 text-white/44">
-                  Andreani utiliza estos datos para calcular el costo del paquete.
+                  Obligatorios: Andreani los necesita para calcular el costo del paquete.
                 </p>
               </div>
               <div className="product-editor-logistics-grid grid gap-1.5">
@@ -698,28 +700,36 @@ export function ProductoForm({
                     ancho_paquete_cm: "Ancho",
                     largo_paquete_cm: "Largo",
                   }[key]
+                  const fieldError =
+                    logisticsFieldError?.field === key
+                      ? logisticsFieldError.message
+                      : undefined
 
                   return (
                     <AdminFormField
                       key={key}
-                      label={label}
+                      label={`${label} *`}
                       labelClassName={productFieldLabelClassName}
+                      error={fieldError}
                     >
                       <span className="relative block">
                         <input
                           id={key}
                           type="text"
                           inputMode="decimal"
+                          required
                           value={form[key]}
-                          placeholder="Opcional"
-                          aria-label={`${label} en ${unit}`}
+                          placeholder="Requerido"
+                          aria-label={`${label} en ${unit} (obligatorio)`}
+                          aria-required="true"
+                          aria-invalid={fieldError ? "true" : undefined}
                           onChange={(event) =>
                             setField(
                               key,
                               normalizeLogisticsDecimalInput(event.target.value),
                             )
                           }
-                          className={`${inputCls} !pr-9`}
+                          className={`${inputCls} !pr-9 ${fieldError ? "!border-red-400/60" : ""}`}
                         />
                         <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-10px font-black text-white/50">
                           {unit}

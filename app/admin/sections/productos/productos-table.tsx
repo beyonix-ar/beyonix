@@ -22,6 +22,7 @@ interface ProductosTableProps {
   loading: boolean
   sortBy: ProductSortKey
   sortDirection: SortDirection
+  isSuperAdmin: boolean
   onSort: (key: ProductSortKey) => void
   onEdit: (producto: SupabaseProducto) => void
   onDelete: (id: number) => void
@@ -83,6 +84,7 @@ export function ProductosTable({
   loading,
   sortBy,
   sortDirection,
+  isSuperAdmin,
   onSort,
   onEdit,
   onDelete,
@@ -140,6 +142,7 @@ export function ProductosTable({
           stockSettings={stockSettings}
           visualIndex={index}
           isLast={index === productos.length - 1}
+          isSuperAdmin={isSuperAdmin}
           onEdit={onEdit}
           onDelete={onDelete}
           onToggleActivo={onToggleActivo}

@@ -4,6 +4,7 @@ import {
   ProductLogisticsValidationError,
 } from "@/lib/shipping/logistics-validation"
 import { catalogSkuConflictMessage } from "@/lib/products/catalog-sku-conflict"
+import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
 
 function positiveInteger(value: unknown) {
   const parsed = Number(value)
@@ -91,7 +92,6 @@ export async function POST(
   const body = (await request.json().catch(() => null)) as
     | Record<string, unknown>
     | null
-  const name = requiredText(body?.name, 160)
   const sku = optionalText(body?.sku, 120)
   const color = validColor(body?.color)
   const quantity = nonNegativeInteger(body?.quantity)
@@ -111,12 +111,17 @@ export async function POST(
     )
   }
 
-  if (!productId || !name || !color || quantity == null || !images) {
+  if (!productId || !color || quantity == null || !images) {
     return Response.json(
       { error: "Completá correctamente la variante y sus unidades." },
       { status: 400 },
     )
   }
+
+  // producto_variantes.nombre no es editable: se deriva siempre del color,
+  // nunca del valor que envíe el cliente (una variante se identifica por
+  // color/SKU/asignación, no por un nombre propio).
+  const name = deriveVariantNameFromColor(color)
 
   const productResult = await auth.admin
     .from("productos")

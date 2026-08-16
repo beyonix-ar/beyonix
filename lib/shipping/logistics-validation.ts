@@ -96,6 +96,61 @@ export function parseOptionalProductLogistics(values: {
   }
 }
 
+export interface RequiredProductLogisticsValues {
+  peso_empaquetado_kg: number
+  alto_paquete_cm: number
+  ancho_paquete_cm: number
+  largo_paquete_cm: number
+}
+
+/**
+ * Variante obligatoria para la ficha del producto (peso y dimensiones del
+ * paquete son datos comerciales requeridos, a diferencia de la sobrescritura
+ * opcional por variante que sigue usando parseOptionalProductLogistics).
+ */
+export function parseRequiredLogisticsValue(
+  value: unknown,
+  field: ProductLogisticsField,
+): number {
+  const parsed = parseOptionalLogisticsValue(value, field)
+
+  if (parsed === null) {
+    const definition = fieldDefinition(field)
+    throw new ProductLogisticsValidationError(
+      field,
+      `${definition.label} es obligatorio.`,
+    )
+  }
+
+  return parsed
+}
+
+export function parseRequiredProductLogistics(values: {
+  peso_empaquetado_kg?: unknown
+  alto_paquete_cm?: unknown
+  ancho_paquete_cm?: unknown
+  largo_paquete_cm?: unknown
+}): RequiredProductLogisticsValues {
+  return {
+    peso_empaquetado_kg: parseRequiredLogisticsValue(
+      values.peso_empaquetado_kg,
+      "peso_empaquetado_kg",
+    ),
+    alto_paquete_cm: parseRequiredLogisticsValue(
+      values.alto_paquete_cm,
+      "alto_paquete_cm",
+    ),
+    ancho_paquete_cm: parseRequiredLogisticsValue(
+      values.ancho_paquete_cm,
+      "ancho_paquete_cm",
+    ),
+    largo_paquete_cm: parseRequiredLogisticsValue(
+      values.largo_paquete_cm,
+      "largo_paquete_cm",
+    ),
+  }
+}
+
 export function normalizeLogisticsDecimalInput(value: string) {
   const cleaned = value.replace(/[^\d,.]/g, "")
   const separatorIndex = cleaned.search(/[,.]/)

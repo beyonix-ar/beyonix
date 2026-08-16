@@ -33,6 +33,11 @@ import {
 import {
   getVariantValue,
 } from "@/lib/products/product-variants"
+import {
+  buildDiscountedSkuSuggestion,
+  deriveVariantNameFromColor,
+  getColorName,
+} from "@/lib/products/variant-color"
 
 import {
   deleteProductoVariante,
@@ -63,6 +68,7 @@ interface ProductosRowProps {
   stockSettings: StockSettings
   visualIndex: number
   isLast?: boolean
+  isSuperAdmin: boolean
   onEdit: (
     producto: SupabaseProducto
   ) => void
@@ -77,35 +83,6 @@ const stockColor = (stock: number, settings: StockSettings) => {
   if (stock <= settings.criticalStockThreshold) return "text-red-400"
   if (stock <= settings.lowStockThreshold) return "text-amber-400"
   return "text-green-400"
-}
-
-const COLOR_NAMES_BY_HEX: Record<string, string> = {
-  "#000000": "Negro",
-  "#18181B": "Negro mate",
-  "#FFFFFF": "Blanco",
-  "#6B7280": "Gris",
-  "#D1D5DB": "Gris claro",
-  "#374151": "Gris oscuro",
-  "#2563EB": "Azul",
-  "#38BDF8": "Celeste",
-  "#EF4444": "Rojo",
-  "#22C55E": "Verde",
-  "#FACC15": "Amarillo",
-}
-
-const GENERIC_VARIANT_NAME = /^(principal|variante(?:\s+\d+)?)$/i
-
-function getColorName(colorHex: string | null | undefined, variantName?: string | null) {
-  const normalizedHex = colorHex?.trim().toUpperCase() || ""
-  const knownName = COLOR_NAMES_BY_HEX[normalizedHex]
-  if (knownName) return knownName
-
-  const cleanVariantName = variantName?.trim() || ""
-  if (cleanVariantName && !GENERIC_VARIANT_NAME.test(cleanVariantName)) {
-    return cleanVariantName
-  }
-
-  return "Color personalizado"
 }
 
 const formatProductPrice = (value: number | null | undefined) => {
@@ -183,6 +160,7 @@ export function ProductosRow({
   stockSettings,
   visualIndex,
   isLast,
+  isSuperAdmin,
   onEdit,
   onDelete,
   onToggleActivo,
@@ -208,8 +186,6 @@ export function ProductosRow({
     } | null>(null)
 
   const [editColor, setEditColor] =
-    useState("")
-  const [editVariantName, setEditVariantName] =
     useState("")
   const [editVariantSku, setEditVariantSku] =
     useState("")
@@ -440,32 +416,27 @@ export function ProductosRow({
     setVariantError("")
     setEditingVariantId(variante.id)
     setEditColor(variante.color_hex)
-    setEditVariantName(variante.nombre)
     setEditVariantSku(variante.sku ?? "")
   }
 
   const cancelEditVariant = () => {
     setEditingVariantId(null)
     setEditColor("")
-    setEditVariantName("")
     setEditVariantSku("")
   }
 
   const saveVariant = async (
     variante: SupabaseProductoVariante
   ) => {
-    const name = editVariantName.trim()
     const sku = editVariantSku.trim() || null
     const color = editColor.trim().toUpperCase()
 
-    if (!name) {
-      setVariantError("El nombre del color es obligatorio.")
-      return
-    }
     if (!/^#[0-9A-F]{6}$/.test(color)) {
       setVariantError("El color hexadecimal no es válido.")
       return
     }
+
+    const name = deriveVariantNameFromColor(color)
 
     if (
       variante.nombre === name &&
@@ -551,7 +522,9 @@ export function ProductosRow({
     try {
       setDeletingVariantId(variante.id)
       setVariantError("")
-      await deleteProductoVariante(producto.id, variante.id)
+      await deleteProductoVariante(producto.id, variante.id, {
+        force: isSuperAdmin,
+      })
     } catch (error) {
       setVariantError(
         error instanceof Error
@@ -606,8 +579,7 @@ export function ProductosRow({
       id: linkedVariant?.id ?? producto.id,
       producto_id: producto.id,
       nombre:
-        item.conditioned_name?.trim() ||
-        `${linkedVariant?.nombre || "Variante"} · Con descuento`,
+        item.conditioned_name?.trim() || "Con descuento",
       sku:
         item.conditioned_sku?.trim() || linkedVariant?.sku?.trim() || "SKU pendiente",
       color_hex:
@@ -936,8 +908,8 @@ export function ProductosRow({
                       key={variante.id}
                       image={firstUsableImage(variante.imagenes, productImage)}
                       imageCount={variante.imagenes?.length ?? 0}
-                      name={variante.nombre}
-                      subtitle={isPrincipal ? "Variante principal" : "Variante del producto"}
+                      name={producto.nombre}
+                      subtitle={isPrincipal ? "Variante principal" : undefined}
                       sku={variante.sku}
                       colorHex={variante.color_hex}
                       colorLabel={getColorName(variante.color_hex, variante.nombre)}
@@ -1023,7 +995,7 @@ export function ProductosRow({
                       <div className="min-w-0">
                         <p className="text-xs font-black text-white">Editar variante</p>
                         <p className="mt-0.5 truncate text-10px text-white/45">
-                          {variante.nombre}{isPrincipal ? " · Principal" : ""} · {stock} unidades disponibles
+                          {producto.nombre}{isPrincipal ? " · Principal" : ""} · {stock} unidades disponibles
                         </p>
                       </div>
                       <button
@@ -1038,27 +1010,7 @@ export function ProductosRow({
                       </button>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <label className="min-w-0">
-                        <span className="mb-1.5 block text-10px font-bold uppercase tracking-wider text-white/48">Nombre</span>
-                        <input
-                          type="text"
-                          value={editVariantName}
-                          maxLength={160}
-                          placeholder="Ej.: Negro"
-                          aria-label={`Editar nombre de ${variante.nombre}`}
-                          onChange={(event) => setEditVariantName(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault()
-                              void saveVariant(variante)
-                            }
-                            if (event.key === "Escape") cancelEditVariant()
-                          }}
-                          className="h-10 w-full min-w-0 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-3 text-sm font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
-                        />
-                      </label>
-
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <label className="min-w-0">
                         <span className="mb-1.5 block text-10px font-bold uppercase tracking-wider text-white/48">SKU</span>
                       <input
@@ -1167,8 +1119,7 @@ export function ProductosRow({
                   : undefined
               )
               const conditionedName =
-                item.conditioned_name?.trim() ||
-                `${linkedVariant?.nombre || "Variante"} · Con descuento`
+                item.conditioned_name?.trim() || "Con descuento"
               const conditionedSku =
                 item.conditioned_sku?.trim() || "SKU pendiente"
               const conditionedColor =
@@ -1187,7 +1138,7 @@ export function ProductosRow({
                   key={`conditioned-${item.id}`}
                   image={conditionedImage}
                   imageCount={item.conditioned_images?.length ?? 0}
-                  name={conditionedName}
+                  name={producto.nombre}
                   subtitle={`${item.discount_percent}% de descuento · ${item.reason || "Detalle por revisar"}`}
                   sku={conditionedSku}
                   colorHex={conditionedColor}
@@ -1248,7 +1199,11 @@ export function ProductosRow({
             open
             compact
             title="Eliminar variante"
-            description="Esta acción es permanente."
+            description={
+              isSuperAdmin
+                ? "Acción permanente de SUPER ADMIN: se elimina aunque tenga stock, compras, ventas o devoluciones asociadas. El historial se conserva desvinculado."
+                : "Esta acción es permanente."
+            }
             onClose={() => {
               if (!deletingVariantId) {
                 setPendingVariantDelete(null)
@@ -1309,7 +1264,6 @@ export function ProductosRow({
           <ConditionedStockEditModal
             key={editingConditionedStock.id}
             item={editingConditionedStock}
-            productName={producto.nombre}
             productPrice={producto.precio}
             variants={variantes}
             saving={savingConditionedId === editingConditionedStock.id}
@@ -1343,7 +1297,6 @@ export function ProductosRow({
 
 function ConditionedStockEditModal({
   item,
-  productName,
   productPrice,
   variants,
   saving,
@@ -1352,7 +1305,6 @@ function ConditionedStockEditModal({
   onSave,
 }: {
   item: SupabaseConditionedStock
-  productName: string
   productPrice: number
   variants: SupabaseProductoVariante[]
   saving: boolean
@@ -1374,18 +1326,20 @@ function ConditionedStockEditModal({
   const initialVariant =
     variants.find((variant) => variant.id === item.variant_id) ??
     (item.variant_id == null && variants.length === 1 ? variants[0] : null)
-  const conditionedSuffix = item.id.replaceAll("-", "").slice(0, 8).toUpperCase()
-  const suggestedSku = (variant: SupabaseProductoVariante | null) =>
-    `${(variant?.sku?.trim() || "COND").slice(0, 96)}-DESC-${conditionedSuffix}`
   const [selectedVariantId, setSelectedVariantId] = useState(
     initialVariant ? String(initialVariant.id) : "",
   )
   const [conditionedName, setConditionedName] = useState(
-    item.conditioned_name?.trim() ||
-      `${initialVariant?.nombre || productName} · Con descuento`,
+    item.conditioned_name?.trim() || "Con descuento",
   )
   const [conditionedSku, setConditionedSku] = useState(
-    item.conditioned_sku?.trim() || suggestedSku(initialVariant),
+    item.conditioned_sku?.trim() || "",
+  )
+  // El SKU se sugiere automáticamente mientras el administrador no lo haya
+  // tocado a mano. Si ya existía uno guardado, se respeta y no se
+  // sobrescribe con la sugerencia.
+  const [skuManuallyEdited, setSkuManuallyEdited] = useState(
+    Boolean(item.conditioned_sku?.trim()),
   )
   const [conditionedColor, setConditionedColor] = useState(
     item.conditioned_color_hex || initialVariant?.color_hex || "#000000",
@@ -1405,6 +1359,23 @@ function ConditionedStockEditModal({
     item.non_sellable_reason ?? "",
   )
   const parsedPercent = Number(discountPercent.replace(",", "."))
+  const selectedVariant = variants.find(
+    (variant) => String(variant.id) === selectedVariantId,
+  )
+
+  useEffect(() => {
+    if (skuManuallyEdited) return
+
+    setConditionedSku(
+      buildDiscountedSkuSuggestion({
+        originalSku: selectedVariant?.sku,
+        colorHex: conditionedColor,
+        colorName: selectedVariant?.nombre,
+        discountPercent: parsedPercent,
+      }),
+    )
+  }, [skuManuallyEdited, selectedVariant, conditionedColor, parsedPercent])
+
   const valid =
     Boolean(conditionedName.trim()) &&
     Boolean(conditionedSku.trim()) &&
@@ -1423,10 +1394,7 @@ function ConditionedStockEditModal({
   const selectVariant = (value: string) => {
     setSelectedVariantId(value)
     const selected = variants.find((variant) => String(variant.id) === value)
-    setConditionedName(
-      `${selected?.nombre || productName} · Con descuento`,
-    )
-    setConditionedSku(suggestedSku(selected ?? null))
+    setConditionedName("Con descuento")
     setConditionedColor(selected?.color_hex ?? "#000000")
     setConditionedImages(selected?.imagenes ?? [])
     setNewImages([])
@@ -1563,14 +1531,14 @@ function ConditionedStockEditModal({
 
             <label>
               <span className="mb-1.5 block text-10px font-black uppercase tracking-wider text-white/45">
-                Nombre / color
+                Nombre
               </span>
               <input
                 type="text"
                 value={conditionedName}
                 maxLength={160}
                 onChange={(event) => setConditionedName(event.target.value)}
-                placeholder="Negro · Con descuento"
+                placeholder="Con descuento"
                 className={inputClass}
               />
             </label>
@@ -1583,8 +1551,11 @@ function ConditionedStockEditModal({
                 type="text"
                 value={conditionedSku}
                 maxLength={120}
-                onChange={(event) => setConditionedSku(event.target.value)}
-                placeholder="AP01-DESC-..."
+                onChange={(event) => {
+                  setConditionedSku(event.target.value)
+                  setSkuManuallyEdited(true)
+                }}
+                placeholder="AP01-Neg-30"
                 className={inputClass}
               />
             </label>

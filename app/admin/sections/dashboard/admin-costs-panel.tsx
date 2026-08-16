@@ -43,6 +43,7 @@ import {
 } from "@/lib/business/idempotency-attempt"
 import { formatPrice } from "../productos/helpers"
 import { AdminDatePicker } from "../../components/admin-date-picker"
+import { useAuth } from "@/context/auth-context"
 
 type CostMode = "product" | "expense"
 type PurchaseSortKey =
@@ -492,6 +493,7 @@ function ModernSelect({
 }
 
 export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
+  const { isSuperAdmin } = useAuth()
   const productFormRef = useRef<HTMLElement>(null)
   const productCreateAttemptRef = useRef<IdempotencyAttempt | null>(null)
   const expenseCreateAttemptRef = useRef<IdempotencyAttempt | null>(null)
@@ -1095,7 +1097,33 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       await load()
       onChanged?.()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo eliminar el movimiento.")
+      const message =
+        cause instanceof Error ? cause.message : "No se pudo eliminar el movimiento."
+      const stockConflict = kind === "product" && /consumida/i.test(message)
+      if (stockConflict && isSuperAdmin) {
+        const forceConfirmed = window.confirm(
+          "Esta compra ya tiene stock consumido por ventas posteriores. " +
+            "Como SUPER ADMIN podés forzar la eliminación de todos modos: " +
+            "es una acción permanente y puede dejar el stock derivado en negativo. ¿Forzar la eliminación?",
+        )
+        if (forceConfirmed) {
+          try {
+            await deleteBusinessCost(kind, id, { force: true })
+            if (editingProductId === id) resetProductForm()
+            await load()
+            onChanged?.()
+            return
+          } catch (forceCause) {
+            setError(
+              forceCause instanceof Error
+                ? forceCause.message
+                : "No se pudo forzar la eliminación de la compra.",
+            )
+            return
+          }
+        }
+      }
+      setError(message)
     }
   }
 
