@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import {
   PAYMENT_PROOF_BUCKET,
   getPaymentProofValidationError,
@@ -38,29 +39,6 @@ function normalizeStoredPath(path: string) {
     : `${PAYMENT_PROOF_BUCKET}/${path}`
 }
 
-function isPaymentConfirmed(order: {
-  payment_status?: string | null
-  paid_at?: string | null
-  estado?: string | null
-}) {
-  return (
-    Boolean(order.paid_at) ||
-    ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "") ||
-    [
-      "pagado",
-      "enviado",
-      "en_camino",
-      "visita_fallida",
-      "en_sucursal",
-      "retiro_pendiente",
-      "retiro_vencido",
-      "en_devolucion",
-      "devuelto_beyonix",
-      "entregado",
-    ].includes(order.estado ?? "")
-  )
-}
-
 function isRefundableOrder(order: {
   estado?: string | null
   financial_status?: string | null
@@ -72,7 +50,7 @@ function isRefundableOrder(order: {
   if (status === "refund_pending") return true
   if (status === "refunded" || status === "cancelled") return false
 
-  return order.estado === "cancelado" && isPaymentConfirmed(order)
+  return order.estado === "cancelado" && isOrderPaymentConfirmed(order)
 }
 
 function getOrderCode(orderId: number) {

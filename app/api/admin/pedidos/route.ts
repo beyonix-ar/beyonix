@@ -265,23 +265,31 @@ export async function GET(request: Request) {
     itemsByOrder.set(item.orden_id, currentItems)
   }
 
-  for (const claim of claimsResult.data ?? []) {
-    const signedFiles = await Promise.all(
-      (claim.order_claim_files ?? []).map(async (file: any) => {
-        const { data } = await auth.admin.storage
-          .from(ORDER_CLAIM_BUCKET)
-          .createSignedUrl(stripClaimBucket(file.file_path), 300)
+  const claimRows = claimsResult.data ?? []
+  const signedFilesByClaimId = new Map<number, any[]>()
+  await Promise.all(
+    claimRows.map(async (claim) => {
+      const signedFiles = await Promise.all(
+        (claim.order_claim_files ?? []).map(async (file: any) => {
+          const { data } = await auth.admin.storage
+            .from(ORDER_CLAIM_BUCKET)
+            .createSignedUrl(stripClaimBucket(file.file_path), 300)
 
-        return {
-          ...file,
-          signedUrl: data?.signedUrl ?? null,
-        }
-      })
-    )
+          return {
+            ...file,
+            signedUrl: data?.signedUrl ?? null,
+          }
+        })
+      )
+      signedFilesByClaimId.set(claim.id, signedFiles)
+    })
+  )
+
+  for (const claim of claimRows) {
     const currentClaims = claimsByOrder.get(claim.order_id) ?? []
     currentClaims.push({
       ...claim,
-      order_claim_files: signedFiles,
+      order_claim_files: signedFilesByClaimId.get(claim.id) ?? [],
     })
     claimsByOrder.set(claim.order_id, currentClaims)
   }

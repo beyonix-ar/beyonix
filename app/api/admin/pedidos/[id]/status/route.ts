@@ -5,6 +5,7 @@ import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { upsertCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import {
   DEFAULT_PRODUCT_WARRANTY_MONTHS,
   getWarrantyExpiration,
@@ -57,18 +58,6 @@ function isMissingColumnError(error: { message?: string; code?: string } | null)
     error?.code === "PGRST204" ||
     error?.message?.includes("schema cache") ||
     error?.message?.includes("cancelled_at")
-  )
-}
-
-function isPaymentConfirmed(order: {
-  payment_status?: string | null
-  paid_at?: string | null
-  estado?: string | null
-}) {
-  return (
-    Boolean(order.paid_at) ||
-    ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "") ||
-    ["pagado", ...DISPATCHED_ORDER_STATUSES].includes(order.estado ?? "")
   )
 }
 
@@ -332,7 +321,7 @@ export async function PATCH(
   }
 
   const cancellingPaidOrder =
-    estado === "cancelado" && isPaymentConfirmed(currentOrder)
+    estado === "cancelado" && isOrderPaymentConfirmed(currentOrder)
   const nextFinancialStatus =
     estado === "cancelado"
       ? cancellingPaidOrder

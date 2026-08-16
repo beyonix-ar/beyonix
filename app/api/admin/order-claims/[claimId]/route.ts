@@ -594,47 +594,24 @@ export async function PATCH(
       )
     }
 
-    const nowIso = new Date().toISOString()
     const message = adminResponse || "BEYONIX aprobó la cancelación de la compra."
 
-    const { error: orderUpdateError } = await auth.admin
-      .from("ordenes")
-      .update({ estado: "cancelado" })
-      .eq("id", currentClaim.order_id)
+    const { data: updatedClaim, error: approveError } = await auth.admin.rpc(
+      "approve_order_claim_cancellation",
+      {
+        p_claim_id: id,
+        p_admin_id: auth.user.id,
+        p_admin_role: auth.profile.rol,
+        p_message: message,
+      },
+    )
 
-    if (orderUpdateError) {
+    if (approveError || !updatedClaim) {
       return NextResponse.json(
-        { error: orderUpdateError.message || "No se pudo cancelar el pedido." },
-        { status: 500 },
+        { error: approveError?.message || "No se pudo aprobar la cancelación." },
+        { status: approveError?.code === "P0001" ? 409 : 500 },
       )
     }
-
-    const { data: updatedClaim, error: updateError } = await auth.admin
-      .from("order_claims")
-      .update({
-        status: "cerrado",
-        resolution: "otro",
-        admin_response: message,
-        closed_at: nowIso,
-        admin_needs_action: false,
-      })
-      .eq("id", id)
-      .select("*, order_claim_files(*), order_claim_messages(*)")
-      .single()
-
-    if (updateError || !updatedClaim) {
-      return NextResponse.json(
-        { error: updateError?.message || "No se pudo aprobar la cancelación." },
-        { status: 500 },
-      )
-    }
-
-    await auth.admin.from("order_claim_messages").insert({
-      claim_id: id,
-      author_user_id: auth.user.id,
-      author_role: auth.profile.rol,
-      message,
-    })
 
     await notifyCancellationResolution(auth.admin, {
       claimId: id,
