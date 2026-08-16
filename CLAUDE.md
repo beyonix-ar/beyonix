@@ -252,6 +252,8 @@ Podés:
 * crear o modificar triggers
 * optimizar consultas
 
+`supabase/migrations/` es la única fuente de verdad operativa del esquema; está sincronizada 1:1 con el proyecto remoto (verificable con `supabase migration list`). Todo cambio de esquema se agrega como una migración nueva ahí, nunca editando una migración ya aplicada remotamente. `supabase/sql/` es un archivo histórico/manual (ver `supabase/sql/README.md`): puede estar desactualizado o contradicho por migraciones posteriores, así que no se usa como referencia para saber qué existe hoy en la base ni se aplica manualmente para "solucionar" un error.
+
 Antes de modificar la base de datos, comprender la estructura existente y evitar duplicaciones.
 
 Mantener:

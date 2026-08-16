@@ -241,6 +241,8 @@ Podés crear o modificar:
 * funciones
 * triggers
 
+`supabase/migrations/` es la única fuente de verdad operativa del esquema (sincronizada 1:1 con el remoto). Un cambio de esquema siempre se agrega como migración nueva ahí; nunca se edita una migración ya aplicada remotamente como forma de "corregirla". `supabase/sql/` es un archivo histórico (ver `supabase/sql/README.md`) y puede estar desactualizado: no usarlo para saber qué existe hoy en la base ni aplicarlo manualmente para resolver un error.
+
 No eliminar datos reales de forma irreversible salvo instrucción explícita.
 
 ---
