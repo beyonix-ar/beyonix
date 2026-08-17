@@ -1281,6 +1281,10 @@ export default function CheckoutPage() {
 
   const isRecipientStepValid =
     isValidCheckoutForm(formData)
+  const areCriticalCheckoutStatesReady =
+    !isLoading &&
+    !customerCredit.loading &&
+    !siteSettings.loading
   const isShippingStepValid =
     Boolean(
       selectedShippingOption &&
@@ -1289,13 +1293,15 @@ export default function CheckoutPage() {
         destinationSelectionStatus === "ready",
     )
   const isFormValid = Boolean(
-    isRecipientStepValid &&
+    areCriticalCheckoutStatesReady &&
+      isRecipientStepValid &&
       isShippingStepValid
   )
   const isCurrentStepValid =
-    currentStep === 1
+    areCriticalCheckoutStatesReady &&
+    (currentStep === 1
       ? isRecipientStepValid
-      : isShippingStepValid
+      : isShippingStepValid)
   const getCheckoutInputClassName = (
     field: RequiredCheckoutField
   ) =>
@@ -1306,6 +1312,8 @@ export default function CheckoutPage() {
     )
 
   const goToNextStep = () => {
+    if (!areCriticalCheckoutStatesReady) return
+
     if (
       currentStep === 1 &&
       !isRecipientStepValid
@@ -1526,7 +1534,7 @@ export default function CheckoutPage() {
       return next
     })
   }
-  if (!mounted || isLoading || !isCartReady) {
+  if (!mounted || !isCartReady) {
     return null
   }
 
@@ -2154,6 +2162,7 @@ export default function CheckoutPage() {
                   <button
                     type="button"
                     onClick={goToNextStep}
+                    disabled={!areCriticalCheckoutStatesReady}
                     className={cn(
                       "h-10 min-w-140px px-5 text-sm",
                       isCurrentStepValid

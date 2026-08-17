@@ -14,6 +14,7 @@ import {
   type CustomerCreditPaymentSettings,
   type StockSettings,
 } from "@/lib/site-settings"
+import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
 import {
   AdminCard,
   AdminInfoBlock,
@@ -248,6 +249,7 @@ export function AdminModificaciones() {
       return
     }
 
+    invalidateSiteSettingsClientCache()
     applyShipping(data.settings.shipping)
     const savedCustomerCreditPayments =
       data.settings.customerCreditPayments ?? nextCustomerCreditPayments

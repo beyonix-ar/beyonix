@@ -18,6 +18,7 @@ const nextConfig = {
           "eqxoupwuijobktxkmagr.supabase.co",
       },
     ],
+    formats: ["image/avif", "image/webp"],
   },
 }
 

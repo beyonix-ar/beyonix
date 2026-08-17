@@ -129,7 +129,7 @@ export async function POST(request: Request) {
     )
     const baseTotals = calculateCartTotals(catalog.cartRows)
     const requestedCredit = normalizeMoney(payload.customerCreditAmount)
-    const siteSettings = await getSiteSettings()
+    const siteSettings = await getSiteSettings({ fresh: true })
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
       customer: payload.customer,

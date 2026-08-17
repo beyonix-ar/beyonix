@@ -133,7 +133,24 @@ export function getFallbackSiteSettings(): SiteSettings {
   }
 }
 
-export async function getSiteSettings(): Promise<SiteSettings> {
+// site_settings cambia con muy poca frecuencia (lo edita un admin a mano) y
+// se lee en casi todas las páginas: cachear unos segundos evita golpear la
+// base en cada request. Las operaciones financieras piden `fresh: true` y el
+// resto se invalida explícitamente al guardar desde /api/admin/settings.
+const SITE_SETTINGS_CACHE_MS = 30_000
+let siteSettingsCache: { expiresAt: number; value: SiteSettings } | null = null
+let siteSettingsCacheGeneration = 0
+let siteSettingsRequest: Promise<SiteSettings> | null = null
+
+export function invalidateSiteSettingsCache() {
+  siteSettingsCacheGeneration += 1
+  siteSettingsCache = null
+  siteSettingsRequest = null
+}
+
+async function loadSiteSettings(): Promise<SiteSettings> {
+  const requestGeneration = siteSettingsCacheGeneration
+
   try {
     const admin = createAdminClient()
     const { data, error } = await admin
@@ -141,22 +158,53 @@ export async function getSiteSettings(): Promise<SiteSettings> {
       .select("key, value")
       .in("key", ["shipping", "customer_credit_payments", "stock"])
 
-    if (error) {
-      return getFallbackSiteSettings()
-    }
+    if (error) return getFallbackSiteSettings()
 
     const settingsByKey = new Map(
       (data ?? []).map((setting) => [setting.key, setting.value]),
     )
-
-    return {
+    const settings: SiteSettings = {
       shipping: normalizeShippingSettings(settingsByKey.get("shipping")),
       customerCreditPayments: normalizeCustomerCreditPaymentSettings(
         settingsByKey.get("customer_credit_payments"),
       ),
       stock: normalizeStockSettings(settingsByKey.get("stock")),
     }
+
+    if (requestGeneration === siteSettingsCacheGeneration) {
+      siteSettingsCache = {
+        expiresAt: Date.now() + SITE_SETTINGS_CACHE_MS,
+        value: settings,
+      }
+    }
+    return settings
   } catch {
     return getFallbackSiteSettings()
   }
+}
+
+export function getSiteSettings(
+  options: { fresh?: boolean } = {},
+): Promise<SiteSettings> {
+  if (
+    !options.fresh &&
+    siteSettingsCache &&
+    siteSettingsCache.expiresAt > Date.now()
+  ) {
+    return Promise.resolve(siteSettingsCache.value)
+  }
+
+  if (!options.fresh && siteSettingsRequest) return siteSettingsRequest
+
+  const request = loadSiteSettings()
+  if (!options.fresh) {
+    siteSettingsRequest = request
+    void request.finally(() => {
+      if (siteSettingsRequest === request) {
+        siteSettingsRequest = null
+      }
+    })
+  }
+
+  return request
 }

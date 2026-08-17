@@ -262,6 +262,7 @@ interface AuthContextType {
   user: BeyonixUser | null
 
   isLoading: boolean
+  hasSession: boolean
 
   isAdmin: boolean
   isInternal: boolean
@@ -417,6 +418,8 @@ export function AuthProvider({
 
   const [isLoading, setIsLoading] =
     useState(true)
+  const [hasSession, setHasSession] =
+    useState(false)
   const registrationInProgress = useRef(false)
   const loginInProgress = useRef(false)
   const hasAuthenticatedSession = useRef(false)
@@ -554,6 +557,7 @@ export function AuthProvider({
       setAdminInactivityWarning(false)
       clearAuthActivity()
       setUser(null)
+      setHasSession(false)
     }
 
     async function logoutExpiredSession() {
@@ -574,6 +578,7 @@ export function AuthProvider({
 
     function acceptAuthenticatedSession() {
       hasAuthenticatedSession.current = true
+      setHasSession(true)
     }
 
     function validatePersistentSession() {
@@ -1340,6 +1345,7 @@ export function AuthProvider({
         user,
 
         isLoading,
+        hasSession,
 
         isAdmin,
         isInternal,

@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
   const payload = (await request.json()) as PreferencePayload
   const amount = normalizeAmount(payload.amount)
-  const settings = await getSiteSettings()
+    const settings = await getSiteSettings({ fresh: true })
   const minimumAmount =
     settings.customerCreditPayments.mercadoPagoMinimumAmount
   const expectedMinimumAmount = normalizeAmount(payload.expectedMinimumAmount)

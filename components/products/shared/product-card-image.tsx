@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import {
   SILVER_IMAGE_BACKGROUND,
@@ -34,7 +35,7 @@ export function ProductCardImage({
       className="relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden border-b border-beyonix-blue-light/12 bg-[#0B1118] p-3 sm:p-3.5"
     >
       <div
-        className="h-full w-full overflow-hidden rounded-lg border border-white/70 bg-[#F5F7FA]"
+        className="relative h-full w-full overflow-hidden rounded-lg border border-white/70 bg-[#F5F7FA]"
         style={{
           background:
             hasTransparentBackground
@@ -42,14 +43,16 @@ export function ProductCardImage({
               : undefined,
         }}
       >
-        <img
+        <Image
           src={image}
           alt={productName}
+          fill
+          sizes="(min-width: 1280px) 20vw, (min-width: 768px) 33vw, 50vw"
           crossOrigin="anonymous"
           onLoad={
             detectTransparency
           }
-          className="h-full w-full object-contain p-2 transition-transform duration-500 group-hover:scale-[1.035]"
+          className="object-contain p-2 transition-transform duration-500 group-hover:scale-[1.035]"
         />
       </div>
 

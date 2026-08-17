@@ -1,5 +1,3 @@
-import type { User } from "@supabase/supabase-js"
-
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
   isInternalRole,
@@ -9,7 +7,10 @@ import {
 
 export interface AdminApiAuth {
   admin: ReturnType<typeof createAdminClient>
-  user: User
+  user: {
+    id: string
+    email: string | null
+  }
   profile: {
     id: string
     email: string | null
@@ -30,13 +31,22 @@ export async function requireInternalUser(
   }
 
   const admin = createAdminClient()
-  const { data: userData, error: userError } = await admin.auth.getUser(token)
-  const user = userData.user
+  // getClaims() verifica firma y expiración. Con claves asimétricas reutiliza
+  // el JWKS cacheado; si el token usa firma simétrica, el SDK vuelve de forma
+  // segura a getUser(). El rol efectivo siempre se relee desde `profiles`.
+  const { data: claimsData, error: claimsError } = await admin.auth.getClaims(token)
+  const claims = claimsData?.claims
+  const userId = typeof claims?.sub === "string" ? claims.sub : null
 
-  if (userError || !user) {
+  if (claimsError || !userId) {
     return {
       error: Response.json({ error: "No autorizado." }, { status: 401 }),
     }
+  }
+
+  const user = {
+    id: userId,
+    email: typeof claims?.email === "string" ? claims.email : null,
   }
 
   const { data: profile, error: profileError } = await admin

@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       items,
     )
     const baseTotals = calculateCartTotals(catalog.cartRows)
-    const siteSettings = await getSiteSettings()
+    const siteSettings = await getSiteSettings({ fresh: true })
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
       customer: payload.customer,

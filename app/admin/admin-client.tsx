@@ -123,7 +123,6 @@ function SidebarItem({
       )}
       <Link
         href={ADMIN_ROUTES[item.key]}
-        prefetch={false}
         draggable={false}
         aria-label={item.label}
         onClick={onClick}
@@ -195,8 +194,16 @@ function getStoredNavigationOrder(allowedSections: AdminRouteKey[]) {
 export function AdminClient({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user, isLoading, isInternal, isOperator, isSuperAdmin, logout } =
-    useAuth()
+  const {
+    user,
+    isLoading,
+    hasSession,
+    isInternal,
+    isOperator,
+    isSuperAdmin,
+    logout,
+  } = useAuth()
+  const hasResolvedInternalAccess = !isLoading && Boolean(user) && isInternal
   const {
     notificationCount,
     notificationTone,
@@ -205,7 +212,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
     loading: notificationsLoading,
     error: notificationsError,
     reloadNotifications,
-  } = useAdminNotifications(isInternal)
+  } = useAdminNotifications(hasResolvedInternalAccess)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [invoicePendingCount, setInvoicePendingCount] = useState(0)
   const [navigationOrder, setNavigationOrder] = useState<AdminRouteKey[]>([])
@@ -213,7 +220,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
   const [dragOverSection, setDragOverSection] = useState<AdminRouteKey | null>(null)
 
   const loadInvoicePendingCount = useCallback(async () => {
-    if (!isInternal || isOperator) {
+    if (!hasResolvedInternalAccess || isOperator) {
       setInvoicePendingCount(0)
       return
     }
@@ -249,7 +256,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
     } catch {
       setInvoicePendingCount(0)
     }
-  }, [isInternal, isOperator])
+  }, [hasResolvedInternalAccess, isOperator])
 
   useEffect(() => {
     void loadInvoicePendingCount()
@@ -431,7 +438,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
     router.push("/")
   }
 
-  if (isLoading) {
+  if (isLoading && !hasSession) {
     return (
       <div className="min-h-screen bg-black text-white lg:grid lg:grid-cols-[254px_minmax(0,1fr)]">
         <aside className="hidden border-r border-beyonix-blue-light/18 bg-[#050B12] p-5 lg:block">
@@ -459,7 +466,13 @@ export function AdminClient({ children }: { children: ReactNode }) {
     )
   }
 
-  if (!user || !isInternal) {
+  // Sesión confirmada pero perfil/rol todavía sin resolver: se
+  // muestra la estructura del panel (sidebar genérico, sin datos
+  // de usuario) en vez de bloquear toda la pantalla. Los datos
+  // reales siguen sin poder mostrarse: `routeDenied` exige un rol
+  // conocido para renderizar `children`, y cada API admin vuelve a
+  // exigir `requireInternalUser` server-side.
+  if (!isLoading && (!user || !isInternal)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black px-4">
         <div className="max-w-md rounded-3xl border border-white/10 bg-beyonix-surface p-8 text-center">
@@ -510,16 +523,26 @@ export function AdminClient({ children }: { children: ReactNode }) {
 
       <div className="border-b border-beyonix-blue-light/18 p-4">
         <div className="admin-ds-sidebar-card p-4">
-          <p className="truncate text-sm font-bold uppercase text-white">
-            {user.username || user.name}
-          </p>
-          <p className="mt-1 truncate text-xs text-white/45">{user.email}</p>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/40 bg-beyonix-blue px-3 py-1">
-            <span className="size-1.5 rounded-full bg-beyonix-sky" />
-            <span className="text-10px font-bold uppercase tracking-widest text-beyonix-sky">
-              {ROLE_LABELS[user.rol as UserRole]}
-            </span>
-          </div>
+          {hasResolvedInternalAccess && user ? (
+            <>
+              <p className="truncate text-sm font-bold uppercase text-white">
+                {user.username || user.name}
+              </p>
+              <p className="mt-1 truncate text-xs text-white/45">{user.email}</p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/40 bg-beyonix-blue px-3 py-1">
+                <span className="size-1.5 rounded-full bg-beyonix-sky" />
+                <span className="text-10px font-bold uppercase tracking-widest text-beyonix-sky">
+                  {ROLE_LABELS[user.rol as UserRole]}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div className="h-4 w-28 animate-pulse rounded bg-white/8" />
+              <div className="h-3 w-36 animate-pulse rounded bg-white/6" />
+              <div className="h-5 w-20 animate-pulse rounded-full bg-white/6" />
+            </div>
+          )}
         </div>
       </div>
 
@@ -629,7 +652,9 @@ export function AdminClient({ children }: { children: ReactNode }) {
         }`}
       >
         <AdminNotificationGroupsProvider groups={notificationGroups}>
-          {routeDenied ? <AdminSectionLoading /> : children}
+          {hasResolvedInternalAccess && !routeDenied
+            ? children
+            : <AdminSectionLoading />}
         </AdminNotificationGroupsProvider>
       </main>
     </div>

@@ -1,6 +1,7 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import {
   getSiteSettings,
+  invalidateSiteSettingsCache,
   normalizeCustomerCreditPaymentSettings,
   normalizeShippingSettings,
   normalizeStockSettings,
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
   const auth = await requireInternalUser(request, [...MANAGE_ROLES])
   if ("error" in auth) return auth.error
 
-  const settings = await getSiteSettings()
+  const settings = await getSiteSettings({ fresh: true })
 
   return Response.json({ settings })
 }
@@ -26,7 +27,7 @@ export async function PATCH(request: Request) {
     customerCreditPayments?: unknown
     stock?: unknown
   }
-  const before = await getSiteSettings()
+  const before = await getSiteSettings({ fresh: true })
   const shipping = normalizeShippingSettings(body.shipping)
   const customerCreditPayments = normalizeCustomerCreditPaymentSettings(
     body.customerCreditPayments,
@@ -67,6 +68,8 @@ export async function PATCH(request: Request) {
   if (error) {
     return Response.json({ error: error.message }, { status: 500 })
   }
+
+  invalidateSiteSettingsCache()
 
   await auth.admin.from("audit_logs").insert({
     table_name: "site_settings",

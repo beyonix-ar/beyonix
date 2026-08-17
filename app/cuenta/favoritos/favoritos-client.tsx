@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Heart, Loader2 } from "lucide-react"
 
 import {
@@ -30,6 +31,7 @@ const FAVORITES_PRODUCT_SELECT = `
 `
 
 export function FavoritosClient() {
+  const router = useRouter()
   const { user, isLoading } = useAuth()
   const { addToCart } = useCart()
   const [products, setProducts] = useState<SupabaseProducto[]>([])
@@ -149,7 +151,7 @@ export function FavoritosClient() {
                 key={product.id}
                 product={product}
                 onOpenPreview={() => {
-                  window.location.href = `/productos/${product.slug}`
+                  router.push(`/productos/${product.slug}`)
                 }}
                 onAddToCart={(nextProduct, color, image) => {
                   addToCart(nextProduct, color, image)

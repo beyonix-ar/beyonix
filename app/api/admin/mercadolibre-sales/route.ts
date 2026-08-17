@@ -1,5 +1,7 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import { canViewSensitiveNumbers } from "@/lib/auth/roles"
+import { mapWithConcurrency } from "@/lib/async/map-with-concurrency"
+import { createAdminClient } from "@/lib/supabase/admin"
 import {
   buildProductCostLedgers,
   getHistoricalUnitCost,
@@ -57,6 +59,79 @@ async function authorize(request: Request) {
   return auth
 }
 
+type AdminClient = ReturnType<typeof createAdminClient>
+const READ_CONCURRENCY = 4
+
+async function fetchAllMercadoLibreSales(admin: AdminClient) {
+  const { count, error: countError } = await admin
+    .from("mercadolibre_sales")
+    .select("id", { count: "exact", head: true })
+  if (countError) return { rows: null, error: countError }
+
+  const batchStarts: number[] = []
+  for (let from = 0; from < (count ?? 0); from += 1000) batchStarts.push(from)
+
+  const batches = await mapWithConcurrency(
+    batchStarts,
+    READ_CONCURRENCY,
+    (from) =>
+      admin
+        .from("mercadolibre_sales")
+        .select(SELECT)
+        .order("sale_date", { ascending: false })
+        .order("imported_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, from + 999),
+  )
+  const batchError = batches.find((batch) => batch.error)?.error
+  if (batchError) return { rows: null, error: batchError }
+
+  return {
+    rows: batches.flatMap(
+      (batch) => (batch.data ?? []) as unknown as Record<string, unknown>[],
+    ),
+    error: null,
+  }
+}
+
+async function fetchReturnReviewsChunk(admin: AdminClient, chunkIds: string[]) {
+  let { data, error } = await admin
+    .from("inventory_return_movements")
+    .select(
+      "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, discount_reason, non_sellable_reason, review_notes, occurred_at, approved_at, updated_at",
+    )
+    .in("mercadolibre_sale_id", chunkIds)
+
+  if (
+    error &&
+    /discount_reason|non_sellable_reason|occurred_at|updated_at|schema cache/i.test(
+      error.message,
+    )
+  ) {
+    const fallback = await admin
+      .from("inventory_return_movements")
+      .select(
+        "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, review_notes, approved_at",
+      )
+      .in("mercadolibre_sale_id", chunkIds)
+    data = fallback.data?.map((review) => ({
+      ...review,
+      discount_reason: null,
+      non_sellable_reason: null,
+      occurred_at: review.approved_at,
+      updated_at: review.approved_at,
+    })) ?? null
+    error = fallback.error
+  }
+
+  if (error && /mercadolibre_sale_id|received_quantity|schema cache/i.test(error.message)) {
+    return { data: [] as Record<string, unknown>[], fatal: null }
+  }
+  if (error) return { data: [] as Record<string, unknown>[], fatal: error }
+
+  return { data: (data ?? []) as unknown as Record<string, unknown>[], fatal: null }
+}
+
 export async function GET(request: Request) {
   const auth = await authorize(request)
   if ("error" in auth) return auth.error
@@ -66,81 +141,10 @@ export async function GET(request: Request) {
     { actorId: auth.user.id },
   )
 
-  const rows: Record<string, unknown>[] = []
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await auth.admin
-      .from("mercadolibre_sales")
-      .select(SELECT)
-      .order("sale_date", { ascending: false })
-      .order("imported_at", { ascending: false })
-      .range(from, from + 999)
-    if (error) {
-      return Response.json(
-        { error: "No se pudieron cargar las ventas de Mercado Libre." },
-        { status: 500 },
-      )
-    }
-    rows.push(...((data ?? []) as unknown as Record<string, unknown>[]))
-    if (!data || data.length < 1000) break
-  }
-
-  const saleIds = rows.map((row) => String(row.id))
-  const returnReviews: Record<string, unknown>[] = []
-  for (let index = 0; index < saleIds.length; index += 400) {
-    let { data, error } = await auth.admin
-      .from("inventory_return_movements")
-      .select(
-        "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, discount_reason, non_sellable_reason, review_notes, occurred_at, approved_at, updated_at",
-      )
-      .in("mercadolibre_sale_id", saleIds.slice(index, index + 400))
-
-    if (
-      error &&
-      /discount_reason|non_sellable_reason|occurred_at|updated_at|schema cache/i.test(
-        error.message,
-      )
-    ) {
-      const fallback = await auth.admin
-        .from("inventory_return_movements")
-        .select(
-          "id, mercadolibre_sale_id, received_quantity, sellable_quantity, discounted_quantity, non_sellable_quantity, discount_percent, review_notes, approved_at",
-        )
-        .in("mercadolibre_sale_id", saleIds.slice(index, index + 400))
-      data = fallback.data?.map((review) => ({
-        ...review,
-        discount_reason: null,
-        non_sellable_reason: null,
-        occurred_at: review.approved_at,
-        updated_at: review.approved_at,
-      })) ?? null
-      error = fallback.error
-    }
-
-    if (error) {
-      if (
-        !/mercadolibre_sale_id|received_quantity|schema cache/i.test(
-          error.message,
-        )
-      ) {
-        return Response.json(
-          { error: "No se pudieron cargar las revisiones de devoluciones." },
-          { status: 500 },
-        )
-      }
-      break
-    }
-    returnReviews.push(
-      ...((data ?? []) as unknown as Record<string, unknown>[]),
-    )
-  }
-  const returnReviewBySale = new Map(
-    returnReviews.map((review) => [
-      String(review.mercadolibre_sale_id),
-      review,
-    ]),
-  )
-
-  const [catalogResult, productCostsResult] = await Promise.all([
+  // El catálogo y las compras no dependen de las ventas de ML: se piden en
+  // paralelo con ellas en vez de esperar a que terminen de leerse.
+  const [salesResult, catalogResult, productCostsResult] = await Promise.all([
+    fetchAllMercadoLibreSales(auth.admin),
     auth.admin
       .from("productos")
       .select(
@@ -153,6 +157,38 @@ export async function GET(request: Request) {
       .order("purchase_date", { ascending: true })
       .limit(10000),
   ])
+
+  if (salesResult.error || !salesResult.rows) {
+    return Response.json(
+      { error: "No se pudieron cargar las ventas de Mercado Libre." },
+      { status: 500 },
+    )
+  }
+  const rows = salesResult.rows
+
+  const saleIds = rows.map((row) => String(row.id))
+  const chunkStarts: number[] = []
+  for (let index = 0; index < saleIds.length; index += 400) chunkStarts.push(index)
+  const returnChunks = await mapWithConcurrency(
+    chunkStarts,
+    READ_CONCURRENCY,
+    (index) =>
+      fetchReturnReviewsChunk(auth.admin, saleIds.slice(index, index + 400)),
+  )
+  const fatalReturnError = returnChunks.find((chunk) => chunk.fatal)?.fatal
+  if (fatalReturnError) {
+    return Response.json(
+      { error: "No se pudieron cargar las revisiones de devoluciones." },
+      { status: 500 },
+    )
+  }
+  const returnReviews = returnChunks.flatMap((chunk) => chunk.data)
+  const returnReviewBySale = new Map(
+    returnReviews.map((review) => [
+      String(review.mercadolibre_sale_id),
+      review,
+    ]),
+  )
 
   if (catalogResult.error) {
     return Response.json(

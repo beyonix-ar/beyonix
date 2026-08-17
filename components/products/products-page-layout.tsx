@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  Suspense,
   useEffect,
   useMemo,
   useState,
@@ -116,20 +117,47 @@ function getProductBaseColors(product: SupabaseProducto) {
   return [...colors]
 }
 
-export function ProductsPageLayout() {
-  const searchParams =
-    useSearchParams()
+// useSearchParams() obliga a Next.js a mostrar el fallback de Suspense
+// durante el render estático/ISR si envuelve todo el árbol. Se aísla acá,
+// en una hoja sin salida visual, para que el resto de la página (grilla
+// de productos con contenido real) se sirva desde el servidor sin
+// depender de esto.
+function SearchParamSync({
+  onChange,
+}: {
+  onChange: (value: string) => void
+}) {
+  const searchParams = useSearchParams()
 
+  useEffect(() => {
+    onChange(searchParams.get("search") || "")
+  }, [searchParams, onChange])
+
+  return null
+}
+
+interface ProductsPageLayoutProps {
+  initialProducts?: SupabaseProducto[]
+  initialCategories?: SupabaseCategoria[]
+  initialSearch?: string
+}
+
+export function ProductsPageLayout({
+  initialProducts = [],
+  initialCategories = [],
+  initialSearch = "",
+}: ProductsPageLayoutProps) {
+  const initialPriceRange = getProductPriceRange(initialProducts)
   const [products, setProducts] =
     useState<
       SupabaseProducto[]
-    >([])
+    >(initialProducts)
 
   const [categories, setCategories] =
-    useState<SupabaseCategoria[]>([])
+    useState<SupabaseCategoria[]>(initialCategories)
 
   const [search, setSearch] =
-    useState("")
+    useState(initialSearch)
 
   const [productsBanners, setProductsBanners] =
     useState<StoreBanner[]>([])
@@ -166,10 +194,10 @@ export function ProductsPageLayout() {
   ] = useState(false)
 
   const [minPrice, setMinPrice] =
-    useState(0)
+    useState(initialPriceRange.min)
 
   const [maxPrice, setMaxPrice] =
-    useState(1000)
+    useState(initialPriceRange.max)
 
   const priceRange = useMemo(
     () =>
@@ -207,19 +235,18 @@ export function ProductsPageLayout() {
   // ─────────────────────────────────────
 
   useEffect(() => {
-    setSearch(
-      searchParams.get("search") ||
-        ""
-    )
-
+    // El servidor ya entregó una página inicial de productos en el
+    // primer render (sin esperar hidratación). Este efecto completa
+    // en segundo plano el catálogo completo para que el filtrado
+    // client-side (categorías, color, precio, ofertas) tenga el
+    // universo entero, sin bloquear el contenido inicial.
     async function loadProducts() {
       try {
-        const [
-          productsData,
-          categoriesData,
-        ] = await Promise.all([
+        const [productsData, categoriesData] = await Promise.all([
           getStoreProductos(),
-          getStoreCategorias(),
+          initialCategories.length
+            ? Promise.resolve(initialCategories)
+            : getStoreCategorias(),
         ])
 
         const nextPriceRange =
@@ -241,7 +268,7 @@ export function ProductsPageLayout() {
     }
 
     loadProducts()
-  }, [searchParams])
+  }, [initialCategories])
 
   useEffect(() => {
     let active = true
@@ -468,6 +495,9 @@ export function ProductsPageLayout() {
 
   return (
     <main className="relative min-h-screen overflow-visible bg-black text-white">
+      <Suspense fallback={null}>
+        <SearchParamSync onChange={setSearch} />
+      </Suspense>
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">

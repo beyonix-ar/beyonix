@@ -20,39 +20,37 @@ interface CartRow {
   expires_at?: string | null
 }
 
+interface ClientOrderSummaryRow {
+  profile_id: string
+  order_count: number | string
+  total_spent: number | string
+  last_order: SupabasePedido | null
+}
+
 function getApellido(nombre: string | null | undefined) {
   const parts = (nombre ?? "").trim().split(" ").filter(Boolean)
   if (parts.length <= 1) return null
   return parts.slice(1).join(" ")
 }
 
-function isPaidOrder(order: SupabasePedido) {
-  return (
-    order.estado === "pagado" ||
-    order.estado === "enviado" ||
-    order.estado === "entregado" ||
-    order.payment_status === "approved"
-  )
-}
-
 export async function getClientes() {
-  const [profilesResult, ordersResult, presenceResult, cartsResult] = await Promise.all([
+  const [profilesResult, summariesResult, presenceResult, cartsResult] = await Promise.all([
     supabase.rpc("admin_get_client_profiles"),
-    supabase
-      .from("ordenes")
-      .select("id, usuario_id, cliente_email, total, estado, payment_status, created_at")
-      .order("created_at", { ascending: false }),
+    // Agregados (order_count, total_spent, last_order) ya calculados en
+    // SQL vía GROUP BY: evita descargar la tabla `ordenes` completa al
+    // navegador para recalcularlos en JS en cada carga del panel.
+    supabase.rpc("admin_get_client_order_summaries"),
     supabase.rpc("admin_get_client_presence"),
     supabase.rpc("admin_get_client_carts"),
   ])
 
   if (profilesResult.error) throw profilesResult.error
-  if (ordersResult.error) throw ordersResult.error
+  if (summariesResult.error) throw summariesResult.error
 
   const profiles = ((profilesResult.data ?? []) as SupabaseProfile[]).filter(
     (profile) => ["cliente", "admin", "super_admin"].includes(profile.rol ?? "")
   )
-  const orders = (ordersResult.data ?? []) as SupabasePedido[]
+  const summaryRows = (summariesResult.data ?? []) as ClientOrderSummaryRow[]
   const presenceRows = presenceResult.error
     ? []
     : ((presenceResult.data ?? []) as PresenceRow[])
@@ -60,41 +58,14 @@ export async function getClientes() {
   const activeSince = Date.now() - 5 * 60 * 1000
   const presenceByUser = new Map(presenceRows.map((row) => [row.user_id, row]))
   const cartsByUser = new Map(cartRows.map((row) => [row.user_id, row.payload]))
-  const ordersByUserId = new Map<string, SupabasePedido[]>()
-  const ordersByEmail = new Map<string, SupabasePedido[]>()
-
-  for (const order of orders) {
-    if (order.usuario_id) {
-      const current = ordersByUserId.get(order.usuario_id) ?? []
-      current.push(order)
-      ordersByUserId.set(order.usuario_id, current)
-    }
-    const email = order.cliente_email?.trim().toLocaleLowerCase("es")
-    if (email) {
-      const current = ordersByEmail.get(email) ?? []
-      current.push(order)
-      ordersByEmail.set(email, current)
-    }
-  }
+  const summaryByProfileId = new Map(summaryRows.map((row) => [row.profile_id, row]))
 
   return profiles.map<SupabaseCliente>((profile) => {
     const presence = presenceByUser.get(profile.id)
-    const ordersById = ordersByUserId.get(profile.id) ?? []
-    const profileEmail = profile.email?.trim().toLocaleLowerCase("es")
-    const ordersByProfileEmail = profileEmail
-      ? ordersByEmail.get(profileEmail) ?? []
-      : []
-    const clientOrders = [
-      ...new Map(
-        [...ordersById, ...ordersByProfileEmail].map((order) => [order.id, order]),
-      ).values(),
-    ]
-    const paidOrders = clientOrders.filter(isPaidOrder)
-    const lastOrder = clientOrders[0] ?? null
-    const totalSpent = paidOrders.reduce(
-      (total, order) => total + Number(order.total ?? 0),
-      0
-    )
+    const summary = summaryByProfileId.get(profile.id)
+    const lastOrder = summary?.last_order ?? null
+    const totalSpent = Number(summary?.total_spent ?? 0)
+    const orderCount = Number(summary?.order_count ?? 0)
 
     return {
       id: profile.id,
@@ -128,8 +99,8 @@ export async function getClientes() {
       current_cart: cartsByUser.get(profile.id) ?? null,
       last_order: lastOrder,
       total_spent: totalSpent,
-      order_count: clientOrders.length,
-      status: clientOrders.length ? "activo" : "sin_compras",
+      order_count: orderCount,
+      status: orderCount ? "activo" : "sin_compras",
     }
   })
 }

@@ -16,15 +16,22 @@ const PRODUCT_SELECT = `
   producto_especificaciones(*)
 `
 
-export async function getStoreProductos() {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .select(PRODUCT_SELECT)
-      .eq("activo", true)
-      .order("created_at", {
-        ascending: false,
-      })
+export async function getStoreProductos(
+  options?: { limit?: number }
+) {
+  let query = supabase
+    .from("productos")
+    .select(PRODUCT_SELECT)
+    .eq("activo", true)
+    .order("created_at", {
+      ascending: false,
+    })
+
+  if (options?.limit) {
+    query = query.limit(options.limit)
+  }
+
+  const { data, error } = await query
 
   if (error) {
     throw error
@@ -83,18 +90,21 @@ export async function getProductoBySlug(
 
   if (!data) return null
 
-  const [product] = await attachStoreConditionedStock(
-    supabase,
-    [data as SupabaseProducto],
-  )
+  // Ninguna de las dos depende del resultado de la otra: sólo necesitan el
+  // producto base recién leído, así que se piden en paralelo en vez de
+  // encadenar dos round-trips secuenciales en la página de producto.
+  const [[conditionedProduct], [reviewProduct]] = await Promise.all([
+    attachStoreConditionedStock(supabase, [data as SupabaseProducto]),
+    attachProductReviewSummaries([data as SupabaseProducto]),
+  ])
 
-  if (!product || !hasPurchasableStock(product)) {
+  if (!conditionedProduct || !hasPurchasableStock(conditionedProduct)) {
     return null
   }
 
-  const [productWithReviews] = await attachProductReviewSummaries([product])
-
-  return productWithReviews ?? product
+  return reviewProduct
+    ? { ...conditionedProduct, ...reviewProduct }
+    : conditionedProduct
 }
 
 export async function getProductosByCategoria(

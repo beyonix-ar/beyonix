@@ -1,8 +1,11 @@
 import type { createAdminClient } from "../supabase/admin.ts"
 
+import { mapWithConcurrency } from "../async/map-with-concurrency.ts"
 import { normalizeMercadoLibreSku } from "./sku-aliases.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
+const READ_CONCURRENCY = 4
+const UPDATE_CONCURRENCY = 8
 
 export interface CatalogSkuRow {
   id: number
@@ -103,61 +106,85 @@ export async function reconcileUnlinkedMercadoLibreSalesByExactSku(
     return { linked: 0, errors: [] }
   }
 
-  const sales: UnlinkedSaleRow[] = []
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await admin
-      .from("mercadolibre_sales")
-      .select("id, sku, raw_data")
-      .is("product_id", null)
-      .not("sku", "is", null)
-      .range(from, from + 999)
+  const { count, error: countError } = await admin
+    .from("mercadolibre_sales")
+    .select("id", { count: "exact", head: true })
+    .is("product_id", null)
+    .not("sku", "is", null)
+  if (countError) return { linked: 0, errors: [countError.message] }
 
-    if (error) return { linked: 0, errors: [error.message] }
-    sales.push(...((data ?? []) as UnlinkedSaleRow[]))
-    if (!data || data.length < 1000) break
-  }
+  const total = count ?? 0
+  const batchStarts: number[] = []
+  for (let from = 0; from < total; from += 1000) batchStarts.push(from)
 
-  let linked = 0
-  const errors: string[] = []
+  const batches = await mapWithConcurrency(
+    batchStarts,
+    READ_CONCURRENCY,
+    (from) =>
+      admin
+        .from("mercadolibre_sales")
+        .select("id, sku, raw_data")
+        .is("product_id", null)
+        .not("sku", "is", null)
+        .order("id", { ascending: true })
+        .range(from, from + 999),
+  )
+  const batchError = batches.find((batch) => batch.error)?.error
+  if (batchError) return { linked: 0, errors: [batchError.message] }
+
+  const sales = batches.flatMap(
+    (batch) => (batch.data ?? []) as UnlinkedSaleRow[],
+  )
+
   const mappedAt = new Date().toISOString()
-
-  for (const sale of sales) {
+  const updates = sales.flatMap((sale) => {
     const normalizedSku = normalizeMercadoLibreSku(sale.sku)
-    if (requestedSku && normalizedSku !== requestedSku) continue
+    if (requestedSku && normalizedSku !== requestedSku) return []
 
     const target = targetsBySku.get(normalizedSku)
-    if (!target) continue
+    if (!target) return []
 
     const rawData = rawObject(sale.raw_data)
     const storedMapping = rawObject(rawData.beyonix_cost_mapping)
-    if (storedMapping.standalone_key) continue
+    if (storedMapping.standalone_key) return []
 
-    const { error } = await admin
-      .from("mercadolibre_sales")
-      .update({
-        product_id: target.productId,
-        raw_data: {
-          ...rawData,
-          beyonix_cost_mapping: {
-            product_id: target.productId,
-            variant_id: target.variantId,
-            standalone_key: null,
-            match_key: `sku:${normalizedSku}`,
-            mapped_at: mappedAt,
-            mapped_by: actorId ?? null,
-            mapping_origin: "automatic_exact_sku",
+    return [
+      admin
+        .from("mercadolibre_sales")
+        .update({
+          product_id: target.productId,
+          raw_data: {
+            ...rawData,
+            beyonix_cost_mapping: {
+              product_id: target.productId,
+              variant_id: target.variantId,
+              standalone_key: null,
+              match_key: `sku:${normalizedSku}`,
+              mapped_at: mappedAt,
+              mapped_by: actorId ?? null,
+              mapping_origin: "automatic_exact_sku",
+            },
           },
-        },
-      })
-      .eq("id", sale.id)
-      .is("product_id", null)
+        })
+        .eq("id", sale.id)
+        .is("product_id", null),
+    ]
+  })
 
-    if (error) {
-      errors.push(error.message)
-    } else {
-      linked += 1
-    }
-  }
+  // Cada UPDATE apunta a una fila distinta (eq id) y es independiente del
+  // resto: seguro correrlas en paralelo en vez de una por una.
+  const results = await mapWithConcurrency(
+    updates,
+    UPDATE_CONCURRENCY,
+    (update) => update,
+  )
+
+  let linked = 0
+  const errors: string[] = []
+  results.forEach((result) => {
+    if (result.error) errors.push(result.error.message)
+    else linked += 1
+  })
 
   return { linked, errors }
 }

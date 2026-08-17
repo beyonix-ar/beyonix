@@ -9,7 +9,7 @@ export interface ProductPriceRange {
 }
 
 export function getProductPriceRange(
-  products: SupabaseProducto[]
+  products: Array<Pick<SupabaseProducto, "precio">>
 ): ProductPriceRange {
   const prices = products
     .map((product) => Number(product.precio))

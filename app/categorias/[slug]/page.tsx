@@ -12,21 +12,16 @@ import {
 
 export const dynamic = "force-dynamic"
 
-type CategoryPageParams =
-  | {
-      slug?: string
-    }
-  | Promise<{
-      slug?: string
-    }>
+type CategoryPageParams = Promise<{
+  slug?: string
+}>
 
 export default async function Page({
   params,
 }: {
   params: CategoryPageParams
 }) {
-  const resolvedParams =
-    await Promise.resolve(params)
+  const resolvedParams = await params
 
   const slug =
     resolvedParams?.slug || ""
