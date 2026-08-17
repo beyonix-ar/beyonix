@@ -66,12 +66,22 @@ interface AndreaniResolvedConfig {
   password: string
 }
 
+/**
+ * Autorización explícita y semánticamente separada para acceder a PROD:
+ * "tariffs-only" habilita únicamente GET /login y GET /v1/tarifas (cotización,
+ * ya solicitada por Andreani mientras QA es inestable). "shipment-creation"
+ * habilita únicamente GET /login y POST /v2/ordenes-de-envio (creación B2C) y
+ * nunca se otorga implícitamente: la resolución de ambiente de creación es
+ * quien decide si corresponde pasarla.
+ */
+export type AndreaniProductionAccess = "tariffs-only" | "shipment-creation"
+
 export interface AndreaniClientOptions {
   env?: NodeJS.ProcessEnv
   fetch?: typeof fetch
   timeoutMs?: number
   now?: () => number
-  productionAccess?: "tariffs-only"
+  productionAccess?: AndreaniProductionAccess
 }
 
 interface RequestOptions {
@@ -167,7 +177,11 @@ export function resolveAndreaniConfig(
 ): AndreaniResolvedConfig {
   const environment = parseEnvironment(env)
 
-  if (environment === "PROD" && productionAccess !== "tariffs-only") {
+  if (
+    environment === "PROD" &&
+    productionAccess !== "tariffs-only" &&
+    productionAccess !== "shipment-creation"
+  ) {
     throw new AndreaniError(
       "PRODUCTION_BLOCKED",
       "El acceso a Andreani PROD está bloqueado durante esta etapa.",
@@ -1189,6 +1203,32 @@ function buildSearchQuery(filters: AndreaniShipmentSearchFilters) {
   return query
 }
 
+/**
+ * Los 4xx de negocio de Andreani (400/404/409/422/429) devuelven un cuerpo
+ * ProblemDetails ({ type, title, detail, status, errors }). Se conserva sólo
+ * "detail"/"title" -- nunca el cuerpo completo -- para poder diagnosticar sin
+ * exponer nada del request ni encabezados.
+ */
+async function readAndreaniErrorDetail(response: Response): Promise<string | undefined> {
+  let text: string
+  try {
+    text = await response.text()
+  } catch {
+    return undefined
+  }
+  if (!text.trim()) return undefined
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+  if (!isRecord(payload)) return undefined
+
+  return getRequiredString(payload.detail) || getRequiredString(payload.title) || undefined
+}
+
 function assertJsonResponse(payload: unknown) {
   if (payload === null || payload === undefined) {
     throw new AndreaniError(
@@ -1216,6 +1256,21 @@ export class AndreaniClient {
     this.developmentLogs = (options.env ?? process.env).NODE_ENV === "development"
   }
 
+  /** Sanitiza texto de Andreani con las credenciales reales de esta instancia. */
+  private sanitizeDetail(value: string) {
+    return sanitizeAndreaniMessage(value, {
+      ...process.env,
+      ANDREANI_QA_USERNAME:
+        this.config.environment === "QA" ? this.config.username : undefined,
+      ANDREANI_QA_PASSWORD:
+        this.config.environment === "QA" ? this.config.password : undefined,
+      ANDREANI_PROD_USERNAME:
+        this.config.environment === "PROD" ? this.config.username : undefined,
+      ANDREANI_PROD_PASSWORD:
+        this.config.environment === "PROD" ? this.config.password : undefined,
+    })
+  }
+
   private get cacheKey() {
     return `${this.config.environment}:${this.config.baseUrl}`
   }
@@ -1224,14 +1279,19 @@ export class AndreaniClient {
     const method = options.method ?? "GET"
     const pathname = path.split("?")[0]
     const productionRequestAllowed =
-      this.productionAccess === "tariffs-only" &&
-      method === "GET" &&
-      (pathname === "/login" || pathname === "/v1/tarifas")
+      (this.productionAccess === "tariffs-only" &&
+        method === "GET" &&
+        (pathname === "/login" || pathname === "/v1/tarifas")) ||
+      (this.productionAccess === "shipment-creation" &&
+        ((method === "GET" && pathname === "/login") ||
+          (method === "POST" && pathname === "/v2/ordenes-de-envio")))
 
     if (this.config.environment === "PROD" && !productionRequestAllowed) {
       throw new AndreaniError(
         "PRODUCTION_BLOCKED",
-        "Andreani PROD solo admite autenticación y consulta de tarifas.",
+        this.productionAccess === "shipment-creation"
+          ? "Andreani PROD solo admite autenticación y creación de envíos B2C con autorización explícita."
+          : "Andreani PROD solo admite autenticación y consulta de tarifas.",
       )
     }
 
@@ -1297,9 +1357,10 @@ export class AndreaniClient {
           )
         }
 
+        const detail = await readAndreaniErrorDetail(response)
         throw new AndreaniError(
           "REQUEST_FAILED",
-          "Andreani rechazó la solicitud.",
+          detail ? this.sanitizeDetail(detail) : "Andreani rechazó la solicitud.",
           { status: response.status },
         )
       }
@@ -1650,7 +1711,14 @@ export class AndreaniClient {
         altoCm: logistics.altoCm,
         anchoCm: logistics.anchoCm,
         largoCm: logistics.largoCm,
-        volumenCm: logistics.altoCm * logistics.anchoCm * logistics.largoCm,
+        volumenCm:
+          item.bulto?.volumenCm === undefined
+            ? logistics.altoCm * logistics.anchoCm * logistics.largoCm
+            : assertPositiveNumber(
+                item.bulto.volumenCm,
+                "bulto.volumenCm",
+                100_000_000,
+              ),
       }
     })
     const { payload } = await this.performFetch("/v2/ordenes-de-envio", {

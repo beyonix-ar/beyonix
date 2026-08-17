@@ -323,7 +323,10 @@ export interface AndreaniCreateShipmentInput {
     bulto?: Omit<
       AndreaniPackage,
       "kilos" | "altoCm" | "anchoCm" | "largoCm" | "volumenCm"
-    >
+    > & {
+      /** Volumen consolidado calculado a partir de todas las unidades del pedido. */
+      volumenCm?: number
+    }
   }>
 }
 

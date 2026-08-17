@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { createAndreaniAdminTestHandlers } from "./admin-test-handler.ts"
+import type { AndreaniCreateShipmentInput } from "./types.ts"
 import {
   AndreaniClient,
   AndreaniError,
@@ -166,6 +167,17 @@ test("selecciona únicamente la configuración QA", () => {
   const config = resolveAndreaniConfig(qaEnvironment())
   assert.equal(config.environment, "QA")
   assert.equal(config.baseUrl, "https://apisqa.andreani.com")
+})
+
+test("rechaza una URL PROD aunque esté cargada en las variables QA", () => {
+  assert.throws(
+    () =>
+      resolveAndreaniConfig(
+        qaEnvironment({ ANDREANI_QA_API_URL: "https://apis.andreani.com" }),
+      ),
+    (error) =>
+      error instanceof AndreaniError && error.code === "CONFIGURATION_ERROR",
+  )
 })
 
 test("bloquea el uso accidental de PROD", () => {
@@ -720,10 +732,54 @@ for (const status of [400, 404] as const) {
         error instanceof AndreaniError &&
         error.code === "REQUEST_FAILED" &&
         error.status === status &&
-        !error.message.includes("Detalle externo"),
+        error.message === "Detalle externo",
     )
   })
 }
+
+test("conserva el detalle sanitizado de un 4xx y descarta el body completo", async () => {
+  resetAndreaniRuntimeStateForTests()
+  const env = qaEnvironment()
+  const client = new AndreaniClient({
+    env,
+    fetch: async () =>
+      Response.json(
+        {
+          type: "about:blank",
+          title: "Error al generar alta de la orden",
+          detail: `Numero de contrato 400042104 no existe. token secreto=${env.ANDREANI_QA_PASSWORD}`,
+          status: 400,
+          errors: null,
+        },
+        { status: 400 },
+      ),
+  })
+
+  await assert.rejects(
+    () => client.getSucursales(),
+    (error) =>
+      error instanceof AndreaniError &&
+      error.status === 400 &&
+      error.message.startsWith("Numero de contrato 400042104 no existe.") &&
+      !error.message.includes(env.ANDREANI_QA_PASSWORD as string),
+  )
+})
+
+test("sin detail ni title conserva el mensaje genérico", async () => {
+  resetAndreaniRuntimeStateForTests()
+  const client = new AndreaniClient({
+    env: qaEnvironment(),
+    fetch: async () => Response.json({ type: "about:blank", status: 422 }, { status: 422 }),
+  })
+
+  await assert.rejects(
+    () => client.getSucursales(),
+    (error) =>
+      error instanceof AndreaniError &&
+      error.status === 422 &&
+      error.message === "Andreani rechazó la solicitud.",
+  )
+})
 
 test("sanitiza secretos y headers de los mensajes", () => {
   const env = qaEnvironment()
@@ -894,6 +950,7 @@ test("serializa una orden B2C según el ejemplo oficial", async () => {
   let requestBody = ""
   let requestMethod = ""
   let requestToken: string | null = null
+  let responseStatus = 202
   const client = new AndreaniClient({
     env: qaEnvironment(),
     fetch: async (input, init) => {
@@ -903,11 +960,11 @@ test("serializa una orden B2C según el ejemplo oficial", async () => {
       requestMethod = init?.method ?? ""
       requestBody = String(init?.body ?? "")
       requestToken = new Headers(init?.headers).get("x-authorization-token")
-      return Response.json(officialOrderResponse, { status: 202 })
+      return Response.json(officialOrderResponse, { status: responseStatus })
     },
   })
 
-  const response = await client.crearEnvio({
+  const input: AndreaniCreateShipmentInput = {
     envio: {
       contrato: "300006611",
       origen: {
@@ -975,7 +1032,8 @@ test("serializa una orden B2C según el ejemplo oficial", async () => {
         },
       },
     ],
-  })
+  }
+  const response = await client.crearEnvio(input)
 
   const serialized = JSON.parse(requestBody) as {
     bultos: Array<Record<string, unknown>>
@@ -1000,6 +1058,10 @@ test("serializa una orden B2C según el ejemplo oficial", async () => {
   ])
   assert.equal(response.estado, "Pendiente")
   assert.equal(response.agrupadorDeBultos, "API0000000428931")
+
+  responseStatus = 208
+  const alreadyReported = await client.crearEnvio(input)
+  assert.equal(alreadyReported.agrupadorDeBultos, "API0000000428931")
 })
 
 test("rechaza órdenes que no cumplen el límite B2C", async () => {

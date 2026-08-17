@@ -7,6 +7,7 @@ import {
   buildCheckoutOrderBase,
   buildCheckoutOrderItemsPayload,
   getCheckoutOrderCustomerValidationError,
+  getCheckoutOrderShippingFields,
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
@@ -135,6 +136,13 @@ test("prepara productos, variantes y precios con las reglas existentes", () => {
 
 test("los tres medios conservan la misma base y sus diferencias reales", () => {
   const customer = normalizeCheckoutOrderCustomer(validCustomer)
+  const shipping = getCheckoutOrderShippingFields({
+    provider: "andreani",
+    type: "domicilio",
+    costReal: 12_345.67,
+    costCharged: 10_000,
+    freeShippingApplied: false,
+  })
   const storeBenefit = {
     id: "benefit-1",
     code: "CLIENTE10",
@@ -160,7 +168,6 @@ test("los tres medios conservan la misma base y sus diferencias reales", () => {
     paymentMethodId: "transferencia",
     creditBalanceUsed: 2_500,
     externalAmountDue: 7_500,
-    includePostalCode: false,
   })
   const customerCredit = buildCheckoutOrderBase({
     ...common,
@@ -169,7 +176,8 @@ test("los tres medios conservan la misma base y sus diferencias reales", () => {
     externalAmountDue: 0,
   })
 
-  for (const order of [mercadoPago, transferencia, customerCredit]) {
+  for (const base of [mercadoPago, transferencia, customerCredit]) {
+    const order = { ...base, ...shipping }
     assert.equal(order.total, 10_000)
     assert.equal(order.original_total, 10_000)
     assert.equal(order.credit_balance_used, 0)
@@ -177,6 +185,17 @@ test("los tres medios conservan la misma base y sus diferencias reales", () => {
     assert.equal(order.checkout_idempotency_key, "checkout:session-1")
     assert.equal(order.store_benefit_id, "benefit-1")
     assert.equal(order.cliente_nombre, "María Muñoz")
+    assert.equal(order.cliente_email, "maria@example.com")
+    assert.equal(order.cliente_telefono, "+54 11 5555-1234")
+    assert.equal(order.cliente_dni, "30123456")
+    assert.equal(order.cliente_direccion, "Avenida Córdoba 1234")
+    assert.equal(order.cp_destino, "3230")
+    assert.equal(order.localidad, "Paso de los Libres")
+    assert.equal(order.provincia, "Corrientes")
+    assert.equal(order.shipping_provider, "andreani")
+    assert.equal(order.shipping_type, "domicilio")
+    assert.equal(order.shipping_cost_real, 12_345.67)
+    assert.equal(order.shipping_cost_charged, 10_000)
   }
   assert.equal(mercadoPago.payment_composition.parts[1].type, "mercadopago")
   assert.equal(
@@ -185,7 +204,10 @@ test("los tres medios conservan la misma base y sus diferencias reales", () => {
   )
   assert.equal(customerCredit.payment_composition.parts.length, 1)
   assert.equal(customerCredit.payment_composition.parts[0].type, "customer_credit")
-  assert.equal("cp_destino" in transferencia, false)
+  assert.equal(
+    "cp_destino" in transferencia && transferencia.cp_destino,
+    "3230",
+  )
   assert.equal("cp_destino" in mercadoPago && mercadoPago.cp_destino, "3230")
   assert.equal(
     "cp_destino" in customerCredit && customerCredit.cp_destino,

@@ -134,7 +134,6 @@ interface CheckoutOrderBaseParams {
   > | null
   storeBenefitDiscountAmount: number
   customer: NormalizedCheckoutOrderCustomer
-  includePostalCode?: boolean
 }
 
 interface PersistCheckoutOrderItemsParams {
@@ -391,20 +390,7 @@ export function buildCheckoutOrderBase({
   storeBenefit,
   storeBenefitDiscountAmount,
   customer,
-  includePostalCode = true,
 }: CheckoutOrderBaseParams) {
-  const customerFields = includePostalCode
-    ? customer
-    : {
-        cliente_nombre: customer.cliente_nombre,
-        cliente_email: customer.cliente_email,
-        cliente_telefono: customer.cliente_telefono,
-        cliente_dni: customer.cliente_dni,
-        cliente_direccion: customer.cliente_direccion,
-        localidad: customer.localidad,
-        provincia: customer.provincia,
-      }
-
   return {
     usuario_id: userId,
     total,
@@ -425,7 +411,7 @@ export function buildCheckoutOrderBase({
     store_benefit_type: storeBenefit?.benefit_type ?? null,
     store_benefit_percent: storeBenefit?.percent ?? null,
     store_benefit_discount_amount: storeBenefitDiscountAmount || null,
-    ...customerFields,
+    ...customer,
   }
 }
 

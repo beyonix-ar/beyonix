@@ -23,6 +23,7 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import {
   buildCheckoutOrderBase,
   getCheckoutOrderCustomerValidationError,
+  getCheckoutOrderShippingFields,
   insertCheckoutOrderItemsAndValidateInventory,
   loadAndValidateCheckoutOrderCatalog,
   normalizeCheckoutOrderCustomer,
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
     const baseTotals = calculateCartTotals(catalog.cartRows)
     const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const siteSettings = await getSiteSettings({ fresh: true })
-    const shipping = normalizeCheckoutOrderShipping({
+    const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
       customer: payload.customer,
       items,
@@ -83,8 +84,9 @@ export async function POST(request: Request) {
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
     })
+    const shipping = getCheckoutOrderShippingFields(normalizedShipping)
     const totals = calculateCartTotals(catalog.cartRows, {
-      shippingCost: shipping.costCharged,
+      shippingCost: shipping.shipping_cost_charged,
     })
     const storeBenefit = user
       ? await findActiveStoreBenefit(
@@ -170,16 +172,16 @@ export async function POST(request: Request) {
         storeBenefit,
         storeBenefitDiscountAmount,
         customer,
-        includePostalCode: false,
       }),
-      envio_proveedor: shipping.provider,
-      andreani_costo: shipping.costCharged,
+      envio_proveedor: shipping.shipping_provider,
+      andreani_costo: shipping.shipping_cost_charged,
       payment_method_id: "transferencia",
       payment_type_id: null,
       payment_status: "pendiente_comprobante",
       transfer_alias: TRANSFER_ALIAS,
       transfer_discount_percent: TRANSFER_DISCOUNT_PERCENT,
       transfer_discount_amount: transferDiscountAmount,
+      ...shipping,
     }
 
     const orderClient = user ? supabase : admin
