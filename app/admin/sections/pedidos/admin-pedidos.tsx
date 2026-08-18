@@ -4032,152 +4032,114 @@ function AdminOrderSummaryDashboard({
   const actionToneClass = `admin-order-action-tone-${action.tone}`
   return (
     <div className="admin-order-summary-view space-y-2.5">
-      <section className={`admin-order-summary-main-panel rounded-xl border px-3 py-2.5 ${actionToneClass}`}>
-        <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div className="min-w-0 space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-base font-black text-white">
-                Pedido #{formatPublicOrderId(pedido.id)}
-              </h3>
-              <span className={`admin-order-status-badge rounded-full border px-2.5 py-0.5 text-10px font-black uppercase tracking-wide ${
-                isAdminSensitiveStatus(mainStatus)
-                  ? "admin-order-status-badge-danger"
-                  : "admin-order-status-badge-info"
-              }`}>
-                {mainStatus}
-              </span>
-            </div>
-            <div className="grid gap-1 text-xs sm:grid-cols-[auto_minmax(0,1fr)] sm:items-baseline">
-              <span className="text-white/42">Última actividad</span>
-              <span className="font-semibold text-white/82">{latestActivity.label}</span>
-              <span className="text-white/42">Fecha</span>
-              <span className="font-medium text-white/58">{formatOptionalOrderDate(latestActivity.at)}</span>
-            </div>
+      <section className={`admin-order-rs-hero ${actionToneClass}`}>
+        <div className="min-w-0">
+          <p className="admin-order-rs-eyebrow">Pedido</p>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h3 className="admin-order-rs-title">#{formatPublicOrderId(pedido.id)}</h3>
+            <span className={`admin-order-status-badge rounded-full border px-2.5 py-0.5 text-10px font-black uppercase tracking-wide ${
+              isAdminSensitiveStatus(mainStatus)
+                ? "admin-order-status-badge-danger"
+                : "admin-order-status-badge-info"
+            }`}>
+              {mainStatus}
+            </span>
           </div>
+          <p className="admin-order-rs-meta">
+            {latestActivity.label}
+            <span className="admin-order-rs-meta-dot">·</span>
+            {formatOptionalOrderDate(latestActivity.at)}
+          </p>
+        </div>
 
-          <div className="admin-order-recommended-action rounded-lg px-2.5 py-2 lg:min-w-52">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-white">{action.title}</p>
-            </div>
-            {action.buttonLabel && (
-              <button
-                type="button"
-                onClick={() => onGoToView(action.target)}
-                className="admin-ds-button admin-ds-button-primary mt-2 inline-flex h-8 cursor-pointer items-center justify-center px-3 text-10px font-black uppercase tracking-wide transition"
-              >
-                {action.buttonLabel}
-              </button>
-            )}
-          </div>
+        <div className="admin-order-rs-action">
+          <p className="admin-order-rs-eyebrow">Próxima acción</p>
+          <p className="admin-order-rs-action-title">{action.title}</p>
+          {action.buttonLabel && (
+            <button
+              type="button"
+              onClick={() => onGoToView(action.target)}
+              className="admin-ds-button admin-ds-button-primary mt-2 inline-flex h-8 cursor-pointer items-center justify-center px-3 text-10px font-black uppercase tracking-wide transition"
+            >
+              {action.buttonLabel}
+            </button>
+          )}
         </div>
       </section>
 
-      <div className="grid gap-2.5 xl:grid-cols-[minmax(300px,0.4fr)_minmax(0,0.6fr)]">
-        <section className="admin-order-finance-panel rounded-xl p-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-              Resumen económico
-            </p>
-          </div>
+      <section className="admin-order-rs-panel">
+        <div className="admin-order-rs-col">
+          <p className="admin-order-rs-eyebrow">Resumen económico</p>
 
-          <div className="mt-2.5 space-y-1.5 text-sm">
-            <div className="admin-order-finance-row flex items-baseline justify-between gap-4">
-              <span className="text-white/54">Subtotal productos</span>
-              <span className="font-bold text-white/82">{formatPrice(financialBreakdown.productsSubtotal)}</span>
+          <div className="admin-order-rs-rows">
+            <div className="admin-order-rs-row">
+              <span>Subtotal productos</span>
+              <span>{formatPrice(financialBreakdown.productsSubtotal)}</span>
             </div>
-            <div className="admin-order-finance-row flex items-baseline justify-between gap-4">
-              <span className="text-white/54">Descuento transferencia</span>
-              <span className="font-bold text-emerald-200">
+            <div className="admin-order-rs-row">
+              <span>Descuento transferencia</span>
+              <span className={financialBreakdown.transferDiscount > 0 ? "admin-order-rs-positive" : undefined}>
                 {financialBreakdown.transferDiscount > 0
                   ? `-${formatPrice(financialBreakdown.transferDiscount)}`
                   : formatPrice(0)}
               </span>
             </div>
-            <div className="admin-order-finance-row flex items-baseline justify-between gap-4">
-              <span className="text-white/54">Envío</span>
-              <span className="font-bold text-white/82">
-                {financialBreakdown.shipping > 0 ? formatPrice(financialBreakdown.shipping) : "Gratis"}
-              </span>
+            <div className="admin-order-rs-row">
+              <span>Envío</span>
+              <span>{financialBreakdown.shipping > 0 ? formatPrice(financialBreakdown.shipping) : "Gratis"}</span>
             </div>
           </div>
 
-          <div className="my-3 border-t border-dashed border-white/12" />
+          <div className="admin-order-rs-hr" />
 
-          <div
-            className={
-              isCollectedTotal
-                ? "admin-order-received-card admin-order-final-total-card rounded-lg px-4 py-4"
-                : "admin-order-total-card admin-order-final-total-card rounded-lg px-4 py-4"
-            }
-          >
-            <p
-              className={
-                isCollectedTotal
-                  ? "text-10px font-bold uppercase tracking-widest text-white/68"
-                  : "text-10px font-black uppercase tracking-widest text-white"
-              }
-            >
-              {totalLabel}
-            </p>
-            <p
-              className={
-                isCollectedTotal
-                  ? "admin-order-total-received-amount mt-1 text-2xl font-black text-emerald-100"
-                  : "mt-1 text-2xl font-black text-white"
-              }
-            >
-              {formatPrice(totalValue)}
-            </p>
-            <p
-              className={
-                isCollectedTotal
-                  ? "mt-1 text-11px font-medium text-white/76"
-                  : "mt-1 text-11px font-medium text-white"
-              }
-            >
-              {paymentContext}
-            </p>
+          <div className={`admin-order-rs-total ${isCollectedTotal ? "admin-order-rs-total-positive" : ""}`}>
+            <span className="admin-order-rs-total-bar" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="admin-order-rs-total-label">
+                {isCollectedTotal && <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />}
+                {totalLabel}
+              </p>
+              <p className="admin-order-rs-total-amount">{formatPrice(totalValue)}</p>
+              <p className="admin-order-rs-total-context">{paymentContext}</p>
+            </div>
           </div>
 
           {(isCancellationFlowOrder(pedido) || refundAmount > 0) && (
-            <div className="mt-2 space-y-1.5 border-t border-white/8 pt-2 text-sm">
+            <div className="admin-order-rs-rows admin-order-rs-rows-tight">
               {!refundedOrder && (
-                <div className="flex items-baseline justify-between gap-4">
-                  <span className="text-white/54">Monto reintegrado</span>
-                  <span
-                    className={`font-black ${
-                      refundAmount > 0 ? "text-emerald-200" : "text-amber-200"
-                    }`}
-                  >
+                <div className="admin-order-rs-row">
+                  <span>Monto reintegrado</span>
+                  <span className={refundAmount > 0 ? "admin-order-rs-positive" : "admin-order-rs-warning"}>
                     {refundAmount > 0 ? `-${formatPrice(refundAmount)}` : "Pendiente"}
                   </span>
                 </div>
               )}
               {(refundAmount > 0 || refundedOrder) && (
-                <div className="flex items-baseline justify-between gap-4">
-                  <span className="text-white/54">Saldo final</span>
-                  <span className="font-black text-white">{formatPrice(finalBalance)}</span>
+                <div className="admin-order-rs-row">
+                  <span>Saldo final</span>
+                  <span className="admin-order-rs-strong">{formatPrice(finalBalance)}</span>
                 </div>
               )}
             </div>
           )}
-        </section>
+        </div>
 
-        <section className="rounded-xl border border-white/8 bg-[#0D1117] p-3">
-          <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-            Cliente y dirección
+        <div className="admin-order-rs-divider" aria-hidden="true" />
+
+        <div className="admin-order-rs-col">
+          <p className="admin-order-rs-eyebrow">Cliente</p>
+          <p className="admin-order-rs-name">{pedido.cliente_nombre || "Cliente sin nombre"}</p>
+          <p className="admin-order-rs-sub">
+            {pedido.cliente_email || "Email no informado"}
+            <span className="admin-order-rs-meta-dot">·</span>
+            {pedido.cliente_telefono || "Sin teléfono"}
           </p>
-          <div className="mt-2.5 space-y-2.5">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <DetailValue label="Nombre" value={pedido.cliente_nombre || "Cliente sin nombre"} />
-              <DetailValue label="Usuario" value={(pedido.cliente_username || "Sin usuario").toUpperCase()} />
-              <DetailValue label="Email" value={pedido.cliente_email || "No informado"} />
-              <DetailValue label="Teléfono" value={pedido.cliente_telefono || "No informado"} />
-            </div>
-            <CustomerAddressDetails pedido={pedido} />
-          </div>
-        </section>
-      </div>
+          <p className="admin-order-rs-faint">Usuario: {(pedido.cliente_username || "Sin usuario").toUpperCase()}</p>
+
+          <p className="admin-order-rs-eyebrow admin-order-rs-eyebrow-spaced">Entrega</p>
+          <CustomerAddressDetails pedido={pedido} />
+        </div>
+      </section>
     </div>
   )
 }
@@ -4923,21 +4885,24 @@ function PedidoDetailModal({
           {(activeView === "resumen" || activeView === "envio") && (
             <>
            {activeView === "resumen" && (
-           <section className="admin-order-products-panel admin-order-summary-products-panel mt-2.5 rounded-xl border border-white/8 p-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <div>
-                <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                  Productos
-                </p>
-                <p className="mt-1 text-sm text-white/55">
-                  {items.reduce((sum, item) => sum + Number(item.cantidad ?? 0), 0)} unidades
-                </p>
-              </div>
+           <section className="admin-order-rs-products mt-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="admin-order-rs-eyebrow">Productos</p>
+              <p className="admin-order-rs-faint">
+                {items.reduce((sum, item) => sum + Number(item.cantidad ?? 0), 0)} unidades
+              </p>
             </div>
 
-            <div className="mt-2 space-y-1">
-              {items.length ? (
-                items.map((item) => {
+            {items.length ? (
+              <div className="admin-order-rs-table">
+                <div className="admin-order-rs-product-row admin-order-rs-product-head" aria-hidden="true">
+                  <span>Producto</span>
+                  <span>Color</span>
+                  <span>Cant.</span>
+                  <span>Precio</span>
+                  <span>Subtotal</span>
+                </div>
+                {items.map((item) => {
                   const image = getItemImage(item)
                   const productName =
                     item.productos?.nombre ?? `Producto #${item.producto_id}`
@@ -4945,12 +4910,9 @@ function PedidoDetailModal({
                   const unitPrice = Number(item.precio ?? 0)
 
                   return (
-                    <article
-                      key={item.id}
-                      className="admin-order-item-card grid gap-2 rounded-lg border border-white/8 px-2 py-1.5 sm:grid-cols-[minmax(220px,1.45fr)_0.62fr_0.52fr_0.72fr_0.72fr] sm:items-center"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/8 bg-white">
+                    <div key={item.id} className="admin-order-rs-product-row">
+                      <div className="admin-order-rs-product-id">
+                        <div className="admin-order-rs-thumb">
                           {image ? (
                             <img
                               src={image}
@@ -4962,36 +4924,29 @@ function PedidoDetailModal({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-black text-white">{productName}</p>
-                          <p className="mt-0.5 text-[10px] text-white/48">
-                            Producto #{item.producto_id}
-                          </p>
+                          <p className="admin-order-rs-product-name">{productName}</p>
+                          <p className="admin-order-rs-faint">Producto #{item.producto_id}</p>
                         </div>
                       </div>
-                      <ItemValue label="Color" value={getItemColor(item)} />
-                      <ItemValue label="Cantidad" value={String(quantity)} />
-                      <ItemValue label="Precio unitario" value={formatPrice(unitPrice)} />
-                      <ItemValue
-                        label="Subtotal"
-                        value={formatPrice(quantity * unitPrice)}
-                      />
-                    </article>
+                      <span className="admin-order-rs-product-color">{getItemColor(item)}</span>
+                      <span className="admin-order-rs-product-qty">{quantity}</span>
+                      <span className="admin-order-rs-product-num">{formatPrice(unitPrice)}</span>
+                      <span className="admin-order-rs-product-num admin-order-rs-strong">
+                        {formatPrice(quantity * unitPrice)}
+                      </span>
+                    </div>
                   )
-                })
-              ) : (
-                <p className="admin-order-item-card rounded-xl border border-white/8 p-4 text-sm text-white/55">
-                  Este pedido no tiene productos cargados.
-                </p>
-              )}
-            </div>
+                })}
+              </div>
+            ) : (
+              <p className="admin-order-rs-faint mt-3">Este pedido no tiene productos cargados.</p>
+            )}
            </section>
            )}
 
            {activeView === "resumen" && (
-            <section className="admin-order-products-panel mt-2.5 rounded-xl border border-white/8 p-3">
-              <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                Garantía
-              </p>
+            <section className="admin-order-rs-warranty mt-3">
+              <p className="admin-order-rs-eyebrow">Garantía</p>
 
               {warrantyNotice && (
                 <p
@@ -5006,7 +4961,7 @@ function PedidoDetailModal({
                 </p>
               )}
 
-              <div className="mt-3 space-y-2">
+              <div className="admin-order-rs-warranty-list">
                 {items.length ? (
                   items.map((item) => {
                     const productName =
@@ -5018,53 +4973,50 @@ function PedidoDetailModal({
                         : visual.daysRemaining < 0
                           ? `Vencida hace ${Math.abs(visual.daysRemaining)} días`
                           : `${visual.daysRemaining} días`
+                    const warrantyFacts = [
+                      pedido.delivered_at ? `Entregado ${formatWarrantyDate(pedido.delivered_at)}` : null,
+                      item.warranty_started_at ? `Inicio ${formatWarrantyDate(item.warranty_started_at)}` : null,
+                      item.warranty_expires_at ? `Vence ${formatWarrantyDate(item.warranty_expires_at)}` : null,
+                      visual.daysRemaining !== null ? `Restan ${daysText}` : null,
+                    ].filter((fact): fact is string => Boolean(fact))
 
                     return (
-                      <article
-                        key={`warranty-${item.id}`}
-                        className="rounded-lg border border-white/8 bg-white/3 px-3 py-3"
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div key={`warranty-${item.id}`} className="admin-order-rs-warranty-row">
+                        <div className="admin-order-rs-warranty-head">
                           <div className="min-w-0">
-                            <p className="text-sm font-black text-white">{productName}</p>
-                            <p className="mt-1 text-xs text-white/52">
-                              Color: {getItemColor(item)}
-                            </p>
+                            <p className="admin-order-rs-product-name">{productName}</p>
+                            <p className="admin-order-rs-faint">Color: {getItemColor(item)}</p>
                           </div>
                           <span
-                            className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${visual.className}`}
+                            className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-10px font-black uppercase tracking-wide ${visual.className}`}
                           >
                             {visual.label}
                           </span>
                         </div>
 
-                        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-5">
-                          <ItemValue label="Fecha de entrega" value={formatWarrantyDate(pedido.delivered_at)} />
-                          <ItemValue label="Inicio" value={formatWarrantyDate(item.warranty_started_at)} />
-                          <ItemValue label="Válida hasta" value={formatWarrantyDate(item.warranty_expires_at)} />
-                          <ItemValue label="Meses" value={String(item.warranty_months ?? 6)} />
-                          <ItemValue label="Restan" value={daysText} />
-                        </div>
+                        <p className="admin-order-rs-warranty-meta">
+                          {warrantyFacts.length
+                            ? `${warrantyFacts.join(" · ")} · ${item.warranty_months ?? 6} meses de garantía`
+                            : `Aún no se entregó · Garantía de ${item.warranty_months ?? 6} meses desde la entrega`}
+                        </p>
 
                         {canEditRefundAmount && (
                           <button
                             type="button"
                             disabled={warrantySavingItemId === item.id}
                             onClick={() => void handleWarrantyEdit(item)}
-                            className="mt-3 inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-white/10 px-3 text-10px font-black uppercase tracking-wide text-white/62 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
+                            className="mt-2.5 inline-flex h-7 cursor-pointer items-center justify-center rounded-md border border-white/10 px-2.5 text-10px font-black uppercase tracking-wide text-white/62 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky disabled:cursor-wait disabled:opacity-50"
                           >
                             {warrantySavingItemId === item.id
                               ? "Guardando..."
                               : "Editar garantía"}
                           </button>
                         )}
-                      </article>
+                      </div>
                     )
                   })
                 ) : (
-                  <p className="rounded-xl border border-white/8 p-4 text-sm text-white/55">
-                    Este pedido no tiene productos cargados.
-                  </p>
+                  <p className="admin-order-rs-faint mt-3">Este pedido no tiene productos cargados.</p>
                 )}
               </div>
             </section>
@@ -5679,14 +5631,16 @@ function CustomerAddressDetails({ pedido }: { pedido: SupabasePedido }) {
   const localityLine = [locality, pedido.provincia].filter(Boolean).join(", ")
 
   return (
-    <div className="sm:col-span-2 rounded-lg border border-white/8 bg-[#111827] p-2.5">
-      <div className="grid gap-2 text-sm sm:grid-cols-2">
-        <CompactAddressValue label="Dirección" value={streetLine || cleanAddress || "No informada"} />
-        <CompactAddressValue label="Piso / Depto" value={unitLine || "-"} />
-        <CompactAddressValue label="Localidad / Provincia" value={localityLine || "Localidad no informada"} />
-        <CompactAddressValue label="Código postal" value={postalCode || "No informado"} />
-        <CompactAddressValue label="Referencias" value={reference || "-"} wide />
-      </div>
+    <div>
+      <p className="admin-order-rs-name">
+        {[streetLine || cleanAddress || "Dirección no informada", unitLine].filter(Boolean).join(" · ")}
+      </p>
+      <p className="admin-order-rs-sub">
+        {[localityLine || "Localidad no informada", postalCode ? `CP ${postalCode}` : ""]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      {reference && <p className="admin-order-rs-faint">Ref.: {reference}</p>}
     </div>
   )
 }
@@ -5745,17 +5699,6 @@ function CompactAddressValue({
       <p className="mt-0.5 truncate text-sm font-black text-white">
         {value}
       </p>
-    </div>
-  )
-}
-
-function ItemValue({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 text-left sm:text-center">
-      <p className="text-9px font-bold uppercase tracking-widest text-white/38">
-        {label}
-      </p>
-      <p className="mt-0.5 truncate text-xs font-black text-white sm:text-sm">{value}</p>
     </div>
   )
 }

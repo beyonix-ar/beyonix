@@ -6434,15 +6434,6 @@ div.claim-form-shell::after {
     0 14px 34px rgba(0, 0, 0, 0.16) !important;
 }
 
-.admin-order-detail-scope .admin-order-summary-main-panel {
-  background:
-    linear-gradient(135deg, rgba(17, 42, 67, 0.9), rgba(6, 15, 25, 0.98)) !important;
-  border-color: rgba(140, 200, 242, 0.26) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 16px 36px rgba(0, 0, 0, 0.18) !important;
-}
-
 .admin-order-detail-scope .admin-order-action-tone-urgent {
   border-left: 3px solid #FFB4BD !important;
 }
@@ -6471,34 +6462,14 @@ div.claim-form-shell::after {
   color: #FFB4BD !important;
 }
 
-.admin-order-detail-scope .admin-order-recommended-action,
 .admin-order-detail-scope .admin-order-info-card,
-.admin-order-detail-scope .admin-order-proof-card,
-.admin-order-detail-scope .admin-order-item-card {
+.admin-order-detail-scope .admin-order-proof-card {
   background:
     linear-gradient(145deg, var(--order-level-2), rgba(6, 14, 23, 0.98)) !important;
   border-color: rgba(92, 159, 215, 0.12) !important;
   box-shadow: none !important;
 }
 
-.admin-order-detail-scope .admin-order-finance-panel {
-  background:
-    linear-gradient(145deg, rgba(8, 18, 29, 0.96), rgba(5, 11, 18, 0.98)) !important;
-  border: 0 !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.024) !important;
-}
-
-.admin-order-detail-scope .admin-order-finance-row {
-  color: rgba(248, 250, 252, 0.62) !important;
-  padding-block: 0.2rem;
-}
-
-.admin-order-detail-scope .admin-order-finance-row span:last-child {
-  color: rgba(248, 250, 252, 0.82) !important;
-  font-weight: 650 !important;
-}
-
-.admin-order-detail-scope .admin-order-final-total-card,
 .admin-order-detail-scope .admin-order-total-card,
 .admin-order-detail-scope .admin-order-received-card {
   background:
@@ -6509,25 +6480,340 @@ div.claim-form-shell::after {
     0 0 24px rgba(16, 185, 129, 0.16) !important;
 }
 
-.admin-order-detail-scope .admin-order-final-total-card p:first-child {
-  color: rgba(209, 250, 229, 0.86) !important;
+/* Resumen (admin-order-rs-*): scoped rewrite for the pedido summary tab.
+   4-class chains beat the .admin-order-summary-layout-bg > div > section
+   background override above, which would otherwise flatten every panel. */
+.admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0.95rem 1.15rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(120deg, rgba(17, 42, 67, 0.88), rgba(4, 10, 18, 0.97)) !important;
+  border: 1px solid rgba(140, 200, 242, 0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
-.admin-order-detail-scope .admin-order-final-total-card p:nth-child(2) {
-  color: #7DFFBF !important;
-  letter-spacing: 0 !important;
-  text-shadow: 0 0 16px rgba(16, 185, 129, 0.24);
+.admin-order-detail-scope .admin-order-rs-eyebrow {
+  margin: 0;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.36) !important;
 }
 
-.admin-order-detail-scope .admin-order-summary-view .admin-order-received-card .admin-order-total-received-amount {
-  color: #fff !important;
-  text-shadow: none;
+.admin-order-detail-scope .admin-order-rs-eyebrow-spaced {
+  margin-top: 1.1rem;
 }
 
-.admin-order-detail-scope .admin-order-summary-products-panel .admin-order-item-card {
+.admin-order-detail-scope .admin-order-rs-title {
+  margin-top: 0.2rem;
+  font-size: 1.7rem;
+  line-height: 1.15;
+  font-weight: 900;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-meta {
+  margin-top: 0.45rem;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-meta-dot {
+  margin: 0 0.4rem;
+  color: rgba(255, 255, 255, 0.28) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-action-title {
+  margin-top: 0.3rem;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.86) !important;
+}
+
+@media (min-width: 1024px) {
+  .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-hero {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .admin-order-detail-scope .admin-order-rs-action {
+    padding-left: 1.5rem;
+    border-left: 1px solid rgba(140, 200, 242, 0.16);
+    text-align: right;
+  }
+}
+
+.admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 0.65rem;
+  padding: 1.1rem 1.15rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(150deg, rgba(9, 15, 23, 0.92), rgba(4, 8, 13, 0.96)) !important;
+  border: 1px solid rgba(92, 159, 215, 0.14) !important;
+}
+
+@media (min-width: 1280px) {
+  .admin-order-detail-scope .admin-order-rs-panel {
+    flex-direction: row;
+  }
+
+  .admin-order-detail-scope .admin-order-rs-col {
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+
+  .admin-order-detail-scope .admin-order-rs-divider {
+    width: 1px;
+    height: auto;
+    align-self: stretch;
+  }
+}
+
+.admin-order-detail-scope .admin-order-rs-divider {
+  height: 1px;
+  background: rgba(92, 159, 215, 0.16) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-rows {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-order-detail-scope .admin-order-rs-rows-tight {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.admin-order-detail-scope .admin-order-rs-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 13px;
+}
+
+.admin-order-detail-scope .admin-order-rs-row span:first-child {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-row span:last-child {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-positive {
+  color: #7dffbf !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-warning {
+  color: #f5c15a !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-strong {
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-hr {
+  margin: 0.85rem 0;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 6px, transparent 6px 12px);
+}
+
+.admin-order-detail-scope .admin-order-rs-total {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.admin-order-detail-scope .admin-order-rs-total-bar {
+  width: 3px;
+  align-self: stretch;
+  min-height: 3.4rem;
+  border-radius: 999px;
+  background: rgba(140, 200, 242, 0.45);
+}
+
+.admin-order-detail-scope .admin-order-rs-total-positive .admin-order-rs-total-bar {
+  background: #34d399;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.45);
+}
+
+.admin-order-detail-scope .admin-order-rs-total-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-total-positive .admin-order-rs-total-label {
+  color: #7dffbf !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-total-amount {
+  margin-top: 0.15rem;
+  font-size: 2.35rem;
+  line-height: 1.1;
+  font-weight: 900;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-total-positive .admin-order-rs-total-amount {
+  color: #eafff5 !important;
+  text-shadow: 0 0 18px rgba(52, 211, 153, 0.22);
+}
+
+.admin-order-detail-scope .admin-order-rs-total-context {
+  margin-top: 0.15rem;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.56) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-name {
   margin-top: 0.5rem;
-  border-color: transparent !important;
-  background-color: rgba(13, 27, 42, 0.84) !important;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-sub {
+  margin-top: 0.25rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.58) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-faint {
+  margin-top: 0.25rem;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.34) !important;
+}
+
+.admin-order-detail-scope .admin-order-detail-content .admin-order-rs-products,
+.admin-order-detail-scope .admin-order-detail-content .admin-order-rs-warranty {
+  padding: 1rem 1.1rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(92, 159, 215, 0.12) !important;
+  background: rgba(8, 14, 22, 0.55) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-table {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+}
+
+.admin-order-detail-scope .admin-order-rs-product-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 84px 56px 104px 112px;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.1rem;
+  min-width: 560px;
+}
+
+.admin-order-detail-scope .admin-order-rs-product-row:not(:first-child) {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-order-detail-scope .admin-order-rs-product-head {
+  padding-top: 0;
+  padding-bottom: 0.55rem;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.34) !important;
+  border-top: 0;
+}
+
+.admin-order-detail-scope .admin-order-rs-product-id {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.admin-order-detail-scope .admin-order-rs-thumb {
+  display: flex;
+  height: 2.35rem;
+  width: 2.35rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: #ffffff;
+}
+
+.admin-order-detail-scope .admin-order-rs-product-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-product-color,
+.admin-order-detail-scope .admin-order-rs-product-qty {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-product-qty {
+  text-align: center;
+}
+
+.admin-order-detail-scope .admin-order-rs-product-num {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.admin-order-detail-scope .admin-order-rs-warranty-list {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-order-detail-scope .admin-order-rs-warranty-row {
+  padding: 0.75rem 0.1rem;
+}
+
+.admin-order-detail-scope .admin-order-rs-warranty-row:not(:first-child) {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-order-detail-scope .admin-order-rs-warranty-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.admin-order-detail-scope .admin-order-rs-warranty-meta {
+  margin-top: 0.4rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.56) !important;
 }
 
 .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-danger,
