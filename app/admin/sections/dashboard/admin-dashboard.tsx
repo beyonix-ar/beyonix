@@ -3286,7 +3286,7 @@ export function AdminDashboard() {
               </div>
             </section>
             <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-              <SectionHeader eyebrow="Actividad" title="Actividad reciente" action={<button type="button" onClick={() => onNavigate("auditoria")} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/14 px-3 text-xs font-black text-white/68 transition hover:border-beyonix-sky/38 hover:text-white">Ver auditoría <ArrowRight className="size-3.5" /></button>} />
+              <SectionHeader eyebrow="Actividad" title="Actividad reciente" action={<button type="button" onClick={() => onNavigate("auditoria")} className="admin-ds-button admin-ds-button-secondary inline-flex cursor-pointer items-center gap-2 px-3 text-xs font-black transition">Ver auditoría <ArrowRight className="size-3.5" /></button>} />
               <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
                 {recentActivity.length ? recentActivity.map((item) => <ActivityItem key={item.id} item={item} />) : <EmptyState icon={<Clock className="size-5" />} title="No hay actividad reciente" description="Los movimientos operativos se mostrarán en este panel." />}
               </div>
@@ -3294,7 +3294,7 @@ export function AdminDashboard() {
           </div>
 
           <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-            <SectionHeader eyebrow="Stock" title="Productos sin stock o bajo stock" action={<button type="button" aria-label="Ver productos" onClick={() => onNavigate("productos")} className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-4 text-sm font-black text-white/78 transition hover:border-beyonix-sky/42 hover:bg-beyonix-blue/32 hover:text-white">Ver productos <ArrowRight className="size-4" /></button>} />
+            <SectionHeader eyebrow="Stock" title="Productos sin stock o bajo stock" action={<button type="button" aria-label="Ver productos" onClick={() => onNavigate("productos")} className="admin-ds-button admin-ds-button-secondary inline-flex cursor-pointer items-center gap-2 px-3 text-xs font-black transition">Ver productos <ArrowRight className="size-3.5" /></button>} />
             <div className="custom-scrollbar grid max-h-420px gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
               {lowStock.length ? lowStock.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">

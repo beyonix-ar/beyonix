@@ -13,6 +13,7 @@ import {
   PaymentProofActionButton,
   PaymentProofUploader,
 } from "@/components/payment-proof-uploader"
+import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const PAYMENT_STATUS_CONTENT = {
@@ -107,7 +108,10 @@ export function CustomerPaymentProof({
       setPreviewError("")
 
       try {
-        const response = await fetch(`/api/payment-proofs/${order.id}`)
+        const guestToken = getGuestOrderToken(order.id)
+        const response = await fetch(`/api/payment-proofs/${order.id}`, {
+          headers: guestToken ? { "x-guest-order-token": guestToken } : undefined,
+        })
         const data = (await response.json()) as {
           signedUrl?: string | null
           error?: string

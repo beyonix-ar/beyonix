@@ -4572,7 +4572,7 @@ div.claim-form-shell::after {
   padding: 0.55rem;
 }
 
-.admin-credit-note-steps > span {
+.admin-credit-note-steps > button {
   align-items: center;
   color: rgba(255, 255, 255, 0.42);
   display: flex;
@@ -4597,34 +4597,131 @@ div.claim-form-shell::after {
   width: 1.4rem;
 }
 
-.admin-credit-note-steps > span.is-current,
-.admin-credit-note-steps > span.is-complete {
+.admin-credit-note-steps > button.is-current,
+.admin-credit-note-steps > button.is-complete {
   color: #d7ecff;
 }
 
-.admin-credit-note-steps > span.is-current b {
+.admin-credit-note-steps > button.is-current b {
   background: #181d23;
   border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.admin-credit-note-steps > span.is-complete b {
+.admin-credit-note-steps > button.is-complete b {
   background: #181d23;
   border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
 
-.admin-credit-note-editor {
-  align-items: start;
+.admin-credit-note-editor-step {
   display: grid;
   gap: 0.75rem;
-  margin-top: 0.75rem;
 }
 
-.admin-credit-note-side {
+.admin-credit-note-step2-grid {
   display: grid;
   gap: 0.75rem;
+}
+
+.admin-credit-note-wizard-nav {
+  align-items: center;
+  border-top: 1px solid rgba(92, 159, 215, 0.2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: space-between;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+}
+
+.admin-credit-note-wizard-hint {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.admin-credit-note-wizard-next,
+.admin-credit-note-wizard-back {
+  align-items: center;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 900;
+  gap: 0.4rem;
+  justify-content: center;
+  padding: 0.55rem 0.9rem;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+}
+
+.admin-credit-note-wizard-next {
+  background: #1e4d7b;
+  border: 1px solid rgba(140, 200, 242, 0.58);
+  color: #fff;
+}
+
+.admin-credit-note-wizard-next:not(:disabled):hover {
+  background: #2d5f91;
+  border-color: rgba(191, 225, 249, 0.82);
+  transform: translateY(-1px);
+}
+
+.admin-credit-note-wizard-next:disabled {
+  background: #101a24;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.3);
+  cursor: not-allowed;
+}
+
+.admin-credit-note-wizard-back {
+  background: rgba(17, 42, 67, 0.18);
+  border: 1px solid rgba(92, 159, 215, 0.28);
+  color: rgba(248, 250, 252, 0.78);
+}
+
+.admin-credit-note-wizard-back:hover {
+  background: rgba(17, 42, 67, 0.38);
+  border-color: rgba(140, 200, 242, 0.48);
+  color: #f8fafc;
+}
+
+.admin-credit-note-wizard-nav-review {
+  border-top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.admin-credit-note-wizard-nav-review .admin-credit-note-submit {
+  flex: 1;
+  margin-top: 0;
+  min-width: 12rem;
+}
+
+@container credit-note (min-width: 820px) {
+  .admin-credit-note-step2-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-credit-note-step2-span {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-credit-note-wizard-nav-review {
+    flex-direction: column;
+  }
+
+  .admin-credit-note-wizard-nav-review .admin-credit-note-wizard-back,
+  .admin-credit-note-wizard-nav-review .admin-credit-note-submit {
+    width: 100%;
+  }
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-step-card,
@@ -5551,10 +5648,6 @@ div.claim-form-shell::after {
 }
 
 @container credit-note (min-width: 820px) {
-  .admin-credit-note-editor {
-    grid-template-columns: minmax(0, 1.35fr) minmax(19rem, 0.8fr);
-  }
-
   .admin-credit-note-review {
     align-items: center;
     display: grid;
@@ -5621,7 +5714,7 @@ div.claim-form-shell::after {
     grid-template-columns: 1fr;
   }
 
-  .admin-credit-note-steps > span {
+  .admin-credit-note-steps > button {
     justify-content: flex-start;
   }
 
@@ -5654,7 +5747,7 @@ div.claim-form-shell::after {
     grid-template-columns: 1fr;
   }
 
-  .admin-credit-note-steps > span {
+  .admin-credit-note-steps > button {
     justify-content: flex-start;
   }
 
@@ -6050,9 +6143,8 @@ div.claim-form-shell::after {
     padding-block: 0.35rem;
   }
 
-  .admin-credit-note-editor {
+  .admin-credit-note-editor-step {
     gap: 0.5rem;
-    margin-top: 0.5rem;
   }
 
   .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-step-card,

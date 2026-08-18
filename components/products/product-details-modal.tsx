@@ -122,7 +122,7 @@ export function ProductDetailsModal({
   const selectedStock = selectedVariant?.stock ?? product.stock
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#02070B]/88 px-4 py-5 backdrop-blur-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-5 backdrop-blur-sm">
       <button
         type="button"
         aria-label="Cerrar modal"

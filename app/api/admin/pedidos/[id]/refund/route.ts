@@ -264,6 +264,62 @@ export async function POST(
 
   const storedPath = normalizeStoredPath(path)
   const now = new Date().toISOString()
+
+  // Claim atómico (compare-and-swap): la condición reafirma el mismo
+  // financial_status que acabamos de leer para decidir isRefundableOrder.
+  // Si otro POST concurrente ya reintegró este pedido en el medio, esta
+  // condición deja de cumplirse y el update no afecta ninguna fila — eso
+  // es lo que detectamos para abortar ANTES de crear el comprobante,
+  // actualizar notas de crédito, auditar o notificar. Como mucho una de
+  // dos requests simultáneas termina de esta sección en adelante.
+  let orderQuery = auth.admin
+    .from("ordenes")
+    .update({
+      financial_status: "refunded",
+      refund_proof_url: storedPath,
+      refund_proof_file_name: file.name,
+      refund_proof_mime_type: file.type || "application/octet-stream",
+      refund_proof_file_size: file.size,
+      refund_amount: amount,
+      refund_method: method,
+      refund_uploaded_by: auth.user.id,
+      refund_uploaded_at: now,
+      refunded_at: now,
+      refunded_by: auth.user.id,
+      credit_note_required: false,
+    })
+    .eq("id", orderId)
+
+  orderQuery =
+    order.financial_status === null || order.financial_status === undefined
+      ? orderQuery.is("financial_status", null)
+      : orderQuery.eq("financial_status", order.financial_status)
+
+  const { data: updatedOrder, error: updateError } = await orderQuery
+    .select()
+    .maybeSingle()
+
+  if (updateError) {
+    await auth.admin.storage.from(PAYMENT_PROOF_BUCKET).remove([path])
+
+    return NextResponse.json(
+      { error: updateError.message || "No se pudo marcar el reintegro." },
+      { status: 500 },
+    )
+  }
+
+  if (!updatedOrder) {
+    await auth.admin.storage.from(PAYMENT_PROOF_BUCKET).remove([path])
+
+    return NextResponse.json(
+      {
+        error:
+          "Este pedido ya fue reintegrado o su estado cambió. Actualizá la página.",
+      },
+      { status: 409 },
+    )
+  }
+
   const { data: proof, error: proofError } = await auth.admin
     .from("order_refund_proofs")
     .insert({
@@ -283,33 +339,6 @@ export async function POST(
   if (proofError || !proof) {
     return NextResponse.json(
       { error: proofError?.message || "No se pudo guardar el comprobante." },
-      { status: 500 },
-    )
-  }
-
-  const { data: updatedOrder, error: updateError } = await auth.admin
-    .from("ordenes")
-    .update({
-      financial_status: "refunded",
-      refund_proof_url: storedPath,
-      refund_proof_file_name: file.name,
-      refund_proof_mime_type: file.type || "application/octet-stream",
-      refund_proof_file_size: file.size,
-      refund_amount: amount,
-      refund_method: method,
-      refund_uploaded_by: auth.user.id,
-      refund_uploaded_at: now,
-      refunded_at: now,
-      refunded_by: auth.user.id,
-      credit_note_required: false,
-    })
-    .eq("id", orderId)
-    .select()
-    .single()
-
-  if (updateError || !updatedOrder) {
-    return NextResponse.json(
-      { error: updateError?.message || "No se pudo marcar el reintegro." },
       { status: 500 },
     )
   }

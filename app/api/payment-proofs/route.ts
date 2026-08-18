@@ -7,6 +7,7 @@ import {
 } from "@/lib/payments/transfer"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { expireTransferOrderIfNeeded } from "@/lib/orders/transfer-expiration"
+import { verifyGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { SupabasePedido } from "@/lib/supabase/types"
@@ -115,8 +116,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
     }
 
-    if (order.usuario_id && order.usuario_id !== user?.id) {
-      return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+    if (order.usuario_id) {
+      if (order.usuario_id !== user?.id) {
+        return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+      }
+    } else {
+      const guestToken = request.headers.get("x-guest-order-token")
+      if (!verifyGuestOrderAccessToken(guestToken, orderId)) {
+        return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+      }
     }
 
     const currentOrder = await expireTransferOrderIfNeeded(

@@ -229,7 +229,7 @@ export function ProductDetailsPanel({
         <div className="custom-scrollbar min-h-0 flex-1 border-t border-white/7 px-5 py-5 md:overflow-y-auto md:px-7">
           <div className="space-y-7">
             <section>
-            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
+            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
               Descripción
             </p>
 
@@ -250,7 +250,7 @@ export function ProductDetailsPanel({
 
             {limitedFeatures.length > 0 && (
             <section>
-              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
+              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
                 Características principales
               </p>
 
@@ -289,7 +289,7 @@ export function ProductDetailsPanel({
 
             {hasVariants && (
             <section>
-              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-[#8CC8F2]">
+              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
                 Variante
               </p>
 

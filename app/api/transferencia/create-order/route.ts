@@ -20,6 +20,7 @@ import {
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { createGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
 import {
   buildCheckoutOrderBase,
   getCheckoutOrderCustomerValidationError,
@@ -244,6 +245,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       order_id: order.id,
       redirect_url: `/checkout/success?method=transferencia&order_id=${order.id}`,
+      guest_token: order.usuario_id ? null : createGuestOrderAccessToken(order.id),
     })
   } catch (error) {
     console.error("Error creando orden por transferencia", error)

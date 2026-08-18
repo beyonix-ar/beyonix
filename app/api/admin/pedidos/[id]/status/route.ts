@@ -6,6 +6,7 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { upsertCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { canChangeOrderStatus } from "@/lib/orders/order-status-authorization"
 import {
   DEFAULT_PRODUCT_WARRANTY_MONTHS,
   getWarrantyExpiration,
@@ -28,6 +29,7 @@ const ALLOWED_ORDER_STATUSES = [
   "entregado",
   "cancelado",
 ]
+
 const DISPATCHED_ORDER_STATUSES = [
   "enviado",
   "en_camino",
@@ -251,6 +253,16 @@ export async function PATCH(
     return NextResponse.json(
       { error: "Estado del pedido inválido." },
       { status: 400 },
+    )
+  }
+
+  if (!canChangeOrderStatus(auth.profile.rol, estado)) {
+    return NextResponse.json(
+      {
+        error:
+          "Solo un superadministrador puede cambiar este estado manualmente.",
+      },
+      { status: 403 },
     )
   }
 

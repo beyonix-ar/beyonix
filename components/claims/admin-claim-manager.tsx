@@ -24,6 +24,11 @@ import { useAuth } from "@/context/auth-context"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
 import { getOrderClaimResolutionLabel } from "@/lib/order-claims"
+import {
+  isClaimVisibleForMode,
+  shouldShowReturnInventoryPanel,
+} from "@/lib/orders/claim-visibility"
+import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
 import { supabase } from "@/lib/supabase/client"
 import type {
   OrderClaimResolution,
@@ -1281,11 +1286,7 @@ export function AdminClaimManager({
 }) {
   const { isAdmin } = useAuth()
   const allClaims = pedido.order_claims ?? []
-  const claims = allClaims.filter((item) => {
-    if (mode === "messaging") return item.failure_type === "consulta_pedido"
-    if (mode === "claims") return item.failure_type !== "consulta_pedido" && item.failure_type !== "cancelar_compra"
-    return true
-  })
+  const claims = allClaims.filter((item) => isClaimVisibleForMode(item.failure_type, mode))
   const [claimId, setClaimId] = useState<number | null>(claims[0]?.id ?? null)
   const claim = claims.find((item) => item.id === claimId) ?? claims[0]
   const [response, setResponse] = useState("")
@@ -1407,14 +1408,20 @@ export function AdminClaimManager({
       }
     }
 
-    const intervalId = window.setInterval(() => void refreshClaim(), 5000)
+    // Un caso cerrado/rechazado no vuelve a moverse en el flujo actual, pero
+    // seguimos escuchando el foco de la ventana como red de seguridad barata:
+    // si el admin vuelve a esta pestaña, se revalida sin mantener un
+    // intervalo corriendo en segundo plano para un caso ya terminado.
+    const intervalId = shouldPollSingleClaim(claim.status)
+      ? window.setInterval(() => void refreshClaim(), 20000)
+      : null
     window.addEventListener("focus", refreshClaim)
     return () => {
       active = false
-      window.clearInterval(intervalId)
+      if (intervalId !== null) window.clearInterval(intervalId)
       window.removeEventListener("focus", refreshClaim)
     }
-  }, [claim?.id, claim?.updated_at, messageCount, onClaimChange])
+  }, [claim?.id, claim?.status, claim?.updated_at, messageCount, onClaimChange])
 
   const updateClaim = async (
     overrides: Record<string, unknown>,
@@ -1834,13 +1841,13 @@ export function AdminClaimManager({
         ? "Centro de reclamos"
         : mode === "messaging"
           ? "Mensajería"
-          : "Mensajería de ayuda"
+          : "Atención al cliente"
     const emptyDescription =
       mode === "claims"
         ? "Este pedido todavía no tiene reclamos formales cargados."
         : mode === "messaging"
           ? "Este pedido todavía no tiene mensajes previos a la entrega."
-          : "Este pedido todavía no tiene mensajes de ayuda ni reclamos."
+          : "Este pedido todavía no tiene mensajes ni reclamos."
     return (
       <div className="admin-claim-manager admin-ds-card mt-3 overflow-hidden">
         <section className="p-4">
@@ -2206,7 +2213,7 @@ export function AdminClaimManager({
         </aside>
       </div>
 
-      {mode === "claims" && (
+      {shouldShowReturnInventoryPanel(claim.failure_type) && (
         <ReturnInventoryPanel
           pedido={pedido}
           claim={claim}

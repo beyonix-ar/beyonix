@@ -157,7 +157,7 @@ export function EliminarCuentaClient() {
       </AccountCard>
 
       {confirmOpen ? (
-        <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-beyonix-blue-light/20 bg-[#080D14] p-5 text-white shadow-2xl shadow-black/55">
             <div className="flex items-start gap-3">
               <IconContainer

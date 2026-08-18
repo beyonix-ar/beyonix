@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react"
 
+import { BeyonixButton } from "@/components/beyonix-ui"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { supabase } from "@/lib/supabase/client"
 import { FIELD_LIMITS, validatePassword } from "@/lib/validation/account-fields"
@@ -315,11 +316,11 @@ function ResetPasswordContent() {
               </div>
             )}
 
-            <button
+            <BeyonixButton
               type="submit"
               aria-label="Guardar contraseña nueva"
               disabled={loading}
-              className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/48 bg-beyonix-blue px-5 font-heading text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_34px_rgba(0,0,0,0.35)] transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full"
             >
               {loading ? (
                 <Loader2 className="size-5 animate-spin" />
@@ -329,7 +330,7 @@ function ResetPasswordContent() {
                   <ArrowRight className="size-4" />
                 </>
               )}
-            </button>
+            </BeyonixButton>
           </form>
         ) : (
           <div className="space-y-4">

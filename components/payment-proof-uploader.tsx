@@ -11,6 +11,7 @@ import {
 import {
   getPaymentProofValidationError,
 } from "@/lib/payments/transfer"
+import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 interface PaymentProofUploaderProps {
@@ -74,8 +75,10 @@ export function PaymentProofUploader({
       formData.set("orderId", String(orderId))
       formData.set("file", nextFile)
 
+      const guestToken = getGuestOrderToken(orderId)
       const response = await fetch("/api/payment-proofs", {
         method: "POST",
+        headers: guestToken ? { "x-guest-order-token": guestToken } : undefined,
         body: formData,
       })
       const data = await response.json()
@@ -305,8 +308,10 @@ export function PaymentProofActionButton({
       formData.set("orderId", String(orderId))
       formData.set("file", selectedFile)
 
+      const guestToken = getGuestOrderToken(orderId)
       const response = await fetch("/api/payment-proofs", {
         method: "POST",
+        headers: guestToken ? { "x-guest-order-token": guestToken } : undefined,
         body: formData,
       })
       const data = await response.json()

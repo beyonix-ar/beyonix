@@ -33,6 +33,7 @@ import {
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
 import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
+import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const formatPrice = (price: number) =>
@@ -355,8 +356,10 @@ function CheckoutSuccessContent() {
       setSessionExpired(false)
 
       try {
+        const guestToken = getGuestOrderToken(orderId)
         const response = await fetch(`/api/payment-proofs/${orderId}`, {
           cache: "no-store",
+          headers: guestToken ? { "x-guest-order-token": guestToken } : undefined,
         })
         const data = (await response.json()) as {
           order?: SupabasePedido
@@ -454,8 +457,10 @@ function CheckoutSuccessContent() {
     setOrderError("")
 
     try {
+      const guestToken = getGuestOrderToken(orderId)
       const response = await fetch(`/api/payment-proofs/${orderId}`, {
         cache: "no-store",
+        headers: guestToken ? { "x-guest-order-token": guestToken } : undefined,
       })
       const data = (await response.json()) as {
         order?: SupabasePedido

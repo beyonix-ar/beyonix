@@ -30,7 +30,7 @@ export function AccountPageContainer({
 }
 
 export const beyonixButtonVariants = cva(
-  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border font-heading text-sm font-semibold leading-none outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]",
+  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border font-heading text-sm font-semibold leading-none outline-none transition-all duration-200 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]",
   {
     variants: {
       variant: {
@@ -48,9 +48,9 @@ export const beyonixButtonVariants = cva(
           "border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-secondary)] hover:border-[var(--account-border-strong)] hover:text-[var(--account-text-primary)]",
       },
       size: {
-        sm: "h-9 px-3 text-xs",
-        md: "h-10 px-4",
-        lg: "h-11 px-5",
+        sm: "h-9 px-3.5 text-xs",
+        md: "h-11 px-5",
+        lg: "h-12 px-6 text-[15px]",
         icon: "size-10 p-0",
       },
       fullWidth: {

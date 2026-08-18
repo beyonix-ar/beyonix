@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import { CreditCard } from "lucide-react"
 
+import { BeyonixButton } from "@/components/beyonix-ui"
+
 import { ProductCartToggleButton } from "./product-cart-toggle-button"
 
 interface ProductPurchaseBoxProps {
@@ -112,14 +114,15 @@ export function ProductPurchaseBox({
           />
         </div>
 
-        <button
-          type="button"
+        <BeyonixButton
+          variant="primary"
+          size="lg"
           aria-label="Ver carrito"
           onClick={onViewCart}
-          className="flex h-12 w-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-xl border border-beyonix-blue-light/45 bg-[#112A43] px-5 text-14px font-bold text-white transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:text-white active:scale-95 sm:w-auto"
+          className="w-full px-5 text-14px sm:w-auto"
         >
           Ver carrito
-        </button>
+        </BeyonixButton>
       </div>
     </div>
   )

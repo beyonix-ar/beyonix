@@ -2,9 +2,13 @@ import { NextResponse } from "next/server"
 
 import { PAYMENT_PROOF_BUCKET } from "@/lib/payments/transfer"
 import { expireTransferOrderIfNeeded } from "@/lib/orders/transfer-expiration"
+import { verifyGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { SupabasePedido } from "@/lib/supabase/types"
+
+const ORDER_PROOF_FIELDS =
+  "id, usuario_id, created_at, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_proof_file_name, financial_status, paid_at, payment_confirmed_amount, total"
 
 function stripBucket(path: string) {
   return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
@@ -13,7 +17,7 @@ function stripBucket(path: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ orderId: string }> },
 ) {
   const supabase = await createClient()
@@ -31,7 +35,7 @@ export async function GET(
   const admin = createAdminClient()
   const { data: order, error: orderError } = await admin
     .from("ordenes")
-    .select("*")
+    .select(ORDER_PROOF_FIELDS)
     .eq("id", pedidoId)
     .maybeSingle()
 
@@ -39,8 +43,15 @@ export async function GET(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (order.usuario_id && order.usuario_id !== user?.id) {
-    return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+  if (order.usuario_id) {
+    if (order.usuario_id !== user?.id) {
+      return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+    }
+  } else {
+    const guestToken = request.headers.get("x-guest-order-token")
+    if (!verifyGuestOrderAccessToken(guestToken, pedidoId)) {
+      return NextResponse.json({ error: "No autorizado." }, { status: 403 })
+    }
   }
 
   const currentOrder = await expireTransferOrderIfNeeded(

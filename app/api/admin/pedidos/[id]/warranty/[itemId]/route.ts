@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { canChangeDeliveredAt } from "@/lib/orders/delivery-date-authorization"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import {
   DEFAULT_PRODUCT_WARRANTY_MONTHS,
@@ -118,6 +119,22 @@ export async function PATCH(
     warranty_expires_at: warrantyExpiresAt,
     warranty_months: warrantyMonths,
     warranty_status: warrantyStatus,
+  }
+
+  // Cambiar la fecha de entrega acá equivale semánticamente a forzar el
+  // pedido a "entregado" (misma evidencia que usan garantías, reclamos,
+  // cancelaciones y la UI), así que respeta exactamente la misma política
+  // que /status: solo super_admin.
+  if (
+    !canChangeDeliveredAt(auth.profile.rol, previous.delivered_at, next.delivered_at)
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Solo un superadministrador puede modificar la fecha de entrega.",
+      },
+      { status: 403 },
+    )
   }
 
   const { error: orderUpdateError } = await auth.admin

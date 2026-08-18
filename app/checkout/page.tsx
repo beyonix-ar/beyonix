@@ -55,6 +55,7 @@ import {
   Label,
 } from "@/components/ui/label"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
+import { storeGuestOrderToken } from "@/lib/orders/guest-order-token-client"
 
 import {
   Separator,
@@ -1449,6 +1450,7 @@ export default function CheckoutPage() {
         clearCart()
         customerCredit.clearAppliedAmount()
         await customerCredit.reload()
+        storeGuestOrderToken(data.order_id, data.guest_token)
         window.location.href = data.redirect_url
         return
       }
@@ -1465,6 +1467,7 @@ export default function CheckoutPage() {
         clearCart()
         customerCredit.clearAppliedAmount()
         await customerCredit.reload()
+        storeGuestOrderToken(data.order_id, data.guest_token)
         window.location.href = data.redirect_url
         return
       }

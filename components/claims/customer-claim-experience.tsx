@@ -19,6 +19,7 @@ import {
 
 import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
 import { getClaimFileValidationError, getOrderClaimResolutionLabel } from "@/lib/order-claims"
+import { getCustomerClaimPollIntervalMs } from "@/lib/orders/claim-polling"
 import { beyonixHoverBorder } from "@/lib/utils"
 import type {
   OrderClaimType,
@@ -623,13 +624,28 @@ export function CustomerClaimExperience({
     setClaimsReadyOrderId(order.id)
     setClaimsReady(initialClaimsReady)
     void loadClaims()
-    const intervalId = window.setInterval(() => void loadClaims(), 5000)
-    window.addEventListener("focus", loadClaims)
-    return () => {
-      window.clearInterval(intervalId)
-      window.removeEventListener("focus", loadClaims)
-    }
   }, [claimsVerified, initialClaims.length, loadClaims, order.id])
+
+  // La frecuencia de polling se calcula sobre el estado VIGENTE de los
+  // claims (no sobre initialClaims, que queda desactualizado apenas cambia
+  // algo durante la sesion), para que un cierre reduzca la frecuencia de
+  // inmediato y una reapertura o un caso nuevo la aceleren sin necesidad de
+  // recargar. El intervalo nunca se apaga del todo: aun con todo terminado
+  // queda un chequeo liviano de baja frecuencia por si se reabre un caso
+  // mientras la pestaña permanece enfocada (sin disparar el listener de foco).
+  useEffect(() => {
+    window.addEventListener("focus", loadClaims)
+
+    const intervalId = window.setInterval(
+      () => void loadClaims(),
+      getCustomerClaimPollIntervalMs(claims),
+    )
+
+    return () => {
+      window.removeEventListener("focus", loadClaims)
+      window.clearInterval(intervalId)
+    }
+  }, [claims, loadClaims])
 
   const visibleClaims = claims.filter((claim) => claim.failure_type !== "cancelar_compra")
   const displayableClaims = canCreatePostDeliveryClaim

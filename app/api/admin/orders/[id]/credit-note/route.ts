@@ -11,12 +11,17 @@ import {
   feCompUltimoAutorizado,
 } from "@/lib/arca/wsfe"
 import { creditCustomerForOrderCreditNote } from "@/lib/customer-credit/server"
+import { canProceedPastProductsStep } from "@/lib/orders/credit-note-wizard"
 import {
   allocateEffectiveOrderItemAmounts,
   calculatePartialLineAmount,
   roundCreditMoney,
 } from "@/lib/orders/credit-note-calculations"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import {
+  isPhysicallyReceivedStatus,
+  normalizeStockDestination,
+} from "@/lib/orders/return-reception"
 
 export const runtime = "nodejs"
 
@@ -261,11 +266,16 @@ export async function POST(
     "pendiente_despacho",
   )
   const receptionException = body.reception_exception === true
-  const stockDestination = enumValue(
+  const stockDestinationInput = enumValue(
     body.stock_destination,
     STOCK_DESTINATIONS,
     "pendiente_revision",
   )
+  // Un destino de stock solo tiene sentido cuando hubo recepcion fisica; en
+  // cualquier otro caso se normaliza para no persistir un valor stale que
+  // el motor de stock jamas va a leer.
+  const stockDestination = normalizeStockDestination(receptionStatus, stockDestinationInput)
+
   const conditionedDiscountPercent = Number(body.conditioned_discount_percent)
   const claimIdValue = Number(body.claim_id)
   let claimId =
@@ -544,6 +554,17 @@ export async function POST(
       { status: 400 },
     )
   }
+
+  const selectedUnits = selectedItems.reduce((sum, item) => sum + item.quantity, 0)
+  if (!canProceedPastProductsStep(operationType, selectedUnits)) {
+    return NextResponse.json(
+      {
+        error:
+          "Este tipo de gestión requiere seleccionar al menos un producto.",
+      },
+      { status: 400 },
+    )
+  }
   const { data: reservedNote, error: reservationFailure } = await auth.admin
     .rpc("begin_partial_credit_note", {
       p_order_id: orderId,
@@ -746,12 +767,7 @@ export async function POST(
     }
     arcaAuthorizationPersisted = true
 
-    const physicallyReceived = [
-      "recibido_revision",
-      "producto_aprobado",
-      "producto_rechazado",
-      "aprobado_parcial",
-    ].includes(receptionStatus)
+    const physicallyReceived = isPhysicallyReceivedStatus(receptionStatus)
     if (physicallyReceived && stockDestination !== "no_reingresar") {
       const orderItemsById = new Map(
         items.map((item) => [Number(item.id), item]),

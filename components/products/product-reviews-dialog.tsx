@@ -230,7 +230,7 @@ export function ProductReviewsDialog({
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#02070B]/90 p-4 backdrop-blur-md">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
           <button
             type="button"
             aria-label="Cerrar reseñas"

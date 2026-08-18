@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { getRemainingCreditableAmount } from "@/lib/orders/credit-note-remaining"
 import {
   CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS,
   ORDER_CLAIM_BUCKET,
@@ -1216,6 +1217,34 @@ export async function PATCH(
     )
   }
 
+  if (
+    effectiveResolution === "cupon_descuento" &&
+    body.credit_note_amount !== undefined &&
+    status !== "rechazado" &&
+    Number.isFinite(creditNoteAmount) &&
+    Number(creditNoteAmount) > 0
+  ) {
+    const remaining = await getRemainingCreditableAmount(
+      auth.admin,
+      currentClaim.order_id,
+    )
+
+    if (remaining === null) {
+      return NextResponse.json(
+        { error: "No se pudo validar el importe contra el pedido." },
+        { status: 500 },
+      )
+    }
+
+    if (Number(creditNoteAmount) > remaining + 0.005) {
+      return NextResponse.json(
+        {
+          error: `El monto supera lo que el pedido todavía puede acreditar (máximo ${remaining.toFixed(2)}).`,
+        },
+        { status: 400 },
+      )
+    }
+  }
   const helpMessage = currentClaim?.failure_type === "consulta_pedido"
   const shouldInsertAdminMessage =
     Boolean(adminResponse) &&

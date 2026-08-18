@@ -614,7 +614,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           type="button"
           aria-label="Abrir navegación"
           onClick={() => setMobileOpen(true)}
-          className="flex size-10 items-center justify-center rounded-xl border border-white/10 text-white"
+          className="admin-ds-icon-action flex size-10 cursor-pointer items-center justify-center transition-colors"
         >
           <Menu className="size-5" />
         </button>
@@ -637,7 +637,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
               type="button"
               aria-label="Cerrar navegación"
               onClick={() => setMobileOpen(false)}
-              className="flex size-10 items-center justify-center rounded-xl border border-white/10 text-white"
+              className="admin-ds-icon-action flex size-10 cursor-pointer items-center justify-center transition-colors"
             >
               <X className="size-5" />
             </button>

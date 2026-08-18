@@ -53,7 +53,7 @@ export function ProductPreviewModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center px-4 py-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-10 backdrop-blur-sm">
       {/* click afuera */}
       <button
         type="button"

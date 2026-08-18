@@ -5,6 +5,8 @@ import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   BadgePercent,
   CalendarDays,
   Check,
@@ -39,11 +41,8 @@ import { useAuth } from "@/context/auth-context"
 import { usePedidos } from "@/hooks/use-pedidos"
 import { AdminClaimManager } from "@/components/claims/admin-claim-manager"
 import { parseDeliveryAddress } from "@/lib/delivery-address"
-import {
-  getOrderClaimResolutionLabel,
-  getOrderClaimStatusLabel,
-  getOrderClaimTypeLabel,
-} from "@/lib/order-claims"
+import { canProceedPastProductsStep } from "@/lib/orders/credit-note-wizard"
+import { isPhysicallyReceivedStatus } from "@/lib/orders/return-reception"
 import {
   getAdminOrderLastSeenAt,
   getSupabaseErrorDetails,
@@ -77,8 +76,6 @@ import {
 } from "@/lib/orders/admin-order-visibility"
 import { cn } from "@/lib/utils"
 import type {
-  OrderClaimResolution,
-  OrderClaimStatus,
   SupabaseOrderClaim,
   SupabasePedido,
   SupabasePedidoItem,
@@ -163,8 +160,7 @@ type AdminOrderDetailView =
   | "pago"
   | "envio"
   | "facturacion"
-  | "mensajeria"
-  | "reclamos"
+  | "atencion"
   | "cancelacion"
   | "historial"
 
@@ -211,8 +207,7 @@ const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "pago",
   "envio",
   "facturacion",
-  "mensajeria",
-  "reclamos",
+  "atencion",
   "cancelacion",
   "historial",
 ]
@@ -226,8 +221,10 @@ const ADMIN_STATUS_BADGES = {
 } as const
 
 function getAdminOrderDetailView(value: string | null): AdminOrderDetailView {
-  return ADMIN_ORDER_DETAIL_VIEWS.includes(value as AdminOrderDetailView)
-    ? (value as AdminOrderDetailView)
+  const normalized =
+    value === "mensajeria" || value === "reclamos" ? "atencion" : value
+  return ADMIN_ORDER_DETAIL_VIEWS.includes(normalized as AdminOrderDetailView)
+    ? (normalized as AdminOrderDetailView)
     : "resumen"
 }
 
@@ -271,18 +268,6 @@ function getOrderUsername(pedido: SupabasePedido) {
   return "Usuario"
 }
 
-function getPedidoClientKey(pedido: SupabasePedido) {
-  return (
-    pedido.cliente_email ||
-    pedido.cliente_telefono ||
-    pedido.usuario_id ||
-    pedido.cliente_nombre ||
-    `pedido-${pedido.id}`
-  )
-    .trim()
-    .toLowerCase()
-}
-
 function getItemColor(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
   const itemColor = item as typeof item & {
     color?: string | null
@@ -306,12 +291,6 @@ function getItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) 
     item.productos?.imagenes_producto?.[0]?.url ||
     ""
   )
-}
-
-function getShippingProvider(pedido: SupabasePedido) {
-  const provider = pedido.envio_proveedor?.trim() || "Andreani"
-
-  return provider.replace(/andreani/gi, "Andreani")
 }
 
 function getAndreaniStatus(pedido: SupabasePedido) {
@@ -474,14 +453,29 @@ function getPaymentStatusLabel(status?: string | null) {
     confirmado: "Confirmado",
     rechazado: "Comprobante rechazado",
     vencido_falta_comprobante: "Cancelado por falta de pago",
+    checkout_expired: "Pago vencido sin completar",
+    pending_checkout: "Iniciando pago",
+    preference_created: "Pago iniciado, sin completar",
+    preference_error: "Error al iniciar el pago",
+    pending_credit: "Pendiente (saldo BEYONIX)",
     approved: "Aprobado",
     pending: "Pendiente",
+    in_process: "En proceso",
+    authorized: "Autorizado",
     rejected: "Comprobante rechazado",
+    cancelled: "Cancelado",
+    refunded: "Reintegrado",
+    charged_back: "Contracargo",
+    approved_amount_mismatch: "Monto no coincide (revisar)",
+    approved_currency_mismatch: "Moneda no coincide (revisar)",
   }
 
   return status ? labels[status] ?? status : "Sin estado"
 }
 
+function isPaymentStatusMismatch(status?: string | null) {
+  return status === "approved_amount_mismatch" || status === "approved_currency_mismatch"
+}
 function isRejectedPayment(status?: string | null) {
   return status === "rechazado" || status === "rejected"
 }
@@ -646,8 +640,7 @@ function getAdminOrderTabState(
 
   return {
     visible: {
-      mensajeria: shouldShowMessagingTab(pedido),
-      reclamos: shouldShowClaimsTab(pedido),
+      atencion: shouldShowMessagingTab(pedido) || shouldShowClaimsTab(pedido),
       cancelacion: isCancellationFlowOrder(pedido),
     },
     badges: {
@@ -675,20 +668,19 @@ function getAdminOrderTabState(
                 label: "Facturación pendiente",
               }
             : null,
-      mensajeria: pendingClaim && isHelpMessageClaim(pendingClaim)
-        ? {
-            type: "danger",
-            label: "Mensaje de ayuda pendiente",
-            critical: true,
-          }
-        : null,
-      reclamos: pendingClaim && isFormalClaim(pendingClaim)
+      atencion: pendingClaim && isFormalClaim(pendingClaim)
         ? {
             type: "danger",
             label: "Reclamo abierto",
             critical: true,
           }
-        : null,
+        : pendingClaim && isHelpMessageClaim(pendingClaim)
+          ? {
+              type: "danger",
+              label: "Mensaje de ayuda pendiente",
+              critical: true,
+            }
+          : null,
       cancelacion: refundPending
         ? {
             type: "danger",
@@ -707,7 +699,6 @@ function getAdminOrderTabState(
     } satisfies Record<AdminOrderTabBadgeKey, AdminOrderTabBadgeState>,
   }
 }
-
 type SummaryBadge = {
   label: string
   value: string
@@ -751,28 +742,6 @@ function getClaimSummary(pedido: SupabasePedido) {
   }
   if (claims.some((claim) => claim.failure_type === "consulta_pedido")) return "Ayuda cerrada"
   return "Reclamo finalizado"
-}
-
-function getAdminClaimFailureLabel(failureType?: string | null) {
-  const labels: Record<string, string> = {
-    danado: "Producto dañado",
-    incorrecto: "Producto incorrecto",
-    falla: "Producto con falla",
-    faltante: "Faltó un producto",
-    cantidad_menor: "Menos cantidad recibida",
-    cancelar_compra: "Cancelar compra",
-    consulta_pedido: "Mensaje de ayuda",
-    devolucion: "Solicitud anterior",
-    no_llego: "Solicitud anterior",
-    cambio_producto: "Solicitud anterior",
-    cambio_color: "Solicitud anterior",
-    cambio_cantidad: "Solicitud anterior",
-    modificar_envio: "Solicitud anterior",
-    otro_pre_despacho: "Solicitud anterior",
-    otro: "Otro problema",
-  }
-
-  return failureType ? labels[failureType] ?? failureType : "Sin detalle"
 }
 
 function getCancellationSummary(pedido: SupabasePedido) {
@@ -873,14 +842,28 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
   )
 
   if (openClaim) {
+    // cancelar_compra tiene su propio flujo (RefundManagementPanel /
+    // pestaña "Cancelación") y está excluido de AdminClaimManager modo
+    // "all" (ver isClaimVisibleForMode): enviarlo a "atencion" sería un
+    // callejón sin salida, ahí nunca aparecería listado.
+    if (openClaim.failure_type === "cancelar_compra") {
+      return {
+        title: "Resolver solicitud de cancelación",
+        description: "El cliente pidió cancelar la compra y requiere revisión administrativa.",
+        target: "cancelacion",
+        buttonLabel: "Ir a Cancelación",
+        tone: "urgent",
+      }
+    }
+
     const helpMessage = openClaim.failure_type === "consulta_pedido"
     return {
       title: helpMessage ? "Responder mensaje de ayuda" : "Resolver reclamo abierto",
       description: helpMessage
         ? "Hay una consulta del cliente que requiere respuesta administrativa."
         : "Hay una gestión de reclamo que requiere revisión administrativa.",
-      target: helpMessage ? "mensajeria" : "reclamos",
-      buttonLabel: helpMessage ? "Ir a Mensajería" : "Ir a Reclamos",
+      target: "atencion",
+      buttonLabel: "Ir a Atención al cliente",
       tone: "urgent",
     }
   }
@@ -889,7 +872,7 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
     return {
       title: "Definir destino del producto devuelto",
       description: "Registrá si vuelve al stock disponible o queda dado de baja como pérdida.",
-      target: "reclamos",
+      target: "atencion",
       buttonLabel: "Revisar devolución",
       tone: "urgent",
     }
@@ -1049,38 +1032,6 @@ function getAdminOrderMenuStateClass(_state: AdminOrderTabBadgeState) {
   return "border-beyonix-blue-light/24 bg-[#15191F] text-white hover:border-beyonix-blue-light/45 hover:bg-[#1B2028]"
 }
 
-function getTransferPaymentStatusBadge(status?: string | null) {
-  const badges: Record<string, { label: string; className: string }> = {
-    pendiente_comprobante: {
-      label: "Falta comprobante",
-      className: "border-amber-400/25 bg-amber-400/10 text-amber-200",
-    },
-    en_revision: {
-      label: "En revisión",
-      className: "border-blue-400/25 bg-blue-500/10 text-blue-200",
-    },
-    confirmado: {
-      label: "Pago confirmado",
-      className: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
-    },
-    rechazado: {
-      label: "Comprobante rechazado",
-      className: "border-red-400/25 bg-red-400/10 text-red-300",
-    },
-    vencido_falta_comprobante: {
-      label: "Vencido sin comprobante",
-      className: "border-red-400/25 bg-red-400/10 text-red-300",
-    },
-  }
-
-  return (
-    badges[status ?? ""] ?? {
-      label: getPaymentStatusLabel(status),
-      className: "border-white/10 bg-white/5 text-white/60",
-    }
-  )
-}
-
 function formatOptionalOrderDate(value?: string | null) {
   return value ? formatOrderDate(value) : "Sin fecha"
 }
@@ -1139,34 +1090,6 @@ function downloadBlob(blob: Blob, filename: string) {
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
-}
-
-function TransferPaymentBadges({ pedido }: { pedido: SupabasePedido }) {
-  const paymentBadge = getTransferPaymentStatusBadge(pedido.payment_status)
-  const proofUploaded = Boolean(pedido.payment_proof_url)
-
-  return (
-    <div className="flex flex-wrap justify-center gap-1.5">
-      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-beyonix-blue-light/35 bg-black px-2.5 py-1 text-10px font-black uppercase tracking-wide text-beyonix-sky">
-        <CreditCard className="size-3" />
-        Transferencia
-      </span>
-      <span
-        className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${paymentBadge.className}`}
-      >
-        {paymentBadge.label}
-      </span>
-      <span
-        className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${
-          proofUploaded
-            ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
-            : "border-white/10 bg-white/5 text-white/52"
-        }`}
-      >
-        {proofUploaded ? "Con comprobante" : "Sin comprobante"}
-      </span>
-    </div>
-  )
 }
 
 type AdminNotificationTone =
@@ -2349,6 +2272,58 @@ function RefundManagementPanel({
   )
 }
 
+const OPERATION_TYPE_LABELS: Record<string, string> = {
+  devolucion_parcial: "Devolución parcial",
+  devolucion_total: "Devolución total",
+  cambio_producto: "Cambio de producto",
+  cancelacion_antes_despacho: "Cancelación antes del despacho",
+  reembolso_excepcional: "Reembolso excepcional",
+  ajuste_manual: "Ajuste manual",
+}
+
+const REASON_CODE_LABELS: Record<string, string> = {
+  arrepentimiento: "Arrepentimiento del cliente",
+  producto_defectuoso: "Producto defectuoso",
+  producto_incorrecto: "Producto incorrecto",
+  producto_faltante: "Producto faltante",
+  producto_danado_envio: "Producto dañado durante el envío",
+  garantia_aprobada: "Garantía aprobada",
+  cancelacion_antes_despacho: "Cancelación antes del despacho",
+  error_administrativo: "Error administrativo",
+  otro: "Otro",
+}
+
+const RETURN_SHIPPING_PARTY_LABELS: Record<string, string> = {
+  cliente: "A cargo del cliente",
+  beyonix: "A cargo de BEYONIX",
+  no_corresponde: "No corresponde",
+}
+
+const NEW_SHIPPING_PARTY_LABELS: Record<string, string> = {
+  cliente: "A cargo del cliente",
+  beyonix: "Bonificado por BEYONIX",
+  no_corresponde: "No corresponde",
+}
+
+const RECEPTION_STATUS_LABELS: Record<string, string> = {
+  no_requiere: "No requiere devolución",
+  pendiente_despacho: "Pendiente de despacho del cliente",
+  en_transito: "En tránsito",
+  recibido_revision: "Recibido, pendiente de revisión",
+  producto_aprobado: "Producto aprobado",
+  producto_rechazado: "Producto rechazado",
+  aprobado_parcial: "Aprobado parcialmente",
+}
+
+const STOCK_DESTINATION_LABELS: Record<string, string> = {
+  pendiente_revision: "Pendiente de revisión",
+  stock_vendible: "Reingresar a stock vendible",
+  stock_observaciones: "Stock con observaciones",
+  fallado: "Marcar como fallado",
+  garantia_proveedor: "Garantía / proveedor",
+  no_reingresar: "No reingresar",
+}
+
 function BillingManagementPanel({
   pedido,
   invoiceLoading,
@@ -2396,6 +2371,7 @@ function BillingManagementPanel({
   const [conditionedDiscountPercent, setConditionedDiscountPercent] =
     useState("10")
   const [showCreditConfirmation, setShowCreditConfirmation] = useState(false)
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
   const [showClosedDetail, setShowClosedDetail] = useState(false)
   const [settlementSavingId, setSettlementSavingId] = useState<string | null>(null)
   const [creditDestination, setCreditDestination] = useState<
@@ -2546,6 +2522,7 @@ function BillingManagementPanel({
     setConditionedDiscountPercent("10")
     setShowCreditConfirmation(false)
     setShowClosedDetail(false)
+    setWizardStep(1)
     setSettlementSavingId(null)
     setCreditDestination("customer_balance")
   }, [pedido.id])
@@ -2567,7 +2544,7 @@ function BillingManagementPanel({
     }
     if (value === "cancelacion_antes_despacho") {
       setReasonCode("cancelacion_antes_despacho")
-      setReceptionStatus("no_requiere")
+      handleReceptionStatusChange("no_requiere")
       setReturnShippingParty("no_corresponde")
       setIncludeOriginalShipping(originalShippingPaid > 0)
     }
@@ -2593,10 +2570,18 @@ function BillingManagementPanel({
           : "cliente",
     )
     if (["producto_faltante", "cancelacion_antes_despacho"].includes(value)) {
-      setReceptionStatus("no_requiere")
+      handleReceptionStatusChange("no_requiere")
     }
   }
 
+
+  const handleReceptionStatusChange = (value: string) => {
+    setReceptionStatus(value)
+    if (!isPhysicallyReceivedStatus(value)) {
+      setStockDestination("pendiente_revision")
+      setConditionedDiscountPercent("10")
+    }
+  }
   const issueCreditNote = async () => {
     setCreditSaving(true)
     setMessage(null)
@@ -2676,6 +2661,7 @@ function BillingManagementPanel({
       setCreditReason("")
       setReasonDetail("")
       setShowCreditConfirmation(false)
+      setWizardStep(1)
       setMessage({ ok: true, text: "Nota de crédito emitida por ARCA." })
       notifyOrderNotificationsChanged()
     } catch {
@@ -2718,7 +2704,7 @@ function BillingManagementPanel({
         })
         return
       }
-      onBillingUpdated(data.order)
+            onBillingUpdated(data.order)
       setMessage({ ok: true, text: "Saldo acreditado sin volver a emitir la nota." })
     } catch {
       setMessage({ ok: false, text: "No se pudo reintentar la acreditación." })
@@ -2726,6 +2712,17 @@ function BillingManagementPanel({
       setSettlementSavingId(null)
     }
   }
+
+  const canReviewAndEmit =
+    newCreditTotal > 0 &&
+    newCreditTotal <= invoiceCreditRemaining + 0.005 &&
+    !(reasonCode === "otro" && !reasonDetail.trim()) &&
+    !(receptionStatus === "producto_rechazado" && !receptionNotes.trim()) &&
+    !(
+      !["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(
+        receptionStatus,
+      ) && !receptionException
+    )
 
   return (
     <section className="admin-order-data-panel admin-order-invoice-panel admin-order-billing-section rounded-xl border border-white/8 p-3">
@@ -2991,18 +2988,36 @@ function BillingManagementPanel({
               </div>
 
               <div className="admin-credit-note-steps" aria-label="Pasos para crear la nota">
-                <span className={selectedCreditUnits > 0 ? "is-complete" : "is-current"}>
+                <button
+                  type="button"
+                  aria-current={wizardStep === 1 ? "step" : undefined}
+                  onClick={() => setWizardStep(1)}
+                  className={`cursor-pointer border-0 bg-transparent p-0 text-left ${wizardStep === 1 ? "is-current" : canProceedPastProductsStep(operationType, selectedCreditUnits) ? "is-complete" : ""}`}
+                >
                   <b>1</b> Productos
-                </span>
-                <span className={selectedCreditUnits > 0 ? "is-current" : ""}>
+                </button>
+                <button
+                  type="button"
+                  disabled={!canProceedPastProductsStep(operationType, selectedCreditUnits)}
+                  aria-current={wizardStep === 2 ? "step" : undefined}
+                  onClick={() => canProceedPastProductsStep(operationType, selectedCreditUnits) && setWizardStep(2)}
+                  className={`cursor-pointer border-0 bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-45 ${wizardStep === 2 ? "is-current" : wizardStep > 2 ? "is-complete" : ""}`}
+                >
                   <b>2</b> Resolución
-                </span>
-                <span className={newCreditTotal > 0 ? "is-current" : ""}>
+                </button>
+                <button
+                  type="button"
+                  disabled={!canReviewAndEmit}
+                  aria-current={wizardStep === 3 ? "step" : undefined}
+                  onClick={() => canReviewAndEmit && setWizardStep(3)}
+                  className={`cursor-pointer border-0 bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-45 ${wizardStep === 3 ? "is-current" : ""}`}
+                >
                   <b>3</b> Revisar y emitir
-                </span>
+                </button>
               </div>
 
-              <div className="admin-credit-note-editor">
+              {wizardStep === 1 && (
+                <div className="admin-credit-note-editor-step mt-3">
                 <section className="admin-credit-note-step-card admin-credit-note-products-panel">
                   <div className="admin-credit-note-step-heading">
                     <span>1</span>
@@ -3088,7 +3103,7 @@ function BillingManagementPanel({
                       )
                     })}
                   </div>
-                  {selectedCreditUnits === 0 && (
+                  {selectedCreditUnits === 0 && !canProceedPastProductsStep(operationType, selectedCreditUnits) && (
                     <p className="admin-credit-note-guidance">
                       Usá el botón <Plus className="size-3" /> para agregar las
                       unidades incluidas en el reclamo.
@@ -3096,7 +3111,30 @@ function BillingManagementPanel({
                   )}
                 </section>
 
-                <aside className="admin-credit-note-side">
+                <div className="admin-credit-note-wizard-nav">
+                  <span className="admin-credit-note-wizard-hint">
+                    {selectedCreditUnits > 0
+                      ? `${selectedCreditUnits} ${selectedCreditUnits === 1 ? "unidad seleccionada" : "unidades seleccionadas"} · ${formatPrice(selectedItemsAmount)}`
+                      : canProceedPastProductsStep(operationType, selectedCreditUnits)
+                        ? "Este tipo de gestión no requiere seleccionar productos."
+                        : "Seleccioná al menos un producto para continuar."}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!canProceedPastProductsStep(operationType, selectedCreditUnits)}
+                    onClick={() => setWizardStep(2)}
+                    className="admin-credit-note-wizard-next"
+                  >
+                    Continuar
+                    <ArrowRight className="size-3.5" />
+                  </button>
+                </div>
+                </div>
+              )}
+
+              {wizardStep === 2 && (
+                <div className="admin-credit-note-editor-step mt-3">
+                <div className="admin-credit-note-step2-grid">
                   <section className="admin-credit-note-step-card admin-credit-note-resolution-panel">
                     <div className="admin-credit-note-step-heading">
                       <span>2</span>
@@ -3267,7 +3305,7 @@ function BillingManagementPanel({
                     </div>
                   </section>
 
-                  <section className="admin-credit-note-step-card admin-return-reception-panel">
+                  <section className="admin-credit-note-step-card admin-return-reception-panel admin-credit-note-step2-span">
                     <div className="admin-credit-note-step-heading">
                       <span><Package className="size-3" /></span>
                       <div>
@@ -3283,7 +3321,7 @@ function BillingManagementPanel({
                           ariaLabel="Seleccionar estado de recepción"
                           value={receptionStatus}
                           disabled={creditNoteProcessing}
-                          onChange={setReceptionStatus}
+                          onChange={handleReceptionStatusChange}
                         >
                           <option value="no_requiere">No requiere devolución</option>
                           <option value="pendiente_despacho">
@@ -3298,49 +3336,48 @@ function BillingManagementPanel({
                           <option value="aprobado_parcial">Aprobado parcialmente</option>
                         </AdminSelect>
                       </label>
-                      <label className="admin-credit-note-field">
-                        <span>Destino del producto devuelto</span>
-                        <AdminSelect
-                          title="Destino del producto"
-                          ariaLabel="Seleccionar destino del producto devuelto"
-                          value={stockDestination}
-                          disabled={creditNoteProcessing}
-                          onChange={setStockDestination}
-                        >
-                          <option value="pendiente_revision">Pendiente de revisión</option>
-                          <option value="stock_vendible">Reingresar a stock vendible</option>
-                          <option value="stock_observaciones">
-                            Stock con observaciones
-                          </option>
-                          <option value="fallado">Marcar como fallado</option>
-                          <option value="garantia_proveedor">
-                            Garantía / proveedor
-                          </option>
-                          <option value="no_reingresar">No reingresar</option>
-                          </AdminSelect>
-                      </label>
-                      {stockDestination === "stock_observaciones" && (
-                        <label className="admin-credit-note-field">
-                          <span>Descuento especial (%)</span>
-                          <input
-                            type="number"
-                            min="1"
-                            max="99"
-                            step="1"
-                            value={conditionedDiscountPercent}
-                            onChange={(event) =>
-                              setConditionedDiscountPercent(event.target.value)
-                            }
-                            aria-label="Porcentaje de descuento del producto devuelto"
-                          />
-                        </label>
+                      {isPhysicallyReceivedStatus(receptionStatus) && (
+                        <>
+                          <label className="admin-credit-note-field">
+                            <span>Destino del producto devuelto</span>
+                            <AdminSelect
+                              title="Destino del producto"
+                              ariaLabel="Seleccionar destino del producto devuelto"
+                              value={stockDestination}
+                              disabled={creditNoteProcessing}
+                              onChange={setStockDestination}
+                            >
+                              <option value="pendiente_revision">Pendiente de revisión</option>
+                              <option value="stock_vendible">Reingresar a stock vendible</option>
+                              <option value="stock_observaciones">
+                                Stock con observaciones
+                              </option>
+                              <option value="fallado">Marcar como fallado</option>
+                              <option value="garantia_proveedor">
+                                Garantía / proveedor
+                              </option>
+                              <option value="no_reingresar">No reingresar</option>
+                              </AdminSelect>
+                          </label>
+                          {stockDestination === "stock_observaciones" && (
+                            <label className="admin-credit-note-field">
+                              <span>Descuento especial (%)</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                step="1"
+                                value={conditionedDiscountPercent}
+                                onChange={(event) =>
+                                  setConditionedDiscountPercent(event.target.value)
+                                }
+                                aria-label="Porcentaje de descuento del producto devuelto"
+                              />
+                            </label>
+                          )}
+                        </>
                       )}
-                      {[
-                        "recibido_revision",
-                        "producto_aprobado",
-                        "producto_rechazado",
-                        "aprobado_parcial",
-                      ].includes(receptionStatus) && (
+                      {isPhysicallyReceivedStatus(receptionStatus) && (
                         <>
                           <div className="admin-return-inline-fields">
                             <input
@@ -3421,9 +3458,38 @@ function BillingManagementPanel({
                       )}
                     </div>
                   </section>
-                </aside>
+                </div>
 
-                <section className="admin-credit-note-review">
+                <div className="admin-credit-note-wizard-nav">
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(1)}
+                    className="admin-credit-note-wizard-back"
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    Volver
+                  </button>
+                  <span className="admin-credit-note-wizard-hint">
+                    {canReviewAndEmit
+                      ? `Total a resolver: ${formatPrice(newCreditTotal)}`
+                      : "Completá los datos obligatorios para continuar."}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!canReviewAndEmit}
+                    onClick={() => setWizardStep(3)}
+                    className="admin-credit-note-wizard-next"
+                  >
+                    Continuar a revisión
+                    <ArrowRight className="size-3.5" />
+                  </button>
+                </div>
+                </div>
+              )}
+
+              {wizardStep === 3 && (
+                <div className="admin-credit-note-editor-step mt-3">
+                <section className="admin-credit-note-review admin-credit-note-review-full">
                     <div className="admin-credit-note-step-heading">
                       <span>3</span>
                       <div>
@@ -3433,6 +3499,14 @@ function BillingManagementPanel({
                     </div>
                     <dl>
                       <div>
+                        <dt>Gestión</dt>
+                        <dd>{OPERATION_TYPE_LABELS[operationType] ?? operationType}</dd>
+                      </div>
+                      <div>
+                        <dt>Motivo</dt>
+                        <dd>{reasonDetail || creditReason || (REASON_CODE_LABELS[reasonCode] ?? reasonCode)}</dd>
+                      </div>
+                      <div>
                         <dt>Productos ({selectedCreditUnits} u.)</dt>
                         <dd>{formatPrice(selectedItemsAmount)}</dd>
                       </div>
@@ -3441,12 +3515,40 @@ function BillingManagementPanel({
                         <dd>{formatPrice(originalShippingRefunded)}</dd>
                       </div>
                       <div>
+                        <dt>Envío de devolución</dt>
+                        <dd>{RETURN_SHIPPING_PARTY_LABELS[returnShippingParty] ?? returnShippingParty}</dd>
+                      </div>
+                      {operationType === "cambio_producto" && (
+                        <div>
+                          <dt>Nuevo envío</dt>
+                          <dd>{NEW_SHIPPING_PARTY_LABELS[newShippingParty] ?? newShippingParty}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>Recepción</dt>
+                        <dd>{RECEPTION_STATUS_LABELS[receptionStatus] ?? receptionStatus}</dd>
+                      </div>
+                      {isPhysicallyReceivedStatus(receptionStatus) && (
+                      <div>
+                        <dt>Destino del producto</dt>
+                        <dd>{STOCK_DESTINATION_LABELS[stockDestination] ?? stockDestination}</dd>
+                      </div>
+                      )}
+                      <div>
                         <dt>Otros ajustes</dt>
                         <dd>{formatPrice(parsedManualAmount)}</dd>
                       </div>
                       <div className="admin-credit-note-review-total">
                         <dt>Total de la nota de crédito</dt>
                         <dd>{formatPrice(newCreditTotal)}</dd>
+                      </div>
+                      <div>
+                        <dt>Destino del dinero</dt>
+                        <dd>
+                          {creditDestination === "customer_balance"
+                            ? "Saldo en cuenta BEYONIX"
+                            : "Devolución de dinero"}
+                        </dd>
                       </div>
                       <div>
                         <dt>Saldo a acreditar</dt>
@@ -3479,34 +3581,31 @@ function BillingManagementPanel({
                       >
                         El total supera el disponible de la factura.
                       </p>
-                      <button
-                        type="button"
-                        disabled={
-                          creditNoteProcessing ||
-                          newCreditTotal <= 0 ||
-                          newCreditTotal > invoiceCreditRemaining + 0.005 ||
-                          (reasonCode === "otro" && !reasonDetail.trim()) ||
-                          (receptionStatus === "producto_rechazado" &&
-                            !receptionNotes.trim()) ||
-                          (![
-                            "no_requiere",
-                            "producto_aprobado",
-                            "aprobado_parcial",
-                          ].includes(receptionStatus) &&
-                            !receptionException)
-                        }
-                        onClick={() => setShowCreditConfirmation(true)}
-                        className="admin-credit-note-submit"
-                      >
-                        {creditNoteProcessing ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : (
-                          <ShieldCheck className="size-4" />
-                        )}
-                        {creditNoteProcessing
-                          ? "Validando con ARCA..."
-                          : "Revisar y emitir"}
-                      </button>
+                      <div className="admin-credit-note-wizard-nav admin-credit-note-wizard-nav-review">
+                        <button
+                          type="button"
+                          onClick={() => setWizardStep(2)}
+                          className="admin-credit-note-wizard-back"
+                        >
+                          <ArrowLeft className="size-3.5" />
+                          Volver
+                        </button>
+                        <button
+                          type="button"
+                          disabled={creditNoteProcessing || !canReviewAndEmit}
+                          onClick={() => setShowCreditConfirmation(true)}
+                          className="admin-credit-note-submit"
+                        >
+                          {creditNoteProcessing ? (
+                            <LoaderCircle className="size-4 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="size-4" />
+                          )}
+                          {creditNoteProcessing
+                            ? "Validando con ARCA..."
+                            : "Revisar y emitir"}
+                        </button>
+                      </div>
                       <p className="admin-credit-note-secure-copy">
                         <ShieldCheck className="size-3.5" />
                         Ningún saldo ni reintegro se acredita sin un CAE válido.
@@ -3514,6 +3613,7 @@ function BillingManagementPanel({
                     </div>
                 </section>
               </div>
+              )}
             </>
           )}
 
@@ -4162,508 +4262,6 @@ function MobileOrderField({
   )
 }
 
-function PedidoPreviewModal({
-  pedido,
-  pedidos,
-  onClose,
-  onOpenPaymentProof,
-  onPaymentStatusChange,
-}: {
-  pedido: SupabasePedido
-  pedidos: SupabasePedido[]
-  onClose: () => void
-  onOpenPaymentProof: (pedidoId: number) => Promise<boolean>
-  onPaymentStatusChange: (pedidoId: number, nextStatus: string) => void
-}) {
-  const clientKey = getPedidoClientKey(pedido)
-  const paidPedidos = pedidos.filter(
-    (currentPedido) =>
-      currentPedido.estado === "pagado" &&
-      getPedidoClientKey(currentPedido) === clientKey
-  )
-  const pedidosToShow =
-    pedido.estado === "pagado" && paidPedidos.length > 0
-      ? paidPedidos
-      : [pedido]
-  const total = pedidosToShow.reduce(
-    (sum, currentPedido) => sum + Number(currentPedido.total ?? 0),
-    0
-  )
-  const itemsCount = pedidosToShow.reduce(
-    (sum, currentPedido) =>
-      sum +
-      (currentPedido.orden_items ?? []).reduce(
-        (itemsSum, item) => itemsSum + Number(item.cantidad ?? 0),
-        0
-      ),
-    0
-  )
-  const isGrouped = pedidosToShow.length > 1
-
-  return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-80vh w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-beyonix-surface shadow-2xl shadow-black/80">
-        <div className="flex items-start justify-between gap-4 border-b border-white/8 px-5 py-4 sm:px-6">
-          <div>
-            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-              Ver pedido
-            </p>
-            <h2 className="mt-1 text-2xl font-black text-white">
-              Pedido #{formatPublicOrderId(pedido.id)}
-            </h2>
-            <p className="mt-1 text-sm text-white/55">
-              {isGrouped
-                ? `Mostrando ${pedidosToShow.length} pedidos pagados unificados de este cliente.`
-                : "Detalle completo del pedido seleccionado."}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            aria-label="Cerrar detalle del pedido"
-            onClick={onClose}
-            className="flex size-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 text-white/62 transition-colors hover:border-white/22 hover:text-white"
-          >
-            <X className="size-5" />
-          </button>
-        </div>
-
-        <div className="custom-scrollbar overflow-y-auto px-5 py-5 sm:px-6">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <section className="rounded-2xl border border-white/8 bg-black p-4">
-              <p className="text-11px font-bold uppercase tracking-widest text-white/45">
-                Cliente
-              </p>
-              <h3 className="mt-3 text-lg font-black text-white">
-                {pedido.cliente_nombre || "Cliente sin nombre"}
-              </h3>
-              <div className="mt-3 space-y-2 text-sm text-white/62">
-                <p>{pedido.cliente_email || "Email no informado"}</p>
-                <p>{pedido.cliente_telefono || "Teléfono no informado"}</p>
-                <p>{pedido.cliente_direccion || "Dirección no informada"}</p>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-white/8 bg-black p-4">
-              <p className="text-11px font-bold uppercase tracking-widest text-white/45">
-                Resumen
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-11px uppercase tracking-widest text-white/38">
-                    Pedidos
-                  </p>
-                  <p className="mt-1 text-xl font-black text-white">
-                    {pedidosToShow.length}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-11px uppercase tracking-widest text-white/38">
-                    Unidades
-                  </p>
-                  <p className="mt-1 text-xl font-black text-white">
-                    {itemsCount}
-                  </p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-11px uppercase tracking-widest text-white/38">
-                    Total
-                  </p>
-                  <p className="mt-1 text-2xl font-black text-white">
-                    {formatPrice(total)}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-white/8 bg-black p-4">
-              <p className="text-11px font-bold uppercase tracking-widest text-white/45">
-                Pedido seleccionado
-              </p>
-              <div className="mt-3 space-y-2 text-sm text-white/62">
-                <p>Estado: {pedido.estado}</p>
-                <p>Fecha: {formatOrderDate(pedido.created_at)}</p>
-                <p>Pago: {pedido.payment_id || "Sin ID pago"}</p>
-                <p>
-                  Método:{" "}
-                  {pedido.payment_method_id ||
-                    pedido.payment_type_id ||
-                    "Método no informado"}
-                </p>
-                <p>Seguimiento: {pedido.tracking_number || "Pendiente"}</p>
-              </div>
-            </section>
-          </div>
-
-          {pedido.payment_method_id === "transferencia" && (
-            <section className="mt-5 rounded-2xl border border-beyonix-blue-light/25 bg-black p-4">
-              <div className="flex flex-col gap-4 border-b border-white/7 pb-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                    Pago por transferencia
-                  </p>
-                  <h3 className="mt-2 flex items-center gap-2 text-xl font-black text-white">
-                    <CreditCard className="size-5 text-beyonix-sky" />
-                    Alias usado: {pedido.transfer_alias || "beyonix"}
-                  </h3>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <TransferPaymentBadges pedido={pedido} />
-                  </div>
-                </div>
-
-                <div className="w-full max-w-sm">
-                  <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
-                    Estado administrativo de pago
-                  </p>
-                  <AdminSelect
-                    title="Estado de pago"
-                    value={pedido.payment_status || "pendiente_comprobante"}
-                    onChange={(value) => onPaymentStatusChange(pedido.id, value)}
-                  >
-                    <option value="pendiente_comprobante">Pendiente comprobante</option>
-                    <option value="en_revision">En revisión</option>
-                    <option value="confirmado">Confirmado</option>
-                    <option value="rechazado">Rechazado</option>
-                  </AdminSelect>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                    Estado de pago
-                  </p>
-                  <p className="mt-2 text-sm font-black text-white">
-                    {getPaymentStatusLabel(pedido.payment_status)}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                    Descuento transferencia
-                  </p>
-                  <p className="mt-2 text-sm font-black text-emerald-300">
-                    {formatPrice(Number(pedido.transfer_discount_amount ?? 0))}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                    Comprobante actual
-                  </p>
-                  <p
-                    className="mt-2 wrap-break-word text-sm font-black text-white"
-                  >
-                    {pedido.payment_proof_file_name || "Sin comprobante"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                  <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                    Fecha de subida
-                  </p>
-                  <p className="mt-2 text-sm font-black text-white">
-                    {formatOptionalOrderDate(pedido.payment_proof_uploaded_at)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-[#263242] bg-[#0B0F14] p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Comprobante
-                </p>
-                {pedido.payment_proof_url ? (
-                  <button
-                    type="button"
-                    aria-label={`Ver comprobante del pedido ${pedido.id}`}
-                    onClick={() => onOpenPaymentProof(pedido.id)}
-                    className="mt-3 inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B]"
-                  >
-                    <Download className="size-4" />
-                    Ver comprobante
-                  </button>
-                ) : (
-                  <p className="mt-2 text-sm font-black text-white/55">
-                    Sin comprobante
-                  </p>
-                )}
-              </div>
-            </section>
-          )}
-
-          <section className="mt-5 rounded-2xl border border-white/8 bg-black p-4">
-            <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-              Estados administrativos
-            </p>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Estado del pedido
-                </p>
-                <div className="mt-2">
-                  <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
-                </div>
-              </div>
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Estado de pago
-                </p>
-                {pedido.payment_method_id === "transferencia" ? (
-                  <div className="mt-2">
-                    <TransferPaymentBadges pedido={pedido} />
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm font-black text-white">
-                    {getPaymentStatusLabel(pedido.payment_status)}
-                  </p>
-                )}
-              </div>
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Despacho
-                </p>
-                <span
-                  className={`admin-order-dispatch-badge mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${getDispatchAlert(pedido).className}`}
-                >
-                  {getDispatchAlert(pedido).label}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-5 rounded-2xl border border-white/8 bg-black p-4">
-            <div className="flex flex-col gap-4 border-b border-white/7 pb-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                  Envío
-                </p>
-                <h3 className="mt-2 flex items-center gap-2 text-xl font-black text-white">
-                  <Truck className="size-5 text-beyonix-sky" />
-                  Proveedor: {getShippingProvider(pedido)}
-                </h3>
-                <p className="mt-2 text-sm text-white/55">
-                  Integración preparada para Andreani. Las credenciales reales
-                  quedan reservadas para el backend.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
-                  onClick={() => runAndreaniAction("crear-envio", pedido.id)}
-                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue px-3 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover"
-                >
-                  <Truck className="size-4" />
-                  Generar envío Andreani
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Consultar tracking Andreani para pedido ${pedido.id}`}
-                  onClick={() => runAndreaniAction("tracking", pedido.id)}
-                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-11px font-black uppercase tracking-wide text-white/72 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky"
-                >
-                  <RefreshCw className="size-4" />
-                  Consultar tracking
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Imprimir etiqueta Andreani para pedido ${pedido.id}`}
-                  onClick={() => handlePrintAndreaniLabel(pedido)}
-                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-11px font-black uppercase tracking-wide text-white/72 transition-colors hover:border-beyonix-blue-light/35 hover:text-beyonix-sky"
-                >
-                  <Printer className="size-4" />
-                  Imprimir etiqueta
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Estado de envío
-                </p>
-                <p className="mt-2 text-sm font-black text-white">
-                  {getAndreaniStatus(pedido)}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Tracking
-                </p>
-                <p className="mt-2 wrap-break-word text-sm font-black text-white">
-                  {pedido.andreani_tracking || pedido.tracking_number || "Pendiente"}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Envío ID
-                </p>
-                <p className="mt-2 wrap-break-word text-sm font-black text-white">
-                  {pedido.andreani_envio_id || "Pendiente"}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Etiqueta
-                </p>
-                <p className="mt-2 wrap-break-word text-sm font-black text-white">
-                  {pedido.andreani_etiqueta_url ? "Disponible" : "Pendiente"}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Costo
-                </p>
-                <p className="mt-2 text-sm font-black text-white">
-                  {typeof pedido.andreani_costo === "number"
-                    ? formatPrice(pedido.andreani_costo)
-                    : "Pendiente"}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/7 bg-white/3 p-3">
-                <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                  Error
-                </p>
-                <p
-                  className="mt-2 wrap-break-word text-sm font-black text-white"
-                >
-                  {pedido.andreani_error || "Sin errores"}
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <div className="mt-5 space-y-4">
-            {pedidosToShow.map((currentPedido) => (
-              <section
-                key={currentPedido.id}
-                className="rounded-2xl border border-white/8 bg-black p-4"
-              >
-                <div className="flex flex-col gap-3 border-b border-white/7 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="text-lg font-black text-white">
-                      Pedido #{formatPublicOrderId(currentPedido.id)}
-                    </h3>
-                    <p className="mt-1 text-sm text-white/55">
-                      {formatOrderDate(currentPedido.created_at)} · Estado:{" "}
-                      {currentPedido.estado}
-                    </p>
-                  </div>
-                  {isGrouped && (
-                    <div className="text-left sm:text-right">
-                      <p className="text-11px font-bold uppercase tracking-widest text-white/38">
-                        Total de este pedido
-                      </p>
-                      <p className="mt-1 text-xl font-black text-white">
-                        {formatPrice(currentPedido.total)}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4">
-                  <div className="mb-2 hidden grid-cols-admin-order-modal-item gap-4 px-3 xl:grid">
-                    {[
-                      "Producto",
-                      "Color",
-                      "Cantidad",
-                      "Precio unitario",
-                      "Subtotal",
-                    ].map((label) => (
-                      <span
-                        key={label}
-                        className={`text-11px font-bold uppercase tracking-widest text-white/38 ${
-                          label === "Producto" ? "text-left" : "text-center"
-                        }`}
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="space-y-3">
-                    {(currentPedido.orden_items ?? []).map((item) => {
-                      const image = getItemImage(item)
-                      const productName =
-                        item.productos?.nombre ?? `Producto #${item.producto_id}`
-                      const quantity = Number(item.cantidad ?? 0)
-                      const unitPrice = Number(item.precio ?? 0)
-                      const subtotal = quantity * unitPrice
-
-                      return (
-                        <div
-                          key={item.id}
-                          className="grid gap-4 rounded-2xl border border-white/7 bg-white/3 p-3 sm:grid-cols-admin-order-modal-item sm:items-center"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
-                              {image ? (
-                                <img
-                                  src={image}
-                                  alt={productName}
-                                  className="size-full object-contain"
-                                />
-                              ) : (
-                                <ShoppingCart className="size-6 text-black/35" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-black text-white">
-                                {productName}
-                              </p>
-                              <p className="mt-1 text-xs text-white/48">
-                                Producto #{item.producto_id}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="text-center text-sm text-white/72">
-                            <p className="text-11px font-bold uppercase tracking-widest text-white/38">
-                              Color
-                            </p>
-                            <p className="mt-1 font-black text-white">
-                              {getItemColor(item)}
-                            </p>
-                          </div>
-
-                          <div className="text-center text-sm text-white/72">
-                            <p className="text-11px font-bold uppercase tracking-widest text-white/38">
-                              Cantidad
-                            </p>
-                            <p className="mt-1 font-black text-white">
-                              {quantity}
-                            </p>
-                          </div>
-
-                          <div className="text-center text-sm text-white/72">
-                            <p className="text-11px font-bold uppercase tracking-widest text-white/38">
-                              Precio unitario
-                            </p>
-                            <p className="mt-1 font-black text-white">
-                              {formatPrice(unitPrice)}
-                            </p>
-                          </div>
-
-                          <div className="text-center text-sm text-white/72">
-                            <p className="text-11px font-bold uppercase tracking-widest text-white/38">
-                              Subtotal
-                            </p>
-                            <p className="mt-1 font-black text-white">
-                              {formatPrice(subtotal)}
-                            </p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </section>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function PedidoDetailModal({
   pedido,
   isSuperAdmin,
@@ -4808,8 +4406,7 @@ function PedidoDetailModal({
       { view: "pago" as const, label: "Pago", icon: CreditCard, badge: tabState.badges.pago },
       { view: "facturacion" as const, label: "Facturación", icon: FileText, badge: tabState.badges.facturacion },
       { view: "envio" as const, label: "Envío", icon: Truck, badge: tabState.badges.envio },
-      { view: "mensajeria" as const, label: "Mensajería", icon: MessageCircle, badge: tabState.badges.mensajeria },
-      { view: "reclamos" as const, label: "Reclamo", icon: AlertTriangle, badge: tabState.badges.reclamos },
+      { view: "atencion" as const, label: "Atención al cliente", icon: MessageCircle, badge: tabState.badges.atencion },
       ...(tabState.visible.cancelacion
         ? [{ view: "cancelacion" as const, label: "Cancelación", icon: X, badge: tabState.badges.cancelacion }]
         : []),
@@ -4878,13 +4475,22 @@ function PedidoDetailModal({
   ])
 
   useEffect(() => {
-    if (activeView !== "reclamos" && activeView !== "mensajeria") return
+    if (activeView !== "atencion") return
     if (!pendingClaim) return
-    if (activeView === "mensajeria" && !isHelpMessageClaim(pendingClaim)) return
-    if (activeView === "reclamos" && !isFormalClaim(pendingClaim)) return
 
     void markAdminClaimNotificationsRead(pedido.id)
   }, [activeView, pedido.id, pendingClaim?.id])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      if (document.querySelector('[role="dialog"]')) return
+      onClose()
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [onClose])
 
   const showDetailView = (view: AdminOrderDetailView) => {
     setActiveView(view)
@@ -5074,9 +4680,38 @@ function PedidoDetailModal({
   }
 
   return (
-    <div className={embedded ? "min-w-0 px-2 pb-2 pt-4 sm:px-3 sm:pb-3 sm:pt-5" : "fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 pb-6 pt-9 backdrop-blur-sm"}>
+    <div
+      className={embedded ? "min-w-0 px-2 pb-2 pt-4 sm:px-3 sm:pb-3 sm:pt-5" : "fixed inset-0 z-100 flex items-center justify-center bg-black/82 px-4 pb-6 pt-9 backdrop-blur-sm"}
+      onMouseDown={embedded ? undefined : (event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
       <div className={embedded ? "admin-order-detail-scope mx-auto flex w-full max-w-[1420px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#05070A]" : "admin-order-detail-scope flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#05070A] shadow-2xl shadow-black/80"}>
-        <div className={`custom-scrollbar bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-3 py-2.5 sm:px-4">
+          <p className="min-w-0 truncate text-sm font-black text-white">
+            Pedido #{formatPublicOrderId(pedido.id)}
+          </p>
+          {embedded ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/45 hover:text-beyonix-sky"
+            >
+              <ArrowLeft className="size-3.5" />
+              Volver a pedidos
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label="Cerrar detalle del pedido"
+              onClick={onClose}
+              className="admin-ds-icon-action flex size-9 shrink-0 cursor-pointer items-center justify-center transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </header>
+        <div className={`custom-scrollbar min-h-0 flex-1 bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
           <div
             className={`flex min-w-0 flex-col gap-3 p-2.5 sm:p-3 lg:flex-row ${
               activeView === "resumen" || activeView === "pago" || activeView === "facturacion" ? "admin-order-summary-layout-bg" : ""
@@ -5254,10 +4889,11 @@ function PedidoDetailModal({
                 </div>
               ) : (
                 <div className="mt-2 grid gap-2 border-t border-white/8 pt-2 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="admin-order-info-card rounded-lg border border-white/8 p-2">
+                  <div className={`admin-order-info-card rounded-lg border p-2 ${isPaymentStatusMismatch(pedido.payment_status) ? "border-red-400/45 bg-red-500/10" : "border-white/8"}`}>
                     <DetailValue
                       label="Estado del pago"
                       value={getPaymentStatusLabel(pedido.payment_status)}
+                      valueClassName={isPaymentStatusMismatch(pedido.payment_status) ? "mt-1 wrap-break-word text-sm font-bold text-red-200" : undefined}
                     />
                   </div>
                   <DetailValue label="ID de pago" value={pedido.payment_id || "No informado"} />
@@ -5301,18 +4937,10 @@ function PedidoDetailModal({
             />
           )}
 
-          {activeView === "mensajeria" && (
+          {activeView === "atencion" && (
           <AdminClaimManager
             pedido={pedido}
-            mode="messaging"
-            onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
-          />
-          )}
-
-          {activeView === "reclamos" && (
-          <AdminClaimManager
-            pedido={pedido}
-            mode="claims"
+            mode="all"
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
             onInventoryUpdated={onWarrantyUpdated}
           />
@@ -5866,17 +5494,19 @@ function DetailValue({
   label,
   value,
   wide = false,
+  valueClassName,
 }: {
   label: string
   value: string
   wide?: boolean
+  valueClassName?: string
 }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
       <p className="text-10px font-bold uppercase tracking-widest text-white/38">
         {label}
       </p>
-      <p className="mt-1 wrap-break-word text-sm font-bold text-white/82">{value}</p>
+      <p className={valueClassName ?? "mt-1 wrap-break-word text-sm font-bold text-white/82"}>{value}</p>
     </div>
   )
 }
@@ -6142,6 +5772,7 @@ function CompactAddressValue({
   label: string
   value: string
   wide?: boolean
+  valueClassName?: string
 }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
@@ -6227,7 +5858,7 @@ function TrackingStatusModal({
   const isEditing = request.mode === "edit"
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-beyonix-blue-light/25 bg-[#101010] shadow-2xl shadow-black/80">
         <div className="border-b border-white/8 bg-[linear-gradient(135deg,#102438_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
           <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
@@ -6328,7 +5959,7 @@ function ForcedStatusConfirmModal({
     request.nextEstado === "entregado" ? "Entregado" : "En camino"
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-md overflow-hidden rounded-3xl border border-beyonix-blue-light/25 bg-[#101010] shadow-2xl shadow-black/80">
         <div className="border-b border-white/8 bg-[linear-gradient(135deg,#102438_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
           <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
@@ -6378,355 +6009,6 @@ function ForcedStatusConfirmModal({
         </div>
       </div>
     </div>
-  )
-}
-
-function AdminClaimsCenterSection({
-  pedido,
-  onClaimChange,
-}: {
-  pedido: SupabasePedido
-  onClaimChange: (claim: SupabaseOrderClaim) => void
-}) {
-  const claims = pedido.order_claims ?? []
-  const [editingClaimId, setEditingClaimId] = useState<number | null>(
-    claims[0]?.id ?? null
-  )
-  const claim = claims.find((item) => item.id === editingClaimId) ?? claims[0]
-  const [status, setStatus] = useState<OrderClaimStatus>(
-    claim?.status ?? "recibido"
-  )
-  const [resolution, setResolution] = useState<OrderClaimResolution | "">(
-    claim?.resolution ?? ""
-  )
-  const [closeAfterResolution, setCloseAfterResolution] = useState(
-    claim?.status === "cerrado"
-  )
-  const [adminResponse, setAdminResponse] = useState(
-    claim?.admin_response ?? ""
-  )
-  const [rejectionReason, setRejectionReason] = useState(
-    claim?.rejection_reason ?? ""
-  )
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState("")
-
-  useEffect(() => {
-    setEditingClaimId(claims[0]?.id ?? null)
-  }, [pedido.id, claims.length])
-
-  useEffect(() => {
-    if (!claim) return
-    setStatus(claim.status)
-    setResolution(claim.resolution ?? "")
-    setCloseAfterResolution(claim.status === "cerrado")
-    setAdminResponse(claim.admin_response ?? "")
-    setRejectionReason(claim.rejection_reason ?? "")
-    setMessage("")
-  }, [claim?.id])
-
-  const saveClaim = async () => {
-    if (!claim) return
-
-    setSaving(true)
-    setMessage("")
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!session?.access_token) {
-        setMessage("La sesión administrativa venció.")
-        return
-      }
-
-      const response = await fetch(`/api/admin/order-claims/${claim.id}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: closeAfterResolution ? "cerrado" : status,
-          resolution: resolution || null,
-          offered_resolutions: [],
-          admin_response: adminResponse,
-          rejection_reason: rejectionReason,
-        }),
-      })
-      const data = (await response.json()) as {
-        claim?: SupabaseOrderClaim
-        error?: string
-      }
-
-      if (!response.ok || !data.claim) {
-        setMessage(data.error || "No se pudo actualizar el reclamo.")
-        return
-      }
-
-      onClaimChange(data.claim)
-      setStatus(data.claim.status)
-      setResolution(data.claim.resolution ?? "")
-      setCloseAfterResolution(data.claim.status === "cerrado")
-      setAdminResponse(data.claim.admin_response ?? "")
-      setRejectionReason(data.claim.rejection_reason ?? "")
-      setMessage("Reclamo actualizado.")
-    } catch {
-      setMessage("No se pudo actualizar el reclamo.")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <section className={`admin-order-invoice-panel mt-4 rounded-2xl border p-4 sm:p-5 ${
-      claims.length ? ADMIN_SENSITIVE_DANGER.panel : "border-beyonix-blue-light/20 bg-[#0B1118]"
-    }`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className={`text-11px font-bold uppercase tracking-widest ${
-            claims.length ? ADMIN_SENSITIVE_DANGER.label : "text-beyonix-cyan"
-          }`}>
-            Centro de reclamos
-          </p>
-          <h3 className="mt-2 text-lg font-black text-white">
-            {claims.length
-              ? `${claims.length} reclamo${claims.length === 1 ? "" : "s"}`
-              : "Sin reclamos"}
-          </h3>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-white/55">
-            Revisá la evidencia cargada por el cliente, cambiá el estado y
-            dejá una respuesta visible en su pedido.
-          </p>
-        </div>
-        {claims.length > 1 && (
-          <AdminSelect
-            title="Historial de reclamos"
-            compact
-            value={String(claim?.id ?? "")}
-            onChange={(value) => setEditingClaimId(Number(value))}
-          >
-            {claims.map((item) => (
-              <option key={item.id} value={item.id}>
-                #{item.id} · {getAdminClaimFailureLabel(item.failure_type)}
-              </option>
-            ))}
-          </AdminSelect>
-        )}
-      </div>
-
-      {!claim ? (
-        <p className="mt-4 rounded-xl border border-white/8 bg-[#111827] px-3 py-2 text-xs font-medium text-white/58">
-          Este pedido todavía no tiene reclamos cargados.
-        </p>
-      ) : (
-        <div className="mt-4 grid gap-4 border-t border-[#7f2d3a]/45 pt-4 lg:grid-cols-2">
-          <div className="space-y-3">
-            <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-              <DetailValue
-                label="Tipo de reclamo"
-                value={claim.failure_type === "consulta_pedido" ? "Mensaje de ayuda" : getOrderClaimTypeLabel(claim.claim_type)}
-              />
-            </div>
-            <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-              <DetailValue
-                label="Descripción"
-                value={claim.description || "Sin descripción"}
-                wide
-              />
-            </div>
-            {claim.failure_type && (
-              <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-                <DetailValue label={claim.failure_type === "consulta_pedido" ? "Tipo de consulta" : "Tipo de falla"} value={getAdminClaimFailureLabel(claim.failure_type)} />
-              </div>
-            )}
-            {claim.started_at && (
-              <div className={`admin-order-info-card rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-                <DetailValue label="Inicio de falla" value={claim.started_at} />
-              </div>
-            )}
-            <div className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-              <p className={`text-10px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
-                Evidencia
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(claim.order_claim_files ?? []).length ? (
-                  (claim.order_claim_files ?? []).map((file) => (
-                    <a
-                      key={file.id}
-                      href={file.signedUrl ?? undefined}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-10px font-black uppercase tracking-wide ${ADMIN_SENSITIVE_DANGER.action}`}
-                    >
-                      <Download className="size-3.5" />
-                      {file.file_name}
-                    </a>
-                  ))
-                ) : (
-                  <p className="text-sm font-semibold text-white/55">
-                    Sin archivos cargados.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
-                  Estado
-                </p>
-                <AdminSelect
-                  title="Estado del reclamo"
-                  value={status}
-                  onChange={(value) => setStatus(value as OrderClaimStatus)}
-                >
-                  <option value="recibido">Recibido</option>
-                  <option value="en_revision">En revisión</option>
-                  <option value="falta_informacion">
-                    En conversación
-                  </option>
-                  <option value="aprobado">Aprobado</option>
-                  <option value="cambio_pendiente">Solución en proceso</option>
-                  <option value="reemplazo_enviado">Solución en proceso</option>
-                  <option value="reintegro_pendiente">Reintegro pendiente</option>
-                  <option value="cupon_pendiente">Cupón pendiente</option>
-                  <option value="rechazado">Rechazado</option>
-                  <option value="cerrado">Finalizado</option>
-                </AdminSelect>
-              </div>
-              <div>
-                <p className="mb-2 text-10px font-bold uppercase tracking-widest text-white/38">
-                  Resolución final
-                </p>
-                <AdminSelect
-                  title="Resolución del reclamo"
-                  value={resolution}
-                  onChange={(value) =>
-                    setResolution(value as OrderClaimResolution | "")
-                  }
-                >
-                  <option value="">Sin resolución</option>
-                  <option value="reintegro_total">Reintegro total</option>
-                  <option value="reintegro_parcial">Reintegro parcial</option>
-                  <option value="saldo_a_favor">Saldo a favor</option>
-                  <option value="cupon_descuento">Cupón de descuento</option>
-                  <option value="rechazado">Rechazado</option>
-                  <option value="otro">Otra solución</option>
-                </AdminSelect>
-              </div>
-            </div>
-            <div className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-              <p className={`text-10px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
-                Resolución definida por BEYONIX
-              </p>
-              <p className="mt-2 text-xs font-semibold leading-5 text-white/58">
-                El cliente no elige soluciones desde la web. Registrá la resolución y, si hace falta, respondé desde la conversación.
-              </p>
-            </div>
-            {claim.customer_selected_resolution && (
-              <div className="rounded-xl border border-emerald-300/20 bg-emerald-400/8 px-3 py-2 text-xs font-semibold leading-5 text-emerald-100">
-                Resolución registrada previamente:{" "}
-                <span className="font-black">
-                  {getOrderClaimResolutionLabel(
-                    claim.customer_selected_resolution,
-                  )}
-                </span>
-                .
-              </div>
-            )}
-            {(claim.order_claim_messages ?? []).length > 0 && (
-              <div className={`rounded-xl border p-3 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>
-                <p className={`text-10px font-bold uppercase tracking-widest ${ADMIN_SENSITIVE_DANGER.label}`}>
-                  Conversación con el cliente
-                </p>
-                <div className="mt-3 space-y-2">
-                  {[...(claim.order_claim_messages ?? [])]
-                    .sort(
-                      (a, b) =>
-                        new Date(a.created_at).getTime() -
-                        new Date(b.created_at).getTime(),
-                    )
-                    .map((message) => {
-                      const isCustomer = message.author_role === "cliente"
-
-                      return (
-                        <div
-                          key={message.id}
-                          className={`rounded-xl border px-3 py-2 ${
-                            isCustomer
-                              ? "border-[#7f2d3a]/45 bg-[#111827]"
-                              : "border-[#2c4058] bg-[#111827]"
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-10px font-black uppercase tracking-widest text-white/45">
-                              {isCustomer ? "Cliente" : "BEYONIX"}
-                            </p>
-                            <p className="text-10px font-semibold text-white/34">
-                              {formatOrderDate(message.created_at)}
-                            </p>
-                          </div>
-                          <p className="mt-1 text-sm font-semibold leading-6 text-white/72">
-                            {message.message}
-                          </p>
-                        </div>
-                      )
-                    })}
-                </div>
-              </div>
-            )}
-            <textarea
-              value={adminResponse}
-              onChange={(event) => setAdminResponse(event.target.value)}
-              rows={4}
-              placeholder="Respuesta visible para el cliente. El reclamo seguirá abierto hasta que lo marques como Finalizado."
-              className="w-full resize-none rounded-xl border border-[#2c4058] bg-[#111827] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
-            />
-            <textarea
-              value={rejectionReason}
-              onChange={(event) => setRejectionReason(event.target.value)}
-              rows={3}
-              placeholder="Motivo de rechazo obligatorio si el estado es Rechazado."
-              className="w-full resize-none rounded-xl border border-[#2c4058] bg-[#111827] px-3 py-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
-            />
-            <label className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold leading-5 ${ADMIN_SENSITIVE_DANGER.panelSoft} ${ADMIN_SENSITIVE_DANGER.textMuted}`}>
-              <input
-                type="checkbox"
-                checked={closeAfterResolution}
-                onChange={(event) =>
-                  setCloseAfterResolution(event.target.checked)
-                }
-                className="mt-0.5 size-4 accent-[#9f3546]"
-              />
-              Dar por finalizada la conversación con el cliente al guardar. Se
-              requiere una resolución final.
-            </label>
-            <p className="text-xs font-semibold leading-5 text-white/46">
-              Para seguir hablando, dejá el estado como En revisión o En
-              conversación. Solo Finalizado o Rechazado finalizan el reclamo.
-            </p>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-white/48">
-                {message ||
-                  `Actual: ${getOrderClaimStatusLabel(claim.status)} · ${getOrderClaimResolutionLabel(claim.resolution)}`}
-              </p>
-              <button
-                type="button"
-                onClick={() => void saveClaim()}
-                disabled={saving}
-                className={`inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border px-4 text-11px font-black uppercase tracking-wide disabled:cursor-wait disabled:opacity-50 ${ADMIN_SENSITIVE_DANGER.actionSolid}`}
-              >
-                {saving ? "Guardando..." : "Guardar reclamo"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
   )
 }
 
