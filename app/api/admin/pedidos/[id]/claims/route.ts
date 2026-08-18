@@ -9,22 +9,40 @@ function stripClaimBucket(path: string) {
     : path
 }
 
-async function attachSignedUrls(admin: any, claim: any) {
-  return {
-    ...claim,
-    order_claim_files: await Promise.all(
-      (claim.order_claim_files ?? []).map(async (file: any) => {
-        const { data } = await admin.storage
-          .from(ORDER_CLAIM_BUCKET)
-          .createSignedUrl(stripClaimBucket(file.file_path), 300)
-
-        return {
-          ...file,
-          signedUrl: data?.signedUrl ?? null,
-        }
-      }),
-    ),
+// Firma todos los archivos de todos los reclamos de este pedido en una sola
+// llamada a Storage en vez de una por archivo (evita el N+1 anterior).
+async function attachSignedUrls(admin: any, claims: any[]) {
+  const entries = claims.flatMap((claim) =>
+    (claim.order_claim_files ?? []).map((file: any) => ({
+      claimId: claim.id,
+      file,
+      path: stripClaimBucket(file.file_path),
+    })),
+  )
+  const signedUrlByPath = new Map<string, string | null>()
+  if (entries.length) {
+    const { data: signedUrls } = await admin.storage
+      .from(ORDER_CLAIM_BUCKET)
+      .createSignedUrls(
+        entries.map((entry) => entry.path),
+        300,
+      )
+    for (const signed of signedUrls ?? []) {
+      if (signed.path) signedUrlByPath.set(signed.path, signed.signedUrl ?? null)
+    }
   }
+
+  const filesByClaimId = new Map<number, any[]>()
+  for (const entry of entries) {
+    const current = filesByClaimId.get(entry.claimId) ?? []
+    current.push({ ...entry.file, signedUrl: signedUrlByPath.get(entry.path) ?? null })
+    filesByClaimId.set(entry.claimId, current)
+  }
+
+  return claims.map((claim) => ({
+    ...claim,
+    order_claim_files: filesByClaimId.get(claim.id) ?? [],
+  }))
 }
 
 export async function GET(
@@ -54,9 +72,7 @@ export async function GET(
     )
   }
 
-  const claims = await Promise.all(
-    (data ?? []).map((claim) => attachSignedUrls(auth.admin, claim)),
-  )
+  const claims = await attachSignedUrls(auth.admin, data ?? [])
 
   return NextResponse.json({ claims })
 }

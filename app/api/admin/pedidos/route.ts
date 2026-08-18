@@ -266,24 +266,38 @@ export async function GET(request: Request) {
   }
 
   const claimRows = claimsResult.data ?? []
-  const signedFilesByClaimId = new Map<number, any[]>()
-  await Promise.all(
-    claimRows.map(async (claim) => {
-      const signedFiles = await Promise.all(
-        (claim.order_claim_files ?? []).map(async (file: any) => {
-          const { data } = await auth.admin.storage
-            .from(ORDER_CLAIM_BUCKET)
-            .createSignedUrl(stripClaimBucket(file.file_path), 300)
-
-          return {
-            ...file,
-            signedUrl: data?.signedUrl ?? null,
-          }
-        })
-      )
-      signedFilesByClaimId.set(claim.id, signedFiles)
-    })
+  // Antes: una llamada a createSignedUrl por archivo (N+1 contra Supabase
+  // Storage en cada carga/recarga del listado). createSignedUrls firma todos
+  // los archivos de todos los reclamos de la página en una sola llamada.
+  const claimFileEntries = claimRows.flatMap((claim) =>
+    (claim.order_claim_files ?? []).map((file: any) => ({
+      claimId: claim.id,
+      file,
+      path: stripClaimBucket(file.file_path),
+    })),
   )
+  const signedUrlByPath = new Map<string, string | null>()
+  if (claimFileEntries.length) {
+    const { data: signedUrls } = await auth.admin.storage
+      .from(ORDER_CLAIM_BUCKET)
+      .createSignedUrls(
+        claimFileEntries.map((entry) => entry.path),
+        300,
+      )
+    for (const signed of signedUrls ?? []) {
+      if (signed.path) signedUrlByPath.set(signed.path, signed.signedUrl ?? null)
+    }
+  }
+
+  const signedFilesByClaimId = new Map<number, any[]>()
+  for (const entry of claimFileEntries) {
+    const current = signedFilesByClaimId.get(entry.claimId) ?? []
+    current.push({
+      ...entry.file,
+      signedUrl: signedUrlByPath.get(entry.path) ?? null,
+    })
+    signedFilesByClaimId.set(entry.claimId, current)
+  }
 
   for (const claim of claimRows) {
     const currentClaims = claimsByOrder.get(claim.order_id) ?? []

@@ -4,6 +4,20 @@
 -- supabase/migrations/). Contenido trasladado sin cambios funcionales;
 -- todas las sentencias son idempotentes, por lo que reaplicar esto sobre
 -- el remoto ya migrado no tiene efecto.
+--
+-- Fecha del archivo: 091_partial_credit_notes.sql se aplicó a mano el
+-- 2026-07-27, antes de que supabase/migrations/ arrancara (2026-07-29,
+-- 20260729181537_remote_schema.sql, baseline vacío porque el esquema ya
+-- existía). Por eso esta formalización va inmediatamente después del
+-- baseline y no en la fecha en que se escribió este archivo: varias
+-- migraciones posteriores (20260816135000_temp_reset_diagnostic.sql,
+-- 20260816138000_temp_reset_diagnostic_fix2.sql y sobre todo
+-- 20260816140000_reset_commercial_test_data.sql) ya hacen DELETE contra
+-- order_credit_notes/order_credit_note_items, así que estas tablas tienen
+-- que existir antes de esa fecha para que la historia de migraciones sea
+-- reproducible desde cero. Ubicarla después del baseline (en vez de, por
+-- ejemplo, justo antes de 20260816135000) también refleja con más
+-- fidelidad cuándo existieron realmente en el remoto.
 
 create table if not exists public.order_credit_notes (
   id uuid primary key default gen_random_uuid(),

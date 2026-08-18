@@ -88,14 +88,17 @@ test("la RPC serializa la cancelación y mantiene juntos sus efectos críticos",
   assert.doesNotMatch(migrationSource, /update public\.(productos|producto_variantes)/)
 })
 
-test("las firmas paralelas conservan la asociación por id de reclamo", () => {
+test("las firmas de archivos de reclamos se piden en un solo lote (sin N+1) y conservan la asociación por id de reclamo", () => {
   const routeSource = readFileSync(
     new URL("../../app/api/admin/pedidos/route.ts", import.meta.url),
     "utf8",
   )
 
-  assert.match(routeSource, /await Promise\.all\(\s*claimRows\.map/)
-  assert.match(routeSource, /signedFilesByClaimId\.set\(claim\.id, signedFiles\)/)
+  // Una sola llamada a createSignedUrls por carga de listado, no una por
+  // archivo (createSignedUrl singular sería el N+1 que se corrigió).
+  assert.match(routeSource, /\.createSignedUrls\(/)
+  assert.doesNotMatch(routeSource, /\.createSignedUrl\(/)
+  assert.match(routeSource, /signedFilesByClaimId\.set\(entry\.claimId, current\)/)
   assert.match(
     routeSource,
     /order_claim_files: signedFilesByClaimId\.get\(claim\.id\) \?\? \[\]/,

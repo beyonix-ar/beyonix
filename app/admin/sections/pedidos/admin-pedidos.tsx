@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  BadgePercent,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -1029,7 +1028,7 @@ function OrderSectionNotificationDot({
 }
 
 function getAdminOrderMenuStateClass(_state: AdminOrderTabBadgeState) {
-  return "border-beyonix-blue-light/24 bg-[#15191F] text-white hover:border-beyonix-blue-light/45 hover:bg-[#1B2028]"
+  return "border-transparent bg-transparent text-white/62 hover:border-beyonix-blue-light/30 hover:bg-[#15191F] hover:text-white"
 }
 
 function formatOptionalOrderDate(value?: string | null) {
@@ -2738,11 +2737,6 @@ function BillingManagementPanel({
             <h3 className="mt-1 text-base font-black text-white">
               {invoiceIssued ? "Factura electrónica emitida" : "Emitir comprobante fiscal"}
             </h3>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-white/72">
-              {invoiceIssued
-                ? "Factura, CAE y datos contables asociados a este pedido."
-                : "La Factura C se solicitará a ARCA y quedará asociada a este pedido."}
-            </p>
           </div>
         </div>
 
@@ -2905,10 +2899,6 @@ function BillingManagementPanel({
                 <h3 className="mt-1 text-base font-black text-white">
                   Devoluciones y reintegros
                 </h3>
-                <p className="mt-1 max-w-2xl text-xs leading-5 text-white/58">
-                  Productos, recepción, envíos, resolución y comprobantes en una
-                  sola gestión.
-                </p>
               </div>
             </div>
             <div className="admin-credit-note-balance">
@@ -4777,77 +4767,55 @@ function PedidoDetailModal({
             <>
           <div className="grid gap-3 lg:grid-cols-2">
             <section className="admin-order-data-panel admin-order-payment-panel rounded-xl border border-white/8 p-3 lg:col-span-2">
-              <div className="flex items-center gap-3">
-                {isTransferOrder(pedido) && (
-                  <span className="admin-order-payment-method-icon">
-                    <Landmark className="size-7" />
-                  </span>
-                )}
-                <div className="min-w-0">
-                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                    Método de pago
-                  </p>
-                  <h3 className="mt-1 text-base font-black text-white">
-                    {getPaymentMethodLabel(pedido)}
-                  </h3>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  {isTransferOrder(pedido) && (
+                    <span className="admin-order-payment-method-icon">
+                      <Landmark className="size-7" />
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                      Método de pago
+                    </p>
+                    <h3 className="mt-1 text-base font-black text-white">
+                      {getPaymentMethodLabel(pedido)}
+                    </h3>
+                  </div>
                 </div>
+
+                {isTransferOrder(pedido) ? (
+                  <div className="admin-order-payment-status-card flex items-center gap-2.5 rounded-lg border border-white/8 bg-[#1B2028] px-3 py-2">
+                    <span className="admin-order-payment-icon admin-order-payment-icon--green">
+                      <ShieldCheck className="size-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/55">
+                        Estado del pago
+                      </p>
+                      <PaymentStatusDropdown
+                        value={paymentStatusValue}
+                        onChange={(value) => onPaymentStatusChange(pedido.id, value)}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={`inline-flex items-center rounded-full border px-3 py-1.5 text-11px font-black uppercase tracking-wide ${
+                      isPaymentStatusMismatch(pedido.payment_status)
+                        ? "border-red-400/45 bg-red-500/10 text-red-200"
+                        : "admin-ds-tone-info"
+                    }`}
+                  >
+                    {getPaymentStatusLabel(pedido.payment_status)}
+                  </div>
+                )}
               </div>
 
               {isTransferOrder(pedido) ? (
                 <div className="mt-3 space-y-3 border-t border-white/8 pt-3">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="admin-order-info-card rounded-lg border border-white/8 px-3 py-3">
-                      <div className="flex h-full items-center gap-2.5">
-                        <span className="admin-order-payment-icon admin-order-payment-icon--green">
-                          <BadgePercent className="size-3.5" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-10px font-bold uppercase tracking-widest text-white/38">
-                            Descuento aplicado
-                          </p>
-                          <p className="mt-1 wrap-break-word text-sm font-bold text-white/82">
-                            {Number(pedido.transfer_discount_amount ?? 0) > 0
-                              ? `-${formatPrice(Number(pedido.transfer_discount_amount))}`
-                              : formatPrice(0)}
-                          </p>
-                          {Number(pedido.transfer_discount_percent ?? 0) > 0 && (
-                            <p className="mt-0.5 text-[11px] font-semibold text-emerald-200/78">
-                              {Number(pedido.transfer_discount_percent).toLocaleString("es-AR", {
-                                maximumFractionDigits: 2,
-                              })}% de descuento
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="admin-order-info-card rounded-lg border border-white/8 px-3 py-3">
-                      <div className="flex h-full items-center gap-2.5">
-                        <span className="admin-order-payment-icon admin-order-payment-icon--blue">
-                          <CalendarDays className="size-3.5" />
-                        </span>
-                        <DetailValue
-                          label="Fecha de pago"
-                          value={formatOptionalOrderDate(pedido.paid_at)}
-                        />
-                      </div>
-                    </div>
-                    <div className="admin-order-payment-status-card rounded-lg border border-white/8 bg-[#1B2028] px-3 py-3">
-                      <div className="flex h-full items-center gap-2.5">
-                        <span className="admin-order-payment-icon admin-order-payment-icon--green">
-                          <ShieldCheck className="size-3.5" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="mb-1 text-10px font-bold uppercase tracking-widest text-white/55">
-                            Estado del pago
-                          </p>
-                          <PaymentStatusDropdown
-                            value={paymentStatusValue}
-                            onChange={(value) => onPaymentStatusChange(pedido.id, value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="admin-order-received-card flex flex-col items-center justify-center rounded-lg border px-3 py-3 text-center">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="admin-order-received-card rounded-lg border px-3 py-3">
                       <p className="text-10px font-bold uppercase tracking-widest text-white/68">
                         Total recibido
                       </p>
@@ -4855,53 +4823,50 @@ function PedidoDetailModal({
                         {formatPrice(pedido.total)}
                       </p>
                     </div>
+                    <DetailValue
+                      label="Descuento aplicado"
+                      value={
+                        Number(pedido.transfer_discount_amount ?? 0) > 0
+                          ? `-${formatPrice(Number(pedido.transfer_discount_amount))}${
+                              Number(pedido.transfer_discount_percent ?? 0) > 0
+                                ? ` (${Number(pedido.transfer_discount_percent).toLocaleString("es-AR", {
+                                    maximumFractionDigits: 2,
+                                  })}%)`
+                                : ""
+                            }`
+                          : formatPrice(0)
+                      }
+                    />
+                    <DetailValue
+                      label="Fecha de pago"
+                      value={formatOptionalOrderDate(pedido.paid_at)}
+                    />
                   </div>
-                  <div className="admin-order-proof-card flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#263242] px-3 py-3">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="admin-order-payment-icon admin-order-payment-icon--gray">
-                        <FileText className="size-3.5" />
-                      </span>
-                      <DetailValue
-                        label="Comprobante actual"
-                        value={pedido.payment_proof_file_name || "Sin comprobante"}
-                      />
-                    </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-3">
+                    <DetailValue
+                      label="Comprobante actual"
+                      value={pedido.payment_proof_file_name || "Sin comprobante"}
+                    />
                     {pedido.payment_proof_url && (
                       <button
                         type="button"
                         aria-label={`Ver comprobante del pedido ${pedido.id}`}
                         onClick={() => void handleViewPaymentProof()}
-                        className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B]"
+                        className="admin-ds-button admin-ds-button-secondary inline-flex h-9 cursor-pointer items-center justify-center gap-2 px-3 text-11px font-black uppercase tracking-wide transition-colors"
                       >
                         <Download className="size-4" />
                         Ver comprobante
                       </button>
                     )}
                   </div>
-                  <div className="admin-order-payment-note flex items-center gap-3 rounded-lg border px-3 py-3.5">
-                    <span className="admin-order-payment-icon admin-order-payment-icon--green">
-                      <ShieldCheck className="size-3.5" />
-                    </span>
-                    <p className="pt-0.5 text-sm font-semibold leading-relaxed text-white/76">
-                      La transferencia fue verificada y el pago se encuentra confirmado.
-                    </p>
-                  </div>
+                  <p className="flex items-center gap-2 text-11px font-semibold text-emerald-200/78">
+                    <ShieldCheck className="size-3.5 shrink-0" />
+                    La transferencia fue verificada y el pago se encuentra confirmado.
+                  </p>
                 </div>
               ) : (
-                <div className="mt-2 grid gap-2 border-t border-white/8 pt-2 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className={`admin-order-info-card rounded-lg border p-2 ${isPaymentStatusMismatch(pedido.payment_status) ? "border-red-400/45 bg-red-500/10" : "border-white/8"}`}>
-                    <DetailValue
-                      label="Estado del pago"
-                      value={getPaymentStatusLabel(pedido.payment_status)}
-                      valueClassName={isPaymentStatusMismatch(pedido.payment_status) ? "mt-1 wrap-break-word text-sm font-bold text-red-200" : undefined}
-                    />
-                  </div>
-                  <DetailValue label="ID de pago" value={pedido.payment_id || "No informado"} />
-                  <DetailValue
-                    label="Fecha de acreditación"
-                    value={formatOptionalOrderDate(pedido.paid_at)}
-                  />
-                  <div className="admin-order-total-card flex flex-col items-center justify-center rounded-lg border px-3 py-2 text-center">
+                <div className="mt-3 grid gap-3 border-t border-white/8 pt-3 sm:grid-cols-3">
+                  <div className="admin-order-total-card rounded-lg border px-3 py-3">
                     <p className="text-10px font-bold uppercase tracking-widest text-emerald-100/78">
                       Total recibido
                     </p>
@@ -4909,6 +4874,11 @@ function PedidoDetailModal({
                       {formatPrice(pedido.total)}
                     </p>
                   </div>
+                  <DetailValue label="ID de pago" value={pedido.payment_id || "No informado"} />
+                  <DetailValue
+                    label="Fecha de acreditación"
+                    value={formatOptionalOrderDate(pedido.paid_at)}
+                  />
                 </div>
               )}
             </section>
@@ -5018,17 +4988,10 @@ function PedidoDetailModal({
            )}
 
            {activeView === "resumen" && (
-            <section className="admin-order-products-panel mt-3 rounded-xl border border-white/8 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
-                    Garantía
-                  </p>
-                  <p className="mt-1 text-sm text-white/55">
-                    Control interno por producto vendido.
-                  </p>
-                </div>
-              </div>
+            <section className="admin-order-products-panel mt-2.5 rounded-xl border border-white/8 p-3">
+              <p className="text-11px font-bold uppercase tracking-widest text-beyonix-cyan">
+                Garantía
+              </p>
 
               {warrantyNotice && (
                 <p

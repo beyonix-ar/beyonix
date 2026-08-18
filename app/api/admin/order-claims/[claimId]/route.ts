@@ -235,21 +235,28 @@ async function uploadRefundProof(admin: any, claimId: number, userId: string, fi
   return { error: "" }
 }
 
+// Firma todos los archivos del reclamo en una sola llamada a Storage en vez
+// de una por archivo (este endpoint es el que hace polling cada 20s).
 async function attachSignedUrls(admin: any, claim: any) {
+  const files = claim.order_claim_files ?? []
+  const paths = files.map((file: any) => stripBucket(file.file_path))
+  const signedUrlByPath = new Map<string, string | null>()
+
+  if (paths.length) {
+    const { data: signedUrls } = await admin.storage
+      .from(ORDER_CLAIM_BUCKET)
+      .createSignedUrls(paths, 300)
+    for (const signed of signedUrls ?? []) {
+      if (signed.path) signedUrlByPath.set(signed.path, signed.signedUrl ?? null)
+    }
+  }
+
   return {
     ...claim,
-    order_claim_files: await Promise.all(
-      (claim.order_claim_files ?? []).map(async (file: any) => {
-        const { data } = await admin.storage
-          .from(ORDER_CLAIM_BUCKET)
-          .createSignedUrl(stripBucket(file.file_path), 300)
-
-        return {
-          ...file,
-          signedUrl: data?.signedUrl ?? null,
-        }
-      }),
-    ),
+    order_claim_files: files.map((file: any) => ({
+      ...file,
+      signedUrl: signedUrlByPath.get(stripBucket(file.file_path)) ?? null,
+    })),
   }
 }
 
