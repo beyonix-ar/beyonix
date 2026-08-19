@@ -3147,30 +3147,6 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
   color: rgba(255, 255, 255, 0.32) !important;
 }
 
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon {
-  align-items: center;
-  border: 1px solid rgba(110, 168, 255, 0.34);
-  border-radius: 9999px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 22px rgba(110, 168, 255, 0.12);
-  color: #fff;
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 58px;
-  justify-content: center;
-  width: 58px;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon--issued {
-  background: #06251b;
-  border-color: rgba(92, 255, 176, 0.34);
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon--pending {
-  background: #071527;
-}
-
 .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel {
   --order-billing-section-bg: #111111;
   --order-billing-panel-bg: #202020;
@@ -3182,55 +3158,12 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
   background-image: none !important;
 }
 
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-copy {
-  min-width: 0;
-}
-
 .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-action {
   justify-self: end;
 }
 
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-alert {
-  align-items: center;
-  min-height: 64px;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-grid {
-  align-items: stretch;
-  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.95fr);
-}
-
 .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-panel {
   min-width: 0;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-primary-panel,
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-side-panel {
-  display: flex;
-  flex-direction: column;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-data-grid {
-  align-content: stretch;
-  gap: 0.5rem !important;
-  margin-top: 0.5rem !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-status-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-top: 0.375rem !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-status-list > * + * {
-  margin-top: 0 !important;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-section {
@@ -3265,45 +3198,12 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
   border-color: rgba(74, 144, 184, 0.42) !important;
 }
 
-.admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-alert {
-  background: #232323 !important;
-  background-color: #232323 !important;
-  background-image: linear-gradient(135deg, rgba(65, 18, 28, 0.22), rgba(35, 35, 35, 0.98)) !important;
-  border-color: rgba(255, 143, 160, 0.36) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 16px rgba(159, 53, 70, 0.08) !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-alert-icon {
-  align-items: center;
-  background: #2a1117;
-  border: 1px solid rgba(255, 143, 160, 0.34);
-  border-radius: 9999px;
-  color: #ffc2c8;
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 34px;
-  justify-content: center;
-  width: 34px;
-}
-
 .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel {
   background: var(--order-billing-panel-bg) !important;
   background-color: var(--order-billing-panel-bg) !important;
   background-image: none !important;
   border-color: rgba(74, 144, 184, 0.42) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-primary-panel,
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-side-panel {
-  padding: 0.625rem !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-side-panel {
-  align-self: start;
-  padding: 0.5rem !important;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-danger-button {
@@ -4175,61 +4075,6 @@ div.claim-form-shell::after {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-amount-card,
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-invoice-data-card,
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-data-card,
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card {
-  background: var(--order-billing-credit-note-card-bg) !important;
-  background-color: var(--order-billing-credit-note-card-bg) !important;
-  background-image: linear-gradient(
-    135deg,
-    var(--order-billing-credit-note-card-bg),
-    var(--order-billing-credit-note-card-bg-strong)
-  ) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 14px rgba(255, 255, 255, 0.035) !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-invoice-data-card {
-  min-height: 46px;
-  padding: 0.5rem 0.625rem !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-amount-card,
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-credit-note-data-card {
-  min-height: 52px;
-  padding: 0.625rem !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-invoice-data-card-body {
-  height: 100%;
-  width: 100%;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card {
-  align-items: center;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  min-height: 38px;
-  padding: 0.25rem 0.5rem !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-copy {
-  min-width: 0;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-copy p {
-  overflow: visible;
-}
-
-@media (max-width: 1279px) {
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 767px) {
   .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select {
     width: 100% !important;
@@ -4422,68 +4267,12 @@ div.claim-form-shell::after {
     0 16px 36px rgba(0, 0, 0, 0.16) !important;
   container-name: credit-note;
   container-type: inline-size;
-  padding: 1rem !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel.admin-order-billing-primary-panel {
-  background:
-    linear-gradient(145deg, rgba(9, 31, 50, 0.96), rgba(6, 17, 28, 0.98)) !important;
-  border-color: rgba(91, 171, 226, 0.34) !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel.admin-order-billing-side-panel {
-  background:
-    linear-gradient(145deg, rgba(8, 28, 31, 0.96), rgba(5, 17, 23, 0.98)) !important;
-  border-color: rgba(77, 191, 163, 0.26) !important;
+  margin-top: 0.7rem !important;
+  padding: 0.85rem !important;
 }
 
 .admin-order-detail-scope .admin-order-accounting-status-card > span[aria-hidden="true"] {
   background: transparent !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card.admin-order-accounting-status-card--green {
-  background: rgba(5, 55, 40, 0.68) !important;
-  border-color: rgba(92, 255, 176, 0.28) !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card.admin-order-accounting-status-card--amber {
-  background: rgba(76, 48, 8, 0.72) !important;
-  border-color: rgba(245, 193, 90, 0.32) !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card.admin-order-accounting-status-card--blue {
-  background: rgba(76, 48, 8, 0.72) !important;
-  border-color: rgba(245, 193, 90, 0.32) !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card.admin-order-accounting-status-card--red {
-  background: rgba(77, 22, 32, 0.78) !important;
-  border-color: rgba(255, 143, 160, 0.32) !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card.admin-order-accounting-status-card--gray {
-  background: rgba(77, 22, 32, 0.78) !important;
-  border-color: rgba(255, 143, 160, 0.32) !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-card--green > span:last-child {
-  background: #0b4937 !important;
-  border-color: rgba(110, 231, 183, 0.48) !important;
-  color: #d1fae5 !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-card--amber > span:last-child,
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-card--blue > span:last-child {
-  background: #5a3909 !important;
-  border-color: rgba(245, 193, 90, 0.52) !important;
-  color: #fde68a !important;
-}
-
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-card--red > span:last-child,
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel .admin-order-accounting-status-card--gray > span:last-child {
-  background: #591822 !important;
-  border-color: rgba(255, 143, 160, 0.5) !important;
-  color: #fecdd3 !important;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel svg {
@@ -4492,13 +4281,15 @@ div.claim-form-shell::after {
 
 .admin-credit-note-header {
   align-items: center;
-  background: linear-gradient(135deg, rgba(12, 25, 38, 0.96), rgba(8, 15, 23, 0.98));
-  border: 1px solid rgba(105, 170, 218, 0.22);
-  border-radius: 0.8rem;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid rgba(92, 159, 215, 0.16);
+  border-radius: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   justify-content: space-between;
-  padding: 0.7rem 0.8rem;
+  padding: 0 0 0.8rem;
 }
 
 .admin-credit-note-title {
@@ -4533,11 +4324,15 @@ div.claim-form-shell::after {
 }
 
 .admin-credit-note-balance > div {
-  background: rgba(5, 13, 21, 0.78) !important;
-  border: 1px solid rgba(92, 159, 215, 0.24);
-  border-radius: 0.75rem;
-  padding: 0.55rem 0.75rem;
+  background: none !important;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
   text-align: right;
+}
+
+.admin-credit-note-balance-primary strong {
+  font-size: 1.2rem;
 }
 
 .admin-credit-note-balance span {
@@ -4562,14 +4357,15 @@ div.claim-form-shell::after {
 
 .admin-credit-note-steps {
   align-items: center;
-  background: rgba(3, 9, 15, 0.72);
-  border: 1px solid rgba(92, 159, 215, 0.2);
-  border-radius: 0.7rem;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid rgba(92, 159, 215, 0.16);
+  border-radius: 0;
   display: grid;
   gap: 0.5rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 0.9rem;
-  padding: 0.55rem;
+  margin-top: 0.8rem;
+  padding: 0 0 0.6rem;
 }
 
 .admin-credit-note-steps > button {
@@ -4620,11 +4416,6 @@ div.claim-form-shell::after {
   gap: 0.75rem;
 }
 
-.admin-credit-note-step2-grid {
-  display: grid;
-  gap: 0.75rem;
-}
-
 .admin-credit-note-wizard-nav {
   align-items: center;
   border-top: 1px solid rgba(92, 159, 215, 0.2);
@@ -4632,8 +4423,8 @@ div.claim-form-shell::after {
   flex-wrap: wrap;
   gap: 0.6rem;
   justify-content: space-between;
-  margin-top: 0.9rem;
-  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
 }
 
 .admin-credit-note-wizard-hint {
@@ -4703,16 +4494,6 @@ div.claim-form-shell::after {
   min-width: 12rem;
 }
 
-@container credit-note (min-width: 820px) {
-  .admin-credit-note-step2-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .admin-credit-note-step2-span {
-    grid-column: 1 / -1;
-  }
-}
-
 @media (max-width: 480px) {
   .admin-credit-note-wizard-nav-review {
     flex-direction: column;
@@ -4727,27 +4508,16 @@ div.claim-form-shell::after {
 .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-step-card,
 .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-review {
   background: rgba(7, 17, 27, 0.86) !important;
-  border: 1px solid rgba(92, 159, 215, 0.23) !important;
+  border: 1px solid rgba(92, 159, 215, 0.18) !important;
   border-radius: 0.875rem;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
-  padding: 0.8rem;
+  padding: 0.7rem;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-products-panel {
   background:
     linear-gradient(145deg, rgba(8, 40, 66, 0.98), rgba(5, 19, 33, 0.99)) !important;
   border-color: rgba(95, 186, 247, 0.55) !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-resolution-panel {
-  background:
-    linear-gradient(145deg, rgba(6, 55, 43, 0.96), rgba(4, 24, 24, 0.99)) !important;
-  border-color: rgba(66, 210, 169, 0.5) !important;
-}
-
-.admin-credit-note-resolution-panel .admin-credit-note-step-heading > span {
-  background: #0b4937;
-  border-color: rgba(110, 231, 183, 0.42);
 }
 
 .admin-credit-note-step-heading {
@@ -4780,51 +4550,86 @@ div.claim-form-shell::after {
 
 .admin-credit-note-products {
   display: grid;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+  gap: 0;
+  margin-top: 0.55rem;
+}
+
+.admin-credit-note-product-head,
+.admin-credit-note-product {
+  align-items: center;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) 84px 132px 92px;
+}
+
+.admin-credit-note-product-head {
+  padding: 0 0.1rem 0.4rem;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.admin-credit-note-product-head span:nth-child(2),
+.admin-credit-note-product-head span:nth-child(3) {
+  text-align: center;
+}
+
+.admin-credit-note-product-head span:last-child {
+  text-align: right;
 }
 
 .admin-credit-note-product {
-  align-items: center;
-  background: #101820 !important;
-  border: 1px solid rgba(92, 159, 215, 0.2);
-  border-radius: 0.75rem;
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 0.65rem;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+  background: none !important;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0;
+  padding: 0.55rem 0.1rem;
+  transition: background 160ms ease;
+}
+
+.admin-credit-note-product:first-child {
+  border-top: 0;
 }
 
 .admin-credit-note-product:not(.is-disabled):hover {
-  background: #122233 !important;
-  border-color: rgba(140, 200, 242, 0.48);
-  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.15);
+  background: rgba(17, 42, 67, 0.22) !important;
 }
 
 .admin-credit-note-product.is-selected {
-  background:
-    linear-gradient(135deg, rgba(17, 42, 67, 0.9), rgba(10, 26, 41, 0.96)) !important;
-  border-color: rgba(140, 200, 242, 0.62);
-  box-shadow:
-    inset 3px 0 0 #6fb6e8,
-    0 7px 20px rgba(13, 52, 83, 0.2);
+  background: rgba(17, 42, 67, 0.28) !important;
+  box-shadow: inset 3px 0 0 #6fb6e8;
 }
 
 .admin-credit-note-product.is-disabled {
   opacity: 0.52;
 }
 
-.admin-credit-note-product-copy,
-.admin-credit-note-product-actions {
+.admin-credit-note-product-copy {
   align-items: center;
   display: flex;
   gap: 0.6rem;
   min-width: 0;
+}
+
+.admin-credit-note-product-available {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.admin-credit-note-product-total {
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.admin-credit-note-product-dash {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.25);
 }
 
 .admin-credit-note-product-icon {
@@ -4857,6 +4662,7 @@ div.claim-form-shell::after {
   border-radius: 0.65rem;
   display: grid;
   grid-template-columns: 1.9rem 2rem 1.9rem;
+  justify-self: center;
   overflow: hidden;
 }
 
@@ -4889,43 +4695,75 @@ div.claim-form-shell::after {
   text-align: center;
 }
 
-.admin-credit-note-line-total {
-  min-width: 5.5rem;
-  text-align: right;
-}
-
-.admin-credit-note-line-total span {
-  color: rgba(255, 255, 255, 0.36);
-  display: block;
-  font-size: 0.58rem;
-  font-weight: 750;
-  text-transform: uppercase;
-}
-
-.admin-credit-note-line-total strong {
-  color: #fff;
-  display: block;
-  font-size: 0.8rem;
-  margin-top: 0.1rem;
-}
-
 .admin-credit-note-guidance {
   align-items: center;
-  color: rgba(201, 231, 251, 0.66);
+  color: rgba(255, 255, 255, 0.4);
   display: flex;
-  font-size: 0.65rem;
-  gap: 0.25rem;
+  font-size: 0.62rem;
+  gap: 0.3rem;
+  margin-top: 0.55rem;
+}
+
+.admin-credit-note-substep {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(92, 159, 215, 0.16);
+}
+
+.admin-credit-note-step-heading + .admin-credit-note-substep {
+  margin-top: 0.75rem;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admin-credit-note-refund-extras {
+  display: grid;
+  gap: 0.65rem;
   margin-top: 0.65rem;
 }
 
-.admin-credit-note-fields {
-  display: grid;
-  gap: 0.65rem;
-  margin-top: 0.75rem;
+.admin-credit-note-disclosure {
+  margin-top: 0.6rem;
+  cursor: pointer;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #8cc8f2;
 }
 
-.admin-credit-note-fields label > span,
-.admin-credit-note-fields .admin-credit-note-field > span {
+.admin-credit-note-disclosure:hover {
+  color: #bfe4ff;
+  text-decoration: underline;
+}
+
+.admin-return-check-row-compact {
+  margin-top: 0.65rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(4, 13, 21, 0.4);
+}
+
+.admin-return-check-row-compact b {
+  font-size: 0.64rem;
+}
+
+.admin-credit-note-inspection-meta {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.admin-credit-note-inspection-meta input,
+.admin-credit-note-inspection-meta textarea,
+.admin-credit-note-inspection-meta .admin-credit-note-field > span {
+  opacity: 0.88;
+}
+
+.admin-credit-note-resolution-panel label > span,
+.admin-credit-note-field > span {
   color: rgba(255, 255, 255, 0.68);
   display: block;
   font-size: 0.68rem;
@@ -4933,15 +4771,15 @@ div.claim-form-shell::after {
   margin-bottom: 0.3rem;
 }
 
-.admin-credit-note-fields label > span small {
+.admin-credit-note-resolution-panel label > span small {
   color: #8cc8f2;
   font-size: 0.56rem;
   margin-left: 0.35rem;
   text-transform: uppercase;
 }
 
-.admin-order-detail-scope .admin-credit-note-fields textarea,
-.admin-order-detail-scope .admin-credit-note-fields input,
+.admin-order-detail-scope .admin-credit-note-resolution-panel textarea,
+.admin-order-detail-scope .admin-credit-note-resolution-panel input,
 .admin-credit-note-destination-select {
   background: #0d1721 !important;
   border-color: rgba(92, 159, 215, 0.3) !important;
@@ -4955,16 +4793,16 @@ div.claim-form-shell::after {
   margin-top: 0.3rem;
 }
 
-.admin-order-detail-scope .admin-credit-note-fields textarea {
+.admin-order-detail-scope .admin-credit-note-resolution-panel textarea {
   border: 1px solid;
   border-radius: 0.7rem;
-  min-height: 4.75rem;
-  padding: 0.65rem 0.75rem;
+  min-height: 3.4rem;
+  padding: 0.55rem 0.65rem;
   resize: vertical;
   width: 100%;
 }
 
-.admin-order-detail-scope .admin-credit-note-fields .admin-credit-note-reason input {
+.admin-order-detail-scope .admin-credit-note-resolution-panel .admin-credit-note-reason input {
   border: 1px solid rgba(77, 191, 163, 0.34) !important;
   border-radius: 0.65rem;
   font-size: 0.72rem;
@@ -4974,7 +4812,7 @@ div.claim-form-shell::after {
   width: 100%;
 }
 
-.admin-order-detail-scope .admin-credit-note-fields .admin-credit-note-reason input::placeholder {
+.admin-order-detail-scope .admin-credit-note-resolution-panel .admin-credit-note-reason input::placeholder {
   color: rgba(255, 255, 255, 0.28);
   font-size: 0.64rem;
   font-weight: 500;
@@ -4994,20 +4832,17 @@ div.claim-form-shell::after {
   text-transform: none !important;
 }
 
-.admin-order-detail-scope .admin-credit-note-fields textarea:hover,
+.admin-order-detail-scope .admin-credit-note-resolution-panel textarea:hover,
 .admin-credit-note-destination-select:hover,
 .admin-credit-note-money-input:hover {
   border-color: rgba(140, 200, 242, 0.58) !important;
 }
 
 .admin-credit-note-destination-select {
-  background:
-    linear-gradient(135deg, rgba(25, 73, 111, 0.98), rgba(14, 43, 70, 0.99)) !important;
-  border: 1px solid rgba(120, 205, 255, 0.68) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 0 0 1px rgba(36, 123, 183, 0.12) !important;
-  height: 2.5rem !important;
+  background: rgba(5, 12, 20, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: none !important;
+  height: 2.25rem !important;
   padding-inline: 0.75rem !important;
 }
 
@@ -5075,7 +4910,7 @@ div.claim-form-shell::after {
   padding: 0 0.7rem;
 }
 
-.admin-credit-note-fields em {
+.admin-credit-note-resolution-panel em {
   color: rgba(255, 255, 255, 0.35);
   display: block;
   font-size: 0.59rem;
@@ -5301,19 +5136,33 @@ div.claim-form-shell::after {
 
 .admin-return-config-grid > label,
 .admin-return-config-grid > .admin-credit-note-field {
-  background: rgba(5, 14, 23, 0.72);
-  border: 1px solid rgba(92, 159, 215, 0.2);
-  border-radius: 0.7rem;
-  padding: 0.55rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.admin-order-detail-scope .admin-return-config-grid .admin-control-select {
+  min-height: 2.25rem !important;
+  background-color: rgba(5, 12, 20, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.6rem !important;
+  box-shadow: none !important;
+}
+
+.admin-order-detail-scope .admin-return-config-grid .admin-control-select:hover {
+  background-color: rgba(10, 20, 32, 0.95) !important;
+  border-color: rgba(140, 200, 242, 0.4) !important;
+}
+
+.admin-order-detail-scope .admin-return-config-grid .admin-control-select:focus,
+.admin-order-detail-scope .admin-return-config-grid .admin-control-select:focus-visible {
+  border-color: rgba(140, 200, 242, 0.6) !important;
+  box-shadow: 0 0 0 2px rgba(140, 200, 242, 0.16) !important;
 }
 
 .admin-return-config-grid > .admin-credit-note-reason {
   grid-column: 1 / -1;
-}
-
-.admin-return-logistics-panel,
-.admin-return-reception-panel {
-  background: rgba(7, 24, 38, 0.9) !important;
 }
 
 .admin-return-compact-fields {
@@ -5718,12 +5567,16 @@ div.claim-form-shell::after {
     justify-content: flex-start;
   }
 
-  .admin-credit-note-product {
-    grid-template-columns: 1fr;
+  .admin-credit-note-product-head {
+    display: none;
   }
 
-  .admin-credit-note-product-actions {
-    justify-content: space-between;
+  .admin-credit-note-product {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .admin-credit-note-product-available {
+    display: none;
   }
 
   .admin-credit-note-history-list {
@@ -5751,12 +5604,16 @@ div.claim-form-shell::after {
     justify-content: flex-start;
   }
 
-  .admin-credit-note-product {
-    grid-template-columns: 1fr;
+  .admin-credit-note-product-head {
+    display: none;
   }
 
-  .admin-credit-note-product-actions {
-    justify-content: space-between;
+  .admin-credit-note-product {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .admin-credit-note-product-available {
+    display: none;
   }
 
   .admin-credit-note-history-list {
@@ -6052,10 +5909,6 @@ div.claim-form-shell::after {
   .admin-credit-note-balance > div {
     padding-inline: 0.55rem;
   }
-
-  .admin-credit-note-product-actions {
-    align-items: flex-end;
-  }
 }
 
 @media (min-width: 1100px) and (max-height: 1080px) {
@@ -6153,7 +6006,7 @@ div.claim-form-shell::after {
   }
 
   .admin-credit-note-products,
-  .admin-credit-note-fields {
+  .admin-credit-note-refund-extras {
     gap: 0.4rem;
     margin-top: 0.5rem;
   }
@@ -6162,12 +6015,12 @@ div.claim-form-shell::after {
     padding: 0.45rem 0.55rem;
   }
 
-  .admin-order-detail-scope .admin-credit-note-fields textarea {
-    min-height: 3.35rem;
+  .admin-order-detail-scope .admin-credit-note-resolution-panel textarea {
+    min-height: 2.9rem;
     padding-block: 0.45rem;
   }
 
-  .admin-credit-note-fields em,
+  .admin-credit-note-resolution-panel em,
   .admin-credit-note-destination-help {
     margin-top: 0.15rem;
   }
@@ -6486,11 +6339,11 @@ div.claim-form-shell::after {
 .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-hero {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 0.95rem 1.15rem;
+  gap: 0.7rem;
+  padding: 0.65rem 1.1rem;
   border-radius: 0.9rem;
-  background: linear-gradient(120deg, rgba(17, 42, 67, 0.88), rgba(4, 10, 18, 0.97)) !important;
-  border: 1px solid rgba(140, 200, 242, 0.16) !important;
+  background: linear-gradient(120deg, rgba(19, 46, 71, 0.9), rgba(4, 9, 16, 0.97)) !important;
+  border: 1px solid rgba(140, 200, 242, 0.22) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
@@ -6500,15 +6353,11 @@ div.claim-form-shell::after {
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.36) !important;
-}
-
-.admin-order-detail-scope .admin-order-rs-eyebrow-spaced {
-  margin-top: 1.1rem;
+  color: rgba(255, 255, 255, 0.42) !important;
 }
 
 .admin-order-detail-scope .admin-order-rs-title {
-  margin-top: 0.2rem;
+  margin-top: 0.15rem;
   font-size: 1.7rem;
   line-height: 1.15;
   font-weight: 900;
@@ -6516,7 +6365,7 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-order-rs-meta {
-  margin-top: 0.45rem;
+  margin-top: 0.3rem;
   font-size: 11.5px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.5) !important;
@@ -6548,49 +6397,94 @@ div.claim-form-shell::after {
   }
 }
 
+.admin-order-detail-scope .admin-order-detail-content {
+  container-type: inline-size;
+  container-name: admin-order-content;
+}
+
 .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  margin-top: 0.65rem;
-  padding: 1.1rem 1.15rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.1rem;
+  margin-top: 0.5rem;
+  padding: 0.85rem 1.1rem;
   border-radius: 0.9rem;
-  background: linear-gradient(150deg, rgba(9, 15, 23, 0.92), rgba(4, 8, 13, 0.96)) !important;
-  border: 1px solid rgba(92, 159, 215, 0.14) !important;
+  background: linear-gradient(150deg, rgba(12, 19, 29, 0.94), rgba(5, 9, 15, 0.97)) !important;
+  border: 1px solid rgba(92, 159, 215, 0.2) !important;
 }
 
-@media (min-width: 1280px) {
-  .admin-order-detail-scope .admin-order-rs-panel {
-    flex-direction: row;
+.admin-order-detail-scope .admin-order-rs-col {
+  min-width: 0;
+}
+
+.admin-order-detail-scope .admin-order-rs-col-cliente,
+.admin-order-detail-scope .admin-order-rs-col-entrega {
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(92, 159, 215, 0.16);
+}
+
+/* Container queries (not viewport media queries): the panel's real available
+   width is set by the flex-1 detail-content column, which shrinks well below
+   the browser viewport once the admin sidebar and the order's own tab aside
+   are subtracted. A viewport-based breakpoint can never see that overhead. */
+@container admin-order-content (min-width: 620px) {
+  .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-panel {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "econ econ"
+      "cliente entrega";
+    column-gap: 1.5rem;
   }
 
-  .admin-order-detail-scope .admin-order-rs-col {
-    flex: 1 1 0%;
-    min-width: 0;
+  .admin-order-detail-scope .admin-order-rs-col-econ {
+    grid-area: econ;
   }
 
-  .admin-order-detail-scope .admin-order-rs-divider {
-    width: 1px;
-    height: auto;
-    align-self: stretch;
+  .admin-order-detail-scope .admin-order-rs-col-cliente {
+    grid-area: cliente;
+  }
+
+  .admin-order-detail-scope .admin-order-rs-col-entrega {
+    grid-area: entrega;
+    border-left: 1px solid rgba(92, 159, 215, 0.16);
+    padding-left: 1.5rem;
   }
 }
 
-.admin-order-detail-scope .admin-order-rs-divider {
-  height: 1px;
-  background: rgba(92, 159, 215, 0.16) !important;
+@container admin-order-content (min-width: 860px) {
+  .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-panel {
+    grid-template-columns: 1.35fr 1fr 1.1fr;
+    grid-template-areas: "econ cliente entrega";
+    column-gap: 0;
+  }
+
+  .admin-order-detail-scope .admin-order-rs-col-econ {
+    padding-right: 1.5rem;
+  }
+
+  .admin-order-detail-scope .admin-order-rs-col-cliente,
+  .admin-order-detail-scope .admin-order-rs-col-entrega {
+    border-top: none;
+    padding-top: 0;
+    border-left: 1px solid rgba(92, 159, 215, 0.16);
+    padding-left: 1.5rem;
+  }
+
+  .admin-order-detail-scope .admin-order-rs-col-cliente {
+    padding-right: 1.5rem;
+  }
 }
 
 .admin-order-detail-scope .admin-order-rs-rows {
-  margin-top: 0.65rem;
+  margin-top: 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.32rem;
 }
 
 .admin-order-detail-scope .admin-order-rs-rows-tight {
-  margin-top: 0.6rem;
-  padding-top: 0.6rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
   border-top: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
@@ -6624,7 +6518,7 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-order-rs-hr {
-  margin: 0.85rem 0;
+  margin: 0.55rem 0;
   height: 1px;
   background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 6px, transparent 6px 12px);
 }
@@ -6638,7 +6532,7 @@ div.claim-form-shell::after {
 .admin-order-detail-scope .admin-order-rs-total-bar {
   width: 3px;
   align-self: stretch;
-  min-height: 3.4rem;
+  min-height: 2.4rem;
   border-radius: 999px;
   background: rgba(140, 200, 242, 0.45);
 }
@@ -6664,8 +6558,8 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-order-rs-total-amount {
-  margin-top: 0.15rem;
-  font-size: 2.35rem;
+  margin-top: 0.1rem;
+  font-size: 2rem;
   line-height: 1.1;
   font-weight: 900;
   color: #ffffff !important;
@@ -6684,7 +6578,7 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-order-rs-name {
-  margin-top: 0.5rem;
+  margin-top: 0.35rem;
   font-size: 15px;
   font-weight: 800;
   color: #ffffff !important;
@@ -6706,14 +6600,15 @@ div.claim-form-shell::after {
 
 .admin-order-detail-scope .admin-order-detail-content .admin-order-rs-products,
 .admin-order-detail-scope .admin-order-detail-content .admin-order-rs-warranty {
-  padding: 1rem 1.1rem;
+  padding: 0.7rem 1.1rem;
   border-radius: 0.9rem;
-  border: 1px solid rgba(92, 159, 215, 0.12) !important;
-  background: rgba(8, 14, 22, 0.55) !important;
+  border: 1px solid rgba(92, 159, 215, 0.2) !important;
+  background: rgba(10, 17, 26, 0.72) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
 }
 
 .admin-order-detail-scope .admin-order-rs-table {
-  margin-top: 0.75rem;
+  margin-top: 0.55rem;
   overflow-x: auto;
 }
 
@@ -6722,7 +6617,7 @@ div.claim-form-shell::after {
   grid-template-columns: minmax(220px, 1fr) 84px 56px 104px 112px;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.7rem 0.1rem;
+  padding: 0.5rem 0.1rem;
   min-width: 560px;
 }
 
@@ -6732,7 +6627,7 @@ div.claim-form-shell::after {
 
 .admin-order-detail-scope .admin-order-rs-product-head {
   padding-top: 0;
-  padding-bottom: 0.55rem;
+  padding-bottom: 0.4rem;
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.07em;
@@ -6750,8 +6645,8 @@ div.claim-form-shell::after {
 
 .admin-order-detail-scope .admin-order-rs-thumb {
   display: flex;
-  height: 2.35rem;
-  width: 2.35rem;
+  height: 2rem;
+  width: 2rem;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
@@ -6788,13 +6683,13 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-order-rs-warranty-list {
-  margin-top: 0.75rem;
+  margin-top: 0.55rem;
   display: flex;
   flex-direction: column;
 }
 
 .admin-order-detail-scope .admin-order-rs-warranty-row {
-  padding: 0.75rem 0.1rem;
+  padding: 0.55rem 0.1rem;
 }
 
 .admin-order-detail-scope .admin-order-rs-warranty-row:not(:first-child) {
@@ -6810,10 +6705,412 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-order-rs-warranty-meta {
-  margin-top: 0.4rem;
+  margin-top: 0.3rem;
   font-size: 12px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.56) !important;
+}
+
+/* Pago (admin-order-pg-*): scoped strictly to the Pago tab, kept independent
+   from admin-order-rs-*. Reuses the admin-order-content container declared
+   above (on .admin-order-detail-content) for its own container queries. */
+.admin-order-detail-scope .admin-order-detail-content .admin-order-pg-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.admin-order-detail-scope .admin-order-detail-content .admin-order-pg-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(150deg, rgba(12, 19, 29, 0.94), rgba(5, 9, 15, 0.97)) !important;
+  border: 1px solid rgba(92, 159, 215, 0.2) !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.admin-order-detail-scope .admin-order-pg-eyebrow {
+  margin: 0;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42) !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-method-value {
+  margin-top: 0.2rem;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  text-align: right;
+}
+
+.admin-order-detail-scope .admin-order-pg-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.9rem;
+}
+
+.admin-order-detail-scope .admin-order-pg-total {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.admin-order-detail-scope .admin-order-pg-total-bar {
+  width: 3px;
+  align-self: stretch;
+  min-height: 2.4rem;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.45);
+}
+
+.admin-order-detail-scope .admin-order-pg-total-label {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #7dffbf !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-total-amount {
+  margin-top: 0.1rem;
+  font-size: 2rem;
+  line-height: 1.1;
+  font-weight: 900;
+  color: #eafff5 !important;
+  text-shadow: 0 0 18px rgba(52, 211, 153, 0.22);
+}
+
+.admin-order-detail-scope .admin-order-pg-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.9rem 1.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(92, 159, 215, 0.14);
+}
+
+@container admin-order-content (min-width: 560px) {
+  .admin-order-detail-scope .admin-order-detail-content .admin-order-pg-body {
+    grid-template-columns: minmax(200px, 1fr) minmax(0, 1.6fr);
+    align-items: start;
+    gap: 0;
+  }
+
+  .admin-order-detail-scope .admin-order-pg-meta {
+    padding-top: 0;
+    padding-left: 1.5rem;
+    border-top: none;
+    border-left: 1px solid rgba(92, 159, 215, 0.16);
+  }
+}
+
+.admin-order-detail-scope .admin-order-pg-meta-label {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-meta-value {
+  margin-top: 0.25rem;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-meta-proof {
+  margin-top: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-order-detail-scope .admin-order-pg-meta-proof .admin-order-pg-meta-value {
+  margin-top: 0;
+}
+
+.admin-order-detail-scope .admin-order-pg-proof-button {
+  display: inline-flex;
+  height: 1.9rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(140, 200, 242, 0.28);
+  padding: 0 0.65rem;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #bfe4ff !important;
+  background: rgba(17, 42, 67, 0.4);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-order-detail-scope .admin-order-pg-proof-button:hover {
+  background: rgba(17, 42, 67, 0.65);
+  border-color: rgba(191, 228, 255, 0.45);
+}
+
+.admin-order-detail-scope .admin-order-pg-verified {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(125, 255, 191, 0.82) !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(150deg, rgba(12, 19, 29, 0.94), rgba(5, 9, 15, 0.97)) !important;
+  border: 1px solid rgba(92, 159, 215, 0.2) !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-next-title {
+  margin-top: 0.2rem;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-next-desc {
+  margin-top: 0.2rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.56) !important;
+}
+
+/* Facturacion (admin-order-bl-*): layered on top of the existing
+   admin-credit-note- and admin-return- prefixed rules, which already declare
+   their own container query (container-name: credit-note) on .admin-credit-note-workflow. */
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-bl-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.admin-order-detail-scope .admin-order-bl-eyebrow {
+  margin: 0;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42) !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.2rem;
+}
+
+.admin-order-detail-scope .admin-order-bl-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 231, 183, 0.4);
+  background: rgba(6, 37, 27, 0.75);
+  padding: 0.2rem 0.55rem;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #a7f3d0 !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-subtitle {
+  margin-top: 0.25rem;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-bl-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 143, 160, 0.22);
+  color: #ffc2c8;
+}
+
+.admin-order-detail-scope .admin-order-bl-alert-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #ffffff !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-alert-desc {
+  margin-top: 0.15rem;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #ffc2c8 !important;
+}
+
+.admin-order-detail-scope .admin-order-invoice-panel .admin-order-bl-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(92, 159, 215, 0.16);
+}
+
+@container admin-order-content (min-width: 640px) {
+  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-bl-body {
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 0.55fr);
+    align-items: start;
+  }
+
+  .admin-order-detail-scope .admin-order-bl-status-list {
+    padding-left: 1.5rem;
+    border-left: 1px solid rgba(92, 159, 215, 0.16);
+  }
+}
+
+.admin-order-detail-scope .admin-order-bl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.admin-order-detail-scope .admin-order-bl-meta-item {
+  min-width: 0;
+}
+
+.admin-order-detail-scope .admin-order-bl-meta-label {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-meta-value {
+  margin-top: 0.25rem;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.88) !important;
+  overflow-wrap: anywhere;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.admin-order-detail-scope .admin-order-bl-status-title {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-badge {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--green {
+  color: #7dffbf;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--green .admin-order-bl-status-badge {
+  color: #7dffbf !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--amber {
+  color: #f5c15a;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--amber .admin-order-bl-status-badge {
+  color: #f5c15a !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--blue {
+  color: #8cc8f2;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--blue .admin-order-bl-status-badge {
+  color: #8cc8f2 !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--red {
+  color: #ffb4bd;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--red .admin-order-bl-status-badge {
+  color: #ffb4bd !important;
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--gray {
+  color: rgba(255, 255, 255, 0.36);
+}
+
+.admin-order-detail-scope .admin-order-bl-status-item--gray .admin-order-bl-status-badge {
+  color: rgba(255, 255, 255, 0.5) !important;
 }
 
 .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-danger,
