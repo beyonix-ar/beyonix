@@ -4299,8 +4299,7 @@ div.claim-form-shell::after {
   min-width: 0;
 }
 
-.admin-credit-note-title-icon,
-.admin-credit-note-product-icon {
+.admin-credit-note-title-icon {
   align-items: center;
   background: #112a43;
   border: 1px solid rgba(140, 200, 242, 0.38);
@@ -4559,7 +4558,7 @@ div.claim-form-shell::after {
   align-items: center;
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: minmax(0, 1fr) 84px 132px 92px;
+  grid-template-columns: minmax(0, 1fr) 74px 82px 108px 92px;
 }
 
 .admin-credit-note-product-head {
@@ -4572,7 +4571,8 @@ div.claim-form-shell::after {
 }
 
 .admin-credit-note-product-head span:nth-child(2),
-.admin-credit-note-product-head span:nth-child(3) {
+.admin-credit-note-product-head span:nth-child(3),
+.admin-credit-note-product-head span:nth-child(4) {
   text-align: center;
 }
 
@@ -4620,6 +4620,13 @@ div.claim-form-shell::after {
   color: rgba(255, 255, 255, 0.56);
 }
 
+.admin-credit-note-product-price {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.56);
+}
+
 .admin-credit-note-product-total {
   text-align: right;
   font-size: 0.8rem;
@@ -4632,11 +4639,15 @@ div.claim-form-shell::after {
   color: rgba(255, 255, 255, 0.25);
 }
 
-.admin-credit-note-product-icon {
-  background: #181d23 !important;
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  border-radius: 0.6rem;
+.admin-credit-note-product-thumb {
+  align-items: center;
+  background: #ffffff;
+  border-radius: 0.5rem;
+  display: flex;
+  flex-shrink: 0;
   height: 2rem;
+  justify-content: center;
+  overflow: hidden;
   width: 2rem;
 }
 
@@ -4704,22 +4715,18 @@ div.claim-form-shell::after {
   margin-top: 0.55rem;
 }
 
-.admin-credit-note-substep {
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid rgba(92, 159, 215, 0.16);
-}
-
-.admin-credit-note-step-heading + .admin-credit-note-substep {
-  margin-top: 0.75rem;
-  padding-top: 0;
-  border-top: 0;
-}
-
 .admin-credit-note-refund-extras {
+  align-items: start;
   display: grid;
-  gap: 0.65rem;
+  gap: 0.65rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   margin-top: 0.65rem;
+}
+
+.admin-credit-note-refund-extras > .admin-credit-note-field-wide,
+.admin-credit-note-refund-extras > .admin-credit-note-inspection-meta,
+.admin-credit-note-refund-extras > .admin-credit-note-disclosure {
+  grid-column: 1 / -1;
 }
 
 .admin-credit-note-disclosure {
@@ -4917,6 +4924,203 @@ div.claim-form-shell::after {
   font-style: normal;
   line-height: 1.4;
   margin-top: 0.25rem;
+}
+
+.admin-credit-note-resolution-panel .admin-credit-note-field > span small {
+  color: #8cc8f2;
+  font-size: 0.56rem;
+  margin-left: 0.35rem;
+  text-transform: uppercase;
+}
+
+.admin-resolution-context {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(26, 86, 130, 0.24), rgba(15, 44, 68, 0.24));
+  border-radius: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+}
+
+.admin-resolution-context-motive {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.admin-resolution-context-label {
+  color: rgba(178, 219, 247, 0.8);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.admin-resolution-context-value {
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.admin-resolution-context-aside {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+}
+
+.admin-resolution-context-aside:only-child {
+  margin-left: auto;
+}
+
+.admin-resolution-context-code {
+  color: #8cc8f2;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.admin-resolution-context-meta {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.admin-resolution-decisions {
+  background: rgba(3, 10, 17, 0.55);
+  border-radius: 0.7rem;
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.admin-resolution-decisions-extra {
+  border-top: 1px dashed rgba(255, 255, 255, 0.09);
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.65rem;
+}
+
+.admin-resolution-grid {
+  column-gap: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  row-gap: 0.75rem;
+}
+
+.admin-resolution-question {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding-left: 1.1rem;
+}
+
+.admin-resolution-question:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.admin-resolution-question-label {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-resolution-question:not(:first-child) .admin-resolution-question-label::before {
+  color: rgba(140, 200, 242, 0.55);
+  content: "→ ";
+}
+
+.admin-resolution-segmented {
+  background: rgba(3, 10, 17, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.55rem;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  max-width: 100%;
+  padding: 0.18rem;
+  width: fit-content;
+}
+
+.admin-resolution-segment {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  color: rgba(255, 255, 255, 0.46);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.66rem;
+  font-weight: 600;
+  gap: 0.28rem;
+  line-height: 1;
+  padding: 0.38rem 0.62rem;
+  transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
+  white-space: nowrap;
+}
+
+.admin-resolution-segment:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.admin-resolution-segment.is-selected {
+  background: rgba(52, 211, 153, 0.14);
+  border-color: rgba(52, 211, 153, 0.55);
+  color: #a7f3d0;
+  font-weight: 700;
+}
+
+.admin-resolution-segment.is-selected:not(:disabled):hover {
+  background: rgba(52, 211, 153, 0.2);
+  border-color: rgba(52, 211, 153, 0.7);
+}
+
+.admin-resolution-segment-check {
+  flex-shrink: 0;
+}
+
+.admin-resolution-segment:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.admin-resolution-required-field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.admin-resolution-required-field > span {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.admin-resolution-compact-input {
+  background: #0d1721;
+  border: 1px solid rgba(92, 159, 215, 0.3);
+  border-radius: 0.6rem;
+  color: #fff;
+  font-size: 0.68rem;
+  height: 2.15rem;
+  max-width: 100%;
+  padding: 0 0.7rem;
+  width: 10rem;
+}
+
+.admin-resolution-advanced-panel {
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 0.7rem;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-review {
@@ -5127,44 +5331,6 @@ div.claim-form-shell::after {
   color: #fff;
 }
 
-.admin-return-config-grid {
-  display: grid;
-  gap: 0.6rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 0.75rem;
-}
-
-.admin-return-config-grid > label,
-.admin-return-config-grid > .admin-credit-note-field {
-  background: none;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-}
-
-.admin-order-detail-scope .admin-return-config-grid .admin-control-select {
-  min-height: 2.25rem !important;
-  background-color: rgba(5, 12, 20, 0.9) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  border-radius: 0.6rem !important;
-  box-shadow: none !important;
-}
-
-.admin-order-detail-scope .admin-return-config-grid .admin-control-select:hover {
-  background-color: rgba(10, 20, 32, 0.95) !important;
-  border-color: rgba(140, 200, 242, 0.4) !important;
-}
-
-.admin-order-detail-scope .admin-return-config-grid .admin-control-select:focus,
-.admin-order-detail-scope .admin-return-config-grid .admin-control-select:focus-visible {
-  border-color: rgba(140, 200, 242, 0.6) !important;
-  box-shadow: 0 0 0 2px rgba(140, 200, 242, 0.16) !important;
-}
-
-.admin-return-config-grid > .admin-credit-note-reason {
-  grid-column: 1 / -1;
-}
-
 .admin-return-compact-fields {
   display: grid;
   gap: 0.5rem;
@@ -5210,6 +5376,30 @@ div.claim-form-shell::after {
   width: 1rem;
 }
 
+.admin-return-exception-row {
+  background: rgba(245, 158, 11, 0.07);
+  border-color: rgba(245, 158, 11, 0.32);
+  gap: 0.6rem;
+  justify-content: flex-start;
+  margin-top: 0.7rem;
+  max-width: 100%;
+  width: fit-content;
+}
+
+.admin-return-exception-row span {
+  flex: 1;
+}
+
+.admin-return-exception-row input {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.admin-resolution-exception-icon {
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
 .admin-return-inline-fields {
   display: grid;
   gap: 0.45rem;
@@ -5217,7 +5407,6 @@ div.claim-form-shell::after {
 }
 
 .admin-return-inline-fields input,
-.admin-return-config-grid input,
 .admin-return-compact-fields textarea,
 .admin-return-compact-fields > input {
   background: rgba(3, 10, 17, 0.85);
@@ -5529,13 +5718,8 @@ div.claim-form-shell::after {
 }
 
 @container credit-note (max-width: 700px) {
-  .admin-return-config-grid,
   .admin-return-inline-fields {
     grid-template-columns: 1fr;
-  }
-
-  .admin-return-config-grid > .admin-credit-note-reason {
-    grid-column: auto;
   }
 
   .admin-return-closed-summary {
@@ -5575,7 +5759,8 @@ div.claim-form-shell::after {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .admin-credit-note-product-available {
+  .admin-credit-note-product-available,
+  .admin-credit-note-product-price {
     display: none;
   }
 
@@ -5612,7 +5797,8 @@ div.claim-form-shell::after {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .admin-credit-note-product-available {
+  .admin-credit-note-product-available,
+  .admin-credit-note-product-price {
     display: none;
   }
 

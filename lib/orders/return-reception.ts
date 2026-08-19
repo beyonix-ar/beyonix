@@ -20,6 +20,21 @@ export function isPhysicallyReceivedStatus(receptionStatus: string): boolean {
 }
 
 /**
+ * Mantiene consistente la decisión logística con el estado de recepción.
+ * Si el producto no vuelve, no existe una recepción física pendiente. Si
+ * vuelve a habilitarse una devolución, `no_requiere` deja de ser válido y el
+ * flujo debe comenzar nuevamente como pendiente de despacho.
+ */
+export function receptionStatusForReturnShippingParty(
+  returnShippingParty: string,
+  receptionStatus: string,
+): string {
+  if (returnShippingParty === "no_corresponde") return "no_requiere"
+  if (receptionStatus === "no_requiere") return "pendiente_despacho"
+  return receptionStatus
+}
+
+/**
  * Normaliza `stockDestination` a un valor neutro cuando la recepción no
  * requiere revisión física, para no persistir un valor stale que el motor
  * de stock nunca va a leer. Se usa tanto en el frontend (al cambiar el

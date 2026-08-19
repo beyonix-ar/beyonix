@@ -40,7 +40,7 @@ import type {
   SupabasePedidoItem,
 } from "@/lib/supabase/types"
 
-const PROBLEM_LABELS: Record<string, string> = {
+export const PROBLEM_LABELS: Record<string, string> = {
   danado: "Producto dañado",
   incorrecto: "Producto incorrecto",
   falla: "Producto con falla",
