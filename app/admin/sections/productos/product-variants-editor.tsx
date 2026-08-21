@@ -672,14 +672,14 @@ export function ProductVariantsEditor({
   const saveVariantDetails = async (
     variant: SupabaseProductoVariante,
     details: { sku: string; colorHex: string; colorName: string; barcode: string },
-  ) => {
-    if (!productoId) return
+  ): Promise<boolean> => {
+    if (!productoId) return false
 
     const normalizedColor = normalizeHex(details.colorHex)
     const cleanColorName = details.colorName.trim().toUpperCase()
     if (!cleanColorName) {
       setError("El nombre del color no puede quedar vacío.")
-      return
+      return false
     }
 
     try {
@@ -702,12 +702,14 @@ export function ProductVariantsEditor({
         onPrimarySkuChange?.(updated.sku ?? "")
       }
       setSuccessMessage("Variante actualizada correctamente.")
+      return true
     } catch (detailsError) {
       setError(
         detailsError instanceof Error
           ? detailsError.message
           : "No se pudieron guardar los datos de la variante.",
       )
+      return false
     } finally {
       setSavingVariantDetailsId(null)
     }
@@ -936,7 +938,7 @@ export function ProductVariantsEditor({
       onUploadImages={(files) => void uploadImagesToVariant(variante, files)}
       onMoveImage={(fromIndex, toIndex) => void moveVariantImage(variante, fromIndex, toIndex)}
       onRemoveImage={(imageIndex) => void removeVariantImage(variante, imageIndex)}
-      onDetailsChange={(details) => void saveVariantDetails(variante, details)}
+      onDetailsChange={(details) => saveVariantDetails(variante, details)}
       uploadingImages={uploadingVariantId === variante.id}
       savingImages={savingVariantImagesId === variante.id}
       changingState={false}
@@ -981,6 +983,7 @@ export function ProductVariantsEditor({
               : item,
           ),
         )
+        return true
       }}
       uploadingImages={false}
       savingImages={false}
@@ -1253,7 +1256,7 @@ interface VariantCardProps {
     colorHex: string
     colorName: string
     barcode: string
-  }) => void
+  }) => boolean | Promise<boolean>
   uploadingImages: boolean
   savingImages: boolean
   changingState: boolean
@@ -1349,13 +1352,14 @@ function VariantCard({
             statePending ? " · Pendiente" : ""
           }`
 
-  const commitDetails = () => {
-    onDetailsChange({
+  const commitDetails = async () => {
+    const success = await onDetailsChange({
       sku: localSku,
       colorHex: normalizeHex(localColor),
       colorName: localColorName,
       barcode: localBarcode,
     })
+    if (success) setIsEditing(false)
   }
 
   if (!isEditing) {
@@ -1382,12 +1386,8 @@ function VariantCard({
         </span>
 
         <div className="min-w-0">
-          <p className="truncate text-sm font-black text-white" title={nombre}>
-            {displayName}
-          </p>
-          <p className="mt-0.5 truncate text-10px font-semibold text-white/42">
+          <p className="truncate text-sm font-black text-white" title={sku?.trim() || "SKU pendiente"}>
             {sku?.trim() || "SKU pendiente"}
-            {isPrincipal ? " · Principal" : ""}
           </p>
         </div>
 

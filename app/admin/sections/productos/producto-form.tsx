@@ -439,7 +439,11 @@ export function ProductoForm({
               </div>
 
               <div className="grid min-w-0 gap-x-2.5 gap-y-2 sm:grid-cols-2">
-                <AdminFormField label="Nombre del producto" labelClassName={productFieldLabelClassName}>
+                <AdminFormField
+                  label="Nombre del producto"
+                  labelClassName={productFieldLabelClassName}
+                  className="sm:col-span-2"
+                >
                   <input
                     id="nombre"
                     type="text"
@@ -454,6 +458,7 @@ export function ProductoForm({
                   <AdminFormField
                     label="SKU"
                     labelClassName={productFieldLabelClassName}
+                    className="sm:col-span-2"
                   >
                     <input
                       id="sku"
@@ -753,7 +758,7 @@ export function ProductoForm({
           </div>
         )}
 
-        <div className="product-editor-actions flex flex-col-reverse gap-2 rounded-xl border p-1.5 sm:flex-row sm:items-center sm:justify-end">
+        <div className="product-editor-actions mx-auto flex w-full max-w-xl flex-col-reverse gap-2 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-center sm:gap-2.5">
             <AdminSecondaryButton
               title="Cancelar"
               aria-label="Cancelar"
@@ -772,6 +777,7 @@ export function ProductoForm({
               <Eye className="size-4 text-white" />
               Vista previa
             </AdminSecondaryButton>
+            <span className="hidden h-6 w-px bg-white/10 sm:block" aria-hidden="true" />
             <AdminPrimaryButton
               type="submit"
               disabled={busy}
