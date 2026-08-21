@@ -1,14 +1,18 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ImageIcon } from "lucide-react"
+import { ImageIcon, Search } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
 import { useCategorias } from "@/hooks/use-categorias"
 import { useProductColors } from "@/hooks/use-product-colors"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { useProductos } from "@/hooks/use-productos"
-import { getProductoById } from "@/lib/supabase/queries/productos"
+import {
+  getProductoById,
+  getProductosPage,
+  mergeProducto,
+} from "@/lib/supabase/queries/productos"
 import type { ProductColorOption } from "@/lib/supabase/queries/productos"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -90,6 +94,13 @@ export function AdminProductos() {
   const [loadingProductId, setLoadingProductId] = useState<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<SupabaseProducto | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [pendingMerge, setPendingMerge] = useState<SupabaseProducto | null>(null)
+  const [mergeSearch, setMergeSearch] = useState("")
+  const [mergeResults, setMergeResults] = useState<SupabaseProducto[]>([])
+  const [mergeSearching, setMergeSearching] = useState(false)
+  const [mergeTarget, setMergeTarget] = useState<SupabaseProducto | null>(null)
+  const [merging, setMerging] = useState(false)
+  const [mergeError, setMergeError] = useState("")
   const pageSize = 25
   const [search, setSearch] = useState("")
   const [colorSearch, setColorSearch] = useState("")
@@ -223,6 +234,70 @@ export function AdminProductos() {
     if (deleted) setPendingDelete(null)
   }
 
+  const handleMerge = (producto: SupabaseProducto) => {
+    setPendingMerge(producto)
+    setMergeSearch("")
+    setMergeResults([])
+    setMergeTarget(null)
+    setMergeError("")
+  }
+
+  useEffect(() => {
+    if (!pendingMerge) return
+    const term = mergeSearch.trim()
+    if (!term) {
+      setMergeResults([])
+      setMergeSearching(false)
+      return
+    }
+
+    let cancelled = false
+    setMergeSearching(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await getProductosPage({
+          search: term,
+          pageSize: 6,
+          activeFilter: "todos",
+        })
+        if (!cancelled) {
+          setMergeResults(
+            result.productos.filter((item) => item.id !== pendingMerge.id),
+          )
+        }
+      } catch {
+        if (!cancelled) setMergeResults([])
+      } finally {
+        if (!cancelled) setMergeSearching(false)
+      }
+    }, 300)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [mergeSearch, pendingMerge])
+
+  const confirmMerge = async () => {
+    if (!pendingMerge || !mergeTarget) return
+    try {
+      setMerging(true)
+      setMergeError("")
+      await mergeProducto(mergeTarget.id, pendingMerge.id)
+      setPendingMerge(null)
+      setMergeTarget(null)
+      await reloadProductos()
+    } catch (cause) {
+      setMergeError(
+        cause instanceof Error
+          ? cause.message
+          : "No se pudieron fusionar los productos.",
+      )
+    } finally {
+      setMerging(false)
+    }
+  }
+
   const handleSaved = async () => {
     await reloadProductos()
     setEditando(undefined)
@@ -318,6 +393,7 @@ export function AdminProductos() {
             onSort={handleSort}
             onEdit={(producto) => void handleEdit(producto)}
             onDelete={handleDelete}
+            onMerge={handleMerge}
             onToggleActivo={toggleProductoActivo}
           />
           {!loading && total > 0 && (
@@ -426,6 +502,100 @@ export function AdminProductos() {
             Esta acción no se puede deshacer.
           </p>
         </div>
+      </AdminModal>
+
+      <AdminModal
+        open={Boolean(pendingMerge)}
+        compact
+        title="Fusionar con otro producto"
+        onClose={() => {
+          if (!merging) setPendingMerge(null)
+        }}
+        footer={
+          <div className="flex justify-center gap-2">
+            <AdminSecondaryButton
+              size="sm"
+              disabled={merging}
+              onClick={() => setPendingMerge(null)}
+            >
+              Cancelar
+            </AdminSecondaryButton>
+            <AdminDangerButton
+              size="sm"
+              disabled={!mergeTarget || merging}
+              onClick={() => void confirmMerge()}
+            >
+              {merging ? "Fusionando…" : "Fusionar"}
+            </AdminDangerButton>
+          </div>
+        }
+      >
+        <p className="text-center text-xs leading-5 text-white/52">
+          Vas a mover todas las variantes, compras, ventas y devoluciones de{" "}
+          <span className="font-black text-white">{pendingMerge?.nombre}</span>{" "}
+          hacia otro producto, y este va a eliminarse. Precio, fotos y
+          descripción del producto elegido son los que van a quedar.
+        </p>
+
+        {mergeTarget ? (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/15 px-3 py-2.5">
+            <p className="min-w-0 truncate text-sm font-black text-white">
+              {mergeTarget.nombre}
+            </p>
+            <button
+              type="button"
+              disabled={merging}
+              onClick={() => setMergeTarget(null)}
+              className="shrink-0 text-11px font-bold text-white/50 underline-offset-2 hover:text-white hover:underline disabled:opacity-40"
+            >
+              Cambiar
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-white/35" />
+              <input
+                autoFocus
+                value={mergeSearch}
+                onChange={(event) => setMergeSearch(event.target.value)}
+                placeholder="Buscar el producto que va a quedar…"
+                className="h-10 w-full rounded-xl border border-white/12 bg-black/25 pl-9 pr-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-sky/45"
+              />
+            </label>
+            {mergeSearching && (
+              <p className="mt-2 text-center text-xs text-white/40">Buscando…</p>
+            )}
+            {!mergeSearching && mergeSearch.trim() && !mergeResults.length && (
+              <p className="mt-2 text-center text-xs text-white/40">
+                No encontramos productos con ese nombre.
+              </p>
+            )}
+            {mergeResults.length > 0 && (
+              <div className="mt-2 max-h-180px overflow-y-auto rounded-xl border border-white/8">
+                {mergeResults.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => setMergeTarget(product)}
+                    className="flex w-full cursor-pointer items-center justify-between gap-3 border-b border-white/6 px-3 py-2.5 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-beyonix-blue/20 hover:text-white"
+                  >
+                    <span className="min-w-0 truncate">{product.nombre}</span>
+                    <span className="shrink-0 text-10px font-black text-white/35">
+                      {(product.producto_variantes ?? []).length} variantes
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {mergeError && (
+          <p className="mt-3 text-center text-xs font-bold text-red-300/85">
+            {mergeError}
+          </p>
+        )}
       </AdminModal>
     </div>
   )

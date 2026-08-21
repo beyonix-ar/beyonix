@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  type KeyboardEvent,
   type PointerEvent,
   useEffect,
   useState,
@@ -15,7 +16,9 @@ import {
   Eye,
   GripVertical,
   ImageIcon,
+  Merge,
   Pencil,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react"
@@ -35,7 +38,6 @@ import {
 } from "@/lib/products/product-variants"
 import {
   buildDiscountedSkuSuggestion,
-  deriveVariantNameFromColor,
   getColorName,
 } from "@/lib/products/variant-color"
 
@@ -58,9 +60,12 @@ import {
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { DraftImageUploader } from "./draft-image-uploader"
 import { AdminVariantItem } from "./admin-variant-item"
+import { useStockAdjustment } from "./use-stock-adjustment"
 import {
   AdminModal,
+  AdminRowMenu,
   AdminSecondaryButton,
+  type AdminRowMenuEntry,
 } from "../../components/admin-controls"
 
 interface ProductosRowProps {
@@ -73,6 +78,7 @@ interface ProductosRowProps {
     producto: SupabaseProducto
   ) => void
   onDelete: (id: number) => void
+  onMerge: (producto: SupabaseProducto) => void
   onToggleActivo: (
     producto: SupabaseProducto
   ) => void
@@ -163,6 +169,7 @@ export function ProductosRow({
   isSuperAdmin,
   onEdit,
   onDelete,
+  onMerge,
   onToggleActivo,
 }: ProductosRowProps) {
   const [open, setOpen] =
@@ -179,6 +186,7 @@ export function ProductosRow({
   const [variantError, setVariantError] =
     useState("")
 
+
   const [previewTarget, setPreviewTarget] =
     useState<{
       product: SupabaseProducto
@@ -187,8 +195,14 @@ export function ProductosRow({
 
   const [editColor, setEditColor] =
     useState("")
+  const [editColorName, setEditColorName] =
+    useState("")
   const [editVariantSku, setEditVariantSku] =
     useState("")
+  const [editBarcode, setEditBarcode] =
+    useState("")
+  const [pendingBarcodeConfirm, setPendingBarcodeConfirm] =
+    useState<SupabaseProductoVariante | null>(null)
 
   const [localVariantes, setLocalVariantes] =
     useState<SupabaseProductoVariante[]>(
@@ -416,13 +430,18 @@ export function ProductosRow({
     setVariantError("")
     setEditingVariantId(variante.id)
     setEditColor(variante.color_hex)
-    setEditVariantSku(variante.sku ?? "")
+    setEditColorName((variante.nombre ?? "").toUpperCase())
+    setEditVariantSku((variante.sku ?? "").toUpperCase())
+    setEditBarcode(variante.codigo_barra ?? "")
   }
 
   const cancelEditVariant = () => {
     setEditingVariantId(null)
     setEditColor("")
+    setEditColorName("")
     setEditVariantSku("")
+    setEditBarcode("")
+    setPendingBarcodeConfirm(null)
   }
 
   const saveVariant = async (
@@ -430,18 +449,23 @@ export function ProductosRow({
   ) => {
     const sku = editVariantSku.trim() || null
     const color = editColor.trim().toUpperCase()
+    const colorName = editColorName.trim()
+    const barcode = editBarcode.trim() || null
 
     if (!/^#[0-9A-F]{6}$/.test(color)) {
       setVariantError("El color hexadecimal no es válido.")
       return
     }
-
-    const name = deriveVariantNameFromColor(color)
+    if (!colorName) {
+      setVariantError("El nombre del color no puede quedar vacío.")
+      return
+    }
 
     if (
-      variante.nombre === name &&
       (variante.sku?.trim() || null) === sku &&
-      variante.color_hex.toUpperCase() === color
+      variante.color_hex.toUpperCase() === color &&
+      variante.nombre.trim() === colorName &&
+      (variante.codigo_barra?.trim() || null) === barcode
     ) {
       cancelEditVariant()
       return
@@ -454,9 +478,10 @@ export function ProductosRow({
         producto.id,
         variante.id,
         {
-          nombre: name,
           sku,
+          codigo_barra: barcode,
           color_hex: color,
+          nombre: colorName,
         },
       )
 
@@ -478,6 +503,15 @@ export function ProductosRow({
     } finally {
       setSavingVariantId(null)
     }
+  }
+
+  const requestSaveVariant = (variante: SupabaseProductoVariante) => {
+    const barcode = editBarcode.trim() || null
+    if (barcode !== (variante.codigo_barra?.trim() || null)) {
+      setPendingBarcodeConfirm(variante)
+      return
+    }
+    void saveVariant(variante)
   }
 
   const toggleVariant = async (
@@ -547,6 +581,17 @@ export function ProductosRow({
 
     syncProductSummary(nextVariantes)
   }
+
+  const { openStockAdjustment, stockAdjustmentModal } = useStockAdjustment(
+    producto.id,
+    (updated) => {
+      const nextVariantes = localVariantes.map((item) =>
+        item.id === updated.id ? updated : item
+      )
+      setLocalVariantes(nextVariantes)
+      syncProductSummary(nextVariantes)
+    },
+  )
 
   const currentPreviewProduct = (
     previewVariants = variantes,
@@ -858,42 +903,55 @@ export function ProductosRow({
         <div className="admin-product-actions flex items-center justify-center gap-1.5">
           <button
             type="button"
-            aria-label={`Ver producto ${producto.nombre}`}
-            title={`Ver ${producto.nombre}`}
-            onClick={viewProduct}
-            className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-blue-400/30 hover:text-blue-400 cursor-pointer"
-          >
-            <Eye className="size-3.5" />
-          </button>
-
-          <button
-            type="button"
-            aria-label="Editar"
+            aria-label={`Editar ${producto.nombre}`}
             title={`Editar ${producto.nombre}`}
             onClick={() =>
               onEdit(producto)
             }
-            className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-white/20 hover:text-white cursor-pointer"
+            className="flex size-9 items-center justify-center rounded-xl border border-beyonix-sky/25 bg-beyonix-blue/10 text-beyonix-sky transition-colors hover:border-beyonix-sky/50 hover:bg-beyonix-blue/20 hover:text-white cursor-pointer"
           >
             <Pencil className="size-3.5" />
           </button>
 
-          <button
-            type="button"
-            aria-label="Eliminar"
-            title={`Eliminar ${producto.nombre}`}
-            onClick={() =>
-              onDelete(producto.id)
-            }
-            className="flex size-8 items-center justify-center rounded-xl border border-white/8 text-white/60 transition-colors hover:border-red-500/30 hover:text-red-400 cursor-pointer"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          <AdminRowMenu
+            ariaLabel={`Más acciones para ${producto.nombre}`}
+            items={[
+              {
+                key: "ver",
+                label: "Ver detalle",
+                icon: <Eye className="size-3.5" />,
+                onSelect: viewProduct,
+              },
+              ...(isSuperAdmin
+                ? ([
+                    {
+                      key: "fusionar",
+                      label: "Fusionar con otro producto",
+                      icon: <Merge className="size-3.5" />,
+                      onSelect: () => onMerge(producto),
+                    },
+                  ] satisfies AdminRowMenuEntry[])
+                : []),
+              { key: "divider-eliminar", divider: true },
+              {
+                key: "eliminar",
+                label: "Eliminar",
+                icon: <Trash2 className="size-3.5" />,
+                tone: "danger",
+                onSelect: () => onDelete(producto.id),
+              },
+            ]}
+          />
         </div>
       </div>
 
       {open && (
-        <div className="admin-product-details border-t border-white/5 bg-black py-2">
+        <div className="admin-product-details border-t border-white/5 bg-black py-3">
+          {variantes.length > 0 && (
+            <p className="mb-2 px-4 text-9px font-black uppercase tracking-widest text-white/28">
+              Variantes de este producto
+            </p>
+          )}
           <div className="grid gap-1.5">
             {variantes.length ? (
               variantes.map((variante, index) => {
@@ -913,6 +971,7 @@ export function ProductosRow({
                       sku={variante.sku}
                       colorHex={variante.color_hex}
                       colorLabel={getColorName(variante.color_hex, variante.nombre)}
+                      accentColor={variante.color_hex}
                       stock={stock}
                       stateLabel={
                         savingVariantId === variante.id
@@ -935,163 +994,168 @@ export function ProductosRow({
                             onPointerDown={(event) => handleVariantPointerDown(event, variante.id)}
                             onPointerUp={handleVariantPointerUp}
                             onPointerCancel={stopVariantReorder}
-                            className={`flex size-10 shrink-0 cursor-grab items-center justify-center rounded-xl border text-white/38 transition active:cursor-grabbing ${
+                            className={`flex size-9 shrink-0 cursor-grab items-center justify-center rounded-lg border text-white/34 transition active:cursor-grabbing ${
                               draggedVariantId === variante.id
                                 ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-200"
-                                : "border-white/8 hover:border-cyan-300/25 hover:text-cyan-200"
+                                : "border-white/7 hover:border-cyan-300/25 hover:text-cyan-200"
                             }`}
                           >
                             <GripVertical className="size-3.5" />
                           </button>
                         ) : (
-                          <span aria-hidden="true" className="size-10 shrink-0" />
+                          <span aria-hidden="true" className="size-9 shrink-0" />
                         )
                       }
                       actions={
                         <>
                           <button
                             type="button"
-                            title={`Ver vista previa de ${variante.nombre}`}
-                            aria-label={`Ver variante ${variante.nombre}`}
-                            onClick={() => viewVariant(variante)}
-                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/55 transition hover:border-blue-400/30 hover:text-blue-300"
-                          >
-                            <Eye className="size-3.5" />
-                          </button>
-                          <button
-                            type="button"
                             title={`Editar únicamente ${variante.nombre}`}
                             aria-label={`Editar variante ${variante.nombre}`}
                             onClick={() => startEditVariant(variante)}
-                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-white/8 text-white/55 transition hover:border-white/20 hover:text-white"
+                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-beyonix-sky/22 bg-beyonix-blue/8 text-beyonix-sky transition hover:border-beyonix-sky/45 hover:text-white"
                           >
                             <Pencil className="size-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            title={`Eliminar únicamente ${variante.nombre}`}
-                            aria-label={`Eliminar variante ${variante.nombre}`}
-                            onClick={() => {
-                              setVariantError("")
-                              setPendingVariantDelete(variante)
-                            }}
-                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/16 text-red-200/60 transition hover:border-red-400/35 hover:text-red-300"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          <AdminRowMenu
+                            ariaLabel={`Más acciones para la variante ${variante.nombre}`}
+                            triggerClassName="size-8 rounded-lg"
+                            items={[
+                              {
+                                key: "ver",
+                                label: "Ver vista previa",
+                                icon: <Eye className="size-3.5" />,
+                                onSelect: () => viewVariant(variante),
+                              },
+                              {
+                                key: "ajustar-stock",
+                                label: "Ajustar stock",
+                                icon: <SlidersHorizontal className="size-3.5" />,
+                                onSelect: () => openStockAdjustment(variante),
+                              },
+                              { key: "divider-eliminar", divider: true },
+                              {
+                                key: "eliminar",
+                                label: "Eliminar",
+                                icon: <Trash2 className="size-3.5" />,
+                                tone: "danger",
+                                onSelect: () => {
+                                  setVariantError("")
+                                  setPendingVariantDelete(variante)
+                                },
+                              },
+                            ]}
+                          />
                         </>
                       }
                     />
                   )
                 }
 
+                const editKeyDown = (event: KeyboardEvent) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    requestSaveVariant(variante)
+                  }
+                  if (event.key === "Escape") cancelEditVariant()
+                }
+
                 return (
                   <div
                     key={variante.id}
                     data-variant-drop-id={variante.id}
-                    className="mx-2 rounded-xl border border-cyan-300/25 bg-[#07111b] p-4"
+                    style={{ borderLeftColor: editColor, borderLeftWidth: 3 }}
+                    className="mx-4 rounded-lg border border-beyonix-sky/30 bg-beyonix-blue/[0.06] px-3 py-2.5"
                   >
-                    <div className="mb-3 flex items-center justify-between gap-3 border-b border-white/8 pb-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-black text-white">Editar variante</p>
-                        <p className="mt-0.5 truncate text-10px text-white/45">
-                          {producto.nombre}{isPrincipal ? " · Principal" : ""} · {stock} unidades disponibles
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={savingVariantId === variante.id}
-                        aria-label={`Cancelar edición de ${variante.nombre}`}
-                        title="Cancelar edición"
-                        onClick={cancelEditVariant}
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/55 transition-colors hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="min-w-0">
-                        <span className="mb-1.5 block text-10px font-bold uppercase tracking-wider text-white/48">SKU</span>
-                      <input
-                        type="text"
-                        value={editVariantSku}
-                        maxLength={120}
-                        placeholder="Sin SKU"
-                        aria-label={`Editar SKU de ${variante.nombre}`}
-                        onChange={(event) => setEditVariantSku(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault()
-                            void saveVariant(variante)
-                          }
-                          if (event.key === "Escape") cancelEditVariant()
-                        }}
-                          className="h-10 w-full min-w-0 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-3 text-sm font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
-                      />
-                      </label>
-
-                      <label className="min-w-0">
-                        <span className="mb-1.5 block text-10px font-bold uppercase tracking-wider text-white/48">Color</span>
-                        <span className="flex h-10 min-w-0 items-center gap-2 rounded-xl border border-beyonix-blue-light/20 bg-black/25 px-3 transition-colors hover:border-beyonix-sky/40 focus-within:border-beyonix-sky/55">
-                          <span className="relative flex size-5 shrink-0 cursor-pointer items-center justify-center">
-                          <span
-                            className="size-4 rounded-full border border-white/28"
-                            style={{ backgroundColor: editColor }}
-                          />
-                          <input
-                            type="color"
-                            value={editColor}
-                            aria-label={`Seleccionar color de ${variante.nombre}`}
-                            onChange={(event) => setEditColor(event.target.value)}
-                            className="absolute inset-0 size-full cursor-pointer opacity-0"
-                          />
-                          </span>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="min-w-0 w-28">
+                        <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
+                          SKU
+                        </span>
                         <input
                           type="text"
-                            value={editColor}
-                            maxLength={7}
-                            placeholder="#000000"
-                            aria-label={`Editar color de ${variante.nombre}`}
-                            onChange={(event) => setEditColor(event.target.value.toUpperCase())}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault()
-                              void saveVariant(variante)
-                            }
-                            if (event.key === "Escape") cancelEditVariant()
-                          }}
-                            className="h-full w-full min-w-0 border-0 bg-transparent p-0 text-sm font-bold text-white outline-none placeholder:text-white/28"
+                          value={editVariantSku}
+                          maxLength={120}
+                          placeholder="Sin SKU"
+                          aria-label={`Editar SKU de ${variante.nombre}`}
+                          onChange={(event) => setEditVariantSku(event.target.value.toUpperCase())}
+                          onKeyDown={editKeyDown}
+                          className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 px-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
                         />
+                      </label>
+
+                      <label className="min-w-0 w-36">
+                        <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
+                          Color
+                        </span>
+                        <span className="relative block">
+                          <input
+                            type="text"
+                            value={editColorName}
+                            maxLength={160}
+                            placeholder="Nombre del color"
+                            aria-label={`Editar nombre del color de ${variante.nombre}`}
+                            onChange={(event) => setEditColorName(event.target.value.toUpperCase())}
+                            onKeyDown={editKeyDown}
+                            className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 py-0 pl-8 pr-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                          />
+                          <span
+                            className="absolute left-2 top-1/2 size-4 -translate-y-1/2 cursor-pointer overflow-hidden rounded-full border border-white/28"
+                            style={{ backgroundColor: editColor }}
+                          >
+                            <input
+                              type="color"
+                              value={editColor}
+                              aria-label={`Seleccionar color de ${variante.nombre}`}
+                              onChange={(event) => setEditColor(event.target.value)}
+                              className="absolute inset-0 size-full cursor-pointer opacity-0"
+                            />
+                          </span>
                         </span>
                       </label>
-                    </div>
 
-                    <div className="mt-3 flex flex-col-reverse gap-2 border-t border-white/8 pt-3 sm:flex-row sm:items-center sm:justify-end">
-                      <button
-                        type="button"
-                        disabled={savingVariantId === variante.id}
-                        onClick={cancelEditVariant}
-                        className="inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-xs font-black text-white/65 transition hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingVariantId === variante.id}
-                        aria-label={`Guardar variante ${variante.nombre}`}
-                        onClick={() => void saveVariant(variante)}
-                        className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 text-xs font-black text-emerald-300 transition hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-50"
-                      >
-                        <Check className="size-3.5" />
-                        {savingVariantId === variante.id ? "Guardando…" : "Guardar"}
-                      </button>
+                      <label className="min-w-40 flex-1">
+                        <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
+                          Código de barra
+                        </span>
+                        <input
+                          type="text"
+                          value={editBarcode}
+                          maxLength={64}
+                          placeholder="Sin código de barra"
+                          aria-label={`Editar código de barra de ${variante.nombre}`}
+                          onChange={(event) => setEditBarcode(event.target.value)}
+                          onKeyDown={editKeyDown}
+                          className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 px-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                        />
+                      </label>
+
+                      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={savingVariantId === variante.id}
+                          onClick={cancelEditVariant}
+                          className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-white/10 px-3 text-11px font-black text-white/60 transition hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingVariantId === variante.id}
+                          aria-label={`Guardar variante ${variante.nombre}`}
+                          onClick={() => requestSaveVariant(variante)}
+                          className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 text-11px font-black text-emerald-300 transition hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-50"
+                        >
+                          <Check className="size-3.5" />
+                          {savingVariantId === variante.id ? "Guardando…" : "Guardar"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )
               })
             ) : conditionedStock.length ? null : (
-              <div className="rounded-xl border border-white/7 bg-[#07111b] px-4 py-3">
+              <div className="mx-4 rounded-xl border border-white/7 bg-[#07111b] px-4 py-3">
                 <p className="text-sm text-white/60">
                   Este producto no tiene variantes cargadas.
                 </p>
@@ -1099,13 +1163,13 @@ export function ProductosRow({
             )}
 
             {conditionedError && (
-              <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+              <div className="mx-4 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
                 {conditionedError}
               </div>
             )}
 
             {variantError && (
-              <div className="rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
+              <div className="mx-4 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs font-semibold text-red-200">
                 {variantError}
               </div>
             )}
@@ -1259,6 +1323,53 @@ export function ProductosRow({
           document.body,
         )}
 
+      {stockAdjustmentModal}
+
+      {pendingBarcodeConfirm &&
+        createPortal(
+          <AdminModal
+            open
+            compact
+            title="Cambiar código de barra"
+            description="Vas a cambiar el código con el que se identifica esta variante al escanearla."
+            onClose={() => {
+              if (savingVariantId === null) setPendingBarcodeConfirm(null)
+            }}
+            footer={
+              <div className="flex items-center justify-end gap-2">
+                <AdminSecondaryButton
+                  disabled={savingVariantId !== null}
+                  onClick={() => setPendingBarcodeConfirm(null)}
+                >
+                  No
+                </AdminSecondaryButton>
+                <button
+                  type="button"
+                  disabled={savingVariantId !== null}
+                  onClick={() => {
+                    const target = pendingBarcodeConfirm
+                    setPendingBarcodeConfirm(null)
+                    void saveVariant(target)
+                  }}
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 text-sm font-black text-emerald-300 transition hover:bg-emerald-400/18 disabled:cursor-wait disabled:opacity-50"
+                >
+                  <Check className="size-4" />
+                  Sí
+                </button>
+              </div>
+            }
+          >
+            <p className="text-center text-sm text-white/60">
+              ¿Estás seguro de que querés modificar el código de barra de{" "}
+              <span className="font-bold text-white">
+                {pendingBarcodeConfirm.nombre}
+              </span>
+              ?
+            </p>
+          </AdminModal>,
+          document.body,
+        )}
+
       {editingConditionedStock &&
         createPortal(
           <ConditionedStockEditModal
@@ -1330,10 +1441,10 @@ function ConditionedStockEditModal({
     initialVariant ? String(initialVariant.id) : "",
   )
   const [conditionedName, setConditionedName] = useState(
-    item.conditioned_name?.trim() || "Con descuento",
+    (item.conditioned_name?.trim() || "Con descuento").toUpperCase(),
   )
   const [conditionedSku, setConditionedSku] = useState(
-    item.conditioned_sku?.trim() || "",
+    (item.conditioned_sku?.trim() || "").toUpperCase(),
   )
   // El SKU se sugiere automáticamente mientras el administrador no lo haya
   // tocado a mano. Si ya existía uno guardado, se respeta y no se
@@ -1394,7 +1505,7 @@ function ConditionedStockEditModal({
   const selectVariant = (value: string) => {
     setSelectedVariantId(value)
     const selected = variants.find((variant) => String(variant.id) === value)
-    setConditionedName("Con descuento")
+    setConditionedName("CON DESCUENTO")
     setConditionedColor(selected?.color_hex ?? "#000000")
     setConditionedImages(selected?.imagenes ?? [])
     setNewImages([])
@@ -1537,7 +1648,7 @@ function ConditionedStockEditModal({
                 type="text"
                 value={conditionedName}
                 maxLength={160}
-                onChange={(event) => setConditionedName(event.target.value)}
+                onChange={(event) => setConditionedName(event.target.value.toUpperCase())}
                 placeholder="Con descuento"
                 className={inputClass}
               />
@@ -1552,7 +1663,7 @@ function ConditionedStockEditModal({
                 value={conditionedSku}
                 maxLength={120}
                 onChange={(event) => {
-                  setConditionedSku(event.target.value)
+                  setConditionedSku(event.target.value.toUpperCase())
                   setSkuManuallyEdited(true)
                 }}
                 placeholder="AP01-Neg-30"

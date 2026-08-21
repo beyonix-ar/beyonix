@@ -9,6 +9,7 @@ export interface ProductoVariantePayload {
   nombre: string
   sku?: string | null
   color_hex: string
+  codigo_barra?: string | null
   stock?: number | null
   imagenes?: string[]
   activo?: boolean
@@ -339,6 +340,27 @@ export async function setProductoVarianteActivo(
   }
 
   return payload.variant
+}
+
+export async function adjustProductoVarianteStock(
+  productId: number,
+  variantId: number,
+  payload: { newQuantity: number; reason: string },
+  idempotencyKey: string,
+) {
+  if (!/^[A-Za-z0-9._:-]{8,240}$/.test(idempotencyKey)) {
+    throw new Error("La operación no tiene una clave de idempotencia válida.")
+  }
+
+  const result = await variantRequest<{
+    variant: SupabaseProductoVariante
+  }>(`/api/admin/products/${productId}/variants/${variantId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stockAdjustment: payload }),
+    headers: { "Idempotency-Key": idempotencyKey },
+  })
+
+  return result.variant
 }
 
 export async function deleteProductoVariante(

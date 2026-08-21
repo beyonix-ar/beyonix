@@ -46,7 +46,11 @@ export async function GET(request: Request) {
       .range(offset, offset + pageSize - 1)
 
     if (ids) query = query.in("producto_id", ids)
-    if (skuSearch) query = query.ilike("sku", `%${skuSearch}%`)
+    if (skuSearch) {
+      query = query.or(
+        `sku.ilike.%${skuSearch}%,codigo_barra.ilike.%${skuSearch}%`,
+      )
+    }
     if (colorSearch) {
       query = query.or(
         `nombre.ilike.%${colorSearch}%,color_hex.ilike.%${colorSearch}%`,

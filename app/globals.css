@@ -289,11 +289,11 @@
 }
 
 @utility grid-cols-admin-product-summary {
-  grid-template-columns: minmax(300px, 1.9fr) minmax(100px, 0.65fr) 90px minmax(110px, 0.7fr) 120px 110px 120px;
+  grid-template-columns: minmax(280px, 1.6fr) minmax(100px, 0.65fr) 90px minmax(110px, 0.7fr) 96px 118px 128px;
 }
 
 @utility grid-cols-admin-product-parent {
-  grid-template-columns: minmax(300px, 1.9fr) minmax(100px, 0.65fr) 90px minmax(110px, 0.7fr) 120px 110px 120px;
+  grid-template-columns: minmax(280px, 1.6fr) minmax(100px, 0.65fr) 90px minmax(110px, 0.7fr) 96px 118px 128px;
 }
 
 @utility grid-cols-admin-categories {

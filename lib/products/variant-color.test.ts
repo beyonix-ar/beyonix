@@ -9,9 +9,9 @@ import {
 } from "./variant-color.ts"
 
 test("resuelve el nombre de colores conocidos por hex", () => {
-  assert.equal(getColorName("#000000"), "Negro")
-  assert.equal(getColorName("#ffffff"), "Blanco")
-  assert.equal(getColorName("#2563EB"), "Azul")
+  assert.equal(getColorName("#000000"), "NEGRO")
+  assert.equal(getColorName("#ffffff"), "BLANCO")
+  assert.equal(getColorName("#2563EB"), "AZUL")
 })
 
 test("cae al nombre de la variante cuando el hex no es conocido", () => {
@@ -19,8 +19,8 @@ test("cae al nombre de la variante cuando el hex no es conocido", () => {
 })
 
 test("un nombre de variante genérico no se usa como nombre de color", () => {
-  assert.equal(getColorName("#A3B2C1", "Principal"), "Color personalizado")
-  assert.equal(getColorName("#A3B2C1", "Variante 2"), "Color personalizado")
+  assert.equal(getColorName("#A3B2C1", "Principal"), "COLOR PERSONALIZADO")
+  assert.equal(getColorName("#A3B2C1", "Variante 2"), "COLOR PERSONALIZADO")
 })
 
 test("la tabla de abreviaturas de colores comunes coincide con lo esperado", () => {
@@ -44,21 +44,21 @@ test("un color sin nombre resuelto cae a un código determinístico basado en el
 })
 
 test("deriveVariantNameFromColor resuelve colores conocidos sin depender de un nombre libre", () => {
-  assert.equal(deriveVariantNameFromColor("#000000"), "Negro")
-  assert.equal(deriveVariantNameFromColor("#ffffff"), "Blanco")
+  assert.equal(deriveVariantNameFromColor("#000000"), "NEGRO")
+  assert.equal(deriveVariantNameFromColor("#ffffff"), "BLANCO")
 })
 
 test("deriveVariantNameFromColor identifica cada hex personalizado por su propio código", () => {
   const primero = deriveVariantNameFromColor("#A3B2C1")
   const segundo = deriveVariantNameFromColor("#123456")
-  assert.equal(primero, "Color #A3B2C1")
-  assert.equal(segundo, "Color #123456")
+  assert.equal(primero, "COLOR #A3B2C1")
+  assert.equal(segundo, "COLOR #123456")
   assert.notEqual(primero, segundo)
 })
 
 test("deriveVariantNameFromColor cae al genérico sólo si el hex no es válido", () => {
-  assert.equal(deriveVariantNameFromColor(""), "Color personalizado")
-  assert.equal(deriveVariantNameFromColor(null), "Color personalizado")
+  assert.equal(deriveVariantNameFromColor(""), "COLOR PERSONALIZADO")
+  assert.equal(deriveVariantNameFromColor(null), "COLOR PERSONALIZADO")
 })
 
 test("genera el SKU sugerido en el formato <sku original>-<color>-<%descuento>", () => {

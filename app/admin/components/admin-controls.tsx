@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  MoreVertical,
   Search,
   X,
 } from "lucide-react"
@@ -520,6 +521,167 @@ export function AdminSelect({
             </div>
           </div>,
           document.body
+        )}
+    </div>
+  )
+}
+
+export interface AdminRowMenuAction {
+  key: string
+  label: string
+  icon?: ReactNode
+  tone?: "default" | "danger"
+  disabled?: boolean
+  onSelect: () => void
+}
+
+export type AdminRowMenuEntry = AdminRowMenuAction | { key: string; divider: true }
+
+interface AdminRowMenuProps {
+  items: AdminRowMenuEntry[]
+  ariaLabel: string
+  triggerClassName?: string
+}
+
+/**
+ * Menú "⋮" para acciones secundarias de una fila (ver, fusionar, eliminar,
+ * etc.), dejando solo la acción principal como botón directo en la fila.
+ * Reutiliza el patrón de posicionamiento por portal de AdminSelect.
+ */
+export function AdminRowMenu({
+  items,
+  ariaLabel,
+  triggerClassName,
+}: AdminRowMenuProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0, width: 232 })
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node
+      if (
+        !wrapperRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        setOpen(false)
+      }
+    }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false)
+    }
+
+    document.addEventListener("mousedown", handlePointerDown)
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+
+    function updateMenuPosition() {
+      const rect = wrapperRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      const width = 232
+      const menuHeight = items.length * 34 + 10
+      const spaceBelow = window.innerHeight - rect.bottom
+      const openAbove = spaceBelow < menuHeight && rect.top > menuHeight
+      const left = Math.min(
+        Math.max(8, rect.right - width),
+        window.innerWidth - width - 8,
+      )
+
+      setMenuPosition({
+        left,
+        top: openAbove
+          ? Math.max(8, rect.top - menuHeight - 4)
+          : Math.min(window.innerHeight - menuHeight - 8, rect.bottom + 4),
+        width,
+      })
+    }
+
+    updateMenuPosition()
+    window.addEventListener("resize", updateMenuPosition)
+    window.addEventListener("scroll", updateMenuPosition, true)
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition)
+      window.removeEventListener("scroll", updateMenuPosition, true)
+    }
+  }, [items.length, open])
+
+  return (
+    <div ref={wrapperRef} className="relative inline-flex">
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(
+          "flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/50 transition-colors hover:border-white/22 hover:text-white",
+          open && "border-beyonix-sky/40 bg-beyonix-blue/18 text-white",
+          triggerClassName,
+        )}
+      >
+        <MoreVertical className="size-4" />
+      </button>
+
+      {mounted &&
+        open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label={ariaLabel}
+            className="fixed z-100 rounded-2xl border border-[rgba(92,159,215,0.28)] bg-[#07111b] p-1.5 shadow-[0_22px_52px_rgba(0,0,0,0.52)]"
+            style={{
+              left: menuPosition.left,
+              top: menuPosition.top,
+              width: menuPosition.width,
+            }}
+          >
+            {items.map((item) =>
+              "divider" in item ? (
+                <div
+                  key={item.key}
+                  role="separator"
+                  className="my-1 h-px bg-white/8"
+                />
+              ) : (
+                <button
+                  key={item.key}
+                  type="button"
+                  role="menuitem"
+                  disabled={item.disabled}
+                  onClick={() => {
+                    setOpen(false)
+                    item.onSelect()
+                  }}
+                  className={cn(
+                    "flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    item.tone === "danger"
+                      ? "text-red-300 hover:bg-red-400/12 hover:text-red-200"
+                      : "text-white/72 hover:bg-white/8 hover:text-white",
+                  )}
+                >
+                  {item.icon && <span className="shrink-0">{item.icon}</span>}
+                  <span className="leading-tight">{item.label}</span>
+                </button>
+              ),
+            )}
+          </div>,
+          document.body,
         )}
     </div>
   )

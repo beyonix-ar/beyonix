@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from "react"
 import {
-  AlertTriangle,
   GripVertical,
   ImageIcon,
   Loader2,
@@ -44,14 +43,14 @@ import {
   getProductVariantDistribution,
   getProductoVariantes,
   reorderProductoVariantes,
-  updateProductoVariantWithAllocation,
   updateProductoVariante,
   type ProductVariantDistribution,
 } from "@/lib/supabase/queries/producto-variantes"
 
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 import { getVariantActivationError } from "@/lib/products/product-activation"
-import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
+import { deriveVariantNameFromColor, getColorName } from "@/lib/products/variant-color"
+import { useStockAdjustment } from "./use-stock-adjustment"
 import {
   AdminDangerButton,
   AdminCard,
@@ -81,7 +80,6 @@ interface ProductVariantsEditorProps {
   onPersistedVariantsChange?: (
     variants: SupabaseProductoVariante[]
   ) => void
-  onVariantAllocationsChange?: (allocations: Record<number, number>) => void
   persistedVariantStates?: Record<number, boolean>
   onPersistedVariantStatesChange?: (states: Record<number, boolean>) => void
 }
@@ -137,7 +135,6 @@ export function ProductVariantsEditor({
   draftVariants = [],
   onDraftVariantsChange,
   onPersistedVariantsChange,
-  onVariantAllocationsChange,
   persistedVariantStates = {},
   onPersistedVariantStatesChange,
 }: ProductVariantsEditorProps) {
@@ -149,8 +146,10 @@ export function ProductVariantsEditor({
 
   const [colorHex, setColorHex] =
     useState("#000000")
-  const [cantidad, setCantidad] =
-    useState("0")
+  const [colorName, setColorName] =
+    useState("")
+  const [barcode, setBarcode] =
+    useState("")
   const [shippingValues, setShippingValues] = useState({
     peso_empaquetado_kg: "",
     alto_paquete_cm: "",
@@ -159,8 +158,6 @@ export function ProductVariantsEditor({
   })
   const [distribution, setDistribution] =
     useState<ProductVariantDistribution | null>(null)
-  const [allocations, setAllocations] =
-    useState<Record<number, number>>({})
 
   const [variantImages, setVariantImages] =
     useState<File[]>([])
@@ -248,14 +245,6 @@ export function ProductVariantsEditor({
         setVariantes(data)
         setVariantsLoaded(true)
         setDistribution(stockDistribution)
-        setAllocations(
-          Object.fromEntries(
-            stockDistribution.variants.map((variant) => [
-              variant.variant_id,
-              variant.allocated_quantity,
-            ]),
-          ),
-        )
       } catch (err) {
         setVariantsLoaded(false)
         setError(
@@ -279,10 +268,6 @@ export function ProductVariantsEditor({
   }, [loading, onPersistedVariantsChange, productoId, variantes])
 
   useEffect(() => {
-    onVariantAllocationsChange?.(allocations)
-  }, [allocations, onVariantAllocationsChange])
-
-  useEffect(() => {
     if (!formOpen || !hasVariants) return
 
     const frame = window.requestAnimationFrame(() => {
@@ -295,7 +280,8 @@ export function ProductVariantsEditor({
   const resetFields = () => {
     setSku("")
     setColorHex("#000000")
-    setCantidad("0")
+    setColorName("")
+    setBarcode("")
     setShippingValues({
       peso_empaquetado_kg: "",
       alto_paquete_cm: "",
@@ -314,16 +300,7 @@ export function ProductVariantsEditor({
     setError("")
     setSuccessMessage("")
     const normalizedColor = normalizeHex(colorHex)
-    const cleanName = deriveVariantNameFromColor(normalizedColor)
-
-    const allocationQuantity = Number(cantidad)
-    if (
-      !Number.isInteger(allocationQuantity) ||
-      allocationQuantity < 0
-    ) {
-      setError("La asignación debe ser un número entero igual o mayor que cero.")
-      return
-    }
+    const cleanName = colorName.trim().toUpperCase() || deriveVariantNameFromColor(normalizedColor)
 
     let logistics
     try {
@@ -388,11 +365,19 @@ export function ProductVariantsEditor({
             name: nextVariant.nombre,
             sku: nextVariant.sku,
             color: nextVariant.color_hex,
-            quantity: allocationQuantity,
+            // El stock nunca se asigna al crear la variante: llega
+            // exclusivamente por una compra tagueada a esta variante, o por
+            // un ajuste manual explícito.
+            quantity: 0,
             images: urls,
             ...logistics,
           },
         )
+        if (barcode.trim()) {
+          created = await updateProductoVariante(productoId, created.id, {
+            codigo_barra: barcode.trim(),
+          })
+        }
       } catch (createError) {
         for (const url of urls) {
           try {
@@ -410,10 +395,6 @@ export function ProductVariantsEditor({
       const nextVariantes = [...variantes, created]
       setVariantes(nextVariantes)
       if (!variantes.length) onPrimarySkuChange?.(created.sku ?? "")
-      setAllocations((current) => ({
-        ...current,
-        [created.id]: allocationQuantity,
-      }))
       resetFields()
       await loadVariantes()
       setSuccessMessage("Variante creada correctamente.")
@@ -690,48 +671,36 @@ export function ProductVariantsEditor({
 
   const saveVariantDetails = async (
     variant: SupabaseProductoVariante,
-    details: { sku: string; colorHex: string; stock: number },
+    details: { sku: string; colorHex: string; colorName: string; barcode: string },
   ) => {
     if (!productoId) return
 
-    if (!Number.isInteger(details.stock) || details.stock < 0) {
-      setError("El stock debe ser un número entero igual o mayor que cero.")
+    const normalizedColor = normalizeHex(details.colorHex)
+    const cleanColorName = details.colorName.trim().toUpperCase()
+    if (!cleanColorName) {
+      setError("El nombre del color no puede quedar vacío.")
       return
     }
-
-    const normalizedColor = normalizeHex(details.colorHex)
 
     try {
       setSavingVariantDetailsId(variant.id)
       setError("")
       setSuccessMessage("")
-      const updated = await updateProductoVariantWithAllocation(
-        productoId,
-        variant.id,
-        {
-          name: deriveVariantNameFromColor(normalizedColor),
-          sku: details.sku.trim() || null,
-          color: normalizedColor,
-          quantity: details.stock,
-          images: variant.imagenes ?? [],
-          peso_empaquetado_kg: variant.peso_empaquetado_kg ?? null,
-          alto_paquete_cm: variant.alto_paquete_cm ?? null,
-          ancho_paquete_cm: variant.ancho_paquete_cm ?? null,
-          largo_paquete_cm: variant.largo_paquete_cm ?? null,
-        },
-      )
+      // Metadata pura (SKU/color/código de barra): nunca toca stock ni pasa
+      // por el sistema de asignación de pool genérico.
+      const updated = await updateProductoVariante(productoId, variant.id, {
+        nombre: cleanColorName,
+        sku: details.sku.trim() || null,
+        color_hex: normalizedColor,
+        codigo_barra: details.barcode.trim() || null,
+      })
 
       setVariantes((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       )
-      setAllocations((current) => ({
-        ...current,
-        [updated.id]: details.stock,
-      }))
       if (updated.id === primaryVariantId) {
         onPrimarySkuChange?.(updated.sku ?? "")
       }
-      await loadVariantes()
       setSuccessMessage("Variante actualizada correctamente.")
     } catch (detailsError) {
       setError(
@@ -778,7 +747,7 @@ export function ProductVariantsEditor({
         sku: variant.sku ?? null,
         colorHex: variant.color_hex,
         images: variant.imagenes ?? [],
-        assignedStock: allocations[variant.id] ?? 0,
+        assignedStock: variant.stock ?? 0,
       })
       if (activationError) {
         setSuccessMessage("")
@@ -931,6 +900,15 @@ export function ProductVariantsEditor({
     )
   }
 
+  const { openStockAdjustment, stockAdjustmentModal } = useStockAdjustment(
+    productoId,
+    (updated) => {
+      setVariantes((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+    },
+  )
+
   const renderPersistedVariant = (variante: SupabaseProductoVariante) => {
     const desiredActive =
       persistedVariantStates[variante.id] ?? variante.activo !== false
@@ -943,8 +921,9 @@ export function ProductVariantsEditor({
       isPrincipal={variante.id === primaryVariantId}
       sku={variante.sku}
       colorHex={variante.color_hex}
-      stock={allocations[variante.id] ?? 0}
-      availableStock={variante.stock ?? 0}
+      colorName={getColorName(variante.color_hex, variante.nombre)}
+      barcode={variante.codigo_barra}
+      stock={variante.stock ?? 0}
       active={desiredActive}
       parentActive={productActive}
       statePending={desiredActive !== (variante.activo !== false)}
@@ -953,6 +932,7 @@ export function ProductVariantsEditor({
       fallbackImage={fallbackImage}
       onRemove={() => setPendingDelete({ kind: "persisted", variant: variante })}
       onToggleState={() => toggleVariantState(variante)}
+      onAdjustStock={() => openStockAdjustment(variante)}
       onUploadImages={(files) => void uploadImagesToVariant(variante, files)}
       onMoveImage={(fromIndex, toIndex) => void moveVariantImage(variante, fromIndex, toIndex)}
       onRemoveImage={(imageIndex) => void removeVariantImage(variante, imageIndex)}
@@ -975,8 +955,9 @@ export function ProductVariantsEditor({
       isPrincipal={draftVariants[0]?.tempId === variant.tempId}
       sku={variant.sku}
       colorHex={variant.color_hex}
-      stock={null}
-      availableStock={0}
+      colorName={getColorName(variant.color_hex, variant.nombre)}
+      barcode={null}
+      stock={0}
       active
       parentActive={productActive}
       draftImages={variant.imagenes}
@@ -993,7 +974,7 @@ export function ProductVariantsEditor({
             item.tempId === variant.tempId
               ? {
                   ...item,
-                  nombre: deriveVariantNameFromColor(normalizedColor),
+                  nombre: details.colorName.trim().toUpperCase() || deriveVariantNameFromColor(normalizedColor),
                   sku: details.sku,
                   color_hex: normalizedColor,
                 }
@@ -1029,14 +1010,6 @@ export function ProductVariantsEditor({
             value={distribution?.physicalStock}
           />
           <StockSummaryItem
-            label="Asignado a variantes"
-            value={distribution?.allocatedQuantity}
-          />
-          <StockSummaryItem
-            label="Pendiente de asignar"
-            value={distribution?.unassignedQuantity}
-          />
-          <StockSummaryItem
             label="Stock normal"
             value={distribution?.normalStock}
           />
@@ -1045,21 +1018,17 @@ export function ProductVariantsEditor({
             value={distribution?.discountedStock}
           />
           <StockSummaryItem
+            label="Fallado / no vendible"
+            value={distribution?.nonSellableStock}
+          />
+          <StockSummaryItem
             label="Pendiente de revisión"
             value={distribution?.pendingReviewStock}
           />
         </div>
       </AdminCard>
 
-      {distribution && distribution.allocationOverflow > 0 && (
-        <div className="col-span-full">
-        <AdminInfoBlock tone="danger" icon={<AlertTriangle className="size-4 text-white" />}>
-          <p>
-            Hay {distribution.allocationOverflow} {distribution.allocationOverflow === 1 ? "unidad asignada" : "unidades asignadas"} de más. No edites el stock hasta revisar esta diferencia.
-          </p>
-        </AdminInfoBlock>
-        </div>
-      )}
+      {stockAdjustmentModal}
 
       {error && (
         <div className="col-span-full">
@@ -1086,7 +1055,7 @@ export function ProductVariantsEditor({
               aria-label="Agregar una variante"
               onClick={openCreateForm}
               size="sm"
-              className="shrink-0 px-2.5"
+              className="shrink-0"
             >
               <Plus className="size-4 text-white" />
               Agregar variante
@@ -1156,10 +1125,12 @@ export function ProductVariantsEditor({
                     twoColumn
                     sku={sku}
                     colorHex={colorHex}
-                    stock={cantidad}
+                    colorName={colorName}
+                    barcode={barcode}
                     onSkuChange={setSku}
                     onColorChange={setColorHex}
-                    onStockChange={setCantidad}
+                    onColorNameChange={setColorName}
+                    onBarcodeChange={setBarcode}
                   />
                 </div>
               </div>
@@ -1261,8 +1232,9 @@ interface VariantCardProps {
   isPrincipal?: boolean
   sku?: string | null
   colorHex: string
-  stock: number | null
-  availableStock: number
+  colorName: string
+  barcode?: string | null
+  stock: number
   active: boolean
   parentActive?: boolean
   statePending?: boolean
@@ -1272,13 +1244,15 @@ interface VariantCardProps {
   fallbackImage?: string | null
   onRemove: () => void
   onToggleState?: () => void
+  onAdjustStock?: () => void
   onUploadImages: (files: File[]) => void
   onMoveImage: (fromIndex: number, toIndex: number) => void
   onRemoveImage: (imageIndex: number) => void
   onDetailsChange: (details: {
     sku: string
     colorHex: string
-    stock: number
+    colorName: string
+    barcode: string
   }) => void
   uploadingImages: boolean
   savingImages: boolean
@@ -1294,8 +1268,9 @@ function VariantCard({
   isPrincipal = false,
   sku,
   colorHex,
+  colorName,
+  barcode,
   stock,
-  availableStock,
   active,
   parentActive = true,
   statePending = false,
@@ -1305,6 +1280,7 @@ function VariantCard({
   fallbackImage = null,
   onRemove,
   onToggleState,
+  onAdjustStock,
   onUploadImages,
   onMoveImage,
   onRemoveImage,
@@ -1318,9 +1294,10 @@ function VariantCard({
 }: VariantCardProps) {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [isEditing, setIsEditing] = useState(false)
-  const [localSku, setLocalSku] = useState(sku ?? "")
+  const [localSku, setLocalSku] = useState((sku ?? "").toUpperCase())
   const [localColor, setLocalColor] = useState(normalizeHex(colorHex))
-  const [localStock, setLocalStock] = useState(String(stock ?? 0))
+  const [localColorName, setLocalColorName] = useState(colorName.toUpperCase())
+  const [localBarcode, setLocalBarcode] = useState(barcode ?? "")
   const [draggedImageIndex, setDraggedImageIndex] = useState<number | null>(null)
   const draftUrls = useMemo(
     () => draftImages.map((file) => URL.createObjectURL(file)),
@@ -1332,10 +1309,11 @@ function VariantCard({
   }, [draftUrls])
 
   useEffect(() => {
-    setLocalSku(sku ?? "")
+    setLocalSku((sku ?? "").toUpperCase())
     setLocalColor(normalizeHex(colorHex))
-    setLocalStock(String(stock ?? 0))
-  }, [colorHex, sku, stock])
+    setLocalColorName(colorName.toUpperCase())
+    setLocalBarcode(barcode ?? "")
+  }, [colorHex, colorName, barcode, sku])
 
   // El nombre visible de la variante es siempre el del producto general; el
   // "nombre" propio de la variante (nombre/color) sólo identifica atributos
@@ -1375,7 +1353,8 @@ function VariantCard({
     onDetailsChange({
       sku: localSku,
       colorHex: normalizeHex(localColor),
-      stock: Number(localStock || 0),
+      colorName: localColorName,
+      barcode: localBarcode,
     })
   }
 
@@ -1417,14 +1396,23 @@ function VariantCard({
             className="size-3.5 shrink-0 rounded-full border border-white/25"
             style={{ backgroundColor: normalizeHex(colorHex) }}
           />
-          <span className="truncate text-xs font-bold text-white/62">{normalizeHex(colorHex)}</span>
+          <span className="truncate text-xs font-bold text-white/62">{colorName}</span>
         </div>
 
         <div className="hidden text-center sm:block">
-          <p className="text-10px font-bold text-white/38">Stock / asignado</p>
-          <p className="mt-0.5 text-sm font-black tabular-nums text-white">
-            {availableStock} <span className="text-white/30">/</span> {stock ?? 0}
-          </p>
+          <p className="text-10px font-bold text-white/38">Stock</p>
+          <button
+            type="button"
+            title={onAdjustStock ? `Ajustar stock de ${nombre}` : undefined}
+            aria-label={onAdjustStock ? `Ajustar stock de ${nombre}` : undefined}
+            onClick={onAdjustStock}
+            disabled={!onAdjustStock}
+            className={`mt-0.5 text-sm font-black tabular-nums text-white ${
+              onAdjustStock ? "cursor-pointer underline decoration-white/25 decoration-dashed underline-offset-4 hover:text-beyonix-sky" : ""
+            }`}
+          >
+            {stock}
+          </button>
         </div>
 
         {onToggleState ? (
@@ -1471,7 +1459,17 @@ function VariantCard({
     <article className="product-editor-variant-card rounded-xl border border-white/10 bg-[#0c1219] p-3">
       <div className="mb-3 flex min-w-0 items-center justify-between gap-3 border-b border-white/8 pb-2.5">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black text-white" title={nombre}>{displayName}</p>
+          <p className="text-9px font-black uppercase tracking-widest text-beyonix-sky/70">
+            Editando variante
+          </p>
+          <p className="mt-0.5 flex min-w-0 items-center gap-2 truncate text-sm font-black text-white" title={nombre}>
+            <span
+              className="size-3 shrink-0 rounded-full border border-white/25"
+              style={{ backgroundColor: normalizeHex(colorHex) }}
+              aria-hidden="true"
+            />
+            <span className="truncate">{displayName}</span>
+          </p>
           <p className="mt-0.5 text-10px text-white/42">
             {hasOwnImages
               ? ownImageCount > MAX_VARIANT_IMAGES
@@ -1624,27 +1622,21 @@ function VariantCard({
         </div>
 
         <div className="min-w-0 border-t border-white/8 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+          <p className="mb-2 text-xs font-black text-white/68">Datos de la variante</p>
           <VariantFields
             sku={localSku}
             colorHex={localColor}
-            stock={localStock}
+            colorName={localColorName}
+            barcode={localBarcode}
             disabled={savingDetails}
             onSkuChange={setLocalSku}
             onColorChange={setLocalColor}
-            onStockChange={setLocalStock}
+            onColorNameChange={setLocalColorName}
+            onBarcodeChange={setLocalBarcode}
             onCommit={commitDetails}
+            stock={stock}
+            onAdjustStock={onAdjustStock}
           />
-          <div className="mt-2 flex justify-end">
-            <AdminPrimaryButton
-              size="sm"
-              onClick={commitDetails}
-              disabled={savingDetails}
-              title="Guardar SKU, color y stock"
-            >
-              {savingDetails && <Loader2 className="size-3.5 animate-spin text-white" />}
-              {savingDetails ? "Guardando…" : "Guardar datos"}
-            </AdminPrimaryButton>
-          </div>
         </div>
       </div>
 
@@ -1658,13 +1650,24 @@ function VariantCard({
           <Trash2 className="size-3.5 text-white" />
           Eliminar variante
         </AdminDangerButton>
-        <AdminSecondaryButton
-          size="sm"
-          onClick={() => setIsEditing(false)}
-          disabled={savingDetails || savingImages || uploadingImages}
-        >
-          Cerrar edición
-        </AdminSecondaryButton>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <AdminSecondaryButton
+            size="sm"
+            onClick={() => setIsEditing(false)}
+            disabled={savingDetails || savingImages || uploadingImages}
+          >
+            Cerrar edición
+          </AdminSecondaryButton>
+          <AdminPrimaryButton
+            size="sm"
+            onClick={commitDetails}
+            disabled={savingDetails}
+            title="Guardar SKU, color y código de barra"
+          >
+            {savingDetails && <Loader2 className="size-3.5 animate-spin text-white" />}
+            {savingDetails ? "Guardando…" : "Guardar datos"}
+          </AdminPrimaryButton>
+        </div>
       </div>
 
       <input
@@ -1686,25 +1689,33 @@ function VariantCard({
 interface VariantFieldsProps {
   sku: string
   colorHex: string
-  stock: string
+  colorName: string
+  barcode: string
   disabled?: boolean
   twoColumn?: boolean
   onSkuChange: (value: string) => void
   onColorChange: (value: string) => void
-  onStockChange: (value: string) => void
+  onColorNameChange: (value: string) => void
+  onBarcodeChange: (value: string) => void
   onCommit?: () => void
+  stock?: number
+  onAdjustStock?: () => void
 }
 
 function VariantFields({
   sku,
   colorHex,
-  stock,
+  colorName,
+  barcode,
   disabled = false,
   twoColumn = false,
   onSkuChange,
   onColorChange,
-  onStockChange,
+  onColorNameChange,
+  onBarcodeChange,
   onCommit,
+  stock,
+  onAdjustStock,
 }: VariantFieldsProps) {
   const commitOnEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -1714,13 +1725,13 @@ function VariantFields({
   }
   const fieldClassName = twoColumn
     ? "block min-w-0"
-    : "grid min-w-0 grid-cols-[64px_minmax(0,1fr)] items-center gap-3"
+    : "grid min-w-0 grid-cols-[7rem_minmax(0,1fr)] items-center gap-3"
   const fieldLabelClassName = twoColumn
     ? "mb-1 block text-xs font-black text-white/62"
-    : "text-sm font-black text-white/72"
+    : "shrink-0 whitespace-nowrap text-xs font-black uppercase tracking-wide text-white/55"
 
   return (
-    <div className={`grid gap-2.5 ${twoColumn ? "sm:grid-cols-2" : ""}`}>
+    <div className={`grid gap-2 ${twoColumn ? "sm:grid-cols-2 sm:gap-2.5" : ""}`}>
       <label className={fieldClassName}>
         <span className={fieldLabelClassName}>SKU</span>
         <input
@@ -1729,7 +1740,7 @@ function VariantFields({
           maxLength={120}
           placeholder="Ej.: AP01-NEGRO"
           disabled={disabled}
-          onChange={(event) => onSkuChange(event.target.value)}
+          onChange={(event) => onSkuChange(event.target.value.toUpperCase())}
           onKeyDown={commitOnEnter}
           className={`${inputCls} !h-10 !text-sm`}
         />
@@ -1740,11 +1751,12 @@ function VariantFields({
         <span className="relative block min-w-0">
           <input
             type="text"
-            value={colorHex}
-            placeholder="#000000"
-            aria-label="Código del color"
+            value={colorName}
+            placeholder="Ej.: Negro"
+            aria-label="Nombre del color"
+            maxLength={80}
             disabled={disabled}
-            onChange={(event) => onColorChange(event.target.value)}
+            onChange={(event) => onColorNameChange(event.target.value.toUpperCase())}
             onKeyDown={commitOnEnter}
             className={`${inputCls} !h-10 !pl-12 !text-sm`}
           />
@@ -1765,18 +1777,32 @@ function VariantFields({
       </label>
 
       <label className={fieldClassName}>
-        <span className={fieldLabelClassName}>Asignación</span>
+        <span className={fieldLabelClassName}>Cód. de barra</span>
         <input
           type="text"
-          inputMode="numeric"
-          value={stock}
-          placeholder="0"
+          value={barcode}
+          placeholder="Opcional"
+          maxLength={64}
           disabled={disabled}
-          onChange={(event) => onStockChange(event.target.value.replace(/\D/g, ""))}
+          onChange={(event) => onBarcodeChange(event.target.value)}
           onKeyDown={commitOnEnter}
-          className={`${inputCls} !h-10 !text-sm tabular-nums`}
+          className={`${inputCls} !h-10 !text-sm`}
         />
       </label>
+
+      {!twoColumn && onAdjustStock && (
+        <div className={fieldClassName}>
+          <span className={fieldLabelClassName}>Stock</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-white/8 bg-black/15 px-3 text-sm font-black tabular-nums text-white">
+              {stock ?? 0} <span className="text-xs font-bold text-white/42">unidades</span>
+            </span>
+            <AdminSecondaryButton size="sm" onClick={onAdjustStock}>
+              Ajustar stock
+            </AdminSecondaryButton>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -6,6 +6,8 @@ export interface BusinessCostCatalogVariant {
   sku?: string | null
   activo: boolean
   stock: number | null
+  color_hex?: string | null
+  codigo_barra?: string | null
 }
 
 export interface BusinessCostCatalogProduct {
@@ -14,6 +16,7 @@ export interface BusinessCostCatalogProduct {
   activo: boolean
   stock: number | null
   sku?: string | null
+  codigo_barra?: string | null
   standalone_key?: string | null
   producto_variantes?: BusinessCostCatalogVariant[]
 }
@@ -130,6 +133,37 @@ export async function createBusinessCost(
   pendingCreates.set(idempotencyKey, operation)
   try {
     return await operation
+  } finally {
+    if (pendingCreates.get(idempotencyKey) === operation) {
+      pendingCreates.delete(idempotencyKey)
+    }
+  }
+}
+
+export interface NewCostCatalogArticle {
+  productId: number
+  variantId: number | null
+}
+
+export async function createCostCatalogArticle(
+  payload: Record<string, unknown>,
+  idempotencyKey: string,
+) {
+  if (!/^[A-Za-z0-9._:-]{8,240}$/.test(idempotencyKey)) {
+    throw new Error("La operación no tiene una clave de idempotencia válida.")
+  }
+
+  const pending = pendingCreates.get(idempotencyKey)
+  if (pending) return pending as unknown as Promise<NewCostCatalogArticle>
+
+  const operation = request("/api/admin/costs/new-article", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: { "Idempotency-Key": idempotencyKey },
+  })
+  pendingCreates.set(idempotencyKey, operation)
+  try {
+    return (await operation) as unknown as NewCostCatalogArticle
   } finally {
     if (pendingCreates.get(idempotencyKey) === operation) {
       pendingCreates.delete(idempotencyKey)

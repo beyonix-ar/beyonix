@@ -30,6 +30,7 @@ export interface SupabaseProductoVariante {
   producto_id: number
   nombre: string
   sku?: string | null
+  codigo_barra?: string | null
   peso_empaquetado_kg?: number | null
   alto_paquete_cm?: number | null
   ancho_paquete_cm?: number | null
@@ -114,6 +115,7 @@ export interface SupabaseProducto {
   imagen_principal: string | null
   video_url: string | null
   sku?: string | null
+  codigo_barra?: string | null
   created_from_costs?: boolean
   peso_empaquetado_kg?: number | null
   alto_paquete_cm?: number | null

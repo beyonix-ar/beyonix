@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react"
+import { createPortal } from "react-dom"
 import {
   AlertTriangle,
   ArrowDown,
@@ -27,6 +28,7 @@ import {
 
 import {
   createBusinessCost,
+  createCostCatalogArticle,
   deleteBusinessCost,
   getBusinessCosts,
   type BusinessCostsData,
@@ -44,6 +46,11 @@ import {
 import { formatPrice } from "../productos/helpers"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 import { useAuth } from "@/context/auth-context"
+import {
+  AdminDangerButton,
+  AdminModal,
+  AdminSecondaryButton,
+} from "../../components/admin-controls"
 
 type CostMode = "product" | "expense"
 type PurchaseSortKey =
@@ -125,15 +132,31 @@ const EXPENSE_CATEGORIES = [
   "Seguros",
   "Donación/Regalo",
   "Sorteo/Evento",
+  "Producto dañado/perdido",
   "Otros",
 ]
 
-const PRODUCT_EXPENSE_CATEGORIES = new Set(["Donación/Regalo", "Sorteo/Evento"])
+const PRODUCT_EXPENSE_CATEGORIES = new Set([
+  "Donación/Regalo",
+  "Sorteo/Evento",
+  "Producto dañado/perdido",
+])
+// Categorías que son siempre una salida de stock (nunca de dinero): no
+// tiene sentido preguntar "Dinero o Productos" para una unidad rota.
+const PRODUCT_ONLY_EXPENSE_CATEGORIES = new Set(["Producto dañado/perdido"])
 
 function today() {
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "America/Argentina/Buenos_Aires",
   }).format(new Date())
+}
+
+const DEFAULT_OTHER_COST = "600"
+const OTHER_COST_STORAGE_KEY = "beyonix-admin-last-other-cost"
+
+function getStoredOtherCost() {
+  if (typeof window === "undefined") return DEFAULT_OTHER_COST
+  return window.localStorage.getItem(OTHER_COST_STORAGE_KEY) || DEFAULT_OTHER_COST
 }
 
 function numeric(value: string) {
@@ -152,6 +175,43 @@ function Field({ label, children, className = "" }: {
       </span>
       {children}
     </label>
+  )
+}
+
+function normalizeHex(value: string) {
+  const clean = value.trim()
+  return /^#[0-9a-fA-F]{6}$/.test(clean) ? clean.toUpperCase() : "#000000"
+}
+
+function ColorPickerInput({ colorHex, colorName, onColorHexChange, onColorNameChange }: {
+  colorHex: string
+  colorName: string
+  onColorHexChange: (value: string) => void
+  onColorNameChange: (value: string) => void
+}) {
+  return (
+    <div className="relative">
+      <input
+        value={colorName}
+        placeholder="Por ej: Verde"
+        aria-label="Nombre del color"
+        maxLength={160}
+        onChange={(event) => onColorNameChange(event.target.value)}
+        className={`${inputClass} pl-11`}
+      />
+      <span
+        className="absolute left-2 top-1/2 size-7 -translate-y-1/2 cursor-pointer overflow-hidden rounded-lg border-2 border-white/20"
+        style={{ backgroundColor: normalizeHex(colorHex) }}
+      >
+        <input
+          type="color"
+          value={normalizeHex(colorHex)}
+          aria-label="Elegir color"
+          onChange={(event) => onColorHexChange(event.target.value.toUpperCase())}
+          className="absolute inset-0 size-full cursor-pointer opacity-0"
+        />
+      </span>
+    </div>
   )
 }
 
@@ -255,7 +315,7 @@ function ProductSelect({
   const selectedVariant = selectedProduct?.producto_variantes?.find(
     (variant) => value === `v:${selectedProduct.id}:${variant.id}`,
   )
-  const isUncatalogued = value === "custom"
+  const isCreatingNewArticle = value === "custom"
   const normalizedSearch = search
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -298,9 +358,9 @@ function ProductSelect({
         <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-sky/35 bg-beyonix-blue/45 text-beyonix-sky shadow-[0_0_12px_rgba(140,200,242,0.12)] transition group-hover:border-beyonix-sky/60 group-hover:text-white">
           <Boxes className="size-4" />
         </span>
-        <span className={`min-w-0 flex-1 truncate ${selectedProduct || isUncatalogued ? "text-white" : "text-white/88"}`}>
-          {isUncatalogued
-            ? "Artículo no catalogado"
+        <span className={`min-w-0 flex-1 truncate ${selectedProduct || isCreatingNewArticle ? "text-white" : "text-white/88"}`}>
+          {isCreatingNewArticle
+            ? "Crear artículo nuevo"
             : selectedVariant
               ? `${selectedProduct?.nombre} · ${selectedVariant.nombre}`
               : selectedProduct?.nombre ?? "Seleccionar producto"}
@@ -325,15 +385,15 @@ function ProductSelect({
             <button
               type="button"
               role="option"
-              aria-selected={isUncatalogued}
+              aria-selected={isCreatingNewArticle}
               onClick={() => {
                 onChange("custom")
                 setOpen(false)
                 setSearch("")
               }}
-              className={`mb-1 flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm font-bold transition ${isUncatalogued ? "border-beyonix-sky/45 bg-beyonix-blue/55 text-white" : "border-beyonix-sky/20 text-beyonix-sky hover:bg-beyonix-blue/24"}`}
+              className={`mb-1 flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm font-bold transition ${isCreatingNewArticle ? "border-beyonix-sky/45 bg-beyonix-blue/55 text-white" : "border-beyonix-sky/20 text-beyonix-sky hover:bg-beyonix-blue/24"}`}
             >
-              <span className="truncate">Artículo no catalogado</span>
+              <span className="truncate">Crear artículo nuevo</span>
               <Plus className="size-4 shrink-0" />
             </button>
           )}
@@ -342,8 +402,12 @@ function ProductSelect({
             const active = productValue === value
             const hasVariants = Boolean(product.producto_variantes?.length)
             const availableStock = Number(product.stock ?? 0)
+            // Un producto con variantes nunca se compra "a nivel producto":
+            // toda compra debe quedar tagueada a una variante concreta
+            // (SKU/color), para que el stock quede asignado desde el momento
+            // en que se valida la compra, sin un paso de asignación posterior.
             const productDisabled =
-              inventoryMode && (hasVariants || availableStock <= 0)
+              hasVariants || (inventoryMode && availableStock <= 0)
             return (
               <div key={product.id}>
                 <button
@@ -365,9 +429,7 @@ function ProductSelect({
                   </span>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-10px font-black ${product.activo ? "border-emerald-400/20 bg-emerald-400/8 text-emerald-300" : "border-white/10 bg-white/5 text-white/38"}`}>
                     {hasVariants
-                      ? inventoryMode
-                        ? "Elegí una variante"
-                        : "Ingreso sin asignar"
+                      ? "Elegí una variante"
                       : inventoryMode
                         ? `${availableStock} disponibles`
                         : product.activo ? "Activo" : "Inactivo"}
@@ -496,6 +558,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const { isSuperAdmin } = useAuth()
   const productFormRef = useRef<HTMLElement>(null)
   const productCreateAttemptRef = useRef<IdempotencyAttempt | null>(null)
+  const newArticleCreateAttemptRef = useRef<IdempotencyAttempt | null>(null)
   const expenseCreateAttemptRef = useRef<IdempotencyAttempt | null>(null)
   const [data, setData] = useState<BusinessCostsData | null>(null)
   const [mode, setMode] = useState<CostMode>("product")
@@ -503,6 +566,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: CostMode; id: string; message: string } | null
+  >(null)
+  const [pendingForceDelete, setPendingForceDelete] = useState<
+    { kind: CostMode; id: string } | null
+  >(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [purchaseSort, setPurchaseSort] = useState<PurchaseSortKey>("date")
   const [purchaseSortDirection, setPurchaseSortDirection] =
     useState<PurchaseSortDirection>("desc")
@@ -514,6 +584,9 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [article, setArticle] = useState("")
   const [customArticleName, setCustomArticleName] = useState("")
+  const [newArticleColor, setNewArticleColor] = useState("")
+  const [newArticleColorName, setNewArticleColorName] = useState("")
+  const [newArticleBarcode, setNewArticleBarcode] = useState("")
   const [productSku, setProductSku] = useState("")
   const [purchaseDate, setPurchaseDate] = useState(today)
   const [quantity, setQuantity] = useState("")
@@ -523,9 +596,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   >("recibida")
   const [unitCost, setUnitCost] = useState("")
   const [freightCost, setFreightCost] = useState("")
-  const [taxCost, setTaxCost] = useState("")
-  const [commissionCost, setCommissionCost] = useState("")
-  const [otherCost, setOtherCost] = useState("")
+  const [otherCost, setOtherCost] = useState(getStoredOtherCost)
   const [productSupplier, setProductSupplier] = useState("")
   const [productDocumentType, setProductDocumentType] = useState("")
   const [productDocumentNumber, setProductDocumentNumber] = useState("")
@@ -833,9 +904,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
 
   const resetProductForm = () => {
     productCreateAttemptRef.current = null
+    newArticleCreateAttemptRef.current = null
     setEditingProductId(null)
     setArticle("")
     setCustomArticleName("")
+    setNewArticleColor("")
+    setNewArticleColorName("")
+    setNewArticleBarcode("")
     setProductSku("")
     setPurchaseDate(today())
     setQuantity("")
@@ -843,9 +918,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setPurchaseReception("recibida")
     setUnitCost("")
     setFreightCost("")
-    setTaxCost("")
-    setCommissionCost("")
-    setOtherCost("")
+    setOtherCost(getStoredOtherCost())
     setProductSupplier("")
     setProductDocumentType("")
     setProductDocumentNumber("")
@@ -862,16 +935,32 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
           ? `v:${item.product_id}:${item.variant_id}`
           : `p:${item.product_id}`,
     )
-    setCustomArticleName(item.article_name ?? "")
-    setProductSku(item.sku ?? "")
+    setCustomArticleName((item.article_name ?? "").toUpperCase())
+    const linkedProduct =
+      item.product_id != null
+        ? data?.catalog.find(
+            (product) =>
+              !product.standalone_key && Number(product.id) === item.product_id,
+          )
+        : undefined
+    const linkedVariant =
+      item.variant_id != null
+        ? linkedProduct?.producto_variantes?.find(
+            (variant) => variant.id === item.variant_id,
+          )
+        : undefined
+    setNewArticleColor(linkedVariant?.color_hex ?? "")
+    setNewArticleColorName(linkedVariant ? linkedVariant.nombre.toUpperCase() : "")
+    setNewArticleBarcode(
+      (linkedVariant ? linkedVariant.codigo_barra : linkedProduct?.codigo_barra) ?? "",
+    )
+    setProductSku((item.sku ?? "").toUpperCase())
     setPurchaseDate(item.purchase_date)
     setQuantity(String(item.quantity))
     setReceivedQuantity(String(item.received_quantity ?? item.quantity))
     setPurchaseReception(item.reception_status ?? "recibida")
     setUnitCost(String(item.unit_cost))
     setFreightCost(Number(item.freight_cost) ? String(item.freight_cost) : "")
-    setTaxCost(Number(item.tax_cost) ? String(item.tax_cost) : "")
-    setCommissionCost(Number(item.commission_cost) ? String(item.commission_cost) : "")
     setOtherCost(Number(item.other_cost) ? String(item.other_cost) : "")
     setProductSupplier(item.supplier ?? "")
     setProductDocumentType(item.document_type ?? "")
@@ -891,7 +980,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   ) => {
     resetProductForm()
     setArticle(value)
-    setProductSku(sku)
+    setProductSku(sku.toUpperCase())
     setError("")
     setMessage("Completá la cantidad recibida y el costo para registrar el ingreso.")
     requestAnimationFrame(() => {
@@ -903,25 +992,39 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   }
 
   const saveProduct = async () => {
+    const isNewArticle = article === "custom"
     const parts = article.split(":")
-    const productId = parts[0] === "p" || parts[0] === "v" ? parts[1] : null
-    const variantId = parts[0] === "v" ? parts[2] : null
+    let productId = parts[0] === "p" || parts[0] === "v" ? parts[1] : null
+    let variantId = parts[0] === "v" ? parts[2] : null
     const standaloneProduct = data?.catalog.find(
       (product) => product.standalone_key && article === `c:${product.standalone_key}`,
     )
-    const articleName =
-      article === "custom"
-        ? customArticleName.trim()
-        : standaloneProduct?.nombre.trim() ?? ""
+    const newArticleName = customArticleName.trim()
+    const newArticleColorHex = newArticleColor.trim()
+    const newArticleColorNameValue = newArticleColorName.trim()
+    const newArticleBarcodeValue = newArticleBarcode.trim()
+    const articleName = isNewArticle
+      ? ""
+      : standaloneProduct?.nombre.trim() ?? ""
+    const showsCatalogArticleFields = isNewArticle || Boolean(productId)
 
     if (
-      (!productId && !articleName) ||
+      (!productId && !isNewArticle && !articleName) ||
+      (isNewArticle && !newArticleName) ||
+      (isNewArticle && !productSku.trim()) ||
+      (isNewArticle && !newArticleColorHex) ||
+      (isNewArticle && !newArticleColorNameValue) ||
       !purchaseDate ||
       !quantity ||
       !unitCost ||
+      (isNewArticle && !freightCost) ||
       (purchaseReception === "parcial" && !receivedQuantity)
     ) {
-      setError("Completá artículo, fecha, cantidad y costo unitario.")
+      setError(
+        isNewArticle
+          ? "Completá nombre, SKU, color, cantidad, costo unitario y flete."
+          : "Completá artículo, fecha, cantidad y costo unitario.",
+      )
       return
     }
     if (
@@ -932,11 +1035,45 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       setError("La recepción parcial debe ser mayor que cero y menor que la cantidad comprada.")
       return
     }
+    if (
+      showsCatalogArticleFields &&
+      newArticleColorHex &&
+      !/^#[0-9A-Fa-f]{6}$/.test(newArticleColorHex)
+    ) {
+      setError("El color elegido no es válido.")
+      return
+    }
+    if (showsCatalogArticleFields && newArticleColorNameValue && !newArticleColorHex) {
+      setError("Elegí un color con el selector para poder ponerle nombre.")
+      return
+    }
 
     try {
       setSaving(true)
       setError("")
       setMessage("")
+
+      if (showsCatalogArticleFields) {
+        const articlePayload = {
+          productId: isNewArticle ? null : productId,
+          variantId: isNewArticle ? null : variantId,
+          name: newArticleName,
+          sku: productSku,
+          colorHex: newArticleColorHex || null,
+          colorName: newArticleColorNameValue || null,
+          barcode: newArticleBarcodeValue || null,
+        }
+        const attempt = getOrCreateIdempotencyAttempt(
+          newArticleCreateAttemptRef.current,
+          articlePayload,
+        )
+        newArticleCreateAttemptRef.current = attempt
+        const created = await createCostCatalogArticle(articlePayload, attempt.key)
+        newArticleCreateAttemptRef.current = null
+        productId = String(created.productId)
+        variantId = created.variantId != null ? String(created.variantId) : null
+      }
+
       const payload = {
         kind: "product",
         id: editingProductId,
@@ -955,8 +1092,6 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         receptionStatus: purchaseReception,
         unitCost,
         freightCost,
-        taxCost,
-        commissionCost,
         otherCost,
         supplier: productSupplier,
         documentType: productDocumentType,
@@ -978,6 +1113,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       const successMessage = editingProductId
         ? "Compra actualizada correctamente."
         : "Compra guardada correctamente."
+      window.localStorage.setItem(
+        OTHER_COST_STORAGE_KEY,
+        otherCost || DEFAULT_OTHER_COST,
+      )
       resetProductForm()
       setMessage(successMessage)
       await load()
@@ -1082,48 +1221,65 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  const remove = async (kind: CostMode, id: string) => {
+  const requestRemove = (kind: CostMode, id: string) => {
     const restoresInventory =
       kind === "expense" &&
       data?.expenses.some((item) => item.id === id && item.expense_type === "product")
-    const confirmation = restoresInventory
-      ? "¿Querés eliminar esta salida? Las unidades se reintegrarán al stock."
-      : "¿Querés eliminar este movimiento?"
-    if (!window.confirm(confirmation)) return
+    setError("")
+    setPendingDelete({
+      kind,
+      id,
+      message: restoresInventory
+        ? "Las unidades se reintegrarán al stock."
+        : "Esta acción no se puede deshacer.",
+    })
+  }
+
+  const confirmRemove = async () => {
+    if (!pendingDelete) return
+    const { kind, id } = pendingDelete
     try {
+      setDeletingId(id)
       setError("")
       await deleteBusinessCost(kind, id)
       if (kind === "product" && editingProductId === id) resetProductForm()
       await load()
       onChanged?.()
+      setPendingDelete(null)
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "No se pudo eliminar el movimiento."
       const stockConflict = kind === "product" && /consumida/i.test(message)
+      setPendingDelete(null)
       if (stockConflict && isSuperAdmin) {
-        const forceConfirmed = window.confirm(
-          "Esta compra ya tiene stock consumido por ventas posteriores. " +
-            "Como SUPER ADMIN podés forzar la eliminación de todos modos: " +
-            "es una acción permanente y puede dejar el stock derivado en negativo. ¿Forzar la eliminación?",
-        )
-        if (forceConfirmed) {
-          try {
-            await deleteBusinessCost(kind, id, { force: true })
-            if (editingProductId === id) resetProductForm()
-            await load()
-            onChanged?.()
-            return
-          } catch (forceCause) {
-            setError(
-              forceCause instanceof Error
-                ? forceCause.message
-                : "No se pudo forzar la eliminación de la compra.",
-            )
-            return
-          }
-        }
+        setPendingForceDelete({ kind, id })
+        return
       }
       setError(message)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const confirmForceRemove = async () => {
+    if (!pendingForceDelete) return
+    const { kind, id } = pendingForceDelete
+    try {
+      setDeletingId(id)
+      setError("")
+      await deleteBusinessCost(kind, id, { force: true })
+      if (editingProductId === id) resetProductForm()
+      await load()
+      onChanged?.()
+      setPendingForceDelete(null)
+    } catch (forceCause) {
+      setError(
+        forceCause instanceof Error
+          ? forceCause.message
+          : "No se pudo forzar la eliminación de la compra.",
+      )
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -1179,7 +1335,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                   onChange={(value) => {
                     setArticle(value)
                     if (value === "custom") {
-                      setCustomArticleName(latestArticleBase)
+                      setCustomArticleName(latestArticleBase.toUpperCase())
                     } else {
                       setCustomArticleName("")
                     }
@@ -1197,10 +1353,26 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                           value === `v:${selectedProduct.id}:${variant.id}`,
                       )
                     setProductSku(
-                      selectedVariant
-                        ? selectedVariant.sku ?? ""
-                        : selectedProduct?.sku ?? "",
+                      (selectedVariant
+                        ? selectedVariant.sku
+                        : selectedProduct?.sku
+                      )?.toUpperCase() ?? "",
                     )
+                    if (value === "custom" || selectedProduct?.standalone_key) {
+                      setNewArticleColor("")
+                      setNewArticleColorName("")
+                      setNewArticleBarcode("")
+                    } else {
+                      setNewArticleColor(selectedVariant?.color_hex ?? "")
+                      setNewArticleColorName(
+                        selectedVariant ? selectedVariant.nombre.toUpperCase() : "",
+                      )
+                      setNewArticleBarcode(
+                        (selectedVariant
+                          ? selectedVariant.codigo_barra
+                          : selectedProduct?.codigo_barra) ?? "",
+                      )
+                    }
                   }}
                 />
               </Field>
@@ -1209,42 +1381,45 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                   <HistoryAutocompleteInput
                     value={customArticleName}
                     suggestions={articleNameSuggestions}
-                    onChange={setCustomArticleName}
-                    placeholder="Ej. cajas para envíos"
+                    onChange={(value) => setCustomArticleName(value.toUpperCase())}
+                    placeholder="Por ej: Auricular"
                     maxLength={180}
                     autoFocus
                   />
                 </Field>
               )}
-              <Field label="SKU (opcional)">
+              {(article === "custom" || article.startsWith("p:") || article.startsWith("v:")) && (
+                <>
+                  <Field label={article === "custom" ? "Color" : "Color (opcional)"}>
+                    <ColorPickerInput
+                      colorHex={newArticleColor}
+                      colorName={newArticleColorName}
+                      onColorHexChange={setNewArticleColor}
+                      onColorNameChange={(value) => setNewArticleColorName(value.toUpperCase())}
+                    />
+                  </Field>
+                  <Field label="Código de barra (opcional)">
+                    <input
+                      value={newArticleBarcode}
+                      onChange={(event) => setNewArticleBarcode(event.target.value)}
+                      className={inputClass}
+                      placeholder="Escaneá o escribí el código"
+                      maxLength={64}
+                    />
+                  </Field>
+                </>
+              )}
+              <Field label={article === "custom" ? "SKU" : "SKU (opcional)"}>
                 <input
                   value={productSku}
-                  onChange={(event) => setProductSku(event.target.value)}
+                  onChange={(event) => setProductSku(event.target.value.toUpperCase())}
                   className={inputClass}
-                  placeholder="Ej. TRI-360"
+                  placeholder="Por ej: Aur-01"
                   maxLength={120}
                 />
               </Field>
               <Field label="Fecha compra"><AdminDatePicker title="Fecha compra" ariaLabel="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} centered /></Field>
               <Field label="Cantidad comprada"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
-              <Field label="Recepción">
-                <ModernSelect
-                  value={purchaseReception}
-                  onChange={(value) =>
-                    setPurchaseReception(
-                      value as typeof purchaseReception,
-                    )
-                  }
-                  centered
-                  ariaLabel="Estado de recepción"
-                  options={[
-                    { value: "recibida", label: "Recibida completa" },
-                    { value: "parcial", label: "Recibida parcialmente" },
-                    { value: "pendiente", label: "Pendiente de recepción" },
-                    { value: "anulada", label: "Compra anulada" },
-                  ]}
-                />
-              </Field>
               {purchaseReception === "parcial" && (
                 <Field label="Cantidad recibida">
                   <input
@@ -1261,8 +1436,6 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               <Field label="Costo unitario"><MoneyInput value={unitCost} onChange={setUnitCost} /></Field>
               <Field label="Proveedor"><HistoryAutocompleteInput value={productSupplier} suggestions={supplierSuggestions} onChange={setProductSupplier} placeholder="Opcional" /></Field>
               <Field label="Flete"><MoneyInput value={freightCost} onChange={setFreightCost} /></Field>
-              <Field label="Impuestos"><MoneyInput value={taxCost} onChange={setTaxCost} /></Field>
-              <Field label="Comisiones"><MoneyInput value={commissionCost} onChange={setCommissionCost} /></Field>
               <Field label="Otros costos"><MoneyInput value={otherCost} onChange={setOtherCost} /></Field>
               <Field label="Comprobante"><input value={productDocumentType} onChange={(event) => setProductDocumentType(event.target.value)} className={inputClass} placeholder="Factura, recibo" /></Field>
               <Field label="Número"><input value={productDocumentNumber} onChange={(event) => setProductDocumentNumber(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
@@ -1404,7 +1577,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                     <th className="px-3 py-2.5 text-center">Acción</th>
                   </tr>
                 </thead>
-                <tbody className="[&_td]:align-middle [&_td]:text-center [&_td:nth-child(2)]:text-left">{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); const received = Number(item.received_quantity ?? item.quantity); const receptionLabel = item.reception_status === "anulada" ? "Anulada" : item.reception_status === "pendiente" ? "Pendiente" : item.reception_status === "parcial" ? "Parcial" : "Recibida"; return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.purchase_date}</td><td className="px-3 py-3 font-bold text-white">{articleLabel}</td><td className="px-3 py-3 font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 tabular-nums"><span className="block">{received}/{item.quantity}</span><span className="text-10px font-bold text-white/40">{receptionLabel}</span></td><td className="px-3 py-3 tabular-nums"><span className="flex w-full items-center justify-center">{formatPrice(Number(item.unit_cost))}</span></td><td className="px-3 py-3 tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" onClick={() => void remove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></div></td></tr>})}</tbody>
+                <tbody className="[&_td]:align-middle [&_td]:text-center [&_td:nth-child(2)]:text-left">{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); const received = Number(item.received_quantity ?? item.quantity); const receptionLabel = item.reception_status === "anulada" ? "Anulada" : item.reception_status === "pendiente" ? "Pendiente" : item.reception_status === "parcial" ? "Parcial" : "Recibida"; return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.purchase_date}</td><td className="px-3 py-3 font-bold text-white">{articleLabel}</td><td className="px-3 py-3 font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 tabular-nums"><span className="block">{received}/{item.quantity}</span><span className="text-10px font-bold text-white/40">{receptionLabel}</span></td><td className="px-3 py-3 tabular-nums"><span className="flex w-full items-center justify-center">{formatPrice(Number(item.unit_cost))}</span></td><td className="px-3 py-3 tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" disabled={deletingId === item.id} onClick={() => requestRemove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10 disabled:cursor-wait disabled:opacity-50">{deletingId === item.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</button></div></td></tr>})}</tbody>
               </table>
               {!sortedProductCosts.length && (
                 <p className="px-4 py-8 text-center text-sm text-white/42">
@@ -1473,9 +1646,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                   setExpenseType("money")
                   setExpenseProduct("")
                   setExpenseProductQuantity("")
+                } else if (PRODUCT_ONLY_EXPENSE_CATEGORIES.has(category)) {
+                  setExpenseType("product")
+                  setExpenseAmount("")
                 }
               }} options={EXPENSE_CATEGORIES.map((category) => ({ value: category, label: category }))} /></Field>
-              {PRODUCT_EXPENSE_CATEGORIES.has(expenseCategory) && (
+              {PRODUCT_EXPENSE_CATEGORIES.has(expenseCategory) &&
+                !PRODUCT_ONLY_EXPENSE_CATEGORIES.has(expenseCategory) && (
                 <Field label="Tipo de entrega">
                   <ModernSelect
                     value={expenseType}
@@ -1575,13 +1752,93 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
             <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-black text-white">Historial de gastos</h3><span className="text-xs font-bold text-white/38">{data?.expenses.length ?? 0} registros</span></div>
             <div className="overflow-x-auto rounded-2xl border border-white/7">
               <table className="w-full min-w-1000px text-sm"><thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42"><tr><th className="px-3 py-2.5 text-left">Fecha</th><th className="px-3 py-2.5 text-left">Categoría</th><th className="px-3 py-2.5 text-left">Descripción</th><th className="px-3 py-2.5 text-right">Importe</th><th className="px-3 py-2.5 text-center">Estado</th><th className="px-3 py-2.5 text-center">Frecuencia</th><th className="px-3 py-2.5 text-left">Proveedor</th><th className="px-3 py-2.5 text-center">Acción</th></tr></thead>
-                <tbody>{data?.expenses.map((item) => <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.expense_date}</td><td className="px-3 py-3"><span className="font-bold text-white">{item.category}</span>{item.recipient && <span className="mt-0.5 block text-xs text-white/48">Dirigido a: {item.recipient}</span>}{item.category_detail && <span className="mt-0.5 block text-xs text-white/48">{item.category_detail}</span>}{item.expense_type === "product" && <span className="mt-1 block text-xs font-bold text-beyonix-sky">{item.quantity} × {item.product_name}{item.product_sku ? ` · ${item.product_sku}` : ""}</span>}</td><td className="px-3 py-3">{item.description || "—"}</td><td className="px-3 py-3 text-right font-black tabular-nums text-white">{item.expense_type === "product" ? <span className="text-xs text-beyonix-sky">Salida de stock</span> : formatPrice(Number(item.amount))}</td><td className="px-3 py-3 text-center"><span className={`rounded-full border px-2.5 py-1 text-xs font-black ${item.status === "pagado" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>{item.expense_type === "product" ? "Registrado" : item.status === "pagado" ? "Pagado" : "Pendiente"}</span></td><td className="px-3 py-3 text-center capitalize">{item.recurrence}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3 text-center"><button type="button" aria-label="Eliminar gasto" onClick={() => void remove("expense", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10"><Trash2 className="size-3.5" /></button></td></tr>)}</tbody>
+                <tbody>{data?.expenses.map((item) => <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.expense_date}</td><td className="px-3 py-3"><span className="font-bold text-white">{item.category}</span>{item.recipient && <span className="mt-0.5 block text-xs text-white/48">Dirigido a: {item.recipient}</span>}{item.category_detail && <span className="mt-0.5 block text-xs text-white/48">{item.category_detail}</span>}{item.expense_type === "product" && <span className="mt-1 block text-xs font-bold text-beyonix-sky">{item.quantity} × {item.product_name}{item.product_sku ? ` · ${item.product_sku}` : ""}</span>}</td><td className="px-3 py-3">{item.description || "—"}</td><td className="px-3 py-3 text-right font-black tabular-nums text-white">{item.expense_type === "product" ? <span className="text-xs text-beyonix-sky">Salida de stock</span> : formatPrice(Number(item.amount))}</td><td className="px-3 py-3 text-center"><span className={`rounded-full border px-2.5 py-1 text-xs font-black ${item.status === "pagado" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" : "border-amber-400/25 bg-amber-400/10 text-amber-200"}`}>{item.expense_type === "product" ? "Registrado" : item.status === "pagado" ? "Pagado" : "Pendiente"}</span></td><td className="px-3 py-3 text-center capitalize">{item.recurrence}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3 text-center"><button type="button" aria-label="Eliminar gasto" disabled={deletingId === item.id} onClick={() => requestRemove("expense", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10 disabled:cursor-wait disabled:opacity-50">{deletingId === item.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</button></td></tr>)}</tbody>
               </table>
               {!data?.expenses.length && <p className="px-4 py-8 text-center text-sm text-white/42">Todavía no registraste gastos.</p>}
             </div>
           </section>
         </>
       )}
+
+      {pendingDelete &&
+        createPortal(
+          <AdminModal
+            open
+            compact
+            title="Eliminar movimiento"
+            description={pendingDelete.message}
+            onClose={() => {
+              if (!deletingId) setPendingDelete(null)
+            }}
+            footer={
+              <div className="flex items-center justify-end gap-2">
+                <AdminSecondaryButton
+                  disabled={Boolean(deletingId)}
+                  onClick={() => setPendingDelete(null)}
+                >
+                  Cancelar
+                </AdminSecondaryButton>
+                <AdminDangerButton
+                  disabled={Boolean(deletingId)}
+                  onClick={() => void confirmRemove()}
+                >
+                  {deletingId ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                  {deletingId ? "Eliminando…" : "Eliminar"}
+                </AdminDangerButton>
+              </div>
+            }
+          >
+            <p className="text-sm text-white/60">
+              ¿Querés eliminar este movimiento?
+            </p>
+          </AdminModal>,
+          document.body,
+        )}
+
+      {pendingForceDelete &&
+        createPortal(
+          <AdminModal
+            open
+            compact
+            title="Forzar eliminación"
+            description="Esta compra ya tiene stock consumido por ventas posteriores."
+            onClose={() => {
+              if (!deletingId) setPendingForceDelete(null)
+            }}
+            footer={
+              <div className="flex items-center justify-end gap-2">
+                <AdminSecondaryButton
+                  disabled={Boolean(deletingId)}
+                  onClick={() => setPendingForceDelete(null)}
+                >
+                  Cancelar
+                </AdminSecondaryButton>
+                <AdminDangerButton
+                  disabled={Boolean(deletingId)}
+                  onClick={() => void confirmForceRemove()}
+                >
+                  {deletingId ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                  {deletingId ? "Forzando…" : "Forzar eliminación"}
+                </AdminDangerButton>
+              </div>
+            }
+          >
+            <p className="text-sm text-white/60">
+              Como <span className="font-bold text-white">SUPER ADMIN</span> podés
+              forzar la eliminación de todos modos: es una acción permanente y
+              puede dejar el stock derivado en negativo.
+            </p>
+          </AdminModal>,
+          document.body,
+        )}
     </div>
   )
 }

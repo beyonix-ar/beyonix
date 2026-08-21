@@ -17,6 +17,7 @@ interface AdminVariantItemProps {
   hideSku?: boolean
   colorHex?: string | null
   colorLabel?: string
+  accentColor?: string | null
   stock: number
   stateLabel: string
   stateTone?: VariantStateTone
@@ -53,7 +54,7 @@ export function AdminVariantThumbnail({
   return (
     <span
       className={`relative flex shrink-0 items-center justify-center overflow-hidden border bg-[#07111b] ${
-        density === "comfortable" ? "size-16 rounded-2xl" : "size-11 rounded-xl"
+        density === "comfortable" ? "size-16 rounded-2xl" : "size-9 rounded-lg"
       } ${
         tone === "discounted" ? "border-amber-300/24" : "border-white/10"
       }`}
@@ -64,7 +65,7 @@ export function AdminVariantThumbnail({
           alt={`Imagen de ${name}`}
           fill
           unoptimized={image.startsWith("blob:") || image.startsWith("data:")}
-          sizes={density === "comfortable" ? "64px" : "44px"}
+          sizes={density === "comfortable" ? "64px" : "36px"}
           className="object-cover"
         />
       ) : (
@@ -88,6 +89,7 @@ export function AdminVariantItem({
   hideSku = false,
   colorHex,
   colorLabel,
+  accentColor,
   stock,
   stateLabel,
   stateTone = "active",
@@ -191,10 +193,15 @@ export function AdminVariantItem({
   return (
     <article
       data-variant-drop-id={dropId}
-      className={`admin-variant-item admin-variant-compact grid grid-cols-admin-product-summary items-center gap-3 rounded-xl border px-4 py-2.5 transition-colors ${
+      style={
+        accentColor
+          ? { borderLeftColor: accentColor, borderLeftWidth: 3 }
+          : undefined
+      }
+      className={`admin-variant-item admin-variant-compact grid grid-cols-admin-product-summary items-center gap-3 rounded-lg border px-4 py-2 transition-colors ${
         tone === "discounted"
-          ? "border-amber-300/22 bg-amber-300/[0.045]"
-          : "border-cyan-400/13 bg-cyan-400/[0.035]"
+          ? "border-amber-300/20 bg-amber-300/[0.04]"
+          : "border-white/7 bg-white/[0.018]"
       } ${selected ? "ring-1 ring-cyan-300/55 shadow-[0_0_20px_rgba(34,211,238,0.08)]" : ""}`}
     >
       <div className="flex min-w-0 items-center gap-2.5">

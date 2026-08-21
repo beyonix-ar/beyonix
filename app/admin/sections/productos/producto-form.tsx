@@ -79,9 +79,6 @@ export function ProductoForm({
   const [persistedSpecifications, setPersistedSpecifications] = useState<
     SupabaseProductoEspecificacion[]
   >(producto?.producto_especificaciones ?? [])
-  const [persistedVariantAllocations, setPersistedVariantAllocations] = useState<
-    Record<number, number>
-  >({})
   const [pendingVariantStates, setPendingVariantStates] = useState<
     Record<number, boolean>
   >(() =>
@@ -116,6 +113,12 @@ export function ProductoForm({
   })
 
   const currentProductoId = producto?.id || savedId
+  // El SKU pertenece a la variante en cuanto el producto tiene al menos una:
+  // la DB ya fuerza productos.sku a null en ese caso (validate_product_sku_ownership).
+  // "SKU principal" sólo tiene sentido para un producto que nunca tendrá variantes.
+  const hasAnyVariants = currentProductoId
+    ? persistedVariants.length > 0
+    : draftVariants.length > 0
   const handlePersistedVariantsChange = useCallback(
     (variants: SupabaseProductoVariante[]) => {
       setPersistedVariants(variants)
@@ -170,7 +173,7 @@ export function ProductoForm({
           sku: variant.sku ?? null,
           colorHex: variant.color_hex,
           images: variant.imagenes ?? [],
-          assignedStock: persistedVariantAllocations[variant.id] ?? 0,
+          assignedStock: variant.stock ?? 0,
         }))
       : draftVariants.map((variant, index) => ({
           id: variant.tempId,
@@ -226,7 +229,6 @@ export function ProductoForm({
     draftVariants,
     form,
     persistedSpecifications,
-    persistedVariantAllocations,
     persistedVariants,
     pendingVariantStates,
   ])
@@ -448,20 +450,22 @@ export function ProductoForm({
                   />
                 </AdminFormField>
 
-                <AdminFormField
-                  label="SKU principal"
-                  labelClassName={productFieldLabelClassName}
-                >
-                  <input
-                    id="sku"
-                    type="text"
-                    maxLength={120}
-                    value={form.sku}
-                    placeholder="Ej.: AP-001"
-                    onChange={(event) => setField("sku", event.target.value)}
-                    className={inputCls}
-                  />
-                </AdminFormField>
+                {!hasAnyVariants && (
+                  <AdminFormField
+                    label="SKU"
+                    labelClassName={productFieldLabelClassName}
+                  >
+                    <input
+                      id="sku"
+                      type="text"
+                      maxLength={120}
+                      value={form.sku}
+                      placeholder="Ej.: AP-001"
+                      onChange={(event) => setField("sku", event.target.value.toUpperCase())}
+                      className={inputCls}
+                    />
+                  </AdminFormField>
+                )}
 
                 <AdminFormField label="Precio actual" labelClassName={productFieldLabelClassName}>
                   <span className="relative block">
@@ -671,7 +675,6 @@ export function ProductoForm({
               persistedVariantStates={pendingVariantStates}
               onPersistedVariantStatesChange={setPendingVariantStates}
               onPersistedVariantsChange={handlePersistedVariantsChange}
-              onVariantAllocationsChange={setPersistedVariantAllocations}
             />
           </main>
 

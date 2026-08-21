@@ -57,8 +57,10 @@ function variantMetadata(value: unknown) {
   const record = value as Record<string, unknown>
   const keys = Object.keys(record)
   const allowedKeys = new Set([
+    "nombre",
     "sku",
     "color_hex",
+    "codigo_barra",
     "imagenes",
     "orden",
     ...PRODUCT_LOGISTICS_FIELDS.map(({ key }) => key),
@@ -74,6 +76,7 @@ function variantMetadata(value: unknown) {
     nombre?: string
     sku?: string | null
     color_hex?: string
+    codigo_barra?: string | null
     imagenes?: string[]
     orden?: number
   } & Partial<ProductLogisticsValues> = {}
@@ -82,13 +85,27 @@ function variantMetadata(value: unknown) {
     if (record.sku != null && typeof record.sku !== "string") return null
     payload.sku = optionalText(record.sku ?? "", 120)
   }
+  if ("codigo_barra" in record) {
+    if (record.codigo_barra != null && typeof record.codigo_barra !== "string") {
+      return null
+    }
+    payload.codigo_barra = optionalText(record.codigo_barra ?? "", 64)
+  }
+  if ("nombre" in record) {
+    const name = requiredText(record.nombre, 160)
+    if (!name) return null
+    payload.nombre = name
+  }
   if ("color_hex" in record) {
     const color = validColor(record.color_hex)
     if (!color) return null
     payload.color_hex = color
-    // producto_variantes.nombre no es editable: se deriva siempre del color
-    // que se está guardando, nunca de un valor enviado por el cliente.
-    payload.nombre = deriveVariantNameFromColor(color)
+    // El nombre solo se deriva automáticamente del color cuando el cliente
+    // no mandó uno explícito (p. ej. el editor de variantes de Productos);
+    // si vino "nombre" en el payload, ese es el que manda.
+    if (!("nombre" in record)) {
+      payload.nombre = deriveVariantNameFromColor(color)
+    }
   }
   if ("imagenes" in record) {
     const images = imageUrls(record.imagenes)
@@ -141,6 +158,66 @@ export async function PATCH(
     )
   }
 
+  if ("stockAdjustment" in body) {
+    const adjustment = body.stockAdjustment
+    const newQuantity = nonNegativeInteger(
+      (adjustment as Record<string, unknown> | null)?.newQuantity,
+    )
+    const reason = requiredText(
+      (adjustment as Record<string, unknown> | null)?.reason,
+      300,
+    )
+    const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? ""
+
+    if (newQuantity == null || !reason) {
+      return Response.json(
+        { error: "Indicá la nueva cantidad y el motivo del ajuste." },
+        { status: 400 },
+      )
+    }
+    if (!/^[A-Za-z0-9._:-]{8,240}$/.test(idempotencyKey)) {
+      return Response.json(
+        { error: "La operación no tiene una clave de idempotencia válida." },
+        { status: 400 },
+      )
+    }
+
+    const { data: adjustedData, error: adjustError } = await auth.admin.rpc(
+      "adjust_variant_stock_idempotent",
+      {
+        p_variant_id: variantId,
+        p_new_quantity: newQuantity,
+        p_reason: reason,
+        p_actor_id: auth.user.id,
+        p_idempotency_key: idempotencyKey,
+      },
+    )
+
+    if (adjustError) {
+      const missingMigration =
+        /adjust_variant_stock_idempotent|schema cache|PGRST202/i.test(
+          adjustError.message,
+        )
+      return Response.json(
+        {
+          error: missingMigration
+            ? "Falta aplicar la migración 20260820180000_manual_stock_adjustment.sql."
+            : adjustError.message || "No se pudo ajustar el stock de la variante.",
+        },
+        { status: missingMigration ? 503 : 409 },
+      )
+    }
+    const adjusted = Array.isArray(adjustedData) ? adjustedData[0] : adjustedData
+    if (!adjusted || adjusted.producto_id !== productId) {
+      return Response.json(
+        { error: "La variante ya no existe." },
+        { status: 404 },
+      )
+    }
+
+    return Response.json({ variant: adjusted })
+  }
+
   if ("metadata" in body) {
     const metadata = variantMetadata(body.metadata)
     if (!metadata) {
@@ -165,7 +242,6 @@ export async function PATCH(
       }
 
       const belongsToCurrentVariant =
-        Number(registry.data?.product_id) === productId &&
         Number(registry.data?.variant_id) === variantId
       if (registry.data && !belongsToCurrentVariant) {
         return Response.json(

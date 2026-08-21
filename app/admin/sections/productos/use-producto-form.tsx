@@ -188,11 +188,12 @@ export function useProductoForm({
     )
 
   const [form, setForm] = useState<ProductoFormState>({
-    nombre: producto?.nombre ?? "",
-    sku:
+    nombre: (producto?.nombre ?? "").toUpperCase(),
+    sku: (
       [...(producto?.producto_variantes ?? [])]
         .sort((left, right) => left.orden - right.orden || left.id - right.id)[0]
-        ?.sku ?? producto?.sku ?? "",
+        ?.sku ?? producto?.sku ?? ""
+    ).toUpperCase(),
     slug: producto?.slug ?? "",
     descripcion:
       producto?.descripcion ?? "",
@@ -266,12 +267,13 @@ export function useProductoForm({
   const handleNombreChange = (
     value: string
   ) => {
-    setField("nombre", value)
+    const upperValue = value.toUpperCase()
+    setField("nombre", upperValue)
 
     if (!producto) {
       setField(
         "slug",
-        slugify(value)
+        slugify(upperValue)
       )
     }
   }

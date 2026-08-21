@@ -26,6 +26,7 @@ interface ProductosTableProps {
   onSort: (key: ProductSortKey) => void
   onEdit: (producto: SupabaseProducto) => void
   onDelete: (id: number) => void
+  onMerge: (producto: SupabaseProducto) => void
   onToggleActivo: (producto: SupabaseProducto) => void
 }
 
@@ -88,6 +89,7 @@ export function ProductosTable({
   onSort,
   onEdit,
   onDelete,
+  onMerge,
   onToggleActivo,
 }: ProductosTableProps) {
   if (loading) {
@@ -145,6 +147,7 @@ export function ProductosTable({
           isSuperAdmin={isSuperAdmin}
           onEdit={onEdit}
           onDelete={onDelete}
+          onMerge={onMerge}
           onToggleActivo={onToggleActivo}
         />
       ))}

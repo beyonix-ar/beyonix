@@ -97,7 +97,9 @@ export async function GET(request: Request) {
   const [catalogResult, productCostsResult, expensesResult] = await Promise.all([
     auth.admin
       .from("productos")
-      .select("id, nombre, sku, activo, stock, producto_variantes(id, nombre, sku, activo, stock)")
+      .select(
+        "id, nombre, sku, activo, stock, codigo_barra, producto_variantes(id, nombre, sku, activo, stock, color_hex, codigo_barra)",
+      )
       .order("nombre", { ascending: true }),
     auth.admin
       .from("product_cost_entries")

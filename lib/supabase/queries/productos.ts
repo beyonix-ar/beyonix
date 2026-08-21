@@ -418,7 +418,7 @@ export async function getProductosPage({
       : ""
 
     query = query.or(
-      `nombre.ilike.%${normalizedSearch}%,sku.ilike.%${normalizedSearch}%${variantSearchClause}`,
+      `nombre.ilike.%${normalizedSearch}%,sku.ilike.%${normalizedSearch}%,codigo_barra.ilike.%${normalizedSearch}%${variantSearchClause}`,
     )
   }
   const normalizedColor = colorSearch.trim().replace(/[%(),]/g, " ")
@@ -501,14 +501,32 @@ export async function getProductosPage({
       variant,
     ])
   }
+  const lowerSearch = normalizedSearch.toLocaleLowerCase("es")
   const productos = await attachProductReviewSummaries(
     await attachConditionedStock(
-      rawProducts.map((producto) => ({
-        ...producto,
-        producto_variantes: [...(variantsByProduct.get(producto.id) ?? [])].sort(
-          (a, b) => a.orden - b.orden || a.id - b.id,
-        ),
-      })),
+      rawProducts.map((producto) => {
+        const sortedVariants = [
+          ...(variantsByProduct.get(producto.id) ?? []),
+        ].sort((a, b) => a.orden - b.orden || a.id - b.id)
+
+        // Si la búsqueda coincide con alguna variante puntual (SKU, código
+        // de barra o nombre/color), mostrar solo esas y no el resto de
+        // variantes hermanas que no tienen nada que ver con lo tipeado.
+        const matchingVariants = lowerSearch
+          ? sortedVariants.filter((variant) =>
+              [variant.sku, variant.codigo_barra, variant.nombre].some(
+                (value) => value?.toLocaleLowerCase("es").includes(lowerSearch),
+              ),
+            )
+          : []
+
+        return {
+          ...producto,
+          producto_variantes: matchingVariants.length
+            ? matchingVariants
+            : sortedVariants,
+        }
+      }),
     ),
   )
 
@@ -939,6 +957,40 @@ export async function deleteProducto(
         ? "Producto eliminado."
         : "Producto archivado."),
   }
+}
+
+export async function mergeProducto(
+  keepProductId: number,
+  absorbProductId: number,
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const response = await fetch(`/api/admin/products/${keepProductId}/merge`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ absorbProductId }),
+    cache: "no-store",
+  })
+  const payload = (await response.json().catch(() => null)) as
+    | { product?: SupabaseProducto; error?: string }
+    | null
+
+  if (!response.ok || !payload?.product) {
+    throw new Error(payload?.error || "No se pudieron fusionar los productos.")
+  }
+
+  return payload.product
 }
 
 export async function toggleProductoActivo(

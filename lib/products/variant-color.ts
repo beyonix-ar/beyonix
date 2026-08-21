@@ -1,19 +1,19 @@
 export const COLOR_NAMES_BY_HEX: Record<string, string> = {
-  "#000000": "Negro",
-  "#18181B": "Negro mate",
-  "#FFFFFF": "Blanco",
-  "#6B7280": "Gris",
-  "#D1D5DB": "Gris claro",
-  "#374151": "Gris oscuro",
-  "#2563EB": "Azul",
-  "#38BDF8": "Celeste",
-  "#EF4444": "Rojo",
-  "#22C55E": "Verde",
-  "#FACC15": "Amarillo",
+  "#000000": "NEGRO",
+  "#18181B": "NEGRO MATE",
+  "#FFFFFF": "BLANCO",
+  "#6B7280": "GRIS",
+  "#D1D5DB": "GRIS CLARO",
+  "#374151": "GRIS OSCURO",
+  "#2563EB": "AZUL",
+  "#38BDF8": "CELESTE",
+  "#EF4444": "ROJO",
+  "#22C55E": "VERDE",
+  "#FACC15": "AMARILLO",
 }
 
 const GENERIC_VARIANT_NAME = /^(principal|variante(?:\s+\d+)?)$/i
-const GENERIC_COLOR_LABEL = "Color personalizado"
+const GENERIC_COLOR_LABEL = "COLOR PERSONALIZADO"
 
 export function getColorName(
   colorHex: string | null | undefined,
@@ -52,7 +52,7 @@ export function deriveVariantNameFromColor(colorHex: string | null | undefined) 
   if (knownName) return knownName
 
   return HEX_PATTERN.test(normalizedHex)
-    ? `Color ${normalizedHex}`
+    ? `COLOR ${normalizedHex}`
     : GENERIC_COLOR_LABEL
 }
 
