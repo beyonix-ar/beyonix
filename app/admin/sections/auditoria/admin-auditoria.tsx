@@ -475,7 +475,7 @@ export function AdminAuditoria() {
             title="No hay acciones administrativas para los filtros seleccionados."
           />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-1.5">
             {filteredGroups.map((group) => {
               const log = group.primaryLog
               const isUndone = Boolean(log.undone_at)
@@ -486,79 +486,57 @@ export function AdminAuditoria() {
               return (
                 <article
                   key={group.id}
-                  className="rounded-2xl border border-white/7 bg-black p-4 transition hover:border-sky-300/35 hover:bg-admin-hover"
+                  className="rounded-xl border border-white/7 bg-black px-3 py-2 transition hover:border-sky-300/35 hover:bg-admin-hover"
                 >
-                  <div className="grid gap-4 xl:grid-cols-4 xl:items-center">
-                    <div>
-                      <p className="text-11px font-semibold uppercase tracking-widest text-white/35">
-                        Fecha
-                      </p>
-                      <p className="mt-1 text-sm font-bold text-white">
-                        {formatAuditDate(log.created_at)}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-white/45">
-                        Hora: {formatAuditTime(log.created_at)}
-                      </p>
+                  <div className="grid items-center gap-x-3 gap-y-1.5 lg:grid-cols-[100px_minmax(0,150px)_112px_minmax(0,1fr)_auto]">
+                    <div className="text-xs leading-tight">
+                      <p className="font-bold text-white">{formatAuditDate(log.created_at)}</p>
+                      <p className="text-white/42">{formatAuditTime(log.created_at)}</p>
                     </div>
 
-                    <div>
-                      <p className="text-11px font-semibold uppercase tracking-widest text-white/35">
-                        Usuario
-                      </p>
-                      <p className="mt-1 wrap-break-word text-sm font-bold text-white">
-                        {log.actor_email ?? "Sistema"}
-                      </p>
-                    </div>
+                    <p className="truncate text-xs font-bold text-white/75" title={log.actor_email ?? "Sistema"}>
+                      {log.actor_email ?? "Sistema"}
+                    </p>
 
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-200">
-                          {getAuditGroupDisplayAction(group)}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span
+                        title={`Importancia: ${getSeverityLabel(severity)}`}
+                        className={`rounded-md border px-2 py-0.5 text-10px font-bold ${severityStyles[severity]}`}
+                      >
+                        {getAuditGroupDisplayAction(group)}
+                      </span>
+                      {isUndone && (
+                        <span className="rounded-md border border-red-400/30 bg-red-500/10 px-1.5 py-0.5 text-10px font-bold text-red-200">
+                          Deshecho
                         </span>
-
-                        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${severityStyles[severity]}`}>
-                          {getSeverityLabel(severity)}
-                        </span>
-
-                        {isUndone && (
-                          <span className="rounded-full border border-red-400/30 bg-red-500/10 px-3 py-1 text-xs font-bold text-red-200">
-                            Deshecho
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-3 space-y-2">
-                        <p className="text-sm font-bold text-white/85">
-                          {description.title}
-                        </p>
-                        {description.lines.length > 0 && (
-                          <ul className="space-y-1 text-sm leading-6 text-white/62">
-                            {description.lines.map((line) => (
-                              <li key={`${log.id}-${line}`}>{line}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
+                      )}
                     </div>
 
-                    <div className="flex justify-start xl:justify-end">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-white">{description.title}</p>
+                      {description.lines[0] && (
+                        <p className="truncate text-xs text-white/58">{description.lines[0]}</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-start gap-2 lg:justify-end">
                       {canUndo && (
                         <AdminSecondaryButton
+                          size="sm"
                           aria-label={`Deshacer movimiento ${log.id}`}
                           title="Deshacer movimiento"
                           disabled={undoingId === log.id}
                           onClick={() => setPendingUndoGroup(group)}
-                          className="min-w-140px"
                         >
-                          <RotateCcw className="size-4" />
+                          <RotateCcw className="size-3.5" />
                           {undoingId === log.id ? "Deshaciendo..." : "Deshacer"}
                         </AdminSecondaryButton>
                       )}
                     </div>
                   </div>
 
-                  <details className="mt-4">
-                    <summary className="cursor-pointer text-sm font-bold text-sky-200 transition hover:text-white">
+                  <details className="group mt-1">
+                    <summary className="list-none text-11px font-bold text-sky-300 transition [&::-webkit-details-marker]:hidden hover:text-white">
                       Ver detalle
                     </summary>
 

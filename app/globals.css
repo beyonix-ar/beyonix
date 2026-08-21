@@ -1313,6 +1313,117 @@
   color: #ffffff !important;
 }
 
+.stock-adjustment-modal .admin-ds-button {
+  border-radius: 0.25rem !important;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease,
+    transform 100ms ease;
+}
+
+/* Los pasos −/+ igualan la altura del input de cantidad para que la fila quede alineada. */
+.stock-adjustment-modal .stock-adjustment-step-btn {
+  height: 3rem !important;
+  width: 3rem !important;
+  min-height: 3rem !important;
+}
+
+/*
+ * Cerrar (X): chip neutro, visible sin competir con las acciones principales.
+ * Declarado en @layer components: el selector genérico
+ * button[aria-label^="Cerrar"] (también en @layer components, ver más abajo)
+ * usa !important, y una regla !important sin capa pierde contra una
+ * !important dentro de una capa nombrada. Así se resuelve el conflicto
+ * por especificidad en vez de perder siempre contra la regla genérica.
+ */
+@layer components {
+  .stock-adjustment-modal .admin-ds-button-ghost {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    color: rgba(226, 232, 240, 0.75) !important;
+    box-shadow: none !important;
+  }
+
+  .stock-adjustment-modal .admin-ds-button-ghost:hover {
+    background-color: rgba(185, 28, 28, 0.22) !important;
+    border-color: rgba(248, 113, 113, 0.55) !important;
+    color: #fecaca !important;
+  }
+
+  .stock-adjustment-modal .admin-ds-button-ghost:active {
+    background-color: rgba(185, 28, 28, 0.32) !important;
+    border-color: rgba(248, 113, 113, 0.7) !important;
+    color: #ffffff !important;
+    transform: scale(0.94);
+  }
+
+  .stock-adjustment-modal .admin-ds-button-ghost:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(140, 200, 242, 0.28) !important;
+  }
+}
+
+/* Cancelar y selector −/+: acciones secundarias con tinte celeste consistente. */
+.stock-adjustment-modal .admin-ds-button-secondary {
+  background-color: rgba(140, 200, 242, 0.1) !important;
+  border: 1px solid rgba(140, 200, 242, 0.36) !important;
+  color: rgba(234, 244, 255, 0.9) !important;
+  box-shadow: none !important;
+}
+
+.stock-adjustment-modal .admin-ds-button-secondary:hover:not(:disabled) {
+  background-color: rgba(140, 200, 242, 0.18) !important;
+  border-color: rgba(140, 200, 242, 0.6) !important;
+  color: #ffffff !important;
+}
+
+.stock-adjustment-modal .admin-ds-button-secondary:active:not(:disabled) {
+  background-color: rgba(140, 200, 242, 0.26) !important;
+  border-color: rgba(140, 200, 242, 0.74) !important;
+  transform: scale(0.97);
+}
+
+.stock-adjustment-modal .admin-ds-button-secondary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(140, 200, 242, 0.24) !important;
+}
+
+/* Confirmar ajuste: acción principal, claramente dominante sobre Cancelar. */
+.stock-adjustment-modal .admin-ds-button-primary {
+  background: linear-gradient(180deg, #2f74ab, #1f5686) !important;
+  border: 1px solid rgba(140, 200, 242, 0.65) !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 0 0 1px rgba(9, 23, 36, 0.4),
+    0 4px 14px rgba(15, 66, 107, 0.35) !important;
+}
+
+.stock-adjustment-modal .admin-ds-button-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #3684bf, #256393) !important;
+  border-color: rgba(191, 228, 255, 0.85) !important;
+  box-shadow:
+    0 0 0 1px rgba(9, 23, 36, 0.45),
+    0 6px 18px rgba(15, 66, 107, 0.45) !important;
+}
+
+.stock-adjustment-modal .admin-ds-button-primary:active:not(:disabled) {
+  background: linear-gradient(180deg, #245c8c, #184468) !important;
+  transform: scale(0.97);
+}
+
+.stock-adjustment-modal .admin-ds-button-primary:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(140, 200, 242, 0.32),
+    0 4px 14px rgba(15, 66, 107, 0.35) !important;
+}
+
+.stock-adjustment-modal .admin-ds-button-primary:disabled {
+  box-shadow: none !important;
+}
+
 .admin-ds-badge,
 .beyonix-admin-main :where(span, button):not([style*="background"])[class*="rounded-full"][class*="border"] {
   border-radius: 9999px !important;

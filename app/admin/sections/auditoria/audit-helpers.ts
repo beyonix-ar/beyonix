@@ -1,4 +1,5 @@
 import type { SupabaseAuditLog } from "@/lib/supabase/types"
+import { formatARS } from "@/lib/customer-credit"
 
 export type AuditSeverity = "normal" | "importante" | "critico"
 export type AuditActionFilter = "all" | SupabaseAuditLog["action"] | "UNDONE"
@@ -12,7 +13,7 @@ export interface AuditLogGroup {
   id: string
   logs: SupabaseAuditLog[]
   primaryLog: SupabaseAuditLog
-  kind: "product_delete" | "variant_principal_change" | "single"
+  kind: "product_delete" | "variant_principal_change" | "stock_adjustment" | "single"
 }
 
 const humanFieldNames: Record<string, string> = {
@@ -44,6 +45,8 @@ const humanFieldNames: Record<string, string> = {
   status: "Estado",
   source_kind: "Tipo de movimiento",
   stock: "Stock",
+  stock_adjustment_reason: "Motivo del ajuste",
+  stock_adjustment_delta: "Diferencia aplicada",
   total: "Total",
   target_email: "Email de la cuenta",
   target_name: "Cuenta afectada",
@@ -191,39 +194,228 @@ export function getPreviewFields(log: SupabaseAuditLog) {
     .slice(0, 8)
 }
 
-export function formatAuditTitle(log: SupabaseAuditLog) {
-  if (isUndoAuditEvent(log)) {
-    return "Se deshizo un cambio anterior."
-  }
-
-  const entity = getEntityLabel(log)
-
-  if (log.action === "INSERT") return `Se creó ${entity}.`
-  if (log.action === "DELETE") return `Se eliminó ${entity}.`
-
-  return `Se modificó ${entity}.`
-}
-
+// Resumen humano: título en negrita ("Tipo · Resumen") + como máximo una
+// línea de detalle. Todo el resto (IDs, UUID, nombres de columna, valores
+// crudos) queda disponible en "Ver detalle" vía AuditDetails, nunca acá.
 export function formatAuditDescription(log: SupabaseAuditLog): AuditDescription {
   if (isUndoAuditEvent(log)) {
-    return {
-      title: formatAuditTitle(log),
-      lines: getUndoEventLines(log),
-    }
+    const line = getUndoSummaryLine(log)
+    return { title: "Cambio deshecho", lines: line ? [line] : [] }
   }
 
-  if (log.action !== "UPDATE") {
+  if (
+    log.table_name === "customer_credit_movements" &&
+    log.after_data?.source_kind === "balance_adjustment"
+  ) {
+    return formatCreditMovementSummary(log)
+  }
+
+  if (orderTables.has(log.table_name)) return formatOrderSummary(log)
+  if (log.table_name === "productos") return formatProductSummary(log)
+  if (log.table_name === "producto_variantes") return formatVariantSummary(log)
+  if (log.table_name === "imagenes_producto") return formatImageSummary(log)
+  if (log.table_name === "profiles") return formatProfileSummary(log)
+  if (log.table_name === "categorias") return formatCategorySummary(log)
+
+  return formatGenericSummary(log)
+}
+
+function formatProductSummary(log: SupabaseAuditLog): AuditDescription {
+  const name = getRecordName(log)
+
+  if (log.action === "INSERT") {
     return {
-      title: formatAuditTitle(log),
+      title: `Producto creado · ${name}`,
+      lines: log.actor_email ? [`Creado por ${log.actor_email}`] : [],
+    }
+  }
+  if (log.action === "DELETE") {
+    return { title: `Producto eliminado · ${name}`, lines: [] }
+  }
+
+  const fields = getChangedFields(log)
+  if (fields.length === 0) return { title: `Producto modificado · ${name}`, lines: [] }
+
+  if (fields.length === 1 && fields[0] === "precio") {
+    return {
+      title: `Precio modificado · ${name}`,
+      lines: [
+        `${formatARS(Number(log.before_data?.precio ?? 0))} → ${formatARS(Number(log.after_data?.precio ?? 0))}`,
+      ],
+    }
+  }
+  if (fields.length === 1 && fields[0] === "stock") {
+    return {
+      title: `Stock actualizado · ${name}`,
+      lines: [`Stock ${formatTechnicalValue(log.before_data?.stock)} → ${formatTechnicalValue(log.after_data?.stock)}`],
+    }
+  }
+  if (fields.length === 1 && fields[0] === "activo") {
+    return {
+      title: `${log.after_data?.activo ? "Producto activado" : "Producto desactivado"} · ${name}`,
+      lines: [],
+    }
+  }
+  if (fields.length === 1 && fields[0] === "destacado") {
+    return {
+      title: `${log.after_data?.destacado ? "Producto destacado" : "Producto ya no destacado"} · ${name}`,
       lines: [],
     }
   }
 
-  const changedFields = getChangedFields(log)
+  return {
+    title: `Producto modificado · ${name}`,
+    lines: [formatHumanList(fields.map(getHumanFieldName))],
+  }
+}
+
+function formatVariantSummary(log: SupabaseAuditLog): AuditDescription {
+  const label =
+    String((log.action === "DELETE" ? log.before_data?.nombre : log.after_data?.nombre) ?? "").trim() ||
+    "variante"
+
+  if (log.action === "INSERT") {
+    return {
+      title: `Variante creada · ${label}`,
+      lines: log.actor_email ? [`Creado por ${log.actor_email}`] : [],
+    }
+  }
+  if (log.action === "DELETE") {
+    return { title: `Variante eliminada · ${label}`, lines: [] }
+  }
+
+  const fields = getChangedFields(log)
+  if (fields.length === 0) return { title: `Variante modificada · ${label}`, lines: [] }
+
+  if (fields.length === 1 && fields[0] === "stock") {
+    const reason =
+      typeof log.after_data?.stock_adjustment_reason === "string"
+        ? log.after_data.stock_adjustment_reason
+        : null
+    const before = formatTechnicalValue(log.before_data?.stock)
+    const after = formatTechnicalValue(log.after_data?.stock)
+
+    return {
+      title: `${reason ? "Ajuste de stock" : "Stock actualizado"} · ${label}`,
+      lines: [reason ? `Stock ${before} → ${after} · Motivo: ${reason}` : `Stock ${before} → ${after}`],
+    }
+  }
+  if (fields.length === 1 && fields[0] === "activo") {
+    return {
+      title: `${log.after_data?.activo ? "Variante activada" : "Variante desactivada"} · ${label}`,
+      lines: [],
+    }
+  }
+  if (fields.length === 1 && fields[0] === "sku") {
+    return {
+      title: `SKU actualizado · ${label}`,
+      lines: [`${formatHumanValue(log.before_data?.sku)} → ${formatHumanValue(log.after_data?.sku)}`],
+    }
+  }
+  if (fields.every((field) => field === "orden")) {
+    return { title: `Orden de variantes actualizado · ${label}`, lines: [] }
+  }
 
   return {
-    title: formatAuditTitle(log),
-    lines: changedFields.map((field) => getChangeSentence(log, field)),
+    title: `Variante modificada · ${label}`,
+    lines: [formatHumanList(fields.map(getHumanFieldName))],
+  }
+}
+
+function formatImageSummary(log: SupabaseAuditLog): AuditDescription {
+  const productId = log.after_data?.producto_id ?? log.before_data?.producto_id
+  // No se resuelve el nombre del producto acá para evitar una consulta
+  // adicional sólo por este tipo de evento; el ID sigue siendo mucho más
+  // legible que un UUID y el detalle completo queda en "Ver detalle".
+  const label = productId ? `Producto #${productId}` : "producto"
+
+  if (log.action === "INSERT") return { title: `Imagen agregada · ${label}`, lines: [] }
+  if (log.action === "DELETE") return { title: `Imagen eliminada · ${label}`, lines: [] }
+
+  return { title: `Imagen actualizada · ${label}`, lines: [] }
+}
+
+function formatProfileSummary(log: SupabaseAuditLog): AuditDescription {
+  const name = getRecordName(log)
+
+  if (log.action === "INSERT") return { title: `Usuario creado · ${name}`, lines: [] }
+  if (log.action === "DELETE") return { title: `Usuario eliminado · ${name}`, lines: [] }
+
+  const fields = getChangedFields(log)
+  if (fields.length === 1 && fields[0] === "rol") {
+    return {
+      title: `Permisos actualizados · ${name}`,
+      lines: [`${formatHumanValue(log.before_data?.rol)} → ${formatHumanValue(log.after_data?.rol)}`],
+    }
+  }
+
+  return {
+    title: `Usuario modificado · ${name}`,
+    lines: fields.length ? [formatHumanList(fields.map(getHumanFieldName))] : [],
+  }
+}
+
+function formatCategorySummary(log: SupabaseAuditLog): AuditDescription {
+  const name = getRecordName(log)
+
+  if (log.action === "INSERT") return { title: `Categoría creada · ${name}`, lines: [] }
+  if (log.action === "DELETE") return { title: `Categoría eliminada · ${name}`, lines: [] }
+
+  const fields = getChangedFields(log)
+  return {
+    title: `Categoría modificada · ${name}`,
+    lines: fields.length ? [formatHumanList(fields.map(getHumanFieldName))] : [],
+  }
+}
+
+function formatOrderSummary(log: SupabaseAuditLog): AuditDescription {
+  const id = log.record_id ?? "?"
+
+  if (log.action === "INSERT") {
+    const total = log.after_data?.total
+    return {
+      title: `Pedido #${id} creado`,
+      lines: typeof total === "number" ? [formatARS(total)] : [],
+    }
+  }
+  if (log.action === "DELETE") {
+    return { title: `Pedido #${id} eliminado`, lines: [] }
+  }
+
+  const fields = getChangedFields(log)
+  if (fields.length === 1 && fields[0] === "estado") {
+    return {
+      title: `Pedido #${id} · Estado actualizado`,
+      lines: [`${formatHumanValue(log.before_data?.estado)} → ${formatHumanValue(log.after_data?.estado)}`],
+    }
+  }
+
+  return {
+    title: `Pedido #${id} modificado`,
+    lines: fields.length ? [formatHumanList(fields.map(getHumanFieldName))] : [],
+  }
+}
+
+function formatCreditMovementSummary(log: SupabaseAuditLog): AuditDescription {
+  const data = log.after_data ?? {}
+  const isCredit = data.movement_type === "credit"
+  const targetName = typeof data.target_name === "string" ? data.target_name : "cuenta sin nombre"
+  const amount = formatARS(Number(data.amount ?? 0))
+
+  return {
+    title: `${isCredit ? "Saldo acreditado" : "Saldo debitado"} · ${targetName}`,
+    lines: [amount],
+  }
+}
+
+function formatGenericSummary(log: SupabaseAuditLog): AuditDescription {
+  const name = getRecordName(log)
+  const actionLabel = log.action === "INSERT" ? "creado" : log.action === "DELETE" ? "eliminado" : "modificado"
+  const fields = log.action === "UPDATE" ? getChangedFields(log) : []
+
+  return {
+    title: `Registro ${actionLabel} · ${name}`,
+    lines: fields.length ? [formatHumanList(fields.map(getHumanFieldName))] : [],
   }
 }
 
@@ -261,6 +453,43 @@ export function groupAuditLogs(logs: SupabaseAuditLog[]): AuditLogGroup[] {
       logs: sortProductDeleteLogs(groupedLogs),
       primaryLog: log,
       kind: "product_delete",
+    })
+  })
+
+  // refresh_inventory_stock recalcula el stock de todas las variantes del
+  // producto ante cualquier movimiento de inventario (incluido un ajuste
+  // manual), lo que además dispara una actualización "eco" del stock
+  // agregado en productos. Es la misma acción humana vista dos veces: se
+  // pliega el eco dentro del evento de la variante para no duplicarlo.
+  orderedLogs.forEach((log) => {
+    if (usedIds.has(log.id)) return
+    if (log.table_name !== "producto_variantes" || log.action !== "UPDATE") return
+    if (!getChangedFields(log).includes("stock")) return
+
+    const productId = log.after_data?.producto_id ?? log.before_data?.producto_id
+    if (!productId) return
+
+    const createdAt = new Date(log.created_at).getTime()
+    const echo = orderedLogs.find((candidate) => {
+      if (usedIds.has(candidate.id) || candidate.id === log.id) return false
+      if (candidate.table_name !== "productos" || candidate.action !== "UPDATE") return false
+      if (String(candidate.record_id) !== String(productId)) return false
+      if (candidate.actor_email !== log.actor_email) return false
+
+      const fields = getChangedFields(candidate)
+      if (fields.length !== 1 || fields[0] !== "stock") return false
+
+      return Math.abs(new Date(candidate.created_at).getTime() - createdAt) <= 5000
+    })
+
+    usedIds.add(log.id)
+    if (echo) usedIds.add(echo.id)
+
+    groups.push({
+      id: `stock-adjustment-${log.id}`,
+      logs: echo ? [log, echo] : [log],
+      primaryLog: log,
+      kind: "stock_adjustment",
     })
   })
 
@@ -323,10 +552,24 @@ export function formatAuditGroupDescription(group: AuditLogGroup): AuditDescript
     const summary = getDeletedProductSummary(group.logs)
 
     return {
-      title: `Se eliminó el producto "${productName}".`,
-      lines: summary.length
-        ? [`Registros relacionados eliminados: ${formatHumanList(summary)}.`]
-        : ["Se eliminaron los datos asociados al producto."],
+      title: `Producto eliminado · ${productName}`,
+      lines: summary.length ? [`${formatHumanList(summary)} eliminados`] : [],
+    }
+  }
+
+  if (group.kind === "stock_adjustment") {
+    const log = group.logs.find((item) => item.table_name === "producto_variantes") ?? group.primaryLog
+    const label = String(log.after_data?.nombre ?? log.before_data?.nombre ?? "").trim() || "variante"
+    const before = formatTechnicalValue(log.before_data?.stock)
+    const after = formatTechnicalValue(log.after_data?.stock)
+    const reason =
+      typeof log.after_data?.stock_adjustment_reason === "string"
+        ? log.after_data.stock_adjustment_reason
+        : null
+
+    return {
+      title: `Ajuste de stock · ${label}`,
+      lines: [reason ? `Stock ${before} → ${after} · Motivo: ${reason}` : `Stock ${before} → ${after}`],
     }
   }
 
@@ -337,20 +580,16 @@ export function formatAuditGroupDescription(group: AuditLogGroup): AuditDescript
   const productName = getGroupedProductName(group.logs)
   const { beforeName, afterName } = getVariantPrincipalNames(group.logs)
 
-  const lines =
-    beforeName && afterName
-      ? [`Cambió la variante principal de "${beforeName}" a "${afterName}".`]
-      : ["Cambió la variante principal del producto."]
-
   return {
-    title: `Se modificó la variante principal del producto "${productName}".`,
-    lines,
+    title: `Variante principal actualizada · ${productName}`,
+    lines: beforeName && afterName ? [`${beforeName} → ${afterName}`] : [],
   }
 }
 
 export function getAuditGroupSeverity(group: AuditLogGroup): AuditSeverity {
   if (group.kind === "product_delete") return "critico"
   if (group.kind === "variant_principal_change") return "normal"
+  if (group.kind === "stock_adjustment") return "importante"
 
   return getAuditSeverity(group.primaryLog)
 }
@@ -361,6 +600,11 @@ export function getAuditGroupDisplayAction(group: AuditLogGroup) {
 
 export function canUndoAuditGroup(group: AuditLogGroup) {
   if (group.kind === "product_delete") return canUndoAuditLog(group.primaryLog)
+  // El stock de producto_variantes es una columna derivada (recalculada por
+  // refresh_inventory_stock a partir de inventory_movements); un "deshacer"
+  // genérico que reescriba antes/después directamente sobre esa columna no
+  // es una operación soportada. Mejor no ofrecer un botón que no funciona.
+  if (group.kind === "stock_adjustment") return false
 
   return group.logs.every(canUndoAuditLog)
 }
@@ -464,18 +708,6 @@ export function canUndoAuditLog(log: SupabaseAuditLog) {
   return log.action === "UPDATE" || log.action === "INSERT" || log.action === "DELETE"
 }
 
-export function getUndoDescription(log: SupabaseAuditLog) {
-  const description = formatAuditDescription(log)
-
-  if (log.action === "UPDATE") {
-    return description.lines.length > 0 ? description.lines.join(" ") : description.title
-  }
-
-  if (log.action === "INSERT") return `eliminar ${getEntityLabel(log)}`
-
-  return `recuperar ${getEntityLabel(log)}`
-}
-
 export function getAuditActionLabel(action: SupabaseAuditLog["action"]) {
   if (action === "INSERT") return "Creación"
   if (action === "DELETE") return "Eliminación"
@@ -496,28 +728,7 @@ export function getSeverityLabel(severity: AuditSeverity) {
   return "Normal"
 }
 
-function getEntityLabel(log: SupabaseAuditLog) {
-  if (isUndoAuditEvent(log)) return "una acción administrativa"
-
-  const id = log.record_id ?? getRecordName(log)
-
-  if (orderTables.has(log.table_name)) return `el pedido #${id}`
-  if (log.table_name === "productos") return `el producto "${getRecordName(log)}"`
-  if (log.table_name === "producto_variantes") return "una variante del producto"
-  if (log.table_name === "categorias") return `la categoría "${getRecordName(log)}"`
-  if (log.table_name === "profiles") return `el usuario "${getRecordName(log)}"`
-  if (log.table_name === "customer_credit_movements") {
-    const target =
-      typeof log.after_data?.target_name === "string"
-        ? log.after_data.target_name
-        : "la cuenta seleccionada"
-    return `el ajuste de saldo de "${target}"`
-  }
-
-  return `el registro "${getRecordName(log)}"`
-}
-
-function getUndoEventLines(log: SupabaseAuditLog) {
+function getUndoSummaryLine(log: SupabaseAuditLog): string | null {
   const originalAction =
     typeof log.after_data?.original_action === "string"
       ? log.after_data.original_action
@@ -533,9 +744,7 @@ function getUndoEventLines(log: SupabaseAuditLog) {
       ? log.after_data.original_record_id
       : null
 
-  if (originalAction !== "UPDATE" || !originalBeforeData || !originalAfterData) {
-    return ["Se restauró el estado anterior del registro afectado."]
-  }
+  if (originalAction !== "UPDATE" || !originalBeforeData || !originalAfterData) return null
 
   const restoredLog: SupabaseAuditLog = {
     ...log,
@@ -546,12 +755,13 @@ function getUndoEventLines(log: SupabaseAuditLog) {
     after_data: originalBeforeData,
   }
 
-  return getChangedFields(restoredLog).map((field) => {
-    const label = getHumanFieldName(field).toLowerCase()
-    const restoredValue = formatHumanValue(originalBeforeData[field])
+  const fields = getChangedFields(restoredLog)
+  if (fields.length === 0) return null
+  if (fields.length === 1) {
+    return `${getHumanFieldName(fields[0])}: ${formatHumanValue(originalBeforeData[fields[0]])}`
+  }
 
-    return `Se restauró el ${label} anterior: "${restoredValue}".`
-  })
+  return `Restaurado: ${formatHumanList(fields.map(getHumanFieldName))}`
 }
 
 function toRecord(value: unknown) {
@@ -574,25 +784,6 @@ function getRecordName(log: SupabaseAuditLog) {
     log.record_id
 
   return candidate ? formatTechnicalValue(candidate) : "registro"
-}
-
-function getChangeSentence(log: SupabaseAuditLog, field: string) {
-  const label = getHumanFieldName(field)
-  const article = getFieldArticle(label)
-  const beforeValue = log.before_data?.[field]
-  const afterValue = log.after_data?.[field]
-  const beforeIsEmpty = isEmptyValue(beforeValue)
-  const afterIsEmpty = isEmptyValue(afterValue)
-  const lowerLabel = label.toLowerCase()
-
-  if (field === "imagen_principal") {
-    return "Cambio la imagen principal del producto."
-  }
-
-  if (!beforeIsEmpty && afterIsEmpty) return `Se eliminó ${article} ${lowerLabel}.`
-  if (beforeIsEmpty && !afterIsEmpty) return `Se agregó ${article} ${lowerLabel}.`
-
-  return `Cambió ${article} ${lowerLabel} de "${formatHumanValue(beforeValue)}" a "${formatHumanValue(afterValue)}".`
 }
 
 function isDeletedProductLog(log: SupabaseAuditLog) {
@@ -754,20 +945,6 @@ function formatHumanValue(value: unknown) {
   if (/^https?:\/\//i.test(text)) return "link cargado"
 
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase().replaceAll("_", " ")
-}
-
-function getFieldArticle(label: string) {
-  const normalized = label.trim().toLowerCase()
-
-  if (
-    normalized.startsWith("categoría") ||
-    normalized.startsWith("descripción") ||
-    normalized.startsWith("imagen")
-  ) {
-    return "la"
-  }
-
-  return "el"
 }
 
 function isEmptyValue(value: unknown) {

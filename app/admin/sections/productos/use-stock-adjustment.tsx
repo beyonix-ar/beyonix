@@ -104,6 +104,7 @@ export function useStockAdjustment(
     target &&
     typeof document !== "undefined" &&
     createPortal(
+      <div className="stock-adjustment-modal">
       <AdminModal
         open
         compact
@@ -111,7 +112,7 @@ export function useStockAdjustment(
         description="Corrección manual (recuento físico, unidades falladas). Queda registrada con el motivo indicado."
         onClose={close}
         footer={
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2.5 border-t border-white/8 pt-3">
             <AdminSecondaryButton size="sm" disabled={saving} onClick={close}>
               Cancelar
             </AdminSecondaryButton>
@@ -157,6 +158,7 @@ export function useStockAdjustment(
               aria-label="Restar una unidad"
               disabled={saving || parsedQuantity <= 0}
               onClick={() => stepQuantity(-1)}
+              className="stock-adjustment-step-btn"
             >
               <Minus className="size-4" />
             </AdminSecondaryButton>
@@ -174,6 +176,7 @@ export function useStockAdjustment(
               aria-label="Sumar una unidad"
               disabled={saving}
               onClick={() => stepQuantity(1)}
+              className="stock-adjustment-step-btn"
             >
               <Plus className="size-4" />
             </AdminSecondaryButton>
@@ -206,7 +209,8 @@ export function useStockAdjustment(
             {error}
           </p>
         )}
-      </AdminModal>,
+      </AdminModal>
+      </div>,
       document.body,
     )
 
