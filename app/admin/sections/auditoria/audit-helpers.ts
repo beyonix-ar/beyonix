@@ -1,5 +1,14 @@
 import type { SupabaseAuditLog } from "@/lib/supabase/types"
 import { formatARS } from "@/lib/customer-credit"
+import { formatPublicOrderId } from "@/lib/account/account-formatters"
+import {
+  emptyAuditEntityMaps,
+  resolveCategoryName,
+  resolveProductName,
+  resolveUserName,
+  resolveVariantName,
+  type AuditEntityMaps,
+} from "./audit-entity-resolver"
 
 export type AuditSeverity = "normal" | "importante" | "critico"
 export type AuditActionFilter = "all" | SupabaseAuditLog["action"] | "UNDONE"
@@ -18,51 +27,110 @@ export interface AuditLogGroup {
 
 const humanFieldNames: Record<string, string> = {
   activo: "Estado",
+  affected_count: "Productos afectados",
   amount: "Importe",
+  article_name: "Artículo",
+  category: "Categoría del gasto",
+  cleaned_count: "Productos corregidos",
   category_id: "Categoría",
   categoria_id: "Categoría",
   color_hex: "Color",
+  commission_cost: "Comisión",
   description: "Descripción",
   created_from: "Origen",
+  created_by: "Creado por",
   descripcion: "Descripción",
   destacado: "Destacado",
   descuento: "Descuento",
+  document_number: "Comprobante",
+  document_type: "Tipo de comprobante",
   estado: "Estado",
+  event_name: "Evento",
+  event_type: "Tipo de evento",
+  expense_date: "Fecha del gasto",
+  freight_cost: "Costo de flete",
   image_url: "Imagen",
   last_sign_in_at: "Último inicio",
   imagen_principal: "Imagen principal",
   imagenes: "Imágenes",
   name: "Nombre",
   nombre: "Nombre",
+  notes: "Notas",
   movement_type: "Operación",
   orden: "Orden",
+  orden_id: "Pedido",
+  order_id: "Pedido",
+  pedido_id: "Pedido",
+  other_cost: "Otros costos",
+  payment_method: "Medio de pago",
   price: "Precio",
   precio: "Precio",
   precio_anterior: "Precio anterior",
   producto_id: "Producto",
+  product_id: "Producto",
+  purchase_date: "Fecha de compra",
+  quantity: "Cantidad",
+  received_quantity: "Cantidad recibida",
+  reception_status: "Estado de recepción",
+  recurrence: "Recurrencia",
+  restored_count: "Productos restaurados",
   rol: "Permisos",
+  sku: "SKU",
   slug: "Slug",
   status: "Estado",
   source_kind: "Tipo de movimiento",
   stock: "Stock",
   stock_adjustment_reason: "Motivo del ajuste",
   stock_adjustment_delta: "Diferencia aplicada",
+  supplier: "Proveedor",
+  tax_cost: "Impuestos",
+  tax_deductible: "Deducible de impuestos",
   total: "Total",
+  total_cost: "Costo total",
   target_email: "Email de la cuenta",
   target_name: "Cuenta afectada",
-  target_user_id: "ID de la cuenta",
+  target_user_id: "Cuenta",
   resulting_balance: "Saldo resultante",
   tracking_number: "Número de seguimiento",
   tracking_url: "Link de seguimiento",
+  unit_cost: "Costo unitario",
+  updated_by: "Actualizado por",
   url: "Imagen",
+  variant_id: "Variante",
+  variante_id: "Variante",
+}
+
+// Tablas sin un formateador dedicado: etiqueta humana para el título
+// genérico ("{Tabla} modificado · {nombre}") en vez del nombre técnico
+// de la tabla de base de datos.
+const humanTableNames: Record<string, string> = {
+  banners: "Banner",
+  business_expenses: "Gasto",
+  categorias: "Categoría",
+  configuracion_visual: "Configuración visual",
+  customer_notification_campaigns: "Campaña de notificaciones",
+  hero_banners: "Banner",
+  inventory_variant_allocations: "Asignación de inventario",
+  mercadolibre_sales: "Venta de MercadoLibre",
+  metodos_envio: "Método de envío",
+  metodos_pago: "Método de pago",
+  payment_methods: "Método de pago",
+  product_bulk_events: "Evento comercial",
+  product_cost_entries: "Compra de stock",
+  shipping_methods: "Método de envío",
+  site_banner_items: "Banner",
+  site_settings: "Configuración",
+  store_settings: "Configuración",
 }
 
 const ignoredFields = new Set([
   "actor_user_id",
   "after_data",
   "before_data",
+  "checkout_idempotency_key",
   "created_at",
   "id",
+  "idempotency_key",
   "record_id",
   "table_name",
   "updated_at",
@@ -159,6 +227,112 @@ export function formatAuditTime(value: string) {
   }).format(new Date(value))
 }
 
+interface ReferenceFieldConfig {
+  resolve: (maps: AuditEntityMaps, value: unknown) => string | null
+  noun: string
+  // Los pedidos se identifican con su número público (cálculo puro sobre el
+  // id, ver formatPublicOrderId): no hay "no disponible" posible porque no
+  // dependen de una consulta que pueda no encontrar la fila.
+  alwaysResolvable?: boolean
+}
+
+const referenceFieldConfigs: Record<string, ReferenceFieldConfig> = {
+  categoria_id: { resolve: resolveCategoryName, noun: "categoría" },
+  category_id: { resolve: resolveCategoryName, noun: "categoría" },
+  producto_id: { resolve: resolveProductName, noun: "producto" },
+  product_id: { resolve: resolveProductName, noun: "producto" },
+  variant_id: { resolve: resolveVariantName, noun: "variante" },
+  variante_id: { resolve: resolveVariantName, noun: "variante" },
+  created_by: { resolve: resolveUserName, noun: "usuario" },
+  updated_by: { resolve: resolveUserName, noun: "usuario" },
+  target_user_id: { resolve: resolveUserName, noun: "usuario" },
+  orden_id: { resolve: resolveOrderLabel, noun: "pedido", alwaysResolvable: true },
+  order_id: { resolve: resolveOrderLabel, noun: "pedido", alwaysResolvable: true },
+  pedido_id: { resolve: resolveOrderLabel, noun: "pedido", alwaysResolvable: true },
+}
+
+function resolveOrderLabel(_maps: AuditEntityMaps, value: unknown) {
+  const id = Number(value)
+  return Number.isFinite(id) ? formatPublicOrderId(id) : null
+}
+
+function capitalize(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+// Para "Ver detalle": si el campo es una relación conocida (producto_id,
+// variant_id, categoria_id, usuario, pedido), muestra el nombre resuelto en
+// vez del ID numérico crudo. Si el ID ya no existe (registro eliminado),
+// nunca vuelve a mostrar el número: dice explícitamente que no está
+// disponible. El ID sigue accesible en "Información técnica".
+export function resolveFieldDisplayValue(
+  field: string,
+  value: unknown,
+  maps: AuditEntityMaps,
+  context: "before" | "after" = "after",
+) {
+  const config = referenceFieldConfigs[field]
+  if (config) {
+    if (value === null || value === undefined || value === "") return formatTechnicalValue(value)
+
+    const resolved = config.resolve(maps, value)
+    if (resolved) return resolved
+    if (config.alwaysResolvable) return formatTechnicalValue(value)
+    // Todavía no llegó la primera tanda de consultas: mejor un genérico
+    // transitorio que una afirmación incorrecta de "no disponible".
+    if (!maps.ready) return capitalize(config.noun)
+
+    return context === "before" ? `${capitalize(config.noun)} anterior no disponible` : `${capitalize(config.noun)} no disponible`
+  }
+
+  const formatted = formatDetailFieldValue(field, value)
+  return formatted ?? formatTechnicalValue(value)
+}
+
+const moneyFields = new Set([
+  "amount",
+  "commission_cost",
+  "freight_cost",
+  "other_cost",
+  "precio",
+  "precio_anterior",
+  "price",
+  "resulting_balance",
+  "tax_cost",
+  "total",
+  "total_cost",
+  "unit_cost",
+])
+
+const quantityFields = new Set(["quantity", "received_quantity"])
+const dateOnlyFields = new Set(["purchase_date", "expense_date"])
+
+// Formatos legibles para valores comunes de "Ver detalle" (montos con
+// separador de miles, cantidades con unidad, fechas locales). Sólo aplica
+// cuando el campo no es una relación (esas ya se resuelven arriba) ni un
+// valor vacío (esos siguen su formateo genérico habitual, "-").
+function formatDetailFieldValue(field: string, value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null
+
+  if (moneyFields.has(field)) {
+    const amount = Number(value)
+    return Number.isFinite(amount) ? formatARS(amount) : null
+  }
+
+  if (quantityFields.has(field)) {
+    const amount = Number(value)
+    if (!Number.isFinite(amount)) return null
+    return `${amount} unidad${amount === 1 ? "" : "es"}`
+  }
+
+  if (dateOnlyFields.has(field) && typeof value === "string") {
+    const date = new Date(`${value}T00:00:00`)
+    return Number.isNaN(date.getTime()) ? null : formatAuditDate(date.toISOString())
+  }
+
+  return null
+}
+
 export function formatTechnicalValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "-"
   if (typeof value === "boolean") return value ? "Sí" : "No"
@@ -176,31 +350,82 @@ export function getHumanFieldName(field: string) {
   return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase()
 }
 
+// Orden explícito de campos para "Ver detalle" en tablas donde el orden
+// físico de columnas no coincide con la prioridad de lectura humana (datos
+// principales primero, administrativos al final). Las tablas sin entrada
+// acá mantienen el orden original (comportamiento previo, sin cambios).
+const fieldOrderByTable: Record<string, string[]> = {
+  product_cost_entries: [
+    "product_id",
+    "variant_id",
+    "article_name",
+    "sku",
+    "quantity",
+    "received_quantity",
+    "reception_status",
+    "unit_cost",
+    "total_cost",
+    "supplier",
+    "tax_cost",
+    "commission_cost",
+    "freight_cost",
+    "other_cost",
+    "document_type",
+    "document_number",
+    "payment_method",
+    "notes",
+    "created_by",
+    "purchase_date",
+  ],
+}
+
+// getPreviewFields recorta a este máximo para no saturar la vista con
+// tablas de auditoría genéricas; algunas tablas (como compras, con ~20
+// columnas relevantes) necesitan mostrar todo el snapshot.
+const previewFieldLimits: Record<string, number> = {
+  product_cost_entries: 30,
+}
+
+function sortFieldsForTable(tableName: string, fields: string[]) {
+  const order = fieldOrderByTable[tableName]
+  if (!order) return fields
+
+  const ranked = order.filter((field) => fields.includes(field))
+  const rest = fields.filter((field) => !order.includes(field))
+  return [...ranked, ...rest]
+}
+
 export function getChangedFields(log: SupabaseAuditLog) {
   if (log.action !== "UPDATE" || !log.before_data || !log.after_data) return []
 
-  return Object.keys(log.after_data)
+  const fields = Object.keys(log.after_data)
     .filter((key) => !ignoredFields.has(key))
     .filter((key) => JSON.stringify(log.before_data?.[key]) !== JSON.stringify(log.after_data?.[key]))
+
+  return sortFieldsForTable(log.table_name, fields)
 }
 
 export function getPreviewFields(log: SupabaseAuditLog) {
   const data = log.action === "DELETE" ? log.before_data : log.after_data
   if (!data) return []
 
-  return Object.keys(data)
+  const limit = previewFieldLimits[log.table_name] ?? 8
+  const fields = Object.keys(data)
     .filter((key) => !ignoredFields.has(key))
     .filter((key) => !isEmptyValue(data[key]))
-    .slice(0, 8)
+
+  return sortFieldsForTable(log.table_name, fields).slice(0, limit)
 }
 
 // Resumen humano: título en negrita ("Tipo · Resumen") + como máximo una
 // línea de detalle. Todo el resto (IDs, UUID, nombres de columna, valores
 // crudos) queda disponible en "Ver detalle" vía AuditDetails, nunca acá.
-export function formatAuditDescription(log: SupabaseAuditLog): AuditDescription {
+export function formatAuditDescription(
+  log: SupabaseAuditLog,
+  maps: AuditEntityMaps = emptyAuditEntityMaps,
+): AuditDescription {
   if (isUndoAuditEvent(log)) {
-    const line = getUndoSummaryLine(log)
-    return { title: "Cambio deshecho", lines: line ? [line] : [] }
+    return getUndoDescription(log, maps)
   }
 
   if (
@@ -210,24 +435,45 @@ export function formatAuditDescription(log: SupabaseAuditLog): AuditDescription 
     return formatCreditMovementSummary(log)
   }
 
+  const bulkEventType = getBulkEventType(log)
+  if (bulkEventType) return formatBulkEventSummary(log, bulkEventType)
+
   if (orderTables.has(log.table_name)) return formatOrderSummary(log)
   if (log.table_name === "productos") return formatProductSummary(log)
-  if (log.table_name === "producto_variantes") return formatVariantSummary(log)
-  if (log.table_name === "imagenes_producto") return formatImageSummary(log)
+  if (log.table_name === "producto_variantes") return formatVariantSummary(log, maps)
+  if (log.table_name === "imagenes_producto") return formatImageSummary(log, maps)
   if (log.table_name === "profiles") return formatProfileSummary(log)
   if (log.table_name === "categorias") return formatCategorySummary(log)
+  if (log.table_name === "product_cost_entries") return formatCostEntrySummary(log, maps)
+  if (log.table_name === "business_expenses") return formatExpenseSummary(log)
 
-  return formatGenericSummary(log)
+  return formatGenericSummary(log, maps)
+}
+
+// Algunos flujos insertan una fila de auditoría "sintética" (no corresponde
+// a un INSERT/UPDATE/DELETE real de esa tabla, sino a una acción compuesta:
+// pausar/activar un evento comercial, limpiar ofertas huérfanas, etc.) que
+// se identifica por after_data.event_type en vez del par action/table_name.
+function getBulkEventType(log: SupabaseAuditLog) {
+  const eventType = log.after_data?.event_type
+  return typeof eventType === "string" && eventType ? eventType : null
 }
 
 function formatProductSummary(log: SupabaseAuditLog): AuditDescription {
-  const name = getRecordName(log)
+  const name = getRecordName(log) ?? "producto"
 
   if (log.action === "INSERT") {
-    return {
-      title: `Producto creado · ${name}`,
-      lines: log.actor_email ? [`Creado por ${log.actor_email}`] : [],
-    }
+    const lines: string[] = []
+    const variantCount = Number(log.after_data?.variantes_cargadas ?? 0)
+    const imageCount = Number(log.after_data?.imagenes_cargadas ?? 0)
+    const parts: string[] = []
+    if (variantCount > 0) parts.push(`${variantCount} variante${variantCount === 1 ? "" : "s"}`)
+    if (imageCount > 0) parts.push(`${imageCount} imagen${imageCount === 1 ? "" : "es"}`)
+
+    if (parts.length > 0) lines.push(formatHumanList(parts))
+    else if (log.actor_email) lines.push(`Creado por ${log.actor_email}`)
+
+    return { title: `Producto creado · ${name}`, lines }
   }
   if (log.action === "DELETE") {
     return { title: `Producto eliminado · ${name}`, lines: [] }
@@ -269,10 +515,8 @@ function formatProductSummary(log: SupabaseAuditLog): AuditDescription {
   }
 }
 
-function formatVariantSummary(log: SupabaseAuditLog): AuditDescription {
-  const label =
-    String((log.action === "DELETE" ? log.before_data?.nombre : log.after_data?.nombre) ?? "").trim() ||
-    "variante"
+function formatVariantSummary(log: SupabaseAuditLog, maps: AuditEntityMaps): AuditDescription {
+  const label = getVariantContextLabel(log, maps)
 
   if (log.action === "INSERT") {
     return {
@@ -292,11 +536,12 @@ function formatVariantSummary(log: SupabaseAuditLog): AuditDescription {
       typeof log.after_data?.stock_adjustment_reason === "string"
         ? log.after_data.stock_adjustment_reason
         : null
+    const isRevert = reason?.startsWith("Revertido:") ?? false
     const before = formatTechnicalValue(log.before_data?.stock)
     const after = formatTechnicalValue(log.after_data?.stock)
 
     return {
-      title: `${reason ? "Ajuste de stock" : "Stock actualizado"} · ${label}`,
+      title: `${isRevert ? "Ajuste de stock revertido" : reason ? "Ajuste de stock" : "Stock actualizado"} · ${label}`,
       lines: [reason ? `Stock ${before} → ${after} · Motivo: ${reason}` : `Stock ${before} → ${after}`],
     }
   }
@@ -322,12 +567,9 @@ function formatVariantSummary(log: SupabaseAuditLog): AuditDescription {
   }
 }
 
-function formatImageSummary(log: SupabaseAuditLog): AuditDescription {
+function formatImageSummary(log: SupabaseAuditLog, maps: AuditEntityMaps): AuditDescription {
   const productId = log.after_data?.producto_id ?? log.before_data?.producto_id
-  // No se resuelve el nombre del producto acá para evitar una consulta
-  // adicional sólo por este tipo de evento; el ID sigue siendo mucho más
-  // legible que un UUID y el detalle completo queda en "Ver detalle".
-  const label = productId ? `Producto #${productId}` : "producto"
+  const label = resolveProductName(maps, productId) ?? "producto"
 
   if (log.action === "INSERT") return { title: `Imagen agregada · ${label}`, lines: [] }
   if (log.action === "DELETE") return { title: `Imagen eliminada · ${label}`, lines: [] }
@@ -335,8 +577,104 @@ function formatImageSummary(log: SupabaseAuditLog): AuditDescription {
   return { title: `Imagen actualizada · ${label}`, lines: [] }
 }
 
+// "{Producto} / {Variante}" cuando se puede resolver el producto dueño de
+// la variante; si no hay dato suficiente, sólo el nombre de la variante.
+function getVariantContextLabel(log: SupabaseAuditLog, maps: AuditEntityMaps) {
+  const variantName =
+    String((log.action === "DELETE" ? log.before_data?.nombre : log.after_data?.nombre) ?? "").trim() ||
+    "variante"
+
+  const productId = log.after_data?.producto_id ?? log.before_data?.producto_id
+  const productName = resolveProductName(maps, productId)
+
+  return productName ? `${productName} / ${variantName}` : variantName
+}
+
+// Identifica la compra aunque el producto ya no exista (eliminado después)
+// o nunca haya estado catalogado (artículo "custom"): primero intenta el
+// nombre vigente del producto/variante, después usa lo que la propia
+// compra guardó como snapshot (artículo o SKU), y sólo como último recurso
+// admite que no hay forma de identificarla — nunca un ID crudo.
+function getCostEntryLabel(data: Record<string, unknown> | null | undefined, maps: AuditEntityMaps) {
+  const productName = resolveProductName(maps, data?.producto_id ?? data?.product_id)
+  if (productName) {
+    const variantName = resolveVariantName(maps, data?.variant_id)
+    return variantName ? `${productName} / ${variantName}` : productName
+  }
+
+  const articleName = typeof data?.article_name === "string" ? data.article_name.trim() : ""
+  if (articleName) return articleName
+
+  const sku = typeof data?.sku === "string" ? data.sku.trim() : ""
+  if (sku) return sku
+
+  return maps.ready ? "Producto no disponible" : "producto"
+}
+
+function formatCostEntrySummary(log: SupabaseAuditLog, maps: AuditEntityMaps): AuditDescription {
+  const data = log.action === "DELETE" ? log.before_data : log.after_data
+  const label = getCostEntryLabel(data, maps)
+
+  if (log.action === "DELETE") return { title: `Compra eliminada · ${label}`, lines: [] }
+
+  const quantity = Number(data?.quantity ?? 0)
+  const totalCost = Number(data?.total_cost ?? 0)
+  const lines: string[] = []
+  if (quantity > 0) lines.push(`${quantity} unidad${quantity === 1 ? "" : "es"} · ${formatARS(totalCost)}`)
+
+  return {
+    title: `${log.action === "INSERT" ? "Compra registrada" : "Compra modificada"} · ${label}`,
+    lines,
+  }
+}
+
+function formatExpenseSummary(log: SupabaseAuditLog): AuditDescription {
+  const data = log.action === "DELETE" ? log.before_data : log.after_data
+  const category = formatHumanValue(data?.category)
+  const description = typeof data?.description === "string" ? data.description.trim() : ""
+
+  if (log.action === "DELETE") return { title: `Gasto eliminado · ${category}`, lines: [] }
+
+  const amount = Number(data?.amount ?? 0)
+  const lines = [description ? `${formatARS(amount)} · ${description}` : formatARS(amount)]
+
+  return {
+    title: `${log.action === "INSERT" ? "Gasto registrado" : "Gasto modificado"} · ${category}`,
+    lines,
+  }
+}
+
+const bulkEventLabels: Record<string, string> = {
+  activate: "activado",
+  cleanup_orphan_offers: "Limpieza de ofertas vencidas",
+  delete_event: "eliminado",
+  deactivate: "desactivado",
+  pause: "pausado",
+}
+
+function formatBulkEventSummary(log: SupabaseAuditLog, eventType: string): AuditDescription {
+  const data = log.after_data ?? {}
+
+  if (eventType === "cleanup_orphan_offers") {
+    const cleaned = Number(data.cleaned_count ?? 0)
+    return {
+      title: "Limpieza de ofertas vencidas",
+      lines: [`${cleaned} producto${cleaned === 1 ? "" : "s"} corregido${cleaned === 1 ? "" : "s"}`],
+    }
+  }
+
+  const eventName = typeof data.event_name === "string" && data.event_name ? data.event_name : "evento comercial"
+  const actionLabel = bulkEventLabels[eventType] ?? "modificado"
+  const count = Number(data.affected_count ?? data.restored_count ?? 0)
+
+  return {
+    title: `Evento comercial ${actionLabel} · ${eventName}`,
+    lines: count > 0 ? [`${count} producto${count === 1 ? "" : "s"} afectado${count === 1 ? "" : "s"}`] : [],
+  }
+}
+
 function formatProfileSummary(log: SupabaseAuditLog): AuditDescription {
-  const name = getRecordName(log)
+  const name = getRecordName(log) ?? "usuario"
 
   if (log.action === "INSERT") return { title: `Usuario creado · ${name}`, lines: [] }
   if (log.action === "DELETE") return { title: `Usuario eliminado · ${name}`, lines: [] }
@@ -356,7 +694,7 @@ function formatProfileSummary(log: SupabaseAuditLog): AuditDescription {
 }
 
 function formatCategorySummary(log: SupabaseAuditLog): AuditDescription {
-  const name = getRecordName(log)
+  const name = getRecordName(log) ?? "categoría"
 
   if (log.action === "INSERT") return { title: `Categoría creada · ${name}`, lines: [] }
   if (log.action === "DELETE") return { title: `Categoría eliminada · ${name}`, lines: [] }
@@ -408,13 +746,14 @@ function formatCreditMovementSummary(log: SupabaseAuditLog): AuditDescription {
   }
 }
 
-function formatGenericSummary(log: SupabaseAuditLog): AuditDescription {
-  const name = getRecordName(log)
+function formatGenericSummary(log: SupabaseAuditLog, maps: AuditEntityMaps): AuditDescription {
+  const tableLabel = humanTableNames[log.table_name] ?? "Registro"
+  const name = getRecordName(log, maps)
   const actionLabel = log.action === "INSERT" ? "creado" : log.action === "DELETE" ? "eliminado" : "modificado"
   const fields = log.action === "UPDATE" ? getChangedFields(log) : []
 
   return {
-    title: `Registro ${actionLabel} · ${name}`,
+    title: name ? `${tableLabel} ${actionLabel} · ${name}` : `${tableLabel} ${actionLabel}`,
     lines: fields.length ? [formatHumanList(fields.map(getHumanFieldName))] : [],
   }
 }
@@ -546,7 +885,10 @@ export function groupAuditLogs(logs: SupabaseAuditLog[]): AuditLogGroup[] {
   return groups
 }
 
-export function formatAuditGroupDescription(group: AuditLogGroup): AuditDescription {
+export function formatAuditGroupDescription(
+  group: AuditLogGroup,
+  maps: AuditEntityMaps = emptyAuditEntityMaps,
+): AuditDescription {
   if (group.kind === "product_delete") {
     const productName = getDeletedProductName(group)
     const summary = getDeletedProductSummary(group.logs)
@@ -559,25 +901,26 @@ export function formatAuditGroupDescription(group: AuditLogGroup): AuditDescript
 
   if (group.kind === "stock_adjustment") {
     const log = group.logs.find((item) => item.table_name === "producto_variantes") ?? group.primaryLog
-    const label = String(log.after_data?.nombre ?? log.before_data?.nombre ?? "").trim() || "variante"
+    const label = getVariantContextLabel(log, maps)
     const before = formatTechnicalValue(log.before_data?.stock)
     const after = formatTechnicalValue(log.after_data?.stock)
     const reason =
       typeof log.after_data?.stock_adjustment_reason === "string"
         ? log.after_data.stock_adjustment_reason
         : null
+    const isRevert = reason?.startsWith("Revertido:") ?? false
 
     return {
-      title: `Ajuste de stock · ${label}`,
+      title: `${isRevert ? "Ajuste de stock revertido" : "Ajuste de stock"} · ${label}`,
       lines: [reason ? `Stock ${before} → ${after} · Motivo: ${reason}` : `Stock ${before} → ${after}`],
     }
   }
 
   if (group.kind !== "variant_principal_change") {
-    return formatAuditDescription(group.primaryLog)
+    return formatAuditDescription(group.primaryLog, maps)
   }
 
-  const productName = getGroupedProductName(group.logs)
+  const productName = getGroupedProductName(group.logs, maps)
   const { beforeName, afterName } = getVariantPrincipalNames(group.logs)
 
   return {
@@ -601,16 +944,28 @@ export function getAuditGroupDisplayAction(group: AuditLogGroup) {
 export function canUndoAuditGroup(group: AuditLogGroup) {
   if (group.kind === "product_delete") return canUndoAuditLog(group.primaryLog)
   // El stock de producto_variantes es una columna derivada (recalculada por
-  // refresh_inventory_stock a partir de inventory_movements); un "deshacer"
-  // genérico que reescriba antes/después directamente sobre esa columna no
-  // es una operación soportada. Mejor no ofrecer un botón que no funciona.
-  if (group.kind === "stock_adjustment") return false
+  // refresh_inventory_stock), así que deshacer un ajuste manual NUNCA
+  // reescribe esa columna directamente: el servidor aplica el delta inverso
+  // con la misma función idempotente que usa un ajuste manual normal. Ver
+  // undo_audit_log en supabase para el detalle de la estrategia.
+  if (group.kind === "stock_adjustment") {
+    const log = group.logs.find((item) => item.table_name === "producto_variantes") ?? group.primaryLog
+    return !log.undone_at && !isUndoAuditEvent(log)
+  }
 
   return group.logs.every(canUndoAuditLog)
 }
 
 export function getAuditGroupUndoLogs(group: AuditLogGroup) {
   if (group.kind === "product_delete") return [group.primaryLog]
+
+  // El "eco" de recálculo agregado sobre productos.stock no se deshace de
+  // forma independiente: el servidor lo marca junto con el ajuste de la
+  // variante al procesar ese único log (ver undo_audit_log).
+  if (group.kind === "stock_adjustment") {
+    const log = group.logs.find((item) => item.table_name === "producto_variantes") ?? group.primaryLog
+    return [log]
+  }
 
   return group.logs
 }
@@ -708,6 +1063,54 @@ export function canUndoAuditLog(log: SupabaseAuditLog) {
   return log.action === "UPDATE" || log.action === "INSERT" || log.action === "DELETE"
 }
 
+const paymentAdjacentTables = new Set([
+  "business_expenses",
+  "customer_credit_movements",
+  "inventory_variant_allocations",
+  "mercadolibre_sales",
+  "product_cost_entries",
+])
+
+// Explicación en lenguaje humano de por qué NO hay botón "Deshacer" en un
+// evento. null significa "sí es reversible" (o ya fue deshecho / es en sí
+// mismo el marcador de una reversión, casos que no necesitan explicación).
+export function getNonReversibleReason(log: SupabaseAuditLog): string | null {
+  if (isUndoAuditEvent(log) || log.undone_at) return null
+  if (canUndoAuditLog(log)) return null
+
+  if (log.table_name === "profiles") {
+    return "Los cambios de permisos y cuentas no se revierten automáticamente por motivos de seguridad."
+  }
+  if (orderTables.has(log.table_name)) {
+    return "Los pedidos no se revierten automáticamente: pueden tener pagos, facturación o envío asociados."
+  }
+  if (paymentAdjacentTables.has(log.table_name)) {
+    return "Esta acción afecta el stock calculado o movimientos financieros y no tiene una reversión automática segura."
+  }
+
+  const fields = getChangedFields(log)
+  if (fields.some((field) => field.includes("payment") || field.includes("tracking") || field.includes("mercadopago"))) {
+    return "Este cambio incluye datos de pago o envío y no se revierte automáticamente."
+  }
+
+  if (!reversibleTables.has(log.table_name)) {
+    return "Esta acción no tiene una reversión segura implementada todavía."
+  }
+
+  return "Esta acción no se puede deshacer."
+}
+
+export function getAuditGroupNonReversibleReason(group: AuditLogGroup): string | null {
+  if (canUndoAuditGroup(group)) return null
+  if (group.kind === "product_delete") return getNonReversibleReason(group.primaryLog)
+  if (group.kind === "stock_adjustment") {
+    return "Este ajuste ya fue revertido o forma parte de un movimiento que ya no está disponible."
+  }
+
+  const blockedLog = group.logs.find((log) => !canUndoAuditLog(log)) ?? group.primaryLog
+  return getNonReversibleReason(blockedLog)
+}
+
 export function getAuditActionLabel(action: SupabaseAuditLog["action"]) {
   if (action === "INSERT") return "Creación"
   if (action === "DELETE") return "Eliminación"
@@ -728,11 +1131,13 @@ export function getSeverityLabel(severity: AuditSeverity) {
   return "Normal"
 }
 
-function getUndoSummaryLine(log: SupabaseAuditLog): string | null {
+// Reconstruye el cambio que efectivamente aplicó el "deshacer": una fila de
+// audit_logs "de mentira" con antes/después invertidos respecto del evento
+// original, para poder reutilizar getRecordName/getChangedFields/
+// resolveFieldDisplayValue tal como se usan en cualquier otro evento.
+function buildUndoRestoredLog(log: SupabaseAuditLog): SupabaseAuditLog | null {
   const originalAction =
-    typeof log.after_data?.original_action === "string"
-      ? log.after_data.original_action
-      : null
+    typeof log.after_data?.original_action === "string" ? log.after_data.original_action : null
   const originalBeforeData = toRecord(log.after_data?.original_before_data)
   const originalAfterData = toRecord(log.after_data?.original_after_data)
   const originalTableName =
@@ -740,13 +1145,11 @@ function getUndoSummaryLine(log: SupabaseAuditLog): string | null {
       ? log.after_data.original_table_name
       : "admin_events"
   const originalRecordId =
-    typeof log.after_data?.original_record_id === "string"
-      ? log.after_data.original_record_id
-      : null
+    typeof log.after_data?.original_record_id === "string" ? log.after_data.original_record_id : null
 
   if (originalAction !== "UPDATE" || !originalBeforeData || !originalAfterData) return null
 
-  const restoredLog: SupabaseAuditLog = {
+  return {
     ...log,
     action: "UPDATE",
     table_name: originalTableName,
@@ -754,14 +1157,26 @@ function getUndoSummaryLine(log: SupabaseAuditLog): string | null {
     before_data: originalAfterData,
     after_data: originalBeforeData,
   }
+}
+
+function getUndoDescription(log: SupabaseAuditLog, maps: AuditEntityMaps): AuditDescription {
+  const restoredLog = buildUndoRestoredLog(log)
+  if (!restoredLog) return { title: "Cambio deshecho", lines: [] }
+
+  const entityName = getRecordName(restoredLog, maps)
+  const title = entityName ? `Cambio deshecho · ${entityName}` : "Cambio deshecho"
 
   const fields = getChangedFields(restoredLog)
-  if (fields.length === 0) return null
+  if (fields.length === 0) return { title, lines: [] }
+
   if (fields.length === 1) {
-    return `${getHumanFieldName(fields[0])}: ${formatHumanValue(originalBeforeData[fields[0]])}`
+    const field = fields[0]
+    const from = resolveFieldDisplayValue(field, restoredLog.before_data?.[field], maps, "after")
+    const to = resolveFieldDisplayValue(field, restoredLog.after_data?.[field], maps, "before")
+    return { title, lines: [`${getHumanFieldName(field)}: ${from} → ${to}`] }
   }
 
-  return `Restaurado: ${formatHumanList(fields.map(getHumanFieldName))}`
+  return { title, lines: [`Restaurado: ${formatHumanList(fields.map(getHumanFieldName))}`] }
 }
 
 function toRecord(value: unknown) {
@@ -770,20 +1185,36 @@ function toRecord(value: unknown) {
   return value as Record<string, unknown>
 }
 
-function getRecordName(log: SupabaseAuditLog) {
+// Nunca devuelve un ID o UUID crudo: si no hay un campo de nombre propio ni
+// una relación resoluble, devuelve null y quien llama omite el "· nombre"
+// del título (mejor "Banner creado" que "Banner creado · f3a1...").
+function getRecordName(log: SupabaseAuditLog, maps: AuditEntityMaps = emptyAuditEntityMaps): string | null {
   const data = log.action === "DELETE" ? log.before_data : log.after_data
-  if (!data) return log.record_id ? `ID ${log.record_id}` : "registro"
+  if (!data) return null
 
   const candidate =
     data.nombre ??
     data.name ??
+    data.event_name ??
+    data.internal_name ??
     data.email ??
+    data.target_name ??
     data.slug ??
     data.titulo ??
     data.title ??
-    log.record_id
+    data.concepto ??
+    data.category ??
+    data.alt_text ??
+    data.placement
 
-  return candidate ? formatTechnicalValue(candidate) : "registro"
+  if (candidate) return formatTechnicalValue(candidate)
+
+  const relational =
+    resolveProductName(maps, data.producto_id ?? data.product_id) ??
+    resolveVariantName(maps, data.variant_id) ??
+    resolveCategoryName(maps, data.categoria_id ?? data.category_id)
+
+  return relational
 }
 
 function isDeletedProductLog(log: SupabaseAuditLog) {
@@ -880,7 +1311,7 @@ function getVariantPrincipalProductId(log: SupabaseAuditLog) {
   return null
 }
 
-function getGroupedProductName(logs: SupabaseAuditLog[]) {
+function getGroupedProductName(logs: SupabaseAuditLog[], maps: AuditEntityMaps) {
   const productLog = logs.find((log) => log.table_name === "productos")
   const productName =
     productLog?.after_data?.nombre ??
@@ -890,12 +1321,9 @@ function getGroupedProductName(logs: SupabaseAuditLog[]) {
 
   if (productName) return formatTechnicalValue(productName)
 
-  const productId =
-    logs
-      .map((log) => getVariantPrincipalProductId(log))
-      .find(Boolean) ?? "registro"
+  const productId = logs.map((log) => getVariantPrincipalProductId(log)).find(Boolean)
 
-  return `ID ${productId}`
+  return resolveProductName(maps, productId) ?? "producto"
 }
 
 function getVariantPrincipalNames(logs: SupabaseAuditLog[]) {
