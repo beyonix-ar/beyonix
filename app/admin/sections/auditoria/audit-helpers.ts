@@ -7,6 +7,7 @@ import {
   resolveProductName,
   resolveUserName,
   resolveVariantName,
+  resolveVariantProductId,
   type AuditEntityMaps,
 } from "./audit-entity-resolver"
 
@@ -70,8 +71,6 @@ const humanFieldNames: Record<string, string> = {
   product_id: "Producto",
   purchase_date: "Fecha de compra",
   quantity: "Cantidad",
-  received_quantity: "Cantidad recibida",
-  reception_status: "Estado de recepción",
   recurrence: "Recurrencia",
   restored_count: "Productos restaurados",
   rol: "Permisos",
@@ -131,6 +130,10 @@ const ignoredFields = new Set([
   "created_at",
   "id",
   "idempotency_key",
+  // Redundantes con "Cantidad" para el flujo actual de compras (siempre
+  // coinciden con quantity: no hay recepción parcial en la UI todavía).
+  "received_quantity",
+  "reception_status",
   "record_id",
   "table_name",
   "updated_at",
@@ -228,7 +231,7 @@ export function formatAuditTime(value: string) {
 }
 
 interface ReferenceFieldConfig {
-  resolve: (maps: AuditEntityMaps, value: unknown) => string | null
+  resolve: (maps: AuditEntityMaps, value: unknown, siblingData?: Record<string, unknown> | null) => string | null
   noun: string
   // Los pedidos se identifican con su número público (cálculo puro sobre el
   // id, ver formatPublicOrderId): no hay "no disponible" posible porque no
@@ -239,8 +242,8 @@ interface ReferenceFieldConfig {
 const referenceFieldConfigs: Record<string, ReferenceFieldConfig> = {
   categoria_id: { resolve: resolveCategoryName, noun: "categoría" },
   category_id: { resolve: resolveCategoryName, noun: "categoría" },
-  producto_id: { resolve: resolveProductName, noun: "producto" },
-  product_id: { resolve: resolveProductName, noun: "producto" },
+  producto_id: { resolve: resolveProductOrVariantProduct, noun: "producto" },
+  product_id: { resolve: resolveProductOrVariantProduct, noun: "producto" },
   variant_id: { resolve: resolveVariantName, noun: "variante" },
   variante_id: { resolve: resolveVariantName, noun: "variante" },
   created_by: { resolve: resolveUserName, noun: "usuario" },
@@ -254,6 +257,25 @@ const referenceFieldConfigs: Record<string, ReferenceFieldConfig> = {
 function resolveOrderLabel(_maps: AuditEntityMaps, value: unknown) {
   const id = Number(value)
   return Number.isFinite(id) ? formatPublicOrderId(id) : null
+}
+
+// Si el producto referenciado directamente ya no existe (por ejemplo, se
+// fusionó con otro producto del catálogo) pero el mismo evento también
+// guarda un variant_id que sigue vivo, la variante ya sabe a qué producto
+// pertenece HOY: se usa esa referencia vigente en vez de rendirse.
+function resolveProductOrVariantProduct(
+  maps: AuditEntityMaps,
+  value: unknown,
+  siblingData?: Record<string, unknown> | null,
+) {
+  const direct = resolveProductName(maps, value)
+  if (direct) return direct
+
+  const variantId = siblingData?.variant_id
+  if (variantId === undefined || variantId === null || variantId === "") return null
+
+  const currentProductId = resolveVariantProductId(maps, variantId)
+  return currentProductId ? resolveProductName(maps, currentProductId) : null
 }
 
 function capitalize(text: string) {
@@ -270,12 +292,13 @@ export function resolveFieldDisplayValue(
   value: unknown,
   maps: AuditEntityMaps,
   context: "before" | "after" = "after",
+  siblingData?: Record<string, unknown> | null,
 ) {
   const config = referenceFieldConfigs[field]
   if (config) {
     if (value === null || value === undefined || value === "") return formatTechnicalValue(value)
 
-    const resolved = config.resolve(maps, value)
+    const resolved = config.resolve(maps, value, siblingData)
     if (resolved) return resolved
     if (config.alwaysResolvable) return formatTechnicalValue(value)
     // Todavía no llegó la primera tanda de consultas: mejor un genérico
@@ -361,8 +384,6 @@ const fieldOrderByTable: Record<string, string[]> = {
     "article_name",
     "sku",
     "quantity",
-    "received_quantity",
-    "reception_status",
     "unit_cost",
     "total_cost",
     "supplier",
@@ -596,7 +617,7 @@ function getVariantContextLabel(log: SupabaseAuditLog, maps: AuditEntityMaps) {
 // compra guardó como snapshot (artículo o SKU), y sólo como último recurso
 // admite que no hay forma de identificarla — nunca un ID crudo.
 function getCostEntryLabel(data: Record<string, unknown> | null | undefined, maps: AuditEntityMaps) {
-  const productName = resolveProductName(maps, data?.producto_id ?? data?.product_id)
+  const productName = resolveProductOrVariantProduct(maps, data?.producto_id ?? data?.product_id, data)
   if (productName) {
     const variantName = resolveVariantName(maps, data?.variant_id)
     return variantName ? `${productName} / ${variantName}` : productName

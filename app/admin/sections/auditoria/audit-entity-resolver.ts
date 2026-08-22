@@ -145,6 +145,15 @@ export function resolveVariantBarcode(maps: AuditEntityMaps, id: unknown): strin
   return maps.variants.get(String(id))?.codigoBarra ?? null
 }
 
+// Producto AL QUE PERTENECE HOY la variante (no el producto_id congelado
+// en el evento). Útil cuando el producto original de un evento ya no
+// existe (por ejemplo, se fusionó con otro del catálogo) pero la variante
+// sigue viva: la variante ya sabe a qué producto vigente pertenece.
+export function resolveVariantProductId(maps: AuditEntityMaps, id: unknown): string | null {
+  if (id === null || id === undefined || id === "") return null
+  return maps.variants.get(String(id))?.productoId ?? null
+}
+
 export function resolveCategoryName(maps: AuditEntityMaps, id: unknown): string | null {
   if (id === null || id === undefined || id === "") return null
   return maps.categories.get(String(id)) || null

@@ -278,11 +278,11 @@ function AuditDetails({ log, maps }: { log: SupabaseAuditLog; maps: AuditEntityM
                 <>
                   <p className="wrap-break-word text-sm text-white/65">
                     <span className="mr-2 text-white/35">Antes:</span>
-                    {resolveFieldDisplayValue(field, log.before_data?.[field], maps, "before")}
+                    {resolveFieldDisplayValue(field, log.before_data?.[field], maps, "before", log.before_data)}
                   </p>
                   <p className="wrap-break-word text-sm text-white/80">
                     <span className="mr-2 text-white/35">Después:</span>
-                    {resolveFieldDisplayValue(field, log.after_data?.[field], maps, "after")}
+                    {resolveFieldDisplayValue(field, log.after_data?.[field], maps, "after", log.after_data)}
                   </p>
                 </>
               ) : (
@@ -292,6 +292,7 @@ function AuditDetails({ log, maps }: { log: SupabaseAuditLog; maps: AuditEntityM
                     log.action === "DELETE" ? log.before_data?.[field] : log.after_data?.[field],
                     maps,
                     log.action === "DELETE" ? "before" : "after",
+                    log.action === "DELETE" ? log.before_data : log.after_data,
                   )}
                 </p>
               )}
