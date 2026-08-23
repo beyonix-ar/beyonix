@@ -23,6 +23,11 @@ test("un nombre de variante genérico no se usa como nombre de color", () => {
   assert.equal(getColorName("#A3B2C1", "Variante 2"), "COLOR PERSONALIZADO")
 })
 
+test("un nombre auto-derivado tipo 'COLOR #HEX' tampoco se muestra tal cual", () => {
+  assert.equal(getColorName("#C9A3B0", "COLOR #C9A3B0"), "COLOR PERSONALIZADO")
+  assert.equal(getColorName("#c9a3b0", "color #c9a3b0"), "COLOR PERSONALIZADO")
+})
+
 test("la tabla de abreviaturas de colores comunes coincide con lo esperado", () => {
   assert.equal(getColorAbbreviation("#000000"), "Neg")
   assert.equal(getColorAbbreviation("#FFFFFF"), "Bla")

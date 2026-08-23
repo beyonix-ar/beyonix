@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import { createCheckoutShippingQuoteToken } from "../cart/checkout-shipping.ts"
+import { STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
 import {
   buildCheckoutOrderBase,
   buildCheckoutOrderItemsPayload,
@@ -12,6 +13,7 @@ import {
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
   prepareCheckoutOrderCatalogRows,
+  InsufficientStockError,
   type CheckoutOrderProductRow,
   type CheckoutOrderVariantRow,
 } from "./checkout-order-creation.ts"
@@ -89,6 +91,7 @@ test("prepara productos, variantes y precios con las reglas existentes", () => {
       id: 11,
       producto_id: 1,
       nombre: "Única",
+      color_hex: null,
       stock: 5,
       activo: true,
       orden: 0,
@@ -132,6 +135,221 @@ test("prepara productos, variantes y precios con las reglas existentes", () => {
   assert.equal(orderItems[0].precio, 9_000)
   assert.equal(orderItems[1].conditioned_stock_id, conditionedId)
   assert.equal(orderItems[1].precio, 6_800)
+})
+
+test("continúa cuando la cantidad pedida es menor al stock real", () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 1, quantity: 3 }])
+  const products: CheckoutOrderProductRow[] = [
+    { id: 1, nombre: "Producto A", precio: 10_000, stock: 10, activo: true },
+  ]
+  const variants: CheckoutOrderVariantRow[] = [
+    {
+      id: 21,
+      producto_id: 1,
+      nombre: "Única",
+      color_hex: null,
+      stock: 10,
+      activo: true,
+      orden: 0,
+    },
+  ]
+
+  const catalog = prepareCheckoutOrderCatalogRows(
+    items,
+    products,
+    variants,
+    new Map(),
+  )
+
+  assert.equal(catalog.cartRows.length, 1)
+  assert.equal(catalog.cartRows[0].quantity, 3)
+})
+
+test("acepta pedir exactamente la cantidad de stock disponible", () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 1, quantity: 6 }])
+  const products: CheckoutOrderProductRow[] = [
+    { id: 1, nombre: "Producto A", precio: 10_000, stock: 6, activo: true },
+  ]
+  const variants: CheckoutOrderVariantRow[] = [
+    {
+      id: 21,
+      producto_id: 1,
+      nombre: "Única",
+      color_hex: null,
+      stock: 6,
+      activo: true,
+      orden: 0,
+    },
+  ]
+
+  const catalog = prepareCheckoutOrderCatalogRows(
+    items,
+    products,
+    variants,
+    new Map(),
+  )
+
+  assert.equal(catalog.cartRows[0].quantity, 6)
+})
+
+test("bloquea el exceso sobre stock sin revelar la cantidad real disponible", () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 1, quantity: 10 }])
+  const products: CheckoutOrderProductRow[] = [
+    { id: 1, nombre: "Auricular C-2237", precio: 10_000, stock: 6, activo: true },
+  ]
+  const variants: CheckoutOrderVariantRow[] = [
+    {
+      id: 21,
+      producto_id: 1,
+      nombre: "NEGRO",
+      color_hex: "#000000",
+      stock: 6,
+      activo: true,
+      orden: 0,
+    },
+  ]
+
+  assert.throws(
+    () =>
+      prepareCheckoutOrderCatalogRows(items, products, variants, new Map()),
+    (error) => {
+      assert.ok(error instanceof InsufficientStockError)
+      assert.equal(error.items.length, 1)
+      assert.equal(error.items[0].productId, 1)
+      assert.equal(error.items[0].variantId, 21)
+      assert.equal(error.items[0].displayName, "Auricular C-2237")
+      assert.equal(error.items[0].variantName, "NEGRO")
+      // Ni el mensaje ni el detalle deben delatar cuánto stock hay ("6").
+      assert.doesNotMatch(error.message, /\d/)
+      assert.doesNotMatch(JSON.stringify(error.items), /\b6\b/)
+      return true
+    },
+  )
+})
+
+test("junta todos los productos con stock insuficiente en una sola respuesta", () => {
+  const items = normalizeCheckoutOrderItems([
+    { productId: 1, quantity: 2 },
+    { productId: 2, quantity: 10 },
+    { productId: 3, quantity: 8 },
+  ])
+  const products: CheckoutOrderProductRow[] = [
+    { id: 1, nombre: "Producto A (correcto)", precio: 10_000, stock: 10, activo: true },
+    { id: 2, nombre: "Producto B (excedido)", precio: 10_000, stock: 6, activo: true },
+    { id: 3, nombre: "Producto C (excedido)", precio: 10_000, stock: 3, activo: true },
+  ]
+  const variants: CheckoutOrderVariantRow[] = [
+    { id: 31, producto_id: 1, nombre: "Única", color_hex: null, stock: 10, activo: true, orden: 0 },
+    { id: 32, producto_id: 2, nombre: "Única", color_hex: null, stock: 6, activo: true, orden: 0 },
+    { id: 33, producto_id: 3, nombre: "Única", color_hex: null, stock: 3, activo: true, orden: 0 },
+  ]
+
+  assert.throws(
+    () =>
+      prepareCheckoutOrderCatalogRows(items, products, variants, new Map()),
+    (error) => {
+      assert.ok(error instanceof InsufficientStockError)
+      const flaggedProductIds = error.items
+        .map((item) => item.productId)
+        .sort((a, b) => a - b)
+      assert.deepEqual(flaggedProductIds, [2, 3])
+      return true
+    },
+  )
+})
+
+test("detecta un carrito desactualizado cuyo stock bajó después de agregarlo", () => {
+  // El cliente agregó 5 unidades cuando había stock suficiente; la validación
+  // vuelve a leer el stock actual (no confía en lo que había al agregarlo) y
+  // ahora solo quedan 2.
+  const items = normalizeCheckoutOrderItems([{ productId: 1, quantity: 5 }])
+  const products: CheckoutOrderProductRow[] = [
+    { id: 1, nombre: "Producto A", precio: 10_000, stock: 2, activo: true },
+  ]
+  const variants: CheckoutOrderVariantRow[] = [
+    {
+      id: 21,
+      producto_id: 1,
+      nombre: "Única",
+      color_hex: null,
+      stock: 2,
+      activo: true,
+      orden: 0,
+    },
+  ]
+
+  assert.throws(
+    () =>
+      prepareCheckoutOrderCatalogRows(items, products, variants, new Map()),
+    InsufficientStockError,
+  )
+})
+
+test("un producto desactivado no se confunde con stock insuficiente", () => {
+  // Está desactivado (ya no se vende, sea cual sea la cantidad pedida), no
+  // es un caso de "bajá la cantidad y podés continuar" — debe cortar con el
+  // mensaje genérico de disponibilidad, no como InsufficientStockError.
+  const items = normalizeCheckoutOrderItems([{ productId: 1, quantity: 2 }])
+  const products: CheckoutOrderProductRow[] = [
+    {
+      id: 1,
+      nombre: "Producto discontinuado",
+      precio: 10_000,
+      stock: 10,
+      activo: false,
+    },
+  ]
+  const variants: CheckoutOrderVariantRow[] = [
+    {
+      id: 21,
+      producto_id: 1,
+      nombre: "Única",
+      color_hex: null,
+      stock: 10,
+      activo: true,
+      orden: 0,
+    },
+  ]
+
+  assert.throws(
+    () =>
+      prepareCheckoutOrderCatalogRows(items, products, variants, new Map()),
+    (error) => {
+      assert.ok(!(error instanceof InsufficientStockError))
+      assert.ok(error instanceof Error)
+      assert.equal(error.message, STOCK_CHANGED_MESSAGE)
+      return true
+    },
+  )
+})
+
+test("una variante desactivada no se confunde con stock insuficiente", () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 1, quantity: 2 }])
+  const products: CheckoutOrderProductRow[] = [
+    { id: 1, nombre: "Producto A", precio: 10_000, stock: 10, activo: true },
+  ]
+  const variants: CheckoutOrderVariantRow[] = [
+    {
+      id: 21,
+      producto_id: 1,
+      nombre: "Descontinuada",
+      color_hex: null,
+      stock: 10,
+      activo: false,
+      orden: 0,
+    },
+  ]
+  items[0].variantId = 21
+
+  assert.throws(
+    () =>
+      prepareCheckoutOrderCatalogRows(items, products, variants, new Map()),
+    (error) => {
+      assert.ok(!(error instanceof InsufficientStockError))
+      assert.equal((error as Error).message, STOCK_CHANGED_MESSAGE)
+      return true
+    },
+  )
 })
 
 test("los tres medios conservan la misma base y sus diferencias reales", () => {
@@ -286,5 +504,27 @@ test("los endpoints delegan los bloques equivalentes y conservan lo específico"
     assert.doesNotMatch(source, /function normalizeItems\(/)
     assert.doesNotMatch(source, /function insertOrderItems\(/)
     assert.match(source, route.specific)
+
+    // La validación de catálogo/stock (que puede lanzar
+    // InsufficientStockError) debe ejecutarse ANTES de insertar la orden:
+    // si el stock no alcanza, no debe crearse ninguna orden, preferencia de
+    // Mercado Pago, débito de saldo ni comprobante.
+    const catalogIndex = source.indexOf(
+      "loadAndValidateCheckoutOrderCatalog(",
+    )
+    const orderInsertIndex = source.search(/\.from\("ordenes"\)\s*\n\s*\.insert\(/)
+    assert.ok(
+      catalogIndex >= 0 && orderInsertIndex >= 0,
+      `${route.path}: no se encontró la validación de catálogo o el insert de la orden`,
+    )
+    assert.ok(
+      catalogIndex < orderInsertIndex,
+      `${route.path}: la validación de stock debe ocurrir antes de crear la orden`,
+    )
+
+    // El error de stock insuficiente se responde con una estructura segura
+    // (código + items afectados), no con el mensaje genérico crudo.
+    assert.match(source, /InsufficientStockError/)
+    assert.match(source, /INSUFFICIENT_STOCK/)
   }
 })

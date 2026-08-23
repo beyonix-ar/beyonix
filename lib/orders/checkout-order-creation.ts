@@ -18,13 +18,41 @@ import {
   normalizeCheckoutShipping,
   type NormalizedCheckoutShipping,
 } from "../cart/checkout-shipping.ts"
-import { assertCatalogStock } from "../cart/stock-status.ts"
+import { assertCatalogStock, STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
+import { getColorName } from "../products/variant-color.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
 import { getProductDiscount, type ShippingBonusSettings } from "../store-config.ts"
 import {
   deleteIncompleteCheckoutOrder,
   validateCheckoutInventory,
 } from "./checkout-inventory.ts"
+
+export interface InsufficientStockConflictItem {
+  productId: number
+  variantId: number | null
+  conditionedStockId: string | null
+  displayName: string
+  variantName: string | null
+}
+
+/**
+ * Se lanza cuando uno o más ítems del carrito piden más cantidad de la que
+ * hay realmente disponible para vender. A propósito NO lleva el stock real
+ * en ninguna parte (ni en el mensaje ni en `items`): el cliente nunca debe
+ * poder inferir cuánto inventario queda a partir de un error de checkout.
+ * Reúne TODOS los conflictos del carrito en una sola instancia para que el
+ * cliente los vea de una vez, en lugar de ir descubriéndolos uno por uno en
+ * sucesivos intentos de pago.
+ */
+export class InsufficientStockError extends Error {
+  readonly items: InsufficientStockConflictItem[]
+
+  constructor(items: InsufficientStockConflictItem[]) {
+    super(STOCK_CHANGED_MESSAGE)
+    this.name = "InsufficientStockError"
+    this.items = items
+  }
+}
 
 export interface CheckoutOrderItemInput {
   productId?: number
@@ -90,6 +118,7 @@ export interface CheckoutOrderVariantRow {
   id: number
   producto_id: number
   nombre: string
+  color_hex: string | null
   stock: number | null
   activo: boolean
   orden: number | null
@@ -150,7 +179,7 @@ interface PersistCheckoutOrderItemsParams {
 type CheckoutOrderDatabaseClient = ReturnType<typeof createAdminClient>
 
 const PRODUCT_SELECT = "id, nombre, precio, stock, activo"
-const VARIANT_SELECT = "id, producto_id, nombre, stock, activo, orden"
+const VARIANT_SELECT = "id, producto_id, nombre, color_hex, stock, activo, orden"
 
 export function normalizeCheckoutOrderItems(
   items: CheckoutOrderItemInput[] | null | undefined,
@@ -294,6 +323,11 @@ export function prepareCheckoutOrderCatalogRows(
     variantsByProductId.set(variant.producto_id, productVariants)
   }
 
+  // Se juntan TODOS los conflictos de stock del carrito antes de fallar, en
+  // vez de cortar en el primer ítem: el cliente tiene que ver de una sola
+  // vez todo lo que tiene que ajustar, no ir descubriéndolo pedido a pedido.
+  const stockConflicts: InsufficientStockConflictItem[] = []
+
   for (const item of items) {
     if (!item.variantId && !item.conditionedStockId) {
       const activeVariants =
@@ -315,7 +349,6 @@ export function prepareCheckoutOrderCatalogRows(
     const variant = item.variantId
       ? variantsById.get(item.variantId)
       : undefined
-    const conditioned = assertConditionedCheckoutStock(item, conditionedRows)
 
     if (item.variantId && (!variant || variant.producto_id !== product.id)) {
       throw new Error(
@@ -324,9 +357,51 @@ export function prepareCheckoutOrderCatalogRows(
       )
     }
 
-    if (!conditioned) {
-      assertCatalogStock(item.quantity, product, variant)
+    // Un producto/variante desactivado no es un problema de "cantidad": ni
+    // reduciéndola el cliente puede continuar. Se corta de inmediato con el
+    // mensaje genérico de disponibilidad, en vez de sumarlo a la lista de
+    // conflictos de stock insuficiente (que sí se resuelven bajando la
+    // cantidad pedida).
+    if (
+      !item.conditionedStockId &&
+      (product.activo === false ||
+        (variant ? variant.activo === false : false))
+    ) {
+      throw new Error(STOCK_CHANGED_MESSAGE)
     }
+
+    let hasStock = true
+    let conditioned: ConditionedCheckoutRow | null = null
+
+    try {
+      conditioned = assertConditionedCheckoutStock(item, conditionedRows)
+    } catch {
+      hasStock = false
+    }
+
+    if (hasStock && !conditioned) {
+      try {
+        assertCatalogStock(item.quantity, product, variant)
+      } catch {
+        hasStock = false
+      }
+    }
+
+    if (!hasStock) {
+      stockConflicts.push({
+        productId: item.productId,
+        variantId: item.variantId,
+        conditionedStockId: item.conditionedStockId,
+        displayName: product.nombre,
+        variantName: variant
+          ? getColorName(variant.color_hex, variant.nombre)
+          : null,
+      })
+    }
+  }
+
+  if (stockConflicts.length > 0) {
+    throw new InsufficientStockError(stockConflicts)
   }
 
   const cartRows = items.map((item) => {

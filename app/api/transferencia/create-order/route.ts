@@ -30,6 +30,7 @@ import {
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
+  InsufficientStockError,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -249,6 +250,14 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("Error creando orden por transferencia", error)
+
+    if (error instanceof InsufficientStockError) {
+      return NextResponse.json(
+        { code: "INSUFFICIENT_STOCK", items: error.items },
+        { status: 409 },
+      )
+    }
+
     const stockConflict =
       error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
     const quoteConflict = error instanceof CheckoutShippingQuoteError

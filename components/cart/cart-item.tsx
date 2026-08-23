@@ -1,13 +1,15 @@
+import { useState } from "react"
 import Image from "next/image"
 import { CheckCircle2, CircleSlash2, Flame, Minus, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { CartItem } from "@/context/cart-context"
 import {
-  getProductStock,
+  MAX_CART_ITEM_QUANTITY,
   getStockStatus,
   getStockStatusLabel,
   type StockStatus,
 } from "@/lib/cart/stock-status"
+import { getColorName } from "@/lib/products/variant-color"
 
 interface Props {
   item: CartItem
@@ -54,10 +56,11 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
     discountReason,
   } = item
   const price = unitPrice
-  const colorName = variantName || (color !== "default" ? color : null)
+  const hasVariantInfo = Boolean(variantName || (color && color !== "default"))
+  const colorName = hasVariantInfo ? getColorName(colorHex, variantName) : null
   const hasColor = Boolean(colorHex)
-  const maxQuantity = getProductStock(product, color)
-  const isMaxQuantity = maxQuantity > 0 && quantity >= maxQuantity
+  const [imageSrc, setImageSrc] = useState(image || "/placeholder.svg")
+  const isMaxQuantity = quantity >= MAX_CART_ITEM_QUANTITY
   const stockStatus = getStockStatus(product, color)
   const StockIcon = getStockIcon(stockStatus)
 
@@ -65,11 +68,12 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
     <div className="relative flex gap-3 rounded-xl border border-white/10 bg-beyonix-surface-3 p-2 shadow-sm shadow-black/30">
       <div className="relative size-20 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white p-1">
         <Image
-          src={image || "/placeholder.svg"}
+          src={imageSrc}
           alt={product.nombre}
           fill
           sizes="80px"
           className="object-cover"
+          onError={() => setImageSrc("/placeholder.svg")}
         />
       </div>
 

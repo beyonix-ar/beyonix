@@ -54,7 +54,7 @@ import {
 } from "@/lib/supabase/queries/productos"
 import {
   deleteProductoImageByUrl,
-  uploadProductoImages,
+  uploadProductoVariantImages,
 } from "@/lib/supabase/queries/producto-imagenes"
 
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
@@ -339,10 +339,9 @@ export function ProductosRow({
       setSavingConditionedId(item.id)
       setConditionedError("")
       uploadedImages = values.newImages.length
-        ? await uploadProductoImages(
+        ? await uploadProductoVariantImages(
             producto.id,
             values.newImages,
-            values.conditionedImages.length,
           )
         : []
       const nextItem = await updateConditionedStock(item.id, {
@@ -1068,67 +1067,69 @@ export function ProductosRow({
                     className="mx-4 rounded-lg border border-beyonix-sky/30 bg-beyonix-blue/[0.06] px-3 py-2.5"
                   >
                     <div className="flex flex-wrap items-end gap-2">
-                      <label className="min-w-0 w-28">
-                        <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
-                          SKU
-                        </span>
-                        <input
-                          type="text"
-                          value={editVariantSku}
-                          maxLength={120}
-                          placeholder="Sin SKU"
-                          aria-label={`Editar SKU de ${variante.nombre}`}
-                          onChange={(event) => setEditVariantSku(event.target.value.toUpperCase())}
-                          onKeyDown={editKeyDown}
-                          className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 px-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
-                        />
-                      </label>
-
-                      <label className="min-w-0 w-36">
-                        <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
-                          Color
-                        </span>
-                        <span className="relative block">
+                      <div className="grid w-full min-w-0 gap-2 sm:w-auto sm:flex-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,2fr)]">
+                        <label className="min-w-0">
+                          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
+                            SKU
+                          </span>
                           <input
                             type="text"
-                            value={editColorName}
-                            maxLength={160}
-                            placeholder="Nombre del color"
-                            aria-label={`Editar nombre del color de ${variante.nombre}`}
-                            onChange={(event) => setEditColorName(event.target.value.toUpperCase())}
+                            value={editVariantSku}
+                            maxLength={120}
+                            placeholder="Sin SKU"
+                            aria-label={`Editar SKU de ${variante.nombre}`}
+                            onChange={(event) => setEditVariantSku(event.target.value.toUpperCase())}
                             onKeyDown={editKeyDown}
-                            className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 py-0 pl-8 pr-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                            className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 px-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
                           />
-                          <span
-                            className="absolute left-2 top-1/2 size-4 -translate-y-1/2 cursor-pointer overflow-hidden rounded-full border border-white/28"
-                            style={{ backgroundColor: editColor }}
-                          >
-                            <input
-                              type="color"
-                              value={editColor}
-                              aria-label={`Seleccionar color de ${variante.nombre}`}
-                              onChange={(event) => setEditColor(event.target.value)}
-                              className="absolute inset-0 size-full cursor-pointer opacity-0"
-                            />
-                          </span>
-                        </span>
-                      </label>
+                        </label>
 
-                      <label className="min-w-40 flex-1">
-                        <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
-                          Código de barra
-                        </span>
-                        <input
-                          type="text"
-                          value={editBarcode}
-                          maxLength={64}
-                          placeholder="Sin código de barra"
-                          aria-label={`Editar código de barra de ${variante.nombre}`}
-                          onChange={(event) => setEditBarcode(event.target.value)}
-                          onKeyDown={editKeyDown}
-                          className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 px-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
-                        />
-                      </label>
+                        <label className="min-w-0">
+                          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
+                            Color
+                          </span>
+                          <span className="relative block">
+                            <input
+                              type="text"
+                              value={editColorName}
+                              maxLength={160}
+                              placeholder="Nombre del color"
+                              aria-label={`Editar nombre del color de ${variante.nombre}`}
+                              onChange={(event) => setEditColorName(event.target.value.toUpperCase())}
+                              onKeyDown={editKeyDown}
+                              className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 py-0 pl-8 pr-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                            />
+                            <span
+                              className="absolute left-2 top-1/2 size-4 -translate-y-1/2 cursor-pointer overflow-hidden rounded-full border border-white/28"
+                              style={{ backgroundColor: editColor }}
+                            >
+                              <input
+                                type="color"
+                                value={editColor}
+                                aria-label={`Seleccionar color de ${variante.nombre}`}
+                                onChange={(event) => setEditColor(event.target.value)}
+                                className="absolute inset-0 size-full cursor-pointer opacity-0"
+                              />
+                            </span>
+                          </span>
+                        </label>
+
+                        <label className="min-w-0">
+                          <span className="mb-1 block text-9px font-black uppercase tracking-wider text-white/40">
+                            Código de barra
+                          </span>
+                          <input
+                            type="text"
+                            value={editBarcode}
+                            maxLength={64}
+                            placeholder="Sin código de barra"
+                            aria-label={`Editar código de barra de ${variante.nombre}`}
+                            onChange={(event) => setEditBarcode(event.target.value)}
+                            onKeyDown={editKeyDown}
+                            className="h-9 w-full min-w-0 rounded-lg border border-beyonix-blue-light/20 bg-black/30 px-2.5 text-xs font-bold text-white outline-none transition-colors placeholder:text-white/28 hover:border-beyonix-sky/40 focus:border-beyonix-sky/55"
+                          />
+                        </label>
+                      </div>
 
                       <div className="ml-auto flex shrink-0 items-center gap-1.5">
                         <button

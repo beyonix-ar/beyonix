@@ -33,8 +33,7 @@ import { DraftImageUploader } from "./draft-image-uploader"
 
 import {
   deleteProductoImageByUrl,
-  updateProductoImageOrder,
-  uploadProductoImages,
+  uploadProductoVariantImages,
 } from "@/lib/supabase/queries/producto-imagenes"
 
 import {
@@ -186,6 +185,9 @@ export function ProductVariantsEditor({
     useState<number | null>(null)
   const [draggedVariantKey, setDraggedVariantKey] = useState<string | null>(null)
   const [reorderingVariants, setReorderingVariants] = useState(false)
+  const [editingVariantKeys, setEditingVariantKeys] = useState<Set<string>>(
+    () => new Set(),
+  )
   const formPanelRef = useRef<HTMLElement>(null)
 
   const [error, setError] =
@@ -345,15 +347,9 @@ export function ProductVariantsEditor({
 
       const urls =
         variantImages.length
-          ? await uploadProductoImages(
+          ? await uploadProductoVariantImages(
               productoId,
               variantImages,
-              variantes.reduce(
-                (total, variante) =>
-                  total +
-                  (variante.imagenes?.length || 0),
-                0
-              )
             )
           : []
 
@@ -426,6 +422,12 @@ export function ProductVariantsEditor({
           )
 
         setVariantes(nextVariantes)
+        setEditingVariantKeys((current) => {
+          if (!current.has(String(id))) return current
+          const next = new Set(current)
+          next.delete(String(id))
+          return next
+        })
         if (id === primaryVariantId) {
           const nextPrimary = [...nextVariantes].sort(
             (left, right) => left.orden - right.orden || left.id - right.id,
@@ -455,6 +457,12 @@ export function ProductVariantsEditor({
       (variant) => variant.tempId !== tempId,
     )
     onDraftVariantsChange?.(nextVariants)
+    setEditingVariantKeys((current) => {
+      if (!current.has(tempId)) return current
+      const next = new Set(current)
+      next.delete(tempId)
+      return next
+    })
     if (draftVariants[0]?.tempId === tempId) {
       onPrimarySkuChange?.(nextVariants[0]?.sku ?? "")
     }
@@ -486,13 +494,9 @@ export function ProductVariantsEditor({
     try {
       setUploadingVariantId(variant.id)
       setError("")
-      uploadedUrls = await uploadProductoImages(
+      uploadedUrls = await uploadProductoVariantImages(
         productoId,
         validFiles,
-        variantes.reduce(
-          (total, item) => total + (item.imagenes?.length || 0),
-          0,
-        ),
       )
       const updated = await updateProductoVariante(
         productoId,
@@ -545,7 +549,6 @@ export function ProductVariantsEditor({
       const updated = await updateProductoVariante(productoId, variant.id, {
         imagenes: nextImages,
       })
-      await updateProductoImageOrder(nextImages)
       const nextVariants = optimisticVariants.map((item) =>
         item.id === updated.id ? updated : item,
       )
@@ -584,7 +587,9 @@ export function ProductVariantsEditor({
     try {
       setSavingVariantImagesId(variant.id)
       setError("")
-      await deleteProductoImageByUrl(imageUrl)
+      // Se persiste primero el array sin la imagen eliminada: recién cuando
+      // el catálogo confirma ese estado se borra el archivo de Storage, para
+      // no dejar nunca una URL referenciada apuntando a un archivo inexistente.
       const updated = await updateProductoVariante(productoId, variant.id, {
         imagenes: nextImages,
       })
@@ -592,6 +597,14 @@ export function ProductVariantsEditor({
         item.id === updated.id ? updated : item,
       )
       setVariantes(nextVariants)
+      try {
+        await deleteProductoImageByUrl(imageUrl)
+      } catch (cleanupError) {
+        console.error(
+          "No se pudo limpiar en Storage la imagen eliminada de la variante:",
+          cleanupError,
+        )
+      }
     } catch (removeError) {
       setError(
         removeError instanceof Error
@@ -911,6 +924,15 @@ export function ProductVariantsEditor({
     },
   )
 
+  const setVariantEditing = useCallback((key: string, editing: boolean) => {
+    setEditingVariantKeys((current) => {
+      const next = new Set(current)
+      if (editing) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
+
   const renderPersistedVariant = (variante: SupabaseProductoVariante) => {
     const desiredActive =
       persistedVariantStates[variante.id] ?? variante.activo !== false
@@ -920,7 +942,6 @@ export function ProductVariantsEditor({
       key={variante.id}
       nombre={variante.nombre}
       productName={productName}
-      isPrincipal={variante.id === primaryVariantId}
       sku={variante.sku}
       colorHex={variante.color_hex}
       colorName={getColorName(variante.color_hex, variante.nombre)}
@@ -939,6 +960,7 @@ export function ProductVariantsEditor({
       onMoveImage={(fromIndex, toIndex) => void moveVariantImage(variante, fromIndex, toIndex)}
       onRemoveImage={(imageIndex) => void removeVariantImage(variante, imageIndex)}
       onDetailsChange={(details) => saveVariantDetails(variante, details)}
+      onEditingChange={(editing) => setVariantEditing(String(variante.id), editing)}
       uploadingImages={uploadingVariantId === variante.id}
       savingImages={savingVariantImagesId === variante.id}
       changingState={false}
@@ -954,7 +976,6 @@ export function ProductVariantsEditor({
       key={variant.tempId}
       nombre={variant.nombre}
       productName={productName}
-      isPrincipal={draftVariants[0]?.tempId === variant.tempId}
       sku={variant.sku}
       colorHex={variant.color_hex}
       colorName={getColorName(variant.color_hex, variant.nombre)}
@@ -985,6 +1006,7 @@ export function ProductVariantsEditor({
         )
         return true
       }}
+      onEditingChange={(editing) => setVariantEditing(variant.tempId, editing)}
       uploadingImages={false}
       savingImages={false}
       changingState={false}
@@ -1071,7 +1093,11 @@ export function ProductVariantsEditor({
           </div>
         ) : hasVariants ? (
           <div
-            className="product-editor-variants-scroll max-h-[32rem] min-w-0 space-y-1.5 overflow-y-auto pr-1"
+            className={`product-editor-variants-scroll min-w-0 space-y-1.5 pr-1 ${
+              editingVariantKeys.size > 0
+                ? ""
+                : "max-h-[32rem] overflow-y-auto"
+            }`}
             aria-label="Variantes del producto"
           >
             {productoId
@@ -1232,7 +1258,6 @@ function StockSummaryItem({
 interface VariantCardProps {
   nombre: string
   productName: string
-  isPrincipal?: boolean
   sku?: string | null
   colorHex: string
   colorName: string
@@ -1257,6 +1282,7 @@ interface VariantCardProps {
     colorName: string
     barcode: string
   }) => boolean | Promise<boolean>
+  onEditingChange?: (editing: boolean) => void
   uploadingImages: boolean
   savingImages: boolean
   changingState: boolean
@@ -1268,7 +1294,6 @@ interface VariantCardProps {
 function VariantCard({
   nombre,
   productName,
-  isPrincipal = false,
   sku,
   colorHex,
   colorName,
@@ -1288,6 +1313,7 @@ function VariantCard({
   onMoveImage,
   onRemoveImage,
   onDetailsChange,
+  onEditingChange,
   uploadingImages,
   savingImages,
   changingState,
@@ -1296,7 +1322,11 @@ function VariantCard({
   leadingAccessory,
 }: VariantCardProps) {
   const imageInputRef = useRef<HTMLInputElement>(null)
-  const [isEditing, setIsEditing] = useState(false)
+  const [isEditing, setIsEditingState] = useState(false)
+  const setIsEditing = (editing: boolean) => {
+    setIsEditingState(editing)
+    onEditingChange?.(editing)
+  }
   const [localSku, setLocalSku] = useState((sku ?? "").toUpperCase())
   const [localColor, setLocalColor] = useState(normalizeHex(colorHex))
   const [localColorName, setLocalColorName] = useState(colorName.toUpperCase())
@@ -1322,6 +1352,12 @@ function VariantCard({
   // "nombre" propio de la variante (nombre/color) sólo identifica atributos
   // como color o SKU, nunca reemplaza el título.
   const displayName = productName.trim() || nombre
+  // Agregar, borrar y reordenar imágenes leen y reescriben el array completo
+  // de la variante: si dos de estas operaciones quedaran en vuelo a la vez,
+  // la que responda última pisaría silenciosamente a la otra (o resucitaría
+  // una URL ya borrada de Storage). Por eso se bloquean todas mientras
+  // cualquiera esté en curso, no sólo la propia.
+  const imagesBusy = uploadingImages || savingImages
   const ownImageCount = images.length + draftUrls.length
   const availableImages = [...images, ...draftUrls].slice(0, MAX_VARIANT_IMAGES)
   const galleryImages = availableImages
@@ -1507,7 +1543,7 @@ function VariantCard({
             <p className="text-xs font-black text-white/68">Imágenes</p>
           </div>
 
-          <div className={`grid w-full max-w-60 grid-cols-3 gap-2 ${savingImages ? "pointer-events-none opacity-60" : ""}`}>
+          <div className={`grid w-full max-w-60 grid-cols-3 gap-2 ${imagesBusy ? "pointer-events-none opacity-60" : ""}`}>
             {galleryImages.map((image, index) => (
               <div key={`${image}-${index}`} className="contents">
                 <div
@@ -1580,7 +1616,7 @@ function VariantCard({
                 <button
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
-                  disabled={uploadingImages}
+                  disabled={imagesBusy}
                   aria-label={`Agregar la imagen principal de ${nombre}`}
                   className="flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 bg-white/[0.02] text-9px font-bold text-white/48 transition hover:border-beyonix-sky/55 hover:text-white disabled:cursor-wait"
                 >
@@ -1608,7 +1644,7 @@ function VariantCard({
               <button
                 type="button"
                 onClick={() => imageInputRef.current?.click()}
-                disabled={uploadingImages}
+                disabled={imagesBusy}
                 aria-label={`Agregar imágenes a ${nombre}`}
                 className="flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 bg-white/[0.02] text-9px font-bold text-white/48 transition hover:border-beyonix-sky/55 hover:text-white disabled:cursor-wait"
               >

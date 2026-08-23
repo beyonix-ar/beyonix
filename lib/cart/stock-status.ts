@@ -5,11 +5,23 @@ import type { SupabaseProducto } from "../supabase/types.ts"
 
 export type StockStatus = "available" | "low" | "out"
 
-export const LOW_STOCK_THRESHOLD = 5
-export const STOCK_LIMIT_MESSAGE =
-  "No es posible agregar más unidades de este producto."
+export const LOW_STOCK_THRESHOLD = 3
+// Genérico: para cambios de disponibilidad que NO son específicamente "pedí
+// más cantidad de la que hay" (producto desactivado/eliminado, variante ya
+// no existe, error de reserva, etc.). No usar para el caso puntual de stock
+// insuficiente — para eso están las constantes de abajo.
 export const STOCK_CHANGED_MESSAGE =
   "La disponibilidad del producto cambió desde que comenzaste la compra. Revisá tu carrito antes de continuar."
+export const INSUFFICIENT_STOCK_TITLE = "Stock insuficiente"
+export const INSUFFICIENT_STOCK_MESSAGE_SINGULAR =
+  "La cantidad que seleccionaste supera el stock disponible. Reducí la cantidad para poder continuar con la compra."
+export const INSUFFICIENT_STOCK_MESSAGE_PLURAL =
+  "Las cantidades que seleccionaste superan el stock disponible de algunos productos. Reducí las cantidades para poder continuar con la compra."
+// Techo puramente técnico del selector de cantidad del cliente: no está
+// atado al stock real (que nunca se expone en el frontend) y solo evita un
+// abuso extremo accidental del control +. La validación que sí importa —
+// contra el stock vendible real — ocurre server-side antes de pagar.
+export const MAX_CART_ITEM_QUANTITY = 999
 
 export function assertCatalogStock(
   quantity: number,

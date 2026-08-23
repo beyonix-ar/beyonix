@@ -13,6 +13,11 @@ export const COLOR_NAMES_BY_HEX: Record<string, string> = {
 }
 
 const GENERIC_VARIANT_NAME = /^(principal|variante(?:\s+\d+)?)$/i
+// Coincide con el formato que genera `deriveVariantNameFromColor` (p. ej.
+// "COLOR #C9A3B0") cuando no se cargó un nombre de color real: es un valor
+// técnico pensado para persistencia/compatibilidad, no para mostrárselo tal
+// cual a un cliente.
+const AUTO_DERIVED_COLOR_NAME = /^color\s+#[0-9a-f]{6}$/i
 const GENERIC_COLOR_LABEL = "COLOR PERSONALIZADO"
 
 export function getColorName(
@@ -24,9 +29,12 @@ export function getColorName(
   if (knownName) return knownName
 
   const cleanVariantName = variantName?.trim() || ""
-  if (cleanVariantName && !GENERIC_VARIANT_NAME.test(cleanVariantName)) {
-    return cleanVariantName
-  }
+  const isRealName =
+    cleanVariantName &&
+    !GENERIC_VARIANT_NAME.test(cleanVariantName) &&
+    !AUTO_DERIVED_COLOR_NAME.test(cleanVariantName)
+
+  if (isRealName) return cleanVariantName
 
   return GENERIC_COLOR_LABEL
 }

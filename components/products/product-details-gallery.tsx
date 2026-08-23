@@ -69,7 +69,19 @@ export function ProductDetailsGallery({
   onPrev,
   onSelectImage,
 }: ProductDetailsGalleryProps) {
-  const [loadedMediaKey, setLoadedMediaKey] = useState<string | null>(null)
+  // Set (no un único valor) para que una imagen ya vista no vuelva a mostrar
+  // el skeleton/fade al reseleccionarla: una vez cargada, queda marcada.
+  const [loadedMediaKeys, setLoadedMediaKeys] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const markMediaLoaded = (key: string) => {
+    setLoadedMediaKeys((current) => {
+      if (current.has(key)) return current
+      const next = new Set(current)
+      next.add(key)
+      return next
+    })
+  }
   const [thumbnailStart, setThumbnailStart] = useState(0)
   const [thumbnailWindowSize, setThumbnailWindowSize] = useState(5)
   const thumbnailCarouselRef = useRef<HTMLDivElement>(null)
@@ -120,7 +132,7 @@ export function ProductDetailsGallery({
   const currentMediaKey = isVideoSelected
     ? `video:${videoUrl || ""}`
     : `image:${safeCurrentImage}`
-  const isLoaded = loadedMediaKey === currentMediaKey
+  const isLoaded = loadedMediaKeys.has(currentMediaKey)
   const maxThumbnailStart = Math.max(0, mediaCount - thumbnailWindowSize)
   const visibleMedia = mediaItems.slice(
     thumbnailStart,
@@ -132,7 +144,17 @@ export function ProductDetailsGallery({
   )
   const stockBadge = getStockBadge(selectedStock)
 
+  const hasThumbnailRow = mediaCount > 1
+
   useEffect(() => {
+    // El contenedor de miniaturas solo existe en el DOM cuando hay más de un
+    // elemento (`hasThumbnailRow`); al pasar por una variante de una sola
+    // imagen se desmonta y, al volver, React crea un nodo nuevo. Con un
+    // efecto de dependencias vacías el observer quedaba atado para siempre
+    // al primer nodo medido y nunca volvía a actualizar `thumbnailWindowSize`
+    // para los nodos siguientes. Dependiendo de `hasThumbnailRow` el efecto
+    // se re-ejecuta cada vez que el contenedor (re)aparece y vuelve a medir
+    // el ancho real que tiene en ese momento.
     const carousel = thumbnailCarouselRef.current
     if (!carousel) return
 
@@ -150,7 +172,7 @@ export function ProductDetailsGallery({
     resizeObserver.observe(carousel)
 
     return () => resizeObserver.disconnect()
-  }, [])
+  }, [hasThumbnailRow])
 
   useEffect(() => {
     setThumbnailStart((current) => {
@@ -179,7 +201,7 @@ export function ProductDetailsGallery({
   }
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5 md:h-full">
+    <div className="flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
       <div className="relative flex min-h-290px flex-1 items-center justify-center sm:min-h-380px md:min-h-0">
         <div className="flex h-full min-h-0 w-full items-center justify-center">
           <div
@@ -189,7 +211,7 @@ export function ProductDetailsGallery({
               <ProductVideoPlayer
                 source={playableVideo}
                 productName={productName}
-                onLoaded={() => setLoadedMediaKey(currentMediaKey)}
+                onLoaded={() => markMediaLoaded(currentMediaKey)}
               />
             ) : (
               <Image
@@ -203,7 +225,7 @@ export function ProductDetailsGallery({
                 height={2000}
                 priority
                 onLoad={() => {
-                  setLoadedMediaKey(currentMediaKey)
+                  markMediaLoaded(currentMediaKey)
                 }}
                 className={`h-full w-full object-contain p-1.5 transition-opacity duration-300 sm:p-2 ${
                   isLoaded
@@ -213,7 +235,36 @@ export function ProductDetailsGallery({
               />
             )}
 
-            {mediaCount > 1 && (
+            {/* Precarga en segundo plano del resto de la galería: una vez
+                visible la imagen principal, se piden las demás por el mismo
+                pipeline de next/image (mismo ancho) para que cambiar de
+                miniatura después sea instantáneo en vez de recién disparar
+                la transformación al hacer click. */}
+            {isLoaded && (
+              <div aria-hidden="true" className="hidden">
+                {images.map((image) => {
+                  if (!image) return null
+                  const key = `image:${image}`
+                  if (key === currentMediaKey || loadedMediaKeys.has(key)) {
+                    return null
+                  }
+
+                  return (
+                    <Image
+                      key={key}
+                      src={image}
+                      alt=""
+                      width={2000}
+                      height={2000}
+                      loading="eager"
+                      onLoad={() => markMediaLoaded(key)}
+                    />
+                  )
+                })}
+              </div>
+            )}
+
+            {hasThumbnailRow && (
               <>
                 <button
                   type="button"
@@ -248,19 +299,21 @@ export function ProductDetailsGallery({
         )}
       </div>
 
-      <div className="flex h-34px shrink-0 items-end justify-center pt-2">
-        <span className="text-11px font-bold tabular-nums tracking-widest text-white/40">
-          {safeIndex + 1} / {mediaCount || 1}
-        </span>
-      </div>
+      {hasThumbnailRow && (
+        <div className="flex h-34px shrink-0 items-end justify-center pt-2">
+          <span className="text-11px font-bold tabular-nums tracking-widest text-white/40">
+            {safeIndex + 1} / {mediaCount}
+          </span>
+        </div>
+      )}
 
-      {mediaItems.length > 0 && (
+      {hasThumbnailRow && (
         <div className="flex h-78px shrink-0 items-end justify-center pt-2 sm:h-86px">
           <div
             ref={thumbnailCarouselRef}
             className="flex w-full max-w-[560px] min-w-0 items-center justify-center gap-2"
           >
-            {mediaCount > 1 && (
+            {hasThumbnailRow && (
               <button
                 type="button"
                 aria-label="Ver miniatura anterior"
@@ -283,7 +336,7 @@ export function ProductDetailsGallery({
 
                 return (
                   <ProductMediaThumbnail
-                    key={isVideo ? "product-video" : `${image}-${index}`}
+                    key={isVideo ? "product-video" : `product-image:${image}`}
                     image={image}
                     index={index}
                     isActive={safeIndex === index}
@@ -317,7 +370,7 @@ export function ProductDetailsGallery({
               +{hiddenRightCount}
             </span>
 
-            {mediaCount > 1 && (
+            {hasThumbnailRow && (
               <button
                 type="button"
                 aria-label="Ver miniatura siguiente"

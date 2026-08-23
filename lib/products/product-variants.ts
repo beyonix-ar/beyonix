@@ -23,17 +23,51 @@ export interface ProductVariantOption {
   isConditioned: boolean
 }
 
+function normalizeImageUrls(images: readonly string[]) {
+  const seen = new Set<string>()
+
+  return images.reduce<string[]>((normalized, image) => {
+    const url = image.trim()
+    if (!url || seen.has(url)) return normalized
+
+    seen.add(url)
+    normalized.push(url)
+    return normalized
+  }, [])
+}
+
 function getBaseProductImages(product: SupabaseProducto) {
-  const gallery =
-    product.imagenes_producto
-      ?.map((image) => image.url)
-      .filter(Boolean) ?? []
+  const variants = [...(product.producto_variantes ?? [])].sort(
+    (left, right) => left.orden - right.orden || left.id - right.id,
+  )
+  const variantGallery = normalizeImageUrls(
+    variants.flatMap((variant) =>
+      Array.isArray(variant.imagenes) ? variant.imagenes : [],
+    ),
+  )
 
-  const images = product.imagen_principal
-    ? [product.imagen_principal, ...gallery]
-    : gallery
+  // Mientras un producto con variantes todavía no tiene ninguna activa
+  // (caso normal durante la edición), la vista previa necesita una galería
+  // agregada. Se deriva de producto_variantes.imagenes, no de la tabla
+  // paralela de productos simples.
+  if (variantGallery.length) return variantGallery
 
-  return images.length ? images : [FALLBACK_PRODUCT_IMAGE]
+  // Para un producto sin variantes, imagenes_producto es la galería
+  // canónica y su orden define también la imagen inicial. También conserva
+  // compatibilidad con variantes históricas que aún no tengan URLs propias.
+  // imagen_principal sólo funciona como fallback cuando no existe galería;
+  // anteponerlo siempre duplicaba la primera imagen cuando ambas fuentes
+  // apuntaban a la misma URL.
+  const gallery = normalizeImageUrls(
+    [...(product.imagenes_producto ?? [])]
+      .sort((left, right) => left.orden - right.orden || left.id - right.id)
+      .map((image) => image.url),
+  )
+
+  if (gallery.length) return gallery
+
+  const primaryImage = product.imagen_principal?.trim()
+  return primaryImage ? [primaryImage] : [FALLBACK_PRODUCT_IMAGE]
 }
 
 function getSortedActiveVariants(product: SupabaseProducto) {
@@ -86,26 +120,28 @@ export function getProductVariantOptions(
         Boolean(item.conditioned_sku?.trim()) &&
         Boolean(item.conditioned_color_hex),
     )
-    .map<ProductVariantOption>((item) => ({
-      id: null,
-      conditionedStockId: item.id,
-      name: item.conditioned_name!.trim(),
-      value: `${CONDITIONED_VARIANT_PREFIX}${item.id}`,
-      colorHex: item.conditioned_color_hex,
-      stock: item.quantity,
-      images: item.conditioned_images.length
-        ? item.conditioned_images
-        : baseImages,
-      sku: item.conditioned_sku?.trim() || null,
-      price: Math.max(
-        Math.round(product.precio * (1 - item.discount_percent / 100)),
-        0,
-      ),
-      originalPrice: product.precio,
-      discountPercent: item.discount_percent,
-      reason: item.reason,
-      isConditioned: true,
-    }))
+    .map<ProductVariantOption>((item) => {
+      const conditionedImages = normalizeImageUrls(item.conditioned_images)
+
+      return {
+        id: null,
+        conditionedStockId: item.id,
+        name: item.conditioned_name!.trim(),
+        value: `${CONDITIONED_VARIANT_PREFIX}${item.id}`,
+        colorHex: item.conditioned_color_hex,
+        stock: item.quantity,
+        images: conditionedImages.length ? conditionedImages : baseImages,
+        sku: item.conditioned_sku?.trim() || null,
+        price: Math.max(
+          Math.round(product.precio * (1 - item.discount_percent / 100)),
+          0,
+        ),
+        originalPrice: product.precio,
+        discountPercent: item.discount_percent,
+        reason: item.reason,
+        isConditioned: true,
+      }
+    })
 
   if (!variants.length) {
     return [
@@ -130,9 +166,12 @@ export function getProductVariantOptions(
 
   return [
     ...variants.map((variant) => {
+      const variantImages = Array.isArray(variant.imagenes)
+        ? normalizeImageUrls(variant.imagenes)
+        : []
       const images =
-        Array.isArray(variant.imagenes) && variant.imagenes.length
-          ? variant.imagenes
+        variantImages.length
+          ? variantImages
           : baseImages
 
       return {

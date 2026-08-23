@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
+
 import {
   Armchair,
   AudioLines,
@@ -59,8 +61,7 @@ import type { LucideIcon } from "lucide-react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
-import { ColorSelector } from "./color-selector"
-import { ProductDescription } from "./product-description"
+import { ColorSelector, formatColorName } from "./color-selector"
 import { ProductPurchaseBox } from "./product-purchase-box"
 import { ProductRatingSummary } from "./product-rating-summary"
 import { ProductReviewsDialog } from "./product-reviews-dialog"
@@ -69,6 +70,7 @@ import {
   getProductVariantOptions,
 } from "@/lib/products/product-variants"
 import { getInstallmentsLabel } from "@/lib/products/installments"
+import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
 
 interface ProductDetailsPanelProps {
   product: SupabaseProducto
@@ -164,6 +166,12 @@ export function ProductDetailsPanel({
   const colors = getProductVariantOptions(product)
   const selectedOption =
     colors.find((option) => option.value === selectedColor) ?? colors[0]
+  const [previewedColor, setPreviewedColor] = useState<
+    { name: string; value: string; colorHex?: string | null; image?: string | null } | null
+  >(null)
+  const displayedColorName = formatColorName(
+    previewedColor?.name ?? selectedOption?.name ?? "",
+  )
   const installmentsLabel =
     getInstallmentsLabel(product)
   const hasVariants =
@@ -191,64 +199,87 @@ export function ProductDetailsPanel({
   const hasReviews =
     Number.isInteger(reviewsCount) && reviewsCount > 0
 
+  const descriptionText = product.descripcion?.trim() || ""
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
+  const [isDescriptionClamped, setIsDescriptionClamped] = useState(false)
+  const descriptionRef = useRef<HTMLParagraphElement>(null)
+
+  useEffect(() => {
+    const el = descriptionRef.current
+    if (!el) return
+
+    const measure = () => {
+      setIsDescriptionClamped(el.scrollHeight > el.clientHeight + 1)
+    }
+
+    measure()
+
+    const resizeObserver = new ResizeObserver(measure)
+    resizeObserver.observe(el)
+
+    return () => resizeObserver.disconnect()
+  }, [descriptionText])
+
+  const showDescriptionToggle = isDescriptionClamped || isDescriptionExpanded
+
   return (
-    <aside className="flex min-h-0 flex-col bg-[#080D13] text-white md:h-full md:border-l md:border-white/7">
-      <div className="flex min-h-0 flex-1 flex-col md:overflow-hidden">
-        <div className="shrink-0 px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
-          {product.categorias?.nombre && (
-            <span className="mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
-              <Sparkles className="size-3.5" />
-              {product.categorias.nombre}
-            </span>
-          )}
+    <aside className="flex flex-col bg-[#080D13] text-white md:border-l md:border-white/7">
+      <div className="px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
+        {product.categorias?.nombre && (
+          <span className="mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
+            <Sparkles className="size-3.5 text-white" />
+            {product.categorias.nombre}
+          </span>
+        )}
 
-          <h2 className="text-[28px] font-bold leading-tight text-white md:text-[34px]">
-            {product.nombre}
-          </h2>
+        <h2 className="text-[28px] font-bold leading-tight text-white md:text-[34px]">
+          {product.nombre}
+        </h2>
 
-          {hasReviews && (
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <ProductRatingSummary
-                averageRating={product.average_rating}
-                reviewsCount={product.reviews_count}
-                className="text-sm"
-                starClassName="size-4"
-                countClassName="text-white/55"
-              />
+        {hasReviews && (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <ProductRatingSummary
+              averageRating={product.average_rating}
+              reviewsCount={product.reviews_count}
+              className="text-sm"
+              starClassName="size-4"
+              countClassName="text-white/55"
+            />
 
-              <ProductReviewsDialog
-                productId={product.id}
-                productName={product.nombre}
-                averageRating={product.average_rating}
-                reviewsCount={reviewsCount}
-              />
-            </div>
-          )}
-        </div>
+            <ProductReviewsDialog
+              productId={product.id}
+              productName={product.nombre}
+              averageRating={product.average_rating}
+              reviewsCount={reviewsCount}
+            />
+          </div>
+        )}
+      </div>
 
-        <div className="custom-scrollbar min-h-0 flex-1 border-t border-white/7 px-5 py-5 md:overflow-y-auto md:px-7">
-          <div className="space-y-7">
-            <section>
-            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
-              Descripción
-            </p>
+      <div className="border-t border-white/7">
+        <ProductPurchaseBox
+          price={selectedOption?.price ?? product.precio}
+          originalPrice={
+            selectedOption?.originalPrice ??
+            product.precio_anterior ??
+            undefined
+          }
+          installmentsLabel={installmentsLabel}
+          isInCart={isInCart}
+          cartQuantity={cartQuantity}
+          maxReached={
+            selectedStock < 1 || cartQuantity >= MAX_CART_ITEM_QUANTITY
+          }
+          onAddToCart={onAddToCart}
+          onDecreaseCart={onDecreaseCart}
+          onRemoveFromCart={onRemoveFromCart}
+          onViewCart={onViewCart}
+        />
+      </div>
 
-            <div className="product-description-scrollbar max-h-32 overflow-y-auto pr-3 text-white/82">
-              {product.descripcion ? (
-                <ProductDescription
-                  shortDescription={product.descripcion}
-                  longDescription=""
-                  features={[]}
-                />
-              ) : (
-                <p className="text-15px leading-6 text-white/68">
-                  Producto seleccionado para una experiencia de compra simple y confiable.
-                </p>
-              )}
-            </div>
-            </section>
-
-            {limitedFeatures.length > 0 && (
+      <div className="border-t border-white/7 px-5 py-5 md:px-7">
+        <div className="space-y-7">
+          {limitedFeatures.length > 0 && (
             <section>
               <p className="mb-3 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
                 Características principales
@@ -273,8 +304,8 @@ export function ProductDetailsPanel({
                             key={feature.text}
                             className="flex items-center gap-2.5 text-14px leading-5 text-white/82"
                           >
-                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/24 bg-[#0D1720] text-beyonix-sky/88">
-                              <Icon className="size-3.5" />
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/24 bg-[#0D1720]">
+                              <Icon className="size-3.5 text-white" />
                             </span>
                             <span className="leading-tight">{feature.text}</span>
                           </li>
@@ -284,13 +315,16 @@ export function ProductDetailsPanel({
                   ))}
                 </div>
               </div>
-              </section>
-            )}
+            </section>
+          )}
 
-            {hasVariants && (
+          {hasVariants && (
             <section>
-              <p className="mb-3 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
-                Variante
+              <p className="mb-3 text-14px">
+                <span className="text-white/55">Color: </span>
+                <span className="font-semibold text-white">
+                  {displayedColorName}
+                </span>
               </p>
 
               <ColorSelector
@@ -298,46 +332,64 @@ export function ProductDetailsPanel({
                   name: color.name,
                   value: color.value,
                   colorHex: color.colorHex,
+                  image: color.images[0] ?? null,
                 }))}
                 selectedColor={selectedColor}
                 onSelect={onColorChange}
+                onPreviewChange={setPreviewedColor}
+                thumbnailMode
                 showLabels
               />
-              </section>
-            )}
+            </section>
+          )}
 
-            {selectedOption?.isConditioned && (
-              <section className="rounded-xl border border-amber-300/22 bg-amber-300/7 px-4 py-3">
-                <p className="text-10px font-black uppercase tracking-widest text-amber-200">
-                  Variante con descuento
+          {selectedOption?.isConditioned && (
+            <section className="rounded-xl border border-amber-300/22 bg-amber-300/7 px-4 py-3">
+              <p className="text-10px font-black uppercase tracking-widest text-amber-200">
+                Variante con descuento
+              </p>
+              <p className="mt-1 text-sm font-semibold leading-5 text-white/72">
+                {selectedOption.reason ||
+                  "Esta unidad fue revisada y se vende separada del stock normal."}
+              </p>
+            </section>
+          )}
+
+          <section>
+            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
+              Descripción
+            </p>
+
+            {descriptionText ? (
+              <>
+                <p
+                  ref={descriptionRef}
+                  className={`text-15px font-normal leading-7 text-white/80 ${
+                    isDescriptionExpanded ? "" : "line-clamp-4"
+                  }`}
+                >
+                  {descriptionText}
                 </p>
-                <p className="mt-1 text-sm font-semibold leading-5 text-white/72">
-                  {selectedOption.reason ||
-                    "Esta unidad fue revisada y se vende separada del stock normal."}
-                </p>
-              </section>
+
+                {showDescriptionToggle && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsDescriptionExpanded((current) => !current)
+                    }
+                    className="mt-1.5 cursor-pointer text-13px font-semibold text-beyonix-sky/85 transition-colors hover:text-beyonix-sky"
+                  >
+                    {isDescriptionExpanded ? "Ver menos" : "Ver más"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="text-15px leading-6 text-white/68">
+                Producto seleccionado para una experiencia de compra simple y confiable.
+              </p>
             )}
-          </div>
+          </section>
         </div>
-      </div>
-
-      <div className="shrink-0 border-t border-white/7">
-        <ProductPurchaseBox
-          price={selectedOption?.price ?? product.precio}
-          originalPrice={
-            selectedOption?.originalPrice ??
-            product.precio_anterior ??
-            undefined
-          }
-          installmentsLabel={installmentsLabel}
-          isInCart={isInCart}
-          cartQuantity={cartQuantity}
-          maxReached={selectedStock < 1 || cartQuantity >= selectedStock}
-          onAddToCart={onAddToCart}
-          onDecreaseCart={onDecreaseCart}
-          onRemoveFromCart={onRemoveFromCart}
-          onViewCart={onViewCart}
-        />
       </div>
     </aside>
   )

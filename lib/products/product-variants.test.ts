@@ -1,8 +1,10 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
   CONDITIONED_VARIANT_PREFIX,
+  getProductImagesByVariant,
   getProductVariantOptions,
 } from "./product-variants.ts"
 import type { SupabaseProducto } from "../supabase/types.ts"
@@ -122,4 +124,140 @@ test("un producto sin variantes conserva su opción normal y su descuento", () =
   assert.equal(options[0].sku, "BASE-1")
   assert.equal(options[0].stock, 5)
   assert.equal(options[1].isConditioned, true)
+})
+
+test("la imagen principal no se duplica si ya pertenece a imagenes_producto", () => {
+  const source = product({
+    producto_variantes: [],
+    imagen_principal: "https://example.com/imagen-1.webp",
+    imagenes_producto: [
+      {
+        id: 3,
+        producto_id: 1,
+        url: "https://example.com/imagen-3.webp",
+        orden: 3,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        id: 1,
+        producto_id: 1,
+        url: "https://example.com/imagen-1.webp",
+        orden: 1,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        id: 2,
+        producto_id: 1,
+        url: "https://example.com/imagen-2.webp",
+        orden: 2,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+  })
+
+  assert.deepEqual(getProductImagesByVariant(source), [
+    "https://example.com/imagen-1.webp",
+    "https://example.com/imagen-2.webp",
+    "https://example.com/imagen-3.webp",
+  ])
+})
+
+test("una variante usa solamente producto_variantes.imagenes", () => {
+  const source = product({
+    imagen_principal: "https://example.com/principal.webp",
+    imagenes_producto: [
+      {
+        id: 1,
+        producto_id: 1,
+        url: "https://example.com/producto.webp",
+        orden: 1,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+  })
+
+  assert.deepEqual(getProductImagesByVariant(source, "variant:10"), [
+    "https://example.com/negro.webp",
+  ])
+})
+
+test("normaliza duplicados históricos dentro de una misma fuente", () => {
+  const source = product({
+    producto_variantes: [],
+    imagen_principal: null,
+    imagenes_producto: [
+      {
+        id: 1,
+        producto_id: 1,
+        url: "https://example.com/repetida.webp",
+        orden: 1,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        id: 2,
+        producto_id: 1,
+        url: "https://example.com/repetida.webp",
+        orden: 2,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+  })
+
+  assert.deepEqual(getProductImagesByVariant(source), [
+    "https://example.com/repetida.webp",
+  ])
+})
+
+test("la vista previa de variantes inactivas agrega sus arrays sin usar imagenes_producto", () => {
+  const source = product({
+    imagen_principal: "https://example.com/variante-1.webp",
+    imagenes_producto: [
+      {
+        id: 1,
+        producto_id: 1,
+        url: "https://example.com/imagen-historica.webp",
+        orden: 1,
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ],
+    producto_variantes: [
+      {
+        ...product().producto_variantes![0],
+        activo: false,
+        imagenes: ["https://example.com/variante-1.webp"],
+      },
+      {
+        ...product().producto_variantes![1],
+        activo: false,
+        imagenes: ["https://example.com/variante-2.webp"],
+      },
+    ],
+  })
+
+  assert.deepEqual(getProductImagesByVariant(source), [
+    "https://example.com/variante-1.webp",
+    "https://example.com/variante-2.webp",
+  ])
+})
+
+test("el editor persiste imágenes de variante sin registrarlas como galería simple", () => {
+  const editorSource = readFileSync(
+    new URL(
+      "../../app/admin/sections/productos/product-variants-editor.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  )
+  const uploadSource = readFileSync(
+    new URL("../supabase/queries/producto-imagenes.ts", import.meta.url),
+    "utf8",
+  )
+  const variantUpload = uploadSource.match(
+    /export async function uploadProductoVariantImages[\s\S]*?\n}\n/,
+  )?.[0]
+
+  assert.ok(variantUpload)
+  assert.doesNotMatch(variantUpload, /\.from\("imagenes_producto"\)/)
+  assert.match(editorSource, /uploadProductoVariantImages/)
+  assert.doesNotMatch(editorSource, /uploadProductoImages|updateProductoImageOrder/)
 })

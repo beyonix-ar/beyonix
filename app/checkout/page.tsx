@@ -8,6 +8,7 @@ import {
   useState,
 } from "react"
 
+import Image from "next/image"
 import Link from "next/link"
 
 import {
@@ -19,7 +20,6 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
-  CircleUserRound,
   Clock3,
   Home,
   IdCard,
@@ -54,7 +54,12 @@ import {
 import {
   Label,
 } from "@/components/ui/label"
+import { AccountMenu } from "@/components/account-menu"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
+import {
+  InsufficientStockModal,
+  type InsufficientStockModalItem,
+} from "@/components/checkout/insufficient-stock-modal"
 import { storeGuestOrderToken } from "@/lib/orders/guest-order-token-client"
 
 import {
@@ -62,11 +67,8 @@ import {
 } from "@/components/ui/separator"
 
 import {
-  reserveCartStock,
-} from "@/lib/cart/stock-reservations"
-import {
+  MAX_CART_ITEM_QUANTITY,
   STOCK_CHANGED_MESSAGE,
-  getProductStock,
   getStockStatus,
   getStockStatusLabel,
   type StockStatus,
@@ -111,7 +113,6 @@ import { supabase } from "@/lib/supabase/client"
 import type { SupabaseProfile } from "@/lib/supabase/types"
 
 import {
-  beyonixHoverBorder,
   cn,
 } from "@/lib/utils"
 import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
@@ -119,7 +120,6 @@ import { Footer } from "@/components/footer"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { useSiteSettings } from "@/hooks/use-site-settings"
-import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 
 function formatPrice(
   price: number
@@ -361,7 +361,6 @@ export default function CheckoutPage() {
     user,
     isLoading,
     isInternal,
-    logout,
   } = useAuth()
   const adminNotifications = useOrderNotifications(isInternal)
   const {
@@ -400,10 +399,10 @@ export default function CheckoutPage() {
   const [destinationSelectionStatus, setDestinationSelectionStatus] =
     useState<DestinationSelectionStatus>("incomplete")
 
-  const [stockError, setStockError] =
-    useState("")
   const [checkoutError, setCheckoutError] =
     useState("")
+  const [insufficientStockItems, setInsufficientStockItems] =
+    useState<InsufficientStockModalItem[]>([])
   const [shippingMessage, setShippingMessage] =
     useState("")
   const [shippingMessageTone, setShippingMessageTone] =
@@ -416,8 +415,6 @@ export default function CheckoutPage() {
   ] = useState<ShippingType | null>(null)
   const [shippingOptions, setShippingOptions] =
     useState<ShippingOption[]>([])
-  const [accountMenuOpen, setAccountMenuOpen] =
-    useState(false)
   const [currentStep, setCurrentStep] =
     useState<CheckoutStep>(1)
   const [invalidField, setInvalidField] =
@@ -610,60 +607,6 @@ export default function CheckoutPage() {
     }
   }, [user])
 
-  useEffect(() => {
-    if (
-      !mounted ||
-      isLoading ||
-      !isCartReady ||
-      !cartSessionId ||
-      items.length === 0
-    ) {
-      return
-    }
-
-    let cancelled = false
-
-    setStockError("")
-
-    reserveCartStock({
-      sessionId: cartSessionId,
-      items: items.map((item) => ({
-        productId: item.product.id,
-        quantity: item.quantity,
-        variantId: item.variantId,
-        conditionedStockId: item.conditionedStockId,
-      })),
-    })
-      .then((result) => {
-        if (cancelled) return
-
-        if (!result.success) {
-          setStockError(
-            result.message ||
-              STOCK_CHANGED_MESSAGE,
-          )
-        }
-      })
-      .catch(() => {
-        if (cancelled) return
-
-        setStockError(
-          STOCK_CHANGED_MESSAGE,
-        )
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    cartSessionId,
-    isCartReady,
-    isLoading,
-    items,
-    mounted,
-    user,
-  ])
-
   const baseTotals = calculateCartTotals(items)
   const totalCartUnits = items.reduce(
     (total, item) => total + item.quantity,
@@ -751,6 +694,10 @@ export default function CheckoutPage() {
     paymentMethods.some(
       (method) => method.id === selectedPayment,
     )
+  // El modal de "Stock insuficiente" solo puede aparecer como respuesta al
+  // intento real de pago (ver handleSubmit): no hay ninguna validación
+  // proactiva de stock mientras el cliente completa el Checkout.
+  const hasKnownStockConflict = insufficientStockItems.length > 0
   const finalTotal = customerCreditApplication.externalAmountDue
 
   useEffect(() => {
@@ -1438,6 +1385,15 @@ export default function CheckoutPage() {
 
       const data = await response.json()
 
+      if (
+        !response.ok &&
+        data?.code === "INSUFFICIENT_STOCK" &&
+        Array.isArray(data.items)
+      ) {
+        setInsufficientStockItems(data.items)
+        return
+      }
+
       if (customerCreditCoversTotal) {
         if (!response.ok || !data.order_id || !data.redirect_url) {
           setCheckoutError(
@@ -1614,89 +1570,7 @@ export default function CheckoutPage() {
                 />
               )}
               {user ? (
-                <>
-                  <button
-                    type="button"
-                    aria-label="Abrir menú de cuenta"
-                    aria-expanded={accountMenuOpen}
-                    onClick={() => setAccountMenuOpen((current) => !current)}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-2 rounded-full bg-black py-1.5 pl-1.5 pr-2 sm:pr-3",
-                      beyonixHoverBorder
-                    )}
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white text-black">
-                      {user.avatarUrl ? (
-                        <img
-                          src={user.avatarUrl}
-                          alt=""
-                          className="size-full object-cover"
-                        />
-                      ) : (
-                        <CircleUserRound className="size-5" />
-                      )}
-                    </span>
-
-                    <span className="hidden max-w-32 truncate text-sm font-medium uppercase text-white/86 sm:block">
-                      {(user.username || user.name.split(" ")[0]).toUpperCase()}
-                    </span>
-
-                    <ChevronDown
-                      className={`hidden size-4 text-white/50 transition-transform sm:block ${
-                        accountMenuOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-
-                  {accountMenuOpen && (
-                    <div className="absolute right-0 top-12 z-50 w-220px overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-black/70">
-                      <Link
-                        href="/cuenta?tab=datos"
-                        aria-label="Ir a Mis datos"
-                        title="Ir a Mis datos"
-                        className={cn(
-                          "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
-                          beyonixHoverBorder
-                        )}
-                      >
-                        Mis datos
-                      </Link>
-                      <Link
-                        href="/cuenta?tab=ordenes"
-                        aria-label="Ir a Mis compras"
-                        title="Ir a Mis compras"
-                        className={cn(
-                          "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
-                          beyonixHoverBorder
-                        )}
-                      >
-                        Mis compras
-                      </Link>
-                      <Link
-                        href="/cuenta?tab=seguridad"
-                        aria-label="Ir a Seguridad"
-                        title="Ir a Seguridad"
-                        className={cn(
-                          "block px-4 py-3 text-sm font-medium text-white/78 hover:bg-beyonix-blue hover:text-white",
-                          beyonixHoverBorder
-                        )}
-                      >
-                        Seguridad
-                      </Link>
-                      <button
-                        type="button"
-                        aria-label="Cerrar sesión"
-                        onClick={() => {
-                          setAccountMenuOpen(false)
-                          logout()
-                        }}
-                        className="block w-full cursor-pointer border-t border-white/8 px-4 py-3 text-left text-sm font-medium text-white/62 transition-colors hover:bg-red-950 hover:text-red-300"
-                      >
-                        Cerrar sesión
-                      </button>
-                    </div>
-                  )}
-                </>
+                <AccountMenu />
               ) : (
                 <div className="hidden items-center gap-2 sm:flex">
                   <Link
@@ -2182,7 +2056,7 @@ export default function CheckoutPage() {
                       "h-10 min-w-180px px-5 text-sm",
                       isFormValid &&
                       !isProcessing &&
-                      !stockError &&
+                      !hasKnownStockConflict &&
                       isSelectedPaymentValid
                         ? checkoutPrimaryButtonClassName
                         : cn(checkoutSecondaryButtonClassName, checkoutDisabledButtonClassName)
@@ -2190,7 +2064,7 @@ export default function CheckoutPage() {
                     disabled={
                       !isFormValid ||
                       isProcessing ||
-                      Boolean(stockError) ||
+                      hasKnownStockConflict ||
                       !isSelectedPaymentValid
                     }
                   >
@@ -2228,9 +2102,8 @@ export default function CheckoutPage() {
 
               <div className="custom-scrollbar max-h-[clamp(300px,38vh,390px)] space-y-1.5 overflow-y-auto pr-1">
                 {items.map((item) => {
-                  const maxQuantity = getProductStock(item.product, item.color)
                   const isMaxQuantity =
-                    maxQuantity > 0 && item.quantity >= maxQuantity
+                    item.quantity >= MAX_CART_ITEM_QUANTITY
                   const stockStatus = getStockStatus(item.product, item.color)
                   const showStockIndicator = stockStatus !== "out"
                   const stockSymbol = getStockIndicatorSymbol(stockStatus)
@@ -2238,13 +2111,15 @@ export default function CheckoutPage() {
                   return (
                     <div
                       key={`${item.product.id}-${item.variantId ?? item.color}`}
-                      className="checkout-order-item group grid min-h-[92px] grid-cols-[78px_minmax(0,1fr)] gap-2.5 overflow-hidden rounded-lg border border-beyonix-blue-light/14 bg-[#10151C] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
+                      className="checkout-order-item group grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2.5 overflow-hidden rounded-lg border border-beyonix-blue-light/14 bg-[#10151C] px-2 py-1.5 transition-all hover:border-beyonix-blue-light/40 hover:shadow-lg hover:shadow-black/20"
                     >
-                    <div className="h-full min-h-[80px] overflow-hidden rounded-lg border border-white/8 bg-beyonix-surface-3">
-                      <TransparencyAwareImage
+                    <div className="relative size-14 shrink-0 overflow-hidden rounded-lg border border-white/8 bg-white">
+                      <Image
                         src={item.image}
                         alt={`${item.product.nombre} en carrito`}
-                        className="h-full w-full object-contain p-1.5 transition-transform duration-300 group-hover:scale-[1.025]"
+                        fill
+                        sizes="56px"
+                        className="object-contain p-1 transition-transform duration-300 group-hover:scale-[1.025]"
                       />
                     </div>
 
@@ -2485,11 +2360,6 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {stockError && (
-                <CheckoutNotice tone="error" className="mt-4">
-                  {stockError}
-                </CheckoutNotice>
-              )}
               {checkoutError && (
                 <CheckoutNotice tone="error" className="mt-4">
                   {checkoutError}
@@ -2512,6 +2382,12 @@ export default function CheckoutPage() {
       </div>
       </main>
       <Footer />
+      {insufficientStockItems.length > 0 && (
+        <InsufficientStockModal
+          items={insufficientStockItems}
+          onClose={() => setInsufficientStockItems([])}
+        />
+      )}
     </>
   )
 }

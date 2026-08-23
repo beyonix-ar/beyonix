@@ -79,6 +79,31 @@ export async function uploadProductoImages(
   return urls
 }
 
+export async function uploadProductoVariantImages(
+  productoId: number,
+  files: File[],
+) {
+  const validFiles = files.filter((file) =>
+    file.type.startsWith("image/")
+  )
+
+  const urls: string[] = []
+
+  // Las imágenes de variante viven exclusivamente en
+  // producto_variantes.imagenes. Se suben al mismo bucket, pero no se crea
+  // una fila paralela en imagenes_producto (galería de productos simples).
+  for (const file of validFiles) {
+    urls.push(
+      await uploadImageFile(
+        getFilePath(productoId, file),
+        file,
+      ),
+    )
+  }
+
+  return urls
+}
+
 export async function uploadProductoDraftImages(files: File[]) {
   const validFiles = files.filter((file) =>
     file.type.startsWith("image/")
@@ -145,25 +170,4 @@ export async function deleteProductoImageByUrl(url: string) {
   }
 
   return true
-}
-
-export async function updateProductoImageOrder(
-  urls: string[]
-) {
-  const results = await Promise.all(
-    urls.map((url, index) =>
-      supabase
-        .from("imagenes_producto")
-        .update({
-          orden: index + 1,
-        })
-        .eq("url", url)
-    )
-  )
-
-  const error = results.find((result) => result.error)?.error
-
-  if (error) {
-    throw error
-  }
 }

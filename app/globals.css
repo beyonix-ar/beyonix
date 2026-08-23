@@ -2200,13 +2200,6 @@ section.checkout-panel.checkout-form-panel::after {
   padding-inline: 0.75rem;
 }
 
-.checkout-panel .checkout-order-item {
-  min-height: 92px;
-}
-
-.checkout-panel .checkout-order-item img {
-  max-height: 80px;
-}
 
 .checkout-subpanel,
 .checkout-note {
@@ -2337,17 +2330,6 @@ section.checkout-panel.checkout-form-panel::after {
     top: 4.75rem;
   }
 
-  .checkout-page .checkout-summary .checkout-order-item {
-    min-height: 5rem;
-  }
-
-  .checkout-page .checkout-summary .checkout-order-item > div:first-child {
-    min-height: 4.25rem;
-  }
-
-  .checkout-page .checkout-summary .checkout-order-item img {
-    max-height: 4.25rem;
-  }
 }
 
 .admin-control-select {
@@ -3451,31 +3433,6 @@ body.product-modal-open .category-hero {
 
   /* SIN glow */
   box-shadow: none;
-}
-
-.product-description-scrollbar {
-  scrollbar-color: rgba(140, 200, 242, 0.5) rgba(17, 42, 67, 0.24);
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-}
-
-.product-description-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.product-description-scrollbar::-webkit-scrollbar-track {
-  background: rgba(17, 42, 67, 0.24);
-  border-radius: 9999px;
-}
-
-.product-description-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(140, 200, 242, 0.78), rgba(30, 77, 123, 0.92));
-  border: 1px solid rgba(8, 11, 15, 0.9);
-  border-radius: 9999px;
-}
-
-.product-description-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(215, 236, 255, 0.9), rgba(74, 144, 184, 0.95));
 }
 
 .min-h-screen-small {

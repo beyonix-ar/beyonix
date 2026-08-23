@@ -3,7 +3,9 @@
 import {
   useEffect,
   useRef,
+  useState,
 } from "react"
+import { createPortal } from "react-dom"
 
 import { useRouter } from "next/navigation"
 
@@ -48,9 +50,14 @@ export function CartDrawer({
   onRemoveItem,
 }: CartDrawerProps) {
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
 
   const drawerRef =
     useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // ─────────────────────────────────────
   // Subtotal
@@ -76,6 +83,7 @@ export function CartDrawer({
       e: KeyboardEvent
     ) => {
       if (e.key === "Escape") {
+        e.stopPropagation()
         onClose()
       }
     }
@@ -101,11 +109,11 @@ export function CartDrawer({
     }
   }, [isOpen, onClose])
 
-  if (!isOpen) {
+  if (!mounted || !isOpen) {
     return null
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-100">
       {/* Overlay */}
       <button
@@ -192,6 +200,7 @@ export function CartDrawer({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

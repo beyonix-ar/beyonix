@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -24,7 +23,7 @@ import {
   getVariantOptionByValue,
 } from "@/lib/products/product-variants"
 import {
-  STOCK_LIMIT_MESSAGE,
+  MAX_CART_ITEM_QUANTITY,
   getProductStock,
 } from "@/lib/cart/stock-status"
 
@@ -184,19 +183,25 @@ function normalizeCart(items: unknown) {
         cartItem.product.id === normalized.product.id &&
         cartItem.color === normalized.color,
     )
-    const maxQuantity = getProductStock(normalized.product, normalized.color)
+    // Un producto/variante sin stock ya no es vendible: se descarta del
+    // carrito guardado. Esto es un estado booleano ("agotado"), no una
+    // cantidad — no revela cuánto stock real queda.
+    const hasStock = getProductStock(normalized.product, normalized.color) > 0
 
-    if (maxQuantity < 1) return acc
+    if (!hasStock) return acc
 
     if (existing) {
       existing.quantity = Math.min(
         existing.quantity + normalized.quantity,
-        maxQuantity,
+        MAX_CART_ITEM_QUANTITY,
       )
       return acc
     }
 
-    normalized.quantity = Math.min(normalized.quantity, maxQuantity)
+    normalized.quantity = Math.min(
+      normalized.quantity,
+      MAX_CART_ITEM_QUANTITY,
+    )
     acc.push(normalized)
     return acc
   }, [])
@@ -208,27 +213,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
   const [hasHydrated, setHasHydrated] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [stockLimitToast, setStockLimitToast] = useState("")
-  const stockLimitToastTimerRef =
-    useRef<ReturnType<typeof setTimeout> | null>(null)
-  const shownStockLimitToastKeysRef = useRef(new Set<string>())
-
-  const showStockLimitToast = useCallback((productId: number, color: string) => {
-    const toastKey = `${productId}:${color}`
-
-    if (shownStockLimitToastKeysRef.current.has(toastKey)) return
-
-    shownStockLimitToastKeysRef.current.add(toastKey)
-    setStockLimitToast(STOCK_LIMIT_MESSAGE)
-
-    if (stockLimitToastTimerRef.current) {
-      clearTimeout(stockLimitToastTimerRef.current)
-    }
-
-    stockLimitToastTimerRef.current = setTimeout(() => {
-      setStockLimitToast("")
-    }, 3200)
-  }, [])
 
   useEffect(() => {
     try {
@@ -252,14 +236,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setCart([])
     } finally {
       setHasHydrated(true)
-    }
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (stockLimitToastTimerRef.current) {
-        clearTimeout(stockLimitToastTimerRef.current)
-      }
     }
   }, [])
 
@@ -358,16 +334,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   ) => {
     const variant = resolveCartVariant(product, color)
     const variantColor = variant?.value ?? DEFAULT_VARIANT_VALUE
-    const maxQuantity = getProductStock(product, variantColor)
+    // Booleano ("¿hay algo para vender?"), no una cantidad: el frontend
+    // nunca usa el stock real como techo del selector de cantidad. Eso se
+    // valida server-side, recién al intentar pagar.
+    const hasStock = getProductStock(product, variantColor) > 0
     const normalizedProduct = {
       ...product,
       precio: toFiniteNumber(product.precio),
     }
 
-    if (maxQuantity < 1) {
-      showStockLimitToast(normalizedProduct.id, variantColor)
-      return
-    }
+    if (!hasStock) return
 
     setCart((prev) => {
       const existing = prev.find(
@@ -377,27 +353,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
       )
 
       if (existing) {
-        if (existing.quantity >= maxQuantity) {
-          showStockLimitToast(normalizedProduct.id, variantColor)
-          return prev
-        }
-
-        const nextQuantity = Math.min(existing.quantity + 1, maxQuantity)
-
-        if (nextQuantity === maxQuantity) {
-          showStockLimitToast(normalizedProduct.id, variantColor)
-        }
+        if (existing.quantity >= MAX_CART_ITEM_QUANTITY) return prev
 
         return prev.map((item) =>
           item.product.id === normalizedProduct.id &&
           item.color === variantColor
-            ? { ...item, quantity: nextQuantity }
+            ? { ...item, quantity: item.quantity + 1 }
             : item,
         )
-      }
-
-      if (maxQuantity === 1) {
-        showStockLimitToast(normalizedProduct.id, variantColor)
       }
 
       return [
@@ -442,22 +405,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    const clampedQuantity = Math.min(nextQuantity, MAX_CART_ITEM_QUANTITY)
+
     setCart((prev) =>
       prev.map((item) => {
         if (item.product.id !== productId || item.color !== color) {
           return item
-        }
-
-        const maxQuantity = getProductStock(item.product, item.color)
-        const clampedQuantity = Math.min(nextQuantity, maxQuantity)
-
-        if (maxQuantity < 1) {
-          showStockLimitToast(productId, color)
-          return item
-        }
-
-        if (nextQuantity > maxQuantity || clampedQuantity === maxQuantity) {
-          showStockLimitToast(productId, color)
         }
 
         return {
@@ -544,15 +497,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-      {stockLimitToast && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-5 left-1/2 z-200 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 rounded-full border border-beyonix-blue-light/30 bg-[#0B1118]/95 px-4 py-2.5 text-center text-sm font-medium text-white shadow-xl shadow-black/40 backdrop-blur-md"
-        >
-          {stockLimitToast}
-        </div>
-      )}
     </CartContext.Provider>
   )
 }

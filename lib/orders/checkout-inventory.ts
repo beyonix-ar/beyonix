@@ -25,7 +25,12 @@ function isStockConflict(message?: string) {
 export async function validateCheckoutInventory(
   admin: AdminClient,
   items: CheckoutInventoryItem[],
-  reservationSessionId: string | null | undefined,
+  // El checkout ya no reserva stock por adelantado (ver `stock-reservations.ts`,
+  // sin uso): con `p_session_id` en null, el RPC valida cantidad pedida contra
+  // stock real bajo `pg_advisory_xact_lock` sin exigir una reserva previa de
+  // esta sesión. `reservationSessionId` se conserva solo como parámetro para
+  // no romper la firma de los llamadores; ya no se reenvía al RPC.
+  _reservationSessionId: string | null | undefined,
   orderId: number,
 ) {
   const { error } = await admin.rpc("validate_checkout_inventory_reservation", {
@@ -35,7 +40,7 @@ export async function validateCheckoutInventory(
       conditioned_stock_id: item.conditionedStockId ?? null,
       quantity: item.quantity,
     })),
-    p_session_id: reservationSessionId ?? null,
+    p_session_id: null,
     p_order_id: orderId,
   })
 

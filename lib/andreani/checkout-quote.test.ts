@@ -13,6 +13,7 @@ import {
   normalizeCheckoutQuoteRequest,
   quoteAndreaniCheckout,
   resetAndreaniCheckoutQuoteStateForTests,
+  roundShippingCostToNearestThousand,
   type LoadedCheckoutQuoteItem,
 } from "./checkout-quote.ts"
 
@@ -66,6 +67,59 @@ function qaQuoteEnvironment(): NodeJS.ProcessEnv {
     ANDREANI_QA_ORIGIN_BRANCH: "RAC",
   }
 }
+
+test("redondea el costo de envío al millar usando $300 como punto de corte", () => {
+  const cases: Array<[number, number]> = [
+    [13_656, 14_000],
+    [13_324, 14_000],
+    [13_300, 14_000],
+    [13_299, 13_000],
+    [13_050, 13_000],
+    [13_000, 13_000],
+    [14_999, 15_000],
+    [14_300, 15_000],
+    [14_299, 14_000],
+    [14_000, 14_000],
+  ]
+
+  for (const [rawCost, expected] of cases) {
+    assert.equal(
+      roundShippingCostToNearestThousand(rawCost),
+      expected,
+      `${rawCost} debería redondear a ${expected}`,
+    )
+  }
+})
+
+test("redondea el costo de envío exactamente en los límites de $300", () => {
+  const cases: Array<[number, number]> = [
+    [12_999, 13_000],
+    [13_000, 13_000],
+    [13_299, 13_000],
+    [13_300, 14_000],
+    [13_301, 14_000],
+    [13_999, 14_000],
+    [14_000, 14_000],
+    [14_299, 14_000],
+    [14_300, 15_000],
+  ]
+
+  for (const [rawCost, expected] of cases) {
+    assert.equal(
+      roundShippingCostToNearestThousand(rawCost),
+      expected,
+      `${rawCost} debería redondear a ${expected}`,
+    )
+  }
+})
+
+test("redondea tarifas de Andreani con centavos", () => {
+  assert.equal(roundShippingCostToNearestThousand(13_854.56), 14_000)
+  assert.equal(roundShippingCostToNearestThousand(13_299.99), 13_000)
+  assert.equal(roundShippingCostToNearestThousand(13_300.01), 14_000)
+  assert.equal(roundShippingCostToNearestThousand(13_000.01), 13_000)
+  assert.equal(roundShippingCostToNearestThousand(22_362.66), 23_000)
+})
 
 test("agrega peso, volumen y valor declarado de todas las unidades", () => {
   const result = aggregateAndreaniPackage([
@@ -173,8 +227,8 @@ test("la cotización usa el paquete agregado sin exigir coincidencia textual de 
         assert.equal(input.sucursalOrigen, "RAC")
         return {
           pesoAforado: "2",
-          tarifaSinIva: { seguroDistribucion: "0", distribucion: "100", total: "100" },
-          tarifaConIva: { seguroDistribucion: "0", distribucion: "121", total: "121" },
+          tarifaSinIva: { seguroDistribucion: "0", distribucion: "13400", total: "13400" },
+          tarifaConIva: { seguroDistribucion: "0", distribucion: "13500", total: "13500" },
         }
       },
     },
@@ -182,7 +236,7 @@ test("la cotización usa el paquete agregado sin exigir coincidencia textual de 
 
   assert.equal(receivedWeight, 2)
   assert.equal(receivedVolume, 12_000)
-  assert.deepEqual(options, [{ type: "domicilio", price: 121 }])
+  assert.deepEqual(options, [{ type: "domicilio", price: 14_000 }])
 })
 
 test("el checkout valida en QA y limita PROD a login y GET de tarifas", async () => {
@@ -282,7 +336,7 @@ test("el checkout valida en QA y limita PROD a login y GET de tarifas", async ()
   assert.equal(tariffUrl.searchParams.get("bultos[0][kilos]"), "10")
   assert.equal(tariffUrl.searchParams.get("bultos[0][volumen]"), "1000")
   assert.equal(tariffUrl.searchParams.get("bultos[0][valorDeclarado]"), "50000")
-  assert.deepEqual(options, [{ type: "domicilio", price: 22_362.66 }])
+  assert.deepEqual(options, [{ type: "domicilio", price: 23_000 }])
 })
 
 test("reutiliza localidades estables para el mismo código postal", async () => {
@@ -358,14 +412,14 @@ test("reutiliza el destino ya resuelto antes de cotizar", async () => {
       ],
       quoteTariff: async () => ({
         pesoAforado: "1",
-        tarifaSinIva: { seguroDistribucion: "0", distribucion: "100", total: "100" },
-        tarifaConIva: { seguroDistribucion: "0", distribucion: "121", total: "121" },
+        tarifaSinIva: { seguroDistribucion: "0", distribucion: "13400", total: "13400" },
+        tarifaConIva: { seguroDistribucion: "0", distribucion: "13500", total: "13500" },
       }),
     },
   )
 
   assert.equal(duplicateLocalityRequests, 0)
-  assert.deepEqual(options, [{ type: "domicilio", price: 121 }])
+  assert.deepEqual(options, [{ type: "domicilio", price: 14_000 }])
 })
 
 test("deduplica cotizaciones simultáneas idénticas", async () => {
@@ -453,14 +507,14 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
         pesoAforado: "1",
         tarifaSinIva: {
           seguroDistribucion: "0",
-          distribucion: "100",
-          total: "100",
+          distribucion: "13400",
+          total: "13400",
         },
         tarifaConIva: {
           seguroDistribucion: "0",
-          distribucion: "121",
+          distribucion: "13500",
           total:
-            input.contrato === "CONTRATO-SUCURSAL-QA" ? "110" : "121",
+            input.contrato === "CONTRATO-SUCURSAL-QA" ? "13100" : "13500",
         },
       }),
     },
@@ -472,8 +526,8 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
     seHaceAtencionAlCliente: true,
   })
   assert.deepEqual(options, [
-    { type: "domicilio", price: 121 },
-    { type: "sucursal", price: 110 },
+    { type: "domicilio", price: 14_000 },
+    { type: "sucursal", price: 13_000 },
   ])
 })
 

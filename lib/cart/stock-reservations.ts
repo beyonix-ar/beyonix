@@ -42,6 +42,20 @@ function isMissingRpcError(error: { code?: string; message?: string }) {
   )
 }
 
+// La función SQL (sin tocar acá) distingue estos casos en el texto del
+// error que levanta. Solo lo leemos para poder mostrar una copy específica
+// cuando el problema es puntualmente "pediste más cantidad de la que hay" —
+// no para otros motivos (sesión inválida, falta elegir variante, etc.), que
+// siguen usando el mensaje genérico existente.
+function isStockInsufficientError(message?: string) {
+  return message?.toLowerCase().includes("checkout_stock_insufficient") ?? false
+}
+
+export type StockReservationFailureReason =
+  | "insufficient_stock"
+  | "unavailable"
+  | "other"
+
 export async function reserveCartStock({
   sessionId,
   items,
@@ -52,6 +66,7 @@ export async function reserveCartStock({
     return {
       success: false,
       configured: true,
+      reason: "other" as StockReservationFailureReason,
       message: STOCK_CHANGED_MESSAGE,
       expiresAt: null,
     }
@@ -69,6 +84,7 @@ export async function reserveCartStock({
       return {
         success: false,
         configured: false,
+        reason: "unavailable" as StockReservationFailureReason,
         message:
           "El sistema de reservas de stock está pendiente de actualización.",
         expiresAt: null,
@@ -78,6 +94,9 @@ export async function reserveCartStock({
     return {
       success: false,
       configured: true,
+      reason: (isStockInsufficientError(error.message)
+        ? "insufficient_stock"
+        : "other") as StockReservationFailureReason,
       message: STOCK_CHANGED_MESSAGE,
       expiresAt: null,
     }
@@ -91,6 +110,7 @@ export async function reserveCartStock({
   return {
     success: true,
     configured: true,
+    reason: null,
     message: null,
     expiresAt: response?.expires_at ?? null,
   }

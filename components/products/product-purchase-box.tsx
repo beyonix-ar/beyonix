@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CreditCard } from "lucide-react"
+import { CheckCircle2, CreditCard, ShieldCheck, Truck } from "lucide-react"
 
 import { BeyonixButton } from "@/components/beyonix-ui"
 
@@ -88,23 +88,43 @@ export function ProductPurchaseBox({
         )}
 
         {originalPrice && originalPrice > price && (
-          <span className="pb-0.5 text-15px leading-none text-white/48 line-through">
+          <span className="pb-0.5 text-15px leading-none text-white/62 line-through">
             {formatPrice(originalPrice)}
           </span>
         )}
       </div>
 
-      {installmentsLabel && (
-        <div className="mb-4">
-          <span className="inline-flex items-center gap-2 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3.5 py-2 text-13px font-semibold text-[#8AB9DF]">
-            <CreditCard className="size-3.5 text-[#8AB9DF]" />
+      <div className="mb-2.5 flex flex-wrap gap-2">
+        {installmentsLabel && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3 py-1.5 text-12px font-semibold text-white">
+            <CreditCard className="size-3.5 text-white" />
             {installmentsLabel}
           </span>
-        </div>
-      )}
+        )}
 
-      <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-        <div className="flex-1">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3 py-1.5 text-12px font-semibold text-white">
+          <ShieldCheck className="size-3.5 text-white" />
+          Garantía de 6 meses
+        </span>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-1.5 text-12px font-medium text-white/45">
+        <Truck className="size-3.5 shrink-0 text-white/45" />
+        <span className="whitespace-nowrap">Envíos a todo el país</span>
+        <span aria-hidden="true">·</span>
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <CheckCircle2 className="size-3.5 shrink-0 text-white/45" />
+          Compra segura
+        </span>
+      </div>
+
+      {/* Grid 1fr/1fr, no dos anchos fijos calculados por separado: ambas
+          columnas siempre miden exactamente lo mismo. "Añadir al carrito" y
+          el selector "− 1 +" se renderizan a `w-full` dentro de la primera
+          columna, así ninguno de los dos estados puede desplazar a
+          "Ver carrito" ni cambiar de tamaño entre sí. */}
+      <div className="grid gap-2.5 sm:grid-cols-2 sm:items-center">
+        <div className="w-full">
           <ProductCartToggleButton
             quantity={quantity}
             maxReached={maxReached}
@@ -119,7 +139,7 @@ export function ProductPurchaseBox({
           size="lg"
           aria-label="Ver carrito"
           onClick={onViewCart}
-          className="w-full px-5 text-14px sm:w-auto"
+          className="w-full px-5 text-14px"
         >
           Ver carrito
         </BeyonixButton>

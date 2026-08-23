@@ -549,14 +549,9 @@ export function useProductoForm({
         return
       }
 
-      let imageOrder = 0
       let principalImage: string | null =
         null
       const uploadedImageUrls: string[] = []
-      const imagenes: Array<{
-        url: string
-        orden: number
-      }> = []
       const variantes: Array<{
         nombre: string
         sku: string | null
@@ -587,17 +582,6 @@ export function useProductoForm({
           principalImage = urls[0]
         }
 
-        imagenes.push(
-          ...urls.map((url) => {
-            imageOrder += 1
-
-            return {
-              url,
-              orden: imageOrder,
-            }
-          })
-        )
-
         variantes.push({
           nombre:
             variant.nombre.trim(),
@@ -622,7 +606,9 @@ export function useProductoForm({
               imagen_principal:
                 principalImage,
             },
-            imagenes,
+            // Las variantes ya contienen sus propias URLs. No se copian a
+            // imagenes_producto, que queda reservada para productos simples.
+            imagenes: [],
             variantes,
             especificaciones:
               draftSpecifications.map(

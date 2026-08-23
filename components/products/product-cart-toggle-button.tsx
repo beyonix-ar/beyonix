@@ -43,7 +43,7 @@ export function ProductCartToggleButton({
         <MinusIcon className="size-3.5 stroke-2" />
       </button>
 
-      <div className="flex h-full items-center justify-center bg-[#191B1F] px-4 text-14px font-bold tabular-nums text-white">
+      <div className="flex h-full items-center justify-center bg-[#191B1F] px-2 text-14px font-bold tabular-nums text-white">
         {quantity}
       </div>
 

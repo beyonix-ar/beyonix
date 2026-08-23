@@ -25,6 +25,7 @@ import {
   getDefaultVariantOption,
 } from "@/lib/products/product-variants"
 import { getInstallmentsLabel } from "@/lib/products/installments"
+import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
 
 interface SharedProductCardProps {
   product: SupabaseProducto
@@ -309,7 +310,7 @@ export default function SharedProductCard({
             quantity={quantity}
             maxReached={
               defaultVariant.stock < 1 ||
-              quantity >= defaultVariant.stock
+              quantity >= MAX_CART_ITEM_QUANTITY
             }
             onAddToCart={
               handleAddToCart

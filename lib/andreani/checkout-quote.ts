@@ -425,6 +425,28 @@ export function aggregateAndreaniPackage(
   }
 }
 
+/**
+ * Regla comercial de BEYONIX para el costo de envío: se expresa siempre en
+ * miles enteros, usando $300 como punto de corte para redondear al millar
+ * superior (ej. $13.299 → $13.000, pero $13.300 → $14.000). Es la única
+ * transformación que sufre la tarifa cruda de Andreani, y se aplica acá —
+ * en el punto donde esa tarifa se convierte por primera vez en un número —
+ * para que todo lo que consume `AndreaniCheckoutQuoteOption.price` aguas
+ * abajo (token firmado, checkout, creación de la orden, Mercado Pago,
+ * transferencia, saldo a favor) use exactamente el mismo importe ya
+ * normalizado. Opera en centavos enteros para no depender de comparaciones
+ * de punto flotante justo en el límite de $300.
+ */
+export function roundShippingCostToNearestThousand(rawCost: number): number {
+  const cents = Math.round(rawCost * 100)
+  const baseCents = Math.floor(cents / 100_000) * 100_000
+  const remainderCents = cents - baseCents
+  const roundedCents =
+    remainderCents >= 30_000 ? baseCents + 100_000 : baseCents
+
+  return roundedCents / 100
+}
+
 function readQuotePrice(response: AndreaniTariffResponse) {
   const price = Number(response?.tarifaConIva?.total)
   if (!Number.isFinite(price) || price <= 0) {
@@ -433,7 +455,7 @@ function readQuotePrice(response: AndreaniTariffResponse) {
       "Andreani devolvió una cotización sin un importe válido.",
     )
   }
-  return Number(price.toFixed(2))
+  return roundShippingCostToNearestThousand(price)
 }
 
 export async function quoteAndreaniCheckout(

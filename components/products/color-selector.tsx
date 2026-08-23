@@ -1,11 +1,15 @@
 "use client"
 
+import Image from "next/image"
+
 import { productColors } from "@/lib/product-colors"
+import { FALLBACK_PRODUCT_IMAGE } from "@/lib/products/product-variants"
 
 interface ColorOption {
   name: string
   value: string
   colorHex?: string | null
+  image?: string | null
 }
 
 interface ColorSelectorProps {
@@ -18,9 +22,18 @@ interface ColorSelectorProps {
   ) => void
 
   showLabels?: boolean
+
+  onPreviewChange?: (
+    color: ColorOption | null
+  ) => void
+
+  // Reemplaza el chip de punto de color + texto por una miniatura cuadrada
+  // con la primera imagen de la variante (usado en el modal de producto).
+  // No afecta a los demás consumidores, que siguen usando el chip de color.
+  thumbnailMode?: boolean
 }
 
-function formatColorName(value: string) {
+export function formatColorName(value: string) {
   return value
     .trim()
     .split(/([\s-]+)/)
@@ -43,6 +56,8 @@ export function ColorSelector({
   selectedColor,
   onSelect,
   showLabels = false,
+  onPreviewChange,
+  thumbnailMode = false,
 }: ColorSelectorProps) {
   if (colors.length <= 1 && !showLabels) {
     return null
@@ -62,6 +77,37 @@ export function ColorSelector({
             : productColors[
                 color.value as keyof typeof productColors
               ] ?? "bg-white"
+        const label = formatColorName(color.name)
+
+        if (thumbnailMode) {
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-label={`Seleccionar color ${label}`}
+              aria-pressed={isSelected}
+              title={label}
+              onClick={() => onSelect(value)}
+              onMouseEnter={() => onPreviewChange?.(color)}
+              onMouseLeave={() => onPreviewChange?.(null)}
+              onFocus={() => onPreviewChange?.(color)}
+              onBlur={() => onPreviewChange?.(null)}
+              className={`relative size-12 shrink-0 cursor-pointer overflow-hidden rounded-xl border bg-white transition-all duration-200 sm:size-14 ${
+                isSelected
+                  ? "border-beyonix-sky ring-2 ring-beyonix-sky/60 ring-offset-2 ring-offset-[#080D13]"
+                  : "border-white/12 opacity-82 hover:opacity-100 hover:border-beyonix-blue-light/55"
+              }`}
+            >
+              <Image
+                src={color.image || FALLBACK_PRODUCT_IMAGE}
+                alt=""
+                fill
+                sizes="56px"
+                className="object-cover"
+              />
+            </button>
+          )
+        }
 
         return (
           <button
@@ -72,6 +118,10 @@ export function ColorSelector({
                 value
               )
             }
+            onMouseEnter={() => onPreviewChange?.(color)}
+            onMouseLeave={() => onPreviewChange?.(null)}
+            onFocus={() => onPreviewChange?.(color)}
+            onBlur={() => onPreviewChange?.(null)}
             className={
               showLabels
                 ? `relative flex h-10 cursor-pointer items-center gap-2 rounded-xl border px-3 text-13px font-semibold transition-all duration-200 ${
@@ -96,7 +146,7 @@ export function ColorSelector({
               }}
               className={`block size-4 shrink-0 rounded-full ${colorClass}`}
             />
-            {showLabels && <span>{formatColorName(color.name)}</span>}
+            {showLabels && <span>{label}</span>}
           </button>
         )
       })}
