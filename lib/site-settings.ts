@@ -71,6 +71,10 @@ export function normalizeShippingSettings(value: unknown): ShippingBonusSettings
       source.freeShippingMode,
       DEFAULT_SHIPPING_SETTINGS.freeShippingMode,
     ),
+    logisticsBaseSubsidy: numberFromValue(
+      source.logisticsBaseSubsidy,
+      DEFAULT_SHIPPING_SETTINGS.logisticsBaseSubsidy,
+    ),
   }
 }
 

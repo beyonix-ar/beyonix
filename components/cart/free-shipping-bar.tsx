@@ -11,6 +11,10 @@ interface Props {
   subtotal: number
   coveredByBeyonix?: boolean
   settings: ShippingBonusSettings
+  /** Costo real cotizado (Andreani). Sólo disponible en Checkout, tras cotizar. */
+  shippingCostReal?: number
+  /** Monto que BEYONIX absorbe de ese costo real. Sólo disponible en Checkout. */
+  shippingBonus?: number
 }
 
 const formatPrice = (price: number) =>
@@ -24,6 +28,8 @@ export function FreeShippingBar({
   subtotal,
   coveredByBeyonix = false,
   settings,
+  shippingCostReal,
+  shippingBonus,
 }: Props) {
   if (coveredByBeyonix) {
     return (
@@ -46,6 +52,20 @@ export function FreeShippingBar({
       : Math.min((subtotal / settings.freeShippingMinAmount) * 100, 100)
   const remaining = Math.max(settings.freeShippingMinAmount - subtotal, 0)
   const isComplete = hasShippingBonus(subtotal, settings)
+  const hasRealQuote =
+    typeof shippingCostReal === "number" &&
+    typeof shippingBonus === "number" &&
+    shippingBonus > 0
+  const isFullyFree = hasRealQuote && shippingCostReal - shippingBonus <= 0
+  // El 🎉 queda reservado exclusivamente para "el cliente paga $0" -- pagar
+  // una diferencia después de la bonificación (por poca o mucha plata que
+  // sea) no se comunica como una celebración, sólo como el aporte real de
+  // BEYONIX, para que nunca contradiga lo que después se ve en el resumen.
+  const bonusMessage = hasRealQuote
+    ? isFullyFree
+      ? "🎉 ¡Conseguiste envío gratis!"
+      : `Ahorrás ${formatPrice(shippingBonus)} en tu envío`
+    : `Tenés envío bonificado hasta ${formatPrice(settings.shippingBonusMax)}`
 
   return (
     <div className="space-y-1.5">
@@ -75,7 +95,7 @@ export function FreeShippingBar({
             </span>
 
             <span className="beyonix-success-glow">
-              🎉 ¡Conseguiste envío bonificado!
+              {bonusMessage}
             </span>
           </>
         ) : (

@@ -18,6 +18,7 @@ import {
   AdminCard,
   AdminDangerButton,
   AdminEmptyState,
+  AdminFormField,
   AdminGhostButton,
   AdminInfoBlock,
   AdminPageHeader,
@@ -342,130 +343,143 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
         </AdminInfoBlock>
       ) : null}
 
-      <section className="space-y-3">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(420px,1.2fr)]">
-          <AdminCard className="space-y-3 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-base font-black text-white">
-                {editingId ? "Editar banner" : "Nuevo banner"}
-              </h3>
-            </div>
+      <section className="space-y-2.5">
+        <div className="grid gap-2.5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,1fr)]">
+          <AdminCard className="space-y-2.5 p-3.5">
+            <h3 className="text-sm font-black text-white">
+              {editingId ? "Editar banner" : "Nuevo banner"}
+            </h3>
 
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
 
-            <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
-              <div>
-                <p className="mb-1.5 text-xs font-black text-white/64">Imagen URL</p>
-                <AdminTextInput
-                  title="Imagen URL"
-                  ariaLabel="URL de imagen"
-                  value={imageUrl}
-                  placeholder="Pegá una URL o subí una imagen"
-                  icon={<ImageIcon className="size-4" />}
-                  className="h-10"
-                  onChange={setImageUrl}
-                />
-              </div>
-              <AdminSecondaryButton
+            <div>
+              <p className="mb-1.5 text-12px font-black uppercase tracking-widest text-white/52">
+                Imagen
+              </p>
+              <button
+                type="button"
                 title="Subir imagen"
                 aria-label="Subir imagen"
                 disabled={uploading || saving}
                 onClick={() => fileInputRef.current?.click()}
-                size="sm"
-                className="h-10 w-full"
+                className="flex h-11 w-full items-center gap-2.5 rounded-lg border border-dashed border-beyonix-blue-light/28 bg-white/[0.015] px-3 text-left transition hover:border-beyonix-sky/45 hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Upload className="size-4" />
-                {uploading ? "Subiendo" : "Subir imagen"}
-              </AdminSecondaryButton>
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/16 text-beyonix-cyan">
+                  {uploading ? (
+                    <Upload className="size-3.5 animate-pulse" />
+                  ) : imageUrl ? (
+                    <ImageIcon className="size-3.5" />
+                  ) : (
+                    <Upload className="size-3.5" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-bold text-white/85">
+                    {uploading
+                      ? "Subiendo…"
+                      : imageUrl
+                        ? "Imagen cargada"
+                        : "Sin imagen seleccionada"}
+                  </span>
+                  <span className="block truncate text-12px text-white/42">
+                    {imageUrl || "Hacé clic para elegir un archivo"}
+                  </span>
+                </span>
+              </button>
+              <p className="mt-1.5 text-12px text-white/40">
+                Recomendado {BANNER_SIZE_HELP} · también podés pegar una URL:
+              </p>
+              <AdminTextInput
+                title="Imagen URL"
+                ariaLabel="URL de imagen"
+                value={imageUrl}
+                placeholder="https://…"
+                className="mt-1 h-9 text-xs"
+                onChange={setImageUrl}
+              />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_90px_150px]">
-              <div>
-                <p className="mb-1.5 text-xs font-black text-white/64">Descripción</p>
+            <div className="flex flex-wrap items-end gap-2.5">
+              <AdminFormField label="Descripción" className="min-w-[160px] flex-1" labelClassName="mb-1.5 text-12px">
                 <AdminTextInput
                   title="Descripción"
                   ariaLabel="Descripción del banner"
                   value={altText}
                   placeholder="Descripción accesible"
-                  className="h-10"
+                  className="h-9 text-sm"
                   onChange={setAltText}
                 />
-              </div>
-              <div>
-                <p className="mb-1.5 text-xs font-black text-white/64">Orden</p>
+              </AdminFormField>
+              <AdminFormField label="Orden" className="w-16" labelClassName="mb-1.5 text-12px">
                 <AdminTextInput
                   title="Orden"
                   ariaLabel="Orden del banner"
                   value={sortOrder}
                   placeholder="0"
                   inputMode="numeric"
-                  className="h-10 text-center"
+                  className="h-9 text-center text-sm"
                   onChange={setSortOrder}
                 />
-              </div>
-              <div>
-                <p className="mb-1.5 text-xs font-black text-white/64">Estado</p>
+              </AdminFormField>
+              <AdminFormField label="Estado" className="w-32" labelClassName="mb-1.5 text-12px">
                 <AdminSecondaryButton
                   title={active ? "Banner activo" : "Banner inactivo"}
                   aria-label={active ? "Banner activo" : "Banner inactivo"}
                   onClick={() => setActive((current) => !current)}
                   size="sm"
-                  className="h-10 w-full justify-between"
+                  className="h-9 w-full justify-between"
                 >
                   <span>{active ? "Activo" : "Oculto"}</span>
                   <span className={`h-4 w-7 rounded-full p-0.5 transition ${active ? "bg-beyonix-sky/80" : "bg-white/18"}`}>
                     <span className={`block size-3 rounded-full bg-white transition ${active ? "translate-x-3" : ""}`} />
                   </span>
                 </AdminSecondaryButton>
-              </div>
-            </div>
+              </AdminFormField>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/7 pt-3">
-              <span className="text-xs font-semibold text-beyonix-cyan/68">Medida: {BANNER_SIZE_HELP}</span>
-              <div className="flex gap-2">
+              <div className="ml-auto flex gap-2">
                 <AdminGhostButton title="Limpiar formulario" aria-label="Limpiar formulario" size="sm" onClick={resetForm}>
-                  <RotateCcw className="size-4" />
+                  <RotateCcw className="size-3.5" />
                   Limpiar
                 </AdminGhostButton>
                 <AdminPrimaryButton title="Guardar banner" aria-label="Guardar banner" disabled={saving || uploading} onClick={handleSave} size="sm">
-                  <Save className="size-4" />
-                  {saving ? "Guardando" : "Guardar"}
+                  <Save className="size-3.5" />
+                  {saving ? "Guardando" : "Guardar banner"}
                 </AdminPrimaryButton>
               </div>
             </div>
           </AdminCard>
 
-          <AdminCard className="p-3">
-            <div className="relative flex h-full min-h-260px items-center justify-center overflow-hidden rounded-xl border border-beyonix-blue-light/20 bg-[#03070D]">
-              <span className="absolute left-3 top-3 z-10 rounded-full border border-beyonix-blue-light/16 bg-black/55 px-2.5 py-1 text-10px font-black uppercase tracking-wider text-white/58 backdrop-blur-sm">
+          <AdminCard className="self-start p-2.5">
+            <div className="relative aspect-[48/13] w-full overflow-hidden rounded-xl border border-beyonix-blue-light/20 bg-[#03070D]">
+              <span className="absolute left-2 top-2 z-10 rounded-full border border-beyonix-blue-light/16 bg-black/55 px-2 py-0.5 text-10px font-black uppercase tracking-wider text-white/58 backdrop-blur-sm">
                 Vista previa
               </span>
               {imageUrl ? (
                 <img src={imageUrl} alt={altText || DEFAULT_ALT_TEXT} className="absolute inset-0 size-full object-contain object-center" />
               ) : (
-                <div className="px-6 text-center">
-                  <ImageIcon className="mx-auto mb-2 size-7 text-beyonix-sky/45" />
-                  <p className="text-xs font-bold text-white/58">Sin imagen</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                  <ImageIcon className="size-5 text-beyonix-sky/45" />
+                  <p className="text-12px font-bold text-white/58">Sin imagen</p>
                 </div>
               )}
             </div>
           </AdminCard>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-black text-white">Banners cargados</h3>
-            <span className="text-xs font-bold text-white/45">{loading ? "Cargando" : banners.length}</span>
+            <h3 className="text-xs font-black text-white">Banners cargados</h3>
+            <span className="text-12px font-bold text-white/45">{loading ? "Cargando" : banners.length}</span>
           </div>
 
           {banners.length ? (
             banners.map((banner) => (
-              <AdminCard key={banner.id} className="grid items-center gap-4 p-4 lg:grid-cols-[minmax(320px,520px)_1fr_auto]">
-                <div className="relative aspect-[48/13] w-full overflow-hidden rounded-xl border border-beyonix-blue-light/20 bg-[#03070D] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <AdminCard key={banner.id} className="grid items-center gap-3 p-2.5 lg:grid-cols-[200px_1fr_auto]">
+                <div className="relative aspect-[48/13] w-full overflow-hidden rounded-lg border border-beyonix-blue-light/20 bg-[#03070D] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                   <img src={banner.image_url} alt={banner.alt_text || DEFAULT_ALT_TEXT} className="absolute inset-0 size-full object-contain object-center" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <AdminSecondaryButton
                       title={banner.active ? "Desactivar banner" : "Activar banner"}
                       aria-label={banner.active ? "Desactivar banner" : "Activar banner"}
@@ -477,21 +491,21 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
                     </AdminSecondaryButton>
                     <AdminBadge tone="neutral">Orden {banner.sort_order}</AdminBadge>
                   </div>
-                  <p className="mt-3 truncate text-base font-black text-white/90">{banner.alt_text || DEFAULT_ALT_TEXT}</p>
-                  <p className="mt-1 truncate text-xs text-white/38">{banner.image_url}</p>
+                  <p className="mt-1.5 truncate text-sm font-black text-white/90">{banner.alt_text || DEFAULT_ALT_TEXT}</p>
+                  <p className="truncate text-12px text-white/38">{banner.image_url}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <AdminGhostButton title="Editar banner" aria-label="Editar banner" size="icon" onClick={() => handleEdit(banner)}>
-                    <Pencil className="size-4" />
+                    <Pencil className="size-3.5" />
                   </AdminGhostButton>
                   <AdminDangerButton title="Eliminar banner" aria-label="Eliminar banner" size="icon" onClick={() => void handleDelete(banner)}>
-                    <Trash2 className="size-4" />
+                    <Trash2 className="size-3.5" />
                   </AdminDangerButton>
                 </div>
               </AdminCard>
             ))
           ) : (
-            <AdminEmptyState icon={<ImageIcon className="size-5" />} title="Sin banners" />
+            <AdminEmptyState icon={<ImageIcon className="size-4" />} title="Sin banners" className="py-4" />
           )}
         </div>
       </section>

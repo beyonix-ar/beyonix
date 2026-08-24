@@ -1,13 +1,15 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ImageIcon, Search } from "lucide-react"
+import Image from "next/image"
+import { Check, ImageIcon, Search } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
 import { useCategorias } from "@/hooks/use-categorias"
 import { useProductColors } from "@/hooks/use-product-colors"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { useProductos } from "@/hooks/use-productos"
+import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import {
   getProductoById,
   getProductosPage,
@@ -47,6 +49,41 @@ function parseStockValue(value: string) {
   if (!value.trim()) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function getMergeRowImage(product: SupabaseProducto) {
+  return firstUsableImage(
+    product.imagen_principal,
+    [...(product.imagenes_producto ?? [])]
+      .sort((left, right) => left.orden - right.orden || left.id - right.id)
+      .map((image) => image.url),
+  )
+}
+
+function getMergeRowSku(product: SupabaseProducto) {
+  const primaryVariantSku = [...(product.producto_variantes ?? [])]
+    .sort((left, right) => left.orden - right.orden || left.id - right.id)[0]
+    ?.sku?.trim()
+
+  return product.sku?.trim() || primaryVariantSku || null
+}
+
+function MergeProductThumbnail({
+  image,
+  alt,
+}: {
+  image: string | null | undefined
+  alt: string
+}) {
+  return (
+    <span className="relative flex aspect-square size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/30">
+      {image ? (
+        <Image src={image} alt={alt} fill sizes="40px" className="object-cover" />
+      ) : (
+        <ImageIcon className="size-4 text-white/22" aria-hidden="true" />
+      )}
+    </span>
+  )
 }
 
 function getPrimaryColor(product: SupabaseProducto) {
@@ -245,32 +282,30 @@ export function AdminProductos() {
   useEffect(() => {
     if (!pendingMerge) return
     const term = mergeSearch.trim()
-    if (!term) {
-      setMergeResults([])
-      setMergeSearching(false)
-      return
-    }
 
     let cancelled = false
     setMergeSearching(true)
-    const timer = window.setTimeout(async () => {
-      try {
-        const result = await getProductosPage({
-          search: term,
-          pageSize: 6,
-          activeFilter: "todos",
-        })
-        if (!cancelled) {
-          setMergeResults(
-            result.productos.filter((item) => item.id !== pendingMerge.id),
-          )
+    const timer = window.setTimeout(
+      async () => {
+        try {
+          const result = await getProductosPage({
+            search: term,
+            pageSize: 20,
+            activeFilter: "todos",
+          })
+          if (!cancelled) {
+            setMergeResults(
+              result.productos.filter((item) => item.id !== pendingMerge.id),
+            )
+          }
+        } catch {
+          if (!cancelled) setMergeResults([])
+        } finally {
+          if (!cancelled) setMergeSearching(false)
         }
-      } catch {
-        if (!cancelled) setMergeResults([])
-      } finally {
-        if (!cancelled) setMergeSearching(false)
-      }
-    }, 300)
+      },
+      term ? 300 : 0,
+    )
 
     return () => {
       cancelled = true
@@ -537,58 +572,75 @@ export function AdminProductos() {
           descripción del producto elegido son los que van a quedar.
         </p>
 
-        {mergeTarget ? (
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/15 px-3 py-2.5">
-            <p className="min-w-0 truncate text-sm font-black text-white">
-              {mergeTarget.nombre}
-            </p>
-            <button
-              type="button"
-              disabled={merging}
-              onClick={() => setMergeTarget(null)}
-              className="shrink-0 text-11px font-bold text-white/50 underline-offset-2 hover:text-white hover:underline disabled:opacity-40"
-            >
-              Cambiar
-            </button>
-          </div>
-        ) : (
-          <div className="mt-3">
-            <label className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-white/35" />
-              <input
-                autoFocus
-                value={mergeSearch}
-                onChange={(event) => setMergeSearch(event.target.value)}
-                placeholder="Buscar el producto que va a quedar…"
-                className="h-10 w-full rounded-xl border border-white/12 bg-black/25 pl-9 pr-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-sky/45"
-              />
-            </label>
+        <div className="mt-3">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-white/35" />
+            <input
+              autoFocus
+              value={mergeSearch}
+              onChange={(event) => setMergeSearch(event.target.value)}
+              placeholder="Buscar el producto que va a quedar…"
+              className="h-10 w-full rounded-xl border border-white/12 bg-black/25 pl-9 pr-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-sky/45"
+            />
+          </label>
+
+          <div className="mt-2 max-h-[260px] overflow-y-auto rounded-xl border border-white/8">
             {mergeSearching && (
-              <p className="mt-2 text-center text-xs text-white/40">Buscando…</p>
-            )}
-            {!mergeSearching && mergeSearch.trim() && !mergeResults.length && (
-              <p className="mt-2 text-center text-xs text-white/40">
-                No encontramos productos con ese nombre.
+              <p className="px-3 py-4 text-center text-xs text-white/40">
+                {mergeSearch.trim() ? "Buscando…" : "Cargando productos…"}
               </p>
             )}
-            {mergeResults.length > 0 && (
-              <div className="mt-2 max-h-180px overflow-y-auto rounded-xl border border-white/8">
-                {mergeResults.map((product) => (
+            {!mergeSearching && mergeResults.length === 0 && (
+              <p className="px-3 py-4 text-center text-xs text-white/40">
+                {mergeSearch.trim()
+                  ? "No encontramos productos con ese nombre."
+                  : "No hay productos disponibles para fusionar."}
+              </p>
+            )}
+            {!mergeSearching &&
+              mergeResults.map((product) => {
+                const selected = mergeTarget?.id === product.id
+                const sku = getMergeRowSku(product)
+                return (
                   <button
                     key={product.id}
                     type="button"
+                    aria-pressed={selected}
                     onClick={() => setMergeTarget(product)}
-                    className="flex w-full cursor-pointer items-center justify-between gap-3 border-b border-white/6 px-3 py-2.5 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-beyonix-blue/20 hover:text-white"
+                    className={`flex w-full cursor-pointer items-center gap-2.5 border-b border-white/6 px-3 py-1.5 text-left transition last:border-b-0 ${
+                      selected
+                        ? "bg-beyonix-blue/15 ring-1 ring-inset ring-beyonix-sky/40"
+                        : "hover:bg-white/[0.04]"
+                    }`}
                   >
-                    <span className="min-w-0 truncate">{product.nombre}</span>
-                    <span className="shrink-0 text-10px font-black text-white/35">
-                      {(product.producto_variantes ?? []).length} variantes
+                    <MergeProductThumbnail
+                      image={getMergeRowImage(product)}
+                      alt={product.nombre}
+                    />
+                    <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+                      <span className="min-w-0 truncate text-sm font-bold text-white/85">
+                        {product.nombre}
+                      </span>
+                      {sku && (
+                        <span className="shrink-0 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-9px font-bold uppercase tracking-wide text-white/40">
+                          SKU: {sku}
+                        </span>
+                      )}
                     </span>
+                    {selected && (
+                      <Check className="size-4 shrink-0 text-beyonix-sky" />
+                    )}
                   </button>
-                ))}
-              </div>
-            )}
+                )
+              })}
           </div>
+        </div>
+
+        {mergeTarget && (
+          <p className="mt-2 text-center text-11px font-bold text-white/45">
+            Va a quedar:{" "}
+            <span className="text-white/75">{mergeTarget.nombre}</span>
+          </p>
         )}
 
         {mergeError && (

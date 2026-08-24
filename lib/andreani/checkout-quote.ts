@@ -107,6 +107,20 @@ const pendingQuotes = new Map<
   string,
   Promise<AndreaniCheckoutQuoteOption[]>
 >()
+// Cache corto del RESULTADO de una cotización ya resuelta, para el caso de
+// pedir dos veces exactamente el mismo destino+carrito (ida y vuelta entre
+// pasos del checkout, doble click, etc.). La key es el JSON exacto del
+// request normalizado (mismo carrito, cantidades, variantes, destino), así
+// que nunca puede devolver una tarifa de otro carrito/peso/destino. El TTL
+// es deliberadamente corto y muy inferior a los 30 min que ya tolera el
+// token de cotización firmado (`CHECKOUT_SHIPPING_QUOTE_TTL_MS`), así que no
+// introduce una ventana de staleness nueva: la orden vuelve a validar todo
+// server-side igual que siempre.
+const RESOLVED_QUOTE_CACHE_TTL_MS = 60 * 1000
+const resolvedQuoteCache = new Map<
+  string,
+  TimedCacheEntry<AndreaniCheckoutQuoteOption[]>
+>()
 const localityCache = new Map<string, TimedCacheEntry<AndreaniLocality[]>>()
 const localityRequests = new Map<string, Promise<AndreaniLocality[]>>()
 const branchCache = new Map<string, TimedCacheEntry<AndreaniBranch[]>>()
@@ -466,10 +480,18 @@ export async function quoteAndreaniCheckout(
   const env = dependencies.env ?? process.env
   const config = resolveAndreaniCheckoutConfig(env)
   const key = JSON.stringify(request)
+  const cached = resolvedQuoteCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.data
+
   const existing = pendingQuotes.get(key)
   if (existing) return existing
 
   const promise = (async () => {
+    const t0 = performance.now()
+    const timings: Record<string, number> = {}
+    const mark = (label: string, start: number) => {
+      timings[label] = Math.round(performance.now() - start)
+    }
     const tariffEnv = { ...env, ANDREANI_ENV: config.environment }
     const client = new AndreaniClient({
       ...dependencies.clientOptions,
@@ -512,15 +534,21 @@ export async function quoteAndreaniCheckout(
         request.localidad,
         request.cpDestino,
       )
+    const validateStart = performance.now()
     const validateDestinationPromise = (async () => {
-      if (destinationIsCached) return
+      if (destinationIsCached) {
+        mark("destinoCacheado", validateStart)
+        return
+      }
 
       try {
         const localities = await getLocalities({
           codigosPostales: request.cpDestino,
         })
         matchAndreaniCheckoutProvince(request, localities)
+        mark("validacionDestino", validateStart)
       } catch (error) {
+        mark("validacionDestino", validateStart)
         if (error instanceof AndreaniError && error.status === 404) {
           throw new AndreaniError(
             "VALIDATION_ERROR",
@@ -530,25 +558,53 @@ export async function quoteAndreaniCheckout(
         throw error
       }
     })()
-    await validateDestinationPromise
 
+    const branchesStart = performance.now()
     const branchesPromise = (async () => {
       if (!config.sucursalContrato) return []
       try {
-        return await getBranches({
+        const result = await getBranches({
           codigoPostal: request.cpDestino,
           canal: "B2C",
           seHaceAtencionAlCliente: true,
         })
+        mark("sucursales", branchesStart)
+        return result
       } catch (error) {
+        mark("sucursales", branchesStart)
         if (error instanceof AndreaniError && error.status === 404) return []
         throw error
       }
     })()
+    const authStart = performance.now()
     const authenticationPromise = dependencies.quoteTariff
       ? Promise.resolve()
-      : client.authenticate()
+      : client.authenticate().then((token) => {
+          mark("token", authStart)
+          return token
+        })
+
+    // Token, validación de destino y sucursales son 3 llamadas independientes
+    // entre sí (ninguna depende del resultado de las otras) -- se disparan
+    // todas en paralelo arriba. Si la validación pierde la carrera y rechaza
+    // primero, token/sucursales quedan sin nadie que los espere: se les
+    // adjunta un catch mudo solo para que Node no los reporte como rechazos
+    // no manejados (el rechazo real, si lo hay, se sigue propagando más
+    // abajo a través de authenticationPromise/branchesPromise sin cortar).
+    authenticationPromise.catch(() => {})
+    branchesPromise.catch(() => {})
+
+    // Recién acá se espera la validación: es la única que debe bloquear
+    // antes de tocar la base de datos o cotizar, para no gastar ese trabajo
+    // en un destino que va a resultar inválido.
+    await validateDestinationPromise
+
+    const dbStart = performance.now()
     const packagePromise = (dependencies.loadItems ?? loadCheckoutItems)(request)
+      .then((items) => {
+        mark("db", dbStart)
+        return items
+      })
       .then(aggregateAndreaniPackage)
     const quote =
       dependencies.quoteTariff ??
@@ -558,6 +614,7 @@ export async function quoteAndreaniCheckout(
       contrato: string,
       packageData: AggregatedAndreaniPackage,
     ) => {
+      const tariffStart = performance.now()
       try {
         const response = await quote({
           cpDestino: request.cpDestino,
@@ -575,8 +632,10 @@ export async function quoteAndreaniCheckout(
             },
           ],
         })
+        mark(`tarifa_${type}`, tariffStart)
         return { type, price: readQuotePrice(response) }
       } catch (error) {
+        mark(`tarifa_${type}`, tariffStart)
         if (
           error instanceof AndreaniError &&
           (error.code === "INVALID_RESPONSE" ||
@@ -620,12 +679,20 @@ export async function quoteAndreaniCheckout(
     const options = [homeQuote, branchQuote].filter(
       (option): option is AndreaniCheckoutQuoteOption => option !== null,
     )
+    console.info("[cotizar-timing]", {
+      totalMs: Math.round(performance.now() - t0),
+      ...timings,
+    })
     if (!options.length) {
       throw new AndreaniError(
         "VALIDATION_ERROR",
         ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
       )
     }
+    resolvedQuoteCache.set(key, {
+      data: options,
+      expiresAt: Date.now() + RESOLVED_QUOTE_CACHE_TTL_MS,
+    })
     return options
   })()
 
@@ -639,6 +706,7 @@ export async function quoteAndreaniCheckout(
 
 export function resetAndreaniCheckoutQuoteStateForTests() {
   pendingQuotes.clear()
+  resolvedQuoteCache.clear()
   localityCache.clear()
   localityRequests.clear()
   branchCache.clear()

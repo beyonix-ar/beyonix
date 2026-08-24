@@ -51,6 +51,7 @@ test("el costo real proviene de la cotización firmada y no del navegador", () =
         freeShippingMinAmount: 80_000,
         shippingBonusMax: 5_000,
         freeShippingMode: "full",
+        logisticsBaseSubsidy: 0,
       },
     },
   )
@@ -82,6 +83,7 @@ test("todos los medios de pago consumen la misma cotización verificada", () => 
           freeShippingMinAmount: 999_999,
           shippingBonusMax: 0,
           freeShippingMode: "off",
+          logisticsBaseSubsidy: 0,
         },
       },
     ),

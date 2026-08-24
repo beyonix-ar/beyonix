@@ -6,12 +6,38 @@ import {
   normalizeArgentineProvinceKey,
 } from "../validation/account-fields.ts"
 
-import { AndreaniClient, AndreaniError } from "./client.ts"
+import { AndreaniClient, AndreaniError, sanitizeAndreaniMessage } from "./client.ts"
 import type { AndreaniLocality } from "./types.ts"
 
+function logCheckoutDestinationFailure(
+  operation: "localidades" | "codigos-postales",
+  province: string,
+  error: unknown,
+) {
+  const safeError =
+    error instanceof AndreaniError
+      ? error.toJSON()
+      : {
+          code: "REQUEST_FAILED" as const,
+          message: sanitizeAndreaniMessage(error),
+          status: null,
+          retryable: false,
+        }
+
+  console.error("[checkout-destinos] fallo", {
+    proveedor: operation === "localidades" ? "georef" : "andreani",
+    operacion: operation,
+    provincia: province,
+    status: safeError.status,
+    mensaje: safeError.message,
+  })
+}
+
 const TERRITORIAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+// v2.0 devuelve 502 (origen caído detrás de Cloudflare) al 2026-08-23; v1.0
+// expone el mismo contrato ({ asentamientos: [{ id, nombre }] }) y funciona.
 const GEOREF_API_URL =
-  "https://apis.datos.gob.ar/georef/api/v2.0/asentamientos"
+  "https://apis.datos.gob.ar/georef/api/v1.0/asentamientos"
 
 const PROVINCE_IDS = new Map([
   ["BUENOSAIRES", "06"],
@@ -162,13 +188,42 @@ function parseGeorefLocalities(payload: unknown): CheckoutLocalityOption[] {
   )
 }
 
+/**
+ * Andreani no ofrece un endpoint "todas las localidades de una provincia"
+ * (`/v1/localidades` sólo acepta `localidad` o `codigosPostales` puntuales;
+ * filtrar por `provincia`/`idprovincia` solo devuelve 404, verificado en
+ * vivo). Por eso no se puede armar la intersección Georef ∩ Andreani con una
+ * sola consulta, y consultar Andreani una vez por localidad de Georef sería
+ * un N+1 real (miles de requests por provincia grande).
+ *
+ * En cambio, se reutiliza `postalCodeCache`: cada vez que el flujo normal
+ * pide los CP de una localidad puntual (`getCheckoutPostalCodes`) y Andreani
+ * responde con cero CP utilizables, esa localidad queda marcada acá. El
+ * listado automático se filtra con ese conocimiento ya adquirido -- sin
+ * ninguna llamada extra -- y se va autodepurando con el uso real: no es
+ * perfecto en frío para una provincia que nadie exploró todavía, pero nunca
+ * cuesta una consulta adicional a Andreani ni depende de una lista
+ * hardcodeada.
+ */
+function filterLocalitiesWithUsablePostalCode(
+  provinceKey: string,
+  localities: CheckoutLocalityOption[],
+): CheckoutLocalityOption[] {
+  const now = Date.now()
+  return localities.filter((option) => {
+    const localityKey = normalizeArgentineLocationKey(option.name)
+    const cached = postalCodeCache.get(`${provinceKey}:${localityKey}`)
+    return !(cached && cached.expiresAt > now && cached.data.length === 0)
+  })
+}
+
 export async function getCheckoutProvinceLocalities(
   province: string,
   dependencies: CheckoutDestinationDependencies = {},
 ) {
   const resolvedProvince = resolveProvince(province)
 
-  return getCachedTerritorialData(
+  const localities = await getCachedTerritorialData(
     resolvedProvince.key,
     provinceLocalityCache,
     provinceLocalityRequests,
@@ -185,7 +240,8 @@ export async function getCheckoutProvinceLocalities(
           signal: AbortSignal.timeout(8_000),
           next: { revalidate: 86_400 },
         })
-      } catch {
+      } catch (error) {
+        logCheckoutDestinationFailure("localidades", province, error)
         throw new AndreaniError(
           "SERVICE_UNAVAILABLE",
           "No pudimos cargar las localidades.",
@@ -194,14 +250,16 @@ export async function getCheckoutProvinceLocalities(
       }
 
       if (!response.ok) {
-        throw new AndreaniError(
+        const error = new AndreaniError(
           "SERVICE_UNAVAILABLE",
           "No pudimos cargar las localidades.",
           { status: response.status, retryable: true },
         )
+        logCheckoutDestinationFailure("localidades", province, error)
+        throw error
       }
 
-      const localities = parseGeorefLocalities(await response.json())
+      const georefLocalities = parseGeorefLocalities(await response.json())
       if (resolvedProvince.key === "CABA") {
         return [
           {
@@ -210,9 +268,11 @@ export async function getCheckoutProvinceLocalities(
           },
         ]
       }
-      return localities
+      return georefLocalities
     },
   )
+
+  return filterLocalitiesWithUsablePostalCode(resolvedProvince.key, localities)
 }
 
 export async function getCheckoutPostalCodes(
@@ -267,6 +327,7 @@ export async function getCheckoutPostalCodes(
         andreaniLocalities = await getAndreaniLocalities(officialLocality.name)
       } catch (error) {
         if (error instanceof AndreaniError && error.status === 404) return []
+        logCheckoutDestinationFailure("codigos-postales", province, error)
         throw error
       }
 

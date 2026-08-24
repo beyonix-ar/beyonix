@@ -85,6 +85,7 @@ import {
 import {
   calculateCustomerShippingCost,
   calculateShippingBonus,
+  hasShippingBonus,
 } from "@/lib/store-config"
 import {
   formatDeliveryAddress,
@@ -192,6 +193,9 @@ const checkoutDividerClassName =
 
 const checkoutSectionKickerClassName =
   "shrink-0 text-9px font-bold uppercase tracking-[0.16em] text-white/46"
+
+const checkoutManualToggleClassName =
+  "text-11px font-bold text-[#4f8cc9]/85 underline-offset-2 hover:text-[#4f8cc9] hover:underline"
 
 const checkoutOptionClassName =
   "checkout-option flex w-full cursor-pointer rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] text-left transition-all hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/38 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/22"
@@ -398,6 +402,8 @@ export default function CheckoutPage() {
   const [postalCodesLoading, setPostalCodesLoading] = useState(false)
   const [destinationSelectionStatus, setDestinationSelectionStatus] =
     useState<DestinationSelectionStatus>("incomplete")
+  const [manualLocalityMode, setManualLocalityMode] = useState(false)
+  const [manualPostalCodeMode, setManualPostalCodeMode] = useState(false)
 
   const [checkoutError, setCheckoutError] =
     useState("")
@@ -651,6 +657,16 @@ export default function CheckoutPage() {
   const totals = calculateCartTotals(items, {
     shippingCost: shippingCostCharged,
   })
+  // Distingue las dos políticas de envío para la UI (nunca se acumulan, ver
+  // calculateCustomerShippingCost): la política grande por compra mínima se
+  // comunica con precio tachado + "Ahorrás" (GRATIS incluido); el subsidio
+  // logístico chico para pedidos que no llegan al mínimo es sólo un precio
+  // final ("Envío $X"), sin tachado ni promoción -- es lo que BEYONIX decide
+  // cobrar por el servicio, no lo que "descontó" de la tarifa de Andreani.
+  const qualifiesForMainShippingBonus = hasShippingBonus(
+    baseTotals.productsTotal,
+    siteSettings.shipping,
+  )
   const selectedStoreBenefit =
     storeBenefits.find((benefit) => benefit.id === selectedStoreBenefitId) ??
     null
@@ -722,6 +738,10 @@ export default function CheckoutPage() {
       setLocalityOptions([])
       setLocalitiesLoading(false)
       setLocalityLoadError("")
+      return
+    }
+    if (manualLocalityMode) {
+      setLocalitiesLoading(false)
       return
     }
 
@@ -812,13 +832,18 @@ export default function CheckoutPage() {
       })
 
     return () => controller.abort()
-  }, [formData.provincia])
+  }, [formData.provincia, manualLocalityMode])
 
   useEffect(() => {
-    if (formData.provincia && !formData.localidad && !localitiesLoading) {
+    if (
+      formData.provincia &&
+      !formData.localidad &&
+      !localitiesLoading &&
+      !manualLocalityMode
+    ) {
       setDestinationSelectionStatus("incomplete")
     }
-  }, [formData.localidad, formData.provincia, localitiesLoading])
+  }, [formData.localidad, formData.provincia, localitiesLoading, manualLocalityMode])
 
   useEffect(() => {
     const province = formData.provincia.trim()
@@ -827,6 +852,10 @@ export default function CheckoutPage() {
       setPostalCodeOptions([])
       setPostalCodesLoading(false)
       setDestinationSelectionStatus("incomplete")
+      return
+    }
+    if (manualLocalityMode || manualPostalCodeMode) {
+      setPostalCodesLoading(false)
       return
     }
 
@@ -876,17 +905,18 @@ export default function CheckoutPage() {
         return next
       })
 
-      if (postalCodes.length === 0) {
-        setDestinationSelectionStatus("unavailable")
-        setShippingLoading(false)
-        setShippingQuoteCurrent(false)
-        setShippingOptions([])
-        setSelectedShippingType(null)
-        setShippingMessageTone("error")
-        setShippingMessage(ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE)
-      } else {
-        setDestinationSelectionStatus(nextPostalCode ? "ready" : "incomplete")
-      }
+      // Georef confirmó la localidad, pero Andreani no tiene CPs catalogados
+      // para ella (p. ej. Base Marambio). Eso no significa "sin servicio" --
+      // solo que no podemos autocompletar el CP. Se deja en "incomplete" para
+      // que el usuario pueda cargarlo manualmente y la cotización real
+      // (fuente de verdad) decida si Andreani puede o no enviar ahí.
+      setDestinationSelectionStatus(
+        postalCodes.length === 0
+          ? "incomplete"
+          : nextPostalCode
+            ? "ready"
+            : "incomplete",
+      )
     }
 
     const cached = postalCodeOptionsCacheRef.current.get(cacheKey)
@@ -939,7 +969,13 @@ export default function CheckoutPage() {
       })
 
     return () => controller.abort()
-  }, [formData.cpDestino, formData.localidad, formData.provincia])
+  }, [
+    formData.cpDestino,
+    formData.localidad,
+    formData.provincia,
+    manualLocalityMode,
+    manualPostalCodeMode,
+  ])
 
   const shippingQuotePayload = JSON.stringify({
     cpDestino: formData.cpDestino.trim(),
@@ -978,6 +1014,8 @@ export default function CheckoutPage() {
       } else if (destinationSelectionStatus === "error") {
         return
       } else {
+        setShippingOptions([])
+        setSelectedShippingType(null)
         setShippingMessageTone("info")
         setShippingMessage(
           destinationSelectionStatus === "loading"
@@ -1203,6 +1241,8 @@ export default function CheckoutPage() {
     setLocalityOptions([])
     setLocalityLoadError("")
     setPostalCodeOptions([])
+    setManualLocalityMode(false)
+    setManualPostalCodeMode(false)
     setDestinationSelectionStatus(normalizedValue ? "loading" : "incomplete")
 
     setFormData((prev) => {
@@ -1453,6 +1493,7 @@ export default function CheckoutPage() {
 
     if (invalidField === "localidad") setInvalidField(null)
     setPostalCodeOptions([])
+    setManualPostalCodeMode(false)
     setDestinationSelectionStatus(normalizedValue ? "loading" : "incomplete")
 
     setFormData((prev) => {
@@ -1493,6 +1534,61 @@ export default function CheckoutPage() {
       return next
     })
   }
+
+  const handleManualPostalCodeInputChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    handlePostalCodeChange(e.target.value.replace(/\D/g, "").slice(0, 4))
+  }
+
+  const handleEnableManualLocality = () => {
+    hasEditedCheckoutFormRef.current = true
+    setManualLocalityMode(true)
+    setLocalityLoadError("")
+    setLocalitiesLoading(false)
+    setLocalityOptions([])
+    setPostalCodesLoading(false)
+    setPostalCodeOptions([])
+    setDestinationSelectionStatus(
+      /^\d{4}$/.test(formData.cpDestino.trim()) ? "ready" : "incomplete",
+    )
+  }
+
+  const handleDisableManualLocality = () => {
+    setManualLocalityMode(false)
+    setManualPostalCodeMode(false)
+    setDestinationSelectionStatus(formData.provincia ? "loading" : "incomplete")
+
+    setFormData((prev) => {
+      const next = { ...prev, localidad: "", cpDestino: "" }
+      next.direccion = formatDeliveryAddress({
+        street: next.calle,
+        streetNumber: next.numero,
+        floor: next.piso,
+        apartment: next.departamento,
+        locality: next.localidad,
+        region: next.provincia,
+        postalCode: next.cpDestino,
+      })
+      return next
+    })
+  }
+
+  const handleEnableManualPostalCode = () => {
+    hasEditedCheckoutFormRef.current = true
+    setManualPostalCodeMode(true)
+    setDestinationSelectionStatus(
+      /^\d{4}$/.test(formData.cpDestino.trim()) ? "ready" : "incomplete",
+    )
+  }
+
+  const cpEntryIsManual = manualLocalityMode || manualPostalCodeMode
+  const showManualPostalCodeOption =
+    !cpEntryIsManual &&
+    Boolean(formData.localidad) &&
+    !postalCodesLoading &&
+    postalCodeOptions.length === 0
+
   if (!mounted || !isCartReady) {
     return null
   }
@@ -1763,51 +1859,117 @@ export default function CheckoutPage() {
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Localidad *
                           </Label>
-                          <GeographicSelect
-                            id="localidad"
-                            value={formData.localidad}
-                            options={localitySelectOptions}
-                            onChange={handleLocalityChange}
-                            placeholder="Seleccioná una localidad"
-                            loading={localitiesLoading}
-                            loadingLabel="Cargando localidades…"
-                            disabled={!formData.provincia || localitiesLoading}
-                            searchable
-                            emptyLabel="No hay localidades disponibles para esta provincia."
-                            errorMessage={localityLoadError}
-                            ariaLabel="Seleccionar localidad"
-                            invalid={invalidField === "localidad"}
-                          />
+                          {manualLocalityMode ? (
+                            <>
+                              <Input
+                                id="localidad"
+                                name="localidad"
+                                className={getCheckoutInputClassName("localidad")}
+                                value={formData.localidad}
+                                onChange={handleInputChange}
+                                placeholder="Ingresá tu localidad"
+                                maxLength={80}
+                                required
+                              />
+                              <button
+                                type="button"
+                                onClick={handleDisableManualLocality}
+                                className={checkoutManualToggleClassName}
+                              >
+                                Volver a selección automática
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <GeographicSelect
+                                id="localidad"
+                                value={formData.localidad}
+                                options={localitySelectOptions}
+                                onChange={handleLocalityChange}
+                                placeholder="Seleccioná una localidad"
+                                loading={localitiesLoading}
+                                loadingLabel="Cargando localidades…"
+                                disabled={!formData.provincia || localitiesLoading}
+                                searchable
+                                emptyLabel="No hay localidades disponibles para esta provincia."
+                                errorMessage={localityLoadError}
+                                ariaLabel="Seleccionar localidad"
+                                invalid={invalidField === "localidad"}
+                              />
+                              {localityLoadError && (
+                                <p className="text-xs font-semibold text-red-300">
+                                  {localityLoadError}
+                                </p>
+                              )}
+                              {formData.provincia && (
+                                <button
+                                  type="button"
+                                  onClick={handleEnableManualLocality}
+                                  className={checkoutManualToggleClassName}
+                                >
+                                  ¿No encontrás tu localidad? Ingresar manualmente
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
                         <div className="space-y-0.5">
                           <Label htmlFor="cpDestino" className="text-white/75">
                             <MapPin aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Código postal *
                           </Label>
-                          <GeographicSelect
-                            id="cpDestino"
-                            value={formData.cpDestino}
-                            options={postalCodeSelectOptions}
-                            onChange={handlePostalCodeChange}
-                            placeholder={
-                              formData.localidad &&
-                              !postalCodesLoading &&
-                              postalCodeOptions.length === 0
-                                ? "Sin códigos postales disponibles"
-                                : "Seleccioná un código postal"
-                            }
-                            loading={postalCodesLoading}
-                            loadingLabel="Cargando códigos postales…"
-                            disabled={
-                              !formData.localidad ||
-                              postalCodesLoading ||
-                              postalCodeOptions.length === 0
-                            }
-                            locked={postalCodeOptions.length === 1}
-                            compact
-                            ariaLabel="Seleccionar código postal"
-                            invalid={invalidField === "cpDestino"}
-                          />
+                          {cpEntryIsManual ? (
+                            <Input
+                              id="cpDestino"
+                              name="cpDestino"
+                              inputMode="numeric"
+                              className={getCheckoutInputClassName("cpDestino")}
+                              value={formData.cpDestino}
+                              onChange={handleManualPostalCodeInputChange}
+                              placeholder="Ej: 9410"
+                              maxLength={4}
+                              required
+                            />
+                          ) : (
+                            <>
+                              <GeographicSelect
+                                id="cpDestino"
+                                value={formData.cpDestino}
+                                options={postalCodeSelectOptions}
+                                onChange={handlePostalCodeChange}
+                                placeholder={
+                                  showManualPostalCodeOption
+                                    ? "Sin códigos postales disponibles"
+                                    : "Seleccioná un código postal"
+                                }
+                                loading={postalCodesLoading}
+                                loadingLabel="Cargando códigos postales…"
+                                disabled={
+                                  !formData.localidad ||
+                                  postalCodesLoading ||
+                                  postalCodeOptions.length === 0
+                                }
+                                locked={postalCodeOptions.length === 1}
+                                compact
+                                ariaLabel="Seleccionar código postal"
+                                invalid={invalidField === "cpDestino"}
+                              />
+                              {showManualPostalCodeOption && (
+                                <div className="space-y-0.5">
+                                  <p className="text-xs text-white/50">
+                                    No encontramos códigos postales para esta localidad.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={handleEnableManualPostalCode}
+                                    className={checkoutManualToggleClassName}
+                                  >
+                                    Ingresar código postal manualmente
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                         <div className="space-y-0.5 sm:col-span-2">
                           <Label htmlFor="referencias" className="text-white/75">Referencias opcionales</Label>
@@ -2097,6 +2259,8 @@ export default function CheckoutPage() {
                   subtotal={baseTotals.productsTotal}
                   coveredByBeyonix={customerCreditIncludesShippingBenefit}
                   settings={siteSettings.shipping}
+                  shippingCostReal={hasAndreaniQuote ? shippingCostReal : undefined}
+                  shippingBonus={hasAndreaniQuote ? shippingBonus : undefined}
                 />
               </div>
 
@@ -2291,41 +2455,62 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    {customerCreditIncludesShippingBenefit
-                      ? "Envío"
-                      : shippingBonus > 0
-                        ? "Envío bonificado"
-                        : "Envío"}
-                  </span>
-                  <span className={
-                    !selectedShippingOption &&
-                      shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
-                      ? "font-semibold text-red-400"
-                      : customerCreditIncludesShippingBenefit
-                        ? "font-semibold text-emerald-400"
-                      : !selectedShippingOption
-                      ? "text-white/45"
-                      : totals.shipping === 0 &&
-                          (shippingBonus > 0 || customerCreditCoversShipping)
-                        ? "font-semibold text-emerald-400"
-                        : "text-white"
-                  }>
-                    {selectedShippingOption?.quoteStatus === "pending"
-                      ? "A confirmar"
-                      : !selectedShippingOption &&
-                          shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
-                        ? "No disponible"
-                      : customerCreditIncludesShippingBenefit
-                      ? "GRATIS"
-                      : !selectedShippingOption
-                      ? "A definir"
-                      : totals.shipping === 0 &&
-                          (shippingBonus > 0 || customerCreditCoversShipping)
-                        ? "Sin cargo"
-                        : formatPrice(totals.shipping)}
-                  </span>
+                <div className="space-y-0.5">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      {customerCreditIncludesShippingBenefit
+                        ? "Envío"
+                        : qualifiesForMainShippingBonus && shippingBonus > 0
+                          ? "Envío bonificado"
+                          : "Envío"}
+                    </span>
+                    <span className={
+                      !selectedShippingOption &&
+                        shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
+                        ? "font-semibold text-red-400"
+                        : customerCreditIncludesShippingBenefit
+                          ? "font-semibold text-emerald-400"
+                        : !selectedShippingOption
+                        ? "text-white/45"
+                        : totals.shipping === 0 &&
+                            (shippingBonus > 0 || customerCreditCoversShipping)
+                          ? "font-semibold text-emerald-400"
+                          : "text-white"
+                    }>
+                      {selectedShippingOption?.quoteStatus === "pending"
+                        ? "A confirmar"
+                        : !selectedShippingOption &&
+                            shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
+                          ? "No disponible"
+                        : customerCreditIncludesShippingBenefit
+                        ? "GRATIS"
+                        : !selectedShippingOption
+                        ? "A definir"
+                        : totals.shipping === 0 &&
+                            (shippingBonus > 0 || customerCreditCoversShipping)
+                          ? "GRATIS"
+                          : qualifiesForMainShippingBonus && shippingBonus > 0
+                            ? (
+                              <span className="inline-flex items-baseline gap-1.5">
+                                <span className="text-11px font-medium text-white/40 line-through">
+                                  {formatPrice(shippingCostReal)}
+                                </span>
+                                <span className="font-semibold">
+                                  {formatPrice(totals.shipping)}
+                                </span>
+                              </span>
+                            )
+                            : formatPrice(totals.shipping)}
+                    </span>
+                  </div>
+                  {qualifiesForMainShippingBonus &&
+                    shippingBonus > 0 &&
+                    totals.shipping > 0 &&
+                    selectedShippingOption && (
+                    <p className="text-right text-11px font-semibold text-emerald-400">
+                      Ahorrás {formatPrice(shippingBonus)} en tu envío
+                    </p>
+                  )}
                 </div>
                 {transferDiscountAmount > 0 && (
                   <div className="flex justify-between">

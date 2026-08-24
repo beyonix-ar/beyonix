@@ -1878,6 +1878,61 @@
   box-shadow: 0 0 0 3px rgba(82, 174, 238, 0.16) !important;
 }
 
+/*
+ * Panel Configuración (Admin > Configuración): pase de compactación
+ * exclusivamente visual. .admin-ds-control / .admin-control-select fuerzan
+ * min-height 2.75rem vía !important (ver arriba); acá se reduce solo dentro
+ * de esta pantalla con selectores más específicos, sin afectar al resto
+ * del admin.
+ */
+.beyonix-admin-main .admin-config-page .admin-ds-control,
+.beyonix-admin-main .admin-config-page .admin-control-select {
+  height: 2.25rem !important;
+  min-height: 2.25rem !important;
+}
+
+/* Casillas compactas de Stock: label + valor dentro del mismo borde semántico. */
+.beyonix-admin-main .admin-stock-threshold-box input {
+  min-height: 0 !important;
+  height: auto !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/*
+ * Panel Configuración: +1px a todo el texto del panel (labels, ayudas,
+ * inputs, botones, badges, estados), excepto el título "Configuración"
+ * (text-3xl, no tocado). Alcance limitado a .admin-config-page: Andreani,
+ * Stock, Envíos y el bloque de Banners embebido viven dentro de ese
+ * contenedor, así que no afecta la pantalla completa de Banners ni el
+ * resto del admin.
+ */
+.beyonix-admin-main .admin-config-page .text-10px {
+  font-size: 11px !important;
+}
+
+.beyonix-admin-main .admin-config-page .text-11px {
+  font-size: 12px !important;
+}
+
+.beyonix-admin-main .admin-config-page .text-12px {
+  font-size: 13px !important;
+}
+
+.beyonix-admin-main .admin-config-page .text-xs {
+  font-size: 13px !important;
+}
+
+.beyonix-admin-main .admin-config-page .text-sm {
+  font-size: 15px !important;
+}
+
+.beyonix-admin-main .admin-config-page .text-lg {
+  font-size: 19px !important;
+}
+
 .beyonix-section-spacing {
   padding-block: var(--beyonix-section-y);
 }

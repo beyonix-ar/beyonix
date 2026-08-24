@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
-import { Boxes, ImageIcon, Save, Truck, WalletCards } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Boxes, ImageIcon, Save, Truck } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
 import {
@@ -16,10 +16,11 @@ import {
 } from "@/lib/site-settings"
 import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
 import {
-  AdminCard,
+  AdminFormField,
   AdminInfoBlock,
   AdminPageHeader,
   AdminPrimaryButton,
+  AdminSection,
   AdminSelect,
   AdminTextInput,
 } from "../../components/admin-controls"
@@ -64,17 +65,6 @@ function normalizeNumericInput(value: string) {
   return value.replace(/\D/g, "")
 }
 
-function normalizeDecimalInput(value: string) {
-  const cleaned = value.replace(/[^\d,.]/g, "")
-  const separatorIndex = cleaned.search(/[,.]/)
-
-  if (separatorIndex < 0) return cleaned
-
-  return `${cleaned.slice(0, separatorIndex + 1)}${cleaned
-    .slice(separatorIndex + 1)
-    .replace(/[,.]/g, "")}`
-}
-
 const formatARS = (value: number) =>
   new Intl.NumberFormat("es-AR", {
     style: "currency",
@@ -82,20 +72,54 @@ const formatARS = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value)
 
-function SettingField({
-  title,
-  children,
-}: {
-  title: string
-  children: ReactNode
-}) {
+const compactInputClassName = "h-9 text-sm"
+const compactLabelClassName = "mb-1.5 text-12px"
+const compactHelpClassName = "mt-1 text-12px leading-4"
+
+type StockTone = "critical" | "low" | "available"
+
+const stockToneClassNames: Record<StockTone, { border: string; text: string }> = {
+  critical: {
+    border: "border-red-500/40 focus-within:border-red-400/75",
+    text: "text-red-200",
+  },
+  low: {
+    border: "border-amber-500/40 focus-within:border-amber-400/75",
+    text: "text-amber-200",
+  },
+  available: {
+    border: "border-emerald-500/40 focus-within:border-emerald-400/75",
+    text: "text-emerald-200",
+  },
+}
+
+interface StockThresholdBoxProps {
+  label: string
+  value: string
+  tone: StockTone
+  disabled: boolean
+  onChange: (value: string) => void
+}
+
+function StockThresholdBox({ label, value, tone, disabled, onChange }: StockThresholdBoxProps) {
+  const toneClassNames = stockToneClassNames[tone]
+
   return (
-    <div className="flex h-20 w-full items-center justify-center rounded-xl bg-white/[0.025] px-4 ring-1 ring-inset ring-beyonix-blue-light/14 transition-colors hover:bg-white/[0.04] hover:ring-beyonix-blue-light/24">
-      <div className="w-full max-w-48">
-        <h3 className="mb-1.5 text-center text-sm font-black text-white/82">{title}</h3>
-        {children}
-      </div>
-    </div>
+    <label
+      className={`admin-stock-threshold-box flex w-auto min-w-28 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border bg-white/[0.02] px-3.5 py-2 transition-colors ${toneClassNames.border}`}
+    >
+      <span className="whitespace-nowrap text-11px font-bold uppercase tracking-wide text-white/50">{label}</span>
+      <input
+        type="text"
+        aria-label={label}
+        inputMode="numeric"
+        maxLength={2}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className={`w-full min-w-0 bg-transparent text-center text-lg font-black outline-none disabled:opacity-45 ${toneClassNames.text}`}
+      />
+    </label>
   )
 }
 
@@ -111,6 +135,9 @@ export function AdminModificaciones() {
   )
   const [freeShippingMode, setFreeShippingMode] = useState(
     DEFAULT_SHIPPING_SETTINGS.freeShippingMode,
+  )
+  const [logisticsBaseSubsidy, setLogisticsBaseSubsidy] = useState(
+    toInputValue(DEFAULT_SHIPPING_SETTINGS.logisticsBaseSubsidy),
   )
   const [mercadoPagoSurchargePercent, setMercadoPagoSurchargePercent] = useState(
     String(DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS.mercadoPagoSurchargePercent),
@@ -137,6 +164,7 @@ export function AdminModificaciones() {
     setFreeShippingMinAmount(toInputValue(nextShipping.freeShippingMinAmount))
     setShippingBonusMax(toInputValue(nextShipping.shippingBonusMax))
     setFreeShippingMode(nextShipping.freeShippingMode)
+    setLogisticsBaseSubsidy(toInputValue(nextShipping.logisticsBaseSubsidy))
   }
 
   const applyStock = (nextStock: StockSettings) => {
@@ -200,6 +228,7 @@ export function AdminModificaciones() {
       freeShippingMinAmount: normalizeAmount(freeShippingMinAmount),
       shippingBonusMax: normalizeAmount(shippingBonusMax),
       freeShippingMode,
+      logisticsBaseSubsidy: normalizeAmount(logisticsBaseSubsidy),
     }
     const nextCustomerCreditPayments: CustomerCreditPaymentSettings = {
       mercadoPagoSurchargePercent: normalizePercentage(
@@ -266,182 +295,170 @@ export function AdminModificaciones() {
 
   const previewMin = normalizeAmount(freeShippingMinAmount)
   const previewBonus = normalizeAmount(shippingBonusMax)
-  const previewMercadoPagoMinimum = normalizeAmount(mercadoPagoMinimumAmount)
-  const previewMercadoPagoSurcharge = normalizePercentage(
-    mercadoPagoSurchargePercent,
-  )
-  const previewMercadoPagoTotal =
-    previewMercadoPagoMinimum * (1 + previewMercadoPagoSurcharge / 100)
+  const previewLogisticsBaseSubsidy = normalizeAmount(logisticsBaseSubsidy)
   const previewCriticalStock = normalizeAmount(criticalStockThreshold)
   const previewLowStock = normalizeAmount(lowStockThreshold)
   const previewAvailableStock = normalizeAmount(availableStockThreshold)
   const previewLowStockStart = previewCriticalStock + 1
 
+  const saveButton = (
+    <AdminPrimaryButton
+      type="button"
+      size="sm"
+      onClick={() => void saveSettings()}
+      disabled={loading || saving}
+      className="shrink-0"
+    >
+      <Save className="size-3.5" />
+      {saving ? "Guardando…" : "Guardar cambios"}
+    </AdminPrimaryButton>
+  )
+
   return (
-    <div className="space-y-4 p-4 sm:p-6 lg:p-8">
+    <div className="admin-config-page space-y-3 p-4 sm:p-6 lg:p-8">
       <AdminPageHeader
         title="Configuración"
         className="gap-2"
       />
 
       {message ? (
-        <AdminInfoBlock tone="success">{message}</AdminInfoBlock>
+        <AdminInfoBlock tone="success" className="py-2 text-xs">{message}</AdminInfoBlock>
       ) : null}
-      {error ? <AdminInfoBlock tone="danger">{error}</AdminInfoBlock> : null}
+      {error ? <AdminInfoBlock tone="danger" className="py-2 text-xs">{error}</AdminInfoBlock> : null}
 
       <AndreaniIntegrationCard />
 
-      <AdminCard className="space-y-3 p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="flex items-center gap-2 text-base font-black text-white">
-            <Boxes className="size-4 text-beyonix-cyan" />
-            Stock
-          </h2>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-bold sm:justify-end sm:text-sm">
-            <span className="text-red-300">
+      <AdminSection
+        compact
+        icon={<Boxes className="size-3.5" />}
+        eyebrow="Inventario"
+        title="Stock"
+        description="Cuándo cambia el estado visual del inventario."
+        actions={saveButton}
+      >
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <StockThresholdBox
+              label="Stock crítico"
+              tone="critical"
+              value={criticalStockThreshold}
+              disabled={loading || saving}
+              onChange={(value) => setCriticalStockThreshold(normalizeTwoDigits(value))}
+            />
+
+            <StockThresholdBox
+              label="Stock bajo"
+              tone="low"
+              value={lowStockThreshold}
+              disabled={loading || saving}
+              onChange={(value) => {
+                const normalized = normalizeTwoDigits(value)
+                const nextValue = Math.min(98, normalizeAmount(normalized))
+                setLowStockThreshold(normalized ? String(nextValue) : "")
+                setAvailableStockThreshold(normalized ? String(nextValue + 1) : "")
+              }}
+            />
+
+            <StockThresholdBox
+              label="Disponible desde"
+              tone="available"
+              value={availableStockThreshold}
+              disabled={loading || saving}
+              onChange={(value) => {
+                const normalized = normalizeTwoDigits(value)
+                const nextValue = Math.max(2, normalizeAmount(normalized))
+                setAvailableStockThreshold(normalized ? String(nextValue) : "")
+                setLowStockThreshold(normalized ? String(nextValue - 1) : "")
+              }}
+            />
+          </div>
+
+          <span className="hidden h-10 w-px shrink-0 bg-white/8 sm:block" />
+
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-12px font-semibold text-white/55">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-red-400" />
               Crítico: {previewCriticalStock > 0 ? `1 a ${previewCriticalStock}` : "sin rango"}
             </span>
-            <span className="text-amber-200">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-amber-400" />
               Bajo: {previewLowStock >= previewLowStockStart ? `${previewLowStockStart} a ${previewLowStock}` : "revisar"}
             </span>
-            <span className="text-green-300">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-emerald-400" />
               Disponible: desde {previewAvailableStock}
             </span>
-          </div>
-        </div>
-
-        <div className="grid items-center gap-3 xl:grid-cols-[minmax(0,1fr)_190px]">
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="flex h-20 w-full items-center justify-center rounded-xl bg-red-400/[0.035] px-4 ring-1 ring-inset ring-red-400/20 transition-colors hover:bg-red-400/[0.055] hover:ring-red-400/32">
-              <div className="w-full max-w-36">
-                <label className="mb-1.5 block text-center text-sm font-black text-red-300">Stock crítico</label>
-                <AdminTextInput
-                  title="Stock crítico"
-                  ariaLabel="Cantidad máxima para stock crítico"
-                  value={criticalStockThreshold}
-                  placeholder="3"
-                  inputMode="numeric"
-                  maxLength={2}
-                  className="h-9 text-center text-base font-black"
-                  disabled={loading || saving}
-                  onChange={(value) => setCriticalStockThreshold(normalizeTwoDigits(value))}
-                />
-              </div>
-            </div>
-
-            <div className="flex h-20 w-full items-center justify-center rounded-xl bg-amber-400/[0.035] px-4 ring-1 ring-inset ring-amber-400/20 transition-colors hover:bg-amber-400/[0.055] hover:ring-amber-400/32">
-              <div className="w-full max-w-36">
-                <label className="mb-1.5 block text-center text-sm font-black text-amber-200">Stock bajo</label>
-                <AdminTextInput
-                  title="Stock bajo"
-                  ariaLabel="Cantidad máxima para stock bajo"
-                  value={lowStockThreshold}
-                  placeholder="6"
-                  inputMode="numeric"
-                  maxLength={2}
-                  className="h-9 text-center text-base font-black"
-                  disabled={loading || saving}
-                  onChange={(value) => {
-                    const normalized = normalizeTwoDigits(value)
-                    const nextValue = Math.min(98, normalizeAmount(normalized))
-                    setLowStockThreshold(normalized ? String(nextValue) : "")
-                    setAvailableStockThreshold(normalized ? String(nextValue + 1) : "")
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="flex h-20 w-full items-center justify-center rounded-xl bg-green-400/[0.035] px-4 ring-1 ring-inset ring-green-400/20 transition-colors hover:bg-green-400/[0.055] hover:ring-green-400/32">
-              <div className="w-full max-w-36">
-                <label className="mb-1.5 block text-center text-sm font-black text-green-300">Stock disponible</label>
-                <AdminTextInput
-                  title="Stock disponible"
-                  ariaLabel="Cantidad mínima para stock disponible"
-                  value={availableStockThreshold}
-                  placeholder="7"
-                  inputMode="numeric"
-                  maxLength={2}
-                  className="h-9 text-center text-base font-black"
-                  disabled={loading || saving}
-                  onChange={(value) => {
-                    const normalized = normalizeTwoDigits(value)
-                    const nextValue = Math.max(2, normalizeAmount(normalized))
-                    setAvailableStockThreshold(normalized ? String(nextValue) : "")
-                    setLowStockThreshold(normalized ? String(nextValue - 1) : "")
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="flex h-20 items-center xl:border-l xl:border-white/8 xl:pl-3">
-            <AdminPrimaryButton
-              type="button"
-              onClick={() => void saveSettings()}
-              disabled={loading || saving}
-              className="w-full whitespace-nowrap"
-            >
-              <Save className="size-4" />
-              {saving ? "Guardando..." : "Guardar"}
-            </AdminPrimaryButton>
-          </div>
-        </div>
-      </AdminCard>
-
-      <AdminCard className="space-y-3 p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="flex items-center gap-2 text-base font-black text-white">
-            <Truck className="size-4 text-beyonix-cyan" />
-            Envíos
-          </h2>
-          <p className="text-xs font-bold text-white/58 sm:text-sm">
-            Compra desde <strong className="text-white">{formatARS(previewMin)}</strong>
-            <span className="mx-2 text-white/24">·</span>
-            Bonifica hasta <strong className="text-beyonix-cyan">{formatARS(previewBonus)}</strong>
           </p>
         </div>
+      </AdminSection>
 
-        <div className="grid items-center gap-3 xl:grid-cols-[minmax(0,1fr)_190px]">
-          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-            <SettingField title="Costo base">
+      <AdminSection
+        compact
+        icon={<Truck className="size-3.5" />}
+        eyebrow="Comercial"
+        title="Envíos"
+        description="Costo y bonificación de envío."
+        actions={saveButton}
+      >
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <AdminFormField
+            label="Compra mínima"
+            help="Activa la bonificación."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
             <AdminTextInput
-              title="Costo base de envío"
-              ariaLabel="Costo base de envío"
-              value={withInputSymbol(defaultShippingCost, "$")}
-              placeholder="$ 15000"
-              inputMode="numeric"
-              className="h-9 text-center text-base font-black"
-              disabled={loading || saving}
-              onChange={(value) => setDefaultShippingCost(normalizeNumericInput(value))}
-            />
-            </SettingField>
-
-            <SettingField title="Inicio bono">
-            <AdminTextInput
-              title="Inicio bono"
+              title="Compra mínima"
               ariaLabel="Monto mínimo para acceder a envío bonificado"
               value={withInputSymbol(freeShippingMinAmount, "$")}
               placeholder="$ 75000"
               inputMode="numeric"
-              className="h-9 text-center text-base font-black"
+              className={`text-center font-bold ${compactInputClassName}`}
               disabled={loading || saving}
               onChange={(value) => setFreeShippingMinAmount(normalizeNumericInput(value))}
             />
-            </SettingField>
+          </AdminFormField>
 
-            <SettingField title="Tope bono">
+          <AdminFormField
+            label="Bonif. máxima"
+            help="Tope de BEYONIX."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
             <AdminTextInput
-              title="Tope bono"
+              title="Bonificación máxima"
               ariaLabel="Tope máximo de bonificación de envío"
               value={withInputSymbol(shippingBonusMax, "$")}
               placeholder="$ 12000"
               inputMode="numeric"
-              className="h-9 text-center text-base font-black"
+              className={`text-center font-bold text-beyonix-cyan ${compactInputClassName}`}
               disabled={loading || saving}
               onChange={(value) => setShippingBonusMax(normalizeNumericInput(value))}
             />
-            </SettingField>
+          </AdminFormField>
 
-            <SettingField title="Estado">
+          <AdminFormField
+            label="Bonif. base"
+            help="Antes del mínimo."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="Bonificación base"
+              ariaLabel="Bonificación base de envío para compras por debajo del mínimo"
+              value={withInputSymbol(logisticsBaseSubsidy, "$")}
+              placeholder="$ 3000"
+              inputMode="numeric"
+              className={`text-center font-bold text-beyonix-cyan ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) => setLogisticsBaseSubsidy(normalizeNumericInput(value))}
+            />
+          </AdminFormField>
+
+          <AdminFormField
+            label="Estado"
+            labelClassName={compactLabelClassName}
+          >
             <AdminSelect
               title="Estado"
               value={freeShippingMode}
@@ -455,7 +472,7 @@ export function AdminModificaciones() {
                   }`}
                 />
               }
-              triggerClassName="admin-modifications-status-select !h-9 !px-3 !text-base !font-black"
+              triggerClassName="admin-modifications-status-select !text-sm !font-bold"
               optionClassName="font-bold hover:!bg-beyonix-blue/25"
               disabled={loading || saving}
               onChange={(value) =>
@@ -465,94 +482,35 @@ export function AdminModificaciones() {
               <option value="full">Activo</option>
               <option value="off">Desactivado</option>
             </AdminSelect>
-            </SettingField>
-          </div>
-          <div className="flex h-20 items-center xl:border-l xl:border-white/8 xl:pl-3">
-            <AdminPrimaryButton
-              type="button"
-              onClick={() => void saveSettings()}
-              disabled={loading || saving}
-              className="w-full whitespace-nowrap"
-            >
-              <Save className="size-4" />
-              {saving ? "Guardando..." : "Guardar"}
-            </AdminPrimaryButton>
-          </div>
-        </div>
-      </AdminCard>
-
-      <AdminCard className="space-y-3 p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="flex items-center gap-2 text-base font-black text-white">
-            <WalletCards className="size-4 text-beyonix-cyan" />
-            Cargas de saldo
-          </h2>
-          <p className="text-xs font-bold text-white/58 sm:text-sm">
-            Carga mínima <strong className="text-white">{formatARS(previewMercadoPagoMinimum)}</strong>
-            <span className="mx-2 text-white/24">·</span>
-            Recargo <strong className="text-beyonix-cyan">{previewMercadoPagoSurcharge}%</strong>
-          </p>
+          </AdminFormField>
         </div>
 
-        <div className="grid items-center gap-3 xl:grid-cols-[minmax(0,1fr)_190px]">
-          <div className="grid gap-3 md:grid-cols-3">
-            <SettingField title="Recargo MP">
-            <AdminTextInput
-              title="Recargo MP"
-              ariaLabel="Porcentaje de recargo de Mercado Pago"
-              value={withInputSymbol(mercadoPagoSurchargePercent, "%")}
-              placeholder="% 8"
-              inputMode="decimal"
-              className="h-9 text-center text-base font-black"
-              disabled={loading || saving}
-              onChange={(value) =>
-                setMercadoPagoSurchargePercent(normalizeDecimalInput(value))
-              }
-            />
-            </SettingField>
-            <SettingField title="Mínimo MP">
-            <AdminTextInput
-              title="Mínimo MP"
-              ariaLabel="Importe mínimo de carga por Mercado Pago"
-              value={withInputSymbol(mercadoPagoMinimumAmount, "$")}
-              placeholder="$ 10000"
-              inputMode="numeric"
-              className="h-9 text-center text-base font-black"
-              disabled={loading || saving}
-              onChange={(value) => setMercadoPagoMinimumAmount(normalizeNumericInput(value))}
-            />
-            </SettingField>
-            <div className="flex h-20 w-full items-center justify-center rounded-xl bg-beyonix-blue/8 px-4 ring-1 ring-inset ring-beyonix-blue-light/16">
-              <div className="w-full max-w-48">
-                <p className="mb-1 text-center text-sm font-black text-white/82">Resultado</p>
-                <p className="text-center text-lg font-black text-beyonix-cyan">
-                  {formatARS(previewMercadoPagoTotal)}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex h-20 items-center xl:border-l xl:border-white/8 xl:pl-3">
-            <AdminPrimaryButton
-              type="button"
-              onClick={() => void saveSettings()}
-              disabled={loading || saving}
-              className="w-full whitespace-nowrap"
-            >
-              <Save className="size-4" />
-              {saving ? "Guardando..." : "Guardar"}
-            </AdminPrimaryButton>
-          </div>
-        </div>
-      </AdminCard>
+        <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
+          Desde <strong className="text-white">{formatARS(previewMin)}</strong> de
+          compra, BEYONIX bonifica hasta{" "}
+          <strong className="text-beyonix-cyan">{formatARS(previewBonus)}</strong>{" "}
+          del envío.
+          {previewLogisticsBaseSubsidy > 0 && (
+            <>
+              {" "}Por debajo de ese monto, absorbe una bonificación base de{" "}
+              <strong className="text-beyonix-cyan">
+                {formatARS(previewLogisticsBaseSubsidy)}
+              </strong>
+              .
+            </>
+          )}
+        </p>
+      </AdminSection>
 
-      <section className="space-y-3">
-        <h2 className="flex items-center gap-2 text-base font-black text-white">
-          <ImageIcon className="size-4 text-beyonix-cyan" />
-          Banners
-        </h2>
+      <AdminSection
+        compact
+        icon={<ImageIcon className="size-3.5" />}
+        eyebrow="Visuales"
+        title="Banners"
+        description="Imagen destacada que se muestra en la tienda."
+      >
         <AdminBanners embedded />
-      </section>
-
+      </AdminSection>
     </div>
   )
 }

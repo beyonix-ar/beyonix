@@ -116,10 +116,13 @@ interface AdminPageHeaderProps {
 }
 
 interface AdminSectionProps extends HTMLAttributes<HTMLElement> {
+  icon?: ReactNode
   eyebrow?: string
   title?: string
   description?: string
   actions?: ReactNode
+  /** Cabecera y padding reducidos para paneles administrativos de alta densidad. */
+  compact?: boolean
 }
 
 interface AdminCardProps extends HTMLAttributes<HTMLDivElement> {
@@ -178,6 +181,7 @@ interface AdminFormFieldProps {
   error?: ReactNode
   className?: string
   labelClassName?: string
+  helpClassName?: string
 }
 
 interface AdminInfoBlockProps extends HTMLAttributes<HTMLDivElement> {
@@ -822,33 +826,66 @@ export function AdminPageHeader({
 }
 
 export function AdminSection({
+  icon,
   eyebrow,
   title,
   description,
   actions,
+  compact = false,
   className,
   children,
   ...props
 }: AdminSectionProps) {
   return (
     <section
-      className={cn(adminCardClassName, "p-4 sm:p-5", className)}
+      className={cn(adminCardClassName, compact ? "p-3.5" : "p-4 sm:p-5", className)}
       {...props}
     >
       {(title || eyebrow || description || actions) && (
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            {eyebrow && (
-              <p className="mb-1 text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-                {eyebrow}
-              </p>
+        <div
+          className={cn(
+            "flex flex-col gap-3 sm:flex-row sm:justify-between",
+            compact ? "mb-3 sm:items-center" : "mb-4 sm:items-start",
+          )}
+        >
+          <div className={cn("flex min-w-0 items-center", compact ? "gap-2" : "items-start gap-3")}>
+            {icon && (
+              <span
+                className={cn(
+                  "flex shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/16 text-beyonix-cyan",
+                  compact ? "size-7" : "size-9",
+                )}
+              >
+                {icon}
+              </span>
             )}
-            {title && <h2 className="text-lg font-black text-white">{title}</h2>}
-            {description && (
-              <p className="mt-1 text-sm leading-6 text-white/58">
-                {description}
-              </p>
-            )}
+            <div className="min-w-0">
+              {eyebrow && (
+                <p
+                  className={cn(
+                    "font-black uppercase tracking-widest text-beyonix-cyan",
+                    compact ? "text-10px" : "mb-1 text-11px",
+                  )}
+                >
+                  {eyebrow}
+                </p>
+              )}
+              {title && (
+                <h2 className={cn("font-black text-white", compact ? "text-sm leading-tight" : "text-lg")}>
+                  {title}
+                </h2>
+              )}
+              {description && (
+                <p
+                  className={cn(
+                    "text-white/58",
+                    compact ? "mt-0.5 text-12px leading-4" : "mt-1 text-sm leading-6",
+                  )}
+                >
+                  {description}
+                </p>
+              )}
+            </div>
           </div>
           {actions && <div className="shrink-0">{actions}</div>}
         </div>
@@ -1185,6 +1222,7 @@ export function AdminFormField({
   error,
   className,
   labelClassName,
+  helpClassName,
 }: AdminFormFieldProps) {
   return (
     <label className={cn("block min-w-0", className)}>
@@ -1197,7 +1235,7 @@ export function AdminFormField({
           {error}
         </span>
       ) : help ? (
-        <span className="mt-1.5 block text-xs leading-5 text-white/42">
+        <span className={cn("mt-1.5 block text-xs leading-5 text-white/42", helpClassName)}>
           {help}
         </span>
       ) : null}

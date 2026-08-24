@@ -132,9 +132,9 @@ test("prepara productos, variantes y precios con las reglas existentes", () => {
     catalog.conditionedRows,
   )
   assert.equal(orderItems[0].variante_id, 11)
-  assert.equal(orderItems[0].precio, 9_000)
+  assert.equal(orderItems[0].precio, 10_000)
   assert.equal(orderItems[1].conditioned_stock_id, conditionedId)
-  assert.equal(orderItems[1].precio, 6_800)
+  assert.equal(orderItems[1].precio, 8_000)
 })
 
 test("continúa cuando la cantidad pedida es menor al stock real", () => {
@@ -464,6 +464,7 @@ test("el helper común mantiene la validación del envío firmado", () => {
         freeShippingMinAmount: 999_999,
         shippingBonusMax: 0,
         freeShippingMode: "off",
+        logisticsBaseSubsidy: 0,
       },
     })
 
