@@ -320,6 +320,18 @@ export async function getCheckoutPostalCodes(
         ((name: string) =>
           new AndreaniClient({
             env: { ...(dependencies.env ?? process.env), ANDREANI_ENV: "QA" },
+            // CABA se modela como una única localidad Andreani ("CIUDAD
+            // AUTÓNOMA DE BUENOS AIRES" / provincia "CAPITAL FEDERAL") que
+            // agrupa ~436 códigos postales -- Andreani no tiene una entrada
+            // por barrio (verificado: buscar "RECOLETA"/"CABALLITO"/etc. como
+            // localidad no devuelve nada). Es la única localidad del país con
+            // un resultado tan grande, y en QA tarda 15-20s en responder
+            // (medido en vivo), muy por encima del timeout general de
+            // Andreani (10s) pensado para localidades chicas como el resto
+            // del país. Sin este margen, esta consulta puntual siempre
+            // expira antes de tiempo y el frontend lo muestra como "sin
+            // códigos postales" en vez de como la falla de red que es.
+            timeoutMs: 25_000,
           }).getLocalidades({ localidad: name }))
 
       let andreaniLocalities: AndreaniLocality[]

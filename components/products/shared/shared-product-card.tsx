@@ -23,6 +23,7 @@ import { ProductCardPricing } from "./product-card-pricing"
 import { ProductRatingSummary } from "@/components/products/product-rating-summary"
 import {
   getDefaultVariantOption,
+  getDiscountPercent,
 } from "@/lib/products/product-variants"
 import { getInstallmentsLabel } from "@/lib/products/installments"
 import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
@@ -86,17 +87,10 @@ export default function SharedProductCard({
         )
       : 0
 
-  const discountPercentage =
-    defaultVariant.originalPrice &&
-    defaultVariant.originalPrice >
-      defaultVariant.price
-      ? Math.round(
-          (1 -
-            defaultVariant.price /
-              defaultVariant.originalPrice) *
-            100
-        )
-      : null
+  const discountPercentage = getDiscountPercent(
+    defaultVariant.price,
+    defaultVariant.originalPrice
+  )
   const installmentsLabel =
     getInstallmentsLabel(product)
 

@@ -9,8 +9,10 @@ import {
 import { ProductLogisticsValidationError } from "../shipping/logistics-validation.ts"
 import {
   normalizeArgentineLocality,
+  normalizeArgentineLocationKey,
   normalizeArgentineProvinceKey,
 } from "../validation/account-fields.ts"
+import { canonicalizeCheckoutQuoteItems } from "../cart/checkout-shipping-items.ts"
 
 import {
   AndreaniClient,
@@ -268,14 +270,26 @@ export function normalizeCheckoutQuoteRequest(
   return { cpDestino, localidad, provincia, items }
 }
 
+/**
+ * Valida la terna completa provincia + localidad + CP contra el catálogo
+ * real de Andreani, no solo CP + provincia. Sin esto, un destino con CP y
+ * provincia válidos pero una localidad arbitraria (que no corresponde a ese
+ * CP) pasaba silenciosamente. La comparación de localidad usa la misma
+ * clave normalizada tolerante a mayúsculas/tildes que el resto del código
+ * (`normalizeArgentineLocationKey`), así que alias legítimos como
+ * "Ciudad Autónoma de Buenos Aires" vs. el "CIUDAD AUTONOMA DE BUENOS
+ * AIRES" (sin tilde) que devuelve Andreani siguen matcheando -- verificado
+ * en vivo contra Andreani QA.
+ */
 export function matchAndreaniCheckoutProvince(
   request: Pick<
     AndreaniCheckoutQuoteRequest,
-    "cpDestino" | "provincia"
+    "cpDestino" | "provincia" | "localidad"
   >,
   localities: AndreaniLocality[],
 ) {
   const provinceKey = normalizeArgentineProvinceKey(request.provincia)
+  const localityKey = normalizeArgentineLocationKey(request.localidad)
   const match = localities.find(
     (locality) =>
       locality.codigosPostales.includes(request.cpDestino) &&
@@ -286,6 +300,13 @@ export function matchAndreaniCheckoutProvince(
     throw new AndreaniError(
       "VALIDATION_ERROR",
       "El código postal no corresponde a la provincia seleccionada.",
+    )
+  }
+
+  if (normalizeArgentineLocationKey(match.localidad) !== localityKey) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La localidad no corresponde al código postal indicado.",
     )
   }
 
@@ -479,7 +500,15 @@ export async function quoteAndreaniCheckout(
   const request = normalizeCheckoutQuoteRequest(rawRequest)
   const env = dependencies.env ?? process.env
   const config = resolveAndreaniCheckoutConfig(env)
-  const key = JSON.stringify(request)
+  // El dedupe/caché de esta función es puramente de performance (evita
+  // repetir la llamada real a Andreani), nunca la fuente de verdad del
+  // precio -- por eso la clave puede canonicalizar el orden de los ítems
+  // sin ningún riesgo: dos carritos con las mismas líneas en distinto orden
+  // son el mismo carrito y deben compartir cotización.
+  const key = JSON.stringify({
+    ...request,
+    items: canonicalizeCheckoutQuoteItems(request.items),
+  })
   const cached = resolvedQuoteCache.get(key)
   if (cached && cached.expiresAt > Date.now()) return cached.data
 

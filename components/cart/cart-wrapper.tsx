@@ -2,6 +2,7 @@
 
 import { CartDrawer } from "./cart-drawer"
 import { useCart } from "@/context/cart-context"
+import { useCheckoutShippingPrefetch } from "@/hooks/use-checkout-shipping-prefetch"
 
 export function CartWrapper() {
   const {
@@ -11,6 +12,11 @@ export function CartWrapper() {
     removeFromCart,
     updateQuantity,
   } = useCart()
+
+  // Con el carrito abierto, el cliente típicamente va camino a "Finalizar
+  // compra": precargamos su cotización de envío en background para que
+  // esté lista cuando llegue a /checkout (ver hook para el detalle).
+  useCheckoutShippingPrefetch(isOpen)
 
   return (
     <CartDrawer

@@ -6,6 +6,7 @@ import { CheckCircle2, CreditCard, ShieldCheck, Truck } from "lucide-react"
 import { BeyonixButton } from "@/components/beyonix-ui"
 
 import { ProductCartToggleButton } from "./product-cart-toggle-button"
+import { getDiscountPercent } from "@/lib/products/product-variants"
 
 interface ProductPurchaseBoxProps {
   price: number
@@ -69,10 +70,7 @@ export function ProductPurchaseBox({
     onDecreaseCart()
   }
 
-  const discount =
-    originalPrice && originalPrice > price
-      ? Math.round(((originalPrice - price) / originalPrice) * 100)
-      : null
+  const discount = getDiscountPercent(price, originalPrice)
 
   return (
     <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">

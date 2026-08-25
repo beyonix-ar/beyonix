@@ -217,6 +217,21 @@ export function getVariantOptionByValue(
   )
 }
 
+/**
+ * Porcentaje de descuento visible, calculado siempre a partir del precio
+ * final vs. el precio anterior reales (nunca del campo `descuento`
+ * guardado, que puede quedar desactualizado respecto de los precios).
+ * Fuente de verdad única para catálogo, detalle de producto y carrito.
+ */
+export function getDiscountPercent(
+  price: number,
+  originalPrice?: number | null,
+) {
+  if (!originalPrice || originalPrice <= price) return null
+
+  return Math.round((1 - price / originalPrice) * 100)
+}
+
 export function getProductImagesByVariant(
   product: SupabaseProducto,
   value?: string | null,

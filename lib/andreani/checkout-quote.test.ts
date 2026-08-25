@@ -194,7 +194,7 @@ test("no cotiza un producto con logística incompleta", () => {
   )
 })
 
-test("la cotización usa el paquete agregado sin exigir coincidencia textual de localidad", async () => {
+test("la cotización usa el paquete agregado, normalizando espacios de la localidad real", async () => {
   resetAndreaniCheckoutQuoteStateForTests()
   let receivedWeight = 0
   let receivedVolume = 0
@@ -205,7 +205,7 @@ test("la cotización usa el paquete agregado sin exigir coincidencia textual de 
   const options = await quoteAndreaniCheckout(
     {
       cpDestino: "3230",
-      localidad: "  otra   localidad  ",
+      localidad: "  paso   de los   libres  ",
       provincia: "Corrientes",
       items: [{ productId: 10, quantity: 2 }],
     },
@@ -216,7 +216,7 @@ test("la cotización usa el paquete agregado sin exigir coincidencia textual de 
         return officialLocalityResponse
       },
       loadItems: async (request) => {
-        assert.equal(request.localidad, "OTRA LOCALIDAD")
+        assert.equal(request.localidad, "PASO DE LOS LIBRES")
         return loadedItems
       },
       quoteTariff: async (input) => {
@@ -462,17 +462,56 @@ test("deduplica cotizaciones simultáneas idénticas", async () => {
   assert.deepEqual(second, first)
 })
 
-test("valida provincia y código postal ignorando diferencias de mayúsculas", () => {
+test("valida provincia, localidad y código postal ignorando mayúsculas y tildes", () => {
   const locality = matchAndreaniCheckoutProvince(
     {
       cpDestino: "3230",
       provincia: "Corrientes",
+      localidad: "Paso de los Libres",
     },
     officialLocalityResponse,
   )
 
   assert.equal(locality.localidad, "PASO DE LOS LIBRES")
   assert.equal(locality.provincia, "CORRIENTES")
+})
+
+test("rechaza una localidad arbitraria aunque CP y provincia sean válidos", () => {
+  assert.throws(
+    () =>
+      matchAndreaniCheckoutProvince(
+        {
+          cpDestino: "3230",
+          provincia: "Corrientes",
+          localidad: "Mendoza",
+        },
+        officialLocalityResponse,
+      ),
+    (error) =>
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      error.message === "La localidad no corresponde al código postal indicado.",
+  )
+})
+
+test("acepta el alias CABA / Capital Federal como misma localidad", () => {
+  const locality = matchAndreaniCheckoutProvince(
+    {
+      cpDestino: "1000",
+      provincia: "CABA",
+      localidad: "Ciudad Autónoma de Buenos Aires",
+    },
+    [
+      {
+        idDeProvLocalidad: 1,
+        localidad: "CIUDAD AUTONOMA DE BUENOS AIRES",
+        provincia: "CAPITAL FEDERAL",
+        codigosPostales: ["1000"],
+      },
+    ],
+  )
+
+  assert.equal(locality.provincia, "CAPITAL FEDERAL")
 })
 
 test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
@@ -717,6 +756,48 @@ test("CABA se presenta como una única ciudad compatible con Andreani", async ()
   assert.deepEqual(localities, [
     { id: "02", name: "CIUDAD AUTÓNOMA DE BUENOS AIRES" },
   ])
+})
+
+test("CABA resuelve códigos postales aunque Andreani identifique la provincia como CAPITAL FEDERAL", async () => {
+  resetCheckoutDestinationStateForTests()
+  // Regresión: Andreani no tiene una entrada de localidad por barrio para
+  // CABA (buscar "Recoleta"/"Caballito" no devuelve nada) -- toda la
+  // ciudad es una única localidad, y Andreani la etiqueta con la provincia
+  // histórica "Capital Federal", no "CABA" (verificado contra QA en vivo).
+  // Si `normalizeArgentineProvinceKey` no equiparara ambos valores, este
+  // filtro descartaría los ~436 CP reales y el checkout mostraría "sin
+  // códigos postales disponibles" pese a que Andreani sí tiene cobertura.
+  const dependencies = {
+    fetch: async () =>
+      Response.json({
+        asentamientos: [{ id: "0200701002", nombre: "Monserrat" }],
+      }),
+    getAndreaniLocalities: async () => [
+      {
+        idDeProvLocalidad: 1,
+        localidad: "CIUDAD AUTONOMA DE BUENOS AIRES",
+        provincia: "CAPITAL FEDERAL",
+        codigosPostales: ["1000"],
+      },
+      {
+        idDeProvLocalidad: 2,
+        localidad: "CIUDAD AUTONOMA DE BUENOS AIRES",
+        provincia: "CAPITAL FEDERAL",
+        codigosPostales: ["1425"],
+      },
+    ],
+  }
+
+  const result = await getCheckoutPostalCodes(
+    "CABA",
+    "CIUDAD AUTÓNOMA DE BUENOS AIRES",
+    dependencies,
+  )
+
+  assert.deepEqual(result, {
+    locality: "CIUDAD AUTÓNOMA DE BUENOS AIRES",
+    postalCodes: ["1000", "1425"],
+  })
 })
 
 test("valida el código postal y las cantidades antes de acceder a Supabase", () => {

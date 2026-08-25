@@ -10,6 +10,7 @@ import {
   type StockStatus,
 } from "@/lib/cart/stock-status"
 import { getColorName } from "@/lib/products/variant-color"
+import { getDiscountPercent } from "@/lib/products/product-variants"
 
 interface Props {
   item: CartItem
@@ -52,10 +53,12 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
     variantName,
     colorHex,
     unitPrice,
+    originalUnitPrice,
     conditionedStockId,
     discountReason,
   } = item
   const price = unitPrice
+  const discountPercent = getDiscountPercent(price, originalUnitPrice)
   const hasVariantInfo = Boolean(variantName || (color && color !== "default"))
   const colorName = hasVariantInfo ? getColorName(colorHex, variantName) : null
   const hasColor = Boolean(colorHex)
@@ -116,11 +119,25 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
         </div>
 
         <div className="mt-1.5 flex items-center justify-between gap-2">
-          <p className="shrink-0 text-sm font-semibold text-white/90">
-            {formatPrice(price)}
-          </p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white/90">
+              {formatPrice(price)}
+            </p>
 
-          <div className="flex min-w-0 items-center gap-1.5">
+            {discountPercent !== null && originalUnitPrice !== null && (
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <span className="truncate text-13px text-white/50 line-through tabular-nums">
+                  {formatPrice(originalUnitPrice)}
+                </span>
+
+                <span className="inline-flex shrink-0 items-center rounded-full border border-green-400/28 bg-green-600/78 px-2 py-0.5 text-12px font-bold leading-none text-white shadow-[0_0_7px_rgba(22,163,74,0.18)]">
+                  -{discountPercent}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5">
             <span className="text-11px font-medium text-white/60">Cant.</span>
 
             <div className="inline-flex h-7 items-center overflow-hidden rounded-full border border-beyonix-blue-light/60 bg-black">

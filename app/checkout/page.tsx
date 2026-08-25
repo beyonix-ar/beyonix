@@ -102,6 +102,23 @@ import {
 } from "@/lib/validation/account-fields"
 import { ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE } from "@/lib/andreani/types"
 import {
+  buildShippingQuoteKey,
+  CheckoutCatalogError,
+  findCanonicalLocality,
+  getLocalitiesForProvince,
+  getPostalCodesForLocality,
+  getShippingQuoteOptions,
+  isQuotableDestination,
+  mapCartItemsToQuoteItems,
+  peekLocalitiesForProvince,
+  peekPostalCodesForLocality,
+  peekShippingQuoteOptions,
+  resolvePostalCodeFromCatalog,
+  type CheckoutLocalityOption,
+  type CheckoutPostalCodeResult,
+  type CheckoutQuoteRawOption,
+} from "@/lib/andreani/checkout-quote-client"
+import {
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
@@ -110,8 +127,6 @@ import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
 } from "@/lib/customer-credit"
-import { supabase } from "@/lib/supabase/client"
-import type { SupabaseProfile } from "@/lib/supabase/types"
 
 import {
   cn,
@@ -273,23 +288,6 @@ interface ShippingOption {
   quoteStatus: "quoted" | "pending"
 }
 
-interface CheckoutLocalityOption {
-  id: string
-  name: string
-}
-
-interface CheckoutPostalCodeResult {
-  locality: string
-  postalCodes: string[]
-}
-
-type DestinationSelectionStatus =
-  | "incomplete"
-  | "loading"
-  | "ready"
-  | "unavailable"
-  | "error"
-
 interface CheckoutStoreBenefit {
   id: string
   benefit_type: StoreBenefitType
@@ -400,8 +398,11 @@ export default function CheckoutPage() {
   const [localitiesLoading, setLocalitiesLoading] = useState(false)
   const [localityLoadError, setLocalityLoadError] = useState("")
   const [postalCodesLoading, setPostalCodesLoading] = useState(false)
-  const [destinationSelectionStatus, setDestinationSelectionStatus] =
-    useState<DestinationSelectionStatus>("incomplete")
+  // Separado de "sin resultados" real: un timeout/error de red al pedir el
+  // catálogo de CP no debe mostrarse como "sin códigos postales disponibles"
+  // (ver showManualPostalCodeOption más abajo).
+  const [postalCodeLoadError, setPostalCodeLoadError] = useState("")
+  const [postalCodeRetryNonce, setPostalCodeRetryNonce] = useState(0)
   const [manualLocalityMode, setManualLocalityMode] = useState(false)
   const [manualPostalCodeMode, setManualPostalCodeMode] = useState(false)
 
@@ -435,12 +436,19 @@ export default function CheckoutPage() {
   const submissionInFlightRef = useRef(false)
   const validationTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null)
-  const localityOptionsCacheRef = useRef(
-    new Map<string, CheckoutLocalityOption[]>(),
-  )
-  const postalCodeOptionsCacheRef = useRef(
-    new Map<string, CheckoutPostalCodeResult>(),
-  )
+  // Identidad de request por efecto (no AbortController): la caché
+  // compartida de `checkout-quote-client.ts` deja de depender del
+  // AbortSignal de quien la disparó primero, así que "cancelar" acá ya no
+  // significa abortar la request real -- significa ignorar su resultado si
+  // llega para una selección que ya quedó vieja.
+  const localityRequestIdRef = useRef(0)
+  const postalCodeRequestIdRef = useRef(0)
+  const shippingRequestIdRef = useRef(0)
+  // Espejo en ref de `shippingQuoteCurrent`, legible desde los efectos de
+  // catálogo territorial (que no lo tienen en sus dependencias) para no
+  // dejar que una respuesta de catálogo le gane a un destino que la
+  // cotización real ya confirmó válido.
+  const shippingQuoteCurrentRef = useRef(false)
   const provinceSelectOptions = useMemo(
     () =>
       ARGENTINA_PROVINCES.map((province) => ({
@@ -476,101 +484,68 @@ export default function CheckoutPage() {
     }
   }, [])
 
+  // `useAuth().user` ya está poblado con el mismo perfil que antes se
+  // volvía a pedir acá (login/restauración de sesión lo carga vía
+  // `profileToUser`, y "Mi cuenta" lo mantiene sincronizado en la misma
+  // sesión: `updateUser()` en auth-context.tsx hace `setUser` con la
+  // respuesta confirmada del servidor apenas se guarda un cambio). Seedear
+  // el checkout directamente desde memoria evita un round-trip a Supabase
+  // redundante en cada mount, sin perder frescura.
   useEffect(() => {
     if (!user) return
+    if (hasEditedCheckoutFormRef.current) return
 
     const currentUser = user
-    let cancelled = false
+    const fallbackAddress = currentUser.address ?? ""
+    const parsedAddress = parseDeliveryAddress(
+      fallbackAddress,
+      currentUser.province,
+      currentUser.postalCode
+    )
 
-    async function loadCheckoutProfile() {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(
-          "id, email, nombre, username, telefono, dni, calle, numero, piso, departamento, localidad, codigo_postal, provincia, referencias, rol, created_at"
-        )
-        .eq("id", currentUser.id)
-        .maybeSingle()
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+      }
+      const profileValues = {
+        nombre: currentUser.name ?? "",
+        email: currentUser.email ?? "",
+        telefono: currentUser.phone ?? "",
+        dni: (currentUser.dni ?? "").replace(/\D/g, "").slice(0, 8),
+        direccion: fallbackAddress,
+        calle: currentUser.street ?? parsedAddress.street,
+        numero: currentUser.streetNumber ?? parsedAddress.streetNumber,
+        piso: currentUser.floor ?? parsedAddress.floor,
+        departamento: currentUser.apartment ?? parsedAddress.apartment,
+        cpDestino: currentUser.postalCode ?? "",
+        localidad: currentUser.city ?? parsedAddress.locality,
+        provincia: currentUser.province ?? "",
+        referencias: currentUser.references ?? "",
+      }
 
-      if (cancelled || hasEditedCheckoutFormRef.current) return
+      for (const [key, value] of Object.entries(profileValues)) {
+        const field = key as keyof typeof initialCheckoutFormData
+        const normalizedValue = String(value ?? "").trim()
 
-      if (error) {
-        console.error("CHECKOUT_PROFILE_LOAD_ERROR", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-          error,
+        if (!next[field] && normalizedValue) {
+          next[field] = String(value).toLocaleUpperCase("es-AR")
+        }
+      }
+
+      if (!next.direccion && next.calle && next.numero) {
+        next.direccion = formatDeliveryAddress({
+          street: next.calle,
+          streetNumber: next.numero,
+          floor: next.piso,
+          apartment: next.departamento,
+          locality: next.localidad,
+          region: next.provincia,
+          postalCode: next.cpDestino,
         })
       }
 
-      const profile = data as SupabaseProfile | null
-      const fallbackAddress = currentUser.address ?? ""
-      const parsedAddress = parseDeliveryAddress(
-        fallbackAddress,
-        profile?.provincia ?? currentUser.province,
-        profile?.codigo_postal ?? currentUser.postalCode
-      )
-
-      setFormData((prev) => {
-        const next = {
-          ...prev,
-        }
-        const profileValues = {
-          nombre: profile?.nombre ?? currentUser.name ?? "",
-          email: profile?.email ?? currentUser.email ?? "",
-          telefono: profile?.telefono ?? currentUser.phone ?? "",
-          dni: (profile?.dni ?? currentUser.dni ?? "")
-            .replace(/\D/g, "")
-            .slice(0, 8),
-          direccion: fallbackAddress,
-          calle: profile?.calle ?? currentUser.street ?? parsedAddress.street,
-          numero:
-            profile?.numero ??
-            currentUser.streetNumber ??
-            parsedAddress.streetNumber,
-          piso: profile?.piso ?? currentUser.floor ?? parsedAddress.floor,
-          departamento:
-            profile?.departamento ??
-            currentUser.apartment ??
-            parsedAddress.apartment,
-          cpDestino: profile?.codigo_postal ?? currentUser.postalCode ?? "",
-          localidad:
-            profile?.localidad ?? currentUser.city ?? parsedAddress.locality,
-          provincia: profile?.provincia ?? currentUser.province ?? "",
-          referencias:
-            profile?.referencias ?? currentUser.references ?? "",
-        }
-
-        for (const [key, value] of Object.entries(profileValues)) {
-          const field = key as keyof typeof initialCheckoutFormData
-          const normalizedValue = String(value ?? "").trim()
-
-          if (!next[field] && normalizedValue) {
-            next[field] = String(value).toLocaleUpperCase("es-AR")
-          }
-        }
-
-        if (!next.direccion && next.calle && next.numero) {
-          next.direccion = formatDeliveryAddress({
-            street: next.calle,
-            streetNumber: next.numero,
-            floor: next.piso,
-            apartment: next.departamento,
-            locality: next.localidad,
-            region: next.provincia,
-            postalCode: next.cpDestino,
-          })
-        }
-
-        return next
-      })
-    }
-
-    void loadCheckoutProfile()
-
-    return () => {
-      cancelled = true
-    }
+      return next
+    })
   }, [user])
 
   useEffect(() => {
@@ -746,19 +721,24 @@ export default function CheckoutPage() {
     }
 
     const cacheKey = normalizeArgentineLocationKey(province)
-    const controller = new AbortController()
+    const requestId = ++localityRequestIdRef.current
+    const isStale = () => localityRequestIdRef.current !== requestId
 
     const applyLocalities = (localities: CheckoutLocalityOption[]) => {
       setLocalityOptions(localities)
+
+      // Si ya tenemos una cotización vigente para el destino actual (fast
+      // path desde el perfil guardado, o una cotización manual ya
+      // confirmada), Andreani ya validó ese destino de verdad -- el
+      // catálogo de Georef no debe pisarlo aunque no encuentre un match
+      // textual exacto.
+      if (shippingQuoteCurrentRef.current) return
 
       setFormData((prev) => {
         if (normalizeArgentineLocationKey(prev.provincia) !== cacheKey) return prev
         if (!prev.localidad) return prev
 
-        const selectedKey = normalizeArgentineLocationKey(prev.localidad)
-        const canonical = localities.find(
-          (option) => normalizeArgentineLocationKey(option.name) === selectedKey,
-        )
+        const canonical = findCanonicalLocality(localities, prev.localidad)
         if (
           (canonical?.name ?? "") === prev.localidad &&
           (canonical || !prev.cpDestino)
@@ -784,42 +764,26 @@ export default function CheckoutPage() {
       })
     }
 
-    const cached = localityOptionsCacheRef.current.get(cacheKey)
+    const cached = peekLocalitiesForProvince(province)
     if (cached) {
       setLocalityLoadError("")
       applyLocalities(cached)
       setLocalitiesLoading(false)
-      return () => controller.abort()
+      return
     }
 
     setLocalitiesLoading(true)
     setLocalityLoadError("")
-    fetch(
-      `/api/andreani/destinos?provincia=${encodeURIComponent(province)}&catalogo=asentamientos-v1`,
-      { signal: controller.signal },
-    )
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          localities?: CheckoutLocalityOption[]
-          message?: string
-        }
-        if (!response.ok || !Array.isArray(data.localities)) {
-          throw new Error(data.message || "No pudimos cargar las localidades.")
-        }
-
-        const localities = data.localities.filter(
-          (option) =>
-            typeof option?.id === "string" && typeof option?.name === "string",
-        )
-        localityOptionsCacheRef.current.set(cacheKey, localities)
+    getLocalitiesForProvince(province)
+      .then((localities) => {
+        if (isStale()) return
         setLocalityLoadError("")
         applyLocalities(localities)
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return
+        if (isStale()) return
         setLocalityOptions([])
         setLocalityLoadError("No pudimos cargar las localidades. Intentá nuevamente.")
-        setDestinationSelectionStatus("error")
         setShippingMessageTone("error")
         setShippingMessage(
           error instanceof Error
@@ -828,22 +792,9 @@ export default function CheckoutPage() {
         )
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLocalitiesLoading(false)
+        if (!isStale()) setLocalitiesLoading(false)
       })
-
-    return () => controller.abort()
   }, [formData.provincia, manualLocalityMode])
-
-  useEffect(() => {
-    if (
-      formData.provincia &&
-      !formData.localidad &&
-      !localitiesLoading &&
-      !manualLocalityMode
-    ) {
-      setDestinationSelectionStatus("incomplete")
-    }
-  }, [formData.localidad, formData.provincia, localitiesLoading, manualLocalityMode])
 
   useEffect(() => {
     const province = formData.provincia.trim()
@@ -851,7 +802,7 @@ export default function CheckoutPage() {
     if (!province || !locality) {
       setPostalCodeOptions([])
       setPostalCodesLoading(false)
-      setDestinationSelectionStatus("incomplete")
+      setPostalCodeLoadError("")
       return
     }
     if (manualLocalityMode || manualPostalCodeMode) {
@@ -861,19 +812,24 @@ export default function CheckoutPage() {
 
     const provinceKey = normalizeArgentineLocationKey(province)
     const localityKey = normalizeArgentineLocationKey(locality)
-    const cacheKey = `${provinceKey}:${localityKey}`
-    const controller = new AbortController()
+    const requestId = ++postalCodeRequestIdRef.current
+    const isStale = () => postalCodeRequestIdRef.current !== requestId
 
     const applyPostalCodes = (result: CheckoutPostalCodeResult) => {
       const postalCodes = result.postalCodes.filter((code) => /^\d{4}$/.test(code))
-      const currentPostalCode = formData.cpDestino.trim()
-      const nextPostalCode = postalCodes.includes(currentPostalCode)
-        ? currentPostalCode
-        : postalCodes.length === 1
-          ? postalCodes[0]
-          : ""
-
       setPostalCodeOptions(postalCodes)
+
+      // Igual que en el efecto de localidades: no pisar un destino que la
+      // cotización real ya confirmó válido (fast path desde el perfil
+      // guardado). El catálogo sigue sirviendo para poblar el selector.
+      if (shippingQuoteCurrentRef.current) return
+
+      const currentPostalCode = formData.cpDestino.trim()
+      const nextPostalCode = resolvePostalCodeFromCatalog(
+        postalCodes,
+        currentPostalCode,
+      )
+
       setFormData((prev) => {
         if (
           normalizeArgentineLocationKey(prev.provincia) !== provinceKey ||
@@ -905,71 +861,38 @@ export default function CheckoutPage() {
         return next
       })
 
-      // Georef confirmó la localidad, pero Andreani no tiene CPs catalogados
-      // para ella (p. ej. Base Marambio). Eso no significa "sin servicio" --
-      // solo que no podemos autocompletar el CP. Se deja en "incomplete" para
-      // que el usuario pueda cargarlo manualmente y la cotización real
-      // (fuente de verdad) decida si Andreani puede o no enviar ahí.
-      setDestinationSelectionStatus(
-        postalCodes.length === 0
-          ? "incomplete"
-          : nextPostalCode
-            ? "ready"
-            : "incomplete",
-      )
     }
 
-    const cached = postalCodeOptionsCacheRef.current.get(cacheKey)
+    const cached = peekPostalCodesForLocality(province, locality)
     if (cached) {
+      setPostalCodeLoadError("")
       applyPostalCodes(cached)
       setPostalCodesLoading(false)
-      return () => controller.abort()
+      return
     }
 
-    setDestinationSelectionStatus("loading")
     setPostalCodesLoading(true)
-    fetch(
-      `/api/andreani/destinos?provincia=${encodeURIComponent(province)}&localidad=${encodeURIComponent(locality)}`,
-      { signal: controller.signal },
-    )
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          locality?: string
-          postalCodes?: string[]
-          message?: string
-        }
-        if (
-          !response.ok ||
-          typeof data.locality !== "string" ||
-          !Array.isArray(data.postalCodes)
-        ) {
-          throw new Error(data.message || "No pudimos cargar los códigos postales.")
-        }
-
-        const result = {
-          locality: data.locality,
-          postalCodes: data.postalCodes,
-        }
-        postalCodeOptionsCacheRef.current.set(cacheKey, result)
+    setPostalCodeLoadError("")
+    getPostalCodesForLocality(province, locality)
+      .then((result) => {
+        if (isStale()) return
+        setPostalCodeLoadError("")
         applyPostalCodes(result)
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return
+        if (isStale()) return
         setPostalCodeOptions([])
-        setDestinationSelectionStatus("error")
-        setShippingMessageTone("error")
-        setShippingMessage(
+        setPostalCodeLoadError(
           error instanceof Error
             ? error.message
             : "No pudimos cargar los códigos postales.",
         )
       })
       .finally(() => {
-        if (!controller.signal.aborted) setPostalCodesLoading(false)
+        if (!isStale()) setPostalCodesLoading(false)
       })
-
-    return () => controller.abort()
   }, [
+    postalCodeRetryNonce,
     formData.cpDestino,
     formData.localidad,
     formData.provincia,
@@ -977,17 +900,24 @@ export default function CheckoutPage() {
     manualPostalCodeMode,
   ])
 
-  const shippingQuotePayload = JSON.stringify({
+  const shippingQuoteDestination = {
     cpDestino: formData.cpDestino.trim(),
     localidad: formData.localidad.trim(),
     provincia: formData.provincia.trim(),
-    items: items.map((item) => ({
-      productId: item.product.id,
-      quantity: item.quantity,
-      variantId: item.variantId,
-      conditionedStockId: item.conditionedStockId,
-    })),
-  })
+    items: mapCartItemsToQuoteItems(items),
+  }
+  const shippingQuotePayload = buildShippingQuoteKey(shippingQuoteDestination)
+  // Fast path: un destino con provincia + localidad + CP de 4 dígitos ya es
+  // apto para intentar cotizar directamente, sin esperar a que el catálogo
+  // de localidades/CP termine de descargarse ni validarse -- ese catálogo
+  // es una herramienta de edición aparte (ver los dos efectos anteriores).
+  // El backend (`/api/andreani/cotizar`) valida el destino real por su
+  // cuenta y es la autoridad final.
+  const isDestinationQuotable = isQuotableDestination(shippingQuoteDestination)
+
+  useEffect(() => {
+    shippingQuoteCurrentRef.current = shippingQuoteCurrent
+  }, [shippingQuoteCurrent])
 
   useEffect(() => {
     const payload = JSON.parse(shippingQuotePayload) as {
@@ -1001,41 +931,22 @@ export default function CheckoutPage() {
         conditionedStockId: string | null
       }>
     }
+    const requestId = ++shippingRequestIdRef.current
+    const isStale = () => shippingRequestIdRef.current !== requestId
 
-    if (destinationSelectionStatus !== "ready") {
-      setShippingLoading(false)
-      setShippingQuoteCurrent(false)
-
-      if (destinationSelectionStatus === "unavailable") {
-        setShippingOptions([])
-        setSelectedShippingType(null)
-        setShippingMessageTone("error")
-        setShippingMessage(ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE)
-      } else if (destinationSelectionStatus === "error") {
-        return
-      } else {
-        setShippingOptions([])
-        setSelectedShippingType(null)
-        setShippingMessageTone("info")
-        setShippingMessage(
-          destinationSelectionStatus === "loading"
-            ? "Cargando destino…"
-            : !payload.provincia
-              ? "Seleccioná una provincia."
-              : !payload.localidad
-                ? "Seleccioná una localidad."
-                : "Seleccioná un código postal.",
-        )
-      }
-      return
-    }
-    if (!/^\d{4}$/.test(payload.cpDestino)) {
+    if (!isDestinationQuotable) {
       setShippingLoading(false)
       setShippingQuoteCurrent(false)
       setShippingOptions([])
       setSelectedShippingType(null)
       setShippingMessageTone("info")
-      setShippingMessage("Seleccioná un código postal.")
+      setShippingMessage(
+        !payload.provincia
+          ? "Seleccioná una provincia."
+          : !payload.localidad
+            ? "Seleccioná una localidad."
+            : "Seleccioná un código postal.",
+      )
       return
     }
     if (payload.items.length === 0) {
@@ -1047,111 +958,109 @@ export default function CheckoutPage() {
       return
     }
 
-    const controller = new AbortController()
+    const applyRawOptions = (rawOptions: CheckoutQuoteRawOption[]) => {
+      const options = rawOptions.flatMap<ShippingOption>((option) => {
+        const price = Number(option.price)
+        if (
+          (option.type !== "domicilio" && option.type !== "sucursal") ||
+          !Number.isFinite(price) ||
+          price <= 0 ||
+          typeof option.quoteToken !== "string" ||
+          !option.quoteToken
+        ) {
+          return []
+        }
+        return [{
+          type: option.type,
+          label: getShippingOptionLabel(option.type),
+          price,
+          quoteToken: option.quoteToken,
+          provider: "andreani" as const,
+          quoteStatus: "quoted" as const,
+        }]
+      })
+      if (!options.length) {
+        throw new Error(ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE)
+      }
+
+      setShippingOptions(options)
+      setShippingQuoteCurrent(true)
+      setSelectedShippingType((current) =>
+        current && options.some((option) => option.type === current)
+          ? current
+          : options.find((option) => option.type === "domicilio")?.type ??
+            options[0].type,
+      )
+      setShippingMessageTone("info")
+      setShippingMessage("Destino validado y tarifa actualizada.")
+    }
+
+    const handleQuoteFailure = (error: unknown, timedOut = false) => {
+      const errorMessage =
+        error instanceof Error ? error.message : "QUOTE_FAILED"
+      if (process.env.NODE_ENV === "development") {
+        console.info("[Andreani checkout] cotización no disponible", {
+          reason: errorMessage.slice(0, 120),
+        })
+      }
+      setShippingQuoteCurrent(false)
+      setShippingMessageTone("error")
+      setShippingMessage(
+        timedOut
+          ? "La cotización tardó demasiado. Intentá nuevamente."
+          : errorMessage !== "QUOTE_FAILED"
+            ? errorMessage
+            : "No pudimos calcular el envío. Intentá nuevamente.",
+      )
+    }
+
+    // Si ya hay una cotización vigente para este destino+carrito exactos
+    // (precargada al abrir el carrito o al hacer click en "Finalizar
+    // compra"), se usa de inmediato: sin fetch ni parpadeo de "Calculando…".
+    const cachedOptions = peekShippingQuoteOptions(payload)
+    if (cachedOptions) {
+      setShippingLoading(false)
+      try {
+        applyRawOptions(cachedOptions)
+      } catch (error) {
+        handleQuoteFailure(error)
+      }
+      return
+    }
+
     setShippingLoading(true)
     setShippingQuoteCurrent(false)
     setShippingMessageTone("info")
     setShippingMessage("")
 
-    let disposed = false
-    let requestTimedOut = false
-    let requestTimeout: ReturnType<typeof setTimeout> | null = null
+    // Timer puramente informativo: no cancela nada. La request compartida
+    // (`getShippingQuoteOptions`) no depende de este efecto para seguir
+    // viva -- si esta selección deja de ser la vigente, `isStale()` ignora
+    // el resultado cuando llegue, pero la request sigue su curso para quien
+    // más la necesite (otro consumidor, o esta misma clave si el usuario
+    // vuelve a este destino).
+    const slowNoticeTimer = setTimeout(() => {
+      if (isStale()) return
+      setShippingMessageTone("info")
+      setShippingMessage("Esto está tardando más de lo normal…")
+    }, 8_000)
 
-    requestTimeout = setTimeout(() => {
-      requestTimedOut = true
-      controller.abort()
-    }, 12_000)
-
-    fetch("/api/andreani/cotizar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: shippingQuotePayload,
-      signal: controller.signal,
-      cache: "no-store",
-    })
-        .then(async (response) => {
-          const data = (await response.json()) as {
-            options?: Array<{
-              type?: string
-              price?: number
-              quoteToken?: string
-            }>
-            message?: string
-          }
-          if (disposed) return
-          if (!response.ok) throw new Error(data.message || "QUOTE_FAILED")
-
-          const options = (data.options ?? []).flatMap<ShippingOption>((option) => {
-            const price = Number(option.price)
-            if (
-              (option.type !== "domicilio" && option.type !== "sucursal") ||
-              !Number.isFinite(price) ||
-              price <= 0 ||
-              typeof option.quoteToken !== "string" ||
-              !option.quoteToken
-            ) {
-              return []
-            }
-            return [{
-              type: option.type,
-              label: getShippingOptionLabel(option.type),
-              price,
-              quoteToken: option.quoteToken,
-              provider: "andreani" as const,
-              quoteStatus: "quoted" as const,
-            }]
-          })
-          if (!options.length) {
-            throw new Error(ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE)
-          }
-
-          setShippingOptions(options)
-          setShippingQuoteCurrent(true)
-          setSelectedShippingType((current) =>
-            current && options.some((option) => option.type === current)
-              ? current
-              : options.find((option) => option.type === "domicilio")?.type ??
-                options[0].type,
-          )
-          setShippingMessageTone("info")
-          setShippingMessage("Destino validado y tarifa actualizada.")
-        })
-        .catch((error: unknown) => {
-          if (disposed) return
-          const errorMessage =
-            error instanceof Error ? error.message : "QUOTE_FAILED"
-          if (process.env.NODE_ENV === "development") {
-            console.info("[Andreani checkout] cotización no disponible", {
-              reason: errorMessage.slice(0, 120),
-            })
-          }
-          setShippingQuoteCurrent(false)
-          setShippingMessageTone("error")
-          if (
-            errorMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE ||
-            errorMessage.startsWith("El código postal")
-          ) {
-            setDestinationSelectionStatus("unavailable")
-          }
-          setShippingMessage(
-            requestTimedOut
-              ? "La cotización tardó demasiado. Intentá nuevamente."
-              : errorMessage !== "QUOTE_FAILED"
-                ? errorMessage
-                : "No pudimos calcular el envío. Intentá nuevamente.",
-          )
+    getShippingQuoteOptions(payload)
+      .then((rawOptions) => {
+        if (isStale()) return
+        applyRawOptions(rawOptions)
+      })
+      .catch((error: unknown) => {
+        if (isStale()) return
+        const timedOut =
+          error instanceof CheckoutCatalogError && error.reason === "timeout"
+        handleQuoteFailure(error, timedOut)
       })
       .finally(() => {
-        if (requestTimeout) clearTimeout(requestTimeout)
-        if (!disposed) setShippingLoading(false)
+        clearTimeout(slowNoticeTimer)
+        if (!isStale()) setShippingLoading(false)
       })
-
-    return () => {
-      disposed = true
-      if (requestTimeout) clearTimeout(requestTimeout)
-      controller.abort()
-    }
-  }, [destinationSelectionStatus, shippingQuotePayload])
+  }, [isDestinationQuotable, shippingQuotePayload])
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement>
@@ -1241,9 +1150,9 @@ export default function CheckoutPage() {
     setLocalityOptions([])
     setLocalityLoadError("")
     setPostalCodeOptions([])
+    setPostalCodeLoadError("")
     setManualLocalityMode(false)
     setManualPostalCodeMode(false)
-    setDestinationSelectionStatus(normalizedValue ? "loading" : "incomplete")
 
     setFormData((prev) => {
       const next = {
@@ -1278,7 +1187,7 @@ export default function CheckoutPage() {
       selectedShippingOption &&
         shippingQuoteCurrent &&
         !shippingLoading &&
-        destinationSelectionStatus === "ready",
+        isDestinationQuotable,
     )
   const isFormValid = Boolean(
     areCriticalCheckoutStatesReady &&
@@ -1493,8 +1402,8 @@ export default function CheckoutPage() {
 
     if (invalidField === "localidad") setInvalidField(null)
     setPostalCodeOptions([])
+    setPostalCodeLoadError("")
     setManualPostalCodeMode(false)
-    setDestinationSelectionStatus(normalizedValue ? "loading" : "incomplete")
 
     setFormData((prev) => {
       const next = {
@@ -1518,7 +1427,6 @@ export default function CheckoutPage() {
   const handlePostalCodeChange = (value: string) => {
     hasEditedCheckoutFormRef.current = true
     if (invalidField === "cpDestino") setInvalidField(null)
-    setDestinationSelectionStatus(/^\d{4}$/.test(value) ? "ready" : "incomplete")
 
     setFormData((prev) => {
       const next = { ...prev, cpDestino: value }
@@ -1549,15 +1457,12 @@ export default function CheckoutPage() {
     setLocalityOptions([])
     setPostalCodesLoading(false)
     setPostalCodeOptions([])
-    setDestinationSelectionStatus(
-      /^\d{4}$/.test(formData.cpDestino.trim()) ? "ready" : "incomplete",
-    )
+    setPostalCodeLoadError("")
   }
 
   const handleDisableManualLocality = () => {
     setManualLocalityMode(false)
     setManualPostalCodeMode(false)
-    setDestinationSelectionStatus(formData.provincia ? "loading" : "incomplete")
 
     setFormData((prev) => {
       const next = { ...prev, localidad: "", cpDestino: "" }
@@ -1577,16 +1482,17 @@ export default function CheckoutPage() {
   const handleEnableManualPostalCode = () => {
     hasEditedCheckoutFormRef.current = true
     setManualPostalCodeMode(true)
-    setDestinationSelectionStatus(
-      /^\d{4}$/.test(formData.cpDestino.trim()) ? "ready" : "incomplete",
-    )
   }
 
   const cpEntryIsManual = manualLocalityMode || manualPostalCodeMode
+  // "Sin códigos postales disponibles" es solo para el resultado real y
+  // válido de cero CP -- si la request falló (timeout, red, servicio no
+  // disponible), `postalCodeLoadError` lo intercepta antes.
   const showManualPostalCodeOption =
     !cpEntryIsManual &&
     Boolean(formData.localidad) &&
     !postalCodesLoading &&
+    !postalCodeLoadError &&
     postalCodeOptions.length === 0
 
   if (!mounted || !isCartReady) {
@@ -1938,9 +1844,11 @@ export default function CheckoutPage() {
                                 options={postalCodeSelectOptions}
                                 onChange={handlePostalCodeChange}
                                 placeholder={
-                                  showManualPostalCodeOption
-                                    ? "Sin códigos postales disponibles"
-                                    : "Seleccioná un código postal"
+                                  postalCodeLoadError
+                                    ? "No pudimos consultar los códigos postales"
+                                    : showManualPostalCodeOption
+                                      ? "Sin códigos postales disponibles"
+                                      : "Seleccioná un código postal"
                                 }
                                 loading={postalCodesLoading}
                                 loadingLabel="Cargando códigos postales…"
@@ -1951,9 +1859,35 @@ export default function CheckoutPage() {
                                 }
                                 locked={postalCodeOptions.length === 1}
                                 compact
+                                errorMessage={postalCodeLoadError}
                                 ariaLabel="Seleccionar código postal"
                                 invalid={invalidField === "cpDestino"}
                               />
+                              {postalCodeLoadError && (
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-semibold text-red-300">
+                                    {postalCodeLoadError}
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPostalCodeRetryNonce((current) => current + 1)
+                                      }
+                                      className={checkoutManualToggleClassName}
+                                    >
+                                      Reintentar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleEnableManualPostalCode}
+                                      className={checkoutManualToggleClassName}
+                                    >
+                                      Ingresar código postal manualmente
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                               {showManualPostalCodeOption && (
                                 <div className="space-y-0.5">
                                   <p className="text-xs text-white/50">
@@ -2484,6 +2418,8 @@ export default function CheckoutPage() {
                           ? "No disponible"
                         : customerCreditIncludesShippingBenefit
                         ? "GRATIS"
+                        : !selectedShippingOption && shippingLoading
+                        ? "Calculando…"
                         : !selectedShippingOption
                         ? "A definir"
                         : totals.shipping === 0 &&
