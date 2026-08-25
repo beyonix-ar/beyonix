@@ -57,8 +57,7 @@ export async function POST(request: Request) {
   try {
     const label = await getEtiquetas(envioId, formato, {
       env: { ...process.env, ANDREANI_ENV: environment },
-      // La autorización PROD de creación no habilita este endpoint: pedir
-      // etiquetas en PROD queda deliberadamente sin habilitar todavía.
+      productionAccess: environment === "PROD" ? "shipment-read" : undefined,
     })
 
     return new NextResponse(Buffer.from(label.data), {
@@ -75,9 +74,19 @@ export async function POST(request: Request) {
       environment,
       code: safeError.code,
       status: safeError.status,
+      requestId: safeError.requestId,
     })
 
     const status = error instanceof AndreaniError ? statusForAndreaniError(error) : 502
-    return NextResponse.json({ ok: false, error: safeError.message }, { status })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: safeError.message,
+        code: safeError.code,
+        upstreamStatus: safeError.status,
+        requestId: safeError.requestId,
+      },
+      { status },
+    )
   }
 }

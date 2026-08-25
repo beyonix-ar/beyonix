@@ -18,6 +18,7 @@ export interface AndreaniSafeError {
   message: string
   status: number | null
   retryable: boolean
+  requestId: string | null
 }
 
 export interface AndreaniAuthenticationResponse {
@@ -497,10 +498,17 @@ export interface AndreaniConnectionTestResult {
   message: string
 }
 
+export interface AndreaniShipmentCreationConfigStatus {
+  environment: AndreaniEnvironment | "INVALID"
+  configured: boolean
+  message: string
+}
+
 export interface AndreaniIntegrationStatus {
   environment: AndreaniEnvironment | "INVALID"
   configured: boolean
   message: string
   lastTest: AndreaniConnectionTestResult | null
+  shipmentCreation?: AndreaniShipmentCreationConfigStatus
 }
 import type { ProductLogisticsSource } from "../shipping/product-logistics.ts"

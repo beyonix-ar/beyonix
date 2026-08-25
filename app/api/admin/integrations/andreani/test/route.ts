@@ -3,6 +3,7 @@ import {
   getAndreaniIntegrationStatus,
   testAndreaniQaConnection,
 } from "@/lib/andreani/client"
+import { getAndreaniShipmentCreationConfigStatus } from "@/lib/andreani/order-shipment"
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
 export const dynamic = "force-dynamic"
@@ -12,7 +13,10 @@ const handlers = createAndreaniAdminTestHandlers({
     const result = await requireInternalUser(request, ["admin", "super_admin"])
     return "error" in result ? result : { authorized: true }
   },
-  getStatus: getAndreaniIntegrationStatus,
+  getStatus: () => ({
+    ...getAndreaniIntegrationStatus(),
+    shipmentCreation: getAndreaniShipmentCreationConfigStatus(),
+  }),
   testConnection: testAndreaniQaConnection,
 })
 

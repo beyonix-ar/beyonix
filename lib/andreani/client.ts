@@ -43,8 +43,6 @@ const DEFAULT_TIMEOUT_MS = 10_000
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000
 const TEST_DEDUPLICATION_MS = 10_000
-const ANDREANI_NOT_ENABLED_MESSAGE =
-  "La integración operativa con Andreani todavía no está activa."
 
 const REQUIRED_VARIABLES = {
   QA: [
@@ -70,11 +68,15 @@ interface AndreaniResolvedConfig {
  * Autorización explícita y semánticamente separada para acceder a PROD:
  * "tariffs-only" habilita únicamente GET /login y GET /v1/tarifas (cotización,
  * ya solicitada por Andreani mientras QA es inestable). "shipment-creation"
- * habilita únicamente GET /login y POST /v2/ordenes-de-envio (creación B2C) y
- * nunca se otorga implícitamente: la resolución de ambiente de creación es
- * quien decide si corresponde pasarla.
+ * habilita únicamente GET /login y POST /v2/ordenes-de-envio (creación B2C).
+ * "shipment-read" habilita autenticación y las lecturas necesarias para
+ * consultar una orden, sus trazas y su etiqueta ya creada. Ninguna capacidad
+ * se otorga implícitamente.
  */
-export type AndreaniProductionAccess = "tariffs-only" | "shipment-creation"
+export type AndreaniProductionAccess =
+  | "tariffs-only"
+  | "shipment-creation"
+  | "shipment-read"
 
 export interface AndreaniClientOptions {
   env?: NodeJS.ProcessEnv
@@ -105,11 +107,6 @@ interface AndreaniTariffQueryInput
 
 export interface AndreaniAuthenticationOptions {
   forceRefresh?: boolean
-}
-
-export interface AndreaniDisabledResponse {
-  ok: false
-  message: typeof ANDREANI_NOT_ENABLED_MESSAGE
 }
 
 const tokenCache = new Map<string, CachedToken>()
@@ -180,7 +177,8 @@ export function resolveAndreaniConfig(
   if (
     environment === "PROD" &&
     productionAccess !== "tariffs-only" &&
-    productionAccess !== "shipment-creation"
+    productionAccess !== "shipment-creation" &&
+    productionAccess !== "shipment-read"
   ) {
     throw new AndreaniError(
       "PRODUCTION_BLOCKED",
@@ -219,7 +217,7 @@ export function getAndreaniConfigurationStatus(
     return {
       environment,
       configured: true,
-      message: "Configuración QA completa.",
+      message: `Configuración ${environment} completa.`,
     }
   } catch (error) {
     const safeError = normalizeAndreaniError(error)
@@ -235,17 +233,23 @@ export class AndreaniError extends Error {
   readonly code: AndreaniErrorCode
   readonly status: number | null
   readonly retryable: boolean
+  readonly requestId: string | null
 
   constructor(
     code: AndreaniErrorCode,
     message: string,
-    options: { status?: number | null; retryable?: boolean } = {},
+    options: {
+      status?: number | null
+      retryable?: boolean
+      requestId?: string | null
+    } = {},
   ) {
     super(message)
     this.name = "AndreaniError"
     this.code = code
     this.status = options.status ?? null
     this.retryable = options.retryable ?? false
+    this.requestId = options.requestId ?? null
   }
 
   toJSON(): AndreaniSafeError {
@@ -254,6 +258,7 @@ export class AndreaniError extends Error {
       message: this.message,
       status: this.status,
       retryable: this.retryable,
+      requestId: this.requestId,
     }
   }
 }
@@ -300,7 +305,16 @@ export function normalizeAndreaniError(
     ),
     status: null,
     retryable: false,
+    requestId: null,
   }
+}
+
+function getAndreaniRequestId(response: Response) {
+  const value =
+    response.headers.get("x-request-id") ??
+    response.headers.get("x-correlation-id") ??
+    response.headers.get("trace-id")
+  return value && /^[A-Za-z0-9._:-]{1,120}$/.test(value) ? value : null
 }
 
 function assertIdentifier(value: string, fieldName: string) {
@@ -1284,14 +1298,21 @@ export class AndreaniClient {
         (pathname === "/login" || pathname === "/v1/tarifas")) ||
       (this.productionAccess === "shipment-creation" &&
         ((method === "GET" && pathname === "/login") ||
-          (method === "POST" && pathname === "/v2/ordenes-de-envio")))
+          (method === "POST" && pathname === "/v2/ordenes-de-envio"))) ||
+      (this.productionAccess === "shipment-read" &&
+        method === "GET" &&
+        (pathname === "/login" ||
+          /^\/v2\/ordenes-de-envio\/[^/]+(?:\/etiquetas)?$/.test(pathname) ||
+          /^\/v3\/envios\/[^/]+\/trazas$/.test(pathname)))
 
     if (this.config.environment === "PROD" && !productionRequestAllowed) {
       throw new AndreaniError(
         "PRODUCTION_BLOCKED",
         this.productionAccess === "shipment-creation"
           ? "Andreani PROD solo admite autenticación y creación de envíos B2C con autorización explícita."
-          : "Andreani PROD solo admite autenticación y consulta de tarifas.",
+          : this.productionAccess === "shipment-read"
+            ? "Andreani PROD solo admite consultar órdenes, tracking y etiquetas ya creadas."
+            : "Andreani PROD solo admite autenticación y consulta de tarifas.",
       )
     }
 
@@ -1340,12 +1361,13 @@ export class AndreaniClient {
       }
 
       if (!response.ok) {
+        const requestId = getAndreaniRequestId(response)
         if (response.status === 401 || response.status === 403) {
           tokenCache.delete(this.cacheKey)
           throw new AndreaniError(
             "AUTHENTICATION_FAILED",
             "Andreani rechazó la autenticación.",
-            { status: response.status },
+            { status: response.status, requestId },
           )
         }
 
@@ -1353,7 +1375,7 @@ export class AndreaniClient {
           throw new AndreaniError(
             "SERVICE_UNAVAILABLE",
             "Andreani no está disponible temporalmente.",
-            { status: response.status, retryable: true },
+            { status: response.status, retryable: true, requestId },
           )
         }
 
@@ -1361,7 +1383,7 @@ export class AndreaniClient {
         throw new AndreaniError(
           "REQUEST_FAILED",
           detail ? this.sanitizeDetail(detail) : "Andreani rechazó la solicitud.",
-          { status: response.status },
+          { status: response.status, requestId },
         )
       }
 
@@ -1908,10 +1930,6 @@ export async function getAndreaniToken(
   return new AndreaniClient(options).authenticate(authenticationOptions)
 }
 
-export function getAndreaniDisabledResponse(): AndreaniDisabledResponse {
-  return { ok: false, message: ANDREANI_NOT_ENABLED_MESSAGE }
-}
-
 export function isAndreaniReady(env: NodeJS.ProcessEnv = process.env) {
   return getAndreaniConfigurationStatus(env).configured
 }
@@ -1919,10 +1937,11 @@ export function isAndreaniReady(env: NodeJS.ProcessEnv = process.env) {
 export function getAndreaniHealth(env: NodeJS.ProcessEnv = process.env) {
   const status = getAndreaniConfigurationStatus(env)
   return {
-    ok: status.configured,
-    enabled: false,
+    ok: status.configured && lastTestResult?.status === "success",
     environment: status.environment,
     configured: status.configured,
+    authenticated:
+      lastTestResult === null ? null : lastTestResult.status === "success",
     message: status.message,
   }
 }

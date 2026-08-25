@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
+import { getCheckoutOrderItemUnitPrice } from "../orders/conditioned-checkout.ts"
 import { AndreaniError } from "./client.ts"
 import {
   getCheckoutPostalCodes,
@@ -145,6 +146,23 @@ test("agrega peso, volumen y valor declarado de todas las unidades", () => {
     volumenCm3: 18_000,
     valorDeclarado: 49_000,
   })
+})
+
+test("el valor declarado usa el mismo redondeo unitario que orden_items", () => {
+  const unitPrice = getCheckoutOrderItemUnitPrice(10, 10_001, {
+    discount_percent: 10,
+  })
+  const result = aggregateAndreaniPackage([
+    {
+      product: { ...completeProduct, precio: unitPrice },
+      variant: null,
+      quantity: 2,
+      discountPercent: 0,
+    },
+  ])
+
+  assert.equal(unitPrice, 9_001)
+  assert.equal(result.valorDeclarado, 18_002)
 })
 
 test("una variante hereda y sobrescribe campos mediante el resolvedor central", () => {

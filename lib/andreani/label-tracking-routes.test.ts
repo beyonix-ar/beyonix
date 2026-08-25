@@ -17,7 +17,7 @@ test("el endpoint de etiqueta exige admin, andreani_envio_id y usa el ambiente d
   )
   assert.match(source, /andreani_creation_environment/)
   assert.match(source, /getEtiquetas\(/)
-  // No debe pedir autorización PROD implícitamente para este endpoint.
+  assert.match(source, /productionAccess:[\s\S]*?"shipment-read"/)
   assert.doesNotMatch(source, /productionAccess:\s*"shipment-creation"/)
 })
 
@@ -26,13 +26,19 @@ test("el endpoint de tracking exige admin, andreani_tracking y usa el ambiente d
 
   assert.match(source, /requireInternalUser\(request, \["admin", "super_admin"\]\)/)
   assert.match(source, /andreani_tracking/)
+  assert.match(source, /andreani_envio_id/)
   assert.match(
     source,
-    /El pedido todavía no tiene tracking Andreani disponible/,
+    /El pedido todavía no tiene un envío Andreani generado/,
   )
   assert.match(source, /andreani_creation_environment/)
   assert.match(source, /getTrackingPullV3\(/)
+  assert.match(source, /getEstadoOrden\(/)
+  assert.match(source, /andreani_tracking_checked_at/)
+  assert.match(source, /productionAccess:[\s\S]*?"shipment-read"/)
   assert.doesNotMatch(source, /productionAccess:\s*"shipment-creation"/)
+  assert.doesNotMatch(source, /delivered_at/)
+  assert.doesNotMatch(source, /estado:\s*"entregado"/)
 })
 
 test("ninguna de las dos rutas expone el body completo de Andreani ni credenciales en la respuesta de error", () => {

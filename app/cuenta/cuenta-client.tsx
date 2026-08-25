@@ -72,6 +72,7 @@ import {
   TRANSFER_ACCOUNT_HOLDER,
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
+import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
@@ -90,19 +91,6 @@ const CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES = [
   "en_revision",
   "rechazado",
 ]
-
-function isOrderPaymentConfirmed(order: SupabasePedido) {
-  const paymentStatus = (order.payment_status ?? "").toLowerCase()
-
-  return (
-    order.estado === "pagado" ||
-    paymentStatus === "confirmado" ||
-    paymentStatus === "confirmed" ||
-    paymentStatus === "approved" ||
-    Boolean(order.paid_at) ||
-    Number(order.payment_confirmed_amount ?? 0) > 0
-  )
-}
 
 function isOrderDetailDispatched(order: SupabasePedido) {
   const status = (order.estado ?? "").toLowerCase()

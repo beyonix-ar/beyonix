@@ -1,5 +1,6 @@
 import type { createAdminClient } from "../supabase/admin.ts"
 import { STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
+import { getProductDiscount } from "../store-config.ts"
 
 export interface CheckoutConditionedItem {
   productId: number
@@ -123,7 +124,7 @@ export function assertConditionedCheckoutStock(
 
 export function getConditionedUnitPrice(
   basePrice: number,
-  row?: ConditionedCheckoutRow | null,
+  row?: Pick<ConditionedCheckoutRow, "discount_percent"> | null,
 ) {
   const safeBasePrice = Number.isFinite(basePrice)
     ? Math.max(basePrice, 0)
@@ -133,6 +134,23 @@ export function getConditionedUnitPrice(
   return Math.max(
     Math.round(safeBasePrice * (1 - row.discount_percent / 100)),
     0,
+  )
+}
+
+/**
+ * Precio unitario canónico que se persiste en `orden_items`: primero aplica
+ * la condición particular de la unidad y después la campaña comercial del
+ * producto. Cotización logística y creación de orden deben usar este mismo
+ * redondeo para declarar exactamente el mismo valor de mercadería.
+ */
+export function getCheckoutOrderItemUnitPrice(
+  productId: number,
+  basePrice: number,
+  conditioned?: Pick<ConditionedCheckoutRow, "discount_percent"> | null,
+) {
+  return Math.round(
+    getConditionedUnitPrice(basePrice, conditioned) *
+      (1 - getProductDiscount(productId)),
   )
 }
 

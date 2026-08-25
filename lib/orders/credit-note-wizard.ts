@@ -26,3 +26,18 @@ export function canProceedPastProductsStep(
     CREDIT_NOTE_OPERATION_TYPES_WITHOUT_REQUIRED_ITEMS as readonly string[]
   ).includes(operationType)
 }
+
+/**
+ * Determina si un tipo de gestion representa una devolucion iniciada por el
+ * cliente (y por lo tanto exige un order_claims real para el pedido) o un
+ * ajuste administrativo/contable (que no depende de que exista un reclamo).
+ * Misma regla que el RPC begin_partial_credit_note
+ * (supabase/migrations/20260825090000_credit_note_requires_claim.sql) exige
+ * de forma autoritativa; esta funcion solo permite dar un mensaje mas claro
+ * antes de llamar al RPC.
+ */
+export function operationRequiresClaim(operationType: string): boolean {
+  return !(
+    CREDIT_NOTE_OPERATION_TYPES_WITHOUT_REQUIRED_ITEMS as readonly string[]
+  ).includes(operationType)
+}

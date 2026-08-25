@@ -4,34 +4,29 @@ import test from "node:test"
 
 import { isOrderPaymentConfirmed } from "./order-payment-status.ts"
 
-const paidOrderStatuses = [
-  "pagado",
-  "enviado",
-  "en_camino",
-  "visita_fallida",
-  "en_sucursal",
-  "retiro_pendiente",
-  "retiro_vencido",
-  "en_devolucion",
-  "devuelto_beyonix",
-  "entregado",
-]
-
-test("isOrderPaymentConfirmed conserva todas las señales de pago históricas", () => {
+test("isOrderPaymentConfirmed usa exclusivamente evidencia financiera", () => {
   assert.equal(isOrderPaymentConfirmed({ paid_at: "2026-08-16T12:00:00.000Z" }), true)
+  assert.equal(isOrderPaymentConfirmed({ payment_confirmed_amount: 10_000 }), true)
 
   for (const paymentStatus of ["confirmado", "approved", "confirmed"]) {
     assert.equal(isOrderPaymentConfirmed({ payment_status: paymentStatus }), true)
   }
 
-  for (const estado of paidOrderStatuses) {
-    assert.equal(isOrderPaymentConfirmed({ estado }), true)
+  for (const financialStatus of [
+    "payment_confirmed",
+    "refund_pending",
+    "refunded",
+  ]) {
+    assert.equal(isOrderPaymentConfirmed({ financial_status: financialStatus }), true)
   }
 
   for (const order of [
     {},
-    { estado: "pendiente" },
+    { estado: "pagado" },
+    { estado: "enviado" },
+    { estado: "entregado" },
     { payment_status: "pending" },
+    { financial_status: "cancellation_requested" },
     { payment_status: "en_revision", estado: "cancelado" },
   ]) {
     assert.equal(isOrderPaymentConfirmed(order), false)
@@ -86,6 +81,26 @@ test("la RPC serializa la cancelación y mantiene juntos sus efectos críticos",
   assert.match(migrationSource, /v_previous_financial_status/)
   assert.match(migrationSource, /insert into public\.order_claim_messages/)
   assert.doesNotMatch(migrationSource, /update public\.(productos|producto_variantes)/)
+})
+
+test("la cancelación directa del cliente también delega orden y claim a una RPC atómica", () => {
+  const routeSource = readFileSync(
+    new URL("../../app/api/orders/[id]/cancel/route.ts", import.meta.url),
+    "utf8",
+  )
+  const migrationSource = readFileSync(
+    new URL(
+      "../../supabase/migrations/20260825130000_atomic_customer_cancellation_claim.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  )
+
+  assert.match(routeSource, /\.rpc\(\s*"request_customer_order_cancellation_with_claim"/)
+  assert.doesNotMatch(routeSource, /\.from\("ordenes"\)\s*\.update\(/)
+  assert.match(migrationSource, /from public\.ordenes[\s\S]*for update/)
+  assert.match(migrationSource, /insert into public\.order_claims/)
+  assert.match(migrationSource, /update public\.ordenes/)
 })
 
 test("las firmas de archivos de reclamos se piden en un solo lote (sin N+1) y conservan la asociación por id de reclamo", () => {

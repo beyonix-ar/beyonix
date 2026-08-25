@@ -325,22 +325,19 @@ Nunca simular que una integración funciona si no pudo verificarse.
 
 ---
 
-# Andreani — restricción temporal
+# Andreani
 
-La integración con Andreani está actualmente en desarrollo y deliberadamente incompleta.
+La integración con Andreani tiene implementados cotización, creación B2C idempotente,
+consulta, tracking y etiqueta (`lib/andreani/`, `app/api/andreani/*`,
+`app/api/admin/integrations/andreani/*`). El circuito PROD y la compatibilidad real de
+credenciales/contrato/sucursal deben considerarse pendientes de una prueba manual controlada:
+la presencia de variables no demuestra que Andreani acepte esa combinación.
 
-Hasta nueva indicación del usuario:
-
-* NO continuar desarrollando Andreani.
-* NO habilitar creación automática de envíos.
-* NO habilitar tracking.
-* NO rediseñar su arquitectura.
-* NO intentar completar funcionalidades faltantes.
-* NO modificar el flujo actual salvo que sea estrictamente necesario para evitar que rompa otra funcionalidad.
-
-Preservar el estado actual de la integración.
-
-Los problemas detectados relacionados exclusivamente con Andreani pueden documentarse, pero no deben implementarse hasta nueva indicación.
+La separación de ambientes QA/PROD (endpoint, credenciales, contrato y autorización de creación
+en PROD) es la fuente de verdad — nunca mezclar variables de distintos ambientes ni hardcodear
+un número de contrato. Cualquier cambio de alcance real (nuevo servicio, nuevo flujo logístico)
+se trata como una tarea normal de desarrollo, con la misma prioridad de correctitud/seguridad
+que el resto del proyecto.
 
 ---
 

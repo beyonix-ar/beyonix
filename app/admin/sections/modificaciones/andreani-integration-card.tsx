@@ -175,6 +175,27 @@ export function AndreaniIntegrationCard() {
         </AdminInfoBlock>
       ) : null}
 
+      {integration?.shipmentCreation ? (
+        <AdminInfoBlock
+          tone={integration.shipmentCreation.configured ? "success" : "danger"}
+          icon={
+            integration.shipmentCreation.configured ? (
+              <CheckCircle2 className="size-3.5" />
+            ) : (
+              <ShieldAlert className="size-3.5" />
+            )
+          }
+          className="mt-2 py-2 text-xs"
+        >
+          <p className="font-bold">
+            Creación de envíos ({integration.shipmentCreation.environment})
+          </p>
+          <p className="mt-0.5 text-12px opacity-70">
+            {integration.shipmentCreation.message}
+          </p>
+        </AdminInfoBlock>
+      ) : null}
+
       {error ? (
         <AdminInfoBlock tone="danger" className="mt-2 py-2 text-xs">
           {error}

@@ -4,13 +4,10 @@ import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
-
-const ALLOWED_PAYMENT_STATUSES = [
-  "pendiente_comprobante",
-  "en_revision",
-  "confirmado",
-  "rechazado",
-]
+import {
+  TRANSFER_PAYMENT_STATUSES,
+  getTransferPaymentTransitionError,
+} from "@/lib/orders/transfer-payment-status"
 
 function getOrderCode(orderId: number) {
   return `BX-${1000 + orderId}`
@@ -54,7 +51,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
   }
 
-  if (!ALLOWED_PAYMENT_STATUSES.includes(paymentStatus)) {
+  if (!(TRANSFER_PAYMENT_STATUSES as readonly string[]).includes(paymentStatus)) {
     return NextResponse.json({ error: "Estado de pago inválido." }, { status: 400 })
   }
 
@@ -72,9 +69,15 @@ export async function PATCH(
     )
   }
 
-  if (paymentStatus === "confirmado" && !currentOrder.payment_proof_url) {
+  const transitionError = getTransferPaymentTransitionError({
+    currentStatus: currentOrder.payment_status,
+    nextStatus: paymentStatus,
+    hasProof: Boolean(currentOrder.payment_proof_url),
+    observation,
+  })
+  if (transitionError) {
     return NextResponse.json(
-      { error: "No se puede confirmar el pago sin comprobante cargado." },
+      { error: transitionError },
       { status: 409 },
     )
   }
@@ -115,17 +118,18 @@ export async function PATCH(
     financial_status: nextFinancialStatus,
     paid_at:
       paymentStatus === "confirmado" ? currentOrder.paid_at ?? now : null,
+    payment_confirmed_by: paymentStatus === "confirmado" ? auth.user.id : null,
+    payment_confirmed_at: paymentStatus === "confirmado" ? now : null,
+    payment_confirmed_amount:
+      paymentStatus === "confirmado"
+        ? Number(currentOrder.external_amount_due ?? currentOrder.total ?? 0)
+        : null,
+    payment_confirmation_observation: observation || null,
   }
 
   if (paymentStatus === "confirmado") {
     updatePayload.order_change_status = "change_approved"
     updatePayload.order_change_extra_amount = 0
-    updatePayload.payment_confirmed_by = auth.user.id
-    updatePayload.payment_confirmed_at = now
-    updatePayload.payment_confirmed_amount = Number(
-      currentOrder.external_amount_due ?? currentOrder.total ?? 0
-    )
-    updatePayload.payment_confirmation_observation = observation || null
 
     if (orderWasCancelled) {
       updatePayload.refund_pending_at = now
@@ -133,19 +137,23 @@ export async function PATCH(
     }
   }
 
-  const { data, error } = await auth.admin
+  let updateQuery = auth.admin
     .from("ordenes")
     .update(updatePayload)
     .eq("id", pedidoId)
     .eq("payment_method_id", "transferencia")
+  updateQuery = currentOrder.payment_status
+    ? updateQuery.eq("payment_status", currentOrder.payment_status)
+    : updateQuery.is("payment_status", null)
+  const { data, error } = await updateQuery
     .select()
-    .single()
+    .maybeSingle()
 
   if (error || !data) {
-    if (error?.code === "PGRST116") {
+    if (!data || error?.code === "PGRST116") {
       return NextResponse.json(
-        { error: "Solo los pedidos por transferencia admiten cambios manuales de pago." },
-        { status: 400 },
+        { error: "El estado del pago cambió mientras se procesaba la revisión. Actualizá el pedido e intentá nuevamente." },
+        { status: 409 },
       )
     }
 

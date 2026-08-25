@@ -7195,6 +7195,26 @@ div.claim-form-shell::after {
   color: rgba(125, 255, 191, 0.82) !important;
 }
 
+.admin-order-detail-scope .admin-order-pg-pending {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(252, 211, 128, 0.85) !important;
+}
+
+.admin-order-detail-scope .admin-order-pg-rejected {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 148, 148, 0.85) !important;
+}
+
 .admin-order-detail-scope .admin-order-pg-next {
   display: flex;
   flex-wrap: wrap;

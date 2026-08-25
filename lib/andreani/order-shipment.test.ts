@@ -12,6 +12,7 @@ import {
   resolveAndreaniShipmentCreationConfig,
   resolveAndreaniShipmentEnvironment,
   type AndreaniOrderRow,
+  type AndreaniShipmentAttemptErrorContext,
 } from "./order-shipment.ts"
 
 function qaEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
@@ -24,8 +25,12 @@ function qaEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
     ANDREANI_QA_CLIENT: "CLIENTE-QA",
     ANDREANI_QA_HOME_CONTRACT: "CONTRATO-QA",
     ANDREANI_QA_ORIGIN_BRANCH: "RAC",
-    ...overrides,
+    // idgla de sucursal para creación B2C, deliberadamente distinto del
+    // código "RAC" de arriba (que solo usa /v1/tarifas) para poder detectar
+    // si el código se reutiliza por error como si fuera el id.
+    ANDREANI_QA_ORIGIN_BRANCH_ID: "20001",
     NODE_ENV: "test",
+    ...overrides,
   }
 }
 
@@ -44,7 +49,12 @@ function baseOrder(overrides: Partial<AndreaniOrderRow> = {}): AndreaniOrderRow 
     estado: "pagado",
     payment_status: "confirmado",
     paid_at: "2026-08-16T12:00:00.000Z",
+    payment_confirmed_amount: 10_000,
     financial_status: "payment_confirmed",
+    invoice_status: "authorized",
+    invoice_cae: "12345678901234",
+    invoice_number: 123,
+    invoice_point: 1,
     andreani_envio_id: null,
     andreani_tracking: null,
     andreani_etiqueta_url: null,
@@ -75,10 +85,10 @@ const officialOrderResponse: AndreaniCreateShipmentResponse = {
     "https://apisqa.andreani.com/v2/ordenes-de-envio/API0000000428931/etiquetas",
 }
 
-test("la RPC remota no recicla claims ambiguos y valida pago/cancelación", () => {
+test("la RPC remota serializa ambientes y exige pago y factura", () => {
   const migration = readFileSync(
     new URL(
-      "../../supabase/migrations/20260817190000_andreani_shipment_creation_safety.sql",
+      "../../supabase/migrations/20260825110000_harden_andreani_shipment_lifecycle.sql",
       import.meta.url,
     ),
     "utf8",
@@ -87,11 +97,34 @@ test("la RPC remota no recicla claims ambiguos y valida pago/cancelación", () =
   assert.match(migration, /andreani_creation_status = 'reconciliation_required'/)
   assert.match(
     migration,
-    /andreani_creation_status is null or andreani_creation_status = 'failed'/,
+    /andreani_creation_status is null\s+or andreani_creation_status = 'failed'/,
   )
   assert.match(migration, /paid_at is not null/)
+  assert.match(migration, /payment_confirmed_amount/)
   assert.match(migration, /financial_status[\s\S]*'refund_pending'/)
   assert.match(migration, /shipping_type = 'domicilio'/)
+  assert.match(migration, /invoice_status = 'authorized'/)
+  assert.doesNotMatch(migration, /lower\(coalesce\(estado[\s\S]*?'pagado'/)
+})
+
+test("la RPC remota permite reclamar un 'rejected' en el mismo ambiente, pero nunca un 'reconciliation_required'", () => {
+  const migration = readFileSync(
+    new URL(
+      "../../supabase/migrations/20260825140000_andreani_rejected_retry_same_environment.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  )
+
+  // La condición de reclamo ya no exige que el ambiente cambie para
+  // aceptar un 'rejected' previo.
+  assert.match(
+    migration,
+    /andreani_creation_status is null\s+or andreani_creation_status = 'failed'[\s\S]*?or andreani_creation_status = 'rejected'/,
+  )
+  assert.doesNotMatch(migration, /andreani_creation_environment is distinct from p_environment/)
+  // 'reconciliation_required' sigue sin ninguna vía de reclamo automático.
+  assert.doesNotMatch(migration, /or andreani_creation_status = 'reconciliation_required'/)
 })
 
 test("parseArgentineStreetAddress separa calle, numero, piso y depto", () => {
@@ -122,7 +155,8 @@ test("sin ANDREANI_SHIPMENT_ENV, la creación resuelve QA aunque ANDREANI_ENV/AN
   assert.equal(config.environment, "QA")
   assert.equal(config.cliente, "CLIENTE-QA")
   assert.equal(config.domicilioContrato, "CONTRATO-QA")
-  assert.equal(config.sucursalOrigen, "OTRA-QA")
+  assert.equal(config.sucursalOrigenCodigo, "OTRA-QA")
+  assert.equal(config.sucursalOrigenId, "20001")
   assert.equal(config.remitenteNombre, "BEYONIX")
 })
 
@@ -157,13 +191,34 @@ test("resolveAndreaniShipmentCreationConfig resuelve PROD usando exclusivamente 
       ANDREANI_PROD_CLIENT: "0012011683",
       ANDREANI_PROD_HOME_CONTRACT: "400042104",
       ANDREANI_PROD_ORIGIN_BRANCH: "RAC",
+      ANDREANI_PROD_ORIGIN_BRANCH_ID: "10179",
     }),
   )
 
   assert.equal(config.environment, "PROD")
   assert.equal(config.cliente, "0012011683")
   assert.equal(config.domicilioContrato, "400042104")
-  assert.equal(config.sucursalOrigen, "RAC")
+  assert.equal(config.sucursalOrigenCodigo, "RAC")
+  assert.equal(config.sucursalOrigenId, "10179")
+})
+
+test("resolveAndreaniShipmentCreationConfig exige el idgla de sucursal para creación, no alcanza con el código tarifario", () => {
+  assert.throws(
+    () =>
+      resolveAndreaniShipmentCreationConfig(
+        qaEnv({
+          ANDREANI_SHIPMENT_ENV: "PROD",
+          ANDREANI_PROD_CLIENT: "0012011683",
+          ANDREANI_PROD_HOME_CONTRACT: "400042104",
+          ANDREANI_PROD_ORIGIN_BRANCH: "RAC",
+          ANDREANI_PROD_ORIGIN_BRANCH_ID: undefined,
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError &&
+      error.code === "CONFIGURATION_ERROR" &&
+      error.message.includes("ANDREANI_PROD_ORIGIN_BRANCH_ID"),
+  )
 })
 
 test("assertAndreaniProdShipmentCreationAuthorized bloquea PROD sin la autorización explícita", () => {
@@ -184,11 +239,106 @@ test("assertAndreaniProdShipmentCreationAuthorized bloquea PROD sin la autorizac
   assert.doesNotThrow(() =>
     assertAndreaniProdShipmentCreationAuthorized(
       "PROD",
-      qaEnv({ ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true" }),
+      qaEnv({
+        ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true",
+        NODE_ENV: "production",
+      }),
     ),
+  )
+  assert.throws(
+    () =>
+      assertAndreaniProdShipmentCreationAuthorized(
+        "PROD",
+        qaEnv({ ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true" }),
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
   )
   assert.doesNotThrow(() =>
     assertAndreaniProdShipmentCreationAuthorized("QA", qaEnv()),
+  )
+})
+
+test("ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV solo habilita PROD en desarrollo, nunca en test", () => {
+  // NODE_ENV=test: PROD siempre bloqueado, aunque todas las flags estén en "true".
+  assert.throws(
+    () =>
+      assertAndreaniProdShipmentCreationAuthorized(
+        "PROD",
+        qaEnv({
+          NODE_ENV: "test",
+          ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true",
+          ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV: "true",
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
+  )
+
+  // NODE_ENV=development: sin la bandera de desarrollo, sigue bloqueado.
+  assert.throws(
+    () =>
+      assertAndreaniProdShipmentCreationAuthorized(
+        "PROD",
+        qaEnv({
+          NODE_ENV: "development",
+          ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true",
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
+  )
+
+  // NODE_ENV=development: con las tres flags activas, queda permitido.
+  assert.doesNotThrow(() =>
+    assertAndreaniProdShipmentCreationAuthorized(
+      "PROD",
+      qaEnv({
+        NODE_ENV: "development",
+        ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true",
+        ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV: "true",
+      }),
+    ),
+  )
+
+  // NODE_ENV=development: la bandera de desarrollo sola no alcanza sin la
+  // autorización general de PROD.
+  assert.throws(
+    () =>
+      assertAndreaniProdShipmentCreationAuthorized(
+        "PROD",
+        qaEnv({
+          NODE_ENV: "development",
+          ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "false",
+          ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV: "true",
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
+  )
+
+  // NODE_ENV=production: comportamiento actual, sin depender de la bandera
+  // de desarrollo.
+  assert.doesNotThrow(() =>
+    assertAndreaniProdShipmentCreationAuthorized(
+      "PROD",
+      qaEnv({
+        NODE_ENV: "production",
+        ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true",
+      }),
+    ),
+  )
+  assert.throws(
+    () =>
+      assertAndreaniProdShipmentCreationAuthorized(
+        "PROD",
+        qaEnv({
+          NODE_ENV: "production",
+          ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "false",
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
   )
 })
 
@@ -225,12 +375,15 @@ test("resolveAndreaniShipmentCreationConfig valida los datos opcionales del remi
   assert.equal(config.remitenteDocumentoTipo, "CUIT")
 })
 
-test("buildAndreaniShipmentEnvio arma domicilio, origen RAC y contrato correctos", () => {
+test("buildAndreaniShipmentEnvio arma domicilio con el idgla de sucursal (no el código tarifario) y contrato correctos", () => {
   const config = resolveAndreaniShipmentCreationConfig(qaEnv())
   const envio = buildAndreaniShipmentEnvio(baseOrder(), config)
 
   assert.equal(envio.contrato, "CONTRATO-QA")
-  assert.deepEqual(envio.origen, { sucursal: { id: "RAC" } })
+  // origen.sucursal.id debe ser el idgla ("20001" en este entorno de test),
+  // nunca el código tarifario "RAC" -- reutilizarlo produce el HTTP 400
+  // "Sucursal con idgla RAC no encontrada" observado en el intento real.
+  assert.deepEqual(envio.origen, { sucursal: { id: "20001" } })
   assert.deepEqual(envio.destino, {
     postal: {
       codigoPostal: "1292",
@@ -387,41 +540,46 @@ function createFakeAdmin(tables: FakeTable) {
       const order = tables.ordenes
       const paymentConfirmed =
         Boolean(order.paid_at) ||
+        Number(order.payment_confirmed_amount ?? 0) > 0 ||
         ["confirmado", "approved", "confirmed"].includes(
           String(order.payment_status ?? "").toLowerCase(),
         ) ||
-        ["pagado", "enviado", "en_camino", "listo_retiro", "entregado"].includes(
-          String(order.estado ?? "").toLowerCase(),
-        )
+        order.financial_status === "payment_confirmed"
       const claimedAt = order.andreani_creation_claimed_at
         ? new Date(String(order.andreani_creation_claimed_at)).getTime()
         : null
-      // Igual que la RPC real: un claim vencido sólo se reconcilia si es
-      // del MISMO ambiente que se está solicitando ahora.
+      // Igual que la RPC real: un claim vencido es ambiguo en cualquier
+      // ambiente y bloquea hasta conciliación manual.
       if (
         order.andreani_creation_status === "claimed" &&
-        order.andreani_creation_environment === args.p_environment &&
         claimedAt !== null &&
         Date.now() - claimedAt > 5 * 60 * 1000
       ) {
         order.andreani_creation_status = "reconciliation_required"
         order.andreani_creation_claim_token = null
       }
-      const sameEnvironmentReclaimable =
-        !order.andreani_creation_status || order.andreani_creation_status === "failed"
-      const differentEnvironment =
-        order.andreani_creation_environment !== undefined &&
-        order.andreani_creation_environment !== null &&
-        order.andreani_creation_environment !== args.p_environment
+      // Igual que la RPC real (20260825140000_andreani_rejected_retry_same_environment.sql):
+      // un rechazo determinístico ("rejected", HTTP 400/422) es reclamable en
+      // cualquier ambiente, incluido el mismo que lo rechazó -- Andreani no
+      // llegó a crear nada. Solo "reconciliation_required" (ambiguo) nunca
+      // se reclama automáticamente.
+      const reclaimable =
+        !order.andreani_creation_status ||
+        order.andreani_creation_status === "failed" ||
+        order.andreani_creation_status === "rejected"
       const canClaim =
         !order.andreani_envio_id &&
-        (sameEnvironmentReclaimable || differentEnvironment) &&
+        reclaimable &&
         order.shipping_type === "domicilio" &&
         order.estado !== "cancelado" &&
-        !["cancelled", "refund_pending", "refunded"].includes(
+        !["cancellation_requested", "cancelled", "refund_pending", "refunded"].includes(
           String(order.financial_status ?? ""),
         ) &&
-        paymentConfirmed
+        paymentConfirmed &&
+        order.invoice_status === "authorized" &&
+        Boolean(order.invoice_cae) &&
+        Boolean(order.invoice_number) &&
+        Boolean(order.invoice_point)
 
       if (!canClaim) return { data: null, error: null }
 
@@ -720,11 +878,37 @@ test("un timeout con respuesta perdida bloquea cualquier segundo POST", async ()
   assert.equal(calls, 1)
 })
 
-test("un 409 se concilia y un 422 se rechaza sin loops", async () => {
-  for (const scenario of [
-    { status: 409, expected: "reconciliation_required" },
-    { status: 422, expected: "rejected" },
-  ] as const) {
+test("un 409 (ambiguo) se concilia y nunca se reclama solo, ni cambiando de ambiente", async () => {
+  const admin = createFakeAdmin(singleItemTables())
+  let calls = 0
+
+  await assert.rejects(() =>
+    createAndreaniShipmentForOrder(admin as never, 42, {
+      env: qaEnv(),
+      crearOrdenEnvio: async () => {
+        calls += 1
+        throw new AndreaniError("REQUEST_FAILED", "Solicitud rechazada.", {
+          status: 409,
+        })
+      },
+    }),
+  )
+  assert.equal(admin.tables.ordenes.andreani_creation_status, "reconciliation_required")
+
+  await assert.rejects(() =>
+    createAndreaniShipmentForOrder(admin as never, 42, {
+      env: qaEnv(),
+      crearOrdenEnvio: async () => {
+        calls += 1
+        return officialOrderResponse
+      },
+    }),
+  )
+  assert.equal(calls, 1)
+})
+
+test("un 400/422 determinístico (sin envío creado) queda rejected y SÍ es reintentable en el mismo ambiente", async () => {
+  for (const status of [400, 422] as const) {
     const admin = createFakeAdmin(singleItemTables())
     let calls = 0
 
@@ -734,23 +918,27 @@ test("un 409 se concilia y un 422 se rechaza sin loops", async () => {
         crearOrdenEnvio: async () => {
           calls += 1
           throw new AndreaniError("REQUEST_FAILED", "Solicitud rechazada.", {
-            status: scenario.status,
+            status,
           })
         },
       }),
     )
-    assert.equal(admin.tables.ordenes.andreani_creation_status, scenario.expected)
+    assert.equal(admin.tables.ordenes.andreani_creation_status, "rejected")
+    assert.equal(admin.tables.ordenes.andreani_envio_id, null)
 
-    await assert.rejects(() =>
-      createAndreaniShipmentForOrder(admin as never, 42, {
-        env: qaEnv(),
-        crearOrdenEnvio: async () => {
-          calls += 1
-          return officialOrderResponse
-        },
-      }),
-    )
-    assert.equal(calls, 1)
+    // Mismo ambiente (QA) que el rechazo: antes de la migración
+    // 20260825140000 esto quedaba bloqueado indefinidamente ("ya está en
+    // curso o requiere conciliación manual"), aunque Andreani nunca hubiera
+    // creado nada.
+    const result = await createAndreaniShipmentForOrder(admin as never, 42, {
+      env: qaEnv(),
+      crearOrdenEnvio: async () => {
+        calls += 1
+        return officialOrderResponse
+      },
+    })
+    assert.equal(result.status, "created")
+    assert.equal(calls, 2)
   }
 })
 
@@ -822,6 +1010,7 @@ test("rechaza pedidos sin pago confirmado", async () => {
       estado: "pendiente",
       payment_status: "pendiente_comprobante",
       paid_at: null,
+      payment_confirmed_amount: null,
       financial_status: "pending_payment",
     }),
   )
@@ -834,12 +1023,52 @@ test("rechaza pedidos sin pago confirmado", async () => {
   assert.equal(admin.claimCalls.length, 0)
 })
 
+test("rechaza pedidos con cancelación solicitada aunque el pago haya estado confirmado", async () => {
+  const admin = createFakeAdmin(
+    singleItemTables({
+      estado: "pagado",
+      financial_status: "cancellation_requested",
+    }),
+  )
+
+  await assert.rejects(
+    () => createAndreaniShipmentForOrder(admin as never, 42, { env: qaEnv() }),
+    (error: unknown) =>
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      /cancelado o con reintegro en curso/.test(error.message),
+  )
+
+  assert.equal(admin.claimCalls.length, 0)
+})
+
+test("rechaza pedidos sin Factura C autorizada antes de reclamar", async () => {
+  const admin = createFakeAdmin(
+    singleItemTables({
+      invoice_status: "pending",
+      invoice_cae: null,
+      invoice_number: null,
+      invoice_point: null,
+    }),
+  )
+
+  await assert.rejects(
+    () => createAndreaniShipmentForOrder(admin as never, 42, { env: qaEnv() }),
+    (error: unknown) =>
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      error.message.includes("Factura C autorizada"),
+  )
+  assert.equal(admin.claimCalls.length, 0)
+})
+
 test("una orden pagada tardíamente recién puede reclamar después de confirmarse", async () => {
   const admin = createFakeAdmin(
     singleItemTables({
       estado: "pendiente",
       payment_status: "pendiente_comprobante",
       paid_at: null,
+      payment_confirmed_amount: null,
       financial_status: "pending_payment",
     }),
   )
@@ -949,6 +1178,7 @@ test("un estado Rechazado de Andreani se persiste como rechazo permanente", asyn
 
 function prodShipmentEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
   return qaEnv({
+    NODE_ENV: "production",
     ANDREANI_SHIPMENT_ENV: "PROD",
     ANDREANI_ALLOW_PROD_SHIPMENT_CREATION: "true",
     ANDREANI_PROD_API_URL: "https://apis.andreani.com",
@@ -957,6 +1187,7 @@ function prodShipmentEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.Pro
     ANDREANI_PROD_CLIENT: "0012011683",
     ANDREANI_PROD_HOME_CONTRACT: "400042104",
     ANDREANI_PROD_ORIGIN_BRANCH: "RAC",
+    ANDREANI_PROD_ORIGIN_BRANCH_ID: "10179",
     ...overrides,
   })
 }
@@ -982,6 +1213,48 @@ test("PROD sin ANDREANI_ALLOW_PROD_SHIPMENT_CREATION queda bloqueado antes de re
   assert.equal(admin.tables.ordenes.andreani_creation_status ?? null, null)
 })
 
+test("NODE_ENV=development con ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV llega a las validaciones normales sin llamar a Andreani", async () => {
+  const admin = createFakeAdmin(singleItemTables())
+  let creationCalls = 0
+
+  const result = await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: prodShipmentEnv({
+      NODE_ENV: "development",
+      ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV: "true",
+    }),
+    // No se llega a la red real: este mock reemplaza crearOrdenEnvio y
+    // confirma que el runtime ya no bloquea antes de llegar acá.
+    crearOrdenEnvio: async () => {
+      creationCalls += 1
+      return officialOrderResponse
+    },
+  })
+
+  assert.equal(result.status, "created")
+  assert.equal(creationCalls, 1)
+  assert.equal(admin.tables.ordenes.andreani_creation_environment, "PROD")
+})
+
+test("NODE_ENV=development sin ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV sigue bloqueado antes de reclamar", async () => {
+  const admin = createFakeAdmin(singleItemTables())
+  let creationCalls = 0
+
+  await assert.rejects(
+    () =>
+      createAndreaniShipmentForOrder(admin as never, 42, {
+        env: prodShipmentEnv({ NODE_ENV: "development" }),
+        crearOrdenEnvio: async () => {
+          creationCalls += 1
+          return officialOrderResponse
+        },
+      }),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
+  )
+  assert.equal(creationCalls, 0)
+  assert.equal(admin.claimCalls.length, 0)
+})
+
 test("PROD autorizado usa cliente/contrato PROD y pide productionAccess shipment-creation", async () => {
   const admin = createFakeAdmin(singleItemTables())
   const capturedOptions: Array<{ env: NodeJS.ProcessEnv; productionAccess?: string }> = []
@@ -998,6 +1271,8 @@ test("PROD autorizado usa cliente/contrato PROD y pide productionAccess shipment
 
   assert.equal(result.status, "created")
   assert.equal(capturedInputs[0]?.envio.contrato, "400042104")
+  // El idgla de PROD (10179), nunca el código tarifario "RAC".
+  assert.deepEqual(capturedInputs[0]?.envio.origen, { sucursal: { id: "10179" } })
   assert.equal(capturedOptions[0]?.env.ANDREANI_ENV, "PROD")
   assert.equal(capturedOptions[0]?.productionAccess, "shipment-creation")
   assert.equal(admin.tables.ordenes.andreani_creation_environment, "PROD")
@@ -1079,8 +1354,34 @@ test("dos intentos PROD concurrentes para la misma orden sólo permiten un claim
   assert.equal(creationCalls, 1)
 })
 
+test("un claim QA activo también bloquea un intento PROD concurrente", async () => {
+  const admin = createFakeAdmin(
+    singleItemTables({
+      andreani_creation_status: "claimed",
+      andreani_creation_environment: "QA",
+      andreani_creation_claimed_at: new Date().toISOString(),
+      andreani_creation_claim_token: "qa-activo",
+    } as Partial<AndreaniOrderRow>),
+  )
+  let creationCalls = 0
+
+  await assert.rejects(() =>
+    createAndreaniShipmentForOrder(admin as never, 42, {
+      env: prodShipmentEnv(),
+      crearOrdenEnvio: async () => {
+        creationCalls += 1
+        return officialOrderResponse
+      },
+    }),
+  )
+
+  assert.equal(creationCalls, 0)
+  assert.equal(admin.tables.ordenes.andreani_creation_claim_token, "qa-activo")
+})
+
 test("un timeout PROD queda en reconciliation_required y no se reintenta automáticamente", async () => {
   const admin = createFakeAdmin(singleItemTables())
+  const loggedErrors: AndreaniShipmentAttemptErrorContext[] = []
 
   await assert.rejects(
     () =>
@@ -1091,6 +1392,7 @@ test("un timeout PROD queda en reconciliation_required y no se reintenta automá
             retryable: true,
           })
         },
+        logAttemptError: (context) => loggedErrors.push(context),
       }),
     (error: unknown) => error instanceof AndreaniError && error.code === "TIMEOUT",
   )
@@ -1098,4 +1400,34 @@ test("un timeout PROD queda en reconciliation_required y no se reintenta automá
   assert.equal(admin.tables.ordenes.andreani_creation_status, "reconciliation_required")
   assert.equal(admin.tables.ordenes.andreani_creation_environment, "PROD")
   assert.equal(admin.tables.ordenes.andreani_envio_id, null)
+  assert.equal(loggedErrors.length, 1)
+  assert.deepEqual(
+    {
+      orderId: loggedErrors[0]?.orderId,
+      attemptNumber: loggedErrors[0]?.attemptNumber,
+      environment: loggedErrors[0]?.environment,
+      cliente: loggedErrors[0]?.cliente,
+      contrato: loggedErrors[0]?.contrato,
+      sucursalOrigenCodigo: loggedErrors[0]?.sucursalOrigenCodigo,
+      sucursalOrigenId: loggedErrors[0]?.sucursalOrigenId,
+      endpoint: loggedErrors[0]?.endpoint,
+      code: loggedErrors[0]?.code,
+      status: loggedErrors[0]?.status,
+      error: loggedErrors[0]?.error,
+    },
+    {
+      orderId: 42,
+      attemptNumber: 1,
+      environment: "PROD",
+      cliente: "0012011683",
+      contrato: "400042104",
+      sucursalOrigenCodigo: "RAC",
+      sucursalOrigenId: "10179",
+      endpoint: "POST /v2/ordenes-de-envio",
+      code: "TIMEOUT",
+      status: null,
+      error: "Andreani no respondió a tiempo.",
+    },
+  )
+  assert.match(loggedErrors[0]?.attemptId ?? "", /^[0-9a-f-]{36}$/)
 })

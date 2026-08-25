@@ -29,7 +29,7 @@ import type {
 type AdminClient = ReturnType<typeof createAdminClient>
 
 const ORDER_SELECT =
-  "id, cliente_nombre, cliente_email, cliente_telefono, cliente_dni, cliente_direccion, cp_destino, localidad, provincia, shipping_type, estado, payment_status, paid_at, financial_status, andreani_envio_id, andreani_tracking, andreani_etiqueta_url, andreani_estado"
+  "id, cliente_nombre, cliente_email, cliente_telefono, cliente_dni, cliente_direccion, cp_destino, localidad, provincia, shipping_type, estado, payment_status, paid_at, payment_confirmed_amount, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_tracking, andreani_etiqueta_url, andreani_estado"
 const ORDER_ITEM_SELECT =
   "producto_id, variante_id, conditioned_stock_id, cantidad, precio"
 const PRODUCT_SELECT =
@@ -37,7 +37,12 @@ const PRODUCT_SELECT =
 const VARIANT_SELECT =
   "id, producto_id, nombre, sku, peso_empaquetado_kg, alto_paquete_cm, ancho_paquete_cm, largo_paquete_cm"
 
-const CANCELLED_FINANCIAL_STATUSES = ["cancelled", "refund_pending", "refunded"]
+const CANCELLED_FINANCIAL_STATUSES = [
+  "cancellation_requested",
+  "cancelled",
+  "refund_pending",
+  "refunded",
+]
 const CREATION_IN_PROGRESS_MESSAGE =
   "La generación del envío ya está en curso o requiere conciliación manual antes de reintentar."
 const SUCURSAL_BLOCKED_MESSAGE =
@@ -61,7 +66,12 @@ export interface AndreaniOrderRow {
   estado: string | null
   payment_status: string | null
   paid_at: string | null
+  payment_confirmed_amount: number | null
   financial_status: string | null
+  invoice_status: string | null
+  invoice_cae: string | null
+  invoice_number: number | null
+  invoice_point: number | null
   andreani_envio_id: string | null
   andreani_tracking: string | null
   andreani_etiqueta_url: string | null
@@ -94,7 +104,23 @@ export interface AndreaniShipmentCreationConfig {
   environment: AndreaniEnvironment
   cliente: string
   domicilioContrato: string
-  sucursalOrigen: string
+  /**
+   * Código/nomenclatura de sucursal (p. ej. "RAC") usado por /v1/tarifas
+   * como `sucursalOrigen`. NO es el identificador que espera
+   * POST /v2/ordenes-de-envio -- ver sucursalOrigenId.
+   */
+  sucursalOrigenCodigo: string
+  /**
+   * idgla numérico de la sucursal, tal como lo devuelve Andreani en
+   * GET /v2/sucursales (campo "id"). Es lo que POST /v2/ordenes-de-envio
+   * espera en origen.sucursal.id: enviar el código de sucursal ahí
+   * ("RAC") produce "Sucursal con idgla RAC no encontrada" (confirmado en
+   * un intento real 2026-08-25). Verificado con GET /v2/sucursales?codigo=RAC
+   * en PROD: existen dos sucursales con codigo "RAC" -- id 10179 (canal
+   * "B2C") e id 30235 (canal "DMS", unidad de distribución interna); para
+   * una orden B2C corresponde la primera.
+   */
+  sucursalOrigenId: string
   remitenteNombre: string
   remitenteEmail?: string
   remitenteTelefono?: string
@@ -110,10 +136,27 @@ export interface AndreaniShipmentCreationResult {
   estado: string
 }
 
+export interface AndreaniShipmentAttemptErrorContext {
+  orderId: number
+  attemptId: string
+  attemptNumber: number
+  environment: AndreaniEnvironment
+  cliente: string
+  contrato: string
+  sucursalOrigenCodigo: string
+  sucursalOrigenId: string
+  endpoint: "POST /v2/ordenes-de-envio"
+  code: string
+  status: number | null
+  requestId: string | null
+  error: string
+}
+
 interface AndreaniShipmentCreationDependencies {
   env?: NodeJS.ProcessEnv
   now?: () => Date
   crearOrdenEnvio?: typeof crearOrdenEnvio
+  logAttemptError?: (context: AndreaniShipmentAttemptErrorContext) => void
 }
 
 function requiredText(value: string | undefined | null) {
@@ -203,6 +246,13 @@ export function resolveAndreaniShipmentEnvironment(
  * también exige esta autorización explícita. No reutiliza
  * productionAccess:"tariffs-only" -- es una autorización separada que el
  * cliente Andreani sólo otorga para POST /v2/ordenes-de-envio.
+ *
+ * Tercera barrera, solo para desarrollo local: NODE_ENV=production sigue
+ * siendo el único runtime habilitado por defecto.
+ * ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV existe exclusivamente para
+ * permitir, de forma deliberada, una prueba manual PROD desde `next dev`;
+ * NODE_ENV=test ignora esta variable siempre, para que un test nunca pueda
+ * disparar un POST real contra Andreani.
  */
 export function assertAndreaniProdShipmentCreationAuthorized(
   environment: AndreaniEnvironment,
@@ -212,6 +262,68 @@ export function assertAndreaniProdShipmentCreationAuthorized(
 
   if (requiredText(env.ANDREANI_ALLOW_PROD_SHIPMENT_CREATION).toLowerCase() !== "true") {
     throw new AndreaniError("PRODUCTION_BLOCKED", PROD_SHIPMENT_CREATION_BLOCKED_MESSAGE)
+  }
+
+  const nodeEnv = requiredText(env.NODE_ENV).toLowerCase()
+  if (nodeEnv === "production") return
+
+  const devOverrideAuthorized =
+    nodeEnv === "development" &&
+    requiredText(env.ANDREANI_ALLOW_PROD_SHIPMENT_CREATION_IN_DEV).toLowerCase() === "true"
+  if (devOverrideAuthorized) return
+
+  if (nodeEnv === "development") {
+    throw new AndreaniError(
+      "PRODUCTION_BLOCKED",
+      "La creación PROD está bloqueada en desarrollo. Activá la autorización explícita de pruebas PROD para continuar.",
+    )
+  }
+
+  throw new AndreaniError(
+    "PRODUCTION_BLOCKED",
+    "La creación de envíos Andreani PROD solo está habilitada en el runtime de producción; desarrollo y tests quedan bloqueados.",
+  )
+}
+
+/**
+ * Validación temprana de configuración: reporta si la creación de envíos
+ * B2C está lista (ambiente, contrato, sucursal, remitente y — si corresponde
+ * PROD — la autorización explícita) sin llegar a intentar un envío real.
+ * Pensada para mostrarse en el panel de integraciones antes de que el error
+ * aparezca recién al clickear "Generar envío".
+ */
+export function getAndreaniShipmentCreationConfigStatus(
+  env: NodeJS.ProcessEnv = process.env,
+): { environment: AndreaniEnvironment | "INVALID"; configured: boolean; message: string } {
+  let environment: AndreaniEnvironment | "INVALID" = "INVALID"
+
+  try {
+    environment = resolveAndreaniShipmentEnvironment(env)
+    const config = resolveAndreaniShipmentCreationConfig(env)
+    assertAndreaniProdShipmentCreationAuthorized(config.environment, env)
+
+    // No confundir "credenciales/contrato completos" con "permiso para
+    // generar": si llegamos acá para PROD en un runtime que no es
+    // producción, es porque la autorización de desarrollo controlado está
+    // activa (assertAndreaniProdShipmentCreationAuthorized ya bloqueó
+    // cualquier otro caso).
+    const isDevOverride =
+      config.environment === "PROD" &&
+      requiredText(env.NODE_ENV).toLowerCase() !== "production"
+
+    return {
+      environment: config.environment,
+      configured: true,
+      message: isDevOverride
+        ? `Configuración de creación de envíos ${config.environment} completa. Creación habilitada en desarrollo controlado (autorización de prueba manual PROD activa).`
+        : `Configuración de creación de envíos ${config.environment} completa. Creación habilitada.`,
+    }
+  } catch (error) {
+    const message =
+      error instanceof AndreaniError
+        ? error.message
+        : "No se pudo validar la configuración de creación de envíos."
+    return { environment, configured: false, message }
   }
 }
 
@@ -238,6 +350,17 @@ export function resolveAndreaniShipmentCreationConfig(
     throw new AndreaniError(
       "CONFIGURATION_ERROR",
       `Falta configurar el contrato de domicilio de Andreani ${environment} para crear envíos.`,
+    )
+  }
+
+  // idgla de la sucursal de origen para POST /v2/ordenes-de-envio, distinto
+  // del código de sucursal ("RAC") que usa /v1/tarifas -- ver el comentario
+  // de sucursalOrigenId en AndreaniShipmentCreationConfig.
+  const sucursalOrigenId = requiredText(env[`ANDREANI_${environment}_ORIGIN_BRANCH_ID`])
+  if (!sucursalOrigenId) {
+    throw new AndreaniError(
+      "CONFIGURATION_ERROR",
+      `Falta configurar el idgla de la sucursal de origen de Andreani ${environment} (ANDREANI_${environment}_ORIGIN_BRANCH_ID) para crear envíos.`,
     )
   }
 
@@ -271,7 +394,8 @@ export function resolveAndreaniShipmentCreationConfig(
     environment,
     cliente: checkoutConfig.cliente,
     domicilioContrato: checkoutConfig.domicilioContrato,
-    sucursalOrigen: checkoutConfig.sucursalOrigen,
+    sucursalOrigenCodigo: checkoutConfig.sucursalOrigen,
+    sucursalOrigenId,
     remitenteNombre,
     remitenteEmail,
     remitenteTelefono,
@@ -295,6 +419,20 @@ function assertShipmentEligibleOrder(order: AndreaniOrderRow) {
     throw new AndreaniError(
       "VALIDATION_ERROR",
       "El pedido todavía no tiene el pago confirmado.",
+    )
+  }
+
+  if (
+    order.invoice_status !== "authorized" ||
+    !requiredText(order.invoice_cae) ||
+    !Number.isSafeInteger(Number(order.invoice_number)) ||
+    Number(order.invoice_number) <= 0 ||
+    !Number.isSafeInteger(Number(order.invoice_point)) ||
+    Number(order.invoice_point) <= 0
+  ) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "El pedido debe tener una Factura C autorizada antes de generar el envío.",
     )
   }
 }
@@ -351,7 +489,7 @@ export function buildAndreaniShipmentEnvio(
     contrato: config.domicilioContrato,
     idPedido: String(order.id),
     origen: {
-      sucursal: { id: config.sucursalOrigen },
+      sucursal: { id: config.sucursalOrigenId },
     },
     destino: {
       postal: {
@@ -552,12 +690,15 @@ async function crearOrdenEnvioConReintentoDeAutenticacion(
   }
 }
 
-function formatAndreaniErrorForPersistence(
-  message: string,
-  status: number | null,
-) {
+function formatAndreaniErrorForPersistence(error: ReturnType<typeof normalizeAndreaniError>) {
+  const { code, message, status, requestId } = error
   const trimmed = message.trim()
-  return status !== null ? `HTTP ${status} · ${trimmed}` : trimmed
+  return [
+    code,
+    status !== null ? `HTTP ${status}` : null,
+    trimmed,
+    requestId ? `Request ID ${requestId}` : null,
+  ].filter(Boolean).join(" · ")
 }
 
 export async function createAndreaniShipmentForOrder(
@@ -734,6 +875,7 @@ export async function createAndreaniShipmentForOrder(
     }
   } catch (error) {
     const safeError = normalizeAndreaniError(error, env)
+    const safeMessage = sanitizeAndreaniMessage(safeError.message, env)
     const status = safeError.status
     const reconciliationRequired =
       safeError.code === "TIMEOUT" ||
@@ -744,6 +886,27 @@ export async function createAndreaniShipmentForOrder(
       safeError.code === "REQUEST_FAILED" &&
       status !== null &&
       (status === 400 || status === 422)
+
+    const errorContext: AndreaniShipmentAttemptErrorContext = {
+      orderId,
+      attemptId: claimToken,
+      attemptNumber: Number(attempts),
+      environment: config.environment,
+      cliente: config.cliente,
+      contrato: envio.contrato,
+      sucursalOrigenCodigo: config.sucursalOrigenCodigo,
+      sucursalOrigenId: config.sucursalOrigenId,
+      endpoint: "POST /v2/ordenes-de-envio",
+      code: safeError.code,
+      status,
+      requestId: safeError.requestId,
+      error: safeMessage,
+    }
+    if (dependencies.logAttemptError) {
+      dependencies.logAttemptError(errorContext)
+    } else if (requiredText(env.NODE_ENV).toLowerCase() !== "test") {
+      console.error("ANDREANI_SHIPMENT_ATTEMPT_ERROR", errorContext)
+    }
 
     await admin
       .from("ordenes")
@@ -758,10 +921,10 @@ export async function createAndreaniShipmentForOrder(
         ...(rejected && safeError.message
           ? { andreani_estado: "Rechazado", andreani_contrato: envio.contrato }
           : {}),
-        andreani_error: formatAndreaniErrorForPersistence(
-          sanitizeAndreaniMessage(safeError.message, env),
-          status,
-        ),
+        andreani_error: formatAndreaniErrorForPersistence({
+          ...safeError,
+          message: safeMessage,
+        }),
       } as never)
       .eq("id", orderId)
       .eq("andreani_creation_claim_token", claimToken)

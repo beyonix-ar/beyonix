@@ -38,7 +38,6 @@ import { useAuth } from "@/context/auth-context"
 import { usePedidos } from "@/hooks/use-pedidos"
 import { AdminClaimManager, PROBLEM_LABELS } from "@/components/claims/admin-claim-manager"
 import { parseDeliveryAddress } from "@/lib/delivery-address"
-import { isClaimVisibleForMode } from "@/lib/orders/claim-visibility"
 import {
   isPhysicallyReceivedStatus,
   receptionStatusForReturnShippingParty,
@@ -70,10 +69,13 @@ import {
   calculatePartialLineAmount,
   roundCreditMoney,
 } from "@/lib/orders/credit-note-calculations"
+import { isClaimEligibleForCreditNote } from "@/lib/orders/credit-note-claim-policy"
 import {
   getAdminNewOrderEventAt,
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
+import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { getAllowedAdminTransferPaymentStatuses } from "@/lib/orders/transfer-payment-status"
 import { cn } from "@/lib/utils"
 import type {
   SupabaseOrderClaim,
@@ -110,6 +112,7 @@ type StatusFilter =
   | "refunded"
   | "rechazado"
 type AndreaniAction = "crear-envio" | "tracking"
+type AndreaniLabelAction = "view" | "download" | "print"
 type AdminNotice = { type: "ok" | "error"; message: string } | null
 type ForcedStatusRequest = {
   pedido: SupabasePedido
@@ -294,7 +297,99 @@ function getItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) 
 }
 
 function getAndreaniStatus(pedido: SupabasePedido) {
-  return pedido.andreani_estado || "Sin envío generado"
+  if (pedido.andreani_envio_id) return pedido.andreani_estado || "Generado"
+  // "rejected" es un rechazo determinístico (Andreani respondió 400/422 sin
+  // llegar a crear nada): distinto de "reconciliation_required", donde el
+  // resultado es ambiguo (timeout/5xx/respuesta perdida) y sí requiere
+  // revisión manual antes de reintentar.
+  if (pedido.andreani_creation_status === "rejected") return "Andreani rechazó la solicitud"
+  if (pedido.andreani_creation_status === "reconciliation_required") {
+    return "Resultado pendiente de conciliación"
+  }
+  if (pedido.andreani_creation_status === "claimed") return "Generando…"
+  return "Pendiente de generación"
+}
+
+/**
+ * Refleja en el frontend (solo como UX; la autoridad real sigue siendo
+ * assertShipmentEligibleOrder/buildAndreaniShipmentEnvio en
+ * lib/andreani/order-shipment.ts) por qué "Generar envío" todavía no
+ * corresponde, para no dejar que el error llegue recién tras el clic.
+ */
+function getAndreaniShipmentBlockingReason(pedido: SupabasePedido): string | null {
+  if (pedido.andreani_envio_id) {
+    return "Ya existe un envío generado para este pedido."
+  }
+  if (pedido.estado === "cancelado") {
+    return "El pedido está cancelado."
+  }
+  if (
+    ["cancellation_requested", "cancelled", "refund_pending", "refunded"].includes(
+      pedido.financial_status ?? "",
+    )
+  ) {
+    return "El pedido tiene una cancelación o un reintegro en curso."
+  }
+  if (!isOrderPaymentConfirmed(pedido)) {
+    return "El pedido todavía no tiene el pago confirmado."
+  }
+  if (
+    pedido.invoice_status !== "authorized" ||
+    !pedido.invoice_cae ||
+    !pedido.invoice_number ||
+    !pedido.invoice_point
+  ) {
+    return "Emití y autorizá la Factura C antes de generar el envío."
+  }
+  if (pedido.shipping_type === "sucursal") {
+    return "El pedido eligió retiro en sucursal; Andreani solo aplica a envíos a domicilio."
+  }
+  if (
+    pedido.shipping_type !== "domicilio" ||
+    !pedido.cp_destino ||
+    !pedido.localidad ||
+    !pedido.provincia ||
+    !pedido.cliente_direccion ||
+    !pedido.cliente_nombre ||
+    !pedido.cliente_email ||
+    !pedido.cliente_telefono ||
+    !pedido.cliente_dni
+  ) {
+    return "Faltan datos de dirección, localidad, provincia, código postal, DNI o contacto del destinatario."
+  }
+  // "reconciliation_required" es un resultado ambiguo (timeout/5xx/respuesta
+  // perdida): a diferencia de "rejected" (rechazo determinístico, seguro de
+  // reintentar tras corregir la causa), acá no sabemos si Andreani llegó a
+  // crear la orden, así que el botón queda bloqueado hasta revisión manual.
+  if (pedido.andreani_creation_status === "reconciliation_required") {
+    return "Resultado pendiente de conciliación manual: revisá el pedido antes de reintentar."
+  }
+  return null
+}
+
+function getAndreaniAdminErrorMessage(rawError: string) {
+  if (rawError.includes("Numero de contrato")) {
+    return "No pudimos generar el envío en Andreani porque el contrato configurado no fue reconocido."
+  }
+  if (rawError.includes("Sucursal") && rawError.includes("idgla")) {
+    return "Andreani rechazó la solicitud: la sucursal de origen configurada no fue reconocida. Revisá el panel de integraciones antes de reintentar."
+  }
+  if (rawError.includes("todavía no tiene el pago confirmado")) {
+    return "No se puede generar el envío: el pedido todavía no tiene el pago confirmado."
+  }
+  if (rawError.includes("información logística")) {
+    return "Faltan datos de dirección, localidad, provincia o código postal del destinatario para generar el envío."
+  }
+  if (rawError.includes("retiro en sucursal")) {
+    return "Este pedido eligió retiro en sucursal: el envío a domicilio de Andreani no aplica."
+  }
+  if (rawError.includes("configuración") || rawError.includes("CONFIGURATION_ERROR")) {
+    return "La configuración de Andreani está incompleta. Revisá el panel de integraciones."
+  }
+  if (rawError.includes("conciliación manual")) {
+    return "Andreani no confirmó si el envío se creó. Requiere revisión manual antes de reintentar."
+  }
+  return "No pudimos generar o consultar el envío en Andreani."
 }
 
 function getPaymentMethodLabel(pedido: SupabasePedido) {
@@ -388,17 +483,6 @@ function getCompactPaymentMethodLabel(pedido: SupabasePedido) {
 
 function isTransferOrder(pedido: SupabasePedido) {
   return pedido.payment_method_id === "transferencia"
-}
-
-function isOrderPaymentConfirmed(pedido: SupabasePedido) {
-  return (
-    Boolean(pedido.paid_at) ||
-    Number(pedido.payment_confirmed_amount ?? 0) > 0 ||
-    pedido.payment_status === "confirmado" ||
-    pedido.payment_status === "approved" ||
-    pedido.payment_status === "confirmed" ||
-    ["pagado", ...SHIPPING_DISPATCHED_STATUSES].includes(pedido.estado)
-  )
 }
 
 function isRefundPaymentAttentionOrder(pedido: SupabasePedido) {
@@ -1198,15 +1282,6 @@ async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
   }
 }
 
-function handlePrintAndreaniLabel(pedido: SupabasePedido) {
-  if (!pedido.andreani_etiqueta_url) {
-    return false
-  }
-
-  window.open(pedido.andreani_etiqueta_url, "_blank", "noopener,noreferrer")
-  return true
-}
-
 function getDispatchAlert(pedido: SupabasePedido) {
   if (isAdminCancelledOrder(pedido)) {
     return {
@@ -1340,9 +1415,11 @@ function PaymentStatusBadge({ status }: { status?: string | null }) {
 
 function PaymentStatusDropdown({
   value,
+  hasProof,
   onChange,
 }: {
   value: PaymentStatusValue
+  hasProof: boolean
   onChange: (value: PaymentStatusValue) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -1357,6 +1434,11 @@ function PaymentStatusDropdown({
   const selected =
     PAYMENT_STATUS_OPTIONS.find((option) => option.value === value) ??
     PAYMENT_STATUS_OPTIONS[0]
+  const allowedValues = getAllowedAdminTransferPaymentStatuses(value, hasProof)
+  const options = PAYMENT_STATUS_OPTIONS.filter((option) =>
+    allowedValues.includes(option.value),
+  )
+  const menuOptionCount = options.length
 
   useEffect(() => {
     setMounted(true)
@@ -1393,7 +1475,7 @@ function PaymentStatusDropdown({
       const rect = dropdownRef.current?.getBoundingClientRect()
       if (!rect) return
 
-      const menuHeight = Math.min(PAYMENT_STATUS_OPTIONS.length * 34 + 8, 220)
+      const menuHeight = Math.min(menuOptionCount * 34 + 8, 220)
       const width = Math.max(176, rect.width)
       const spaceBelow = window.innerHeight - rect.bottom
       const openAbove = spaceBelow < menuHeight && rect.top > menuHeight
@@ -1419,7 +1501,7 @@ function PaymentStatusDropdown({
       window.removeEventListener("resize", updateMenuPosition)
       window.removeEventListener("scroll", updateMenuPosition, true)
     }
-  }, [open])
+  }, [menuOptionCount, open])
 
   return (
     <div ref={dropdownRef} className="relative w-fit">
@@ -1452,7 +1534,7 @@ function PaymentStatusDropdown({
             width: menuPosition.width,
           }}
         >
-          {PAYMENT_STATUS_OPTIONS.map((option) => (
+          {options.map((option) => (
             <button
               key={option.value}
               type="button"
@@ -2370,6 +2452,7 @@ function ResolutionSegment({
 
 function BillingManagementPanel({
   pedido,
+  isSuperAdmin,
   invoiceLoading,
   invoiceDownloading,
   invoiceNotice,
@@ -2379,6 +2462,7 @@ function BillingManagementPanel({
   onBillingUpdated,
 }: {
   pedido: SupabasePedido
+  isSuperAdmin: boolean
   invoiceLoading: boolean
   invoiceDownloading: boolean
   invoiceNotice: { ok: boolean; message: string } | null
@@ -2418,17 +2502,26 @@ function BillingManagementPanel({
   const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false)
   const [manualGestionOverride, setManualGestionOverride] = useState(false)
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
+  const [showAdminAdjustmentForm, setShowAdminAdjustmentForm] = useState(false)
   const [showClosedDetail, setShowClosedDetail] = useState(false)
   const [settlementSavingId, setSettlementSavingId] = useState<string | null>(null)
   const [creditDestination, setCreditDestination] = useState<
     "external_refund" | "customer_balance"
   >("customer_balance")
-  const creditNotes = pedido.order_credit_notes ?? []
-  const authorizedCreditNotes = creditNotes.filter(
-    (note) => note.status === "authorized",
+  const creditNotes = useMemo(
+    () => pedido.order_credit_notes ?? [],
+    [pedido.order_credit_notes],
   )
-  const committedCreditNotes = creditNotes.filter((note) =>
-    ["authorized", "processing"].includes(note.status),
+  const authorizedCreditNotes = useMemo(
+    () => creditNotes.filter((note) => note.status === "authorized"),
+    [creditNotes],
+  )
+  const committedCreditNotes = useMemo(
+    () =>
+      creditNotes.filter((note) =>
+        ["authorized", "processing"].includes(note.status),
+      ),
+    [creditNotes],
   )
   const committedQuantityByItem = useMemo(() => {
     const quantities = new Map<number, number>()
@@ -2549,15 +2642,44 @@ function BillingManagementPanel({
   // ya conoce.
   const linkedClaim =
     (pedido.order_claims ?? [])
-      .filter((claim) => isClaimVisibleForMode(claim.failure_type, "claims"))
+      .filter((claim) => isClaimEligibleForCreditNote(claim))
       .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0] ?? null
+  // Sin un reclamo real del cliente, el wizard de devolución/reintegro no
+  // debe iniciarse: solo queda disponible el ajuste administrativo/contable
+  // (ajuste_manual, reembolso_excepcional), que por diseño no depende de
+  // order_claims. Ver supabase/migrations/20260825090000_credit_note_requires_claim.sql.
+  const hasEligibleClaim = Boolean(linkedClaim)
+  const hasAnyCommercialClaim = (pedido.order_claims ?? []).some(
+    (claim) => claim.failure_type !== "consulta_pedido",
+  )
   const linkedClaimCode = linkedClaim ? `REC-${String(linkedClaim.id).padStart(5, "0")}` : null
   const linkedClaimReasonLabel = linkedClaim
     ? PROBLEM_LABELS[linkedClaim.failure_type ?? ""] ?? "Motivo informado por el cliente"
     : null
-  const totalAvailableOrderUnits = (pedido.orden_items ?? []).reduce(
-    (sum, item) =>
-      sum + Math.max(0, Number(item.cantidad) - (committedQuantityByItem.get(item.id) ?? 0)),
+  const claimAffectedQuantityByItem = useMemo(
+    () =>
+      new Map(
+        (linkedClaim?.affected_items ?? []).map((item) => [
+          Number(item.order_item_id),
+          Number(item.quantity),
+        ]),
+      ),
+    [linkedClaim],
+  )
+  const creditableOrderItems = useMemo(
+    () =>
+      (pedido.orden_items ?? []).filter(
+        (item) => (claimAffectedQuantityByItem.get(item.id) ?? 0) > 0,
+      ),
+    [claimAffectedQuantityByItem, pedido.orden_items],
+  )
+  const totalAvailableOrderUnits = creditableOrderItems.reduce(
+    (sum, item) => {
+      const claimed = claimAffectedQuantityByItem.get(item.id) ?? 0
+      const orderQuantity = Number(item.cantidad)
+      const committed = committedQuantityByItem.get(item.id) ?? 0
+      return sum + Math.max(0, Math.min(orderQuantity, claimed) - committed)
+    },
     0,
   )
 
@@ -2592,6 +2714,7 @@ function BillingManagementPanel({
     setWizardStep(1)
     setSettlementSavingId(null)
     setCreditDestination("customer_balance")
+    setShowAdminAdjustmentForm(false)
   }, [pedido.id])
 
   // Traduce el motivo que el cliente ya informó en su reclamo al reason_code
@@ -2618,6 +2741,27 @@ function BillingManagementPanel({
   // desde "Opciones avanzadas" o el atajo del Paso 1 sin productos.
   useEffect(() => {
     if (manualGestionOverride) return
+    if (linkedClaim?.failure_type === "cancelar_compra") {
+      setOperationType("cancelacion_antes_despacho")
+      setReasonCode("cancelacion_antes_despacho")
+      setReturnShippingParty("no_corresponde")
+      setIncludeOriginalShipping(originalShippingPaid > 0)
+      setCreditQuantities(
+        Object.fromEntries(
+          creditableOrderItems.map((item) => [
+            item.id,
+            Math.max(
+              0,
+              Math.min(
+                Number(item.cantidad),
+                claimAffectedQuantityByItem.get(item.id) ?? 0,
+              ) - (committedQuantityByItem.get(item.id) ?? 0),
+            ),
+          ]),
+        ),
+      )
+      return
+    }
     if (
       linkedClaim?.resolution === "cambio_producto" ||
       linkedClaim?.customer_selected_resolution === "cambio_producto"
@@ -2629,18 +2773,30 @@ function BillingManagementPanel({
     setOperationType(
       selectedCreditUnits >= totalAvailableOrderUnits ? "devolucion_total" : "devolucion_parcial",
     )
-  }, [manualGestionOverride, linkedClaim, selectedCreditUnits, totalAvailableOrderUnits])
+  }, [
+    claimAffectedQuantityByItem,
+    committedQuantityByItem,
+    creditableOrderItems,
+    linkedClaim,
+    manualGestionOverride,
+    originalShippingPaid,
+    selectedCreditUnits,
+    totalAvailableOrderUnits,
+  ])
 
   const selectOperationType = (value: string) => {
     setOperationType(value)
     if (["devolucion_total", "cancelacion_antes_despacho"].includes(value)) {
       setCreditQuantities(
         Object.fromEntries(
-          (pedido.orden_items ?? []).map((item) => [
+          creditableOrderItems.map((item) => [
             item.id,
             Math.max(
               0,
-              Number(item.cantidad) - (committedQuantityByItem.get(item.id) ?? 0),
+              Math.min(
+                Number(item.cantidad),
+                claimAffectedQuantityByItem.get(item.id) ?? 0,
+              ) - (committedQuantityByItem.get(item.id) ?? 0),
             ),
           ]),
         ),
@@ -3024,7 +3180,133 @@ function BillingManagementPanel({
             </div>
           </header>
 
-          {invoiceCreditRemaining > 0 && (
+          {invoiceCreditRemaining > 0 && !hasEligibleClaim && (
+            <div className="admin-credit-note-editor-step mt-3">
+              <p className="admin-order-billing-pending-note rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
+                {hasAnyCommercialClaim
+                  ? "Hay una solicitud del cliente, pero todavía no está aprobada para emitir una devolución o reintegro."
+                  : "No hay reclamos iniciados por el cliente para este pedido."}
+              </p>
+
+              {hasAnyCommercialClaim ? (
+                <p className="mt-2 text-xs font-medium text-white/60">
+                  Revisá el reclamo y aprobá una resolución comercial antes de continuar.
+                </p>
+              ) : !isSuperAdmin ? (
+                <p className="mt-2 text-xs font-medium text-white/60">
+                  Los ajustes administrativos sin reclamo están reservados a superadministradores.
+                </p>
+              ) : !showAdminAdjustmentForm ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOperationType("ajuste_manual")
+                    setReasonCode("error_administrativo")
+                    handleReceptionStatusChange("no_requiere")
+                    setManualGestionOverride(true)
+                    setShowAdminAdjustmentForm(true)
+                  }}
+                  className="admin-ds-button admin-ds-button-secondary mt-2 inline-flex h-9 cursor-pointer items-center justify-center gap-2 px-3.5 text-11px font-black uppercase tracking-wide transition"
+                >
+                  Registrar ajuste administrativo
+                </button>
+              ) : (
+                <section className="admin-credit-note-step-card mt-2">
+                  <div className="admin-credit-note-step-heading">
+                    <div>
+                      <h4>Ajuste administrativo/contable</h4>
+                      <p>
+                        Vía excepcional sin reclamo del cliente: correcciones contables,
+                        reembolsos excepcionales u otros ajustes autorizados por un superadministrador.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="admin-credit-note-field">
+                    <span>Tipo de gestión</span>
+                    <select
+                      value={operationType}
+                      onChange={(event) => selectOperationType(event.target.value)}
+                    >
+                      <option value="ajuste_manual">Ajuste manual</option>
+                      <option value="reembolso_excepcional">Reembolso excepcional</option>
+                    </select>
+                  </label>
+
+                  <label className="admin-credit-note-field">
+                    <span>Monto</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={manualCreditAmount}
+                      onChange={(event) => setManualCreditAmount(event.target.value)}
+                      placeholder="0,00"
+                    />
+                  </label>
+
+                  <label className="admin-credit-note-field">
+                    <span>Motivo</span>
+                    <textarea
+                      value={creditReason}
+                      onChange={(event) => setCreditReason(event.target.value)}
+                      placeholder="Detallá el motivo del ajuste administrativo"
+                      rows={2}
+                    />
+                  </label>
+
+                  <div className="admin-credit-note-steps" aria-label="Destino del importe">
+                    <button
+                      type="button"
+                      aria-current={creditDestination === "customer_balance" ? "step" : undefined}
+                      onClick={() => setCreditDestination("customer_balance")}
+                      className={`cursor-pointer border-0 bg-transparent p-0 text-left ${creditDestination === "customer_balance" ? "is-current" : ""}`}
+                    >
+                      Saldo a favor del cliente
+                    </button>
+                    <button
+                      type="button"
+                      aria-current={creditDestination === "external_refund" ? "step" : undefined}
+                      onClick={() => setCreditDestination("external_refund")}
+                      className={`cursor-pointer border-0 bg-transparent p-0 text-left ${creditDestination === "external_refund" ? "is-current" : ""}`}
+                    >
+                      Reintegro externo
+                    </button>
+                  </div>
+
+                  {message && (
+                    <p className={message.ok ? "text-beyonix-status-success" : "text-beyonix-status-danger"}>
+                      {message.text}
+                    </p>
+                  )}
+
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={
+                        creditSaving ||
+                        parsedManualAmount <= 0 ||
+                        creditReason.trim().length < 3 ||
+                        parsedManualAmount > invoiceCreditRemaining + 0.005
+                      }
+                      onClick={() => void issueCreditNote()}
+                      className="admin-ds-button admin-ds-button-primary inline-flex h-9 cursor-pointer items-center justify-center gap-2 px-3.5 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {creditSaving ? "Emitiendo..." : "Emitir nota de crédito"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminAdjustmentForm(false)}
+                      className="admin-ds-button admin-ds-button-secondary inline-flex h-9 cursor-pointer items-center justify-center gap-2 px-3.5 text-11px font-black uppercase tracking-wide transition"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {invoiceCreditRemaining > 0 && hasEligibleClaim && (
             <>
               <div className="admin-credit-note-steps" aria-label="Pasos para crear la nota">
                 <button
@@ -3073,10 +3355,16 @@ function BillingManagementPanel({
                       <span>Cantidad</span>
                       <span>Se acreditan</span>
                     </div>
-                    {(pedido.orden_items ?? []).map((item) => {
+                    {creditableOrderItems.map((item) => {
                       const allocation = itemAllocations.get(item.id)
                       const used = committedQuantityByItem.get(item.id) ?? 0
-                      const available = Math.max(0, Number(item.cantidad) - used)
+                      const available = Math.max(
+                        0,
+                        Math.min(
+                          Number(item.cantidad),
+                          claimAffectedQuantityByItem.get(item.id) ?? 0,
+                        ) - used,
+                      )
                       const quantity = Math.min(
                         available,
                         Number(creditQuantities[item.id] ?? 0),
@@ -3518,13 +3806,11 @@ function BillingManagementPanel({
                             <option value="devolucion_parcial">Devolución parcial</option>
                             <option value="devolucion_total">Devolución total</option>
                             <option value="cambio_producto">Cambio de producto</option>
-                            <option value="cancelacion_antes_despacho">
-                              Cancelación antes del despacho
-                            </option>
-                            <option value="reembolso_excepcional">
-                              Reembolso excepcional
-                            </option>
-                            <option value="ajuste_manual">Ajuste manual</option>
+                            {linkedClaim?.failure_type === "cancelar_compra" && (
+                              <option value="cancelacion_antes_despacho">
+                                Cancelación antes del despacho
+                              </option>
+                            )}
                           </AdminSelect>
                         </label>
 
@@ -4454,6 +4740,8 @@ function PedidoDetailModal({
     ok: boolean
     message: string
   } | null>(null)
+  const [andreaniLabelLoading, setAndreaniLabelLoading] =
+    useState<AndreaniLabelAction | null>(null)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [invoiceDownloading, setInvoiceDownloading] = useState(false)
   const [orderSummarySeen, setOrderSummarySeen] = useState(true)
@@ -4606,6 +4894,70 @@ function PedidoDetailModal({
     const result = await onAndreaniAction(action, pedido.id)
     setAndreaniNotice(result)
     setAndreaniLoading(null)
+  }
+
+  const handleAndreaniLabel = async (action: AndreaniLabelAction) => {
+    if (!pedido.andreani_envio_id || andreaniLabelLoading) return
+
+    const labelWindow = action === "download" ? null : window.open("", "_blank")
+    if (labelWindow) labelWindow.opener = null
+    setAndreaniLabelLoading(action)
+    setAndreaniNotice(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error("La sesión administrativa venció.")
+      }
+
+      const response = await fetch("/api/andreani/etiqueta", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pedidoId: pedido.id, formato: "pdf" }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+        throw new Error(payload?.error || "No se pudo obtener la etiqueta.")
+      }
+
+      const blobUrl = URL.createObjectURL(await response.blob())
+      if (action === "download") {
+        const link = document.createElement("a")
+        link.href = blobUrl
+        link.download = `andreani-${pedido.andreani_envio_id}.pdf`
+        link.click()
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000)
+      } else if (labelWindow) {
+        if (action === "print") {
+          labelWindow.addEventListener("load", () => {
+            labelWindow.print()
+            window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000)
+          }, { once: true })
+        }
+        labelWindow.location.href = blobUrl
+      } else {
+        URL.revokeObjectURL(blobUrl)
+        throw new Error("El navegador bloqueó la ventana de la etiqueta.")
+      }
+
+      setAndreaniNotice({ ok: true, message: "Etiqueta obtenida desde Andreani." })
+    } catch (error) {
+      labelWindow?.close()
+      setAndreaniNotice({
+        ok: false,
+        message: error instanceof Error ? error.message : "No se pudo obtener la etiqueta.",
+      })
+    } finally {
+      setAndreaniLabelLoading(null)
+    }
   }
 
   const handleConfirmCustomShipping = async () => {
@@ -4891,6 +5243,7 @@ function PedidoDetailModal({
                       {transfer ? (
                         <PaymentStatusDropdown
                           value={paymentStatusValue}
+                          hasProof={Boolean(pedido.payment_proof_url)}
                           onChange={(value) => onPaymentStatusChange(pedido.id, value)}
                         />
                       ) : (
@@ -4911,7 +5264,11 @@ function PedidoDetailModal({
                     <div className="admin-order-pg-total">
                       <span className="admin-order-pg-total-bar" aria-hidden="true" />
                       <div className="min-w-0">
-                        <p className="admin-order-pg-total-label">Total recibido</p>
+                        <p className="admin-order-pg-total-label">
+                          {transfer && paymentStatusValue !== "confirmado"
+                            ? "Monto esperado"
+                            : "Total recibido"}
+                        </p>
                         <p className="admin-order-pg-total-amount">{formatPrice(pedido.total)}</p>
                       </div>
                     </div>
@@ -4969,10 +5326,33 @@ function PedidoDetailModal({
                     </div>
                   </div>
 
-                  {transfer && (
+                  {transfer && paymentStatusValue === "confirmado" && (
                     <p className="admin-order-pg-verified">
                       <ShieldCheck className="size-3.5 shrink-0" aria-hidden="true" />
                       La transferencia fue verificada y el pago se encuentra confirmado.
+                    </p>
+                  )}
+                  {transfer && paymentStatusValue === "en_revision" && (
+                    <p className="admin-order-pg-pending">
+                      <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+                      Comprobante recibido, pendiente de validación administrativa. El
+                      pago todavía no está confirmado.
+                    </p>
+                  )}
+                  {transfer && paymentStatusValue === "rechazado" && (
+                    <p className="admin-order-pg-rejected">
+                      <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                      Comprobante rechazado
+                      {pedido.payment_confirmation_observation
+                        ? `: ${pedido.payment_confirmation_observation}`
+                        : "."}{" "}
+                      El cliente debe volver a cargar un comprobante.
+                    </p>
+                  )}
+                  {transfer && paymentStatusValue === "pendiente_comprobante" && (
+                    <p className="admin-order-pg-pending">
+                      <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+                      Todavía no se recibió ningún comprobante de transferencia.
                     </p>
                   )}
                 </section>
@@ -5001,6 +5381,7 @@ function PedidoDetailModal({
           {activeView === "facturacion" && (
             <BillingManagementPanel
               pedido={pedido}
+              isSuperAdmin={isSuperAdmin}
               invoiceLoading={invoiceLoading}
               invoiceDownloading={invoiceDownloading}
               invoiceNotice={invoiceNotice}
@@ -5402,15 +5783,15 @@ function PedidoDetailModal({
 
               <div className="admin-order-shipping-facts mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-lg border p-2.5 lg:grid-cols-4">
                 <ShippingMiniCard
-                  label="Estado"
+                  label="Estado logístico"
                   value={getAndreaniStatus(pedido)}
                   icon={<Truck className="size-3.5" />}
                 />
                 <ShippingMiniCard
                   label="Costo"
                   value={
-                    typeof pedido.andreani_costo === "number"
-                      ? formatPrice(pedido.andreani_costo)
+                    typeof (pedido.shipping_cost_charged ?? pedido.andreani_costo) === "number"
+                      ? formatPrice(pedido.shipping_cost_charged ?? pedido.andreani_costo ?? 0)
                       : "No informado"
                   }
                   icon={<CreditCard className="size-3.5" />}
@@ -5430,9 +5811,17 @@ function PedidoDetailModal({
               {(pedido.andreani_error || andreaniNotice) && (
                 <div className="mt-3 space-y-2">
                   {pedido.andreani_error && (
-                    <p className="rounded-lg border border-beyonix-status-danger/30 bg-beyonix-status-danger/8 px-3 py-2 text-xs font-medium text-red-200">
-                      {pedido.andreani_error}
-                    </p>
+                    <div className="rounded-lg border border-beyonix-status-danger/30 bg-beyonix-status-danger/8 px-3 py-2 text-xs font-medium text-red-200">
+                      <p>{getAndreaniAdminErrorMessage(pedido.andreani_error)}</p>
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-10px font-bold uppercase tracking-wide text-red-200/70">
+                          Detalle técnico
+                        </summary>
+                        <p className="mt-1 text-10px font-normal text-red-200/80">
+                          {pedido.andreani_error}
+                        </p>
+                      </details>
+                    </div>
                   )}
                   {andreaniNotice && (
                     <p
@@ -5468,24 +5857,29 @@ function PedidoDetailModal({
                       Editar seguimiento
                     </button>
                   )}
-                  <button
-                    type="button"
-                    aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
-                    title="Generar envío"
-                    disabled={andreaniLoading !== null}
-                    onClick={() => void handleModalAndreaniAction("crear-envio")}
-                    className="admin-order-shipping-refined-action admin-order-shipping-refined-action--primary inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-wait disabled:opacity-50"
-                  >
-                    <Truck className="size-4" />
-                    Generar envío
-                  </button>
+                  {(() => {
+                    const blockingReason = getAndreaniShipmentBlockingReason(pedido)
+                    return (
+                      <button
+                        type="button"
+                        aria-label={`Generar envío Andreani para pedido ${pedido.id}`}
+                        title={blockingReason ?? "Generar envío"}
+                        disabled={andreaniLoading !== null || Boolean(blockingReason)}
+                        onClick={() => void handleModalAndreaniAction("crear-envio")}
+                        className="admin-order-shipping-refined-action admin-order-shipping-refined-action--primary inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Truck className="size-4" />
+                        Generar envío
+                      </button>
+                    )
+                  })()}
                   <button
                     type="button"
                     aria-label={`Consultar envío Andreani del pedido ${pedido.id}`}
-                    title="Consultar envío"
-                    disabled={andreaniLoading !== null}
+                    title={pedido.andreani_envio_id ? "Consultar envío" : "Todavía no se generó un envío para consultar"}
+                    disabled={andreaniLoading !== null || !pedido.andreani_envio_id}
                     onClick={() => void handleModalAndreaniAction("tracking")}
-                    className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-wait disabled:opacity-50"
+                    className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <RefreshCw className="size-4" />
                     Consultar
@@ -5510,35 +5904,49 @@ function PedidoDetailModal({
                       Ver envío
                     </button>
                   )}
-                  {pedido.andreani_etiqueta_url ? (
-                    <ExternalLink
-                      href={pedido.andreani_etiqueta_url}
-                      label="Ver etiqueta"
-                      ariaLabel={`Abrir etiqueta del pedido ${pedido.id}`}
-                      icon={<Download className="size-4" />}
-                      className="admin-order-shipping-refined-action"
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      disabled
-                      aria-label="Etiqueta no disponible"
-                      title="Etiqueta no disponible"
-                      className="admin-order-shipping-refined-action inline-flex h-8 cursor-not-allowed items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black disabled:opacity-50"
-                    >
-                      <Download className="size-4" />
-                      Ver etiqueta
-                    </button>
-                  )}
                   <button
                     type="button"
-                    disabled={!pedido.andreani_etiqueta_url}
-                    aria-label={`Imprimir etiqueta Andreani del pedido ${pedido.id}`}
-                    title="Imprimir etiqueta"
-                    onClick={() => handlePrintAndreaniLabel(pedido)}
+                    disabled={!pedido.andreani_envio_id || andreaniLabelLoading !== null}
+                    aria-label={`Ver etiqueta Andreani del pedido ${pedido.id}`}
+                    title={pedido.andreani_envio_id ? "Ver etiqueta" : "Etiqueta no disponible"}
+                    onClick={() => void handleAndreaniLabel("view")}
                     className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Printer className="size-4" />
+                    {andreaniLabelLoading === "view" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                    Ver etiqueta
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!pedido.andreani_envio_id || andreaniLabelLoading !== null}
+                    aria-label={`Descargar etiqueta Andreani del pedido ${pedido.id}`}
+                    title={pedido.andreani_envio_id ? "Descargar etiqueta" : "Etiqueta no disponible"}
+                    onClick={() => void handleAndreaniLabel("download")}
+                    className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {andreaniLabelLoading === "download" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                    Descargar etiqueta
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!pedido.andreani_envio_id || andreaniLabelLoading !== null}
+                    aria-label={`Imprimir etiqueta Andreani del pedido ${pedido.id}`}
+                    title={pedido.andreani_envio_id ? "Imprimir etiqueta" : "Etiqueta no disponible"}
+                    onClick={() => void handleAndreaniLabel("print")}
+                    className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {andreaniLabelLoading === "print" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Printer className="size-4" />
+                    )}
                     Imprimir
                   </button>
                 </div>
@@ -5591,17 +5999,19 @@ function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
   const dispatched = SHIPPING_DISPATCHED_STATUSES.includes(
     pedido.estado as (typeof SHIPPING_DISPATCHED_STATUSES)[number],
   )
-  const activeIndex = delivered
+  const achievedIndex = delivered
     ? 4
     : dispatched
       ? 3
-      : isOrderPaymentConfirmed(pedido)
+      : Boolean(pedido.andreani_envio_id)
         ? 2
-        : 1
+        : isOrderPaymentConfirmed(pedido)
+          ? 1
+          : 0
   const steps = [
     "Pedido registrado",
     "Pago confirmado",
-    "Preparando envío",
+    "Envío generado",
     "En camino",
     "Entregado",
   ]
@@ -5613,10 +6023,10 @@ function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
       </p>
       <ol className="mt-2.5 grid grid-cols-5" aria-label="Progreso del envío">
         {steps.map((step, index) => {
-          const done = delivered ? index <= activeIndex : index < activeIndex
-          const current = !delivered && index === activeIndex
-          const leftCompleted = index > 0 && index <= activeIndex
-          const rightCompleted = index < activeIndex
+          const done = index <= achievedIndex
+          const current = index === achievedIndex
+          const leftCompleted = index > 0 && index <= achievedIndex
+          const rightCompleted = index < achievedIndex
 
           return (
             <li
@@ -6558,6 +6968,22 @@ export function AdminPedidos({
     pedidoId: number,
     nextStatus: string
   ) => {
+    let observation = ""
+    if (nextStatus === "rechazado") {
+      const enteredReason = window.prompt(
+        "Indicá el motivo del rechazo para que quede auditado.",
+      )
+      if (enteredReason === null) return false
+      observation = enteredReason.trim()
+      if (observation.length < 3) {
+        setNotice({
+          type: "error",
+          message: "Indicá el motivo del rechazo del comprobante.",
+        })
+        return false
+      }
+    }
+
     const {
       data: { session },
     } = await supabase.auth.getSession()
@@ -6573,7 +6999,7 @@ export function AdminPedidos({
         Authorization: `Bearer ${session.access_token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ payment_status: nextStatus }),
+      body: JSON.stringify({ payment_status: nextStatus, observation }),
     })
     const data = await response.json()
 

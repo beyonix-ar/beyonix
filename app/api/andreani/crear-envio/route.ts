@@ -51,13 +51,20 @@ export async function POST(request: Request) {
       orderId,
       code: safeError.code,
       status: safeError.status,
+      requestId: safeError.requestId,
     })
 
     const status =
       error instanceof AndreaniError ? statusForAndreaniError(error) : 502
 
     return NextResponse.json(
-      { ok: false, error: safeError.message },
+      {
+        ok: false,
+        error: safeError.message,
+        code: safeError.code,
+        upstreamStatus: safeError.status,
+        requestId: safeError.requestId,
+      },
       { status },
     )
   }

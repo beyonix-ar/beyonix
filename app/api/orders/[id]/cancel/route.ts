@@ -5,8 +5,7 @@ import {
   buildCustomerCancelledOrderNotification,
   upsertCustomerCancelledOrderNotification,
 } from "@/lib/orders/customer-cancellation-notification"
-import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
-import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -31,6 +30,7 @@ type CancelableOrder = {
   financial_status?: string | null
   credit_balance_used?: number | null
   paid_at?: string | null
+  payment_confirmed_amount?: number | null
   cancelled_at?: string | null
 }
 
@@ -74,22 +74,6 @@ function isOrderDispatched(order: CancelableOrder) {
   )
 }
 
-function isOrderInvoiced(order: CancelableOrder) {
-  return (
-    order.invoice_status === "authorized" ||
-    order.invoice_status === "processing" ||
-    Boolean(order.invoice_cae) ||
-    Boolean(order.invoice_number && order.invoice_point)
-  )
-}
-
-function isPaymentConfirmed(order: CancelableOrder) {
-  return (
-    Boolean(order.paid_at) ||
-    ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "")
-  )
-}
-
 function hasPaymentProofPendingReview(order: CancelableOrder) {
   return Boolean(order.payment_proof_url) &&
     ["en_revision", "pendiente_comprobante", "pending"].includes(
@@ -97,44 +81,10 @@ function hasPaymentProofPendingReview(order: CancelableOrder) {
     )
 }
 
-function isMissingColumnError(error: { message?: string; code?: string } | null) {
-  return (
-    error?.code === "PGRST204" ||
-    error?.message?.includes("schema cache") ||
-    error?.message?.includes("cancelled_at")
-  )
-}
-
 function getCancellationFinancialStatus(order: CancelableOrder) {
-  if (isPaymentConfirmed(order)) return "refund_pending"
+  if (isOrderPaymentConfirmed(order)) return "refund_pending"
   if (hasPaymentProofPendingReview(order)) return "cancellation_requested"
   return "cancelled"
-}
-
-function buildCancellationUpdate(
-  order: CancelableOrder,
-  includeCancelledAt: boolean,
-  cancelledAt: string,
-  userId: string,
-) {
-  const financialStatus = getCancellationFinancialStatus(order)
-  const invoiceIssued = isOrderInvoiced(order)
-
-  return {
-    estado: "cancelado",
-    financial_status: financialStatus,
-    cancellation_requested_at: cancelledAt,
-    cancellation_requested_by: userId,
-    ...(financialStatus === "refund_pending"
-      ? {
-          refund_pending_at: cancelledAt,
-          credit_note_required: invoiceIssued,
-        }
-      : {
-          credit_note_required: false,
-        }),
-    ...(includeCancelledAt ? { cancelled_at: cancelledAt } : {}),
-  }
 }
 
 async function notifyCustomerCancellation(
@@ -213,7 +163,7 @@ export async function POST(
   const admin = createAdminClient()
   const { data: order, error: orderError } = await admin
     .from("ordenes")
-    .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at")
+    .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at, payment_confirmed_amount")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -244,81 +194,39 @@ export async function POST(
     )
   }
 
-  const cancelledAt = new Date().toISOString()
-  const previousFinancialStatus =
-    order.financial_status ?? order.payment_status ?? "pending_payment"
-  const nextFinancialStatus = getCancellationFinancialStatus(order)
-  let { data: updatedOrder, error: updateError } = await admin
-    .from("ordenes")
-    .update(buildCancellationUpdate(order, true, cancelledAt, user.id))
-    .eq("id", order.id)
-    .not("estado", "in", "(cancelado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado)")
-    .is("tracking_number", null)
-    .is("andreani_tracking", null)
-    .is("andreani_envio_id", null)
-    .select("*")
-    .maybeSingle()
+  const { data: cancellationResult, error: cancellationError } = await admin.rpc(
+    "request_customer_order_cancellation_with_claim",
+    {
+      p_order_id: order.id,
+      p_user_id: user.id,
+      p_reason: cancellationReason,
+    },
+  )
 
-  if (isMissingColumnError(updateError)) {
-    console.log("cancelled_at no disponible en ordenes; reintentando cancelación sin timestamp", updateError?.message)
-    const retryResult = await admin
-      .from("ordenes")
-      .update(buildCancellationUpdate(order, false, cancelledAt, user.id))
-      .eq("id", order.id)
-      .not("estado", "in", "(cancelado,enviado,en_camino,visita_fallida,en_sucursal,retiro_pendiente,retiro_vencido,en_devolucion,devuelto_beyonix,entregado)")
-      .is("tracking_number", null)
-      .is("andreani_tracking", null)
-      .is("andreani_envio_id", null)
-      .select("*")
-      .maybeSingle()
-
-    updatedOrder = retryResult.data
-    updateError = retryResult.error
-  }
-
-  if (updateError) {
+  if (cancellationError || !cancellationResult) {
+    const message = cancellationError?.message ?? ""
+    if (message.includes("ORDER_NOT_FOUND")) {
+      return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
+    }
+    if (
+      message.includes("ORDER_ALREADY_CANCELLED") ||
+      message.includes("ORDER_ALREADY_DISPATCHED")
+    ) {
+      return NextResponse.json(
+        { error: "Esta compra ya no se puede cancelar desde la cuenta." },
+        { status: 409 },
+      )
+    }
     return NextResponse.json(
-      { error: updateError.message || "No se pudo cancelar la compra." },
+      { error: "No se pudo cancelar la compra de forma segura." },
       { status: 500 },
     )
   }
 
-  if (!updatedOrder) {
-    return NextResponse.json(
-      { error: "Esta compra ya no se puede cancelar desde la cuenta." },
-      { status: 409 },
-    )
-  }
+  const updatedOrder = cancellationResult as unknown as CancelableOrder
+  const nextFinancialStatus = updatedOrder.financial_status ?? "cancelled"
 
   await notifyCustomerCancellation(admin, updatedOrder)
-  if (Number(order.credit_balance_used ?? 0) > 0) {
-    await reverseCustomerCreditForOrder(admin, {
-      orderId: order.id,
-      description: "Reintegro de saldo por cancelación de compra",
-      createdBy: user.id,
-    })
-  }
-  await appendOrderAuditEvent(admin, {
-    orderId: order.id,
-    actorType: "customer",
-    actorId: user.id,
-    action:
-      nextFinancialStatus === "refund_pending"
-        ? "cancellation_requested_refund_pending"
-        : "cancellation_requested",
-    previousStatus: previousFinancialStatus,
-    newStatus: nextFinancialStatus,
-    metadata: {
-      cancelledAt,
-      cancellationReason,
-      paymentStatus: order.payment_status ?? null,
-      paymentProofUrl: order.payment_proof_url ?? null,
-      invoiceIssued: isOrderInvoiced(order),
-      creditNoteRequired:
-        nextFinancialStatus === "refund_pending" && isOrderInvoiced(order),
-    },
-  })
-
   return NextResponse.json({
     order: updatedOrder,
     message:

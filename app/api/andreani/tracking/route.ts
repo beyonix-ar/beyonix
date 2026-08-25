@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
 
-import { AndreaniError, getTrackingPullV3, normalizeAndreaniError } from "@/lib/andreani/client"
+import {
+  AndreaniError,
+  getEstadoOrden,
+  getTrackingPullV3,
+  normalizeAndreaniError,
+} from "@/lib/andreani/client"
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
 function statusForAndreaniError(error: AndreaniError) {
@@ -41,11 +46,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "No encontramos el pedido." }, { status: 404 })
   }
 
+  const envioId =
+    typeof order.andreani_envio_id === "string" ? order.andreani_envio_id.trim() : ""
   const numeroDeTracking =
     typeof order.andreani_tracking === "string" ? order.andreani_tracking.trim() : ""
-  if (!numeroDeTracking) {
+  if (!envioId) {
     return NextResponse.json(
-      { ok: false, error: "El pedido todavía no tiene tracking Andreani disponible." },
+      { ok: false, error: "El pedido todavía no tiene un envío Andreani generado." },
       { status: 409 },
     )
   }
@@ -55,23 +62,55 @@ export async function POST(request: Request) {
   const environment = order.andreani_creation_environment === "PROD" ? "PROD" : "QA"
 
   try {
-    const tracking = await getTrackingPullV3(numeroDeTracking, {
+    const clientOptions = {
       env: { ...process.env, ANDREANI_ENV: environment },
-      // La autorización PROD de creación no habilita este endpoint: pedir
-      // tracking en PROD queda deliberadamente sin habilitar todavía.
-    })
+      productionAccess: environment === "PROD" ? "shipment-read" as const : undefined,
+    }
+    const orderStatus = numeroDeTracking
+      ? null
+      : await getEstadoOrden(envioId, clientOptions)
+    const resolvedTracking =
+      numeroDeTracking || orderStatus?.bultos[0]?.numeroDeEnvio || ""
+    const tracking = resolvedTracking
+      ? await getTrackingPullV3(resolvedTracking, clientOptions)
+      : { eventos: [] }
 
     const [latestEvent] = [...tracking.eventos].sort(
       (left, right) => new Date(right.Fecha).getTime() - new Date(left.Fecha).getTime(),
     )
 
-    if (latestEvent) {
-      await authorization.admin
-        .from("ordenes")
-        .update({
-          andreani_estado: latestEvent.Estado ?? latestEvent.Evento,
-        } as never)
-        .eq("id", orderId)
+    const checkedAt = new Date().toISOString()
+    const updatePayload = {
+      ...(orderStatus
+        ? {
+            andreani_estado: orderStatus.estado,
+            andreani_tracking: resolvedTracking || null,
+            andreani_etiqueta_url:
+              orderStatus.etiquetasPorAgrupador ??
+              orderStatus.bultos[0]?.linking?.find((link) =>
+                link.meta.toLowerCase().includes("etiqueta"),
+              )?.contenido ??
+              null,
+          }
+        : {}),
+      ...(latestEvent
+        ? {
+            andreani_estado: latestEvent.Estado ?? latestEvent.Evento,
+            andreani_tracking_event_at: latestEvent.Fecha,
+          }
+        : {}),
+      andreani_tracking_checked_at: checkedAt,
+    }
+    const { error: persistenceError } = await authorization.admin
+      .from("ordenes")
+      .update(updatePayload as never)
+      .eq("id", orderId)
+
+    if (persistenceError) {
+      throw new AndreaniError(
+        "REQUEST_FAILED",
+        "Andreani respondió, pero no se pudo persistir el estado del envío.",
+      )
     }
 
     return NextResponse.json({
@@ -80,6 +119,7 @@ export async function POST(request: Request) {
         ? `${latestEvent.Estado ?? latestEvent.Evento} (${latestEvent.Fecha})`
         : "Sin eventos de tracking todavía.",
       eventos: tracking.eventos,
+      checkedAt,
     })
   } catch (error) {
     const safeError = normalizeAndreaniError(error)
@@ -88,9 +128,19 @@ export async function POST(request: Request) {
       environment,
       code: safeError.code,
       status: safeError.status,
+      requestId: safeError.requestId,
     })
 
     const status = error instanceof AndreaniError ? statusForAndreaniError(error) : 502
-    return NextResponse.json({ ok: false, error: safeError.message }, { status })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: safeError.message,
+        code: safeError.code,
+        upstreamStatus: safeError.status,
+        requestId: safeError.requestId,
+      },
+      { status },
+    )
   }
 }

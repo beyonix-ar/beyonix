@@ -8,6 +8,7 @@ import {
 } from "../products/product-variants.ts"
 import {
   assertConditionedCheckoutStock,
+  getCheckoutOrderItemUnitPrice,
   getConditionedOrderItemFields,
   getConditionedUnitPrice,
   loadConditionedCheckoutRows,
@@ -21,7 +22,7 @@ import {
 import { assertCatalogStock, STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
 import { getColorName } from "../products/variant-color.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
-import { getProductDiscount, type ShippingBonusSettings } from "../store-config.ts"
+import type { ShippingBonusSettings } from "../store-config.ts"
 import {
   deleteIncompleteCheckoutOrder,
   validateCheckoutInventory,
@@ -490,16 +491,6 @@ export function buildCheckoutOrderBase({
   }
 }
 
-function getCheckoutOrderItemUnitPrice(
-  product: CheckoutOrderProductRow,
-  conditioned?: ConditionedCheckoutRow | null,
-) {
-  return Math.round(
-    getConditionedUnitPrice(product.precio, conditioned) *
-      (1 - getProductDiscount(product.id)),
-  )
-}
-
 export function buildCheckoutOrderItemsPayload(
   orderId: number,
   items: NormalizedCheckoutOrderItem[],
@@ -518,7 +509,9 @@ export function buildCheckoutOrderItemsPayload(
       ...(!conditioned ? { variante_id: item.variantId } : {}),
       ...getConditionedOrderItemFields(conditioned),
       cantidad: item.quantity,
-      precio: product ? getCheckoutOrderItemUnitPrice(product, conditioned) : 0,
+      precio: product
+        ? getCheckoutOrderItemUnitPrice(product.id, product.precio, conditioned)
+        : 0,
     }
   })
 }

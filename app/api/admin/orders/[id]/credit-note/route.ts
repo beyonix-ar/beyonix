@@ -11,7 +11,13 @@ import {
   feCompUltimoAutorizado,
 } from "@/lib/arca/wsfe"
 import { creditCustomerForOrderCreditNote } from "@/lib/customer-credit/server"
-import { canProceedPastProductsStep } from "@/lib/orders/credit-note-wizard"
+import {
+  canProceedPastProductsStep,
+} from "@/lib/orders/credit-note-wizard"
+import {
+  getCreditNoteClaimPolicyError,
+  isAdministrativeCreditNoteOperation,
+} from "@/lib/orders/credit-note-claim-policy"
 import {
   allocateEffectiveOrderItemAmounts,
   calculatePartialLineAmount,
@@ -206,6 +212,16 @@ function reservationError(message?: string) {
       "La orden no tiene una Factura C autorizada para asociar.",
     INVALID_CREDIT_NOTE_CLAIM:
       "El reclamo seleccionado no corresponde a este pedido.",
+    CLAIM_REQUIRED:
+      "Esta gestión requiere un reclamo del cliente para el pedido. Iniciá el reclamo antes de emitir la devolución.",
+    INVALID_CREDIT_NOTE_CLAIM_STATUS:
+      "El reclamo no está habilitado para esta devolución o reintegro.",
+    INVALID_CREDIT_NOTE_CLAIM_ITEM:
+      "La nota incluye productos o cantidades que no forman parte del reclamo.",
+    CREDIT_NOTE_ADMIN_OPERATION_FORBIDDEN:
+      "Solo un superadministrador puede emitir una nota administrativa sin reclamo.",
+    CREDIT_NOTE_ADMIN_ITEMS_FORBIDDEN:
+      "Un ajuste administrativo sin reclamo no puede incluir productos.",
   }
   const entry = Object.entries(knownErrors).find(([code]) =>
     message?.includes(code),
@@ -278,7 +294,7 @@ export async function POST(
 
   const conditionedDiscountPercent = Number(body.conditioned_discount_percent)
   const claimIdValue = Number(body.claim_id)
-  let claimId =
+  const claimId =
     Number.isInteger(claimIdValue) && claimIdValue > 0 ? claimIdValue : null
 
   if (!["external_refund", "customer_balance"].includes(destination)) {
@@ -398,19 +414,6 @@ export async function POST(
       },
       { status: 409 },
     )
-  }
-
-  if (destination === "customer_balance" && claimId === null) {
-    const { data: balanceClaim } = await auth.admin
-      .from("order_claims")
-      .select("id")
-      .eq("order_id", orderId)
-      .in("resolution", ["cupon_descuento", "saldo_a_favor"])
-      .not("status", "eq", "rechazado")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    claimId = balanceClaim?.id ? Number(balanceClaim.id) : null
   }
 
   const requestedItems = new Map<number, number>()
@@ -565,6 +568,36 @@ export async function POST(
       { status: 400 },
     )
   }
+  const { data: selectedClaim, error: claimError } = claimId
+    ? await auth.admin
+        .from("order_claims")
+        .select("id, order_id, user_id, status, failure_type, resolution, affected_items")
+        .eq("id", claimId)
+        .maybeSingle()
+    : { data: null, error: null }
+  if (claimError) {
+    return NextResponse.json(
+      { error: "No se pudo validar el reclamo asociado." },
+      { status: 500 },
+    )
+  }
+  const claimPolicyError = getCreditNoteClaimPolicyError({
+    operationType,
+    actorRole: auth.profile.rol,
+    orderId,
+    orderUserId: order.usuario_id,
+    claim: selectedClaim,
+    selectedItems,
+  })
+  if (claimPolicyError) {
+    return NextResponse.json({ error: claimPolicyError }, { status: 409 })
+  }
+  if (isAdministrativeCreditNoteOperation(operationType) && reasonCode !== "error_administrativo") {
+    return NextResponse.json(
+      { error: "Los ajustes administrativos deben registrarse con motivo Error administrativo." },
+      { status: 400 },
+    )
+  }
   const { data: reservedNote, error: reservationFailure } = await auth.admin
     .rpc("begin_partial_credit_note", {
       p_order_id: orderId,
@@ -578,6 +611,7 @@ export async function POST(
       p_invoice_number: Number(order.invoice_number),
       p_created_by: auth.user.id,
       p_items: selectedItems,
+      p_operation_type: operationType,
     })
     .maybeSingle()
 

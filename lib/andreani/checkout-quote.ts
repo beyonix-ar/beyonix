@@ -13,6 +13,7 @@ import {
   normalizeArgentineProvinceKey,
 } from "../validation/account-fields.ts"
 import { canonicalizeCheckoutQuoteItems } from "../cart/checkout-shipping-items.ts"
+import { getCheckoutOrderItemUnitPrice } from "../orders/conditioned-checkout.ts"
 
 import {
   AndreaniClient,
@@ -400,10 +401,19 @@ async function loadCheckoutItems(
     }
 
     return {
-      product,
+      product: {
+        ...product,
+        precio: getCheckoutOrderItemUnitPrice(
+          product.id,
+          product.precio,
+          conditioned,
+        ),
+      },
       variant,
       quantity: item.quantity,
-      discountPercent: conditioned ? Number(conditioned.discount_percent) || 0 : 0,
+      // El precio ya quedó normalizado con la misma fuente de verdad que se
+      // persiste en orden_items; no se debe aplicar el descuento otra vez.
+      discountPercent: 0,
     }
   })
 }

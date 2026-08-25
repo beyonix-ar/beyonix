@@ -289,6 +289,15 @@ export interface SupabasePedido {
   andreani_etiqueta_url?: string | null
   andreani_costo?: number | null
   andreani_error?: string | null
+  andreani_contrato?: string | null
+  andreani_creation_status?: "claimed" | "created" | "failed" | "rejected" | "reconciliation_required" | null
+  andreani_creation_environment?: "QA" | "PROD" | null
+  andreani_creation_claim_token?: string | null
+  andreani_creation_claimed_at?: string | null
+  andreani_creation_attempts?: number | null
+  andreani_created_at?: string | null
+  andreani_tracking_checked_at?: string | null
+  andreani_tracking_event_at?: string | null
   order_change_used?: boolean | null
   order_change_status?: "change_requested" | "change_approved" | "extra_payment_pending" | "rejected" | null
   order_change_extra_amount?: number | null

@@ -945,6 +945,46 @@ test("rechaza una respuesta incompleta del cotizador", async () => {
   )
 })
 
+test("shipment-read habilita solo consultas operativas PROD ya autenticadas", async () => {
+  resetAndreaniRuntimeStateForTests()
+  const requestedPaths: string[] = []
+  const client = new AndreaniClient({
+    env: {
+      NODE_ENV: "test",
+      ANDREANI_ENV: "PROD",
+      ANDREANI_PROD_API_URL: "https://apis.andreani.com",
+      ANDREANI_PROD_USERNAME: "usuario-prod-prueba",
+      ANDREANI_PROD_PASSWORD: "clave-prod-prueba",
+    },
+    productionAccess: "shipment-read",
+    fetch: async (input) => {
+      const path = new URL(String(input)).pathname
+      requestedPaths.push(path)
+      if (path === "/login") return Response.json({ token: "token-prod-read" })
+      if (path.endsWith("/etiquetas")) {
+        return new Response(new Uint8Array([37, 80, 68, 70]), {
+          headers: { "content-type": "application/pdf" },
+        })
+      }
+      return Response.json(officialTrackingV3Response)
+    },
+  })
+
+  await client.getTrackingPullV3("360000044179430")
+  await client.getEtiquetas("API0000000428931")
+  await assert.rejects(
+    () => client.getLocalidades({ codigosPostales: "3013" }),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
+  )
+
+  assert.deepEqual(requestedPaths, [
+    "/login",
+    "/v3/envios/360000044179430/trazas",
+    "/v2/ordenes-de-envio/API0000000428931/etiquetas",
+  ])
+})
+
 test("serializa una orden B2C según el ejemplo oficial", async () => {
   resetAndreaniRuntimeStateForTests()
   let requestBody = ""

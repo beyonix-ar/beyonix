@@ -296,20 +296,17 @@ Nunca afirmar que una integración funciona si no fue verificada.
 
 ---
 
-# Andreani — congelado temporalmente
+# Andreani
 
-La integración con Andreani está deliberadamente incompleta.
+La integración con Andreani tiene implementados cotización, creación B2C idempotente,
+consulta, tracking y etiqueta (`lib/andreani/`, `app/api/andreani/*`,
+`app/api/admin/integrations/andreani/*`). El circuito PROD y la compatibilidad real de
+credenciales/contrato/sucursal deben considerarse pendientes de una prueba manual controlada:
+la presencia de variables no demuestra que Andreani acepte esa combinación.
 
-Hasta nueva indicación:
-
-* NO continuar su implementación.
-* NO habilitar creación automática de envíos.
-* NO habilitar tracking.
-* NO rediseñar la integración.
-* NO completar funcionalidades faltantes.
-* NO modificar su comportamiento actual salvo que sea estrictamente necesario para evitar que rompa otra funcionalidad.
-
-Si una tarea toca indirectamente Andreani, preservar su estado actual.
+La separación de ambientes QA/PROD (endpoint, credenciales, contrato y autorización de creación
+en PROD) es la fuente de verdad — nunca mezclar variables de distintos ambientes ni hardcodear
+un número de contrato.
 
 ---
 
