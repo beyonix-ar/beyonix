@@ -14,6 +14,7 @@ import {
   normalizeCheckoutQuoteRequest,
   quoteAndreaniCheckout,
   resetAndreaniCheckoutQuoteStateForTests,
+  resolveVerifiedAndreaniBranch,
   roundShippingCostToNearestThousand,
   type LoadedCheckoutQuoteItem,
 } from "./checkout-quote.ts"
@@ -584,8 +585,115 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
   })
   assert.deepEqual(options, [
     { type: "domicilio", price: 14_000 },
-    { type: "sucursal", price: 13_000 },
+    {
+      type: "sucursal",
+      price: 13_000,
+      // Las sucursales reales ya consultadas para decidir si ofrecer la
+      // modalidad ahora se exponen -- antes se descartaban después del
+      // chequeo de existencia, dejando al checkout sin ningún dato real
+      // para que el cliente eligiera una sucursal concreta.
+      branches: officialBranchResponse,
+    },
   ])
+})
+
+test("resolveVerifiedAndreaniBranch: id real elegido por el cliente -> snapshot canónico persistible", async () => {
+  const branch = await resolveVerifiedAndreaniBranch("3000", 10055, {
+    env: {
+      ...qaQuoteEnvironment(),
+      ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+    },
+    getBranches: async () => officialBranchResponse,
+  })
+
+  assert.deepEqual(branch, {
+    id: "10055",
+    codigo: "SFN",
+    nombre: "SANTA FE (CENTRO)",
+    direccion: "25 de Mayo 3340",
+    localidad: "Santa Fe",
+    provincia: "Santa Fe",
+    codigoPostal: "3000",
+  })
+})
+
+test("resolveVerifiedAndreaniBranch: un id inventado/manipulado (no está en la lista real) se rechaza", async () => {
+  await assert.rejects(
+    () =>
+      resolveVerifiedAndreaniBranch("3000", 99999, {
+        env: {
+          ...qaQuoteEnvironment(),
+          ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+        },
+        getBranches: async () => officialBranchResponse,
+      }),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+  )
+})
+
+test("resolveVerifiedAndreaniBranch: nunca confía en nombre/dirección mandados por el cliente -- sólo usa lo que devuelve Andreani", async () => {
+  // El propio tipo de entrada no acepta nombre/dirección -- esta prueba
+  // documenta esa garantía: pase lo que pase en el "id", el resultado sale
+  // siempre de officialBranchResponse.
+  const branch = await resolveVerifiedAndreaniBranch("3000", "10055", {
+    env: {
+      ...qaQuoteEnvironment(),
+      ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+    },
+    getBranches: async () => officialBranchResponse,
+  })
+
+  assert.equal(branch.nombre, "SANTA FE (CENTRO)")
+  assert.equal(branch.direccion, "25 de Mayo 3340")
+})
+
+test("resolveVerifiedAndreaniBranch: sin contrato de sucursal configurado, rechaza sin consultar sucursales", async () => {
+  let called = false
+
+  await assert.rejects(
+    () =>
+      resolveVerifiedAndreaniBranch("3000", 10055, {
+        env: qaQuoteEnvironment(),
+        getBranches: async () => {
+          called = true
+          return officialBranchResponse
+        },
+      }),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+  )
+  assert.equal(called, false)
+})
+
+test("resolveVerifiedAndreaniBranch: CP o id inválidos se rechazan sin llamar a Andreani", async () => {
+  const env = {
+    ...qaQuoteEnvironment(),
+    ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+  }
+
+  for (const [cp, id] of [
+    ["abc", 10055],
+    ["300", 10055],
+    ["3000", 0],
+    ["3000", -1],
+    ["3000", "no-numero"],
+  ] as const) {
+    let called = false
+    await assert.rejects(
+      () =>
+        resolveVerifiedAndreaniBranch(cp, id, {
+          env,
+          getBranches: async () => {
+            called = true
+            return officialBranchResponse
+          },
+        }),
+      (error: unknown) =>
+        error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+    )
+    assert.equal(called, false)
+  }
 })
 
 test("bloquea Tierra del Fuego con CP 9400 antes de acceder al carrito", async () => {

@@ -100,7 +100,10 @@ import {
   normalizeArgentineLocality,
   normalizeArgentineLocationKey,
 } from "@/lib/validation/account-fields"
-import { ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE } from "@/lib/andreani/types"
+import {
+  ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
+  type AndreaniBranch,
+} from "@/lib/andreani/types"
 import {
   buildShippingQuoteKey,
   CheckoutCatalogError,
@@ -286,6 +289,8 @@ interface ShippingOption {
   quoteToken: string
   provider: "andreani"
   quoteStatus: "quoted" | "pending"
+  /** Sucursales Andreani reales disponibles para el destino cotizado. Sólo presente en la opción "sucursal". */
+  branches?: AndreaniBranch[]
 }
 
 interface CheckoutStoreBenefit {
@@ -422,6 +427,8 @@ export default function CheckoutPage() {
   ] = useState<ShippingType | null>(null)
   const [shippingOptions, setShippingOptions] =
     useState<ShippingOption[]>([])
+  const [selectedSucursalId, setSelectedSucursalId] =
+    useState<number | null>(null)
   const [currentStep, setCurrentStep] =
     useState<CheckoutStep>(1)
   const [invalidField, setInvalidField] =
@@ -939,6 +946,7 @@ export default function CheckoutPage() {
       setShippingQuoteCurrent(false)
       setShippingOptions([])
       setSelectedShippingType(null)
+      setSelectedSucursalId(null)
       setShippingMessageTone("info")
       setShippingMessage(
         !payload.provincia
@@ -954,6 +962,7 @@ export default function CheckoutPage() {
       setShippingQuoteCurrent(false)
       setShippingOptions([])
       setSelectedShippingType(null)
+      setSelectedSucursalId(null)
       setShippingMessage("")
       return
     }
@@ -977,6 +986,7 @@ export default function CheckoutPage() {
           quoteToken: option.quoteToken,
           provider: "andreani" as const,
           quoteStatus: "quoted" as const,
+          branches: option.type === "sucursal" ? option.branches : undefined,
         }]
       })
       if (!options.length) {
@@ -985,6 +995,16 @@ export default function CheckoutPage() {
 
       setShippingOptions(options)
       setShippingQuoteCurrent(true)
+      // El destino pudo haber cambiado: si la sucursal elegida antes ya no
+      // está en la lista real recién cotizada, se descarta -- nunca se
+      // arrastra una sucursal de otro destino.
+      const branchOption = options.find((option) => option.type === "sucursal")
+      setSelectedSucursalId((current) =>
+        current !== null &&
+        branchOption?.branches?.some((branch) => branch.id === current)
+          ? current
+          : null,
+      )
       setSelectedShippingType((current) =>
         current && options.some((option) => option.type === current)
           ? current
@@ -1187,7 +1207,8 @@ export default function CheckoutPage() {
       selectedShippingOption &&
         shippingQuoteCurrent &&
         !shippingLoading &&
-        isDestinationQuotable,
+        isDestinationQuotable &&
+        (selectedShippingType !== "sucursal" || selectedSucursalId !== null),
     )
   const isFormValid = Boolean(
     areCriticalCheckoutStatesReady &&
@@ -1318,6 +1339,10 @@ export default function CheckoutPage() {
             provider: selectedShippingOption.provider,
             type: selectedShippingOption.type,
             quoteToken: selectedShippingOption.quoteToken,
+            sucursalId:
+              selectedShippingOption.type === "sucursal"
+                ? selectedSucursalId
+                : undefined,
           },
           storeBenefitId: selectedStoreBenefit?.id ?? null,
           paymentMethodId: selectedPayment || "customer_credit",
@@ -2012,6 +2037,81 @@ export default function CheckoutPage() {
                       )
                     })}
                   </div>
+
+                  {selectedShippingType === "sucursal" && hasAndreaniQuote && (
+                    <div
+                      className={cn(
+                        "space-y-2.5 rounded-2xl border p-4 transition-shadow",
+                        shippingSelectionMissing && !selectedSucursalId
+                          ? "border-red-400/40 shadow-[0_0_0_2px_rgba(248,113,113,0.12)]"
+                          : "border-beyonix-blue-light/16",
+                      )}
+                    >
+                      <p className="text-sm font-semibold text-white">
+                        Elegí la sucursal Andreani donde vas a retirar tu pedido
+                      </p>
+                      {!selectedShippingOption?.branches?.length ? (
+                        <p className="text-xs text-white/55">
+                          No encontramos sucursales disponibles para este destino.
+                        </p>
+                      ) : (
+                        <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+                          {selectedShippingOption.branches.map((branch) => {
+                            const branchSelected = selectedSucursalId === branch.id
+
+                            return (
+                              <button
+                                key={branch.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSucursalId(branch.id)
+                                  setShippingSelectionMissing(false)
+                                }}
+                                className={cn(
+                                  "flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
+                                  branchSelected
+                                    ? "border-beyonix-sky/50 bg-beyonix-blue/30"
+                                    : "border-white/8 bg-black/20 hover:border-white/20",
+                                )}
+                              >
+                                <span className="flex w-full items-center justify-between gap-2">
+                                  <span className="text-sm font-semibold text-white">
+                                    {branch.descripcion}
+                                  </span>
+                                  {branchSelected && (
+                                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue/50 text-beyonix-sky">
+                                      <Check className="size-3" />
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="text-xs text-white/60">
+                                  {branch.direccion.calle} {branch.direccion.numero}
+                                </span>
+                                <span className="text-xs text-white/45">
+                                  {branch.direccion.localidad}, {branch.direccion.provincia} · CP {branch.direccion.codigoPostal}
+                                </span>
+                                {branch.horarioDeAtencion && (
+                                  <span className="text-11px text-white/40">
+                                    {branch.horarioDeAtencion}
+                                  </span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {selectedSucursalId !== null && (
+                        <p className="text-xs font-semibold text-beyonix-sky">
+                          Sucursal seleccionada:{" "}
+                          {
+                            selectedShippingOption?.branches?.find(
+                              (branch) => branch.id === selectedSucursalId,
+                            )?.descripcion
+                          }
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {shippingMessage && (
                     <CheckoutNotice tone={shippingMessageTone}>

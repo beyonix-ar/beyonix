@@ -305,6 +305,16 @@ export async function PATCH(
     )
   }
 
+  if (
+    (estado === "pagado" || DISPATCHED_ORDER_STATUSES.includes(estado)) &&
+    !isOrderPaymentConfirmed(currentOrder)
+  ) {
+    return NextResponse.json(
+      { error: "El pedido no tiene evidencia financiera de pago confirmado." },
+      { status: 409 },
+    )
+  }
+
   if (DISPATCHED_ORDER_STATUSES.includes(estado)) {
     if (
       ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(

@@ -45,8 +45,10 @@ import {
   OrderProductFeedback,
   OrderProgressTimeline,
   PaymentProofViewButton,
+  TrackingCopyButton,
 } from "@/components/account/account-order-components"
 import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
+import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
 import { CustomerClaimExperience } from "@/components/claims/customer-claim-experience"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
@@ -84,8 +86,6 @@ type ProfileView =
   | "datos"
   | "seguridad"
 
-const ACCOUNT_ORDER_SELECT =
-  "*, orden_items(id, orden_id, producto_id, variante_id, conditioned_stock_id, conditioned_name, conditioned_sku, conditioned_color_hex, conditioned_images, conditioned_discount_percent, conditioned_reason, cantidad, precio, productos(*), producto_variantes(*)), order_claims(*, order_claim_files(*), order_claim_messages(*))"
 const CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES = [
   "pendiente_comprobante",
   "en_revision",
@@ -108,7 +108,7 @@ function isOrderDetailDispatched(order: SupabasePedido) {
       "devuelto_beyonix",
       "entregado",
     ].includes(status) ||
-    Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
+    Boolean(order.tracking_number || order.andreani_tracking) ||
     ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some((value) =>
       andreaniStatus.includes(value),
     )
@@ -1420,21 +1420,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const loadedOrderIdRef = useRef<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [downloadingInvoice, setDownloadingInvoice] = useState(false)
   const [downloadingCreditNote, setDownloadingCreditNote] = useState(false)
   const [refundProofOpening, setRefundProofOpening] = useState(false)
   const [refundProofError, setRefundProofError] = useState("")
-  const [trackingCopied, setTrackingCopied] = useState(false)
-
-  async function copyTrackingNumber(value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      setTrackingCopied(true)
-      window.setTimeout(() => setTrackingCopied(false), 1800)
-    } catch {
-      setError("No pudimos copiar el número. Seleccionalo manualmente.")
-    }
-  }
+  const [invoiceViewerOpen, setInvoiceViewerOpen] = useState(false)
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" })
@@ -1457,40 +1446,27 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     async function loadOrder() {
       if (loadedOrderIdRef.current !== orderId) setLoading(true)
       setError("")
-      const { data, error: orderError } = await supabase
-        .from("ordenes")
-        .select(ACCOUNT_ORDER_SELECT)
-        .eq("id", orderId)
-        .maybeSingle()
+      const response = await fetch(`/api/orders/${orderId}`, {
+        cache: "no-store",
+      })
 
       if (!active) return
 
-      if (orderError || !data) {
-        setError("No encontramos esta compra.")
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+        setError(result?.error || "No encontramos esta compra.")
         setLoading(false)
         return
       }
 
-      const currentOrder = data as SupabasePedido
-      const userValues = [authenticatedUserId, authenticatedUserEmail]
-        .filter(Boolean)
-        .map((value) => String(value).trim().toLowerCase())
-      const orderValues = [currentOrder.usuario_id, currentOrder.cliente_email]
-        .filter(Boolean)
-        .map((value) => String(value).trim().toLowerCase())
-
-      if (!orderValues.some((value) => userValues.includes(value))) {
-        setError("No tenés acceso a esta compra.")
-        setLoading(false)
-        return
-      }
+      const result = (await response.json()) as { order: SupabasePedido }
+      const currentOrder = result.order
 
       setOrder({
         ...currentOrder,
-        order_claims:
-          currentOrder.order_claims && currentOrder.order_claims.length > 0
-            ? currentOrder.order_claims
-            : await getOrderClaims(currentOrder.id),
+        order_claims: await getOrderClaims(currentOrder.id),
       })
       loadedOrderIdRef.current = currentOrder.id
       setLoading(false)
@@ -1504,28 +1480,21 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     setOrder((current) => current ? { ...current, ...updatedOrder, orden_items: current.orden_items } : current)
   }
 
-  const handleDownloadInvoice = async (documentType: "invoice" | "credit_note" = "invoice") => {
+  const handleDownloadCreditNote = async () => {
     if (!order) return
-    const isCreditNote = documentType === "credit_note"
-    if (isCreditNote) {
-      setDownloadingCreditNote(true)
-    } else {
-      setDownloadingInvoice(true)
-    }
+    setDownloadingCreditNote(true)
     setError("")
     try {
-      const response = await fetch(
-        `/api/orders/${order.id}/invoice${isCreditNote ? "?type=credit_note" : ""}`,
-      )
+      const response = await fetch(`/api/orders/${order.id}/invoice?type=credit_note`)
       if (!response.ok) {
         const data = (await response.json()) as { error?: string }
-        throw new Error(data.error || `No se pudo descargar ${isCreditNote ? "la nota de crédito" : "la factura"}.`)
+        throw new Error(data.error || "No se pudo descargar la nota de crédito.")
       }
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement("a")
       anchor.href = url
-      anchor.download = isCreditNote ? "Nota-Credito-BEYONIX.pdf" : "Factura-BEYONIX.pdf"
+      anchor.download = "Nota-Credito-BEYONIX.pdf"
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
@@ -1534,14 +1503,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       setError(
         downloadError instanceof Error
           ? downloadError.message
-          : `No se pudo descargar ${isCreditNote ? "la nota de crédito" : "la factura"}.`,
+          : "No se pudo descargar la nota de crédito.",
       )
     } finally {
-      if (isCreditNote) {
-        setDownloadingCreditNote(false)
-      } else {
-        setDownloadingInvoice(false)
-      }
+      setDownloadingCreditNote(false)
     }
   }
 
@@ -1614,15 +1579,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const orderTracking = resolveOrderTrackingLink(order)
   const trackingNumber = orderTracking.trackingNumber ?? ""
   const trackingUrl = orderTracking.url
-  const rawShippingProvider = (
-    order.envio_proveedor ||
-    order.shipping_provider ||
-    ""
-  ).trim()
-  const shippingProvider =
-    rawShippingProvider.toLowerCase() === "andreani"
-      ? "Andreani"
-      : rawShippingProvider
   const showClaimHelp = canShowOrderClaimHelp(order)
   const existingClaim = orderDelivered
     ? getLatestFormalCustomerClaim(order.order_claims)
@@ -1799,7 +1755,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             type="button"
                             aria-label="Descargar nota de crédito"
                             disabled={downloadingCreditNote}
-                            onClick={() => void handleDownloadInvoice("credit_note")}
+                            onClick={() => void handleDownloadCreditNote()}
                             className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3 text-xs font-medium text-white transition disabled:cursor-wait disabled:opacity-60")}
                           >
                             <Download className="size-3.5" />
@@ -1885,17 +1841,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-x-6 gap-y-3">
                 <h1 className="text-xl font-black text-white sm:text-2xl">Pedido #{formatPublicOrderId(order.id)}</h1>
                 {invoiceAvailable && (
                   <button
                     type="button"
-                    disabled={downloadingInvoice}
-                    onClick={() => void handleDownloadInvoice()}
+                    onClick={() => setInvoiceViewerOpen(true)}
                     className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60")}
                   >
-                    <Download className="size-3.5" />
-                    {downloadingInvoice ? "Preparando..." : "Ver factura"}
+                    Ver factura
                   </button>
                 )}
               </div>
@@ -1938,15 +1892,58 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </div>
             </section>
 
+            {order.shipping_type === "sucursal" && (
+              <section className="customer-order-branch-delivery rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-white">
+                  Entrega: Sucursal Andreani
+                </h2>
+                {order.andreani_sucursal_nombre ? (
+                  <dl className="mt-3 space-y-2.5 text-xs">
+                    <div>
+                      <dt className="text-9px font-semibold uppercase tracking-widest text-white/40">
+                        Sucursal
+                      </dt>
+                      <dd className="mt-0.5 text-sm font-semibold text-white">
+                        {order.andreani_sucursal_nombre}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-9px font-semibold uppercase tracking-widest text-white/40">
+                        Dirección
+                      </dt>
+                      <dd className="mt-0.5 text-sm font-medium text-white/80">
+                        {[
+                          order.andreani_sucursal_direccion,
+                          order.andreani_sucursal_localidad,
+                          order.andreani_sucursal_provincia,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")}
+                        {order.andreani_sucursal_cp
+                          ? ` (CP ${order.andreani_sucursal_cp})`
+                          : ""}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-xs font-medium text-amber-200/85">
+                    Falta seleccionar/persistir la sucursal Andreani de este
+                    pedido. Escribinos si necesitás confirmar el punto de
+                    retiro.
+                  </p>
+                )}
+              </section>
+            )}
+
             {(showPaymentProofSection || !orderDelivered) && (
-              <section className="customer-order-management rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
+              <section className="customer-order-management relative flex flex-col rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
                 <h2 className="text-sm font-bold text-white">
                   Gestión del pedido
                 </h2>
 
                 <div
                   className={cn(
-                    "mt-3 grid gap-3",
+                    "mt-3 grid flex-1 content-center gap-3",
                     showPaymentProofSection && !orderDelivered
                       ? "sm:grid-cols-2 sm:divide-x sm:divide-beyonix-gray-700"
                       : "grid-cols-1",
@@ -2003,42 +2000,37 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   {!orderDelivered && (
                     <div
                       className={cn(
-                        "flex min-w-0 flex-col",
+                        "flex min-w-0 flex-col justify-center",
                         showPaymentProofSection &&
                           "border-t border-beyonix-gray-700 pt-3 sm:border-t-0 sm:pt-0 sm:pl-3",
                       )}
                     >
-                      <p className="text-xs font-bold text-white">
-                        Seguimiento
-                      </p>
-                      {shippingProvider && (
-                        <p className="mt-0.5 text-xs font-semibold text-white">
-                          {shippingProvider}
-                        </p>
-                      )}
-                      <div className="mt-0.5 flex items-center gap-1.5">
-                        <p className="text-xs font-medium text-beyonix-gray-500">
-                          {trackingNumber
-                            ? `Código: ${trackingNumber}`
-                            : "Disponible después del despacho."}
-                        </p>
-                        {trackingNumber && (
-                          <button
-                            type="button"
-                            onClick={() => void copyTrackingNumber(trackingNumber)}
-                            aria-label="Copiar número de seguimiento"
-                            title={trackingCopied ? "Copiado" : "Copiar seguimiento"}
-                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-beyonix-gray-500 transition-colors hover:text-white"
-                          >
-                            {trackingCopied ? (
-                              <CheckCircle2 className="size-3.5" />
-                            ) : (
-                              <Copy className="size-3.5" />
-                            )}
-                          </button>
+                      <div
+                        className={cn(
+                          "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
+                          !showPaymentProofSection && "sm:pr-56",
                         )}
-                      </div>
-                      <div className="pt-3">
+                      >
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                          <span className="text-xs font-normal text-white">
+                            Número de seguimiento:
+                          </span>
+                          {trackingNumber ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="break-all text-sm font-semibold text-white">
+                                {trackingNumber}
+                              </span>
+                              <TrackingCopyButton
+                                trackingNumber={trackingNumber}
+                                className="text-white"
+                              />
+                            </span>
+                          ) : (
+                            <span className="text-sm font-semibold text-white">
+                              Disponible después del despacho.
+                            </span>
+                          )}
+                        </div>
                         {trackingUrl ? (
                           <a
                             href={trackingUrl}
@@ -2048,7 +2040,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             title="Ver seguimiento"
                             className={cn(
                               beyonixHoverBorder,
-                              "inline-flex h-9 w-full cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500",
+                              "inline-flex h-9 shrink-0 cursor-pointer items-center justify-center self-center rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500",
+                              !showPaymentProofSection &&
+                                "sm:absolute sm:inset-y-0 sm:right-4 sm:my-auto sm:self-auto",
                             )}
                           >
                             Ver seguimiento
@@ -2059,7 +2053,11 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             aria-label="Seguimiento no disponible"
                             title="Seguimiento no disponible"
                             disabled
-                            className="inline-flex h-9 w-full cursor-not-allowed items-center justify-center rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900 px-4 text-xs font-black text-beyonix-gray-500 opacity-75"
+                            className={cn(
+                              "inline-flex h-9 shrink-0 cursor-not-allowed items-center justify-center self-center rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900 px-4 text-xs font-black text-beyonix-gray-500 opacity-75",
+                              !showPaymentProofSection &&
+                                "sm:absolute sm:inset-y-0 sm:right-4 sm:my-auto sm:self-auto",
+                            )}
                           >
                             Seguimiento no disponible
                           </button>
@@ -2162,6 +2160,13 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
         </div>
       </div>
 
+      {invoiceViewerOpen && (
+        <InvoiceViewerModal
+          title="Factura"
+          orderId={order.id}
+          onClose={() => setInvoiceViewerOpen(false)}
+        />
+      )}
     </main>
   )
 }
@@ -2196,37 +2201,24 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
 
     async function loadOrder() {
       if (loadedOrderIdRef.current !== orderId) setLoading(true)
-      const { data, error: orderError } = await supabase
-        .from("ordenes")
-        .select(ACCOUNT_ORDER_SELECT)
-        .eq("id", orderId)
-        .maybeSingle()
+      const response = await fetch(`/api/orders/${orderId}`, {
+        cache: "no-store",
+      })
 
       if (!active) return
-      if (orderError || !data) {
-        setError("No encontramos esta compra.")
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+        setError(result?.error || "No encontramos esta compra.")
         setLoading(false)
         return
       }
 
-      const currentOrder = data as SupabasePedido
-      const userValues = [authenticatedUserId, authenticatedUserEmail]
-        .filter(Boolean)
-        .map((value) => String(value).trim().toLowerCase())
-      const orderValues = [currentOrder.usuario_id, currentOrder.cliente_email]
-        .filter(Boolean)
-        .map((value) => String(value).trim().toLowerCase())
+      const result = (await response.json()) as { order: SupabasePedido }
+      const currentOrder = result.order
 
-      if (!orderValues.some((value) => userValues.includes(value))) {
-        setError("No tenés acceso a esta compra.")
-        setLoading(false)
-        return
-      }
-
-      const currentClaims =
-        currentOrder.order_claims && currentOrder.order_claims.length > 0
-          ? currentOrder.order_claims
-          : await getOrderClaims(currentOrder.id)
+      const currentClaims = await getOrderClaims(currentOrder.id)
 
       if (!active) return
 

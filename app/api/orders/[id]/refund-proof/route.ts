@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { PAYMENT_PROOF_BUCKET } from "@/lib/payments/transfer"
+import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -33,7 +34,7 @@ export async function GET(
   const admin = createAdminClient()
   const { data: order, error } = await admin
     .from("ordenes")
-    .select("id, usuario_id, refund_proof_url, refund_proof_file_name")
+    .select("id, usuario_id, cliente_email, refund_proof_url, refund_proof_file_name")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -41,7 +42,7 @@ export async function GET(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (order.usuario_id !== user.id) {
+  if (!isCustomerOrderOwner(order, user)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 

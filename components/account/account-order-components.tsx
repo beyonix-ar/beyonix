@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useEffect, useState } from "react"
-import { Bell, Check, Copy, ExternalLink, Package, Sparkles, Star } from "lucide-react"
+import { Check, Copy, ExternalLink, Package, Sparkles, Star } from "lucide-react"
 
 import { BeyonixButton } from "@/components/account/account-ui"
 import { supabase } from "@/lib/supabase/client"
@@ -12,10 +12,8 @@ import {
   getOrderProgressSteps,
   type OrderProgressTone,
 } from "@/lib/account/account-utils"
-import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
-export const DOWNLOADED_INVOICES_STORAGE_KEY = "beyonix:downloaded-invoices"
 const REVIEW_ACTION_PLACEHOLDER_CLASS =
   "h-8 w-40 shrink-0 animate-pulse rounded-lg bg-beyonix-gray-700"
 
@@ -70,16 +68,6 @@ function ReviewRatingSelector({
         )
       })}
     </div>
-  )
-}
-
-export function CustomerInvoiceBell() {
-  return (
-    <span
-      className="inline-flex size-5 items-center justify-center rounded-full border border-red-300/45 bg-red-500 text-white shadow-lg shadow-red-950/35"
-    >
-      <Bell className="size-3" />
-    </span>
   )
 }
 
@@ -191,14 +179,21 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
   )
 }
 
-export function OrderTrackingPanel({ order }: { order: SupabasePedido }) {
+/**
+ * Botón de copia canónico para números de seguimiento. Recibe siempre el
+ * tracking real del pedido (nunca un valor fijo) para que Mis compras, el
+ * detalle de pedido y este panel compartan la misma lógica de portapapeles.
+ */
+export function TrackingCopyButton({
+  trackingNumber,
+  className = "",
+}: {
+  trackingNumber: string
+  className?: string
+}) {
   const [copied, setCopied] = useState(false)
-  const { trackingNumber, url: trackingUrl } = resolveOrderTrackingLink(order)
-
-  if (!trackingNumber && !trackingUrl) return null
 
   async function copyTrackingNumber() {
-    if (!trackingNumber) return
     try {
       await navigator.clipboard.writeText(trackingNumber)
       setCopied(true)
@@ -210,45 +205,18 @@ export function OrderTrackingPanel({ order }: { order: SupabasePedido }) {
   }
 
   return (
-    <div className="mb-3 rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/12 p-2.5">
-      <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-        Seguimiento del envío
-      </p>
-      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-white/45">
-            Número de seguimiento
-          </p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <p className="break-all text-sm font-black text-white">
-              {trackingNumber || "Pendiente"}
-            </p>
-            {trackingNumber && (
-              <button
-                type="button"
-                onClick={() => void copyTrackingNumber()}
-                aria-label="Copiar número de seguimiento"
-                title={copied ? "Copiado" : "Copiar seguimiento"}
-                className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-white/45 transition-colors hover:text-white"
-              >
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              </button>
-            )}
-          </div>
-        </div>
-        {trackingUrl && (
-          <BeyonixButton asChild size="sm" className="shrink-0 self-center">
-            <a
-              href={trackingUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Ver seguimiento
-            </a>
-          </BeyonixButton>
-        )}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={() => void copyTrackingNumber()}
+      aria-label="Copiar número de seguimiento"
+      title={copied ? "Copiado" : "Copiar seguimiento"}
+      className={cn(
+        "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-white/45 transition-colors hover:text-white",
+        className,
+      )}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
   )
 }
 

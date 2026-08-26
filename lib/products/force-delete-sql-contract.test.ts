@@ -27,6 +27,18 @@ const fix = readFileSync(
   ),
   "utf8",
 )
+const latestProductFix = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260820200000_force_delete_disables_catalog_relink_trigger.sql",
+    import.meta.url,
+  ),
+  "utf8",
+)
+const purchaseDefinition = fix.slice(
+  fix.indexOf(
+    "create or replace function public.force_delete_purchase_super_admin(",
+  ),
+)
 
 function countOccurrences(source: string, pattern: RegExp) {
   return (source.match(pattern) ?? []).length
@@ -42,18 +54,25 @@ test("no elimina ni recrea estructura de tablas/índices", () => {
 
 test("define las tres RPC de eliminación forzada como security definer", () => {
   assert.match(
-    fix,
+    latestProductFix,
     /create or replace function public\.force_delete_product_super_admin\(/,
   )
   assert.match(
-    fix,
+    latestProductFix,
     /create or replace function public\.force_delete_product_variant_super_admin\(/,
   )
   assert.match(
     fix,
     /create or replace function public\.force_delete_purchase_super_admin\(/,
   )
-  assert.equal(countOccurrences(fix, /language plpgsql\nsecurity definer/g), 3)
+  assert.equal(
+    countOccurrences(latestProductFix, /language plpgsql\r?\nsecurity definer/g),
+    2,
+  )
+  assert.equal(
+    countOccurrences(purchaseDefinition, /language plpgsql\r?\nsecurity definer/g),
+    1,
+  )
 })
 
 test("force_delete_product(_variant)_super_admin sólo son ejecutables por service_role", () => {
@@ -269,12 +288,14 @@ test("audita la eliminación forzada en audit_logs con una acción válida para 
   // audit_logs.action sólo admite 'INSERT' | 'UPDATE' | 'DELETE'
   // (supabase/sql/020_roles_and_permissions.sql). 'FORCE_DELETE' viola ese
   // constraint y aborta la transacción completa: no puede reaparecer.
-  assert.doesNotMatch(fix, /\n\s*'FORCE_DELETE',\n/)
-  assert.equal(countOccurrences(fix, /\n\s*'DELETE',\n/g), 3)
-  assert.match(fix, /p_actor_id,\s*\n\s*jsonb_build_object\('nombre', v_variant_name/)
-  assert.match(fix, /p_actor_id,\s*\n\s*jsonb_build_object\('nombre', v_product_name\)/)
+  assert.doesNotMatch(latestProductFix, /\r?\n\s*'FORCE_DELETE',\r?\n/)
+  assert.doesNotMatch(purchaseDefinition, /\r?\n\s*'FORCE_DELETE',\r?\n/)
+  assert.equal(countOccurrences(latestProductFix, /\r?\n\s*'DELETE',\r?\n/g), 2)
+  assert.equal(countOccurrences(purchaseDefinition, /\r?\n\s*'DELETE',\r?\n/g), 1)
+  assert.match(latestProductFix, /p_actor_id,\s*\n\s*jsonb_build_object\('nombre', v_variant_name/)
+  assert.match(latestProductFix, /p_actor_id,\s*\n\s*jsonb_build_object\('nombre', v_product_name\)/)
   assert.equal(
-    countOccurrences(fix, /jsonb_build_object\('reason', 'super_admin_force_delete'\)/g),
+    countOccurrences(latestProductFix, /jsonb_build_object\('reason', 'super_admin_force_delete'\)/g),
     2,
   )
 })

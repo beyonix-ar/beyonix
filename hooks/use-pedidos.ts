@@ -13,7 +13,6 @@ import type {
 
 import {
   getPedidos,
-  deletePedido,
   updatePedidoEstado,
   type UpdatePedidoStatusDetails,
 } from "@/lib/supabase/queries/pedidos"
@@ -127,32 +126,6 @@ export function usePedidos({ orderId }: { orderId?: number } = {}) {
   }, [loadPedidos])
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Delete
-  // ───────────────────────────────────────────────────────────────────────────
-
-  const removePedido =
-    useCallback(
-      async (id: number) => {
-        try {
-          await deletePedido(id)
-
-          setPedidos((prev) =>
-            prev.filter(
-              (p) => p.id !== id
-            )
-          )
-
-          return true
-        } catch (err) {
-          console.warn("DELETE_PEDIDO_ERROR", err)
-
-          return false
-        }
-      },
-      []
-    )
-
-  // ───────────────────────────────────────────────────────────────────────────
   // Update estado
   // ───────────────────────────────────────────────────────────────────────────
 
@@ -208,9 +181,6 @@ export function usePedidos({ orderId }: { orderId?: number } = {}) {
 
     reloadPedidos:
       loadPedidos,
-
-    deletePedido:
-      removePedido,
 
     updatePedidoEstado:
       updateEstado,

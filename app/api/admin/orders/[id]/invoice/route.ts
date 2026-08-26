@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { buildArcaQrUrl } from "@/lib/arca/qr"
 import {
   ArcaWsError,
@@ -98,31 +99,6 @@ function invoiceProcessingErrorResponse(message?: string) {
   )
 }
 
-function isPaymentConfirmed(order: {
-  estado?: string | null
-  payment_status?: string | null
-  paid_at?: string | null
-  payment_confirmed_amount?: number | string | null
-}) {
-  return (
-    Boolean(order.paid_at) ||
-    Number(order.payment_confirmed_amount ?? 0) > 0 ||
-    ["confirmado", "approved", "confirmed"].includes(order.payment_status ?? "") ||
-    [
-      "pagado",
-      "enviado",
-      "en_camino",
-      "visita_fallida",
-      "en_sucursal",
-      "retiro_pendiente",
-      "retiro_vencido",
-      "en_devolucion",
-      "devuelto_beyonix",
-      "entregado",
-    ].includes(order.estado ?? "")
-  )
-}
-
 function isCancellationFlow(order: {
   estado?: string | null
   financial_status?: string | null
@@ -165,7 +141,7 @@ export async function POST(
     return NextResponse.json({ error: "La orden ya está facturada." }, { status: 409 })
   }
 
-  if (!isPaymentConfirmed(order)) {
+  if (!isOrderPaymentConfirmed(order)) {
     return NextResponse.json(
       { error: "La orden no tiene un pago confirmado." },
       { status: 400 },
@@ -180,14 +156,6 @@ export async function POST(
     )
   }
 
-  const { data: lockedOrder, error: lockError } = await auth.admin
-    .rpc("begin_arca_invoice_processing", { p_order_id: orderId })
-    .maybeSingle()
-
-  if (lockError) {
-    return invoiceProcessingErrorResponse(lockError.message)
-  }
-
   if (order.order_change_status === "change_requested") {
     return NextResponse.json(
       { error: "El pedido tiene un cambio pendiente de aprobación." },
@@ -200,6 +168,14 @@ export async function POST(
       { error: "El pedido tiene una diferencia de cambio pendiente de pago." },
       { status: 409 },
     )
+  }
+
+  const { data: lockedOrder, error: lockError } = await auth.admin
+    .rpc("begin_arca_invoice_processing", { p_order_id: orderId })
+    .maybeSingle()
+
+  if (lockError) {
+    return invoiceProcessingErrorResponse(lockError.message)
   }
 
   if (!lockedOrder) {

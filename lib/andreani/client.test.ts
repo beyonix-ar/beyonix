@@ -1,5 +1,24 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
+
+test("la prueba de credenciales Andreani no queda expuesta en una ruta pública legacy", () => {
+  assert.throws(() =>
+    readFileSync(
+      new URL("../../app/api/andreani/test-login/route.ts", import.meta.url),
+      "utf8",
+    ),
+  )
+
+  const securedRoute = readFileSync(
+    new URL(
+      "../../app/api/admin/integrations/andreani/test/route.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  )
+  assert.match(securedRoute, /requireInternalUser/)
+})
 
 import { createAndreaniAdminTestHandlers } from "./admin-test-handler.ts"
 import type { AndreaniCreateShipmentInput } from "./types.ts"

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
 
 function normalizeReason(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
@@ -46,7 +47,7 @@ export async function POST(
   const admin = createAdminClient()
   const { data: order, error: orderError } = await admin
     .from("ordenes")
-    .select("id, usuario_id, estado, return_status")
+    .select("id, usuario_id, cliente_email, estado, return_status")
     .eq("id", orderId)
     .single()
 
@@ -54,7 +55,7 @@ export async function POST(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (order.usuario_id !== user.id) {
+  if (!isCustomerOrderOwner(order, user)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 

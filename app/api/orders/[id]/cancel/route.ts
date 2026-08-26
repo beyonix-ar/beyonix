@@ -6,6 +6,7 @@ import {
   upsertCustomerCancelledOrderNotification,
 } from "@/lib/orders/customer-cancellation-notification"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -171,7 +172,7 @@ export async function POST(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (order.usuario_id !== user.id) {
+  if (!isCustomerOrderOwner(order, user)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 

@@ -343,19 +343,26 @@ function getAndreaniShipmentBlockingReason(pedido: SupabasePedido): string | nul
   ) {
     return "Emití y autorizá la Factura C antes de generar el envío."
   }
+  const hasRecipientContactData =
+    Boolean(pedido.cliente_nombre) &&
+    Boolean(pedido.cliente_email) &&
+    Boolean(pedido.cliente_telefono) &&
+    Boolean(pedido.cliente_dni)
+
   if (pedido.shipping_type === "sucursal") {
-    return "El pedido eligió retiro en sucursal; Andreani solo aplica a envíos a domicilio."
-  }
-  if (
+    if (!pedido.andreani_sucursal_id) {
+      return "El pedido eligió entrega en sucursal Andreani, pero no tiene una sucursal persistida. No se puede generar el envío sin reconciliar manualmente la sucursal."
+    }
+    if (!hasRecipientContactData) {
+      return "Faltan datos de contacto (nombre, email, teléfono o DNI) del destinatario."
+    }
+  } else if (
     pedido.shipping_type !== "domicilio" ||
     !pedido.cp_destino ||
     !pedido.localidad ||
     !pedido.provincia ||
     !pedido.cliente_direccion ||
-    !pedido.cliente_nombre ||
-    !pedido.cliente_email ||
-    !pedido.cliente_telefono ||
-    !pedido.cliente_dni
+    !hasRecipientContactData
   ) {
     return "Faltan datos de dirección, localidad, provincia, código postal, DNI o contacto del destinatario."
   }
@@ -6241,7 +6248,59 @@ function CustomerAddressDetails({ pedido }: { pedido: SupabasePedido }) {
   )
 }
 
+/**
+ * Entrega en sucursal: el destino NUNCA es la dirección del cliente -- acá
+ * se muestra la sucursal Andreani real que quedó persistida en el pedido.
+ * Si un pedido histórico quedó con shipping_type = 'sucursal' pero sin
+ * sucursal persistida, se marca explícitamente en vez de inventar un
+ * destino (no cae al domicilio del cliente).
+ */
+function BranchDeliveryDetails({ pedido }: { pedido: SupabasePedido }) {
+  if (!pedido.andreani_sucursal_nombre) {
+    return (
+      <div className="admin-order-shipping-branch-missing rounded-lg border border-amber-400/35 bg-amber-400/10 p-2.5 text-xs font-semibold text-amber-100">
+        Falta seleccionar/persistir sucursal Andreani para este pedido. No
+        inventar el destino: reconciliar manualmente antes de generar el
+        envío.
+      </div>
+    )
+  }
+
+  const localityLine = [
+    pedido.andreani_sucursal_localidad,
+    pedido.andreani_sucursal_provincia,
+  ]
+    .filter(Boolean)
+    .join(", ")
+
+  return (
+    <div className="admin-order-shipping-address-grid grid gap-x-5 gap-y-2.5 text-sm sm:grid-cols-2">
+      <CompactAddressValue
+        label="Sucursal"
+        value={pedido.andreani_sucursal_nombre}
+        wide
+      />
+      <CompactAddressValue
+        label="Dirección"
+        value={pedido.andreani_sucursal_direccion || "-"}
+      />
+      <CompactAddressValue
+        label="Localidad / Provincia"
+        value={localityLine || "-"}
+      />
+      <CompactAddressValue
+        label="Código postal"
+        value={pedido.andreani_sucursal_cp || "-"}
+      />
+    </div>
+  )
+}
+
 function ShippingAddressDetails({ pedido }: { pedido: SupabasePedido }) {
+  if (pedido.shipping_type === "sucursal") {
+    return <BranchDeliveryDetails pedido={pedido} />
+  }
+
   const cleanAddress = cleanAddressValue(pedido.cliente_direccion)
   const parsedAddress = parseDeliveryAddress(
     cleanAddress,

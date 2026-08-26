@@ -590,41 +590,35 @@ type InventoryVariantDiagnosticNotificationRow = {
 }
 
 async function getInventoryIntegrityNotifications() {
-  const [integrityResult, diagnosticsResult] = await Promise.all([
-    supabase
-      .from("inventory_stock_integrity")
-      .select(
-        "product_id, product_name, stored_normal_stock, calculated_normal_stock, stored_variant_stock, calculated_variant_stock, generic_balance, allocation_overflow, pending_review_stock, issues",
-      )
-      .order("product_id", { ascending: true })
-      .limit(250),
-    supabase
-      .from("inventory_variant_diagnostics")
-      .select(
-        "product_id, variant_id, variant_name, actual_stock, expected_stock, difference, duplicated_allocation, possible_cause_movement_id",
-      )
-      .limit(500),
-  ])
+  const session = await getSafeSupabaseSession()
+  if (!session?.access_token) return []
 
-  const { data, error } = integrityResult
+  const response = await fetch("/api/admin/inventory/notification-diagnostics", {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    cache: "no-store",
+  })
 
-  if (error) {
+  if (!response.ok) {
     console.warn(
       "ADMIN_INVENTORY_INTEGRITY_LOAD_ERROR",
-      getSupabaseErrorDetails(error),
+      { status: response.status },
     )
     return []
   }
 
+  const result = (await response.json()) as {
+    integrity?: InventoryIntegrityNotificationRow[]
+    diagnostics?: InventoryVariantDiagnosticNotificationRow[]
+  }
+  const data = result.integrity ?? []
+
   const diagnosticByProduct = new Map<number, InventoryVariantDiagnosticNotificationRow>()
-  if (!diagnosticsResult.error) {
-    for (const diagnostic of (diagnosticsResult.data ?? []) as unknown as InventoryVariantDiagnosticNotificationRow[]) {
-      if (
-        Number(diagnostic.difference) !== 0 ||
-        Number(diagnostic.duplicated_allocation) > 0
-      ) {
-        diagnosticByProduct.set(Number(diagnostic.product_id), diagnostic)
-      }
+  for (const diagnostic of result.diagnostics ?? []) {
+    if (
+      Number(diagnostic.difference) !== 0 ||
+      Number(diagnostic.duplicated_allocation) > 0
+    ) {
+      diagnosticByProduct.set(Number(diagnostic.product_id), diagnostic)
     }
   }
 

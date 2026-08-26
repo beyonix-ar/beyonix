@@ -16,11 +16,6 @@ import {
 export const ORDER_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:order-notifications-changed"
 
-interface AdminOrderView {
-  last_seen_at: string
-  available: boolean
-}
-
 const DEFAULT_LAST_SEEN_AT = "2000-01-01T00:00:00.000Z"
 
 export function getSupabaseErrorDetails(error: unknown) {

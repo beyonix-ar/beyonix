@@ -30,6 +30,7 @@ export interface MercadoPagoCheckoutFingerprintInput {
     costReal: number
     costCharged: number
     freeShippingApplied: boolean
+    sucursalId?: string | null
   }
   storeBenefitId: string | null
   requestedCredit: number

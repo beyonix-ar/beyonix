@@ -285,6 +285,14 @@ export interface SupabasePedido {
   envio_proveedor?: string | null
   andreani_estado?: string | null
   andreani_tracking?: string | null
+  /** idgla de la sucursal Andreani elegida por el cliente para entrega. No es andreani_envio_id -- ver lib/andreani/order-shipment.ts. */
+  andreani_sucursal_id?: string | null
+  andreani_sucursal_codigo?: string | null
+  andreani_sucursal_nombre?: string | null
+  andreani_sucursal_direccion?: string | null
+  andreani_sucursal_localidad?: string | null
+  andreani_sucursal_provincia?: string | null
+  andreani_sucursal_cp?: string | null
   andreani_envio_id?: string | null
   andreani_etiqueta_url?: string | null
   andreani_costo?: number | null
@@ -564,6 +572,49 @@ export interface SupabasePedidoItem {
   warranty_status?: "pending_delivery" | "active" | "expired" | "voided" | null
   productos?: SupabaseProducto | null
   producto_variantes?: SupabaseProductoVariante | null
+}
+
+// ─────────────────────────────────────────────────────────────
+// Resumen liviano de pedidos para "Mis compras" (lista del cliente)
+// ─────────────────────────────────────────────────────────────
+
+export interface CustomerOrderSummaryItem {
+  id: number
+  orden_id: number
+  producto_id: number
+  cantidad: number
+  conditioned_images?: string[] | null
+  productos?: {
+    nombre: string
+    imagen_principal: string | null
+    imagenes_producto?: { url: string }[] | null
+  } | null
+  producto_variantes?: { imagenes: string[] } | null
+}
+
+export interface CustomerOrderSummaryClaim {
+  failure_type?: string | null
+  created_at: string
+}
+
+export interface CustomerOrderSummary {
+  id: number
+  created_at: string
+  total: number
+  estado: string
+  payment_status?: string | null
+  payment_method_id?: string | null
+  financial_status?: OrderFinancialStatus | null
+  delivered_at?: string | null
+  payment_proof_url?: string | null
+  payment_proof_uploaded_at?: string | null
+  shipping_type?: "sucursal" | "domicilio" | null
+  tracking_number?: string | null
+  tracking_url?: string | null
+  andreani_tracking?: string | null
+  andreani_estado?: string | null
+  orden_items?: CustomerOrderSummaryItem[]
+  order_claims?: CustomerOrderSummaryClaim[]
 }
 
 export type OrderClaimType = "transporte_48hs" | "garantia_beyonix"

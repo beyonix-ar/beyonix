@@ -1302,7 +1302,6 @@ export function AdminClaimManager({
   const [previewFile, setPreviewFile] = useState<SupabaseOrderClaimFile | null>(null)
   const [showCloseConversationModal, setShowCloseConversationModal] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [loadingOrderClaims, setLoadingOrderClaims] = useState(false)
   const [notice, setNotice] = useState("")
   const [creditNoteIssuedLocally, setCreditNoteIssuedLocally] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
@@ -1323,7 +1322,6 @@ export function AdminClaimManager({
 
     let active = true
     loadedOrderClaimsRef.current.add(pedido.id)
-    setLoadingOrderClaims(true)
 
     async function loadOrderClaims() {
       try {
@@ -1349,8 +1347,6 @@ export function AdminClaimManager({
         }
       } catch {
         if (active) setNotice("No se pudieron cargar los mensajes.")
-      } finally {
-        if (active) setLoadingOrderClaims(false)
       }
     }
 

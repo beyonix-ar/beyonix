@@ -29,7 +29,7 @@ import type {
 type AdminClient = ReturnType<typeof createAdminClient>
 
 const ORDER_SELECT =
-  "id, cliente_nombre, cliente_email, cliente_telefono, cliente_dni, cliente_direccion, cp_destino, localidad, provincia, shipping_type, estado, payment_status, paid_at, payment_confirmed_amount, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_tracking, andreani_etiqueta_url, andreani_estado"
+  "id, cliente_nombre, cliente_email, cliente_telefono, cliente_dni, cliente_direccion, cp_destino, localidad, provincia, shipping_type, andreani_sucursal_id, andreani_sucursal_codigo, andreani_sucursal_nombre, estado, payment_status, paid_at, payment_confirmed_amount, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_tracking, andreani_etiqueta_url, andreani_estado"
 const ORDER_ITEM_SELECT =
   "producto_id, variante_id, conditioned_stock_id, cantidad, precio"
 const PRODUCT_SELECT =
@@ -46,7 +46,7 @@ const CANCELLED_FINANCIAL_STATUSES = [
 const CREATION_IN_PROGRESS_MESSAGE =
   "La generación del envío ya está en curso o requiere conciliación manual antes de reintentar."
 const SUCURSAL_BLOCKED_MESSAGE =
-  "El pedido eligió retiro en sucursal y todavía no persiste la sucursal elegida. Generá el envío únicamente para pedidos con entrega a domicilio."
+  "El pedido eligió entrega en sucursal Andreani, pero no tiene una sucursal destino persistida. No se puede generar el envío hasta reconciliar manualmente la sucursal (nunca se completa automáticamente con la dirección del cliente)."
 const MISSING_LOGISTICS_MESSAGE =
   "Al pedido le falta información logística (dirección, localidad, provincia o código postal) para generar el envío."
 const PROD_SHIPMENT_CREATION_BLOCKED_MESSAGE =
@@ -63,6 +63,9 @@ export interface AndreaniOrderRow {
   localidad: string | null
   provincia: string | null
   shipping_type: string | null
+  andreani_sucursal_id: string | null
+  andreani_sucursal_codigo: string | null
+  andreani_sucursal_nombre: string | null
   estado: string | null
   payment_status: string | null
   paid_at: string | null
@@ -104,6 +107,14 @@ export interface AndreaniShipmentCreationConfig {
   environment: AndreaniEnvironment
   cliente: string
   domicilioContrato: string
+  /**
+   * Contrato Andreani de ENTREGA SUCURSAL (400042106 en PROD). Distinto del
+   * contrato de cambio/retiro sucursal -- ver ANDREANI_{ENV}_BRANCH_CONTRACT.
+   * Opcional a nivel de config (igual que en cotización): sólo se exige
+   * cuando efectivamente se va a crear un envío sucursal, para no romper
+   * tiendas que sólo tengan configurado domicilio.
+   */
+  sucursalContrato?: string
   /**
    * Código/nomenclatura de sucursal (p. ej. "RAC") usado por /v1/tarifas
    * como `sucursalOrigen`. NO es el identificador que espera
@@ -394,6 +405,7 @@ export function resolveAndreaniShipmentCreationConfig(
     environment,
     cliente: checkoutConfig.cliente,
     domicilioContrato: checkoutConfig.domicilioContrato,
+    sucursalContrato: checkoutConfig.sucursalContrato,
     sucursalOrigenCodigo: checkoutConfig.sucursalOrigen,
     sucursalOrigenId,
     remitenteNombre,
@@ -437,29 +449,19 @@ function assertShipmentEligibleOrder(order: AndreaniOrderRow) {
   }
 }
 
-export function buildAndreaniShipmentEnvio(
+function buildAndreaniShipmentParties(
   order: AndreaniOrderRow,
   config: AndreaniShipmentCreationConfig,
-): Omit<AndreaniCreateShipmentRequest, "bultos"> {
-  if (order.shipping_type === "sucursal") {
-    throw new AndreaniError("VALIDATION_ERROR", SUCURSAL_BLOCKED_MESSAGE)
-  }
-
-  const cpDestino = requiredText(order.cp_destino).toUpperCase()
-  const localidad = requiredText(order.localidad)
-  const provincia = requiredText(order.provincia)
-  const direccion = requiredText(order.cliente_direccion)
+): {
+  remitente: AndreaniCreateShipmentRequest["remitente"]
+  destinatario: AndreaniCreateShipmentRequest["destinatario"]
+} {
   const nombreCompleto = requiredText(order.cliente_nombre)
   const email = requiredText(order.cliente_email)
   const telefono = normalizePhoneNumber(order.cliente_telefono)
   const dni = requiredText(order.cliente_dni)
 
   if (
-    order.shipping_type !== "domicilio" ||
-    !/^\d{4}$/.test(cpDestino) ||
-    !localidad ||
-    !provincia ||
-    !direccion ||
     !nombreCompleto ||
     nombreCompleto.length > 40 ||
     !email ||
@@ -472,36 +474,7 @@ export function buildAndreaniShipmentEnvio(
     throw new AndreaniError("VALIDATION_ERROR", MISSING_LOGISTICS_MESSAGE)
   }
 
-  const address = parseArgentineStreetAddress(direccion)
-  if (
-    !address.calle ||
-    !address.numero ||
-    address.calle.length > 40 ||
-    address.numero.length > 40 ||
-    (address.piso && address.piso.length > 40) ||
-    (address.departamento && address.departamento.length > 40) ||
-    localidad.length > 40
-  ) {
-    throw new AndreaniError("VALIDATION_ERROR", MISSING_LOGISTICS_MESSAGE)
-  }
-
   return {
-    contrato: config.domicilioContrato,
-    idPedido: String(order.id),
-    origen: {
-      sucursal: { id: config.sucursalOrigenId },
-    },
-    destino: {
-      postal: {
-        codigoPostal: cpDestino,
-        calle: address.calle,
-        numero: address.numero,
-        piso: address.piso,
-        departamento: address.departamento,
-        localidad,
-        pais: "Argentina",
-      },
-    },
     remitente: {
       nombreCompleto: config.remitenteNombre,
       email: config.remitenteEmail,
@@ -523,6 +496,108 @@ export function buildAndreaniShipmentEnvio(
       },
     ],
   }
+}
+
+function buildAndreaniBranchDeliveryEnvio(
+  order: AndreaniOrderRow,
+  config: AndreaniShipmentCreationConfig,
+): Omit<AndreaniCreateShipmentRequest, "bultos"> {
+  if (!config.sucursalContrato) {
+    throw new AndreaniError(
+      "CONFIGURATION_ERROR",
+      "Falta configurar el contrato de entrega en sucursal de Andreani para generar este envío.",
+    )
+  }
+
+  const sucursalDestinoId = requiredText(order.andreani_sucursal_id)
+  if (!sucursalDestinoId) {
+    throw new AndreaniError("VALIDATION_ERROR", SUCURSAL_BLOCKED_MESSAGE)
+  }
+
+  const { remitente, destinatario } = buildAndreaniShipmentParties(order, config)
+
+  return {
+    contrato: config.sucursalContrato,
+    idPedido: String(order.id),
+    origen: {
+      sucursal: { id: config.sucursalOrigenId },
+    },
+    destino: {
+      sucursal: { id: sucursalDestinoId },
+    },
+    remitente,
+    destinatario,
+  }
+}
+
+function buildAndreaniHomeDeliveryEnvio(
+  order: AndreaniOrderRow,
+  config: AndreaniShipmentCreationConfig,
+): Omit<AndreaniCreateShipmentRequest, "bultos"> {
+  const cpDestino = requiredText(order.cp_destino).toUpperCase()
+  const localidad = requiredText(order.localidad)
+  const provincia = requiredText(order.provincia)
+  const direccion = requiredText(order.cliente_direccion)
+
+  if (
+    !/^\d{4}$/.test(cpDestino) ||
+    !localidad ||
+    !provincia ||
+    !direccion
+  ) {
+    throw new AndreaniError("VALIDATION_ERROR", MISSING_LOGISTICS_MESSAGE)
+  }
+
+  const address = parseArgentineStreetAddress(direccion)
+  if (
+    !address.calle ||
+    !address.numero ||
+    address.calle.length > 40 ||
+    address.numero.length > 40 ||
+    (address.piso && address.piso.length > 40) ||
+    (address.departamento && address.departamento.length > 40) ||
+    localidad.length > 40
+  ) {
+    throw new AndreaniError("VALIDATION_ERROR", MISSING_LOGISTICS_MESSAGE)
+  }
+
+  const { remitente, destinatario } = buildAndreaniShipmentParties(order, config)
+
+  return {
+    contrato: config.domicilioContrato,
+    idPedido: String(order.id),
+    origen: {
+      sucursal: { id: config.sucursalOrigenId },
+    },
+    destino: {
+      postal: {
+        codigoPostal: cpDestino,
+        calle: address.calle,
+        numero: address.numero,
+        piso: address.piso,
+        departamento: address.departamento,
+        localidad,
+        pais: "Argentina",
+      },
+    },
+    remitente,
+    destinatario,
+  }
+}
+
+export function buildAndreaniShipmentEnvio(
+  order: AndreaniOrderRow,
+  config: AndreaniShipmentCreationConfig,
+): Omit<AndreaniCreateShipmentRequest, "bultos"> {
+  if (order.shipping_type === "sucursal") {
+    return buildAndreaniBranchDeliveryEnvio(order, config)
+  }
+
+  if (order.shipping_type !== "domicilio") {
+    throw new AndreaniError("VALIDATION_ERROR", MISSING_LOGISTICS_MESSAGE)
+  }
+
+  return buildAndreaniHomeDeliveryEnvio(order, config)
 }
 
 function buildConsolidatedProduct(

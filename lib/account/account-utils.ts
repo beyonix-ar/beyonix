@@ -48,7 +48,12 @@ export function isInvoiceAvailable(order: SupabasePedido) {
   return order.invoice_status === "authorized"
 }
 
-export function getClientOrderStatusBadge(order: SupabasePedido) {
+type OrderStatusFields = Pick<
+  SupabasePedido,
+  "estado" | "payment_status" | "financial_status"
+>
+
+export function getClientOrderStatusBadge(order: OrderStatusFields) {
   const status = order.estado.toLowerCase()
   const paymentStatus = order.payment_status ?? ""
   const financialStatus = order.financial_status ?? ""
@@ -150,7 +155,16 @@ export function getCuentaItemColor(item: NonNullable<SupabasePedido["orden_items
   )
 }
 
-export function getCuentaItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
+type CuentaItemImageFields = {
+  conditioned_images?: string[] | null
+  producto_variantes?: { imagenes?: string[] | null } | null
+  productos?: {
+    imagen_principal?: string | null
+    imagenes_producto?: { url: string }[] | null
+  } | null
+}
+
+export function getCuentaItemImage(item: CuentaItemImageFields) {
   return (
     item.conditioned_images?.[0] ||
     item.producto_variantes?.imagenes?.[0] ||
@@ -160,7 +174,17 @@ export function getCuentaItemImage(item: NonNullable<SupabasePedido["orden_items
   )
 }
 
-export function getPaymentProgressLabel(order: SupabasePedido) {
+type PaymentProgressFields = Pick<
+  SupabasePedido,
+  | "payment_status"
+  | "financial_status"
+  | "estado"
+  | "payment_method_id"
+  | "payment_proof_url"
+  | "payment_proof_uploaded_at"
+>
+
+export function getPaymentProgressLabel(order: PaymentProgressFields) {
   const paymentStatus = order.payment_status ?? ""
   const financialStatus = order.financial_status ?? ""
 

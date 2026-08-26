@@ -19,6 +19,11 @@ import {
   normalizeCheckoutShipping,
   type NormalizedCheckoutShipping,
 } from "../cart/checkout-shipping.ts"
+import {
+  resolveVerifiedAndreaniBranch,
+  type VerifiedAndreaniBranch,
+} from "../andreani/checkout-quote.ts"
+import { AndreaniError } from "../andreani/client.ts"
 import { assertCatalogStock, STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
 import { getColorName } from "../products/variant-color.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
@@ -78,6 +83,8 @@ export interface CheckoutOrderShippingInput {
   provider?: string
   type?: "sucursal" | "domicilio"
   quoteToken?: string
+  /** idgla de la sucursal Andreani elegida por el cliente. Sólo relevante cuando type === "sucursal"; se reverifica server-side, nunca se persiste tal cual. */
+  sucursalId?: string | number
 }
 
 export interface CheckoutOrderRequestPayload {
@@ -444,8 +451,41 @@ export function normalizeCheckoutOrderShipping({
   )
 }
 
+/**
+ * Verificación server-side de la sucursal Andreani elegida por el cliente
+ * (nunca se persiste lo que mandó el navegador tal cual). Domicilio no
+ * requiere nada acá y devuelve null. Sucursal exige un id -- sin fallback
+ * silencioso a domicilio ni destino inventado.
+ */
+export async function resolveCheckoutOrderShippingBranch(
+  shipping: CheckoutOrderShippingInput | undefined,
+  customer: CheckoutOrderCustomerInput | undefined,
+  dependencies?: Parameters<typeof resolveVerifiedAndreaniBranch>[2],
+): Promise<VerifiedAndreaniBranch | null> {
+  if (shipping?.type !== "sucursal") return null
+
+  const sucursalId = shipping.sucursalId
+  if (
+    sucursalId === undefined ||
+    sucursalId === null ||
+    String(sucursalId).trim() === ""
+  ) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "Elegí una sucursal Andreani para continuar con el retiro en sucursal.",
+    )
+  }
+
+  return resolveVerifiedAndreaniBranch(
+    customer?.cpDestino ?? "",
+    sucursalId,
+    dependencies,
+  )
+}
+
 export function getCheckoutOrderShippingFields(
   shipping: NormalizedCheckoutShipping,
+  branch: VerifiedAndreaniBranch | null = null,
 ) {
   return {
     shipping_provider: shipping.provider,
@@ -453,6 +493,13 @@ export function getCheckoutOrderShippingFields(
     shipping_cost_real: shipping.costReal,
     shipping_cost_charged: shipping.costCharged,
     free_shipping_applied: shipping.freeShippingApplied,
+    andreani_sucursal_id: branch?.id ?? null,
+    andreani_sucursal_codigo: branch?.codigo ?? null,
+    andreani_sucursal_nombre: branch?.nombre ?? null,
+    andreani_sucursal_direccion: branch?.direccion ?? null,
+    andreani_sucursal_localidad: branch?.localidad ?? null,
+    andreani_sucursal_provincia: branch?.provincia ?? null,
+    andreani_sucursal_cp: branch?.codigoPostal ?? null,
   }
 }
 
@@ -537,6 +584,7 @@ export async function insertCheckoutOrderItemsAndValidateInventory({
     .insert(orderItemsPayload as never)
 
   if (error) {
+    await deleteIncompleteCheckoutOrder(admin, orderId)
     throw new Error(error.message || insertErrorMessage)
   }
 

@@ -112,6 +112,15 @@ export interface AndreaniCheckoutQuoteRequest {
 export interface AndreaniCheckoutQuoteOption {
   type: "domicilio" | "sucursal"
   price: number
+  /**
+   * Sucursales reales disponibles para el CP destino cotizado -- sólo
+   * presente en la opción "sucursal". Ya se consultaban internamente para
+   * decidir si ofrecer la modalidad (ver branchesPromise en
+   * checkout-quote.ts); acá se exponen para que el checkout pueda mostrar
+   * un selector real en vez de descartarlas después de comprobar que
+   * existían.
+   */
+  branches?: AndreaniBranch[]
 }
 
 export interface AndreaniQuoteResponse {

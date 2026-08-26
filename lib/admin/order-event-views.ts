@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase/client"
+import { getSafeSupabaseSession } from "@/lib/supabase/client"
 
 const PAYMENT_PROOF_EVENT = "payment_proof"
 const ORDER_SUMMARY_EVENT = "order_summary"
@@ -18,60 +18,52 @@ function getGenericLocalKey(adminId: string, orderId: number, eventType: string)
   return `${LOCAL_PREFIX}:${eventType}:${adminId}:${orderId}`
 }
 
-function readLocalSeenAt(adminId: string, orderId: number) {
-  if (typeof window === "undefined") return null
-  return window.localStorage.getItem(getLocalKey(adminId, orderId))
-}
-
 function writeLocalSeenAt(adminId: string, orderId: number, eventAt: string) {
   if (typeof window === "undefined") return
   window.localStorage.setItem(getLocalKey(adminId, orderId), eventAt)
 }
 
-export async function getSeenAdminPaymentProofOrderIds(
-  adminId: string,
-  events: Array<{ id: number; eventAt?: string | null }>,
-) {
-  const seen = new Set<number>()
-  if (events.length === 0) return seen
-
-  const { data, error } = await supabase
-    .from("admin_order_event_views")
-    .select("order_id, event_at")
-    .eq("admin_id", adminId)
-    .eq("event_type", PAYMENT_PROOF_EVENT)
-    .in("order_id", events.map((event) => event.id))
-
-  if (!error) {
-    const viewedAt = new Map(
-      (data ?? []).map((row) => [Number(row.order_id), String(row.event_at)]),
-    )
-    for (const event of events) {
-      if (getTime(viewedAt.get(event.id)) >= getTime(event.eventAt)) seen.add(event.id)
-    }
-    return seen
-  }
-
-  for (const event of events) {
-    if (getTime(readLocalSeenAt(adminId, event.id)) >= getTime(event.eventAt)) {
-      seen.add(event.id)
-    }
-  }
-  return seen
+async function getAdminAccessToken() {
+  const session = await getSafeSupabaseSession()
+  return session?.access_token ?? null
 }
 
-export async function isAdminPaymentProofSeen(
-  orderId: number,
-  eventAt?: string | null,
-) {
-  if (!eventAt) return true
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
+async function loadEventViews(orderIds: number[], eventType: string) {
+  const token = await getAdminAccessToken()
+  if (!token || orderIds.length === 0) return null
 
-  const seen = await getSeenAdminPaymentProofOrderIds(user.id, [
-    { id: orderId, eventAt },
-  ])
-  return seen.has(orderId)
+  const search = new URLSearchParams({
+    eventType,
+    orderIds: orderIds.join(","),
+  })
+  const response = await fetch(`/api/admin/order-event-views?${search}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  })
+  if (!response.ok) return null
+
+  const result = (await response.json()) as {
+    views?: Array<{ order_id: number; event_at: string }>
+  }
+  return result.views ?? []
+}
+
+async function persistEventView(
+  orderId: number,
+  eventType: string,
+  eventAt: string,
+) {
+  const token = await getAdminAccessToken()
+  if (!token) return
+
+  await fetch("/api/admin/order-event-views", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ orderId, eventType, eventAt }),
+  })
 }
 
 export async function markAdminPaymentProofSeen(
@@ -79,22 +71,11 @@ export async function markAdminPaymentProofSeen(
   eventAt?: string | null,
 ) {
   if (!eventAt) return
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  const session = await getSafeSupabaseSession()
+  if (!session?.user) return
 
-  writeLocalSeenAt(user.id, orderId, eventAt)
-  const now = new Date().toISOString()
-  await supabase.from("admin_order_event_views").upsert(
-    {
-      admin_id: user.id,
-      order_id: orderId,
-      event_type: PAYMENT_PROOF_EVENT,
-      event_at: eventAt,
-      seen_at: now,
-      updated_at: now,
-    },
-    { onConflict: "admin_id,order_id,event_type" },
-  )
+  writeLocalSeenAt(session.user.id, orderId, eventAt)
+  await persistEventView(orderId, PAYMENT_PROOF_EVENT, eventAt)
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("beyonix:order-notifications-changed"))
@@ -107,24 +88,19 @@ async function isAdminOrderEventSeen(
   eventAt?: string | null,
 ) {
   if (!eventAt) return true
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
+  const session = await getSafeSupabaseSession()
+  if (!session?.user) return false
 
-  const { data, error } = await supabase
-    .from("admin_order_event_views")
-    .select("event_at")
-    .eq("admin_id", user.id)
-    .eq("order_id", orderId)
-    .eq("event_type", eventType)
-    .maybeSingle()
+  const data = await loadEventViews([orderId], eventType)
+  const view = data?.[0]
 
-  if (!error && data?.event_at) {
-    return getTime(data.event_at) >= getTime(eventAt)
+  if (view?.event_at) {
+    return getTime(view.event_at) >= getTime(eventAt)
   }
 
   if (typeof window === "undefined") return false
   return (
-    getTime(window.localStorage.getItem(getGenericLocalKey(user.id, orderId, eventType))) >=
+    getTime(window.localStorage.getItem(getGenericLocalKey(session.user.id, orderId, eventType))) >=
     getTime(eventAt)
   )
 }
@@ -135,25 +111,14 @@ async function markAdminOrderEventSeen(
   eventAt?: string | null,
 ) {
   if (!eventAt) return
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  const session = await getSafeSupabaseSession()
+  if (!session?.user) return
 
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(getGenericLocalKey(user.id, orderId, eventType), eventAt)
+    window.localStorage.setItem(getGenericLocalKey(session.user.id, orderId, eventType), eventAt)
   }
 
-  const now = new Date().toISOString()
-  await supabase.from("admin_order_event_views").upsert(
-    {
-      admin_id: user.id,
-      order_id: orderId,
-      event_type: eventType,
-      event_at: eventAt,
-      seen_at: now,
-      updated_at: now,
-    },
-    { onConflict: "admin_id,order_id,event_type" },
-  )
+  await persistEventView(orderId, eventType, eventAt)
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("beyonix:order-notifications-changed"))

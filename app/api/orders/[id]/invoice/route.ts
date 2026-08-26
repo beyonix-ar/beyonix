@@ -27,6 +27,10 @@ type CreditNotePdfRecord = {
   }>
 }
 
+function escapeIlikeValue(value: string) {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`)
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -52,12 +56,28 @@ export async function GET(
   }
 
   const admin = createAdminClient()
-  const { data: order, error: orderError } = await admin
+  const byUserId = await admin
     .from("ordenes")
     .select("*")
     .eq("id", orderId)
     .eq("usuario_id", user.id)
     .maybeSingle()
+
+  let order = byUserId.data
+  let orderError = byUserId.error
+  const normalizedEmail = user.email?.trim().toLowerCase()
+
+  if (!order && !orderError && normalizedEmail) {
+    const byLegacyEmail = await admin
+      .from("ordenes")
+      .select("*")
+      .eq("id", orderId)
+      .is("usuario_id", null)
+      .ilike("cliente_email", escapeIlikeValue(normalizedEmail))
+      .maybeSingle()
+    order = byLegacyEmail.data
+    orderError = byLegacyEmail.error
+  }
 
   if (orderError) {
     console.error("CLIENT_INVOICE_PDF_ORDER_ERROR", {
@@ -76,6 +96,19 @@ export async function GET(
     return NextResponse.json(
       { error: "Factura no encontrada o sin autorización de acceso." },
       { status: 404 },
+    )
+  }
+
+  if (
+    !order.invoice_number ||
+    !order.invoice_point ||
+    !order.invoice_cae ||
+    !order.invoice_cae_due ||
+    !order.invoice_created_at
+  ) {
+    return NextResponse.json(
+      { error: "La factura autorizada tiene datos incompletos." },
+      { status: 409 },
     )
   }
 
@@ -119,7 +152,7 @@ export async function GET(
 
   const { data: itemRows, error: itemsError } = await admin
     .from("orden_items")
-    .select("id, orden_id, producto_id, variante_id, conditioned_name, cantidad, precio, precio_unitario")
+    .select("id, orden_id, producto_id, variante_id, conditioned_name, cantidad, precio")
     .eq("orden_id", orderId)
 
   if (itemsError) {
@@ -146,10 +179,10 @@ export async function GET(
   ]
   const [productsResult, variantsResult] = await Promise.all([
     productIds.length
-      ? admin.from("productos").select("*").in("id", productIds)
+      ? admin.from("productos").select("id, nombre").in("id", productIds)
       : Promise.resolve({ data: [], error: null }),
     variantIds.length
-      ? admin.from("producto_variantes").select("*").in("id", variantIds)
+      ? admin.from("producto_variantes").select("id, nombre").in("id", variantIds)
       : Promise.resolve({ data: [], error: null }),
   ])
 
@@ -240,7 +273,7 @@ export async function GET(
       : undefined,
     orden_items: isCreditNote ? creditNotePdfItems : items.map((item) => ({
       cantidad: Number(item.cantidad ?? 0),
-      precio: Number(item.precio ?? item.precio_unitario ?? 0),
+      precio: Number(item.precio ?? 0),
       productos: productsById.get(item.producto_id) ?? null,
       producto_variantes:
         typeof item.conditioned_name === "string" &&

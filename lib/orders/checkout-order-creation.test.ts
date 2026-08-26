@@ -13,10 +13,13 @@ import {
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
   prepareCheckoutOrderCatalogRows,
+  resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
   type CheckoutOrderProductRow,
   type CheckoutOrderVariantRow,
 } from "./checkout-order-creation.ts"
+import { AndreaniError } from "../andreani/client.ts"
+import type { VerifiedAndreaniBranch } from "../andreani/checkout-quote.ts"
 import type { ConditionedCheckoutRow } from "./conditioned-checkout.ts"
 
 const QUOTE_SECRET = "beyonix-checkout-order-creation-test-secret"
@@ -71,6 +74,17 @@ test("normaliza carrito y cliente una sola vez sin perder Unicode", () => {
     provincia: "Corrientes",
   })
   assert.equal(getCheckoutOrderCustomerValidationError(customer), "")
+})
+
+test("si falla la inserción de ítems se elimina la orden incompleta", () => {
+  const source = readFileSync(
+    new URL("./checkout-order-creation.ts", import.meta.url),
+    "utf8",
+  )
+  assert.match(
+    source,
+    /export async function insertCheckoutOrderItemsAndValidateInventory[\s\S]*?if \(error\) \{\s*await deleteIncompleteCheckoutOrder\(admin, orderId\)/,
+  )
 })
 
 test("prepara productos, variantes y precios con las reglas existentes", () => {
@@ -433,6 +447,158 @@ test("los tres medios conservan la misma base y sus diferencias reales", () => {
   )
 })
 
+test("getCheckoutOrderShippingFields persiste la sucursal verificada; domicilio y sucursal sin sucursal quedan en null", () => {
+  const domicilio = getCheckoutOrderShippingFields({
+    provider: "andreani",
+    type: "domicilio",
+    costReal: 12_000,
+    costCharged: 10_000,
+    freeShippingApplied: false,
+  })
+  assert.equal(domicilio.andreani_sucursal_id, null)
+  assert.equal(domicilio.andreani_sucursal_codigo, null)
+  assert.equal(domicilio.andreani_sucursal_nombre, null)
+  assert.equal(domicilio.andreani_sucursal_direccion, null)
+  assert.equal(domicilio.andreani_sucursal_localidad, null)
+  assert.equal(domicilio.andreani_sucursal_provincia, null)
+  assert.equal(domicilio.andreani_sucursal_cp, null)
+
+  const branch: VerifiedAndreaniBranch = {
+    id: "10055",
+    codigo: "SFN",
+    nombre: "SANTA FE (CENTRO)",
+    direccion: "25 de Mayo 3340",
+    localidad: "Santa Fe",
+    provincia: "Santa Fe",
+    codigoPostal: "3000",
+  }
+  const sucursal = getCheckoutOrderShippingFields(
+    {
+      provider: "andreani",
+      type: "sucursal",
+      costReal: 11_000,
+      costCharged: 9_000,
+      freeShippingApplied: false,
+    },
+    branch,
+  )
+  assert.equal(sucursal.andreani_sucursal_id, "10055")
+  assert.equal(sucursal.andreani_sucursal_codigo, "SFN")
+  assert.equal(sucursal.andreani_sucursal_nombre, "SANTA FE (CENTRO)")
+  assert.equal(sucursal.andreani_sucursal_direccion, "25 de Mayo 3340")
+  assert.equal(sucursal.andreani_sucursal_localidad, "Santa Fe")
+  assert.equal(sucursal.andreani_sucursal_provincia, "Santa Fe")
+  assert.equal(sucursal.andreani_sucursal_cp, "3000")
+})
+
+test("resolveCheckoutOrderShippingBranch: domicilio nunca consulta sucursales ni exige nada", async () => {
+  let called = false
+  const branch = await resolveCheckoutOrderShippingBranch(
+    { provider: "andreani", type: "domicilio", quoteToken: "token" },
+    { cpDestino: "3230" },
+    { getBranches: async () => { called = true; return [] } },
+  )
+  assert.equal(branch, null)
+  assert.equal(called, false)
+})
+
+test("resolveCheckoutOrderShippingBranch: sucursal sin sucursalId (nunca elegida) se rechaza con un error claro, sin fallback a domicilio", async () => {
+  await assert.rejects(
+    () =>
+      resolveCheckoutOrderShippingBranch(
+        { provider: "andreani", type: "sucursal", quoteToken: "token" },
+        { cpDestino: "3230" },
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      error.message.includes("sucursal"),
+  )
+})
+
+test("resolveCheckoutOrderShippingBranch: un sucursalId manipulado que no está en la lista real de Andreani se rechaza", async () => {
+  await assert.rejects(
+    () =>
+      resolveCheckoutOrderShippingBranch(
+        { provider: "andreani", type: "sucursal", quoteToken: "token", sucursalId: "99999" },
+        { cpDestino: "3230" },
+        {
+          env: {
+            NODE_ENV: "test",
+            ANDREANI_ENV: "QA",
+            ANDREANI_QA_CLIENT: "CLIENTE-QA",
+            ANDREANI_QA_ORIGIN_BRANCH: "RAC",
+            ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+          },
+          getBranches: async () => [
+            {
+              id: 10055,
+              codigo: "SFN",
+              numero: "55",
+              descripcion: "SANTA FE (CENTRO)",
+              canal: "B2C",
+              direccion: {
+                calle: "25 de Mayo",
+                numero: "3340",
+                provincia: "Santa Fe",
+                localidad: "Santa Fe",
+                region: "Litoral",
+                pais: "Argentina",
+                codigoPostal: "3000",
+              },
+            },
+          ],
+        },
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+  )
+})
+
+test("resolveCheckoutOrderShippingBranch: un sucursalId real se verifica y devuelve el snapshot canónico, listo para persistir", async () => {
+  const branch = await resolveCheckoutOrderShippingBranch(
+    { provider: "andreani", type: "sucursal", quoteToken: "token", sucursalId: 10055 },
+    { cpDestino: "3000" },
+    {
+      env: {
+        NODE_ENV: "test",
+        ANDREANI_ENV: "QA",
+        ANDREANI_QA_CLIENT: "CLIENTE-QA",
+        ANDREANI_QA_ORIGIN_BRANCH: "RAC",
+        ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+      },
+      getBranches: async () => [
+        {
+          id: 10055,
+          codigo: "SFN",
+          numero: "55",
+          descripcion: "SANTA FE (CENTRO)",
+          canal: "B2C",
+          direccion: {
+            calle: "25 de Mayo",
+            numero: "3340",
+            provincia: "Santa Fe",
+            localidad: "Santa Fe",
+            region: "Litoral",
+            pais: "Argentina",
+            codigoPostal: "3000",
+          },
+        },
+      ],
+    },
+  )
+
+  assert.deepEqual(branch, {
+    id: "10055",
+    codigo: "SFN",
+    nombre: "SANTA FE (CENTRO)",
+    direccion: "25 de Mayo 3340",
+    localidad: "Santa Fe",
+    provincia: "Santa Fe",
+    codigoPostal: "3000",
+  })
+})
+
 test("el helper común mantiene la validación del envío firmado", () => {
   const previousSecret = process.env.CHECKOUT_SHIPPING_QUOTE_SECRET
   process.env.CHECKOUT_SHIPPING_QUOTE_SECRET = QUOTE_SECRET
@@ -527,5 +693,27 @@ test("los endpoints delegan los bloques equivalentes y conservan lo específico"
     // (código + items afectados), no con el mensaje genérico crudo.
     assert.match(source, /InsufficientStockError/)
     assert.match(source, /INSUFFICIENT_STOCK/)
+
+    // Los tres medios resuelven/verifican la sucursal server-side (nunca
+    // confían en lo que mandó el navegador) y la pasan a
+    // getCheckoutOrderShippingFields para persistirla junto al resto del
+    // envío -- ver resolveCheckoutOrderShippingBranch.
+    assert.match(source, /resolveCheckoutOrderShippingBranch\(/)
+    assert.match(
+      source,
+      /getCheckoutOrderShippingFields\(\s*\n\s*normalizedShipping,\s*\n\s*shippingBranch,\s*\n\s*\)/,
+    )
+    const branchResolveIndex = source.indexOf(
+      "resolveCheckoutOrderShippingBranch(",
+    )
+    const shippingFieldsIndex = source.indexOf(
+      "getCheckoutOrderShippingFields(",
+    )
+    assert.ok(
+      branchResolveIndex >= 0 &&
+        shippingFieldsIndex >= 0 &&
+        branchResolveIndex < shippingFieldsIndex,
+      `${route.path}: la sucursal debe resolverse ANTES de persistir los campos de envío`,
+    )
   }
 })

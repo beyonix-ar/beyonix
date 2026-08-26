@@ -24,6 +24,7 @@ function qaEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
     ANDREANI_QA_PASSWORD: "clave-prueba",
     ANDREANI_QA_CLIENT: "CLIENTE-QA",
     ANDREANI_QA_HOME_CONTRACT: "CONTRATO-QA",
+    ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
     ANDREANI_QA_ORIGIN_BRANCH: "RAC",
     // idgla de sucursal para creación B2C, deliberadamente distinto del
     // código "RAC" de arriba (que solo usa /v1/tarifas) para poder detectar
@@ -46,6 +47,9 @@ function baseOrder(overrides: Partial<AndreaniOrderRow> = {}): AndreaniOrderRow 
     localidad: "C.A.B.A.",
     provincia: "CABA",
     shipping_type: "domicilio",
+    andreani_sucursal_id: null,
+    andreani_sucursal_codigo: null,
+    andreani_sucursal_nombre: null,
     estado: "pagado",
     payment_status: "confirmado",
     paid_at: "2026-08-16T12:00:00.000Z",
@@ -401,6 +405,53 @@ test("buildAndreaniShipmentEnvio arma domicilio con el idgla de sucursal (no el 
   assert.equal(envio.remitente.nombreCompleto, "BEYONIX")
 })
 
+test("buildAndreaniShipmentEnvio arma sucursal con destino.sucursal.id (idgla persistido), contrato de sucursal y mismo origen que domicilio", () => {
+  const config = resolveAndreaniShipmentCreationConfig(qaEnv())
+  const envio = buildAndreaniShipmentEnvio(
+    baseOrder({
+      shipping_type: "sucursal",
+      andreani_sucursal_id: "10179",
+      andreani_sucursal_codigo: "RAC",
+      andreani_sucursal_nombre: "Sucursal Racedo",
+      // El domicilio del cliente puede faltar en un pedido sucursal --
+      // nunca debe usarse como destino ni bloquear la creación.
+      cliente_direccion: null,
+      cp_destino: null,
+      localidad: null,
+      provincia: null,
+    }),
+    config,
+  )
+
+  assert.equal(envio.contrato, "CONTRATO-SUCURSAL-QA")
+  assert.notEqual(envio.contrato, "CONTRATO-QA")
+  // Origen (sucursal de despacho de BEYONIX) es siempre el mismo,
+  // independientemente de la modalidad de entrega.
+  assert.deepEqual(envio.origen, { sucursal: { id: "20001" } })
+  // Destino es la sucursal ELEGIDA POR EL CLIENTE (idgla persistido), nunca
+  // el código "RAC" ni la dirección del cliente.
+  assert.deepEqual(envio.destino, { sucursal: { id: "10179" } })
+  assert.equal(envio.destinatario[0].nombreCompleto, "María Muñoz")
+  assert.equal(envio.destinatario[0].documentoNumero, "30123456")
+  assert.equal(envio.remitente.nombreCompleto, "BEYONIX")
+})
+
+test("buildAndreaniShipmentEnvio sucursal exige contrato de sucursal configurado, sin fallback al contrato de domicilio", () => {
+  const config = resolveAndreaniShipmentCreationConfig(
+    qaEnv({ ANDREANI_QA_BRANCH_CONTRACT: "" }),
+  )
+
+  assert.throws(
+    () =>
+      buildAndreaniShipmentEnvio(
+        baseOrder({ shipping_type: "sucursal", andreani_sucursal_id: "10179" }),
+        config,
+      ),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "CONFIGURATION_ERROR",
+  )
+})
+
 test("buildAndreaniShipmentEnvio bloquea sucursal sin inventar datos", () => {
   const config = resolveAndreaniShipmentCreationConfig(qaEnv())
 
@@ -570,7 +621,11 @@ function createFakeAdmin(tables: FakeTable) {
       const canClaim =
         !order.andreani_envio_id &&
         reclaimable &&
-        order.shipping_type === "domicilio" &&
+        // Igual que la RPC real (20260826130000_andreani_branch_delivery.sql):
+        // domicilio y sucursal pueden reclamar creación por igual; que la
+        // sucursal esté realmente persistida se valida en código de
+        // aplicación (buildAndreaniShipmentEnvio), antes de llegar acá.
+        (order.shipping_type === "domicilio" || order.shipping_type === "sucursal") &&
         order.estado !== "cancelado" &&
         !["cancellation_requested", "cancelled", "refund_pending", "refunded"].includes(
           String(order.financial_status ?? ""),
@@ -682,6 +737,41 @@ test("crea el envío, consolida un único bulto y persiste la referencia", async
   assert.equal(admin.tables.ordenes.andreani_creation_status, "created")
   assert.equal(admin.tables.ordenes.andreani_creation_claim_token, null)
   assert.equal(admin.tables.ordenes.andreani_contrato, "CONTRATO-QA")
+})
+
+test("crea el envío de un pedido sucursal usando el contrato de sucursal y el idgla destino persistido (nunca la dirección del cliente)", async () => {
+  const admin = createFakeAdmin(
+    singleItemTables({
+      shipping_type: "sucursal",
+      andreani_sucursal_id: "10179",
+      andreani_sucursal_codigo: "RAC",
+      andreani_sucursal_nombre: "Sucursal Racedo",
+      cliente_direccion: null,
+      cp_destino: null,
+      localidad: null,
+      provincia: null,
+    }),
+  )
+  const capturedInputs: AndreaniCreateShipmentInput[] = []
+
+  const result = await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: qaEnv(),
+    crearOrdenEnvio: async (input) => {
+      capturedInputs.push(input)
+      return officialOrderResponse
+    },
+  })
+
+  assert.equal(result.status, "created")
+  assert.equal(capturedInputs[0]?.envio.contrato, "CONTRATO-SUCURSAL-QA")
+  assert.deepEqual(capturedInputs[0]?.envio.destino, {
+    sucursal: { id: "10179" },
+  })
+  assert.deepEqual(capturedInputs[0]?.envio.origen, {
+    sucursal: { id: "20001" },
+  })
+  assert.equal(admin.tables.ordenes.andreani_contrato, "CONTRATO-SUCURSAL-QA")
+  assert.equal(admin.tables.ordenes.andreani_creation_status, "created")
 })
 
 test("rechaza un pedido con más de 50 kg consolidados sin llamar a la red", async () => {

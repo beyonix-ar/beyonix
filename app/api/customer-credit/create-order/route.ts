@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import {
   CheckoutShippingQuoteError,
 } from "@/lib/cart/checkout-shipping"
+import { AndreaniError } from "@/lib/andreani/client"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import {
@@ -36,6 +37,7 @@ import {
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
+  resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
@@ -106,7 +108,14 @@ export async function POST(request: Request) {
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
     })
-    const shipping = getCheckoutOrderShippingFields(normalizedShipping)
+    const shippingBranch = await resolveCheckoutOrderShippingBranch(
+      payload.shipping,
+      payload.customer,
+    )
+    const shipping = getCheckoutOrderShippingFields(
+      normalizedShipping,
+      shippingBranch,
+    )
     const totals = calculateCartTotals(catalog.cartRows, {
       shippingCost: shipping.shipping_cost_charged,
     })
@@ -293,6 +302,8 @@ export async function POST(request: Request) {
     const stockConflict =
       error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
     const quoteConflict = error instanceof CheckoutShippingQuoteError
+    const branchConflict =
+      error instanceof AndreaniError && error.code === "VALIDATION_ERROR"
 
     return NextResponse.json(
       {
@@ -301,7 +312,7 @@ export async function POST(request: Request) {
             ? error.message
             : "No pudimos registrar el pedido con saldo a favor.",
       },
-      { status: stockConflict || quoteConflict ? 409 : 500 }
+      { status: stockConflict || quoteConflict || branchConflict ? 409 : 500 }
     )
   }
 }

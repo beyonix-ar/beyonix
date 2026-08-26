@@ -25,6 +25,7 @@ import {
   canonicalizeCheckoutQuoteItems,
   type CheckoutQuoteItemInput,
 } from "../cart/checkout-shipping-items.ts"
+import type { AndreaniBranch } from "./types.ts"
 
 export type { CheckoutQuoteItemInput }
 
@@ -49,6 +50,7 @@ export interface CheckoutQuoteRawOption {
   type?: string
   price?: number
   quoteToken?: string
+  branches?: AndreaniBranch[]
 }
 
 interface MinimalCartItem {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { canChangeOrderStatus } from "./order-status-authorization.ts"
+import { readFileSync } from "node:fs"
 
 test("operador puede aplicar una transición no reservada (ej. pagado)", () => {
   assert.equal(canChangeOrderStatus("operador", "pagado"), true)
@@ -30,4 +31,36 @@ test("cualquier rol interno puede aplicar transiciones no reservadas (cancelado,
     assert.equal(canChangeOrderStatus(role, "cancelado"), true)
     assert.equal(canChangeOrderStatus(role, "retiro_pendiente"), true)
   }
+})
+
+test("el endpoint operativo no puede fabricar pago ni despacho sin evidencia financiera", () => {
+  const route = readFileSync(
+    new URL("../../app/api/admin/pedidos/[id]/status/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  assert.match(
+    route,
+    /\(estado === "pagado" \|\| DISPATCHED_ORDER_STATUSES\.includes\(estado\)\)[\s\S]*?!isOrderPaymentConfirmed\(currentOrder\)/,
+  )
+})
+
+test("Factura C usa evidencia financiera y nunca el estado operativo como prueba de pago", () => {
+  const route = readFileSync(
+    new URL("../../app/api/admin/orders/[id]/invoice/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  assert.match(route, /isOrderPaymentConfirmed\(order\)/)
+  assert.doesNotMatch(route, /function isPaymentConfirmed/)
+
+  const pendingChangeCheck = route.indexOf(
+    'order.order_change_status === "change_requested"',
+  )
+  const invoiceClaim = route.indexOf('rpc("begin_arca_invoice_processing"')
+  assert.ok(pendingChangeCheck >= 0 && invoiceClaim >= 0)
+  assert.ok(
+    pendingChangeCheck < invoiceClaim,
+    "los cambios pendientes deben rechazarse antes de dejar invoice_status en processing",
+  )
 })

@@ -164,6 +164,29 @@ function optionalText(value: string | undefined) {
   return normalized || undefined
 }
 
+/**
+ * Catálogo de referencia (localidades, sucursales) siempre se consulta vía
+ * QA -- incluso cuando la cotización/creación corre en PROD -- porque el
+ * catálogo no difiere entre ambientes y evita gastar cupo de acceso PROD
+ * (limitado a tarifas/creación) en lecturas que no lo necesitan. Factorizado
+ * acá porque tanto quoteAndreaniCheckout como resolveVerifiedAndreaniBranch
+ * necesitan construir exactamente el mismo cliente de referencia.
+ */
+function buildAndreaniReferenceClient(
+  environment: CheckoutQuoteConfig["environment"],
+  env: NodeJS.ProcessEnv,
+  clientOptions: AndreaniClientOptions | undefined,
+  primaryClient: AndreaniClient,
+) {
+  return environment === "QA"
+    ? primaryClient
+    : new AndreaniClient({
+        ...clientOptions,
+        env: { ...env, ANDREANI_ENV: "QA" },
+        productionAccess: undefined,
+      })
+}
+
 export function resolveAndreaniCheckoutConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): CheckoutQuoteConfig {
@@ -540,14 +563,12 @@ export async function quoteAndreaniCheckout(
           ? "tariffs-only"
           : dependencies.clientOptions?.productionAccess,
     })
-    const referenceClient =
-      config.environment === "QA"
-        ? client
-        : new AndreaniClient({
-            ...dependencies.clientOptions,
-            env: { ...env, ANDREANI_ENV: "QA" },
-            productionAccess: undefined,
-          })
+    const referenceClient = buildAndreaniReferenceClient(
+      config.environment,
+      env,
+      dependencies.clientOptions,
+      client,
+    )
     const getLocalities =
       dependencies.getLocalities ??
       ((filters: AndreaniLocalityFilters) =>
@@ -703,12 +724,14 @@ export async function quoteAndreaniCheckout(
           packagePromise,
           branchesPromise,
           authenticationPromise,
-        ]).then(
-          ([packageData, branches]) =>
-            branches.length > 0
-              ? quoteContract("sucursal", sucursalContrato, packageData)
-              : null,
-        )
+        ]).then(async ([packageData, branches]) => {
+          if (branches.length === 0) return null
+          const quoted = await quoteContract("sucursal", sucursalContrato, packageData)
+          // Se exponen las sucursales reales ya consultadas para decidir si
+          // ofrecer la modalidad -- el checkout las usa para el selector, en
+          // vez de tener que volver a pedirlas aparte.
+          return { ...quoted, branches }
+        })
       : Promise.resolve(null)
 
     const [homeQuote, branchQuote] = await Promise.all([
@@ -740,6 +763,104 @@ export async function quoteAndreaniCheckout(
     return await promise
   } finally {
     if (pendingQuotes.get(key) === promise) pendingQuotes.delete(key)
+  }
+}
+
+export interface VerifiedAndreaniBranch {
+  /** idgla numérico (como texto): lo que espera destino.sucursal.id en POST /v2/ordenes-de-envio. */
+  id: string
+  /** Código/nomenclatura (ej. "RAC"), sólo de referencia -- nunca identificador de envío. */
+  codigo: string
+  nombre: string
+  direccion: string
+  localidad: string
+  provincia: string
+  codigoPostal: string
+}
+
+interface ResolveVerifiedAndreaniBranchDependencies {
+  env?: NodeJS.ProcessEnv
+  clientOptions?: AndreaniClientOptions
+  getBranches?: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]>
+}
+
+/**
+ * Verificación server-side de la sucursal Andreani que eligió el cliente:
+ * el cliente sólo manda un id (idgla); acá se vuelve a resolver la MISMA
+ * lista real de sucursales para ese CP destino (mismo filtro y mismo caché
+ * por CP que usa la cotización -- casi siempre un cache hit, porque el CP ya
+ * se cotizó momentos antes) y se exige que el id elegido esté en esa lista.
+ * Todo lo que se persiste después sale de acá (respuesta real de Andreani),
+ * nunca de nombre/dirección que pudo mandar el navegador -- por eso no
+ * existe una versión de esta función que reciba esos campos como input.
+ */
+export async function resolveVerifiedAndreaniBranch(
+  cpDestino: string,
+  sucursalId: string | number,
+  dependencies: ResolveVerifiedAndreaniBranchDependencies = {},
+): Promise<VerifiedAndreaniBranch> {
+  const env = dependencies.env ?? process.env
+  const config = resolveAndreaniCheckoutConfig(env)
+
+  if (!config.sucursalContrato) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La entrega en sucursal Andreani no está disponible.",
+    )
+  }
+
+  const normalizedCp = requiredText(String(cpDestino ?? "")).toUpperCase()
+  const targetId = Number(sucursalId)
+  if (
+    !/^\d{4}$/.test(normalizedCp) ||
+    !Number.isSafeInteger(targetId) ||
+    targetId <= 0
+  ) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La sucursal Andreani seleccionada no es válida.",
+    )
+  }
+
+  const getBranches =
+    dependencies.getBranches ??
+    ((filters: AndreaniBranchFilters) => {
+      // Catálogo de sucursales: siempre vía QA -- ver buildAndreaniReferenceClient.
+      const referenceClient = new AndreaniClient({
+        ...dependencies.clientOptions,
+        env: { ...env, ANDREANI_ENV: "QA" },
+        productionAccess: undefined,
+      })
+      return getCachedReferenceData(
+        normalizedCp,
+        branchCache,
+        branchRequests,
+        () => referenceClient.getSucursales(filters),
+      )
+    })
+
+  const branches = await getBranches({
+    codigoPostal: normalizedCp,
+    canal: "B2C",
+    seHaceAtencionAlCliente: true,
+  })
+
+  const branch = branches.find((item) => item.id === targetId)
+  if (!branch) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      "La sucursal Andreani seleccionada no está disponible para este destino.",
+    )
+  }
+
+  return {
+    id: String(branch.id),
+    codigo: branch.codigo,
+    nombre: branch.descripcion,
+    direccion: `${branch.direccion.calle} ${branch.direccion.numero}`.trim(),
+    localidad: branch.direccion.localidad,
+    provincia: branch.direccion.provincia,
+    codigoPostal: branch.direccion.codigoPostal,
   }
 }
 

@@ -8,6 +8,7 @@ import {
   sanitizeClaimFileName,
 } from "@/lib/order-claims"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { OrderClaimType } from "@/lib/supabase/types"
@@ -216,7 +217,7 @@ export async function GET(
   const admin = createAdminClient()
   const { data: order, error: orderError } = await admin
     .from("ordenes")
-    .select("id, usuario_id")
+    .select("id, usuario_id, cliente_email")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -224,7 +225,7 @@ export async function GET(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (order.usuario_id !== user.id) {
+  if (!isCustomerOrderOwner(order, user)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 
@@ -284,7 +285,7 @@ export async function POST(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (order.usuario_id !== user.id) {
+  if (!isCustomerOrderOwner(order, user)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 

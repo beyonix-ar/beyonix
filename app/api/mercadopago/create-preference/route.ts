@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 
 import { createClient } from "@/lib/supabase/server"
 import { CheckoutShippingQuoteError } from "@/lib/cart/checkout-shipping"
+import { AndreaniError } from "@/lib/andreani/client"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import {
@@ -26,6 +27,7 @@ import {
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
+  resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
@@ -139,7 +141,14 @@ export async function POST(request: Request) {
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
     })
-    const shipping = getCheckoutOrderShippingFields(normalizedShipping)
+    const shippingBranch = await resolveCheckoutOrderShippingBranch(
+      payload.shipping,
+      payload.customer,
+    )
+    const shipping = getCheckoutOrderShippingFields(
+      normalizedShipping,
+      shippingBranch,
+    )
     const checkoutFingerprint = createMercadoPagoCheckoutFingerprint({
       sessionId: checkoutSessionId,
       userId: user?.id ?? null,
@@ -152,6 +161,7 @@ export async function POST(request: Request) {
         costReal: normalizedShipping.costReal,
         costCharged: normalizedShipping.costCharged,
         freeShippingApplied: normalizedShipping.freeShippingApplied,
+        sucursalId: shippingBranch?.id ?? null,
       },
       storeBenefitId: payload.storeBenefitId?.trim() || null,
       requestedCredit,
@@ -434,6 +444,8 @@ export async function POST(request: Request) {
     const stockConflict =
       error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
     const quoteConflict = error instanceof CheckoutShippingQuoteError
+    const branchConflict =
+      error instanceof AndreaniError && error.code === "VALIDATION_ERROR"
 
     return NextResponse.json(
       {
@@ -442,7 +454,7 @@ export async function POST(request: Request) {
             ? error.message
             : "No pudimos iniciar el pago.",
       },
-      { status: stockConflict || quoteConflict ? 409 : 500 },
+      { status: stockConflict || quoteConflict || branchConflict ? 409 : 500 },
     )
   }
 }

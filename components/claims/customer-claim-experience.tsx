@@ -159,14 +159,6 @@ function formatDate(value?: string | null) {
   }).format(new Date(value))
 }
 
-function formatPrice(value: number) {
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
 function getOrderCode(orderId: number) {
   return `BX-${1000 + orderId}`
 }
@@ -234,34 +226,6 @@ function getItemVariant(item: NonNullable<SupabasePedido["orden_items"]>[number]
   return item.conditioned_name?.trim()
     || item.producto_variantes?.nombre?.trim()
     || "Sin variante"
-}
-
-function getOrderStage(order: SupabasePedido) {
-  if (isOrderCancelled(order)) {
-    return {
-      title: "Pedido cancelado",
-      detail: "La compra figura como cancelada.",
-    }
-  }
-
-  if (isOrderDelivered(order)) {
-    return {
-      title: "Pedido entregado",
-      detail: "Si tuviste un problema con algún producto recibido, podés iniciar un reclamo.",
-    }
-  }
-
-  if (isOrderDispatched(order)) {
-    return {
-      title: "Pedido en camino",
-      detail: "Si tu pedido se demora o necesitás consultar algo, podés enviarnos un mensaje de ayuda.",
-    }
-  }
-
-  return {
-    title: "Pedido en preparación",
-    detail: "Estamos preparando tu compra. Si necesitás consultar algo, podés enviarnos un mensaje de ayuda.",
-  }
 }
 
 function getClaimStatusInfo(claim: SupabaseOrderClaim) {
@@ -481,42 +445,6 @@ function appendFiles(formData: FormData, files: File[], role: string) {
     formData.append("files", file)
     formData.append("fileRoles", role)
   })
-}
-
-function ProductSummary({ order }: { order: SupabasePedido }) {
-  const items = order.orden_items ?? []
-  const productCount = items.reduce((total, item) => total + Number(item.cantidad ?? 0), 0)
-  const stage = getOrderStage(order)
-
-  return (
-    <div className="rounded-xl border border-blue-300/12 bg-[#111820] p-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-10px font-black uppercase tracking-[0.16em] text-blue-300">Resumen del pedido</p>
-          <p className="mt-1 text-base font-black text-white">Pedido {getOrderCode(order.id)}</p>
-          <p className="mt-0.5 text-xs font-semibold text-white/55">{stage.title}</p>
-        </div>
-        <div className="rounded-lg border border-emerald-300/35 bg-emerald-400/12 px-3 py-2 text-left shadow-[0_0_24px_rgba(52,211,153,0.12)] sm:text-right">
-          <p className="text-10px font-bold uppercase tracking-wide text-emerald-200">Total</p>
-          <p className="text-lg font-black text-emerald-50">{formatPrice(Number(order.total ?? 0))}</p>
-        </div>
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <div className="rounded-lg border border-white/7 bg-[#18202A] px-3 py-2">
-          <p className="text-10px font-bold uppercase tracking-wide text-white/45">Estado</p>
-          <p className="mt-0.5 text-xs font-black text-white">{stage.title}</p>
-        </div>
-        <div className="rounded-lg border border-white/7 bg-[#18202A] px-3 py-2">
-          <p className="text-10px font-bold uppercase tracking-wide text-white/45">Productos</p>
-          <p className="mt-0.5 text-xs font-black text-white">{productCount} {productCount === 1 ? "producto" : "productos"}</p>
-        </div>
-        <div className="rounded-lg border border-white/7 bg-[#18202A] px-3 py-2">
-          <p className="text-10px font-bold uppercase tracking-wide text-white/45">Seguimiento</p>
-          <p className="mt-0.5 truncate text-xs font-black text-white">{order.tracking_number || order.andreani_tracking || "Disponible al despachar"}</p>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function CustomerClaimExperienceSkeleton() {
