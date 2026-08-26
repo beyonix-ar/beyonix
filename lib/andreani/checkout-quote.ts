@@ -192,36 +192,133 @@ function buildAndreaniReferenceClient(
 }
 
 /**
- * Sucursales reales de una localidad+provincia (nunca por CP exacto): el CP
- * de un destino suele cubrir sólo una porción de la localidad, así que
- * filtrar por `codigoPostal` descarta sucursales válidas de la misma ciudad
- * (confirmado en vivo contra Andreani QA: Rosario CP 2000 devuelve 1 sola
- * sucursal por CP exacto, pero 3 sucursales reales y distintas por
- * localidad). Andreani no acepta filtrar por provincia directamente, así que
- * se vuelve a comprobar acá -- por si Andreani hiciera un match de localidad
- * más laxo que incluyera una homónima de otra provincia.
+ * Catálogo NACIONAL de sucursales aptas para retiro de cliente: una única
+ * consulta sin filtro de localidad (confirmado en vivo contra Andreani QA:
+ * `GET /v2/sucursales?canal=B2C&seHaceAtencionAlCliente=true`, sin
+ * `localidad`, devuelve el listado completo -- 156 sucursales en QA -- en
+ * una sola respuesta). Reemplaza la estrategia anterior de consultar
+ * `/v2/sucursales?localidad=<nombre>` por destino: esa consulta depende de
+ * que el nombre de localidad que maneja BEYONIX coincida EXACTO con la
+ * etiqueta interna de Andreani, lo cual no es una garantía general (CABA
+ * agrupa todo bajo "C.A.B.A."; la única sucursal de la ciudad de San Juan
+ * está taggeada con `localidad: "Santa Lucia"`, un partido vecino, no "San
+ * Juan"). Con el catálogo completo en memoria, el matching territorial pasa
+ * a resolverse server-side contra datos reales (ver
+ * `resolveAndreaniDestinationBranches`), sin depender de adivinar el string
+ * exacto que Andreani usa para cada ciudad del país.
+ *
+ * Cacheado bajo una key fija en el mismo `branchCache`/`branchRequests` que
+ * antes indexaban por destino -- ahora hay una sola entrada para todo el
+ * país, con el mismo TTL de 24h (`REFERENCE_DATA_CACHE_TTL_MS`) que ya usan
+ * localidades/sucursales. Si Andreani falla, el error se propaga tal cual
+ * (mismo comportamiento que antes): no hay sucursales "de repuesto".
  */
-async function fetchAndreaniLocalityBranches(
-  localidad: string,
-  provincia: string,
+const NATIONAL_BRANCH_CATALOG_CACHE_KEY = "__NATIONAL_CATALOG__"
+
+function getAndreaniBranchCatalog(
   getBranches: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]>,
 ): Promise<AndreaniBranch[]> {
-  const branches = await getBranches({
-    localidad,
-    canal: "B2C",
-    seHaceAtencionAlCliente: true,
-  })
-  const provinceKey = normalizeArgentineProvinceKey(provincia)
-  const localityKey = normalizeArgentineLocationKey(localidad)
-  return branches.filter(
-    (branch) =>
-      normalizeArgentineLocationKey(branch.direccion.localidad) === localityKey &&
-      normalizeArgentineProvinceKey(branch.direccion.provincia) === provinceKey,
+  return getCachedReferenceData(
+    NATIONAL_BRANCH_CATALOG_CACHE_KEY,
+    branchCache,
+    branchRequests,
+    () => getBranches({ canal: "B2C", seHaceAtencionAlCliente: true }),
   )
 }
 
-function localityBranchCacheKey(localidad: string, provincia: string) {
-  return `${normalizeArgentineProvinceKey(provincia)}|${normalizeArgentineLocationKey(localidad)}`
+/**
+ * CABA, a diferencia de cualquier otra provincia, es una única localidad
+ * Andreani que agrupa toda la ciudad (confirmado en vivo: en el catálogo
+ * nacional, las ~29 sucursales de todos los barrios de CABA comparten el
+ * valor literal `direccion.localidad = "C.a.b.a."`). Por eso la clave de
+ * localidad para matchear sucursales de CABA se deriva de la PROVINCIA, no
+ * del texto de localidad que haya tipeado la UI (que puede ser "CABA",
+ * "Capital Federal" o "Ciudad Autónoma de Buenos Aires" según el origen del
+ * dato) -- todos esos alias son la misma única localidad real de Andreani.
+ * Es una excepción ESTRUCTURAL del catálogo (una ciudad, cero barrios
+ * propios), no una entrada de un diccionario de ciudades: no crece con cada
+ * destino nuevo que se agregue.
+ */
+function resolveAndreaniBranchLocalityKey(
+  localidad: string,
+  provinceKey: string,
+): string {
+  return provinceKey === "CABA" ? "CABA" : normalizeArgentineLocationKey(localidad)
+}
+
+/**
+ * En el catálogo de sucursales (a diferencia de `/v1/localidades`), Andreani
+ * no modela CABA como su propia provincia: las sucursales de "C.A.B.A."
+ * quedan taggeadas con `direccion.provincia = "Buenos Aires"` (confirmado en
+ * vivo, 29/29), nunca "CABA" ni "Capital Federal". La equivalencia se acepta
+ * únicamente cuando la LOCALIDAD ya resolvió a la clave "CABA" -- así una
+ * localidad homónima real de la provincia de Buenos Aires (localidad
+ * distinta, provincia "Buenos Aires" genuina) nunca puede colarse por esta
+ * vía: sigue exigiendo que la localidad matchee primero.
+ */
+function branchProvinceMatchesRequest(
+  branchProvinceKey: string,
+  requestProvinceKey: string,
+  localityKey: string,
+): boolean {
+  if (branchProvinceKey === requestProvinceKey) return true
+  return (
+    localityKey === "CABA" &&
+    requestProvinceKey === "CABA" &&
+    branchProvinceKey === "BUENOSAIRES"
+  )
+}
+
+/**
+ * Matching territorial único (misma función para descubrimiento y para
+ * `resolveVerifiedAndreaniBranch`): filtra el catálogo nacional ya obtenido
+ * contra un destino provincia+localidad+CP, usando DOS señales -- ambas
+ * declaradas por Andreani, ninguna inventada:
+ *
+ *  1) Nombre de localidad normalizado (tolerante a mayúsculas/tildes) +
+ *     provincia -- cubre la enorme mayoría del país (Rosario, Córdoba,
+ *     Mendoza, Neuquén, etc.), incluyendo la excepción estructural de CABA.
+ *  2) Código postal atendido (`codigosPostalesAtendidos`, un campo que
+ *     Andreani expone por sucursal) + provincia -- cubre el caso real donde
+ *     Andreani etiqueta la sucursal con la localidad/partido vecino en vez
+ *     del nombre de ciudad que reconoce el cliente (confirmado en vivo: la
+ *     única sucursal de la ciudad de San Juan lista "5400" -- el CP real de
+ *     San Juan Capital -- entre sus códigos postales atendidos, aunque su
+ *     propia dirección figura en "Santa Lucia").
+ *
+ * La provincia NUNCA se relaja fuera del caso CABA documentado arriba: ninguna
+ * de las dos vías puede devolver una sucursal de otra provincia. El CP sólo
+ * amplía el conjunto -- nunca lo reduce -- así que una sucursal real de la
+ * misma localidad con un CP distinto al del destino sigue apareciendo (vía
+ * la señal 1), igual que antes de este cambio.
+ */
+function resolveAndreaniDestinationBranches(
+  catalog: readonly AndreaniBranch[],
+  destination: { localidad: string; provincia: string; cpDestino?: string },
+): AndreaniBranch[] {
+  const provinceKey = normalizeArgentineProvinceKey(destination.provincia)
+  const localityKey = resolveAndreaniBranchLocalityKey(destination.localidad, provinceKey)
+  const cpDestino = destination.cpDestino?.trim()
+
+  return catalog.filter((branch) => {
+    const branchProvinceKey = normalizeArgentineProvinceKey(branch.direccion.provincia)
+    if (!branchProvinceMatchesRequest(branchProvinceKey, provinceKey, localityKey)) {
+      return false
+    }
+
+    const branchLocalityKey = normalizeArgentineLocationKey(branch.direccion.localidad)
+    if (branchLocalityKey === localityKey) return true
+
+    return cpDestino !== undefined && cpDestino !== "" && (branch.codigosPostalesAtendidos ?? []).includes(cpDestino)
+  })
+}
+
+async function fetchAndreaniDestinationBranches(
+  destination: { localidad: string; provincia: string; cpDestino?: string },
+  getBranches: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]>,
+): Promise<AndreaniBranch[]> {
+  const catalog = await getAndreaniBranchCatalog(getBranches)
+  return resolveAndreaniDestinationBranches(catalog, destination)
 }
 
 export function resolveAndreaniCheckoutConfig(
@@ -352,6 +449,16 @@ export function normalizeCheckoutQuoteRequest(
  * "Ciudad Autónoma de Buenos Aires" vs. el "CIUDAD AUTONOMA DE BUENOS
  * AIRES" (sin tilde) que devuelve Andreani siguen matcheando -- verificado
  * en vivo contra Andreani QA.
+ *
+ * Un mismo CP+provincia puede tener varias entradas homónimas en el
+ * catálogo de Andreani (confirmado en vivo: el CP 1424 de CABA devuelve 5
+ * entradas -- "C.A.B.A.", "Ciudad Autonoma Buenos Aires", "Ciudad Autonoma
+ * De Buenos Aires", "Caba - Parque Chacabuco" -- todas con la misma
+ * provincia). Por eso se busca la coincidencia de localidad entre TODAS las
+ * entradas de esa provincia+CP, no sólo la primera: quedarse con la primera
+ * hacía depender el resultado del orden en que Andreani devuelve el
+ * listado, y podía rechazar un destino válido si la entrada que matcheaba
+ * el nombre real no era la primera de la lista.
  */
 export function matchAndreaniCheckoutProvince(
   request: Pick<
@@ -362,20 +469,24 @@ export function matchAndreaniCheckoutProvince(
 ) {
   const provinceKey = normalizeArgentineProvinceKey(request.provincia)
   const localityKey = normalizeArgentineLocationKey(request.localidad)
-  const match = localities.find(
+  const sameProvinceAndPostalCode = localities.filter(
     (locality) =>
       locality.codigosPostales.includes(request.cpDestino) &&
       normalizeArgentineProvinceKey(locality.provincia) === provinceKey,
   )
 
-  if (!match) {
+  if (!sameProvinceAndPostalCode.length) {
     throw new AndreaniError(
       "VALIDATION_ERROR",
       "El código postal no corresponde a la provincia seleccionada.",
     )
   }
 
-  if (normalizeArgentineLocationKey(match.localidad) !== localityKey) {
+  const match = sameProvinceAndPostalCode.find(
+    (locality) => normalizeArgentineLocationKey(locality.localidad) === localityKey,
+  )
+
+  if (!match) {
     throw new AndreaniError(
       "VALIDATION_ERROR",
       "La localidad no corresponde al código postal indicado.",
@@ -628,13 +739,7 @@ export async function quoteAndreaniCheckout(
         ))
     const getBranches =
       dependencies.getBranches ??
-      ((filters: AndreaniBranchFilters) =>
-        getCachedReferenceData(
-          localityBranchCacheKey(request.localidad, request.provincia),
-          branchCache,
-          branchRequests,
-          () => referenceClient.getSucursales(filters),
-        ))
+      ((filters: AndreaniBranchFilters) => referenceClient.getSucursales(filters))
     const destinationIsCached =
       dependencies.isDestinationCached?.(request) ??
       isCheckoutDestinationCached(
@@ -671,9 +776,8 @@ export async function quoteAndreaniCheckout(
     const branchesPromise = (async () => {
       if (!config.sucursalContrato) return []
       try {
-        const result = await fetchAndreaniLocalityBranches(
-          request.localidad,
-          request.provincia,
+        const result = await fetchAndreaniDestinationBranches(
+          { localidad: request.localidad, provincia: request.provincia, cpDestino: request.cpDestino },
           getBranches,
         )
         mark("sucursales", branchesStart)
@@ -854,17 +958,17 @@ interface ResolveVerifiedAndreaniBranchDependencies {
 
 /**
  * Verificación server-side de la sucursal Andreani que eligió el cliente:
- * el cliente sólo manda un id (idgla); acá se vuelve a resolver la MISMA
- * lista real de sucursales para esa localidad+provincia destino (mismo
- * filtro y mismo caché que usa la cotización -- casi siempre un cache hit,
- * porque la localidad ya se cotizó momentos antes) y se exige que el id
- * elegido esté en esa lista. Todo lo que se persiste después sale de acá
- * (respuesta real de Andreani), nunca de nombre/dirección que pudo mandar
- * el navegador -- por eso no existe una versión de esta función que reciba
- * esos campos como input.
+ * el cliente sólo manda un id (idgla); acá se vuelve a resolver el MISMO
+ * catálogo nacional y el MISMO matching territorial que usa la cotización
+ * (`resolveAndreaniDestinationBranches` -- casi siempre un cache hit sobre
+ * el catálogo, porque ya se consultó momentos antes al cotizar) y se exige
+ * que el id elegido esté en esa lista. Todo lo que se persiste después sale
+ * de acá (respuesta real de Andreani), nunca de nombre/dirección/CP que
+ * pudo mandar el navegador -- por eso no existe una versión de esta función
+ * que reciba esos campos como input.
  */
 export async function resolveVerifiedAndreaniBranch(
-  destination: { localidad: string; provincia: string },
+  destination: { localidad: string; provincia: string; cpDestino: string },
   sucursalId: string | number,
   dependencies: ResolveVerifiedAndreaniBranchDependencies = {},
 ): Promise<VerifiedAndreaniBranch> {
@@ -880,10 +984,12 @@ export async function resolveVerifiedAndreaniBranch(
 
   const localidad = requiredText(destination?.localidad)
   const provincia = requiredText(destination?.provincia)
+  const cpDestino = requiredText(destination?.cpDestino)
   const targetId = Number(sucursalId)
   if (
     !localidad ||
     !provincia ||
+    !/^\d{4}$/.test(cpDestino) ||
     !Number.isSafeInteger(targetId) ||
     targetId <= 0
   ) {
@@ -902,15 +1008,13 @@ export async function resolveVerifiedAndreaniBranch(
         env: { ...env, ANDREANI_ENV: "QA" },
         productionAccess: undefined,
       })
-      return getCachedReferenceData(
-        localityBranchCacheKey(localidad, provincia),
-        branchCache,
-        branchRequests,
-        () => referenceClient.getSucursales(filters),
-      )
+      return referenceClient.getSucursales(filters)
     })
 
-  const branches = await fetchAndreaniLocalityBranches(localidad, provincia, getBranches)
+  const branches = await fetchAndreaniDestinationBranches(
+    { localidad, provincia, cpDestino },
+    getBranches,
+  )
 
   const branch = branches.find((item) => item.id === targetId)
   if (!branch) {

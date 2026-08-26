@@ -477,7 +477,11 @@ export async function resolveCheckoutOrderShippingBranch(
   }
 
   return resolveVerifiedAndreaniBranch(
-    { localidad: customer?.localidad ?? "", provincia: customer?.provincia ?? "" },
+    {
+      localidad: customer?.localidad ?? "",
+      provincia: customer?.provincia ?? "",
+      cpDestino: customer?.cpDestino ?? "",
+    },
     sucursalId,
     dependencies,
   )
