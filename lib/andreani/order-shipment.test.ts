@@ -1278,6 +1278,26 @@ test("PROD autorizado usa cliente/contrato PROD y pide productionAccess shipment
   assert.equal(admin.tables.ordenes.andreani_creation_environment, "PROD")
 })
 
+test("PROD resuelve completo sin ANDREANI_QA_ORIGIN_BRANCH_ID, aislado de ANDREANI_ENV=qa", async () => {
+  const admin = createFakeAdmin(singleItemTables())
+  const capturedInputs: AndreaniCreateShipmentInput[] = []
+
+  const result = await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: prodShipmentEnv({
+      ANDREANI_ENV: "qa",
+      ANDREANI_QA_ORIGIN_BRANCH_ID: undefined,
+    }),
+    crearOrdenEnvio: async (input) => {
+      capturedInputs.push(input)
+      return officialOrderResponse
+    },
+  })
+
+  assert.equal(result.status, "created")
+  assert.deepEqual(capturedInputs[0]?.envio.origen, { sucursal: { id: "10179" } })
+  assert.equal(admin.tables.ordenes.andreani_creation_environment, "PROD")
+})
+
 test("un rechazo QA no bloquea un primer intento PROD legítimo (caso BX-1003)", async () => {
   const admin = createFakeAdmin(
     singleItemTables({

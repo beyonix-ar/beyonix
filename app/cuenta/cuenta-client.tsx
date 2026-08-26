@@ -65,8 +65,8 @@ import {
   getCuentaItemColor,
   getCuentaItemImage,
   isInvoiceAvailable,
-  normalizeTrackingUrl,
 } from "@/lib/account/account-utils"
+import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import {
   TRANSFER_ALIAS,
   TRANSFER_ACCOUNT_HOLDER,
@@ -1424,6 +1424,17 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const [downloadingCreditNote, setDownloadingCreditNote] = useState(false)
   const [refundProofOpening, setRefundProofOpening] = useState(false)
   const [refundProofError, setRefundProofError] = useState("")
+  const [trackingCopied, setTrackingCopied] = useState(false)
+
+  async function copyTrackingNumber(value: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      setTrackingCopied(true)
+      window.setTimeout(() => setTrackingCopied(false), 1800)
+    } catch {
+      setError("No pudimos copiar el número. Seleccionalo manualmente.")
+    }
+  }
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" })
@@ -1600,8 +1611,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const status = getClientOrderStatusBadge(order)
   const isCancelled = (order.estado ?? "").toLowerCase() === "cancelado"
   const orderDelivered = isOrderDetailDelivered(order)
-  const trackingNumber = order.andreani_tracking || order.tracking_number || ""
-  const trackingUrl = normalizeTrackingUrl(order.tracking_url)
+  const orderTracking = resolveOrderTrackingLink(order)
+  const trackingNumber = orderTracking.trackingNumber ?? ""
+  const trackingUrl = orderTracking.url
   const rawShippingProvider = (
     order.envio_proveedor ||
     order.shipping_provider ||
@@ -2004,11 +2016,28 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                           {shippingProvider}
                         </p>
                       )}
-                      <p className="mt-0.5 text-xs font-medium text-beyonix-gray-500">
-                        {trackingNumber
-                          ? `Código: ${trackingNumber}`
-                          : "Disponible después del despacho."}
-                      </p>
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <p className="text-xs font-medium text-beyonix-gray-500">
+                          {trackingNumber
+                            ? `Código: ${trackingNumber}`
+                            : "Disponible después del despacho."}
+                        </p>
+                        {trackingNumber && (
+                          <button
+                            type="button"
+                            onClick={() => void copyTrackingNumber(trackingNumber)}
+                            aria-label="Copiar número de seguimiento"
+                            title={trackingCopied ? "Copiado" : "Copiar seguimiento"}
+                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-beyonix-gray-500 transition-colors hover:text-white"
+                          >
+                            {trackingCopied ? (
+                              <CheckCircle2 className="size-3.5" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                       <div className="pt-3">
                         {trackingUrl ? (
                           <a

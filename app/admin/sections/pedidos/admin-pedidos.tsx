@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
+  Copy,
   CreditCard,
   Download,
   Eye,
@@ -38,6 +39,7 @@ import { useAuth } from "@/context/auth-context"
 import { usePedidos } from "@/hooks/use-pedidos"
 import { AdminClaimManager, PROBLEM_LABELS } from "@/components/claims/admin-claim-manager"
 import { parseDeliveryAddress } from "@/lib/delivery-address"
+import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import {
   isPhysicallyReceivedStatus,
   receptionStatusForReturnShippingParty,
@@ -4707,6 +4709,7 @@ function PedidoDetailModal({
   const dispatch = getDispatchAlert(pedido)
   const DispatchIcon = dispatch.label === "Entregado" ? CheckCircle2 : AlertTriangle
   const tracking = pedido.andreani_tracking || pedido.tracking_number
+  const pedidoTracking = resolveOrderTrackingLink(pedido)
   const savedShippingProvider = (
     pedido.shipping_provider ||
     pedido.envio_proveedor ||
@@ -4742,6 +4745,7 @@ function PedidoDetailModal({
   } | null>(null)
   const [andreaniLabelLoading, setAndreaniLabelLoading] =
     useState<AndreaniLabelAction | null>(null)
+  const [trackingCopied, setTrackingCopied] = useState(false)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [invoiceDownloading, setInvoiceDownloading] = useState(false)
   const [orderSummarySeen, setOrderSummarySeen] = useState(true)
@@ -4936,13 +4940,17 @@ function PedidoDetailModal({
         link.click()
         window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000)
       } else if (labelWindow) {
+        // El listener de "load" se agrega DESPUÉS de navegar a blobUrl a
+        // propósito: si se agrega antes, puede engancharse al "load" de la
+        // pestaña en blanco inicial (about:blank) en lugar del PDF real,
+        // disparando print() antes de que la etiqueta esté visible.
+        labelWindow.location.href = blobUrl
         if (action === "print") {
           labelWindow.addEventListener("load", () => {
             labelWindow.print()
             window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000)
           }, { once: true })
         }
-        labelWindow.location.href = blobUrl
       } else {
         URL.revokeObjectURL(blobUrl)
         throw new Error("El navegador bloqueó la ventana de la etiqueta.")
@@ -4957,6 +4965,19 @@ function PedidoDetailModal({
       })
     } finally {
       setAndreaniLabelLoading(null)
+    }
+  }
+
+  const copyTrackingNumber = async (trackingNumber: string) => {
+    try {
+      await navigator.clipboard.writeText(trackingNumber)
+      setTrackingCopied(true)
+      window.setTimeout(() => setTrackingCopied(false), 1800)
+    } catch {
+      setAndreaniNotice({
+        ok: false,
+        message: "No pudimos copiar el número. Seleccionalo manualmente.",
+      })
     }
   }
 
@@ -5800,6 +5821,23 @@ function PedidoDetailModal({
                   label="Seguimiento"
                   value={tracking || "Pendiente"}
                   icon={<RefreshCw className="size-3.5" />}
+                  action={
+                    pedidoTracking.trackingNumber ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyTrackingNumber(pedidoTracking.trackingNumber!)}
+                        aria-label={`Copiar número de seguimiento del pedido ${pedido.id}`}
+                        title={trackingCopied ? "Copiado" : "Copiar seguimiento"}
+                        className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-beyonix-gray-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/55"
+                      >
+                        {trackingCopied ? (
+                          <Check className="size-3" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </button>
+                    ) : undefined
+                  }
                 />
                 <ShippingMiniCard
                   label="Envío ID"
@@ -5881,12 +5919,16 @@ function PedidoDetailModal({
                     onClick={() => void handleModalAndreaniAction("tracking")}
                     className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-11px font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <RefreshCw className="size-4" />
+                    {andreaniLoading === "tracking" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
                     Consultar
                   </button>
-                  {pedido.tracking_url ? (
+                  {pedidoTracking.url ? (
                     <ExternalLink
-                      href={normalizeExternalUrl(pedido.tracking_url) ?? "#"}
+                      href={pedidoTracking.url}
                       label="Ver envío"
                       ariaLabel={`Abrir seguimiento del pedido ${pedido.id}`}
                       icon={<Eye className="size-4" />}
@@ -6090,10 +6132,12 @@ function ShippingMiniCard({
   label,
   value,
   icon,
+  action,
 }: {
   label: string
   value: string
   icon?: ReactNode
+  action?: ReactNode
 }) {
   return (
     <div className="admin-order-shipping-detail min-w-0">
@@ -6103,9 +6147,12 @@ function ShippingMiniCard({
           <p className="text-9px font-bold uppercase tracking-widest text-beyonix-gray-300">
             {label}
           </p>
-          <p className="mt-0.5 truncate text-xs font-black text-white sm:text-sm">
-            {value}
-          </p>
+          <div className="mt-0.5 flex items-center gap-1">
+            <p className="truncate text-xs font-black text-white sm:text-sm">
+              {value}
+            </p>
+            {action}
+          </div>
         </div>
       </div>
     </div>

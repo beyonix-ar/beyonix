@@ -41,6 +41,34 @@ test("el endpoint de tracking exige admin, andreani_tracking y usa el ambiente d
   assert.doesNotMatch(source, /estado:\s*"entregado"/)
 })
 
+test("el endpoint de tracking siempre consulta getEstadoOrden, incluso con tracking ya conocido", () => {
+  const source = readRoute("../../app/api/andreani/tracking/route.ts")
+
+  // Regresión: antes se omitía getEstadoOrden apenas existía
+  // andreani_tracking, así que un rechazo posterior a la creación
+  // ("Rechazado") nunca se detectaba desde "Consultar".
+  assert.doesNotMatch(source, /numeroDeTracking\s*\?\s*null\s*:/)
+  assert.match(source, /const orderStatus = await getEstadoOrden\(/)
+  assert.match(source, /orderStatus\.estado === "Rechazado"/)
+})
+
+test("el endpoint de tracking prioriza el evento con Estado legible sobre el evento técnicamente más reciente", () => {
+  const source = readRoute("../../app/api/andreani/tracking/route.ts")
+
+  // Regresión: tomar ciegamente el evento más reciente por fecha podía
+  // pisar un estado legible ("Pendiente de ingreso") con el código interno
+  // de un evento posterior sin Estado (p. ej. "OrdenDeEnvioCreada").
+  assert.match(source, /sortedEvents\.find\(\(event\) => event\.Estado\)/)
+  assert.doesNotMatch(source, /latestEvent\.Estado \?\? latestEvent\.Evento/)
+})
+
+test("el endpoint de tracking siempre devuelve un mensaje visible, incluso sin eventos nuevos", () => {
+  const source = readRoute("../../app/api/andreani/tracking/route.ts")
+
+  assert.match(source, /El envío continúa: \$\{logisticsEstado\}/)
+  assert.match(source, /rechazó la orden después de haberla creado/)
+})
+
 test("ninguna de las dos rutas expone el body completo de Andreani ni credenciales en la respuesta de error", () => {
   for (const path of [
     "../../app/api/andreani/etiqueta/route.ts",

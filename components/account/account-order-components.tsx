@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useEffect, useState } from "react"
-import { Bell, Check, ExternalLink, Package, Sparkles, Star } from "lucide-react"
+import { Bell, Check, Copy, ExternalLink, Package, Sparkles, Star } from "lucide-react"
 
 import { BeyonixButton } from "@/components/account/account-ui"
 import { supabase } from "@/lib/supabase/client"
@@ -10,9 +10,9 @@ import { cn } from "@/lib/utils"
 import {
   getCuentaItemImage,
   getOrderProgressSteps,
-  normalizeTrackingUrl,
   type OrderProgressTone,
 } from "@/lib/account/account-utils"
+import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 export const DOWNLOADED_INVOICES_STORAGE_KEY = "beyonix:downloaded-invoices"
@@ -192,10 +192,22 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
 }
 
 export function OrderTrackingPanel({ order }: { order: SupabasePedido }) {
-  const trackingNumber = order.andreani_tracking || order.tracking_number || ""
-  const trackingUrl = normalizeTrackingUrl(order.tracking_url)
+  const [copied, setCopied] = useState(false)
+  const { trackingNumber, url: trackingUrl } = resolveOrderTrackingLink(order)
 
   if (!trackingNumber && !trackingUrl) return null
+
+  async function copyTrackingNumber() {
+    if (!trackingNumber) return
+    try {
+      await navigator.clipboard.writeText(trackingNumber)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      // Sin feedback de error acá: el número ya está visible para
+      // seleccionar manualmente si el portapapeles falla.
+    }
+  }
 
   return (
     <div className="mb-3 rounded-xl border border-beyonix-blue-light/20 bg-beyonix-blue/12 p-2.5">
@@ -207,9 +219,22 @@ export function OrderTrackingPanel({ order }: { order: SupabasePedido }) {
           <p className="text-xs font-semibold text-white/45">
             Número de seguimiento
           </p>
-          <p className="mt-1 break-all text-sm font-black text-white">
-            {trackingNumber || "Pendiente"}
-          </p>
+          <div className="mt-1 flex items-center gap-1.5">
+            <p className="break-all text-sm font-black text-white">
+              {trackingNumber || "Pendiente"}
+            </p>
+            {trackingNumber && (
+              <button
+                type="button"
+                onClick={() => void copyTrackingNumber()}
+                aria-label="Copiar número de seguimiento"
+                title={copied ? "Copiado" : "Copiar seguimiento"}
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-white/45 transition-colors hover:text-white"
+              >
+                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              </button>
+            )}
+          </div>
         </div>
         {trackingUrl && (
           <BeyonixButton asChild size="sm" className="shrink-0 self-center">

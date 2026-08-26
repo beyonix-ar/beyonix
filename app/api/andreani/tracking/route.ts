@@ -66,39 +66,42 @@ export async function POST(request: Request) {
       env: { ...process.env, ANDREANI_ENV: environment },
       productionAccess: environment === "PROD" ? "shipment-read" as const : undefined,
     }
-    const orderStatus = numeroDeTracking
-      ? null
-      : await getEstadoOrden(envioId, clientOptions)
+    // Se consulta siempre, incluso con tracking ya conocido: es la única
+    // forma de detectar que Andreani rechazó la orden después de haberla
+    // creado (estado "Rechazado"), algo que /v3/trazas no informa.
+    const orderStatus = await getEstadoOrden(envioId, clientOptions)
     const resolvedTracking =
-      numeroDeTracking || orderStatus?.bultos[0]?.numeroDeEnvio || ""
+      numeroDeTracking || orderStatus.bultos[0]?.numeroDeEnvio || ""
     const tracking = resolvedTracking
       ? await getTrackingPullV3(resolvedTracking, clientOptions)
       : { eventos: [] }
 
-    const [latestEvent] = [...tracking.eventos].sort(
+    const sortedEvents = [...tracking.eventos].sort(
       (left, right) => new Date(right.Fecha).getTime() - new Date(left.Fecha).getTime(),
     )
+    const [latestEvent] = sortedEvents
+    // Algunos eventos (p. ej. "OrdenDeEnvioCreada") no traen un Estado
+    // legible en /v3/trazas -- el estado logístico mostrado al admin debe
+    // reflejar el evento más reciente que sí lo tenga, no el técnicamente
+    // más reciente sin más (si no, se pisa un estado real como "Pendiente
+    // de ingreso" con un código interno como "OrdenDeEnvioCreada").
+    const latestEventWithEstado = sortedEvents.find((event) => event.Estado)
+    const rejectedAfterCreation = orderStatus.estado === "Rechazado"
+    const logisticsEstado = rejectedAfterCreation
+      ? orderStatus.estado
+      : (latestEventWithEstado?.Estado ?? orderStatus.estado)
 
     const checkedAt = new Date().toISOString()
     const updatePayload = {
-      ...(orderStatus
-        ? {
-            andreani_estado: orderStatus.estado,
-            andreani_tracking: resolvedTracking || null,
-            andreani_etiqueta_url:
-              orderStatus.etiquetasPorAgrupador ??
-              orderStatus.bultos[0]?.linking?.find((link) =>
-                link.meta.toLowerCase().includes("etiqueta"),
-              )?.contenido ??
-              null,
-          }
-        : {}),
-      ...(latestEvent
-        ? {
-            andreani_estado: latestEvent.Estado ?? latestEvent.Evento,
-            andreani_tracking_event_at: latestEvent.Fecha,
-          }
-        : {}),
+      andreani_estado: logisticsEstado,
+      andreani_tracking: resolvedTracking || null,
+      andreani_etiqueta_url:
+        orderStatus.etiquetasPorAgrupador ??
+        orderStatus.bultos[0]?.linking?.find((link) =>
+          link.meta.toLowerCase().includes("etiqueta"),
+        )?.contenido ??
+        null,
+      ...(latestEvent ? { andreani_tracking_event_at: latestEvent.Fecha } : {}),
       andreani_tracking_checked_at: checkedAt,
     }
     const { error: persistenceError } = await authorization.admin
@@ -113,11 +116,15 @@ export async function POST(request: Request) {
       )
     }
 
+    const message = rejectedAfterCreation
+      ? "Andreani rechazó la orden después de haberla creado. Requiere revisión manual."
+      : latestEvent
+        ? `${logisticsEstado} (${latestEvent.Fecha})`
+        : `El envío continúa: ${logisticsEstado}.`
+
     return NextResponse.json({
       ok: true,
-      message: latestEvent
-        ? `${latestEvent.Estado ?? latestEvent.Evento} (${latestEvent.Fecha})`
-        : "Sin eventos de tracking todavía.",
+      message,
       eventos: tracking.eventos,
       checkedAt,
     })
