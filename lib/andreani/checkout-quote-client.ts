@@ -25,7 +25,7 @@ import {
   canonicalizeCheckoutQuoteItems,
   type CheckoutQuoteItemInput,
 } from "../cart/checkout-shipping-items.ts"
-import type { AndreaniBranch } from "./types.ts"
+import type { AndreaniBranchWithDistance } from "./types.ts"
 
 export type { CheckoutQuoteItemInput }
 
@@ -44,13 +44,16 @@ export interface CheckoutQuoteDestinationInput {
   localidad: string
   provincia: string
   items: CheckoutQuoteItemInput[]
+  /** Calle y altura del domicilio -- opcionales, sólo se envían para ordenar sucursales por cercanía. Nunca forman parte de la clave de caché: cambiarlas no dispara una cotización nueva. */
+  calle?: string
+  numero?: string
 }
 
 export interface CheckoutQuoteRawOption {
   type?: string
   price?: number
   quoteToken?: string
-  branches?: AndreaniBranch[]
+  branches?: AndreaniBranchWithDistance[]
 }
 
 interface MinimalCartItem {
@@ -403,6 +406,8 @@ export function getShippingQuoteOptions(
             localidad: input.localidad.trim(),
             provincia: input.provincia.trim(),
             items: input.items,
+            calle: input.calle?.trim() || undefined,
+            numero: input.numero?.trim() || undefined,
           }),
           signal,
           cache: "no-store",

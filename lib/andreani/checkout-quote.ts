@@ -21,9 +21,12 @@ import {
   type AndreaniClientOptions,
 } from "./client.ts"
 import { isCheckoutDestinationCached } from "./checkout-destinations.ts"
+import { sortAndreaniBranchesByDistance } from "./branch-distance.ts"
+import { geocodeCustomerAddress } from "../geocoding/nominatim.ts"
 import type {
   AndreaniBranch,
   AndreaniBranchFilters,
+  AndreaniBranchWithDistance,
   AndreaniCheckoutQuoteOption,
   AndreaniCheckoutQuoteRequest,
   AndreaniLocality,
@@ -92,6 +95,7 @@ interface CheckoutQuoteDependencies {
   quoteTariff?: (
     input: AndreaniTariffRequest,
   ) => Promise<AndreaniTariffResponse>
+  geocodeAddress?: typeof geocodeCustomerAddress
   isDestinationCached?: (
     request: Pick<
       AndreaniCheckoutQuoteRequest,
@@ -187,6 +191,39 @@ function buildAndreaniReferenceClient(
       })
 }
 
+/**
+ * Sucursales reales de una localidad+provincia (nunca por CP exacto): el CP
+ * de un destino suele cubrir sólo una porción de la localidad, así que
+ * filtrar por `codigoPostal` descarta sucursales válidas de la misma ciudad
+ * (confirmado en vivo contra Andreani QA: Rosario CP 2000 devuelve 1 sola
+ * sucursal por CP exacto, pero 3 sucursales reales y distintas por
+ * localidad). Andreani no acepta filtrar por provincia directamente, así que
+ * se vuelve a comprobar acá -- por si Andreani hiciera un match de localidad
+ * más laxo que incluyera una homónima de otra provincia.
+ */
+async function fetchAndreaniLocalityBranches(
+  localidad: string,
+  provincia: string,
+  getBranches: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]>,
+): Promise<AndreaniBranch[]> {
+  const branches = await getBranches({
+    localidad,
+    canal: "B2C",
+    seHaceAtencionAlCliente: true,
+  })
+  const provinceKey = normalizeArgentineProvinceKey(provincia)
+  const localityKey = normalizeArgentineLocationKey(localidad)
+  return branches.filter(
+    (branch) =>
+      normalizeArgentineLocationKey(branch.direccion.localidad) === localityKey &&
+      normalizeArgentineProvinceKey(branch.direccion.provincia) === provinceKey,
+  )
+}
+
+function localityBranchCacheKey(localidad: string, provincia: string) {
+  return `${normalizeArgentineProvinceKey(provincia)}|${normalizeArgentineLocationKey(localidad)}`
+}
+
 export function resolveAndreaniCheckoutConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): CheckoutQuoteConfig {
@@ -259,6 +296,17 @@ export function normalizeCheckoutQuoteRequest(
   if (!Array.isArray(record.items) || record.items.length === 0 || record.items.length > 50) {
     throw new AndreaniError("VALIDATION_ERROR", "El carrito no es válido para cotizar.")
   }
+  // calle/numero son opcionales y sólo se usan para geocodificar y ordenar
+  // sucursales por cercanía -- un valor ausente o demasiado largo simplemente
+  // se descarta acá, nunca invalida la cotización en sí.
+  const calle =
+    typeof record.calle === "string" && record.calle.trim().length <= 200
+      ? record.calle.trim()
+      : undefined
+  const numero =
+    typeof record.numero === "string" && record.numero.trim().length <= 20
+      ? record.numero.trim()
+      : undefined
 
   const items = record.items.map((rawItem) => {
     if (!rawItem || typeof rawItem !== "object") {
@@ -291,7 +339,7 @@ export function normalizeCheckoutQuoteRequest(
     return { productId, quantity, variantId, conditionedStockId }
   })
 
-  return { cpDestino, localidad, provincia, items }
+  return { cpDestino, localidad, provincia, items, calle, numero }
 }
 
 /**
@@ -582,7 +630,7 @@ export async function quoteAndreaniCheckout(
       dependencies.getBranches ??
       ((filters: AndreaniBranchFilters) =>
         getCachedReferenceData(
-          request.cpDestino,
+          localityBranchCacheKey(request.localidad, request.provincia),
           branchCache,
           branchRequests,
           () => referenceClient.getSucursales(filters),
@@ -623,11 +671,11 @@ export async function quoteAndreaniCheckout(
     const branchesPromise = (async () => {
       if (!config.sucursalContrato) return []
       try {
-        const result = await getBranches({
-          codigoPostal: request.cpDestino,
-          canal: "B2C",
-          seHaceAtencionAlCliente: true,
-        })
+        const result = await fetchAndreaniLocalityBranches(
+          request.localidad,
+          request.provincia,
+          getBranches,
+        )
         mark("sucursales", branchesStart)
         return result
       } catch (error) {
@@ -726,11 +774,31 @@ export async function quoteAndreaniCheckout(
           authenticationPromise,
         ]).then(async ([packageData, branches]) => {
           if (branches.length === 0) return null
-          const quoted = await quoteContract("sucursal", sucursalContrato, packageData)
+          // Geocodificar el domicilio corre en paralelo con la tarifa (no la
+          // bloquea): si no hay resultado, las sucursales se devuelven sin
+          // ordenar por distancia en vez de fallar la cotización entera.
+          const originStart = performance.now()
+          const geocodeAddress = dependencies.geocodeAddress ?? geocodeCustomerAddress
+          const originPromise = geocodeAddress({
+            calle: request.calle,
+            numero: request.numero,
+            localidad: request.localidad,
+            provincia: request.provincia,
+            codigoPostal: request.cpDestino,
+          }).then((point) => {
+            mark("geocoding", originStart)
+            return point
+          })
+          const [quoted, origin] = await Promise.all([
+            quoteContract("sucursal", sucursalContrato, packageData),
+            originPromise,
+          ])
           // Se exponen las sucursales reales ya consultadas para decidir si
           // ofrecer la modalidad -- el checkout las usa para el selector, en
           // vez de tener que volver a pedirlas aparte.
-          return { ...quoted, branches }
+          const sortedBranches: AndreaniBranchWithDistance[] =
+            sortAndreaniBranchesByDistance(branches, origin)
+          return { ...quoted, branches: sortedBranches }
         })
       : Promise.resolve(null)
 
@@ -787,15 +855,16 @@ interface ResolveVerifiedAndreaniBranchDependencies {
 /**
  * Verificación server-side de la sucursal Andreani que eligió el cliente:
  * el cliente sólo manda un id (idgla); acá se vuelve a resolver la MISMA
- * lista real de sucursales para ese CP destino (mismo filtro y mismo caché
- * por CP que usa la cotización -- casi siempre un cache hit, porque el CP ya
- * se cotizó momentos antes) y se exige que el id elegido esté en esa lista.
- * Todo lo que se persiste después sale de acá (respuesta real de Andreani),
- * nunca de nombre/dirección que pudo mandar el navegador -- por eso no
- * existe una versión de esta función que reciba esos campos como input.
+ * lista real de sucursales para esa localidad+provincia destino (mismo
+ * filtro y mismo caché que usa la cotización -- casi siempre un cache hit,
+ * porque la localidad ya se cotizó momentos antes) y se exige que el id
+ * elegido esté en esa lista. Todo lo que se persiste después sale de acá
+ * (respuesta real de Andreani), nunca de nombre/dirección que pudo mandar
+ * el navegador -- por eso no existe una versión de esta función que reciba
+ * esos campos como input.
  */
 export async function resolveVerifiedAndreaniBranch(
-  cpDestino: string,
+  destination: { localidad: string; provincia: string },
   sucursalId: string | number,
   dependencies: ResolveVerifiedAndreaniBranchDependencies = {},
 ): Promise<VerifiedAndreaniBranch> {
@@ -809,10 +878,12 @@ export async function resolveVerifiedAndreaniBranch(
     )
   }
 
-  const normalizedCp = requiredText(String(cpDestino ?? "")).toUpperCase()
+  const localidad = requiredText(destination?.localidad)
+  const provincia = requiredText(destination?.provincia)
   const targetId = Number(sucursalId)
   if (
-    !/^\d{4}$/.test(normalizedCp) ||
+    !localidad ||
+    !provincia ||
     !Number.isSafeInteger(targetId) ||
     targetId <= 0
   ) {
@@ -832,18 +903,14 @@ export async function resolveVerifiedAndreaniBranch(
         productionAccess: undefined,
       })
       return getCachedReferenceData(
-        normalizedCp,
+        localityBranchCacheKey(localidad, provincia),
         branchCache,
         branchRequests,
         () => referenceClient.getSucursales(filters),
       )
     })
 
-  const branches = await getBranches({
-    codigoPostal: normalizedCp,
-    canal: "B2C",
-    seHaceAtencionAlCliente: true,
-  })
+  const branches = await fetchAndreaniLocalityBranches(localidad, provincia, getBranches)
 
   const branch = branches.find((item) => item.id === targetId)
   if (!branch) {

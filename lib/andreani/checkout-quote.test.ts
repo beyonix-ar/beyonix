@@ -57,6 +57,25 @@ const officialBranchResponse = [
   },
 ]
 
+const officialBranchResponsePasoDeLosLibres = [
+  {
+    id: 20011,
+    codigo: "PLB",
+    numero: "11",
+    descripcion: "PASO DE LOS LIBRES (CENTRO)",
+    canal: "B2C",
+    direccion: {
+      calle: "Colón",
+      numero: "850",
+      provincia: "CORRIENTES",
+      localidad: "PASO DE LOS LIBRES",
+      region: "Litoral",
+      pais: "Argentina",
+      codigoPostal: "3230",
+    },
+  },
+]
+
 function qaQuoteEnvironment(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "test",
@@ -551,8 +570,9 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
       getLocalities: async () => officialLocalityResponse,
       getBranches: async (filters) => {
         branchFilters = filters
-        return officialBranchResponse
+        return officialBranchResponsePasoDeLosLibres
       },
+      geocodeAddress: async () => null,
       loadItems: async () => [
         {
           product: completeProduct,
@@ -579,7 +599,7 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
   )
 
   assert.deepEqual(branchFilters, {
-    codigoPostal: "3230",
+    localidad: "PASO DE LOS LIBRES",
     canal: "B2C",
     seHaceAtencionAlCliente: true,
   })
@@ -591,14 +611,164 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
       // Las sucursales reales ya consultadas para decidir si ofrecer la
       // modalidad ahora se exponen -- antes se descartaban después del
       // chequeo de existencia, dejando al checkout sin ningún dato real
-      // para que el cliente eligiera una sucursal concreta.
-      branches: officialBranchResponse,
+      // para que el cliente eligiera una sucursal concreta. Sin domicilio
+      // geocodificable en este caso (mockeado a null), quedan tal cual las
+      // trajo Andreani, sin distanciaKm.
+      branches: officialBranchResponsePasoDeLosLibres,
     },
   ])
 })
 
+test("filtra por localidad+provincia -- descarta una homónima de otra provincia que Andreani pudiera matchear de forma laxa", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  const options = await quoteAndreaniCheckout(
+    {
+      cpDestino: "3230",
+      localidad: "PASO DE LOS LIBRES",
+      provincia: "CORRIENTES",
+      items: [{ productId: 10, quantity: 1 }],
+    },
+    {
+      env: {
+        ...qaQuoteEnvironment(),
+        ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+      },
+      getLocalities: async () => officialLocalityResponse,
+      // Andreani devuelve una mezcla: la sucursal real de Corrientes y una
+      // homónima de otra provincia -- sólo la primera debe sobrevivir.
+      getBranches: async () => [
+        ...officialBranchResponsePasoDeLosLibres,
+        officialBranchResponse[0],
+      ],
+      geocodeAddress: async () => null,
+      loadItems: async () => [
+        {
+          product: completeProduct,
+          variant: null,
+          quantity: 1,
+          discountPercent: 0,
+        },
+      ],
+      quoteTariff: async (input) => ({
+        pesoAforado: "1",
+        tarifaSinIva: {
+          seguroDistribucion: "0",
+          distribucion: "13400",
+          total: "13400",
+        },
+        tarifaConIva: {
+          seguroDistribucion: "0",
+          distribucion: "13500",
+          total:
+            input.contrato === "CONTRATO-SUCURSAL-QA" ? "13100" : "13500",
+        },
+      }),
+    },
+  )
+
+  const branchOption = options.find((option) => option.type === "sucursal")
+  assert.equal(branchOption?.branches?.length, 1)
+  assert.equal(branchOption?.branches?.[0].id, 20011)
+})
+
+test("cuando se puede geocodificar el domicilio, las sucursales se devuelven ordenadas por cercanía real con distanciaKm", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  const lejana = {
+    id: 10229,
+    codigo: "PRC",
+    numero: "29",
+    descripcion: "ROSARIO (CIRCUNVALACION)",
+    canal: "B2C",
+    direccion: {
+      calle: "José María Rosa",
+      numero: "8051",
+      provincia: "SANTA FE",
+      localidad: "ROSARIO",
+      region: "Litoral",
+      pais: "Argentina",
+      codigoPostal: "2000",
+    },
+    coordenadas: { latitud: "-33.015652", longitud: "-60.667958" },
+  }
+  const cercana = {
+    id: 10044,
+    codigo: "ROS",
+    numero: "44",
+    descripcion: "ROSARIO (AV SAN MARTIN)",
+    canal: "B2C",
+    direccion: {
+      calle: "San Martín",
+      numero: "2127",
+      provincia: "SANTA FE",
+      localidad: "ROSARIO",
+      region: "Litoral",
+      pais: "Argentina",
+      codigoPostal: "2000",
+    },
+    coordenadas: { latitud: "-32.962580", longitud: "-60.640600" },
+  }
+  let geocodedInput: unknown
+  const options = await quoteAndreaniCheckout(
+    {
+      cpDestino: "2000",
+      localidad: "ROSARIO",
+      provincia: "SANTA FE",
+      calle: "San Martín",
+      numero: "2100",
+      items: [{ productId: 10, quantity: 1 }],
+    },
+    {
+      env: {
+        ...qaQuoteEnvironment(),
+        ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+      },
+      getLocalities: async () => [
+        {
+          idDeProvLocalidad: 1,
+          localidad: "ROSARIO",
+          provincia: "SANTA FE",
+          codigosPostales: ["2000"],
+        },
+      ],
+      getBranches: async () => [lejana, cercana],
+      geocodeAddress: async (input) => {
+        geocodedInput = input
+        // Coordenadas reales muy cerca de "cercana", lejos de "lejana".
+        return { lat: -32.9626, lng: -60.6407 }
+      },
+      loadItems: async () => [
+        { product: completeProduct, variant: null, quantity: 1, discountPercent: 0 },
+      ],
+      quoteTariff: async (input) => ({
+        pesoAforado: "1",
+        tarifaSinIva: { seguroDistribucion: "0", distribucion: "13400", total: "13400" },
+        tarifaConIva: {
+          seguroDistribucion: "0",
+          distribucion: "13500",
+          total: input.contrato === "CONTRATO-SUCURSAL-QA" ? "13100" : "13500",
+        },
+      }),
+    },
+  )
+
+  assert.deepEqual(geocodedInput, {
+    calle: "San Martín",
+    numero: "2100",
+    localidad: "ROSARIO",
+    provincia: "SANTA FE",
+    codigoPostal: "2000",
+  })
+  const branchOption = options.find((option) => option.type === "sucursal")
+  assert.equal(branchOption?.branches?.[0].id, 10044)
+  assert.equal(branchOption?.branches?.[1].id, 10229)
+  assert.ok(typeof branchOption?.branches?.[0].distanciaKm === "number")
+  assert.ok(branchOption!.branches![0].distanciaKm! < branchOption!.branches![1].distanciaKm!)
+})
+
+const santaFeDestination = { localidad: "Santa Fe", provincia: "Santa Fe" }
+
 test("resolveVerifiedAndreaniBranch: id real elegido por el cliente -> snapshot canónico persistible", async () => {
-  const branch = await resolveVerifiedAndreaniBranch("3000", 10055, {
+  const branch = await resolveVerifiedAndreaniBranch(santaFeDestination, 10055, {
     env: {
       ...qaQuoteEnvironment(),
       ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
@@ -620,7 +790,7 @@ test("resolveVerifiedAndreaniBranch: id real elegido por el cliente -> snapshot 
 test("resolveVerifiedAndreaniBranch: un id inventado/manipulado (no está en la lista real) se rechaza", async () => {
   await assert.rejects(
     () =>
-      resolveVerifiedAndreaniBranch("3000", 99999, {
+      resolveVerifiedAndreaniBranch(santaFeDestination, 99999, {
         env: {
           ...qaQuoteEnvironment(),
           ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
@@ -632,11 +802,32 @@ test("resolveVerifiedAndreaniBranch: un id inventado/manipulado (no está en la 
   )
 })
 
+test("resolveVerifiedAndreaniBranch: una sucursal real pero de otra localidad/provincia (mismo id, destino distinto) se rechaza", async () => {
+  // officialBranchResponsePasoDeLosLibres.id=20011 es una sucursal real, pero
+  // de Corrientes -- pedirla para un destino en Santa Fe debe rechazarse
+  // igual que un id inventado.
+  await assert.rejects(
+    () =>
+      resolveVerifiedAndreaniBranch(santaFeDestination, 20011, {
+        env: {
+          ...qaQuoteEnvironment(),
+          ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
+        },
+        getBranches: async () => [
+          ...officialBranchResponse,
+          ...officialBranchResponsePasoDeLosLibres,
+        ],
+      }),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+  )
+})
+
 test("resolveVerifiedAndreaniBranch: nunca confía en nombre/dirección mandados por el cliente -- sólo usa lo que devuelve Andreani", async () => {
   // El propio tipo de entrada no acepta nombre/dirección -- esta prueba
   // documenta esa garantía: pase lo que pase en el "id", el resultado sale
   // siempre de officialBranchResponse.
-  const branch = await resolveVerifiedAndreaniBranch("3000", "10055", {
+  const branch = await resolveVerifiedAndreaniBranch(santaFeDestination, "10055", {
     env: {
       ...qaQuoteEnvironment(),
       ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
@@ -653,7 +844,7 @@ test("resolveVerifiedAndreaniBranch: sin contrato de sucursal configurado, recha
 
   await assert.rejects(
     () =>
-      resolveVerifiedAndreaniBranch("3000", 10055, {
+      resolveVerifiedAndreaniBranch(santaFeDestination, 10055, {
         env: qaQuoteEnvironment(),
         getBranches: async () => {
           called = true
@@ -666,23 +857,23 @@ test("resolveVerifiedAndreaniBranch: sin contrato de sucursal configurado, recha
   assert.equal(called, false)
 })
 
-test("resolveVerifiedAndreaniBranch: CP o id inválidos se rechazan sin llamar a Andreani", async () => {
+test("resolveVerifiedAndreaniBranch: localidad/provincia o id inválidos se rechazan sin llamar a Andreani", async () => {
   const env = {
     ...qaQuoteEnvironment(),
     ANDREANI_QA_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-QA",
   }
 
-  for (const [cp, id] of [
-    ["abc", 10055],
-    ["300", 10055],
-    ["3000", 0],
-    ["3000", -1],
-    ["3000", "no-numero"],
+  for (const [destination, id] of [
+    [{ localidad: "", provincia: "Santa Fe" }, 10055],
+    [{ localidad: "Santa Fe", provincia: "" }, 10055],
+    [santaFeDestination, 0],
+    [santaFeDestination, -1],
+    [santaFeDestination, "no-numero"],
   ] as const) {
     let called = false
     await assert.rejects(
       () =>
-        resolveVerifiedAndreaniBranch(cp, id, {
+        resolveVerifiedAndreaniBranch(destination, id, {
           env,
           getBranches: async () => {
             called = true

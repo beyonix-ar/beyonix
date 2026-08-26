@@ -495,7 +495,7 @@ test("resolveCheckoutOrderShippingBranch: domicilio nunca consulta sucursales ni
   let called = false
   const branch = await resolveCheckoutOrderShippingBranch(
     { provider: "andreani", type: "domicilio", quoteToken: "token" },
-    { cpDestino: "3230" },
+    { cpDestino: "3230", localidad: "Paso de los Libres", provincia: "Corrientes" },
     { getBranches: async () => { called = true; return [] } },
   )
   assert.equal(branch, null)
@@ -507,7 +507,7 @@ test("resolveCheckoutOrderShippingBranch: sucursal sin sucursalId (nunca elegida
     () =>
       resolveCheckoutOrderShippingBranch(
         { provider: "andreani", type: "sucursal", quoteToken: "token" },
-        { cpDestino: "3230" },
+        { cpDestino: "3230", localidad: "Paso de los Libres", provincia: "Corrientes" },
       ),
     (error: unknown) =>
       error instanceof AndreaniError &&
@@ -521,7 +521,7 @@ test("resolveCheckoutOrderShippingBranch: un sucursalId manipulado que no está 
     () =>
       resolveCheckoutOrderShippingBranch(
         { provider: "andreani", type: "sucursal", quoteToken: "token", sucursalId: "99999" },
-        { cpDestino: "3230" },
+        { cpDestino: "3000", localidad: "Santa Fe", provincia: "Santa Fe" },
         {
           env: {
             NODE_ENV: "test",
@@ -558,7 +558,7 @@ test("resolveCheckoutOrderShippingBranch: un sucursalId manipulado que no está 
 test("resolveCheckoutOrderShippingBranch: un sucursalId real se verifica y devuelve el snapshot canónico, listo para persistir", async () => {
   const branch = await resolveCheckoutOrderShippingBranch(
     { provider: "andreani", type: "sucursal", quoteToken: "token", sucursalId: 10055 },
-    { cpDestino: "3000" },
+    { cpDestino: "3000", localidad: "Santa Fe", provincia: "Santa Fe" },
     {
       env: {
         NODE_ENV: "test",

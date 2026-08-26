@@ -107,20 +107,28 @@ export interface AndreaniCheckoutQuoteRequest {
   localidad: string
   provincia: string
   items: AndreaniCheckoutQuoteItem[]
+  /** Calle y altura del domicilio del cliente -- opcionales, sólo se usan para geocodificar y ordenar sucursales por cercanía real. Nunca afectan la cotización en sí. */
+  calle?: string
+  numero?: string
+}
+
+/** Sucursal Andreani real con la distancia aproximada (Haversine) al domicilio del cliente, cuando se pudo geocodificar. */
+export type AndreaniBranchWithDistance = AndreaniBranch & {
+  distanciaKm?: number
 }
 
 export interface AndreaniCheckoutQuoteOption {
   type: "domicilio" | "sucursal"
   price: number
   /**
-   * Sucursales reales disponibles para el CP destino cotizado -- sólo
+   * Sucursales reales disponibles para la localidad destino cotizada -- sólo
    * presente en la opción "sucursal". Ya se consultaban internamente para
    * decidir si ofrecer la modalidad (ver branchesPromise en
-   * checkout-quote.ts); acá se exponen para que el checkout pueda mostrar
-   * un selector real en vez de descartarlas después de comprobar que
-   * existían.
+   * checkout-quote.ts); acá se exponen, ordenadas por cercanía cuando se
+   * pudo geocodificar el domicilio, para que el checkout pueda mostrar un
+   * selector real en vez de descartarlas después de comprobar que existían.
    */
-  branches?: AndreaniBranch[]
+  branches?: AndreaniBranchWithDistance[]
 }
 
 export interface AndreaniQuoteResponse {

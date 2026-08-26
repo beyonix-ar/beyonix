@@ -10,6 +10,7 @@ import {
 
 import Image from "next/image"
 import Link from "next/link"
+import dynamic from "next/dynamic"
 
 import {
   useRouter,
@@ -102,7 +103,7 @@ import {
 } from "@/lib/validation/account-fields"
 import {
   ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
-  type AndreaniBranch,
+  type AndreaniBranchWithDistance,
 } from "@/lib/andreani/types"
 import {
   buildShippingQuoteKey,
@@ -140,6 +141,24 @@ import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 
+// Leaflet (mapa de sucursales) sólo se descarga cuando el cliente elige
+// "sucursal" -- este import dinámico mantiene ese bundle entero (leaflet +
+// react-leaflet + su CSS) fuera del checkout de domicilio.
+const BranchMapPicker = dynamic(
+  () =>
+    import("@/components/checkout/branch-map-picker").then(
+      (module) => module.BranchMapPicker,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-64 items-center justify-center rounded-2xl border border-beyonix-blue-light/16 bg-black/20 text-xs text-white/50 lg:h-[420px]">
+        Cargando mapa de sucursales…
+      </div>
+    ),
+  },
+)
+
 function formatPrice(
   price: number
 ): string {
@@ -156,9 +175,7 @@ function formatPrice(
 }
 
 function getShippingOptionLabel(type: ShippingType) {
-  return type === "domicilio"
-    ? "Envío a domicilio"
-    : "Retiro en sucursal Andreani"
+  return type === "domicilio" ? "Envío a domicilio" : "Entrega en sucursal"
 }
 
 function getStockIndicatorClassName(status: StockStatus) {
@@ -289,8 +306,8 @@ interface ShippingOption {
   quoteToken: string
   provider: "andreani"
   quoteStatus: "quoted" | "pending"
-  /** Sucursales Andreani reales disponibles para el destino cotizado. Sólo presente en la opción "sucursal". */
-  branches?: AndreaniBranch[]
+  /** Sucursales Andreani reales disponibles para el destino cotizado, ordenadas por cercanía cuando se pudo geocodificar el domicilio. Sólo presente en la opción "sucursal". */
+  branches?: AndreaniBranchWithDistance[]
 }
 
 interface CheckoutStoreBenefit {
@@ -456,6 +473,12 @@ export default function CheckoutPage() {
   // dejar que una respuesta de catálogo le gane a un destino que la
   // cotización real ya confirmó válido.
   const shippingQuoteCurrentRef = useRef(false)
+  // Última calle/numero tipeados, leídos al momento de armar una cotización
+  // real (no forman parte de la clave de caché ni disparan una cotización
+  // nueva por sí solos -- ver `shippingQuoteDestination`/`buildShippingQuoteKey`).
+  // Así, cuando el efecto sí se dispara por otro motivo (CP/localidad/carrito),
+  // usa la dirección más actual sin geocodificar en cada tecla.
+  const latestStreetAddressRef = useRef({ calle: "", numero: "" })
   const provinceSelectOptions = useMemo(
     () =>
       ARGENTINA_PROVINCES.map((province) => ({
@@ -914,6 +937,10 @@ export default function CheckoutPage() {
     items: mapCartItemsToQuoteItems(items),
   }
   const shippingQuotePayload = buildShippingQuoteKey(shippingQuoteDestination)
+  latestStreetAddressRef.current = {
+    calle: formData.calle.trim(),
+    numero: formData.numero.trim(),
+  }
   // Fast path: un destino con provincia + localidad + CP de 4 dígitos ya es
   // apto para intentar cotizar directamente, sin esperar a que el catálogo
   // de localidades/CP termine de descargarse ni validarse -- ese catálogo
@@ -1011,8 +1038,12 @@ export default function CheckoutPage() {
           : options.find((option) => option.type === "domicilio")?.type ??
             options[0].type,
       )
+      // La cotización quedó validada internamente (shippingQuoteCurrent ya
+      // lo refleja) -- no hace falta mostrarle al cliente una confirmación
+      // técnica neutra. Los mensajes de error reales siguen su propio
+      // camino en handleQuoteFailure, sin tocar este componente.
       setShippingMessageTone("info")
-      setShippingMessage("Destino validado y tarifa actualizada.")
+      setShippingMessage("")
     }
 
     const handleQuoteFailure = (error: unknown, timedOut = false) => {
@@ -1034,10 +1065,16 @@ export default function CheckoutPage() {
       )
     }
 
+    // La calle/numero actuales se suman acá (nunca en la clave de caché ni
+    // en las dependencias del efecto): sólo se usan para geocodificar y
+    // ordenar sucursales por cercanía cuando de cualquier forma ya toca
+    // cotizar por otro motivo.
+    const requestPayload = { ...payload, ...latestStreetAddressRef.current }
+
     // Si ya hay una cotización vigente para este destino+carrito exactos
     // (precargada al abrir el carrito o al hacer click en "Finalizar
     // compra"), se usa de inmediato: sin fetch ni parpadeo de "Calculando…".
-    const cachedOptions = peekShippingQuoteOptions(payload)
+    const cachedOptions = peekShippingQuoteOptions(requestPayload)
     if (cachedOptions) {
       setShippingLoading(false)
       try {
@@ -1065,7 +1102,7 @@ export default function CheckoutPage() {
       setShippingMessage("Esto está tardando más de lo normal…")
     }, 8_000)
 
-    getShippingQuoteOptions(payload)
+    getShippingQuoteOptions(requestPayload)
       .then((rawOptions) => {
         if (isStale()) return
         applyRawOptions(rawOptions)
@@ -1210,6 +1247,11 @@ export default function CheckoutPage() {
         isDestinationQuotable &&
         (selectedShippingType !== "sucursal" || selectedSucursalId !== null),
     )
+  // Sólo domicilio en el paso de envío no necesita la altura reservada para
+  // el selector de sucursales (listado + mapa) -- el resto de los pasos, y
+  // sucursal, conservan el panel alto habitual.
+  const isCompactShippingStep =
+    currentStep === 2 && selectedShippingType === "domicilio"
   const isFormValid = Boolean(
     areCriticalCheckoutStatesReady &&
       isRecipientStepValid &&
@@ -1682,9 +1724,18 @@ export default function CheckoutPage() {
           <form
             id="checkout-form"
             onSubmit={handleSubmit}
-            className="checkout-layout grid items-stretch gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(22rem,0.85fr)] lg:gap-4 2xl:gap-5"
+            className={cn(
+              "checkout-layout grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(22rem,0.85fr)] lg:gap-4 2xl:gap-5",
+              isCompactShippingStep ? "items-start" : "items-stretch",
+            )}
           >
-            <section className={cn(checkoutFormPanelClassName, "checkout-main-panel flex min-h-[clamp(440px,52vh,560px)] flex-col px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5")}>
+            <section
+              className={cn(
+                checkoutFormPanelClassName,
+                "checkout-main-panel flex flex-col px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5",
+                !isCompactShippingStep && "min-h-[clamp(440px,52vh,560px)]",
+              )}
+            >
               {currentStep === 1 && (
                 <div className="checkout-receiver-step animate-in fade-in slide-in-from-right-2 space-y-3 duration-300 [&_label]:text-[13px]">
                   <h2 className={checkoutSectionHeadingClassName}>
@@ -1995,6 +2046,12 @@ export default function CheckoutPage() {
                           onClick={() => {
                             setSelectedShippingType(option.type)
                             setShippingSelectionMissing(false)
+                            // Volver a domicilio no debe arrastrar una
+                            // selección de sucursal anterior si el cliente
+                            // vuelve a elegir sucursal más tarde.
+                            if (option.type !== "sucursal") {
+                              setSelectedSucursalId(null)
+                            }
                           }}
                           className={cn(
                             checkoutOptionClassName,
@@ -2039,66 +2096,43 @@ export default function CheckoutPage() {
                   </div>
 
                   {selectedShippingType === "sucursal" && hasAndreaniQuote && (
-                    <div
-                      className={cn(
-                        "space-y-2.5 rounded-2xl border p-4 transition-shadow",
-                        shippingSelectionMissing && !selectedSucursalId
-                          ? "border-red-400/40 shadow-[0_0_0_2px_rgba(248,113,113,0.12)]"
-                          : "border-beyonix-blue-light/16",
-                      )}
-                    >
-                      <p className="text-sm font-semibold text-white">
-                        Elegí la sucursal Andreani donde vas a retirar tu pedido
-                      </p>
-                      {!selectedShippingOption?.branches?.length ? (
-                        <p className="text-xs text-white/55">
-                          No encontramos sucursales disponibles para este destino.
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          Elegí la sucursal Andreani donde vas a retirar tu pedido
                         </p>
-                      ) : (
-                        <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
-                          {selectedShippingOption.branches.map((branch) => {
-                            const branchSelected = selectedSucursalId === branch.id
-
-                            return (
-                              <button
-                                key={branch.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedSucursalId(branch.id)
-                                  setShippingSelectionMissing(false)
-                                }}
-                                className={cn(
-                                  "flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
-                                  branchSelected
-                                    ? "border-beyonix-sky/50 bg-beyonix-blue/30"
-                                    : "border-white/8 bg-black/20 hover:border-white/20",
-                                )}
-                              >
-                                <span className="flex w-full items-center justify-between gap-2">
-                                  <span className="text-sm font-semibold text-white">
-                                    {branch.descripcion}
-                                  </span>
-                                  {branchSelected && (
-                                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-beyonix-blue-light/35 bg-beyonix-blue/50 text-beyonix-sky">
-                                      <Check className="size-3" />
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="text-xs text-white/60">
-                                  {branch.direccion.calle} {branch.direccion.numero}
-                                </span>
-                                <span className="text-xs text-white/45">
-                                  {branch.direccion.localidad}, {branch.direccion.provincia} · CP {branch.direccion.codigoPostal}
-                                </span>
-                                {branch.horarioDeAtencion && (
-                                  <span className="text-11px text-white/40">
-                                    {branch.horarioDeAtencion}
-                                  </span>
-                                )}
-                              </button>
-                            )
-                          })}
+                        {Boolean(selectedShippingOption?.branches?.length) && (
+                          <p className="text-xs text-white/50">
+                            Te mostramos primero las más cercanas a tu domicilio.
+                          </p>
+                        )}
+                      </div>
+                      {!selectedShippingOption?.branches?.length ? (
+                        <div className="space-y-2 rounded-2xl border border-beyonix-blue-light/16 p-4">
+                          <p className="text-xs text-white/55">
+                            No encontramos sucursales Andreani disponibles en tu localidad.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedShippingType("domicilio")
+                              setSelectedSucursalId(null)
+                            }}
+                            className="text-xs font-semibold text-beyonix-sky hover:underline"
+                          >
+                            Volver a envío a domicilio
+                          </button>
                         </div>
+                      ) : (
+                        <BranchMapPicker
+                          branches={selectedShippingOption.branches}
+                          selectedId={selectedSucursalId}
+                          hasSelectionError={shippingSelectionMissing}
+                          onSelect={(branchId) => {
+                            setSelectedSucursalId(branchId)
+                            setShippingSelectionMissing(false)
+                          }}
+                        />
                       )}
                       {selectedSucursalId !== null && (
                         <p className="text-xs font-semibold text-beyonix-sky">
@@ -2210,7 +2244,8 @@ export default function CheckoutPage() {
 
               <div
                 className={cn(
-                  "checkout-actions mt-auto flex items-center gap-3 pt-3",
+                  "checkout-actions flex items-center gap-3 pt-3",
+                  isCompactShippingStep ? "mt-0" : "mt-auto",
                   currentStep === 1 ? "justify-end" : "justify-between",
                 )}
               >
