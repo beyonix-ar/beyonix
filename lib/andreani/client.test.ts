@@ -30,6 +30,7 @@ import {
   sanitizeAndreaniMessage,
   testAndreaniQaConnection,
 } from "./client.ts"
+import { formatAndreaniBranchAddress } from "./branch-address.ts"
 
 function qaEnvironment(
   overrides: Partial<NodeJS.ProcessEnv> = {},
@@ -214,9 +215,10 @@ test("bloquea el uso accidental de PROD", () => {
   )
 })
 
-test("en PROD bloquea cualquier endpoint fuera de login y tarifas", async () => {
+test("en PROD permite solo catálogos públicos además de login y tarifas", async () => {
   resetAndreaniRuntimeStateForTests()
   let networkCalls = 0
+  const authorizationTokens: Array<string | null> = []
   const client = new AndreaniClient({
     env: {
       NODE_ENV: "test",
@@ -226,18 +228,34 @@ test("en PROD bloquea cualquier endpoint fuera de login y tarifas", async () => 
       ANDREANI_PROD_PASSWORD: "clave-prod-prueba",
     },
     productionAccess: "tariffs-only",
-    fetch: async () => {
+    fetch: async (input, init) => {
       networkCalls += 1
-      return Response.json([])
+      authorizationTokens.push(
+        new Headers(init?.headers).get("x-authorization-token"),
+      )
+      return Response.json(
+        new URL(String(input)).pathname === "/v1/localidades"
+          ? officialLocalityResponse
+          : officialBranchResponse,
+      )
     },
   })
 
+  assert.equal(
+    (await client.getLocalidades({ codigosPostales: "3013" })).length,
+    1,
+  )
+  assert.equal(
+    (await client.getSucursales({ canal: "B2C" })).length,
+    1,
+  )
   await assert.rejects(
-    () => client.getLocalidades({ codigosPostales: "3013" }),
+    () => client.getPuntosDeTercero({ contrato: "CONTRATO-PROD" }),
     (error) =>
       error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
   )
-  assert.equal(networkCalls, 0)
+  assert.equal(networkCalls, 2)
+  assert.deepEqual(authorizationTokens, [null, null])
 })
 
 test("normaliza una autenticación rechazada sin exponer la respuesta", async () => {
@@ -430,6 +448,83 @@ test("consulta sucursales QA sin enviar autenticación", async () => {
   assert.equal(sucursales.length, 1)
   assert.equal(sucursales[0]?.codigo, "SFN")
   assert.equal(sucursales[0]?.direccion.codigoPostal, "3000")
+})
+
+async function parseSingleBranch(payload: unknown) {
+  const client = new AndreaniClient({
+    env: qaEnvironment(),
+    fetch: async () => Response.json(payload),
+  })
+  return (await client.getSucursales({ canal: "B2C" }))[0]
+}
+
+test("parseBranches conserva una sucursal con dirección completa", async () => {
+  const branch = await parseSingleBranch(officialBranchResponse)
+
+  assert.equal(branch?.direccion.calle, "25 de Mayo")
+  assert.equal(branch?.direccion.numero, "3340")
+  assert.equal(formatAndreaniBranchAddress(branch!.direccion), "25 de Mayo 3340")
+})
+
+test("parseBranches conserva una sucursal sin número de calle", async () => {
+  const payload = structuredClone(officialBranchResponse)
+  Reflect.deleteProperty(payload[0]!.direccion, "numero")
+
+  const branch = await parseSingleBranch(payload)
+
+  assert.equal(branch?.direccion.calle, "25 de Mayo")
+  assert.equal(branch?.direccion.numero, undefined)
+  assert.equal(formatAndreaniBranchAddress(branch!.direccion), "25 de Mayo")
+})
+
+test("parseBranches conserva una sucursal sin calle y normaliza un número real numérico", async () => {
+  const payload = structuredClone(officialBranchResponse)
+  Reflect.deleteProperty(payload[0]!.direccion, "calle")
+  Reflect.set(payload[0]!.direccion, "numero", 3340)
+
+  const branch = await parseSingleBranch(payload)
+
+  assert.equal(branch?.direccion.calle, undefined)
+  assert.equal(branch?.direccion.numero, "3340")
+  assert.equal(branch?.id, 10055)
+  assert.equal(branch?.codigo, "SFN")
+})
+
+test("parseBranches conserva campos territoriales reales con calle y número ausentes", async () => {
+  const payload = structuredClone(officialBranchResponse)
+  Reflect.set(payload[0]!.direccion, "calle", null)
+  Reflect.set(payload[0]!.direccion, "numero", "")
+
+  const branch = await parseSingleBranch(payload)
+
+  assert.deepEqual(branch?.direccion, {
+    calle: undefined,
+    numero: undefined,
+    provincia: "Santa Fe",
+    localidad: "Santa Fe",
+    region: "Litoral",
+    pais: "Argentina",
+    codigoPostal: "3000",
+  })
+  assert.deepEqual(branch?.coordenadas, {
+    latitud: "-31.637650",
+    longitud: "-60.703000",
+  })
+  assert.equal(
+    formatAndreaniBranchAddress(branch!.direccion),
+    "Santa Fe, Santa Fe, CP 3000",
+  )
+})
+
+test("parseBranches rechaza una sucursal sin localidad verificable", async () => {
+  const payload = structuredClone(officialBranchResponse)
+  Reflect.deleteProperty(payload[0]!.direccion, "localidad")
+
+  await assert.rejects(
+    () => parseSingleBranch(payload),
+    (error) =>
+      error instanceof AndreaniError && error.code === "INVALID_RESPONSE",
+  )
 })
 
 test("consulta puntos de tercero por contrato con autenticación", async () => {
@@ -964,7 +1059,7 @@ test("rechaza una respuesta incompleta del cotizador", async () => {
   )
 })
 
-test("shipment-read habilita solo consultas operativas PROD ya autenticadas", async () => {
+test("shipment-read habilita consultas operativas PROD y conserva públicos los catálogos", async () => {
   resetAndreaniRuntimeStateForTests()
   const requestedPaths: string[] = []
   const client = new AndreaniClient({
@@ -992,7 +1087,13 @@ test("shipment-read habilita solo consultas operativas PROD ya autenticadas", as
   await client.getTrackingPullV3("360000044179430")
   await client.getEtiquetas("API0000000428931")
   await assert.rejects(
-    () => client.getLocalidades({ codigosPostales: "3013" }),
+    () =>
+      client.cotizarEnvio({
+        cpDestino: "3013",
+        contrato: "CONTRATO-PROD",
+        cliente: "CLIENTE-PROD",
+        bultos: [{ volumen: 1_000 }],
+      }),
     (error: unknown) =>
       error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED",
   )

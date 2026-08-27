@@ -20,6 +20,7 @@ import {
   AndreaniError,
   type AndreaniClientOptions,
 } from "./client.ts"
+import { formatAndreaniBranchAddress } from "./branch-address.ts"
 import { isCheckoutDestinationCached } from "./checkout-destinations.ts"
 import { sortAndreaniBranchesByDistance } from "./branch-distance.ts"
 import { geocodeCustomerAddress } from "../geocoding/nominatim.ts"
@@ -169,26 +170,20 @@ function optionalText(value: string | undefined) {
 }
 
 /**
- * Catálogo de referencia (localidades, sucursales) siempre se consulta vía
- * QA -- incluso cuando la cotización/creación corre en PROD -- porque el
- * catálogo no difiere entre ambientes y evita gastar cupo de acceso PROD
- * (limitado a tarifas/creación) en lecturas que no lo necesitan. Factorizado
- * acá porque tanto quoteAndreaniCheckout como resolveVerifiedAndreaniBranch
- * necesitan construir exactamente el mismo cliente de referencia.
+ * Los catálogos son GET públicos y se consultan en el mismo ambiente que la
+ * tarifa. Así, checkout PROD no depende de username/password del ambiente QA.
  */
 function buildAndreaniReferenceClient(
   environment: CheckoutQuoteConfig["environment"],
   env: NodeJS.ProcessEnv,
   clientOptions: AndreaniClientOptions | undefined,
-  primaryClient: AndreaniClient,
 ) {
-  return environment === "QA"
-    ? primaryClient
-    : new AndreaniClient({
-        ...clientOptions,
-        env: { ...env, ANDREANI_ENV: "QA" },
-        productionAccess: undefined,
-      })
+  return new AndreaniClient({
+    ...clientOptions,
+    env: { ...env, ANDREANI_ENV: environment },
+    productionAccess:
+      environment === "PROD" ? "tariffs-only" : clientOptions?.productionAccess,
+  })
 }
 
 /**
@@ -726,7 +721,6 @@ export async function quoteAndreaniCheckout(
       config.environment,
       env,
       dependencies.clientOptions,
-      client,
     )
     const getLocalities =
       dependencies.getLocalities ??
@@ -1002,12 +996,11 @@ export async function resolveVerifiedAndreaniBranch(
   const getBranches =
     dependencies.getBranches ??
     ((filters: AndreaniBranchFilters) => {
-      // Catálogo de sucursales: siempre vía QA -- ver buildAndreaniReferenceClient.
-      const referenceClient = new AndreaniClient({
-        ...dependencies.clientOptions,
-        env: { ...env, ANDREANI_ENV: "QA" },
-        productionAccess: undefined,
-      })
+      const referenceClient = buildAndreaniReferenceClient(
+        config.environment,
+        env,
+        dependencies.clientOptions,
+      )
       return referenceClient.getSucursales(filters)
     })
 
@@ -1028,7 +1021,7 @@ export async function resolveVerifiedAndreaniBranch(
     id: String(branch.id),
     codigo: branch.codigo,
     nombre: branch.descripcion,
-    direccion: `${branch.direccion.calle} ${branch.direccion.numero}`.trim(),
+    direccion: formatAndreaniBranchAddress(branch.direccion),
     localidad: branch.direccion.localidad,
     provincia: branch.direccion.provincia,
     codigoPostal: branch.direccion.codigoPostal,

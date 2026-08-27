@@ -7,6 +7,10 @@ import "leaflet/dist/leaflet.css"
 import { Check, Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import {
+  formatAndreaniBranchAddress,
+  formatAndreaniBranchStreetLine,
+} from "@/lib/andreani/branch-address"
 import { formatDistanceKm } from "@/lib/andreani/branch-distance"
 import type { AndreaniBranchWithDistance } from "@/lib/andreani/types"
 
@@ -35,7 +39,7 @@ function normalizeSearchText(value: string) {
 function branchMatchesSearch(branch: AndreaniBranchWithDistance, query: string) {
   if (!query) return true
   const haystack = normalizeSearchText(
-    `${branch.descripcion} ${branch.direccion.calle} ${branch.direccion.numero} ${branch.direccion.localidad}`,
+    `${branch.descripcion} ${formatAndreaniBranchAddress(branch.direccion)} ${branch.direccion.localidad}`,
   )
   return haystack.includes(query)
 }
@@ -220,7 +224,8 @@ export function BranchMapPicker({
                     )}
                   </span>
                   <span className="text-xs text-white/60">
-                    {branch.direccion.calle} {branch.direccion.numero}
+                    {formatAndreaniBranchStreetLine(branch.direccion) ||
+                      formatAndreaniBranchAddress(branch.direccion)}
                   </span>
                   <span className="text-xs text-white/45">
                     {branch.direccion.localidad}, {branch.direccion.provincia} · CP{" "}

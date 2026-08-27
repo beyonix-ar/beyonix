@@ -173,8 +173,8 @@ export interface AndreaniBranch {
   descripcion: string
   canal: string
   direccion: {
-    calle: string
-    numero: string
+    calle?: string
+    numero?: string
     provincia: string
     localidad: string
     region: string

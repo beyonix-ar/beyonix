@@ -406,6 +406,20 @@ function optionalResponseString(record: Record<string, unknown>, key: string) {
   return value || undefined
 }
 
+function optionalAddressComponent(
+  record: Record<string, unknown>,
+  key: string,
+  message: string,
+) {
+  const rawValue = record[key]
+  if (rawValue === undefined || rawValue === null) return undefined
+  if (typeof rawValue === "string") return rawValue.trim() || undefined
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+    return String(rawValue)
+  }
+  throw new AndreaniError("INVALID_RESPONSE", message)
+}
+
 function requiredResponseNumber(
   record: Record<string, unknown>,
   key: string,
@@ -645,15 +659,15 @@ function parseBranches(payload: unknown): AndreaniBranch[] {
         "Andreani devolvió una sucursal sin canal.",
       ),
       direccion: {
-        calle: requiredResponseString(
+        calle: optionalAddressComponent(
           address,
           "calle",
-          "Andreani devolvió una dirección sin calle.",
+          "Andreani devolvió una calle con formato inválido.",
         ),
-        numero: requiredResponseString(
+        numero: optionalAddressComponent(
           address,
           "numero",
-          "Andreani devolvió una dirección sin número.",
+          "Andreani devolvió un número de calle con formato inválido.",
         ),
         provincia: requiredResponseString(
           address,
@@ -1292,7 +1306,12 @@ export class AndreaniClient {
   private async performFetch(path: string, options: RequestOptions = {}) {
     const method = options.method ?? "GET"
     const pathname = path.split("?")[0]
+    const publicReferenceRequestAllowed =
+      method === "GET" &&
+      !options.authenticated &&
+      (pathname === "/v1/localidades" || pathname === "/v2/sucursales")
     const productionRequestAllowed =
+      publicReferenceRequestAllowed ||
       (this.productionAccess === "tariffs-only" &&
         method === "GET" &&
         (pathname === "/login" || pathname === "/v1/tarifas")) ||
@@ -1312,7 +1331,7 @@ export class AndreaniClient {
           ? "Andreani PROD solo admite autenticación y creación de envíos B2C con autorización explícita."
           : this.productionAccess === "shipment-read"
             ? "Andreani PROD solo admite consultar órdenes, tracking y etiquetas ya creadas."
-            : "Andreani PROD solo admite autenticación y consulta de tarifas.",
+            : "Andreani PROD solo admite catálogos públicos, autenticación y consulta de tarifas.",
       )
     }
 

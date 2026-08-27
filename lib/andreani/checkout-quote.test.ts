@@ -277,7 +277,7 @@ test("la cotización usa el paquete agregado, normalizando espacios de la locali
   assert.deepEqual(options, [{ type: "domicilio", price: 14_000 }])
 })
 
-test("el checkout valida en QA y limita PROD a login y GET de tarifas", async () => {
+test("el checkout usa catálogos públicos y tarifas en PROD sin depender de credenciales QA", async () => {
   resetAndreaniCheckoutQuoteStateForTests()
   const requests: Array<{ url: string; method: string; token: string | null }> = []
   const options = await quoteAndreaniCheckout(
@@ -290,11 +290,8 @@ test("el checkout valida en QA y limita PROD a login y GET de tarifas", async ()
     {
       env: {
         NODE_ENV: "test",
-        ANDREANI_ENV: "QA",
+        ANDREANI_ENV: "PROD",
         ANDREANI_TARIFF_ENV: "PROD",
-        ANDREANI_QA_API_URL: "https://apisqa.andreani.com",
-        ANDREANI_QA_USERNAME: "usuario-qa-prueba",
-        ANDREANI_QA_PASSWORD: "clave-qa-prueba",
         ANDREANI_PROD_API_URL: "https://apis.andreani.com",
         ANDREANI_PROD_USERNAME: "usuario-prod-prueba",
         ANDREANI_PROD_PASSWORD: "clave-prod-prueba",
@@ -358,7 +355,7 @@ test("el checkout valida en QA y limita PROD a login y GET de tarifas", async ()
   )
 
   assert.equal(requests.length, 3)
-  assert.equal(new URL(requests[0].url).hostname, "apisqa.andreani.com")
+  assert.equal(new URL(requests[0].url).hostname, "apis.andreani.com")
   assert.equal(new URL(requests[0].url).pathname, "/v1/localidades")
   assert.equal(requests[0].method, "GET")
   assert.equal(new URL(requests[1].url).pathname, "/login")
@@ -1423,6 +1420,40 @@ test("resolveVerifiedAndreaniBranch: id real elegido por el cliente -> snapshot 
     provincia: "Santa Fe",
     codigoPostal: "3000",
   })
+})
+
+test("resolveVerifiedAndreaniBranch usa el mismo catálogo PROD público que discovery sin credenciales QA", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  let requestedUrl = ""
+  let authorizationToken: string | null = "valor-no-inicializado"
+
+  const branch = await resolveVerifiedAndreaniBranch(santaFeDestination, 10055, {
+    env: {
+      NODE_ENV: "test",
+      ANDREANI_ENV: "PROD",
+      ANDREANI_TARIFF_ENV: "PROD",
+      ANDREANI_PROD_API_URL: "https://apis.andreani.com",
+      ANDREANI_PROD_USERNAME: "usuario-prod-prueba",
+      ANDREANI_PROD_PASSWORD: "clave-prod-prueba",
+      ANDREANI_PROD_CLIENT: "CLIENTE-PROD",
+      ANDREANI_PROD_BRANCH_CONTRACT: "CONTRATO-SUCURSAL-PROD",
+      ANDREANI_PROD_ORIGIN_BRANCH: "RAC",
+    },
+    clientOptions: {
+      fetch: async (input, init) => {
+        requestedUrl = String(input)
+        authorizationToken = new Headers(init?.headers).get(
+          "x-authorization-token",
+        )
+        return Response.json(officialBranchResponse)
+      },
+    },
+  })
+
+  assert.equal(branch.id, "10055")
+  assert.equal(new URL(requestedUrl).hostname, "apis.andreani.com")
+  assert.equal(new URL(requestedUrl).pathname, "/v2/sucursales")
+  assert.equal(authorizationToken, null)
 })
 
 test("resolveVerifiedAndreaniBranch: un id inventado/manipulado (no está en la lista real) se rechaza", async () => {

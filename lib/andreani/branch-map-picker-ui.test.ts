@@ -47,7 +47,8 @@ test("branch-map-picker: cada tarjeta muestra nombre, dirección, localidad/prov
   const picker = source("components/checkout/branch-map-picker.tsx")
 
   assert.match(picker, /branch\.descripcion/)
-  assert.match(picker, /branch\.direccion\.calle/)
+  assert.match(picker, /formatAndreaniBranchStreetLine\(branch\.direccion\)/)
+  assert.match(picker, /formatAndreaniBranchAddress\(branch\.direccion\)/)
   assert.match(picker, /branch\.direccion\.localidad/)
   assert.match(picker, /branch\.direccion\.provincia/)
   assert.match(picker, /branch\.direccion\.codigoPostal/)
