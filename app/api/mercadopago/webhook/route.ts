@@ -10,7 +10,11 @@ import {
   isMercadoPagoOrderAlreadyConfirmed,
   processApprovedMercadoPagoOrderPayment,
 } from "@/lib/mercadopago/order-payment"
-import { isValidWebhookSignature } from "@/lib/mercadopago/webhook-signature"
+import {
+  claimMercadoPagoWebhookDelivery,
+  releaseMercadoPagoWebhookDelivery,
+} from "@/lib/mercadopago/webhook-replay"
+import { validateMercadoPagoWebhookSignature } from "@/lib/mercadopago/webhook-signature"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -55,7 +59,17 @@ function getPaymentId(url: URL, body: unknown) {
 }
 
 async function handleWebhook(request: Request) {
+  let replayClaim: string | null = null
+
   try {
+    const webhookSecret = process.env.MERCADOPAGO_WEBHOOK_SECRET
+    if (!webhookSecret?.trim()) {
+      return NextResponse.json(
+        { error: "Webhook de Mercado Pago no configurado." },
+        { status: 503 },
+      )
+    }
+
     const url = new URL(request.url)
     let body: unknown = null
 
@@ -71,11 +85,25 @@ async function handleWebhook(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    if (!isValidWebhookSignature(request, paymentId)) {
+    const signatureValidation = validateMercadoPagoWebhookSignature(
+      request,
+      paymentId,
+      webhookSecret,
+    )
+
+    if (!signatureValidation.valid || !signatureValidation.requestId) {
       return NextResponse.json(
         { error: "Firma de webhook inválida." },
         { status: 401 },
       )
+    }
+
+    replayClaim = claimMercadoPagoWebhookDelivery(
+      paymentId,
+      signatureValidation.requestId,
+    )
+    if (!replayClaim) {
+      return NextResponse.json({ ok: true, duplicated: true })
     }
 
     const payment = await getMercadoPagoPayment(paymentId)
@@ -249,6 +277,7 @@ async function handleWebhook(request: Request) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
+    if (replayClaim) releaseMercadoPagoWebhookDelivery(replayClaim)
     console.error("Error procesando webhook de Mercado Pago", error)
     return NextResponse.json({ error: "Webhook error" }, { status: 500 })
   }
@@ -259,5 +288,9 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  return handleWebhook(request)
+  void request
+  return NextResponse.json(
+    { error: "Método no permitido. Use Webhooks POST firmados." },
+    { status: 405, headers: { Allow: "POST" } },
+  )
 }

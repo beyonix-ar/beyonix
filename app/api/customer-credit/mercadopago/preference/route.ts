@@ -4,6 +4,7 @@ import { MercadoPagoConfig, Preference } from "mercadopago"
 import { NextResponse } from "next/server"
 
 import { roundMoney } from "@/lib/customer-credit"
+import { getCustomerCreditTopupPreferenceIdempotencyKey } from "@/lib/mercadopago/customer-credit-topup-attempt"
 import { getSiteSettings } from "@/lib/site-settings"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -297,6 +298,10 @@ export async function POST(request: Request) {
           credited_amount: amount,
           surcharge_amount: surchargeAmount,
         },
+      },
+      requestOptions: {
+        idempotencyKey:
+          getCustomerCreditTopupPreferenceIdempotencyKey(topupId),
       },
     })
 

@@ -1,10 +1,17 @@
 import assert from "node:assert/strict"
 import { createHmac } from "node:crypto"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import { isValidWebhookSignature } from "./webhook-signature.ts"
+import {
+  MERCADOPAGO_WEBHOOK_MAX_AGE_MS,
+  MERCADOPAGO_WEBHOOK_MAX_FUTURE_SKEW_MS,
+  isValidWebhookSignature,
+  validateMercadoPagoWebhookSignature,
+} from "./webhook-signature.ts"
 
 const SECRET = "test-webhook-secret"
+const NOW_MS = 1_742_505_638_683
 
 function requestWithHeaders(
   method: string,
@@ -17,7 +24,12 @@ function requestWithHeaders(
   }
 }
 
-function signedRequest(paymentId: string, requestId: string, ts: string, secret = SECRET) {
+function signedRequest(
+  paymentId: string,
+  requestId: string,
+  ts = String(NOW_MS),
+  secret = SECRET,
+) {
   const manifest = `id:${paymentId.toLowerCase()};request-id:${requestId};ts:${ts};`
   const hash = createHmac("sha256", secret).update(manifest).digest("hex")
   return requestWithHeaders("POST", {
@@ -26,58 +38,139 @@ function signedRequest(paymentId: string, requestId: string, ts: string, secret 
   })
 }
 
-test("una firma válida generada con el secreto correcto se acepta", () => {
-  const request = signedRequest("123456789", "req-1", "1700000000")
-  assert.equal(isValidWebhookSignature(request, "123456789", SECRET), true)
-})
+test("POST con firma y secreto correctos se permite", () => {
+  const request = signedRequest("123456789", "req-1")
+  const result = validateMercadoPagoWebhookSignature(
+    request,
+    "123456789",
+    SECRET,
+    NOW_MS,
+  )
 
-test("un webhook falso firmado con un secreto distinto se rechaza", () => {
-  const request = signedRequest("123456789", "req-1", "1700000000", "otro-secreto")
-  assert.equal(isValidWebhookSignature(request, "123456789", SECRET), false)
-})
-
-test("reusar una firma válida para otro payment id se rechaza (anti-replay cruzado)", () => {
-  const request = signedRequest("123456789", "req-1", "1700000000")
-  assert.equal(isValidWebhookSignature(request, "999999999", SECRET), false)
-})
-
-test("un x-signature sin el campo v1 se rechaza", () => {
-  const request = requestWithHeaders("POST", {
-    "x-signature": "ts=1700000000",
-    "x-request-id": "req-1",
+  assert.deepEqual(result, {
+    valid: true,
+    requestId: "req-1",
+    timestamp: String(NOW_MS),
   })
-  assert.equal(isValidWebhookSignature(request, "123456789", SECRET), false)
 })
 
-test("falta el header x-request-id se rechaza", () => {
-  const request = requestWithHeaders("POST", {
-    "x-signature": "ts=1700000000,v1=abc",
-  })
-  assert.equal(isValidWebhookSignature(request, "123456789", SECRET), false)
-})
-
-test("falta el header x-signature se rechaza", () => {
-  const request = requestWithHeaders("POST", { "x-request-id": "req-1" })
-  assert.equal(isValidWebhookSignature(request, "123456789", SECRET), false)
-})
-
-test("sin secreto configurado, en producción se rechaza en vez de aceptar en silencio", () => {
-  const request = signedRequest("123456789", "req-1", "1700000000")
+test("una firma creada con otro secreto se rechaza", () => {
+  const request = signedRequest(
+    "123456789",
+    "req-1",
+    String(NOW_MS),
+    "otro-secreto",
+  )
   assert.equal(
-    isValidWebhookSignature(request, "123456789", undefined, "production"),
+    isValidWebhookSignature(request, "123456789", SECRET, NOW_MS),
     false,
   )
 })
 
-test("sin secreto configurado fuera de producción no bloquea el flujo local", () => {
-  const request = requestWithHeaders("POST", {})
+test("reusar una firma para otro payment id se rechaza", () => {
+  const request = signedRequest("123456789", "req-1")
   assert.equal(
-    isValidWebhookSignature(request, "123456789", undefined, "development"),
-    true,
+    isValidWebhookSignature(request, "999999999", SECRET, NOW_MS),
+    false,
   )
 })
 
-test("una petición GET (IPN legado) no depende de la firma", () => {
-  const request = requestWithHeaders("GET", {})
-  assert.equal(isValidWebhookSignature(request, "123456789", SECRET), true)
+test("una firma claramente vencida se rechaza", () => {
+  const timestamp = NOW_MS - MERCADOPAGO_WEBHOOK_MAX_AGE_MS - 1
+  const request = signedRequest("123456789", "req-old", String(timestamp))
+
+  assert.equal(
+    isValidWebhookSignature(request, "123456789", SECRET, NOW_MS),
+    false,
+  )
+})
+
+test("una firma demasiado adelantada se rechaza", () => {
+  const timestamp = NOW_MS + MERCADOPAGO_WEBHOOK_MAX_FUTURE_SKEW_MS + 1
+  const request = signedRequest("123456789", "req-future", String(timestamp))
+
+  assert.equal(
+    isValidWebhookSignature(request, "123456789", SECRET, NOW_MS),
+    false,
+  )
+})
+
+test("sin MERCADOPAGO_WEBHOOK_SECRET el webhook falla cerrado", () => {
+  const request = signedRequest("123456789", "req-1")
+  assert.equal(
+    isValidWebhookSignature(request, "123456789", undefined, NOW_MS),
+    false,
+  )
+})
+
+test("MERCADOPAGO_WEBHOOK_SECRET vacío o en blanco falla cerrado", () => {
+  const request = signedRequest("123456789", "req-1")
+  assert.equal(
+    isValidWebhookSignature(request, "123456789", "", NOW_MS),
+    false,
+  )
+  assert.equal(
+    isValidWebhookSignature(request, "123456789", "   ", NOW_MS),
+    false,
+  )
+})
+
+test("GET legacy se rechaza aunque incluya una firma válida", () => {
+  const post = signedRequest("123456789", "req-1")
+  const request = {
+    ...post,
+    method: "GET",
+  }
+
+  assert.equal(
+    isValidWebhookSignature(request, "123456789", SECRET, NOW_MS),
+    false,
+  )
+})
+
+test("headers oficiales incompletos se rechazan", () => {
+  assert.equal(
+    isValidWebhookSignature(
+      requestWithHeaders("POST", {
+        "x-signature": `ts=${NOW_MS}`,
+        "x-request-id": "req-1",
+      }),
+      "123456789",
+      SECRET,
+      NOW_MS,
+    ),
+    false,
+  )
+  assert.equal(
+    isValidWebhookSignature(
+      requestWithHeaders("POST", {
+        "x-signature": `ts=${NOW_MS},v1=${"a".repeat(64)}`,
+      }),
+      "123456789",
+      SECRET,
+      NOW_MS,
+    ),
+    false,
+  )
+})
+
+test("la ruta deshabilita GET y autentica antes de consultar el pago", () => {
+  const route = readFileSync(
+    new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
+    "utf8",
+  )
+  const validateAt = route.indexOf("validateMercadoPagoWebhookSignature(")
+  const fetchPaymentAt = route.indexOf("getMercadoPagoPayment(paymentId)")
+
+  assert.match(route, /export async function GET[\s\S]*status: 405/)
+  assert.doesNotMatch(
+    route.match(/export async function GET[\s\S]*$/)?.[0] ?? "",
+    /handleWebhook\(request\)/,
+  )
+  assert.match(route, /if \(!webhookSecret\?\.trim\(\)\)[\s\S]*status: 503/)
+  assert.match(
+    route,
+    /if \(!replayClaim\)[\s\S]*duplicated: true/,
+  )
+  assert.ok(validateAt >= 0 && fetchPaymentAt > validateAt)
 })

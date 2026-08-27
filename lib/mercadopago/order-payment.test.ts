@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import { processApprovedMercadoPagoOrderPayment } from "./order-payment.ts"
@@ -111,4 +112,20 @@ test("una carrera perdida se trata como webhook duplicado", async () => {
 
   assert.equal(result.kind, "duplicate")
   assert.equal(sideEffects, 0)
+})
+
+test("el webhook duplicado no crea stock ni factura como efecto lateral", () => {
+  const webhook = readFileSync(
+    new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  assert.doesNotMatch(
+    webhook,
+    /(?:reserve|decrement|update).*stock|create.*(?:invoice|factura)/i,
+  )
+  assert.match(
+    webhook,
+    /if \(paymentResult\.kind === "duplicate"\)[\s\S]*duplicated: true/,
+  )
 })
