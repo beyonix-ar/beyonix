@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { normalizeAndreaniError } from "@/lib/andreani/client"
+import { isAndreaniTrackingCronAuthorized } from "@/lib/andreani/tracking-sync-cron-auth"
 import { runAndreaniTrackingSyncBatch } from "@/lib/andreani/tracking-sync-batch"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -8,7 +9,7 @@ export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET
   const authorization = request.headers.get("authorization")
 
-  if (cronSecret && authorization !== `Bearer ${cronSecret}`) {
+  if (!isAndreaniTrackingCronAuthorized(authorization, cronSecret)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 })
   }
 
