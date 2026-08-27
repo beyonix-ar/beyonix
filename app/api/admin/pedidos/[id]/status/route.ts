@@ -2,18 +2,12 @@ import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
-import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { upsertCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { canChangeOrderStatus } from "@/lib/orders/order-status-authorization"
-import {
-  DEFAULT_PRODUCT_WARRANTY_MONTHS,
-  getWarrantyExpiration,
-} from "@/lib/orders/warranty"
-import type { createAdminClient } from "@/lib/supabase/admin"
-
-type AdminClient = ReturnType<typeof createAdminClient>
+import { activatePendingItemWarranties } from "@/lib/orders/warranty-activation"
 
 const ALLOWED_ORDER_STATUSES = [
   "pendiente",
@@ -51,10 +45,6 @@ function normalizeExternalUrl(value: unknown) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
 }
 
-function getOrderCode(orderId: number) {
-  return `BX-${1000 + orderId}`
-}
-
 function isMissingColumnError(error: { message?: string; code?: string } | null) {
   return (
     error?.code === "PGRST204" ||
@@ -75,156 +65,6 @@ function isOrderInvoiced(order: {
     Boolean(order.invoice_cae) ||
     Boolean(order.invoice_number && order.invoice_point)
   )
-}
-
-async function activatePendingItemWarranties(
-  admin: AdminClient,
-  {
-    orderId,
-    deliveredAt,
-    actorId,
-  }: {
-    orderId: number
-    deliveredAt: string
-    actorId: string
-  },
-) {
-  const { data: items, error: itemsError } = await admin
-    .from("orden_items")
-    .select("id, warranty_started_at, warranty_expires_at, warranty_status, warranty_months")
-    .eq("orden_id", orderId)
-
-  if (itemsError) {
-    console.warn("ORDER_WARRANTY_ITEMS_ERROR", {
-      orderId,
-      message: itemsError.message,
-    })
-    return
-  }
-
-  const pendingItems = (items ?? []).filter(
-    (item) =>
-      !item.warranty_started_at &&
-      !item.warranty_expires_at &&
-      (item.warranty_status === null ||
-        item.warranty_status === undefined ||
-        item.warranty_status === "pending_delivery"),
-  )
-
-  if (!pendingItems.length) return
-
-  const previousByItemId = Object.fromEntries(
-    pendingItems.map((item) => [
-      item.id,
-      {
-        warranty_started_at: item.warranty_started_at,
-        warranty_expires_at: item.warranty_expires_at,
-        warranty_months: item.warranty_months,
-        warranty_status: item.warranty_status,
-      },
-    ]),
-  )
-
-  const updates = pendingItems.map((item) => {
-    const months =
-      typeof item.warranty_months === "number" && item.warranty_months > 0
-        ? item.warranty_months
-        : DEFAULT_PRODUCT_WARRANTY_MONTHS
-
-    return {
-      id: item.id,
-      warranty_started_at: deliveredAt,
-      warranty_expires_at: getWarrantyExpiration(deliveredAt, months),
-      warranty_months: months,
-      warranty_status: "active",
-    }
-  })
-
-  for (const update of updates) {
-    const { error } = await admin
-      .from("orden_items")
-      .update({
-        warranty_started_at: update.warranty_started_at,
-        warranty_expires_at: update.warranty_expires_at,
-        warranty_months: update.warranty_months,
-        warranty_status: update.warranty_status,
-      })
-      .eq("id", update.id)
-      .is("warranty_started_at", null)
-      .is("warranty_expires_at", null)
-
-    if (error) {
-      console.warn("ORDER_WARRANTY_ACTIVATION_ERROR", {
-        orderId,
-        itemId: update.id,
-        message: error.message,
-      })
-    }
-  }
-
-  await appendOrderAuditEvent(admin, {
-    orderId,
-    actorType: "admin",
-    actorId,
-    action: "order_item_warranty_started",
-    previousStatus: "pending_delivery",
-    newStatus: "active",
-    metadata: {
-      delivered_at: deliveredAt,
-      previous: previousByItemId,
-      next: updates,
-    },
-  })
-}
-
-async function sendOrderStateEmail(order: {
-  id: number
-  estado?: string | null
-  cliente_email?: string | null
-  cliente_nombre?: string | null
-  tracking_number?: string | null
-  tracking_url?: string | null
-}) {
-  const orderCode = getOrderCode(order.id)
-
-  if (order.estado === "enviado" || order.estado === "en_camino") {
-    await sendOrderStatusEmail({
-      to: order.cliente_email,
-      subject: `Pedido enviado ${orderCode}`,
-      html: `
-        <h1>Pedido enviado</h1>
-        <p>Hola ${order.cliente_nombre ?? ""}, tu pedido ${orderCode} ya fue enviado.</p>
-        ${order.tracking_number ? `<p>Seguimiento: ${order.tracking_number}</p>` : ""}
-        ${order.tracking_url ? `<p><a href="${order.tracking_url}">Ver seguimiento</a></p>` : ""}
-      `,
-    })
-    return
-  }
-
-  if (order.estado === "entregado") {
-    await sendOrderStatusEmail({
-      to: order.cliente_email,
-      subject: `Pedido entregado ${orderCode}`,
-      html: `
-        <h1>Pedido entregado</h1>
-        <p>Hola ${order.cliente_nombre ?? ""}, tu pedido ${orderCode} figura como entregado.</p>
-        <p>Si necesitás ayuda con la compra, podés iniciar un reclamo desde tu cuenta.</p>
-      `,
-    })
-    return
-  }
-
-  if (order.estado === "cancelado") {
-    await sendOrderStatusEmail({
-      to: order.cliente_email,
-      subject: `Compra cancelada ${orderCode}`,
-      html: `
-        <h1>Compra cancelada</h1>
-        <p>Hola ${order.cliente_nombre ?? ""}, tu pedido ${orderCode} fue cancelado.</p>
-        <p>Te avisaremos cualquier novedad adicional desde tu cuenta y por email.</p>
-      `,
-    })
-  }
 }
 
 export async function PATCH(
@@ -294,7 +134,7 @@ export async function PATCH(
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
-    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, credit_balance_used, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point")
+    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, credit_balance_used, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_estado, andreani_creation_environment, andreani_tracking_event_at")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -417,6 +257,7 @@ export async function PATCH(
       await activatePendingItemWarranties(auth.admin, {
         orderId,
         deliveredAt: data.delivered_at,
+        actorType: "admin",
         actorId: auth.user.id,
       })
     }
@@ -434,6 +275,21 @@ export async function PATCH(
       metadata: {
         previousEstado: currentOrder.estado,
         newEstado: estado,
+        // Override manual sobre un pedido con envío Andreani activo: se
+        // registra el último estado logístico real conocido para que quede
+        // trazable si el cambio manual contradice a Andreani (ver política
+        // en lib/andreani/tracking-status-mapping.ts) -- nunca se bloquea el
+        // cambio (es la vía de emergencia de super_admin), sólo se audita.
+        ...(currentOrder.andreani_envio_id
+          ? {
+              andreaniSnapshot: {
+                envioId: currentOrder.andreani_envio_id,
+                environment: currentOrder.andreani_creation_environment,
+                estado: currentOrder.andreani_estado,
+                trackingEventAt: currentOrder.andreani_tracking_event_at,
+              },
+            }
+          : {}),
       },
     })
 

@@ -42,3 +42,8 @@ pnpm-debug.log*
 
 # Compressed files
 *.zip
+
+# Local Vercel / Netlify folders (metadata de link local, nunca secretos)
+.vercel
+.env*
+.netlify

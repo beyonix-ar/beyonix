@@ -7338,7 +7338,11 @@ export function AdminPedidos({
       })
 
       if (result.ok) {
-        await reloadPedidos()
+        // Silencioso: la escritura en `ordenes` ya dispara el canal
+        // realtime (usePedidos) que refresca la lista solo; forzar acá un
+        // reload no-silencioso duplicaba la consulta y tapaba la lista
+        // entera con un spinner por una simple consulta de tracking/etiqueta.
+        await reloadPedidos({ silent: true })
       }
 
       return result

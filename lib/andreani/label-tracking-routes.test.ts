@@ -21,51 +21,41 @@ test("el endpoint de etiqueta exige admin, andreani_envio_id y usa el ambiente d
   assert.doesNotMatch(source, /productionAccess:\s*"shipment-creation"/)
 })
 
-test("el endpoint de tracking exige admin, andreani_tracking y usa el ambiente donde se creó el envío", () => {
+test("el endpoint de tracking exige admin y delega en el sync compartido con el ambiente donde se creó el envío", () => {
   const source = readRoute("../../app/api/andreani/tracking/route.ts")
 
   assert.match(source, /requireInternalUser\(request, \["admin", "super_admin"\]\)/)
   assert.match(source, /andreani_tracking/)
   assert.match(source, /andreani_envio_id/)
-  assert.match(
-    source,
-    /El pedido todavía no tiene un envío Andreani generado/,
-  )
   assert.match(source, /andreani_creation_environment/)
-  assert.match(source, /getTrackingPullV3\(/)
-  assert.match(source, /getEstadoOrden\(/)
-  assert.match(source, /andreani_tracking_checked_at/)
-  assert.match(source, /productionAccess:[\s\S]*?"shipment-read"/)
-  assert.doesNotMatch(source, /productionAccess:\s*"shipment-creation"/)
-  assert.doesNotMatch(source, /delivered_at/)
-  assert.doesNotMatch(source, /estado:\s*"entregado"/)
+  assert.match(source, /syncAndreaniOrderTracking\(/)
+  assert.match(source, /resolveAndreaniTrackingEnvironment\(/)
 })
 
-test("el endpoint de tracking siempre consulta getEstadoOrden, incluso con tracking ya conocido", () => {
-  const source = readRoute("../../app/api/andreani/tracking/route.ts")
+// La lógica real (getEstadoOrden/getTrackingPullV3, prioridad de Estado,
+// timestamps, transición automática) vive ahora en un único módulo
+// compartido -- ver lib/andreani/order-tracking-sync.test.ts -- para que el
+// botón "Consultar" y la sincronización automática (cron) nunca diverjan.
+test("el criterio real de tracking vive en un único módulo compartido, no duplicado en la ruta", () => {
+  const source = readRoute("../../lib/andreani/order-tracking-sync.ts")
 
-  // Regresión: antes se omitía getEstadoOrden apenas existía
-  // andreani_tracking, así que un rechazo posterior a la creación
-  // ("Rechazado") nunca se detectaba desde "Consultar".
-  assert.doesNotMatch(source, /numeroDeTracking\s*\?\s*null\s*:/)
+  assert.match(source, /El pedido todavía no tiene un envío Andreani generado/)
   assert.match(source, /const orderStatus = await getEstadoOrden\(/)
   assert.match(source, /orderStatus\.estado === "Rechazado"/)
-})
-
-test("el endpoint de tracking prioriza el evento con Estado legible sobre el evento técnicamente más reciente", () => {
-  const source = readRoute("../../app/api/andreani/tracking/route.ts")
-
-  // Regresión: tomar ciegamente el evento más reciente por fecha podía
-  // pisar un estado legible ("Pendiente de ingreso") con el código interno
-  // de un evento posterior sin Estado (p. ej. "OrdenDeEnvioCreada").
   assert.match(source, /sortedEvents\.find\(\(event\) => event\.Estado\)/)
   assert.doesNotMatch(source, /latestEvent\.Estado \?\? latestEvent\.Evento/)
+  assert.match(source, /andreani_tracking_checked_at/)
+  assert.match(source, /parseAndreaniTimestamp\(/)
+
+  const routeSource = readRoute("../../app/api/andreani/tracking/route.ts")
+  assert.doesNotMatch(routeSource, /getTrackingPullV3\(/)
+  assert.doesNotMatch(routeSource, /getEstadoOrden\(/)
 })
 
 test("el endpoint de tracking siempre devuelve un mensaje visible, incluso sin eventos nuevos", () => {
   const source = readRoute("../../app/api/andreani/tracking/route.ts")
 
-  assert.match(source, /El envío continúa: \$\{logisticsEstado\}/)
+  assert.match(source, /El envío continúa: \$\{snapshot\.logisticsEstado\}/)
   assert.match(source, /rechazó la orden después de haberla creado/)
 })
 

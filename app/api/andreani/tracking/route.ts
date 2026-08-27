@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 
+import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
 import {
-  AndreaniError,
-  getEstadoOrden,
-  getTrackingPullV3,
-  normalizeAndreaniError,
-} from "@/lib/andreani/client"
+  resolveAndreaniTrackingEnvironment,
+  syncAndreaniOrderTracking,
+  type AndreaniOrderTrackingRow,
+} from "@/lib/andreani/order-tracking-sync"
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
 function statusForAndreaniError(error: AndreaniError) {
@@ -19,6 +19,9 @@ function statusForAndreaniError(error: AndreaniError) {
       return 502
   }
 }
+
+const ORDER_TRACKING_SELECT =
+  "id, estado, delivered_at, andreani_tracking, andreani_envio_id, andreani_creation_environment, cliente_email, cliente_nombre, tracking_number, tracking_url"
 
 export async function POST(request: Request) {
   const authorization = await requireInternalUser(request, ["admin", "super_admin"])
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
 
   const { data: order, error: orderError } = await authorization.admin
     .from("ordenes")
-    .select("andreani_tracking, andreani_envio_id, andreani_creation_environment")
+    .select(ORDER_TRACKING_SELECT)
     .eq("id", orderId)
     .maybeSingle()
 
@@ -46,87 +49,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  const envioId =
-    typeof order.andreani_envio_id === "string" ? order.andreani_envio_id.trim() : ""
-  const numeroDeTracking =
-    typeof order.andreani_tracking === "string" ? order.andreani_tracking.trim() : ""
-  if (!envioId) {
-    return NextResponse.json(
-      { ok: false, error: "El pedido todavía no tiene un envío Andreani generado." },
-      { status: 409 },
-    )
-  }
-
-  // El tracking se consulta contra el mismo ambiente donde se creó el
-  // envío (persistido al crear), nunca contra el ambiente configurado hoy.
-  const environment = order.andreani_creation_environment === "PROD" ? "PROD" : "QA"
+  const orderRow = order as unknown as AndreaniOrderTrackingRow
+  const environment = resolveAndreaniTrackingEnvironment(orderRow)
 
   try {
-    const clientOptions = {
-      env: { ...process.env, ANDREANI_ENV: environment },
-      productionAccess: environment === "PROD" ? "shipment-read" as const : undefined,
-    }
-    // Se consulta siempre, incluso con tracking ya conocido: es la única
-    // forma de detectar que Andreani rechazó la orden después de haberla
-    // creado (estado "Rechazado"), algo que /v3/trazas no informa.
-    const orderStatus = await getEstadoOrden(envioId, clientOptions)
-    const resolvedTracking =
-      numeroDeTracking || orderStatus.bultos[0]?.numeroDeEnvio || ""
-    const tracking = resolvedTracking
-      ? await getTrackingPullV3(resolvedTracking, clientOptions)
-      : { eventos: [] }
+    const result = await syncAndreaniOrderTracking(authorization.admin, orderRow, {
+      actorType: "admin",
+      actorId: authorization.user.id,
+    })
 
-    const sortedEvents = [...tracking.eventos].sort(
-      (left, right) => new Date(right.Fecha).getTime() - new Date(left.Fecha).getTime(),
-    )
-    const [latestEvent] = sortedEvents
-    // Algunos eventos (p. ej. "OrdenDeEnvioCreada") no traen un Estado
-    // legible en /v3/trazas -- el estado logístico mostrado al admin debe
-    // reflejar el evento más reciente que sí lo tenga, no el técnicamente
-    // más reciente sin más (si no, se pisa un estado real como "Pendiente
-    // de ingreso" con un código interno como "OrdenDeEnvioCreada").
-    const latestEventWithEstado = sortedEvents.find((event) => event.Estado)
-    const rejectedAfterCreation = orderStatus.estado === "Rechazado"
-    const logisticsEstado = rejectedAfterCreation
-      ? orderStatus.estado
-      : (latestEventWithEstado?.Estado ?? orderStatus.estado)
-
-    const checkedAt = new Date().toISOString()
-    const updatePayload = {
-      andreani_estado: logisticsEstado,
-      andreani_tracking: resolvedTracking || null,
-      andreani_etiqueta_url:
-        orderStatus.etiquetasPorAgrupador ??
-        orderStatus.bultos[0]?.linking?.find((link) =>
-          link.meta.toLowerCase().includes("etiqueta"),
-        )?.contenido ??
-        null,
-      ...(latestEvent ? { andreani_tracking_event_at: latestEvent.Fecha } : {}),
-      andreani_tracking_checked_at: checkedAt,
-    }
-    const { error: persistenceError } = await authorization.admin
-      .from("ordenes")
-      .update(updatePayload as never)
-      .eq("id", orderId)
-
-    if (persistenceError) {
-      throw new AndreaniError(
-        "REQUEST_FAILED",
-        "Andreani respondió, pero no se pudo persistir el estado del envío.",
-      )
-    }
-
-    const message = rejectedAfterCreation
+    const { snapshot } = result
+    const message = snapshot.rejectedAfterCreation
       ? "Andreani rechazó la orden después de haberla creado. Requiere revisión manual."
-      : latestEvent
-        ? `${logisticsEstado} (${latestEvent.Fecha})`
-        : `El envío continúa: ${logisticsEstado}.`
+      : result.statusChanged
+        ? `Actualizado a "${result.newEstado}" según Andreani (${snapshot.logisticsEstado}).`
+        : snapshot.latestEvent
+          ? `${snapshot.logisticsEstado} (${snapshot.latestEvent.Fecha})`
+          : `El envío continúa: ${snapshot.logisticsEstado}.`
 
     return NextResponse.json({
       ok: true,
       message,
-      eventos: tracking.eventos,
-      checkedAt,
+      eventos: snapshot.eventos,
+      checkedAt: result.checkedAt,
+      statusChanged: result.statusChanged,
+      newEstado: result.newEstado,
     })
   } catch (error) {
     const safeError = normalizeAndreaniError(error)
