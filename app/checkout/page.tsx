@@ -1921,7 +1921,7 @@ export default function CheckoutPage() {
                                 onChange={handlePostalCodeChange}
                                 placeholder={
                                   postalCodeLoadError
-                                    ? "No pudimos consultar los códigos postales"
+                                    ? "No disponible"
                                     : showManualPostalCodeOption
                                       ? "Sin códigos postales disponibles"
                                       : "Seleccioná un código postal"
@@ -2527,7 +2527,7 @@ export default function CheckoutPage() {
                 <div className="space-y-0.5">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
-                      {customerCreditIncludesShippingBenefit
+                      {customerCreditCoversShipping
                         ? "Envío"
                         : qualifiesForMainShippingBonus && shippingBonus > 0
                           ? "Envío bonificado"
@@ -2537,7 +2537,7 @@ export default function CheckoutPage() {
                       !selectedShippingOption &&
                         shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
                         ? "font-semibold text-red-400"
-                        : customerCreditIncludesShippingBenefit
+                        : customerCreditCoversShipping
                           ? "font-semibold text-emerald-400"
                         : !selectedShippingOption
                         ? "text-white/45"
@@ -2551,7 +2551,7 @@ export default function CheckoutPage() {
                         : !selectedShippingOption &&
                             shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
                           ? "No disponible"
-                        : customerCreditIncludesShippingBenefit
+                        : customerCreditCoversShipping
                         ? "GRATIS"
                         : !selectedShippingOption && shippingLoading
                         ? "Calculando…"

@@ -27,6 +27,7 @@ import {
   AndreaniError,
   resetAndreaniRuntimeStateForTests,
   resolveAndreaniConfig,
+  resolveAndreaniReferenceEnvironment,
   sanitizeAndreaniMessage,
   testAndreaniQaConnection,
 } from "./client.ts"
@@ -1350,4 +1351,46 @@ test("Andreani no llama a la red si un producto está incompleto", async () => {
       error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
   )
   assert.equal(fetchCalls, 0)
+})
+
+test("resolveAndreaniReferenceEnvironment prioriza ANDREANI_TARIFF_ENV sobre ANDREANI_ENV", () => {
+  assert.equal(
+    resolveAndreaniReferenceEnvironment({
+      NODE_ENV: "test",
+      ANDREANI_ENV: "QA",
+      ANDREANI_TARIFF_ENV: "PROD",
+    }),
+    "PROD",
+  )
+  assert.equal(
+    resolveAndreaniReferenceEnvironment({
+      NODE_ENV: "test",
+      ANDREANI_ENV: "PROD",
+      ANDREANI_TARIFF_ENV: "QA",
+    }),
+    "QA",
+  )
+})
+
+test("resolveAndreaniReferenceEnvironment cae a ANDREANI_ENV si no hay override de tarifa", () => {
+  assert.equal(
+    resolveAndreaniReferenceEnvironment({ NODE_ENV: "test", ANDREANI_ENV: "qa" }),
+    "QA",
+  )
+  assert.equal(
+    resolveAndreaniReferenceEnvironment({ NODE_ENV: "test", ANDREANI_ENV: "prod" }),
+    "PROD",
+  )
+})
+
+test("resolveAndreaniReferenceEnvironment falla cerrado ante un ambiente inválido o ausente", () => {
+  assert.throws(
+    () => resolveAndreaniReferenceEnvironment({ NODE_ENV: "test" }),
+    (error: unknown) => error instanceof AndreaniError && error.code === "CONFIGURATION_ERROR",
+  )
+  assert.throws(
+    () =>
+      resolveAndreaniReferenceEnvironment({ NODE_ENV: "test", ANDREANI_ENV: "staging" }),
+    (error: unknown) => error instanceof AndreaniError && error.code === "CONFIGURATION_ERROR",
+  )
 })

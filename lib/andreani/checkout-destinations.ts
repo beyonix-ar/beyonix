@@ -6,7 +6,12 @@ import {
   normalizeArgentineProvinceKey,
 } from "../validation/account-fields.ts"
 
-import { AndreaniClient, AndreaniError, sanitizeAndreaniMessage } from "./client.ts"
+import {
+  AndreaniClient,
+  AndreaniError,
+  resolveAndreaniReferenceEnvironment,
+  sanitizeAndreaniMessage,
+} from "./client.ts"
 import type { AndreaniLocality } from "./types.ts"
 
 function logCheckoutDestinationFailure(
@@ -317,22 +322,34 @@ export async function getCheckoutPostalCodes(
     async () => {
       const getAndreaniLocalities =
         dependencies.getAndreaniLocalities ??
-        ((name: string) =>
-          new AndreaniClient({
-            env: { ...(dependencies.env ?? process.env), ANDREANI_ENV: "QA" },
+        ((name: string) => {
+          const referenceEnv = { ...(dependencies.env ?? process.env) }
+          const environment = resolveAndreaniReferenceEnvironment(referenceEnv)
+          referenceEnv.ANDREANI_ENV = environment
+
+          return new AndreaniClient({
+            env: referenceEnv,
+            // El catálogo de referencia (localidades/CP/sucursales) se
+            // consulta siempre en el mismo ambiente que la tarifa -- ver
+            // `resolveAndreaniReferenceEnvironment`. Son GET públicos
+            // (`performFetch` los permite en PROD sin más autorización), así
+            // que no hace falta ningún permiso adicional de creación/tarifa.
+            productionAccess:
+              environment === "PROD" ? "tariffs-only" : undefined,
             // CABA se modela como una única localidad Andreani ("CIUDAD
             // AUTÓNOMA DE BUENOS AIRES" / provincia "CAPITAL FEDERAL") que
             // agrupa ~436 códigos postales -- Andreani no tiene una entrada
             // por barrio (verificado: buscar "RECOLETA"/"CABALLITO"/etc. como
             // localidad no devuelve nada). Es la única localidad del país con
-            // un resultado tan grande, y en QA tarda 15-20s en responder
+            // un resultado tan grande, y puede tardar 15-20s en responder
             // (medido en vivo), muy por encima del timeout general de
             // Andreani (10s) pensado para localidades chicas como el resto
             // del país. Sin este margen, esta consulta puntual siempre
             // expira antes de tiempo y el frontend lo muestra como "sin
             // códigos postales" en vez de como la falla de red que es.
             timeoutMs: 25_000,
-          }).getLocalidades({ localidad: name }))
+          }).getLocalidades({ localidad: name })
+        })
 
       let andreaniLocalities: AndreaniLocality[]
       try {

@@ -73,6 +73,29 @@ test("checkout muestra el shell sin habilitar acciones antes de estados crítico
   )
 })
 
+test("el envío nunca se muestra GRATIS/bonificado antes de tener una cotización real", () => {
+  const checkout = source("app/checkout/page.tsx")
+
+  // customerCreditIncludesShippingBenefit sólo mira si hay saldo (> 0), sin
+  // importar si Andreani ya devolvió una cotización real. El label "GRATIS"
+  // del resumen debe depender de customerCreditCoversShipping, que además
+  // exige selectedShippingOption != null -- si vuelve a usarse la variante
+  // sin ese gate, un cliente con saldo ve "GRATIS" con el CP roto o sin
+  // cotizar todavía (justo el bug reportado en producción).
+  assert.doesNotMatch(
+    checkout,
+    /customerCreditIncludesShippingBenefit\s*\n\s*\?\s*"(Envío|GRATIS)"/,
+  )
+  assert.match(
+    checkout,
+    /customerCreditCoversShipping\s*\n\s*\?\s*"Envío"/,
+  )
+  assert.match(
+    checkout,
+    /customerCreditCoversShipping\s*\n\s*\?\s*"GRATIS"/,
+  )
+})
+
 test("las APIs admin verifican JWT y rol actual antes de exponer datos", () => {
   const auth = source("lib/auth/admin-api.ts")
   const shell = source("app/admin/admin-client.tsx")

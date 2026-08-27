@@ -18,6 +18,7 @@ import { getCheckoutOrderItemUnitPrice } from "../orders/conditioned-checkout.ts
 import {
   AndreaniClient,
   AndreaniError,
+  resolveAndreaniReferenceEnvironment,
   type AndreaniClientOptions,
 } from "./client.ts"
 import { formatAndreaniBranchAddress } from "./branch-address.ts"
@@ -319,15 +320,7 @@ async function fetchAndreaniDestinationBranches(
 export function resolveAndreaniCheckoutConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): CheckoutQuoteConfig {
-  const environment = requiredText(
-    env.ANDREANI_TARIFF_ENV || env.ANDREANI_ENV,
-  ).toUpperCase()
-  if (environment !== "QA" && environment !== "PROD") {
-    throw new AndreaniError(
-      "CONFIGURATION_ERROR",
-      "El ambiente de cotización Andreani no está configurado correctamente.",
-    )
-  }
+  const environment = resolveAndreaniReferenceEnvironment(env)
   const prefix = `ANDREANI_${environment}`
   const cliente =
     requiredText(env[`${prefix}_CLIENT`]) || requiredText(env.ANDREANI_CLIENTE)

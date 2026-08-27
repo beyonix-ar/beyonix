@@ -138,6 +138,33 @@ function parseEnvironment(env: NodeJS.ProcessEnv): AndreaniEnvironment {
   return value
 }
 
+/**
+ * Única fuente de verdad para qué ambiente de Andreani sirve los catálogos
+ * de referencia territorial (localidades, códigos postales, sucursales).
+ * Antes había dos criterios viviendo en paralelo: `checkout-quote.ts`
+ * resolvía por `ANDREANI_TARIFF_ENV || ANDREANI_ENV` (PROD en producción)
+ * mientras `checkout-destinations.ts` forzaba QA sin importar la
+ * configuración -- dos ambientes de Andreani pueden devolver nomenclatura o
+ * cobertura de CP distinta para la misma localidad real, así que esa
+ * divergencia rompía el circuito completo (el selector de CP consultaba un
+ * ambiente y la cotización validaba contra otro). Todo el catálogo de
+ * referencia debe resolver siempre por acá.
+ */
+export function resolveAndreaniReferenceEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+): AndreaniEnvironment {
+  const value = nonEmpty(env.ANDREANI_TARIFF_ENV || env.ANDREANI_ENV).toUpperCase()
+
+  if (value !== "QA" && value !== "PROD") {
+    throw new AndreaniError(
+      "CONFIGURATION_ERROR",
+      "El ambiente de referencia territorial de Andreani no está configurado correctamente.",
+    )
+  }
+
+  return value
+}
+
 function resolveBaseUrl(rawValue: string, environment: AndreaniEnvironment) {
   let url: URL
 

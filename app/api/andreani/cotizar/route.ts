@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import {
   normalizeAndreaniError,
+  resolveAndreaniReferenceEnvironment,
 } from "@/lib/andreani/client"
 import { quoteAndreaniCheckout } from "@/lib/andreani/checkout-quote"
 import { createCheckoutShippingQuoteToken } from "@/lib/cart/checkout-shipping"
@@ -21,12 +22,7 @@ export async function POST(request: Request) {
       ...option,
       quoteToken: createCheckoutShippingQuoteToken(payload, option),
     }))
-    const environment =
-      (process.env.ANDREANI_TARIFF_ENV || process.env.ANDREANI_ENV)
-        ?.trim()
-        .toUpperCase() === "PROD"
-        ? "PROD"
-        : "QA"
+    const environment = resolveAndreaniReferenceEnvironment()
 
     return NextResponse.json(
       { ok: true, environment, options },
