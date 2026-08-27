@@ -1,5 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto"
-
 import { NextResponse } from "next/server"
 
 import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
@@ -12,6 +10,7 @@ import {
   isMercadoPagoOrderAlreadyConfirmed,
   processApprovedMercadoPagoOrderPayment,
 } from "@/lib/mercadopago/order-payment"
+import { isValidWebhookSignature } from "@/lib/mercadopago/webhook-signature"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -53,38 +52,6 @@ function getPaymentId(url: URL, body: unknown) {
   }
 
   return null
-}
-
-function isValidWebhookSignature(request: Request, paymentId: string) {
-  const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
-  if (request.method === "GET") return true
-  if (!secret) return process.env.NODE_ENV !== "production"
-
-  const signature = request.headers.get("x-signature")
-  const requestId = request.headers.get("x-request-id")
-  if (!signature || !requestId) return false
-
-  const parts = new Map(
-    signature.split(",").map((part) => {
-      const [key, ...value] = part.trim().split("=")
-      return [key, value.join("=")]
-    }),
-  )
-  const timestamp = parts.get("ts")
-  const receivedHash = parts.get("v1")
-  if (!timestamp || !receivedHash) return false
-
-  const manifest = `id:${paymentId.toLowerCase()};request-id:${requestId};ts:${timestamp};`
-  const expectedHash = createHmac("sha256", secret)
-    .update(manifest)
-    .digest("hex")
-  const expectedBuffer = Buffer.from(expectedHash)
-  const receivedBuffer = Buffer.from(receivedHash)
-
-  return (
-    expectedBuffer.length === receivedBuffer.length &&
-    timingSafeEqual(expectedBuffer, receivedBuffer)
-  )
 }
 
 async function handleWebhook(request: Request) {
