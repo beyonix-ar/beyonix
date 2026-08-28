@@ -40,6 +40,11 @@ import { getProductVideoSource } from "@/lib/products/product-video"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
 import {
+  calculateInstallmentPlan,
+  getEffectiveInstallmentPercent,
+} from "@/lib/products/installments"
+import { useSiteSettings } from "@/hooks/use-site-settings"
+import {
   normalizeLogisticsDecimalInput,
   PRODUCT_LOGISTICS_FIELDS,
 } from "@/lib/shipping/logistics-validation"
@@ -94,6 +99,7 @@ export function ProductoForm({
   const previewObjectUrls = useRef<string[]>([])
   const leaveEditor = onCancel
   const finishProductSave = onSaved
+  const { installmentsFinancing } = useSiteSettings()
 
   const {
     form,
@@ -152,11 +158,13 @@ export function ProductoForm({
     form.precio.trim() && Number.isFinite(currentPrice)
       ? productPriceFormatter.format(currentPrice)
       : null,
-    form.cuotas === "3"
-      ? "3 cuotas sin interés"
-      : form.cuotas === "6"
-        ? "6 cuotas sin interés"
-        : null,
+    [
+      form.cuotas2 && "2 cuotas",
+      form.cuotas3 && "3 cuotas",
+      form.cuotas6 && "6 cuotas",
+    ]
+      .filter(Boolean)
+      .join(" · ") || null,
   ].filter((item): item is string => Boolean(item))
   const activationStatus = useMemo(() => {
     const parseLogisticsValue = (value: string) => {
@@ -359,9 +367,9 @@ export function ProductoForm({
               ((safePreviousPrice - safePrice) / safePreviousPrice) * 100,
             )
           : null,
-      cuotas_sin_interes: form.cuotas !== "sin_cuotas",
-      cuotas_maximas:
-        form.cuotas === "3" ? 3 : form.cuotas === "6" ? 6 : null,
+      cuotas_2_habilitadas: form.cuotas2,
+      cuotas_3_habilitadas: form.cuotas3,
+      cuotas_6_habilitadas: form.cuotas6,
       stock,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : null,
       destacado: form.destacado,
@@ -511,14 +519,68 @@ export function ProductoForm({
                   </AdminSelect>
                 </AdminFormField>
 
-                <AdminFormField label="Cuotas sin interés" labelClassName={productFieldLabelClassName}>
-                  <AdminSelect title="Cuotas sin interés" value={form.cuotas} onChange={(value) => setField("cuotas", value)}>
-                    <option value="sin_cuotas">No ofrecer cuotas</option>
-                    <option value="3">3 cuotas sin interés</option>
-                    <option value="6">6 cuotas sin interés</option>
-                  </AdminSelect>
-                </AdminFormField>
               </div>
+            </AdminCard>
+
+            <AdminCard className="product-editor-panel space-y-2 p-2.5">
+              <div className="product-editor-panel-heading">
+                <h2 className="text-base font-black text-white">Financiación</h2>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
+                    { key: "cuotas3" as const, count: 3 as const, label: "3 cuotas" },
+                    { key: "cuotas6" as const, count: 6 as const, label: "6 cuotas" },
+                  ]
+                ).map((toggle) => {
+                  const active = form[toggle.key]
+                  const plan =
+                    active && Number.isFinite(currentPrice) && currentPrice > 0
+                      ? calculateInstallmentPlan(currentPrice, toggle.count, installmentsFinancing)
+                      : null
+
+                  return (
+                    <AdminSecondaryButton
+                      key={toggle.key}
+                      title={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
+                      aria-label={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
+                      aria-pressed={active}
+                      onClick={() => setField(toggle.key, !active)}
+                      className={`product-editor-toggle grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                    >
+                      {active ? (
+                        <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
+                      ) : (
+                        <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
+                      )}
+                      <span className="min-w-0 self-center">
+                        <span className="block text-xs font-black text-white/82">
+                          {toggle.label} sin interés
+                        </span>
+                        <span className="mt-0.5 block text-10px font-medium leading-4 text-white/46">
+                          {plan
+                            ? `${productPriceFormatter.format(plan.installmentAmount)} por cuota`
+                            : "Deshabilitado"}
+                        </span>
+                      </span>
+                    </AdminSecondaryButton>
+                  )
+                })}
+              </div>
+              {(form.cuotas2 || form.cuotas3 || form.cuotas6) && (
+                <p className="text-10px font-medium leading-4 text-white/38">
+                  Costo financiero configurado:{" "}
+                  {[
+                    form.cuotas2 && `2 cuotas ${getEffectiveInstallmentPercent(2, installmentsFinancing)}%`,
+                    form.cuotas3 && `3 cuotas ${getEffectiveInstallmentPercent(3, installmentsFinancing)}%`,
+                    form.cuotas6 && `6 cuotas ${getEffectiveInstallmentPercent(6, installmentsFinancing)}%`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  . Se aplica automáticamente según la configuración global (Admin &gt; Configuración).
+                </p>
+              )}
             </AdminCard>
 
             <AdminCard className="product-editor-panel space-y-2 p-2.5">

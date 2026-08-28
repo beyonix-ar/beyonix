@@ -27,11 +27,16 @@ import {
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
+  normalizeRequestedInstallmentsModality,
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
 import { deleteIncompleteCheckoutOrder } from "@/lib/orders/checkout-inventory"
+import {
+  calculateInstallmentPlan,
+  getCartInstallmentEligibility,
+} from "@/lib/products/installments"
 import {
   MERCADOPAGO_MAX_ATTEMPTS_PER_DAY,
   MERCADOPAGO_MAX_ATTEMPTS_PER_HOUR,
@@ -149,6 +154,29 @@ export async function POST(request: Request) {
       normalizedShipping,
       shippingBranch,
     )
+    // Se valida acá (antes de calcular el fingerprint) para que la
+    // modalidad forme parte de la identidad del intento de pago: si el
+    // cliente cambia de "pago único" a "3 cuotas" para el mismo carrito, el
+    // fingerprint tiene que cambiar y generar una orden nueva -- nunca
+    // reusar/"reclamar" una orden vieja calculada con otra modalidad.
+    const requestedInstallmentsModality = normalizeRequestedInstallmentsModality(
+      payload.installmentsModality,
+    )
+    if (
+      requestedInstallmentsModality &&
+      !getCartInstallmentEligibility(catalog.products).includes(
+        requestedInstallmentsModality,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Esa cantidad de cuotas no está disponible para los productos de tu carrito.",
+        },
+        { status: 400 },
+      )
+    }
+
     const checkoutFingerprint = createMercadoPagoCheckoutFingerprint({
       sessionId: checkoutSessionId,
       userId: user?.id ?? null,
@@ -165,6 +193,7 @@ export async function POST(request: Request) {
       },
       storeBenefitId: payload.storeBenefitId?.trim() || null,
       requestedCredit,
+      installmentsModality: requestedInstallmentsModality,
     })
     const existingAttempts = await loadMercadoPagoCheckoutAttempts(
       admin,
@@ -277,9 +306,41 @@ export async function POST(request: Request) {
       totals.productsTotal,
       storeBenefit?.percent,
     )
+    // Base financiable: productos netos (después de descuentos/beneficio de
+    // tienda) + envío EFECTIVAMENTE cobrado al cliente (ya bonificado/gratis
+    // si corresponde -- shipping.shipping_cost_charged nunca es el costo
+    // bruto de Andreani). El % de financiación se aplica sobre esta base
+    // completa porque Mercado Pago cobra su costo real sobre TODO el importe
+    // que efectivamente procesa, no sólo sobre los productos.
+    const productsNet = Math.max(
+      totals.productsTotal - storeBenefitDiscountAmount,
+      0,
+    )
+    const financableBase = productsNet + totals.shipping
+
+    // La modalidad ya se validó contra el catálogo real más arriba (antes
+    // del fingerprint). Acá sólo se calcula el plan con la base financiable
+    // definitiva (que recién queda resuelta después de conocer el envío y
+    // el descuento por beneficio de tienda).
+    let installmentPlan: ReturnType<typeof calculateInstallmentPlan> = null
+
+    if (requestedInstallmentsModality) {
+      installmentPlan = calculateInstallmentPlan(
+        financableBase,
+        requestedInstallmentsModality,
+        siteSettings.installmentsFinancing,
+      )
+
+      if (!installmentPlan) {
+        return NextResponse.json(
+          { error: "No pudimos calcular la financiación para tu carrito." },
+          { status: 400 },
+        )
+      }
+    }
+
     const totalAfterStoreBenefit = roundMoney(
-      Math.max(totals.productsTotal - storeBenefitDiscountAmount, 0) +
-        totals.shipping,
+      installmentPlan ? installmentPlan.totalFinanced : financableBase,
     )
     const customerCreditApplication =
       requestedCredit > 0
@@ -331,6 +392,16 @@ export async function POST(request: Request) {
         storeBenefit,
         storeBenefitDiscountAmount,
         customer,
+        installments: installmentPlan
+          ? {
+              count: installmentPlan.count,
+              percent: installmentPlan.percent,
+              productsBaseAmount: financableBase,
+              surchargeAmount: roundMoney(
+                installmentPlan.totalFinanced - financableBase,
+              ),
+            }
+          : null,
       }),
       checkout_idempotency_key: getMercadoPagoCheckoutIdempotencyKey(
         checkoutFingerprint,
@@ -460,7 +531,7 @@ export async function POST(request: Request) {
 }
 
 const MERCADOPAGO_ATTEMPT_SELECT =
-  "id, estado, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_init_point, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation" as const
+  "id, estado, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_init_point, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count" as const
 
 async function loadMercadoPagoCheckoutAttempts(
   admin: ReturnType<typeof createAdminClient>,
@@ -528,6 +599,17 @@ async function createAndPersistMercadoPagoPreference({
   const createdAt = new Date()
   const expiresAt = getMercadoPagoPreferenceExpiration(createdAt)
   const preference = new Preference(client)
+  // Forzamos siempre payment_methods.installments: sin esto, Checkout Pro
+  // puede ofrecer sus propias cuotas (con o sin interés propio) fuera del
+  // control de BEYONIX en CUALQUIER compra, incluso una que nunca eligió
+  // financiación. "1" = pago único; "installments_count" = exactamente la
+  // modalidad que ya quedó calculada y persistida en la orden. Son las
+  // opciones oficiales de Checkout Pro (tope + preselección); no existe un
+  // "mínimo forzado" en la API -- el cliente todavía podría bajar la
+  // cantidad de cuotas en la página de Mercado Pago según el medio de pago.
+  const requestedInstallments = order.installments_count
+    ? Number(order.installments_count)
+    : 1
   const result = await preference.create({
     body: {
       external_reference: String(order.id),
@@ -549,6 +631,10 @@ async function createAndPersistMercadoPagoPreference({
         phone: {
           number: payload.customer?.telefono,
         },
+      },
+      payment_methods: {
+        installments: requestedInstallments,
+        default_installments: requestedInstallments,
       },
       back_urls: {
         success: `${siteUrl}/checkout/success`,

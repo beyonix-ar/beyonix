@@ -96,14 +96,16 @@ export interface SupabaseProducto {
   precio: number
   precio_anterior: number | null
   descuento: number | null
-  cuotas_sin_interes: boolean
-  cuotas_maximas: 3 | 6 | null
+  cuotas_2_habilitadas: boolean
+  cuotas_3_habilitadas: boolean
+  cuotas_6_habilitadas: boolean
   promo_event_id?: string | null
   promo_original_precio?: number | null
   promo_original_precio_anterior?: number | null
   promo_original_descuento?: number | null
-  promo_original_cuotas_sin_interes?: boolean | null
-  promo_original_cuotas_maximas?: 3 | 6 | null
+  promo_original_cuotas_2_habilitadas?: boolean | null
+  promo_original_cuotas_3_habilitadas?: boolean | null
+  promo_original_cuotas_6_habilitadas?: boolean | null
 
   stock: number
 
@@ -245,6 +247,19 @@ export interface SupabasePedido {
   transfer_alias?: string | null
   transfer_discount_percent?: number | null
   transfer_discount_amount?: number | null
+  installments_count?: 2 | 3 | 6 | null
+  installments_percent?: number | null
+  installments_products_base_amount?: number | null
+  installments_surcharge_amount?: number | null
+  mercadopago_payment_snapshot?: {
+    installments?: number | null
+    transaction_amount?: number | null
+    fee_details?: Array<{ type?: string | null; amount?: number | null }> | null
+    transaction_details?: {
+      net_received_amount?: number | null
+      total_paid_amount?: number | null
+    } | null
+  } | null
   payment_proof_url?: string | null
   payment_proof_file_name?: string | null
   payment_proof_uploaded_at?: string | null

@@ -52,7 +52,9 @@ export function useCategoryProducts(
       const matchInstallments =
         !SITE_SETTINGS.filters.showInstallmentsFilter ||
         !onlyInstallments ||
-        product.cuotas_sin_interes === true
+        product.cuotas_2_habilitadas === true ||
+        product.cuotas_3_habilitadas === true ||
+        product.cuotas_6_habilitadas === true
 
       const matchPrice =
         !SITE_SETTINGS.filters.showPriceFilter ||

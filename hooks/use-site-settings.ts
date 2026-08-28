@@ -4,8 +4,10 @@ import { useEffect, useState } from "react"
 
 import {
   DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
+  DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
   DEFAULT_STOCK_SETTINGS,
   type CustomerCreditPaymentSettings,
+  type InstallmentsFinancingSettings,
   type StockSettings,
 } from "@/lib/site-settings"
 import { DEFAULT_SHIPPING_SETTINGS, type ShippingBonusSettings } from "@/lib/store-config"
@@ -15,6 +17,7 @@ interface SiteSettingsResponse {
     shipping?: ShippingBonusSettings
     customerCreditPayments?: CustomerCreditPaymentSettings
     stock?: StockSettings
+    installmentsFinancing?: InstallmentsFinancingSettings
   }
 }
 
@@ -82,6 +85,10 @@ export function useSiteSettings() {
       DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
     )
   const [stock, setStock] = useState<StockSettings>(DEFAULT_STOCK_SETTINGS)
+  const [installmentsFinancing, setInstallmentsFinancing] =
+    useState<InstallmentsFinancingSettings>(
+      DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
+    )
 
   useEffect(() => {
     let active = true
@@ -98,12 +105,16 @@ export function useSiteSettings() {
         if (data.settings?.stock) {
           setStock(data.settings.stock)
         }
+        if (data.settings?.installmentsFinancing) {
+          setInstallmentsFinancing(data.settings.installmentsFinancing)
+        }
       })
       .catch(() => {
         if (!active) return
         setShipping(DEFAULT_SHIPPING_SETTINGS)
         setCustomerCreditPayments(DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS)
         setStock(DEFAULT_STOCK_SETTINGS)
+        setInstallmentsFinancing(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -119,5 +130,6 @@ export function useSiteSettings() {
     shipping,
     customerCreditPayments,
     stock,
+    installmentsFinancing,
   }
 }

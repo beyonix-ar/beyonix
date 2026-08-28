@@ -34,6 +34,7 @@ export interface MercadoPagoCheckoutFingerprintInput {
   }
   storeBenefitId: string | null
   requestedCredit: number
+  installmentsModality: number | null
 }
 
 export interface MercadoPagoCheckoutAttemptRow {
@@ -45,6 +46,7 @@ export interface MercadoPagoCheckoutAttemptRow {
   mercadopago_init_point?: string | null
   mercadopago_preference_expires_at?: string | null
   mercadopago_preference_claimed_at?: string | null
+  installments_count?: number | null
 }
 
 export type MercadoPagoCheckoutAttemptDecision =

@@ -198,6 +198,15 @@ async function handleWebhook(request: Request) {
             payment_confirmed_at: confirmedAt,
             payment_confirmed_amount: confirmedAmount,
             admin_visible_at: confirmedAt,
+            // Costo REAL informado por Mercado Pago (distinto del % configurado
+            // usado para armar el precio financiado): se persiste tal cual para
+            // poder mostrar a futuro en Admin cliente pagó / costos MP / neto.
+            mercadopago_payment_snapshot: {
+              installments: payment.installments ?? null,
+              transaction_amount: payment.transaction_amount ?? null,
+              fee_details: payment.fee_details ?? null,
+              transaction_details: payment.transaction_details ?? null,
+            },
           } as never)
           .eq("id", orderId)
           .eq("estado", orderRow.estado)

@@ -16,7 +16,8 @@ import {
   BeyonixCard,
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
-import { getInstallmentsLabel } from "@/lib/products/installments"
+import { getInstallmentPlanLabels } from "@/lib/products/installments"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
 import type { SupabaseProducto } from "@/lib/supabase/types"
@@ -81,9 +82,10 @@ export function HeroSection({
     ? Math.round((1 - finalPrice / originalPrice) * 100)
     : 0
   const hasSale = discountPercentage > 0
-  const installmentsLabel = featuredProduct
-    ? getInstallmentsLabel(featuredProduct)
-    : null
+  const { installmentsFinancing } = useSiteSettings()
+  const installmentsLabels = featuredProduct
+    ? getInstallmentPlanLabels(featuredProduct, finalPrice, installmentsFinancing)
+    : []
 
   const openFeaturedProduct = () => {
     if (!featuredProduct) {
@@ -204,7 +206,7 @@ export function HeroSection({
                     </p>
                   )}
 
-                  {(hasSale || installmentsLabel) && (
+                  {(hasSale || installmentsLabels.length > 0) && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {hasSale && (
                         <span className="inline-flex min-h-24px items-center rounded-full border border-green-500/25 bg-green-500/12 px-3 py-1.5 text-12px font-semibold leading-none text-green-400">
@@ -212,11 +214,14 @@ export function HeroSection({
                         </span>
                       )}
 
-                      {installmentsLabel && (
-                        <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
-                          {installmentsLabel}
+                      {installmentsLabels.map((label) => (
+                        <span
+                          key={label}
+                          className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky"
+                        >
+                          {label}
                         </span>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>

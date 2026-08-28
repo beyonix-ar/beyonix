@@ -73,13 +73,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "El porcentaje debe estar entre 1 y 99." }, { status: 400 })
   }
 
-  if (actionKind === "installments" && ![3, 6].includes(installments)) {
-    return Response.json({ error: "Elegí 3 o 6 cuotas sin interés." }, { status: 400 })
+  if (actionKind === "installments" && ![2, 3, 6].includes(installments)) {
+    return Response.json({ error: "Elegí 2, 3 o 6 cuotas sin interés." }, { status: 400 })
   }
 
   let query = auth.admin
     .from("productos")
-    .select("id, nombre, slug, precio, precio_anterior, descuento, cuotas_sin_interes, cuotas_maximas, categoria_id")
+    .select("id, nombre, slug, precio, precio_anterior, descuento, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas, categoria_id")
 
   if (scope === "product") {
     const slugs = targetItems
@@ -149,13 +149,15 @@ export async function POST(request: Request) {
       payload.precio_anterior = null
       payload.descuento = null
     } else if (actionKind === "installments") {
-      payload.cuotas_sin_interes = true
-      payload.cuotas_maximas = installments
+      if (installments === 2) payload.cuotas_2_habilitadas = true
+      if (installments === 3) payload.cuotas_3_habilitadas = true
+      if (installments === 6) payload.cuotas_6_habilitadas = true
     } else if (actionKind === "clear_offer") {
       payload.precio_anterior = null
       payload.descuento = null
-      payload.cuotas_sin_interes = false
-      payload.cuotas_maximas = null
+      payload.cuotas_2_habilitadas = false
+      payload.cuotas_3_habilitadas = false
+      payload.cuotas_6_habilitadas = false
     }
 
     const { error } = await auth.admin

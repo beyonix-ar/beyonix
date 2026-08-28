@@ -16,7 +16,9 @@ export interface ProductoFormState {
   video_url: string
   precio: string
   precio_anterior: string
-  cuotas: "sin_cuotas" | "3" | "6"
+  cuotas2: boolean
+  cuotas3: boolean
+  cuotas6: boolean
   categoria_id: string
   destacado: boolean
   activo: boolean

@@ -26,6 +26,7 @@ import {
 import { AndreaniError } from "../andreani/client.ts"
 import { assertCatalogStock, STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
 import { getColorName } from "../products/variant-color.ts"
+import type { InstallmentCount } from "../products/installments.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
 import type { ShippingBonusSettings } from "../store-config.ts"
 import {
@@ -94,6 +95,21 @@ export interface CheckoutOrderRequestPayload {
   customerCreditAmount?: number | string | null
   customer?: CheckoutOrderCustomerInput
   shipping?: CheckoutOrderShippingInput
+  /** Modalidad de cuotas sin interés elegida por el cliente (null = pago único). Se revalida íntegramente server-side -- nunca se confía en este valor. */
+  installmentsModality?: number | string | null
+}
+
+/**
+ * Normaliza y valida la modalidad pedida por el cliente contra los valores
+ * posibles (2/3/6). Cualquier otro valor (incluida manipulación desde el
+ * navegador) se trata como "sin modalidad" -- nunca como un error silencioso
+ * que continúe con un número inventado.
+ */
+export function normalizeRequestedInstallmentsModality(
+  value: number | string | null | undefined,
+): InstallmentCount | null {
+  const parsed = Number(value)
+  return parsed === 2 || parsed === 3 || parsed === 6 ? parsed : null
 }
 
 export interface NormalizedCheckoutOrderItem {
@@ -120,6 +136,9 @@ export interface CheckoutOrderProductRow {
   precio: number
   stock: number
   activo: boolean
+  cuotas_2_habilitadas?: boolean
+  cuotas_3_habilitadas?: boolean
+  cuotas_6_habilitadas?: boolean
 }
 
 export interface CheckoutOrderVariantRow {
@@ -158,6 +177,13 @@ interface CheckoutOrderShippingParams {
   settings: ShippingBonusSettings
 }
 
+interface CheckoutOrderInstallmentsParams {
+  count: InstallmentCount
+  percent: number
+  productsBaseAmount: number
+  surchargeAmount: number
+}
+
 interface CheckoutOrderBaseParams {
   userId: string | null
   total: number
@@ -171,6 +197,7 @@ interface CheckoutOrderBaseParams {
   > | null
   storeBenefitDiscountAmount: number
   customer: NormalizedCheckoutOrderCustomer
+  installments?: CheckoutOrderInstallmentsParams | null
 }
 
 interface PersistCheckoutOrderItemsParams {
@@ -186,7 +213,8 @@ interface PersistCheckoutOrderItemsParams {
 
 type CheckoutOrderDatabaseClient = ReturnType<typeof createAdminClient>
 
-const PRODUCT_SELECT = "id, nombre, precio, stock, activo"
+const PRODUCT_SELECT =
+  "id, nombre, precio, stock, activo, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas"
 const VARIANT_SELECT = "id, producto_id, nombre, color_hex, stock, activo, orden"
 
 export function normalizeCheckoutOrderItems(
@@ -517,6 +545,7 @@ export function buildCheckoutOrderBase({
   storeBenefit,
   storeBenefitDiscountAmount,
   customer,
+  installments,
 }: CheckoutOrderBaseParams) {
   return {
     usuario_id: userId,
@@ -538,6 +567,10 @@ export function buildCheckoutOrderBase({
     store_benefit_type: storeBenefit?.benefit_type ?? null,
     store_benefit_percent: storeBenefit?.percent ?? null,
     store_benefit_discount_amount: storeBenefitDiscountAmount || null,
+    installments_count: installments?.count ?? null,
+    installments_percent: installments?.percent ?? null,
+    installments_products_base_amount: installments?.productsBaseAmount ?? null,
+    installments_surcharge_amount: installments?.surchargeAmount ?? null,
     ...customer,
   }
 }

@@ -1,5 +1,15 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 
+export interface MercadoPagoPaymentFeeDetail {
+  type?: string | null
+  amount?: number | null
+}
+
+export interface MercadoPagoPaymentTransactionDetails {
+  net_received_amount?: number | null
+  total_paid_amount?: number | null
+}
+
 export interface MercadoPagoPayment {
   id: number
   status: string
@@ -13,6 +23,12 @@ export interface MercadoPagoPayment {
   currency_id?: string | null
   live_mode?: boolean
   metadata?: Record<string, unknown> | null
+  /** Cantidad real de cuotas con la que se procesó el pago (costo REAL posterior, distinto del % configurado usado para armar el precio). */
+  installments?: number | null
+  /** Cargos/comisiones reales que Mercado Pago descuenta de la operación. */
+  fee_details?: MercadoPagoPaymentFeeDetail[] | null
+  /** Monto bruto pagado y neto recibido/a liquidar, según informa Mercado Pago. */
+  transaction_details?: MercadoPagoPaymentTransactionDetails | null
 }
 
 interface MercadoPagoSearchResponse {

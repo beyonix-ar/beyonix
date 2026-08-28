@@ -42,6 +42,7 @@ const checkout: MercadoPagoCheckoutFingerprintInput = {
   },
   storeBenefitId: null,
   requestedCredit: 0,
+  installmentsModality: null,
 }
 
 test("el mismo checkout genera una única identidad reutilizable", () => {
@@ -118,6 +119,25 @@ test("compras diferentes no comparten huella ni clave idempotente", () => {
     getMercadoPagoCheckoutIdempotencyKey(firstFingerprint),
     getMercadoPagoCheckoutIdempotencyKey(differentFingerprint),
   )
+})
+
+test("cambiar la modalidad de cuotas para el mismo carrito genera una huella distinta", () => {
+  // Si no fuera así, elegir "3 cuotas" después de haber iniciado un intento
+  // en "pago único" (mismo carrito) reusaría/reclamaría la orden vieja, sin
+  // aplicar nunca la financiación recién elegida.
+  const singlePayment = createMercadoPagoCheckoutFingerprint(checkout)
+  const threeInstallments = createMercadoPagoCheckoutFingerprint({
+    ...checkout,
+    installmentsModality: 3,
+  })
+  const sixInstallments = createMercadoPagoCheckoutFingerprint({
+    ...checkout,
+    installmentsModality: 6,
+  })
+
+  assert.notEqual(singlePayment, threeInstallments)
+  assert.notEqual(singlePayment, sixInstallments)
+  assert.notEqual(threeInstallments, sixInstallments)
 })
 
 test("la base bloquea dobles inserts y el claim de preferencia es atómico", () => {

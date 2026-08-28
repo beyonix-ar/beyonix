@@ -6,7 +6,7 @@ interface ProductCardPricingProps {
   price?: number
   originalPrice?: number
   discountPercentage?: number | null
-  installmentsLabel?: string | null
+  installmentsLabels?: string[]
 
   quantity: number
   maxReached?: boolean
@@ -27,7 +27,7 @@ export function ProductCardPricing({
   price = 0,
   originalPrice,
   discountPercentage,
-  installmentsLabel,
+  installmentsLabels = [],
 
   quantity,
   maxReached = false,
@@ -74,13 +74,16 @@ export function ProductCardPricing({
               </span>
             )}
 
-            {installmentsLabel && (
-              <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
-                {installmentsLabel}
+            {installmentsLabels.map((label) => (
+              <span
+                key={label}
+                className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky"
+              >
+                {label}
               </span>
-            )}
+            ))}
 
-            {!discountPercentage && !installmentsLabel && (
+            {!discountPercentage && installmentsLabels.length === 0 && (
               <span className="inline-flex rounded-full border border-beyonix-blue-light/16 bg-white/4 px-2 py-0.5 text-10px font-medium text-white/54">
                 Stock disponible
               </span>

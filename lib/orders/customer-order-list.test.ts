@@ -135,6 +135,31 @@ test("el detalle devuelve un select explícito sin identificadores internos de c
   assert.doesNotMatch(select, /checkout_idempotency_key/)
 })
 
+test("el select del detalle nunca pide campos que sólo existen calculados en JS (nunca columnas reales)", () => {
+  // Regresión: CUSTOMER_ORDER_DETAIL_SELECT llegó a incluir
+  // "cliente_nombre_completo", un campo que /api/admin/pedidos arma en
+  // memoria (perfil + fallback) y que jamás existió como columna de
+  // "ordenes". Pedirlo en un .select() de PostgREST rompe la query entera
+  // con 42703 y el detalle de compra devuelve 500 para TODA orden, no sólo
+  // para casos límite.
+  const route = source("app/api/orders/[id]/route.ts")
+  const selectMatch = route.match(
+    /const CUSTOMER_ORDER_DETAIL_SELECT =\s*\n?\s*"([^"]+)"/,
+  )
+  assert.ok(selectMatch, "no se encontró CUSTOMER_ORDER_DETAIL_SELECT")
+  const select = selectMatch![1]
+
+  for (const computedOnlyField of [
+    "cliente_nombre_completo",
+    "cliente_username",
+  ]) {
+    assert.doesNotMatch(
+      select,
+      new RegExp(`(^|[\\s,(])${computedOnlyField}([\\s,)]|$)`),
+    )
+  }
+})
+
 test("el bloque muerto de tabs (factura/reclamo/ítems) dentro de la card fue eliminado", () => {
   const list = source("components/account/account-orders.tsx")
 

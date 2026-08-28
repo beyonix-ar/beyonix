@@ -279,6 +279,7 @@ export function AdminAccionesMasivas() {
             {actionKind === "installments" && (
               <AdminFormField label="Cuotas">
                 <AdminSelect title="Cuotas" value={installments} onChange={setInstallments}>
+                  <option value="2">2 cuotas sin interés</option>
                   <option value="3">3 cuotas sin interés</option>
                   <option value="6">6 cuotas sin interés</option>
                 </AdminSelect>

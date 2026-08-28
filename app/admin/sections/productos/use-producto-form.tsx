@@ -207,11 +207,9 @@ export function useProductoForm({
       Number(producto?.precio_anterior ?? 0) > 0
         ? String(producto?.precio_anterior)
         : "",
-    cuotas:
-      producto?.cuotas_sin_interes &&
-      producto.cuotas_maximas
-        ? String(producto.cuotas_maximas) as "3" | "6"
-        : "sin_cuotas",
+    cuotas2: producto?.cuotas_2_habilitadas ?? false,
+    cuotas3: producto?.cuotas_3_habilitadas ?? false,
+    cuotas6: producto?.cuotas_6_habilitadas ?? false,
     categoria_id: String(
       producto?.categoria_id ?? ""
     ),
@@ -288,12 +286,6 @@ export function useProductoForm({
             form.precio_anterior
           )
         : null
-    const cuotasMaximas: 3 | 6 | null =
-      form.cuotas === "3"
-        ? 3
-        : form.cuotas === "6"
-          ? 6
-          : null
     let logistics
     try {
       logistics = parseOptionalProductLogistics(form)
@@ -343,11 +335,14 @@ export function useProductoForm({
             )
           : null,
 
-      cuotas_sin_interes:
-        cuotasMaximas !== null,
+      cuotas_2_habilitadas:
+        form.cuotas2,
 
-      cuotas_maximas:
-        cuotasMaximas,
+      cuotas_3_habilitadas:
+        form.cuotas3,
+
+      cuotas_6_habilitadas:
+        form.cuotas6,
 
       promo_event_id:
         null,
@@ -361,10 +356,13 @@ export function useProductoForm({
       promo_original_descuento:
         null,
 
-      promo_original_cuotas_sin_interes:
+      promo_original_cuotas_2_habilitadas:
         null,
 
-      promo_original_cuotas_maximas:
+      promo_original_cuotas_3_habilitadas:
+        null,
+
+      promo_original_cuotas_6_habilitadas:
         null,
 
       categoria_id:

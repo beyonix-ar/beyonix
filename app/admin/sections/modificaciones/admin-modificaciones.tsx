@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Boxes, ImageIcon, Save, Truck } from "lucide-react"
+import { Boxes, CreditCard, ImageIcon, Save, Truck } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
 import {
@@ -10,10 +10,16 @@ import {
 } from "@/lib/store-config"
 import {
   DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
+  DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
   DEFAULT_STOCK_SETTINGS,
   type CustomerCreditPaymentSettings,
+  type InstallmentsFinancingSettings,
   type StockSettings,
 } from "@/lib/site-settings"
+import {
+  calculateInstallmentPlan,
+  getEffectiveInstallmentPercent,
+} from "@/lib/products/installments"
 import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
 import {
   AdminFormField,
@@ -32,6 +38,7 @@ interface SettingsResponse {
     shipping?: ShippingBonusSettings
     customerCreditPayments?: CustomerCreditPaymentSettings
     stock?: StockSettings
+    installmentsFinancing?: InstallmentsFinancingSettings
   }
   error?: string
 }
@@ -145,6 +152,21 @@ export function AdminModificaciones() {
   const [mercadoPagoMinimumAmount, setMercadoPagoMinimumAmount] = useState(
     toInputValue(DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS.mercadoPagoMinimumAmount),
   )
+  const [baseProcessingPercent, setBaseProcessingPercent] = useState(
+    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.baseProcessingPercent),
+  )
+  const [ivaPercent, setIvaPercent] = useState(
+    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.ivaPercent),
+  )
+  const [surcharge2Percent, setSurcharge2Percent] = useState(
+    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[2]),
+  )
+  const [surcharge3Percent, setSurcharge3Percent] = useState(
+    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[3]),
+  )
+  const [surcharge6Percent, setSurcharge6Percent] = useState(
+    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[6]),
+  )
   const [criticalStockThreshold, setCriticalStockThreshold] = useState(
     String(DEFAULT_STOCK_SETTINGS.criticalStockThreshold),
   )
@@ -171,6 +193,14 @@ export function AdminModificaciones() {
     setCriticalStockThreshold(String(nextStock.criticalStockThreshold))
     setLowStockThreshold(String(nextStock.lowStockThreshold))
     setAvailableStockThreshold(String(nextStock.availableStockThreshold))
+  }
+
+  const applyInstallmentsFinancing = (next: InstallmentsFinancingSettings) => {
+    setBaseProcessingPercent(String(next.baseProcessingPercent))
+    setIvaPercent(String(next.ivaPercent))
+    setSurcharge2Percent(String(next.surchargePercentByCount[2]))
+    setSurcharge3Percent(String(next.surchargePercentByCount[3]))
+    setSurcharge6Percent(String(next.surchargePercentByCount[6]))
   }
 
   const loadSettings = async () => {
@@ -211,6 +241,9 @@ export function AdminModificaciones() {
       toInputValue(nextCustomerCreditPayments.mercadoPagoMinimumAmount),
     )
     applyStock(data.settings.stock ?? DEFAULT_STOCK_SETTINGS)
+    applyInstallmentsFinancing(
+      data.settings.installmentsFinancing ?? DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
+    )
     setLoading(false)
   }
 
@@ -241,6 +274,15 @@ export function AdminModificaciones() {
       lowStockThreshold: normalizeAmount(lowStockThreshold),
       availableStockThreshold: normalizeAmount(availableStockThreshold),
     }
+    const nextInstallmentsFinancing: InstallmentsFinancingSettings = {
+      baseProcessingPercent: normalizePercentage(baseProcessingPercent),
+      ivaPercent: normalizePercentage(ivaPercent),
+      surchargePercentByCount: {
+        2: normalizePercentage(surcharge2Percent),
+        3: normalizePercentage(surcharge3Percent),
+        6: normalizePercentage(surcharge6Percent),
+      },
+    }
 
     if (nextStock.criticalStockThreshold >= nextStock.lowStockThreshold) {
       setError("El límite de stock crítico debe ser menor que el de stock bajo.")
@@ -268,6 +310,7 @@ export function AdminModificaciones() {
         shipping: nextShipping,
         customerCreditPayments: nextCustomerCreditPayments,
         stock: nextStock,
+        installmentsFinancing: nextInstallmentsFinancing,
       }),
     })
     const data = (await response.json()) as SettingsResponse
@@ -289,10 +332,23 @@ export function AdminModificaciones() {
       toInputValue(savedCustomerCreditPayments.mercadoPagoMinimumAmount),
     )
     applyStock(data.settings.stock ?? nextStock)
+    applyInstallmentsFinancing(
+      data.settings.installmentsFinancing ?? nextInstallmentsFinancing,
+    )
     setMessage("Configuración actualizada. Los textos y cálculos ya usan estos valores.")
     setSaving(false)
   }
 
+  const previewInstallmentsFinancing: InstallmentsFinancingSettings = {
+    baseProcessingPercent: normalizePercentage(baseProcessingPercent),
+    ivaPercent: normalizePercentage(ivaPercent),
+    surchargePercentByCount: {
+      2: normalizePercentage(surcharge2Percent),
+      3: normalizePercentage(surcharge3Percent),
+      6: normalizePercentage(surcharge6Percent),
+    },
+  }
+  const installmentsPreviewAmount = 75_000
   const previewMin = normalizeAmount(freeShippingMinAmount)
   const previewBonus = normalizeAmount(shippingBonusMax)
   const previewLogisticsBaseSubsidy = normalizeAmount(logisticsBaseSubsidy)
@@ -499,6 +555,128 @@ export function AdminModificaciones() {
               .
             </>
           )}
+        </p>
+      </AdminSection>
+
+      <AdminSection
+        compact
+        icon={<CreditCard className="size-3.5" />}
+        eyebrow="Comercial"
+        title="Financiación Mercado Pago"
+        description="Costos reales de Mercado Pago usados para armar las cuotas sin interés."
+        actions={saveButton}
+      >
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <AdminFormField
+            label="Costo base"
+            help="Procesamiento c/tarjeta."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="Costo base de procesamiento"
+              ariaLabel="Costo base de procesamiento con tarjeta"
+              value={withInputSymbol(baseProcessingPercent, "%")}
+              placeholder="% 6.42"
+              inputMode="decimal"
+              className={`text-center font-bold ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) => setBaseProcessingPercent(value.replace(/[^0-9,.]/g, ""))}
+            />
+          </AdminFormField>
+
+          <AdminFormField
+            label="IVA"
+            help="Sobre la comisión."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="IVA sobre comisiones de Mercado Pago"
+              ariaLabel="IVA sobre comisiones de Mercado Pago"
+              value={withInputSymbol(ivaPercent, "%")}
+              placeholder="% 21"
+              inputMode="decimal"
+              className={`text-center font-bold ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) => setIvaPercent(value.replace(/[^0-9,.]/g, ""))}
+            />
+          </AdminFormField>
+
+          <AdminFormField
+            label="+2 cuotas"
+            help="Costo adicional MP."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="Costo adicional de Mercado Pago por 2 cuotas"
+              ariaLabel="Costo adicional de Mercado Pago por 2 cuotas"
+              value={withInputSymbol(surcharge2Percent, "%")}
+              placeholder="% 7.79"
+              inputMode="decimal"
+              className={`text-center font-bold ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) => setSurcharge2Percent(value.replace(/[^0-9,.]/g, ""))}
+            />
+          </AdminFormField>
+
+          <AdminFormField
+            label="+3 cuotas"
+            help="Costo adicional MP."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="Costo adicional de Mercado Pago por 3 cuotas"
+              ariaLabel="Costo adicional de Mercado Pago por 3 cuotas"
+              value={withInputSymbol(surcharge3Percent, "%")}
+              placeholder="% 10.49"
+              inputMode="decimal"
+              className={`text-center font-bold ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) => setSurcharge3Percent(value.replace(/[^0-9,.]/g, ""))}
+            />
+          </AdminFormField>
+
+          <AdminFormField
+            label="+6 cuotas"
+            help="Costo adicional MP."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="Costo adicional de Mercado Pago por 6 cuotas"
+              ariaLabel="Costo adicional de Mercado Pago por 6 cuotas"
+              value={withInputSymbol(surcharge6Percent, "%")}
+              placeholder="% 18.69"
+              inputMode="decimal"
+              className={`text-center font-bold ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) => setSurcharge6Percent(value.replace(/[^0-9,.]/g, ""))}
+            />
+          </AdminFormField>
+        </div>
+
+        <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
+          Para un producto de ejemplo de {formatARS(installmentsPreviewAmount)}:{" "}
+          {([2, 3, 6] as const).map((count, index) => {
+            const plan = calculateInstallmentPlan(
+              installmentsPreviewAmount,
+              count,
+              previewInstallmentsFinancing,
+            )
+            if (!plan) return null
+            return (
+              <span key={count}>
+                {index > 0 && " · "}
+                <strong className="text-beyonix-cyan">
+                  {count} cuotas de {formatARS(plan.installmentAmount)}
+                </strong>{" "}
+                (costo efectivo {getEffectiveInstallmentPercent(count, previewInstallmentsFinancing)}%)
+              </span>
+            )
+          })}
         </p>
       </AdminSection>
 

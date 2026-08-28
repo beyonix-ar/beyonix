@@ -11,7 +11,7 @@ import { getDiscountPercent } from "@/lib/products/product-variants"
 interface ProductPurchaseBoxProps {
   price: number
   originalPrice?: number
-  installmentsLabel?: string | null
+  installmentsLabels?: string[]
   isInCart?: boolean
   cartQuantity?: number
   maxReached?: boolean
@@ -32,7 +32,7 @@ function formatPrice(price: number) {
 export function ProductPurchaseBox({
   price,
   originalPrice,
-  installmentsLabel,
+  installmentsLabels = [],
   isInCart = false,
   cartQuantity = 0,
   maxReached = false,
@@ -93,12 +93,15 @@ export function ProductPurchaseBox({
       </div>
 
       <div className="mb-2.5 flex flex-wrap gap-2">
-        {installmentsLabel && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3 py-1.5 text-12px font-semibold text-white">
+        {installmentsLabels.map((label) => (
+          <span
+            key={label}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3 py-1.5 text-12px font-semibold text-white"
+          >
             <CreditCard className="size-3.5 text-white" />
-            {installmentsLabel}
+            {label}
           </span>
-        )}
+        ))}
 
         <span className="inline-flex items-center gap-1.5 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3 py-1.5 text-12px font-semibold text-white">
           <ShieldCheck className="size-3.5 text-white" />

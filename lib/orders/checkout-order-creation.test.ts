@@ -447,6 +447,100 @@ test("los tres medios conservan la misma base y sus diferencias reales", () => {
   )
 })
 
+test("buildCheckoutOrderBase persiste la modalidad de cuotas como snapshot histórico", () => {
+  const customer = normalizeCheckoutOrderCustomer(validCustomer)
+  const base = {
+    userId: "user-1",
+    total: 84_300,
+    externalAmountDue: 84_300,
+    creditBalanceUsed: 0,
+    paymentMethodId: "mercadopago",
+    storeBenefitDiscountAmount: 0,
+    customer,
+  }
+
+  const financed = buildCheckoutOrderBase({
+    ...base,
+    installments: {
+      count: 3,
+      percent: 21,
+      productsBaseAmount: 75_000,
+      surchargeAmount: 9_300,
+    },
+  })
+
+  assert.equal(financed.installments_count, 3)
+  assert.equal(financed.installments_percent, 21)
+  assert.equal(financed.installments_products_base_amount, 75_000)
+  assert.equal(financed.installments_surcharge_amount, 9_300)
+
+  const singlePayment = buildCheckoutOrderBase({ ...base, total: 75_000, externalAmountDue: 75_000 })
+
+  assert.equal(singlePayment.installments_count, null)
+  assert.equal(singlePayment.installments_percent, null)
+  assert.equal(singlePayment.installments_products_base_amount, null)
+  assert.equal(singlePayment.installments_surcharge_amount, null)
+})
+
+test("transferencia nunca recibe financiación: create-order no importa ni usa el módulo de cuotas", () => {
+  const source = readFileSync(
+    new URL("../../app/api/transferencia/create-order/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  assert.doesNotMatch(source, /products\/installments/)
+  assert.doesNotMatch(source, /installmentsModality/)
+})
+
+test("create-preference recalcula la modalidad server-side y nunca confía en el navegador", () => {
+  const source = readFileSync(
+    new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  // La elegibilidad se recalcula contra el catálogo real (nunca contra lo
+  // que mandó el navegador) y se rechaza si no coincide.
+  assert.match(source, /getCartInstallmentEligibility\(catalog\.products\)/)
+  assert.match(source, /status: 400/)
+  // El % vigente sale de la configuración global fresca, nunca del payload.
+  assert.match(source, /siteSettings\.installmentsFinancing/)
+  assert.doesNotMatch(source, /payload\.installmentsFinancing/)
+  assert.doesNotMatch(source, /payload\.percent/)
+  assert.doesNotMatch(source, /payload\.total\b/)
+  // La preferencia fuerza payment_methods.installments/default_installments
+  // (nunca deja que Mercado Pago ofrezca sus propias cuotas sin control).
+  assert.match(source, /payment_methods:\s*\{/)
+  assert.match(source, /default_installments/)
+  // Pago único (sin modalidad elegida) siempre manda installments = 1, no
+  // "sin restricción": el precio base nunca se financia por accidente.
+  assert.match(
+    source,
+    /order\.installments_count[\s\S]{0,20}\?[\s\S]{0,20}Number\(order\.installments_count\)[\s\S]{0,10}:\s*1/,
+  )
+  // La modalidad pedida por el navegador siempre pasa por el normalizador
+  // (2|3|6 o null) antes de usarse -- nunca un número crudo del payload.
+  assert.match(
+    source,
+    /normalizeRequestedInstallmentsModality\([\s\S]{0,30}payload\.installmentsModality/,
+  )
+})
+
+test("una modalidad pedida pero no habilitada en ningún producto del carrito nunca llega a calcular un plan", () => {
+  const source = readFileSync(
+    new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  // El rechazo (400) ocurre ANTES de tocar site_settings/calculateInstallmentPlan:
+  // nunca se calcula un monto financiado para una modalidad no habilitada.
+  const eligibilityCheckIndex = source.indexOf(
+    "getCartInstallmentEligibility(catalog.products)",
+  )
+  const firstPlanCalculationIndex = source.indexOf("calculateInstallmentPlan(")
+  assert.ok(eligibilityCheckIndex >= 0 && firstPlanCalculationIndex >= 0)
+  assert.ok(eligibilityCheckIndex < firstPlanCalculationIndex)
+})
+
 test("getCheckoutOrderShippingFields persiste la sucursal verificada; domicilio y sucursal sin sucursal quedan en null", () => {
   const domicilio = getCheckoutOrderShippingFields({
     provider: "andreani",

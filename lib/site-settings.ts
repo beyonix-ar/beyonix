@@ -6,12 +6,16 @@ import {
   type ShippingBonusSettings,
 } from "@/lib/store-config"
 import { SITE_SETTINGS } from "@/config/site-settings"
+import type { InstallmentsFinancingConfig } from "@/lib/products/installments"
 
 export interface SiteSettings {
   shipping: ShippingBonusSettings
   customerCreditPayments: CustomerCreditPaymentSettings
   stock: StockSettings
+  installmentsFinancing: InstallmentsFinancingSettings
 }
+
+export type InstallmentsFinancingSettings = InstallmentsFinancingConfig
 
 export interface StockSettings {
   criticalStockThreshold: number
@@ -27,6 +31,12 @@ export interface CustomerCreditPaymentSettings {
 export const DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS: CustomerCreditPaymentSettings = {
   mercadoPagoSurchargePercent: 8,
   mercadoPagoMinimumAmount: MIN_MERCADOPAGO_CUSTOMER_CREDIT_TOPUP,
+}
+
+export const DEFAULT_INSTALLMENTS_FINANCING_SETTINGS: InstallmentsFinancingSettings = {
+  baseProcessingPercent: 6.42,
+  ivaPercent: 21,
+  surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 },
 }
 
 export const DEFAULT_STOCK_SETTINGS: StockSettings = {
@@ -99,6 +109,51 @@ export function normalizeCustomerCreditPaymentSettings(
   return { mercadoPagoSurchargePercent, mercadoPagoMinimumAmount }
 }
 
+function normalizeCostPercentage(value: unknown, fallback: number) {
+  const parsed = Number(String(value ?? "").replace(",", "."))
+  return Number.isFinite(parsed)
+    ? Math.min(100, Math.max(0, Math.round(parsed * 100) / 100))
+    : fallback
+}
+
+export function normalizeInstallmentsFinancingSettings(
+  value: unknown,
+): InstallmentsFinancingSettings {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {}
+  const surchargeSource =
+    source.surchargePercentByCount && typeof source.surchargePercentByCount === "object"
+      ? (source.surchargePercentByCount as Record<string, unknown>)
+      : {}
+
+  return {
+    baseProcessingPercent: normalizeCostPercentage(
+      source.baseProcessingPercent,
+      DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.baseProcessingPercent,
+    ),
+    ivaPercent: normalizeCostPercentage(
+      source.ivaPercent,
+      DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.ivaPercent,
+    ),
+    surchargePercentByCount: {
+      2: normalizeCostPercentage(
+        surchargeSource["2"],
+        DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[2],
+      ),
+      3: normalizeCostPercentage(
+        surchargeSource["3"],
+        DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[3],
+      ),
+      6: normalizeCostPercentage(
+        surchargeSource["6"],
+        DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[6],
+      ),
+    },
+  }
+}
+
 export function normalizeStockSettings(value: unknown): StockSettings {
   const source =
     value && typeof value === "object"
@@ -134,6 +189,7 @@ export function getFallbackSiteSettings(): SiteSettings {
     shipping: DEFAULT_SHIPPING_SETTINGS,
     customerCreditPayments: DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
     stock: DEFAULT_STOCK_SETTINGS,
+    installmentsFinancing: DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
   }
 }
 
@@ -160,7 +216,12 @@ async function loadSiteSettings(): Promise<SiteSettings> {
     const { data, error } = await admin
       .from("site_settings")
       .select("key, value")
-      .in("key", ["shipping", "customer_credit_payments", "stock"])
+      .in("key", [
+        "shipping",
+        "customer_credit_payments",
+        "stock",
+        "installments_financing",
+      ])
 
     if (error) return getFallbackSiteSettings()
 
@@ -173,6 +234,9 @@ async function loadSiteSettings(): Promise<SiteSettings> {
         settingsByKey.get("customer_credit_payments"),
       ),
       stock: normalizeStockSettings(settingsByKey.get("stock")),
+      installmentsFinancing: normalizeInstallmentsFinancingSettings(
+        settingsByKey.get("installments_financing"),
+      ),
     }
 
     if (requestGeneration === siteSettingsCacheGeneration) {

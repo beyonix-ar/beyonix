@@ -642,6 +642,7 @@ export function AdminEventos() {
                       setForm((current) => ({ ...current, installments: value }))
                     }
                   >
+                    <option value="2">2 cuotas sin interés</option>
                     <option value="3">3 cuotas sin interés</option>
                     <option value="6">6 cuotas sin interés</option>
                   </AdminSelect>

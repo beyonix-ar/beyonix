@@ -288,9 +288,14 @@ export function ProductosRow({
     `${stockMetrics.quarantine} en cuarentena`,
   ].join(" · ")
   const categoryLabel = producto.categorias?.nombre?.trim() || "Sin categoría"
+  const enabledInstallmentCounts = [
+    producto.cuotas_2_habilitadas && "2",
+    producto.cuotas_3_habilitadas && "3",
+    producto.cuotas_6_habilitadas && "6",
+  ].filter(Boolean)
   const installmentsLabel =
-    producto.cuotas_sin_interes && producto.cuotas_maximas
-      ? `${producto.cuotas_maximas} cuotas sin interés`
+    enabledInstallmentCounts.length > 0
+      ? `${enabledInstallmentCounts.join("/")} cuotas sin interés`
       : "Sin cuotas"
   const commercialSubtitle = `${categoryLabel} · ${installmentsLabel}`
   const replaceConditionedStock = (nextItem: SupabaseConditionedStock) => {

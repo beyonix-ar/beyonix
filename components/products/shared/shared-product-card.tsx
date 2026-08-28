@@ -25,7 +25,8 @@ import {
   getDefaultVariantOption,
   getDiscountPercent,
 } from "@/lib/products/product-variants"
-import { getInstallmentsLabel } from "@/lib/products/installments"
+import { getInstallmentPlanLabels } from "@/lib/products/installments"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
 
 interface SharedProductCardProps {
@@ -91,8 +92,12 @@ export default function SharedProductCard({
     defaultVariant.price,
     defaultVariant.originalPrice
   )
-  const installmentsLabel =
-    getInstallmentsLabel(product)
+  const { installmentsFinancing } = useSiteSettings()
+  const installmentsLabels = getInstallmentPlanLabels(
+    product,
+    defaultVariant.price,
+    installmentsFinancing,
+  )
 
   useEffect(() => {
     let active = true
@@ -298,8 +303,8 @@ export default function SharedProductCard({
             discountPercentage={
               discountPercentage
             }
-            installmentsLabel={
-              installmentsLabel
+            installmentsLabels={
+              installmentsLabels
             }
             quantity={quantity}
             maxReached={

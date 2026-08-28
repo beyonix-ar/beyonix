@@ -3,6 +3,7 @@ import {
   getSiteSettings,
   invalidateSiteSettingsCache,
   normalizeCustomerCreditPaymentSettings,
+  normalizeInstallmentsFinancingSettings,
   normalizeShippingSettings,
   normalizeStockSettings,
 } from "@/lib/site-settings"
@@ -26,6 +27,7 @@ export async function PATCH(request: Request) {
     shipping?: unknown
     customerCreditPayments?: unknown
     stock?: unknown
+    installmentsFinancing?: unknown
   }
   const before = await getSiteSettings({ fresh: true })
   const shipping = normalizeShippingSettings(body.shipping)
@@ -33,6 +35,9 @@ export async function PATCH(request: Request) {
     body.customerCreditPayments,
   )
   const stock = normalizeStockSettings(body.stock)
+  const installmentsFinancing = normalizeInstallmentsFinancingSettings(
+    body.installmentsFinancing,
+  )
   const updatedAt = new Date().toISOString()
 
   const { error } = await auth.admin
@@ -60,6 +65,14 @@ export async function PATCH(request: Request) {
           updated_by: auth.user.id,
           updated_at: updatedAt,
         },
+        {
+          key: "installments_financing",
+          value: installmentsFinancing,
+          description:
+            "Costos reales de Mercado Pago usados para construir las modalidades de cuotas sin interés.",
+          updated_by: auth.user.id,
+          updated_at: updatedAt,
+        },
       ],
       { onConflict: "key" },
     )
@@ -78,7 +91,13 @@ export async function PATCH(request: Request) {
     actor_user_id: auth.user.id,
     actor_email: auth.user.email ?? auth.profile.email,
     before_data: before,
-    after_data: { shipping, customerCreditPayments, stock, updated_at: updatedAt },
+    after_data: {
+      shipping,
+      customerCreditPayments,
+      stock,
+      installmentsFinancing,
+      updated_at: updatedAt,
+    },
   })
 
   return Response.json({
@@ -86,6 +105,7 @@ export async function PATCH(request: Request) {
       shipping,
       customerCreditPayments,
       stock,
+      installmentsFinancing,
     },
   })
 }

@@ -79,6 +79,11 @@ import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
 import {
+  calculateInstallmentPlan,
+  getCartInstallmentEligibility,
+  type InstallmentCount,
+} from "@/lib/products/installments"
+import {
   calculateStoreBenefitDiscount,
   getStoreBenefitLabel,
   type StoreBenefitType,
@@ -407,6 +412,9 @@ export default function CheckoutPage() {
     setSelectedPayment,
   ] = useState("")
 
+  const [installmentsModality, setInstallmentsModality] =
+    useState<InstallmentCount | null>(null)
+
   const [
     isProcessing,
     setIsProcessing,
@@ -686,7 +694,30 @@ export default function CheckoutPage() {
     0,
   )
   const isTransferPayment = selectedPayment === "transferencia"
+  const isMercadoPagoPayment = selectedPayment === "mercadopago"
+  // Sólo informativo para pintar la UI (qué botones mostrar/habilitar): la
+  // fuente de verdad real es el recálculo server-side en create-preference,
+  // que vuelve a validar esto mismo contra el catálogo real antes de cobrar.
+  const cartInstallmentEligibility = getCartInstallmentEligibility(
+    items.map((item) => item.product),
+  )
+  // Nunca confía en el estado crudo: si el pago no es Mercado Pago, o el
+  // carrito cambió y esa modalidad dejó de estar disponible, se trata como
+  // "sin modalidad" acá mismo (además de revalidarse íntegramente server-side).
+  const effectiveInstallmentsModality =
+    isMercadoPagoPayment &&
+    installmentsModality &&
+    cartInstallmentEligibility.includes(installmentsModality)
+      ? installmentsModality
+      : null
   const totalBeforeTransferDiscount = productsTotalAfterStoreBenefit + totals.shipping
+  const installmentPlan = effectiveInstallmentsModality
+    ? calculateInstallmentPlan(
+        totalBeforeTransferDiscount,
+        effectiveInstallmentsModality,
+        siteSettings.installmentsFinancing,
+      )
+    : null
   const maxApplicableCustomerCredit = getMaxApplicableCustomerCredit(
     customerCredit.balance,
     totalBeforeTransferDiscount,
@@ -701,7 +732,9 @@ export default function CheckoutPage() {
     : 0
   const totalBeforeCustomerCredit = isTransferPayment
     ? totalBeforeTransferDiscount - transferDiscountAmount
-    : totalBeforeTransferDiscount
+    : installmentPlan
+      ? installmentPlan.totalFinanced
+      : totalBeforeTransferDiscount
   const customerCreditApplication = calculateCustomerCreditApplication({
     availableBalance: customerCredit.balance,
     eligibleTotal: totalBeforeCustomerCredit,
@@ -1389,6 +1422,7 @@ export default function CheckoutPage() {
           storeBenefitId: selectedStoreBenefit?.id ?? null,
           paymentMethodId: selectedPayment || "customer_credit",
           customerCreditAmount: customerCreditApplication.appliedAmount,
+          installmentsModality: effectiveInstallmentsModality,
           items: items.map((item) => ({
             productId: item.product.id,
             quantity: item.quantity,
@@ -2195,6 +2229,64 @@ export default function CheckoutPage() {
                       </button>
                     ))}
                   </div>
+
+                  {isMercadoPagoPayment && cartInstallmentEligibility.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-white/70">
+                        Modalidad de pago
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => setInstallmentsModality(null)}
+                          className={cn(
+                            checkoutOptionClassName,
+                            "items-center gap-3 p-3.5",
+                            effectiveInstallmentsModality === null &&
+                              checkoutOptionSelectedClassName,
+                          )}
+                        >
+                          <span className="min-w-0">
+                            <span className="block font-semibold text-white">
+                              Pago único
+                            </span>
+                          </span>
+                        </button>
+
+                        {cartInstallmentEligibility.map((count) => {
+                          const plan = calculateInstallmentPlan(
+                            totalBeforeTransferDiscount,
+                            count,
+                            siteSettings.installmentsFinancing,
+                          )
+                          if (!plan) return null
+
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => setInstallmentsModality(count)}
+                              className={cn(
+                                checkoutOptionClassName,
+                                "items-center gap-3 p-3.5",
+                                effectiveInstallmentsModality === count &&
+                                  checkoutOptionSelectedClassName,
+                              )}
+                            >
+                              <span className="min-w-0">
+                                <span className="block font-semibold text-white">
+                                  Hasta {count} cuotas sin interés
+                                </span>
+                                <span className="mt-1 block text-sm text-white/45">
+                                  {formatPrice(plan.installmentAmount)} por cuota
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {selectedPayment === "transferencia" && (
                     <CheckoutNotice tone="warning">

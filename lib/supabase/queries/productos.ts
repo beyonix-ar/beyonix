@@ -21,14 +21,16 @@ export interface ProductoPayload {
   precio: number
   precio_anterior?: number | null
   descuento?: number | null
-  cuotas_sin_interes?: boolean
-  cuotas_maximas?: 3 | 6 | null
+  cuotas_2_habilitadas?: boolean
+  cuotas_3_habilitadas?: boolean
+  cuotas_6_habilitadas?: boolean
   promo_event_id?: string | null
   promo_original_precio?: number | null
   promo_original_precio_anterior?: number | null
   promo_original_descuento?: number | null
-  promo_original_cuotas_sin_interes?: boolean | null
-  promo_original_cuotas_maximas?: 3 | 6 | null
+  promo_original_cuotas_2_habilitadas?: boolean | null
+  promo_original_cuotas_3_habilitadas?: boolean | null
+  promo_original_cuotas_6_habilitadas?: boolean | null
   stock?: number
   categoria_id?: number | null
   destacado?: boolean

@@ -14,7 +14,8 @@ import {
   getProductVariantOptions,
   getVariantOptionByValue,
 } from "@/lib/products/product-variants"
-import { getInstallmentsLabel } from "@/lib/products/installments"
+import { getInstallmentPlanLabels } from "@/lib/products/installments"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -61,8 +62,12 @@ export function CategoryProductCard({
   )
 
   const images = activeVariant.images
-  const installmentsLabel =
-    getInstallmentsLabel(product)
+  const { installmentsFinancing } = useSiteSettings()
+  const installmentsLabels = getInstallmentPlanLabels(
+    product,
+    activeVariant.price,
+    installmentsFinancing,
+  )
 
   const handleAddToCart = () => {
     addToCart(
@@ -136,13 +141,16 @@ export function CategoryProductCard({
               <div className="min-h-28px" />
             )}
 
-            {installmentsLabel && (
-              <span className="inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2.5 py-1 text-11px font-medium text-beyonix-cyan">
-                {installmentsLabel}
+            {installmentsLabels.map((label) => (
+              <span
+                key={label}
+                className="inline-flex rounded-full border border-beyonix-blue-light/20 bg-beyonix-blue/18 px-2.5 py-1 text-11px font-medium text-beyonix-cyan"
+              >
+                {label}
               </span>
-            )}
+            ))}
 
-            {!installmentsLabel && (
+            {installmentsLabels.length === 0 && (
               <div className="min-h-28px" />
             )}
           </div>

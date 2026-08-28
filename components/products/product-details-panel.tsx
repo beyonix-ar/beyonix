@@ -69,7 +69,8 @@ import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
 } from "@/lib/products/product-variants"
-import { getInstallmentsLabel } from "@/lib/products/installments"
+import { getInstallmentPlanLabels } from "@/lib/products/installments"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
 
 interface ProductDetailsPanelProps {
@@ -172,8 +173,12 @@ export function ProductDetailsPanel({
   const displayedColorName = formatColorName(
     previewedColor?.name ?? selectedOption?.name ?? "",
   )
-  const installmentsLabel =
-    getInstallmentsLabel(product)
+  const { installmentsFinancing } = useSiteSettings()
+  const installmentsLabels = getInstallmentPlanLabels(
+    product,
+    selectedOption?.price ?? product.precio,
+    installmentsFinancing,
+  )
   const hasVariants =
     colors.length > 1 || colors[0]?.value !== DEFAULT_VARIANT_VALUE
   const productSpecifications =
@@ -264,7 +269,7 @@ export function ProductDetailsPanel({
             product.precio_anterior ??
             undefined
           }
-          installmentsLabel={installmentsLabel}
+          installmentsLabels={installmentsLabels}
           isInCart={isInCart}
           cartQuantity={cartQuantity}
           maxReached={
