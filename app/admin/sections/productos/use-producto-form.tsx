@@ -30,7 +30,9 @@ import {
 import {
   createProductoCompleto,
   getCategorias,
+  getProductPricing,
   updateProductoCatalog,
+  type ProductVariantCostInfo,
 } from "@/lib/supabase/queries/productos"
 
 import { slugify } from "./helpers"
@@ -170,6 +172,12 @@ export function useProductoForm({
   const [categorias, setCategorias] =
     useState<SupabaseCategoria[]>([])
 
+  // undefined = todavía no se consultó; null = consultado, sin costo cargado.
+  const [knownUnitCost, setKnownUnitCost] =
+    useState<number | null | undefined>(undefined)
+  const [variantCosts, setVariantCosts] =
+    useState<ProductVariantCostInfo[]>([])
+
   const [saving, setSaving] =
     useState(false)
 
@@ -210,6 +218,11 @@ export function useProductoForm({
     cuotas2: producto?.cuotas_2_habilitadas ?? false,
     cuotas3: producto?.cuotas_3_habilitadas ?? false,
     cuotas6: producto?.cuotas_6_habilitadas ?? false,
+    // Método de precio: se completa de verdad al resolver getProductPricing()
+    // (abajo) -- hasta entonces, "manual" es el default seguro (igual que un
+    // producto sin fila en product_pricing).
+    pricingMode: "manual",
+    targetMarginPercent: "",
     categoria_id: String(
       producto?.categoria_id ?? ""
     ),
@@ -243,6 +256,39 @@ export function useProductoForm({
         )
       })
   }, [])
+
+  useEffect(() => {
+    if (!producto?.id) {
+      setKnownUnitCost(null)
+      setVariantCosts([])
+      return
+    }
+
+    let active = true
+
+    getProductPricing(producto.id)
+      .then((info) => {
+        if (!active) return
+        setKnownUnitCost(info.knownUnitCost)
+        setVariantCosts(info.variantCosts)
+        setForm((prev) => ({
+          ...prev,
+          pricingMode: info.pricingMode,
+          targetMarginPercent:
+            info.targetMarginPercent != null ? String(info.targetMarginPercent) : "",
+        }))
+      })
+      .catch((err) => {
+        if (!active) return
+        setKnownUnitCost(null)
+        setVariantCosts([])
+        console.error("Error cargando rentabilidad del producto:", err)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [producto?.id])
 
   const setField = (
     key: keyof typeof form,
@@ -343,6 +389,14 @@ export function useProductoForm({
 
       cuotas_6_habilitadas:
         form.cuotas6,
+
+      pricing_mode:
+        form.pricingMode,
+
+      target_margin_percent:
+        form.pricingMode === "target_margin" && form.targetMarginPercent
+          ? Number(form.targetMarginPercent)
+          : null,
 
       promo_event_id:
         null,
@@ -670,6 +724,8 @@ export function useProductoForm({
     savedId,
     categorias,
     logisticsFieldError,
+    knownUnitCost,
+    variantCosts,
 
     setField,
     showError,

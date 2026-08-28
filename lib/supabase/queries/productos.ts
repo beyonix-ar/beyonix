@@ -804,6 +804,61 @@ export async function updateProductoCatalog(
   return result.product
 }
 
+export interface ProductVariantCostInfo {
+  variantId: number | null
+  variantName: string | null
+  unitCost: number | null
+}
+
+export interface ProductPricingInfo {
+  knownUnitCost: number | null
+  variantCosts: ProductVariantCostInfo[]
+  pricingMode: "manual" | "target_margin"
+  targetMarginPercent: number | null
+}
+
+export async function getProductPricing(id: number): Promise<ProductPricingInfo> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const response = await fetch(`/api/admin/products/${id}/pricing`, {
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    cache: "no-store",
+  })
+  const result = (await response.json().catch(() => null)) as Record<string, unknown> | null
+
+  if (!response.ok || !result) {
+    const message = typeof result?.error === "string" ? result.error : null
+    throw new Error(message || "No se pudo consultar la rentabilidad del producto.")
+  }
+
+  const variantCostsRaw = Array.isArray(result.variantCosts) ? result.variantCosts : []
+
+  return {
+    knownUnitCost: typeof result.knownUnitCost === "number" ? result.knownUnitCost : null,
+    variantCosts: variantCostsRaw.map((entry) => {
+      const item = (entry ?? {}) as Record<string, unknown>
+      return {
+        variantId: typeof item.variantId === "number" ? item.variantId : null,
+        variantName: typeof item.variantName === "string" ? item.variantName : null,
+        unitCost: typeof item.unitCost === "number" ? item.unitCost : null,
+      }
+    }),
+    pricingMode: result.pricingMode === "target_margin" ? "target_margin" : "manual",
+    targetMarginPercent:
+      typeof result.targetMarginPercent === "number" ? result.targetMarginPercent : null,
+  }
+}
+
 async function conditionedStockRequest(
   id: string,
   init: RequestInit,

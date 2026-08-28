@@ -80,3 +80,72 @@ export function getHistoricalUnitCost(
 
   return null
 }
+
+export interface ProductVariantSummary {
+  id: number
+  nombre?: string | null
+}
+
+export interface VariantCostResolution {
+  /** `null` sólo para un producto SIN variantes (costo a nivel producto). */
+  variantId: number | null
+  variantName: string | null
+  unitCost: number | null
+}
+
+/**
+ * Resuelve el costo histórico de un producto contemplando sus variantes.
+ *
+ * Un producto CON variantes nunca se compra "a nivel producto" -- cada
+ * compra se carga contra una variante puntual (ver Admin > Costos), así que
+ * `variant_id` en `product_cost_entries` es la referencia real. Pasar
+ * `variantId: null` (costo a nivel producto) para un producto con variantes
+ * nunca encuentra esas compras -- hay que resolver el costo de CADA variante
+ * por separado, nunca colapsar variantes con costos distintos en un único
+ * número inventado.
+ *
+ * - Sin variantes: una sola resolución a nivel producto (comportamiento
+ *   histórico, sin cambios).
+ * - Con una o más variantes: una resolución por variante, cada una usando
+ *   `getHistoricalUnitCost` (que ya hace fallback a nivel producto si esa
+ *   variante puntual no tiene compras propias cargadas).
+ */
+export function resolveProductVariantCosts(
+  ledgers: ProductCostLedgers,
+  productId: number,
+  variants: ProductVariantSummary[],
+  saleDate: string,
+): VariantCostResolution[] {
+  if (variants.length === 0) {
+    return [
+      {
+        variantId: null,
+        variantName: null,
+        unitCost: getHistoricalUnitCost(ledgers, productId, null, saleDate),
+      },
+    ]
+  }
+
+  return variants.map((variant) => ({
+    variantId: variant.id,
+    variantName: variant.nombre ?? null,
+    unitCost: getHistoricalUnitCost(ledgers, productId, variant.id, saleDate),
+  }))
+}
+
+/**
+ * Costo de referencia para fijar precio: el MAYOR costo conocido entre las
+ * resoluciones (peor caso). Mismo principio que el peor escenario de medio
+ * de pago (lib/pricing/product-pricing.ts) -- un precio único para todas las
+ * variantes debe garantizar el margen incluso en la variante más cara de
+ * reponer, nunca menos. `null` si ninguna resolución tiene costo conocido.
+ */
+export function getWorstCaseKnownCost(
+  resolutions: VariantCostResolution[],
+): number | null {
+  const knownCosts = resolutions
+    .map((entry) => entry.unitCost)
+    .filter((cost): cost is number => cost != null)
+
+  return knownCosts.length > 0 ? Math.max(...knownCosts) : null
+}

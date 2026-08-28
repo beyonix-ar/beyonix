@@ -39,6 +39,21 @@ export function roundUpToCommercialHundred(value: number): number {
 }
 
 /**
+ * Aplica IVA sobre un % crudo y redondea hacia arriba al entero como margen
+ * de seguridad -- nunca se muestra este número al cliente. Compartido entre
+ * `getEffectiveInstallmentPercent` (con recargo por cuotas) y
+ * `getSinglePaymentEffectivePercent` (sin recargo, pago único) para no
+ * duplicar la fórmula.
+ */
+function ceilPercentWithIva(
+  rawPercent: number,
+  config: InstallmentsFinancingConfig,
+): number {
+  const withIva = rawPercent * (1 + config.ivaPercent / 100)
+  return Math.ceil(withIva - ROUNDING_EPSILON)
+}
+
+/**
  * % efectivo que hay que aplicar sobre el precio base para que, después de
  * que Mercado Pago cobre su costo real (procesamiento + costo por cuotas,
  * con IVA), BEYONIX preserve la base económica que pretendía cobrar.
@@ -51,8 +66,18 @@ export function getEffectiveInstallmentPercent(
 ): number {
   const rawPercent =
     config.baseProcessingPercent + config.surchargePercentByCount[count]
-  const withIva = rawPercent * (1 + config.ivaPercent / 100)
-  return Math.ceil(withIva - ROUNDING_EPSILON)
+  return ceilPercentWithIva(rawPercent, config)
+}
+
+/**
+ * Igual que `getEffectiveInstallmentPercent`, pero para pago único (sin
+ * cuotas): sólo el costo base de checkout con tarjeta, sin el recargo
+ * adicional por financiación en cuotas.
+ */
+export function getSinglePaymentEffectivePercent(
+  config: InstallmentsFinancingConfig,
+): number {
+  return ceilPercentWithIva(config.baseProcessingPercent, config)
 }
 
 /**

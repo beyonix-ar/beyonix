@@ -6,6 +6,7 @@ import {
   calculateShippingBonus,
   DEFAULT_SHIPPING_SETTINGS,
   roundDownToCommercialEnding,
+  roundUpToCommercialEnding,
   type ShippingBonusSettings,
 } from "./store-config.ts"
 
@@ -27,6 +28,18 @@ test("roundDownToCommercialEnding termina en 900 redondeando siempre hacia abajo
   // Nunca negativo.
   assert.equal(roundDownToCommercialEnding(0), 0)
   assert.equal(roundDownToCommercialEnding(-500), 0)
+})
+
+test("roundUpToCommercialEnding termina en 900 redondeando siempre hacia arriba (hermana de roundDown, usada en precio por margen objetivo)", () => {
+  assert.equal(roundUpToCommercialEnding(8_100), 8_900)
+  assert.equal(roundUpToCommercialEnding(11_000), 11_900)
+  assert.equal(roundUpToCommercialEnding(31_437.82), 31_900)
+  // Ya termina en 900: no debe subir al próximo (caso límite importante,
+  // simétrico al de roundDownToCommercialEnding).
+  assert.equal(roundUpToCommercialEnding(3_900), 3_900)
+  // Nunca negativo.
+  assert.equal(roundUpToCommercialEnding(0), 900)
+  assert.equal(roundUpToCommercialEnding(-500), 900)
 })
 
 test("compra debajo del minimo: Andreani $12.000 -> cliente $8.900", () => {

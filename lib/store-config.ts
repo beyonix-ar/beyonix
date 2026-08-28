@@ -126,6 +126,25 @@ export function roundDownToCommercialEnding(value: number): number {
 }
 
 /**
+ * Hermana de `roundDownToCommercialEnding`, redondeando hacia ARRIBA a la
+ * misma terminación comercial ($900). Usada por el precio público calculado
+ * a partir de un margen objetivo (lib/pricing/product-pricing.ts): redondear
+ * hacia arriba nunca perfora el margen objetivo por redondeo (a diferencia de
+ * redondear hacia abajo). Mismas constantes que la regla de envío -- no es un
+ * tercer esquema de redondeo, es la misma terminación comercial aplicada en
+ * la otra dirección.
+ */
+export function roundUpToCommercialEnding(value: number): number {
+  const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0
+  const rounded =
+    Math.ceil((safeValue - COMMERCIAL_ROUNDING_ENDING) / COMMERCIAL_ROUNDING_STEP) *
+      COMMERCIAL_ROUNDING_STEP +
+    COMMERCIAL_ROUNDING_ENDING
+
+  return Math.max(0, rounded)
+}
+
+/**
  * Dos políticas de bonificación de envío, mutuamente excluyentes (nunca se
  * suman) para no generar un doble descuento involuntario:
  *

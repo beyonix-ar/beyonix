@@ -3,10 +3,24 @@ import {
   parseRequiredProductLogistics,
   ProductLogisticsValidationError,
 } from "@/lib/shipping/logistics-validation"
+import { resolveProductKnownCost } from "@/lib/admin/product-known-cost"
+import { calculateTargetMarginPrice } from "@/lib/pricing/product-pricing"
+import { getSiteSettings } from "@/lib/site-settings"
+import type { InstallmentCount } from "@/lib/products/installments"
 
 function parseProductId(value: string) {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+function parsePricingMode(value: unknown): "manual" | "target_margin" {
+  return value === "target_margin" ? "target_margin" : "manual"
+}
+
+function parseTargetMarginPercent(value: unknown): number | null {
+  if (value == null || value === "") return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 && parsed < 100 ? parsed : null
 }
 
 export async function PATCH(
@@ -70,11 +84,78 @@ export async function PATCH(
     )
   }
 
+  // pricing_mode/target_margin_percent no son columnas de `productos`: viven
+  // en product_pricing (tabla separada, admin-only). Se sacan del catalog
+  // antes de mandarlo a la RPC y se procesan/persisten acá mismo.
+  const catalogInput = { ...(body.catalog as Record<string, unknown>) }
+  const pricingMode = parsePricingMode(catalogInput.pricing_mode)
+  const targetMarginPercent = parseTargetMarginPercent(catalogInput.target_margin_percent)
+  delete catalogInput.pricing_mode
+  delete catalogInput.target_margin_percent
+
+  if (pricingMode === "target_margin") {
+    if (targetMarginPercent == null) {
+      return Response.json(
+        { error: "El margen objetivo no es válido." },
+        { status: 400 },
+      )
+    }
+
+    let knownCost
+    try {
+      knownCost = await resolveProductKnownCost(auth.admin, productId)
+    } catch {
+      return Response.json(
+        { error: "No se pudo consultar el costo del producto." },
+        { status: 500 },
+      )
+    }
+    const knownUnitCost = knownCost.knownUnitCost
+
+    if (knownUnitCost == null) {
+      return Response.json(
+        {
+          error:
+            "Costo desconocido: cargá un costo de compra para este producto en Admin > Costos antes de usar margen objetivo.",
+        },
+        { status: 400 },
+      )
+    }
+
+    const { installmentsFinancing } = await getSiteSettings({ fresh: true })
+    const eligibleInstallmentCounts: InstallmentCount[] = [
+      ...(catalogInput.cuotas_2_habilitadas ? [2 as const] : []),
+      ...(catalogInput.cuotas_3_habilitadas ? [3 as const] : []),
+      ...(catalogInput.cuotas_6_habilitadas ? [6 as const] : []),
+    ]
+
+    const targetMarginResult = calculateTargetMarginPrice({
+      cost: knownUnitCost,
+      targetMarginPercent,
+      eligibleInstallmentCounts,
+      config: installmentsFinancing,
+    })
+
+    if (!targetMarginResult) {
+      return Response.json(
+        {
+          error:
+            "El margen objetivo no es alcanzable con el costo y la configuración financiera actual.",
+        },
+        { status: 400 },
+      )
+    }
+
+    // Autoritativo: el precio que haya mandado el navegador se ignora y se
+    // sobreescribe acá, igual que ya se hace con la logística.
+    catalogInput.precio = targetMarginResult.commercialPrice
+  }
+
   const { data, error } = await auth.admin.rpc(
     "update_product_commercial_configuration_atomic",
     {
       p_product_id: productId,
-      p_catalog: { ...body.catalog, ...logistics },
+      p_catalog: { ...catalogInput, ...logistics },
       p_primary_sku: body.primarySku ?? null,
       p_variant_states: variantStates,
       p_actor_id: auth.user.id,
@@ -107,6 +188,17 @@ export async function PATCH(
       { status: 500 },
     )
   }
+
+  // Escritura secundaria de metadata (método de precio), después de que el
+  // catálogo ya quedó confirmado por la RPC atómica -- el precio en sí ya es
+  // autoritativo en este punto, esto sólo registra cómo se llegó a él.
+  await auth.admin.from("product_pricing").upsert({
+    product_id: productId,
+    pricing_mode: pricingMode,
+    target_margin_percent: pricingMode === "target_margin" ? targetMarginPercent : null,
+    updated_at: new Date().toISOString(),
+    updated_by: auth.user.id,
+  })
 
   return Response.json({
     product,

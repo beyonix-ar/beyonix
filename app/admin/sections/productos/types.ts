@@ -19,6 +19,8 @@ export interface ProductoFormState {
   cuotas2: boolean
   cuotas3: boolean
   cuotas6: boolean
+  pricingMode: "manual" | "target_margin"
+  targetMarginPercent: string
   categoria_id: string
   destacado: boolean
   activo: boolean

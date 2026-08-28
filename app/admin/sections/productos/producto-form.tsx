@@ -12,6 +12,12 @@ import {
   X,
 } from "lucide-react"
 
+import {
+  calculateTargetMarginPrice,
+  simulateProductProfitability,
+} from "@/lib/pricing/product-pricing"
+import type { InstallmentCount } from "@/lib/products/installments"
+
 import type {
   SupabaseProducto,
   SupabaseProductoEspecificacion,
@@ -29,6 +35,7 @@ import { useProductoForm } from "./use-producto-form"
 import {
   adminControlClassName,
   adminPageClassName,
+  AdminBadge,
   AdminCard,
   AdminFormField,
   AdminInfoBlock,
@@ -109,6 +116,8 @@ export function ProductoForm({
     savedId,
     categorias,
     logisticsFieldError,
+    knownUnitCost,
+    variantCosts,
     setField,
     showError,
     submit,
@@ -152,6 +161,55 @@ export function ProductoForm({
     (category) => String(category.id) === form.categoria_id,
   )?.nombre
   const currentPrice = Number(form.precio)
+  const eligibleInstallmentCounts: InstallmentCount[] = [
+    ...(form.cuotas2 ? [2 as const] : []),
+    ...(form.cuotas3 ? [3 as const] : []),
+    ...(form.cuotas6 ? [6 as const] : []),
+  ]
+  const targetMarginPercentValue = form.targetMarginPercent
+    ? Number(form.targetMarginPercent)
+    : null
+  const targetMarginResult =
+    form.pricingMode === "target_margin" &&
+    knownUnitCost != null &&
+    targetMarginPercentValue != null &&
+    Number.isFinite(targetMarginPercentValue)
+      ? calculateTargetMarginPrice({
+          cost: knownUnitCost,
+          targetMarginPercent: targetMarginPercentValue,
+          eligibleInstallmentCounts,
+          config: installmentsFinancing,
+        })
+      : null
+  // En modo margen objetivo, el precio público es SIEMPRE el que calcula el
+  // servidor -- este sync sólo mantiene la UI (y el campo que se manda al
+  // guardar) reflejando esa misma cuenta en vivo, para que el admin vea el
+  // mismo número que después va a persistir el backend autoritativamente.
+  useEffect(() => {
+    if (form.pricingMode !== "target_margin" || !targetMarginResult) return
+    setField("precio", String(targetMarginResult.commercialPrice))
+  }, [form.pricingMode, targetMarginResult, setField])
+  const profitabilityPrice =
+    form.pricingMode === "target_margin"
+      ? (targetMarginResult?.commercialPrice ?? null)
+      : Number.isFinite(currentPrice) && currentPrice > 0
+        ? currentPrice
+        : null
+  const profitabilitySimulation =
+    profitabilityPrice != null
+      ? simulateProductProfitability({
+          price: profitabilityPrice,
+          cost: knownUnitCost ?? null,
+          eligibleInstallmentCounts,
+          config: installmentsFinancing,
+        })
+      : null
+  // Costo distinto entre variantes reales (>1 fila con variantId no-null):
+  // nunca se colapsa en un solo número, se muestra el detalle completo.
+  const realVariantCosts = variantCosts.filter((entry) => entry.variantId != null)
+  const variantCostsDiffer =
+    realVariantCosts.length > 1 &&
+    new Set(realVariantCosts.map((entry) => entry.unitCost)).size > 1
   const productSubtitle = [
     selectedCategoryName,
     form.sku.trim() || null,
@@ -480,7 +538,15 @@ export function ProductoForm({
                   </AdminFormField>
                 )}
 
-                <AdminFormField label="Precio actual" labelClassName={productFieldLabelClassName}>
+                <AdminFormField
+                  label="Precio actual"
+                  labelClassName={productFieldLabelClassName}
+                  help={
+                    form.pricingMode === "target_margin"
+                      ? "Calculado automáticamente según tu margen objetivo (sección Rentabilidad)."
+                      : undefined
+                  }
+                >
                   <span className="relative block">
                     <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white/60">$</span>
                     <input
@@ -489,6 +555,7 @@ export function ProductoForm({
                       type="number"
                       value={form.precio}
                       placeholder="0"
+                      disabled={form.pricingMode === "target_margin"}
                       onChange={(event) => setField("precio", event.target.value)}
                       className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                     />
@@ -580,6 +647,127 @@ export function ProductoForm({
                     .join(" · ")}
                   . Se aplica automáticamente según la configuración global (Admin &gt; Configuración).
                 </p>
+              )}
+            </AdminCard>
+
+            <AdminCard className="product-editor-panel space-y-2.5 p-2.5">
+              <div className="product-editor-panel-heading">
+                <h2 className="text-base font-black text-white">Rentabilidad</h2>
+                <p className="mt-0.5 text-10px leading-4 text-white/44">
+                  Ganancia estimada según el costo cargado en Compras. No se muestra al cliente.
+                </p>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <AdminSecondaryButton
+                  aria-pressed={form.pricingMode === "manual"}
+                  onClick={() => setField("pricingMode", "manual")}
+                  className={`min-h-11 justify-start px-3 text-left text-xs font-black ${form.pricingMode === "manual" ? "border-beyonix-sky/45 bg-beyonix-blue/18 text-white" : "text-white/68"}`}
+                >
+                  Precio manual
+                </AdminSecondaryButton>
+                <AdminSecondaryButton
+                  aria-pressed={form.pricingMode === "target_margin"}
+                  disabled={!currentProductoId}
+                  title={
+                    currentProductoId
+                      ? undefined
+                      : "Guardá el producto primero para poder usar margen objetivo."
+                  }
+                  onClick={() => setField("pricingMode", "target_margin")}
+                  className={`min-h-11 justify-start px-3 text-left text-xs font-black ${form.pricingMode === "target_margin" ? "border-beyonix-sky/45 bg-beyonix-blue/18 text-white" : "text-white/68"}`}
+                >
+                  Margen objetivo
+                </AdminSecondaryButton>
+              </div>
+
+              {knownUnitCost === undefined && (
+                <p className="text-10px font-medium leading-4 text-white/38">Consultando costo cargado...</p>
+              )}
+
+              {knownUnitCost === null && (
+                <AdminInfoBlock tone="warning">
+                  Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para ver rentabilidad
+                  {form.pricingMode === "target_margin" ? " o usar margen objetivo" : ""}.
+                </AdminInfoBlock>
+              )}
+
+              {form.pricingMode === "target_margin" && (
+                <AdminFormField label="Margen neto objetivo" labelClassName={productFieldLabelClassName}>
+                  <span className="relative block">
+                    <input
+                      id="target_margin_percent"
+                      min="0"
+                      max="99"
+                      type="number"
+                      value={form.targetMarginPercent}
+                      placeholder="Ej.: 40"
+                      disabled={knownUnitCost == null}
+                      onChange={(event) => setField("targetMarginPercent", event.target.value)}
+                      className={`${inputCls} admin-product-price-input !pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white/60">%</span>
+                  </span>
+                </AdminFormField>
+              )}
+
+              {knownUnitCost != null && !variantCostsDiffer && (
+                <p className="text-10px font-medium leading-4 text-white/46">
+                  Costo conocido: {productPriceFormatter.format(knownUnitCost)}
+                </p>
+              )}
+
+              {variantCostsDiffer && (
+                <div className="space-y-1 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] p-2.5">
+                  <p className="text-10px font-black uppercase tracking-widest text-amber-300/85">
+                    Las variantes tienen costos distintos
+                  </p>
+                  {realVariantCosts.map((entry) => (
+                    <div key={entry.variantId} className="flex items-center justify-between text-11px">
+                      <span className="text-white/68">{entry.variantName ?? `Variante ${entry.variantId}`}</span>
+                      <span className="font-bold text-white/86">
+                        {entry.unitCost != null
+                          ? productPriceFormatter.format(entry.unitCost)
+                          : "Sin costo"}
+                      </span>
+                    </div>
+                  ))}
+                  <p className="text-10px font-medium leading-4 text-white/46">
+                    La rentabilidad de abajo usa el mayor costo conocido ({productPriceFormatter.format(knownUnitCost ?? 0)}) para no arriesgar el margen en ninguna variante.
+                  </p>
+                </div>
+              )}
+
+              {profitabilitySimulation && (
+                <div className="space-y-1.5 rounded-lg border border-white/8 bg-black/20 p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-11px font-black uppercase tracking-widest text-white/54">
+                      Piso garantizado ({profitabilitySimulation.worstCase.label})
+                    </span>
+                    <AdminBadge tone={profitabilitySimulation.worstCase.marginPercent < 0 ? "danger" : "success"}>
+                      {profitabilitySimulation.worstCase.marginPercent.toFixed(1)}%
+                    </AdminBadge>
+                  </div>
+                  <p className="text-sm font-black text-white">
+                    Ganancia: {productPriceFormatter.format(profitabilitySimulation.worstCase.profitAmount)}
+                  </p>
+
+                  <div className="mt-1 space-y-1 border-t border-white/8 pt-1.5">
+                    {profitabilitySimulation.scenarios.map((scenario) => (
+                      <div key={scenario.id} className="flex items-center justify-between gap-2 text-11px">
+                        <span className="text-white/68">{scenario.label}</span>
+                        <span className="flex items-center gap-2 font-bold">
+                          <span className={scenario.marginPercent < 0 ? "text-red-300" : "text-white/86"}>
+                            {productPriceFormatter.format(scenario.profitAmount)}
+                          </span>
+                          <span className={scenario.marginPercent < 0 ? "text-red-300" : "text-emerald-300"}>
+                            {scenario.marginPercent.toFixed(1)}%
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </AdminCard>
 

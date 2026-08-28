@@ -9,6 +9,7 @@ import {
   getEligibleInstallmentCounts,
   getInstallmentPlanLabels,
   getMaxInstallmentPlanLabel,
+  getSinglePaymentEffectivePercent,
   roundUpToCommercialHundred,
   type InstallmentsFinancingConfig,
 } from "./installments.ts"
@@ -33,6 +34,13 @@ test("el % efectivo se deriva de costo base + costo por cuotas + IVA, nunca de u
   assert.equal(getEffectiveInstallmentPercent(2, REAL_CONFIG), 18) // 14.21 * 1.21 = 17.1941
   assert.equal(getEffectiveInstallmentPercent(3, REAL_CONFIG), 21) // 16.91 * 1.21 = 20.4611
   assert.equal(getEffectiveInstallmentPercent(6, REAL_CONFIG), 31) // 25.11 * 1.21 = 30.3831
+})
+
+test("getSinglePaymentEffectivePercent: costo de MP en pago único, sin recargo por cuotas", () => {
+  // Sólo baseProcessingPercent + IVA, sin surchargePercentByCount -> 6.42 * 1.21 = 7.7682 -> 8%.
+  assert.equal(getSinglePaymentEffectivePercent(REAL_CONFIG), 8)
+  // Siempre <= la de cualquier cantidad de cuotas (el recargo por cuotas nunca es negativo).
+  assert.ok(getSinglePaymentEffectivePercent(REAL_CONFIG) <= getEffectiveInstallmentPercent(2, REAL_CONFIG))
 })
 
 test("cambiar cualquiera de los 3 ingredientes recalcula el % efectivo sin tocar código", () => {
