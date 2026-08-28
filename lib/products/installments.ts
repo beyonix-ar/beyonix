@@ -118,30 +118,62 @@ function formatCommercialPrice(value: number) {
 }
 
 /**
- * Líneas de cara al cliente, ej. "Hasta 3 cuotas sin interés de $31.700".
- * Nunca incluye porcentaje, comisión ni "financiado" -- sólo cuenta de
- * cuotas y monto de cada una. `price` es el precio efectivamente mostrado
- * (puede diferir de `producto.precio` cuando hay variante/condicionado con
- * su propio precio) -- nunca se asume `producto.precio` acá.
- *
  * "Hasta N" y no "N" a secas: Checkout Pro configura `installments` como
  * TOPE ofrecido, no como cantidad obligatoria -- según el medio de pago,
  * Mercado Pago puede terminar ofreciéndole al comprador menos cuotas que N
  * (hasta 1 pago) por el mismo monto. "N cuotas de $X" sin matizar sería una
  * promesa que la propia preferencia de Mercado Pago no puede garantizar.
  */
+function formatInstallmentPlanLabel(plan: InstallmentPlan): string {
+  return `Hasta ${plan.count} cuotas sin interés de ${formatCommercialPrice(plan.installmentAmount)}`
+}
+
+/**
+ * Planes elegibles de cara al cliente, en orden ascendente de cuotas.
+ * `price` es el precio efectivamente mostrado (puede diferir de
+ * `producto.precio` cuando hay variante/condicionado con su propio precio)
+ * -- nunca se asume `producto.precio` acá.
+ */
+export function getEligibleInstallmentPlans(
+  product: EligibleInstallmentsProduct,
+  price: number,
+  config: InstallmentsFinancingConfig,
+): InstallmentPlan[] {
+  return getEligibleInstallmentCounts(product)
+    .map((count) => calculateInstallmentPlan(price, count, config))
+    .filter((plan): plan is InstallmentPlan => plan !== null)
+}
+
+/**
+ * Líneas de cara al cliente, ej. "Hasta 3 cuotas sin interés de $31.700".
+ * Nunca incluye porcentaje, comisión ni "financiado" -- sólo cuenta de
+ * cuotas y monto de cada una. Una línea por cada modalidad habilitada, en
+ * orden ascendente de cuotas.
+ */
 export function getInstallmentPlanLabels(
   product: EligibleInstallmentsProduct,
   price: number,
   config: InstallmentsFinancingConfig,
 ): string[] {
-  const eligibleCounts = getEligibleInstallmentCounts(product)
+  return getEligibleInstallmentPlans(product, price, config).map(
+    formatInstallmentPlanLabel,
+  )
+}
 
-  return eligibleCounts
-    .map((count) => {
-      const plan = calculateInstallmentPlan(price, count, config)
-      if (!plan) return null
-      return `Hasta ${count} cuotas sin interés de ${formatCommercialPrice(plan.installmentAmount)}`
-    })
-    .filter((label): label is string => label !== null)
+/**
+ * La MAYOR modalidad de cuotas habilitada para el producto, ya formateada
+ * ("Hasta 6 cuotas sin interés de $X"). Pensada para superficies compactas
+ * (ProductCard, PDP/Quick View) donde mostrar las 3 modalidades a la vez
+ * sobrecarga la UI -- el checkout sigue mostrando todas las modalidades
+ * reales vía `getInstallmentPlanLabels`/`getEligibleInstallmentCounts`.
+ * `null` si el producto no tiene ninguna modalidad habilitada.
+ */
+export function getMaxInstallmentPlanLabel(
+  product: EligibleInstallmentsProduct,
+  price: number,
+  config: InstallmentsFinancingConfig,
+): string | null {
+  const plans = getEligibleInstallmentPlans(product, price, config)
+  const maxPlan = plans[plans.length - 1]
+  return maxPlan ? formatInstallmentPlanLabel(maxPlan) : null
 }

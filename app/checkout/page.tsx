@@ -31,6 +31,7 @@ import {
   MapPin,
   Minus,
   Plus,
+  ShieldCheck,
   Smartphone,
   Trash2,
   Truck,
@@ -2196,38 +2197,47 @@ export default function CheckoutPage() {
                   </h2>
 
                   <div className="grid gap-3">
-                    {paymentMethods.map((method) => (
-                      <button
-                        key={method.id}
-                        type="button"
-                        onClick={() =>
-                          setSelectedPayment(method.id)
-                        }
-                        className={cn(
-                          checkoutOptionClassName,
-                          "items-center gap-3 p-4",
-                          selectedPayment === method.id &&
-                            checkoutOptionSelectedClassName
-                        )}
-                      >
-                        <span className={cn(
-                          "flex size-11 shrink-0 items-center justify-center rounded-xl",
-                          selectedPayment === method.id
-                            ? "bg-beyonix-blue-light text-white"
-                            : "bg-black/35 text-white/65"
-                        )}>
-                          <method.icon className="size-5" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block font-semibold text-white">
-                            {method.name}
+                    {paymentMethods.map((method) => {
+                      const bestCartInstallmentCount =
+                        method.id === "mercadopago" && cartInstallmentEligibility.length > 0
+                          ? Math.max(...cartInstallmentEligibility)
+                          : null
+
+                      return (
+                        <button
+                          key={method.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedPayment(method.id)
+                          }
+                          className={cn(
+                            checkoutOptionClassName,
+                            "items-center gap-3 p-4",
+                            selectedPayment === method.id &&
+                              checkoutOptionSelectedClassName
+                          )}
+                        >
+                          <span className={cn(
+                            "flex size-11 shrink-0 items-center justify-center rounded-xl",
+                            selectedPayment === method.id
+                              ? "bg-beyonix-blue-light text-white"
+                              : "bg-black/35 text-white/65"
+                          )}>
+                            <method.icon className="size-5" />
                           </span>
-                          <span className="mt-1 block text-sm text-white/45">
-                            {method.description}
+                          <span className="min-w-0">
+                            <span className="block font-semibold text-white">
+                              {method.name}
+                            </span>
+                            <span className="mt-1 block text-sm text-white/45">
+                              {bestCartInstallmentCount
+                                ? `Tarjeta o saldo en cuenta · Hasta ${bestCartInstallmentCount} cuotas sin interés`
+                                : method.description}
+                            </span>
                           </span>
-                        </span>
-                      </button>
-                    ))}
+                        </button>
+                      )
+                    })}
                   </div>
 
                   {isMercadoPagoPayment && cartInstallmentEligibility.length > 0 && (
@@ -2286,6 +2296,13 @@ export default function CheckoutPage() {
                         })}
                       </div>
                     </div>
+                  )}
+
+                  {isMercadoPagoPayment && (
+                    <p className="flex items-center gap-1.5 text-11px font-medium text-white/45">
+                      <ShieldCheck className="size-3.5 shrink-0 text-white/45" />
+                      Pago protegido por Mercado Pago
+                    </p>
                   )}
 
                   {selectedPayment === "transferencia" && (
@@ -2706,6 +2723,12 @@ export default function CheckoutPage() {
                     {formatPrice(finalTotal)}
                   </span>
                 </div>
+                {installmentPlan && effectiveInstallmentsModality && (
+                  <p className="text-right text-11px font-semibold text-beyonix-sky">
+                    Pagás {effectiveInstallmentsModality} cuotas de{" "}
+                    {formatPrice(installmentPlan.installmentAmount)}
+                  </p>
+                )}
               </div>
 
               {checkoutError && (

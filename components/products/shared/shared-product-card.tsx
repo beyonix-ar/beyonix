@@ -25,7 +25,7 @@ import {
   getDefaultVariantOption,
   getDiscountPercent,
 } from "@/lib/products/product-variants"
-import { getInstallmentPlanLabels } from "@/lib/products/installments"
+import { getMaxInstallmentPlanLabel } from "@/lib/products/installments"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
 
@@ -93,7 +93,7 @@ export default function SharedProductCard({
     defaultVariant.originalPrice
   )
   const { installmentsFinancing } = useSiteSettings()
-  const installmentsLabels = getInstallmentPlanLabels(
+  const installmentLabel = getMaxInstallmentPlanLabel(
     product,
     defaultVariant.price,
     installmentsFinancing,
@@ -293,54 +293,61 @@ export default function SharedProductCard({
           {product.nombre}
         </h3>
 
-        <div className="mt-3 border-t border-beyonix-blue-light/12 pt-3">
-          <ProductCardPricing
-            price={defaultVariant.price}
-            originalPrice={
-              defaultVariant.originalPrice ||
-              undefined
-            }
-            discountPercentage={
-              discountPercentage
-            }
-            installmentsLabels={
-              installmentsLabels
-            }
-            quantity={quantity}
-            maxReached={
-              defaultVariant.stock < 1 ||
-              quantity >= MAX_CART_ITEM_QUANTITY
-            }
-            onAddToCart={
-              handleAddToCart
-            }
-            onIncrease={() =>
-              increaseQuantity(
-                product.id,
-                defaultVariant.value
-              )
-            }
-            onDecrease={() =>
-              decreaseQuantity(
-                product.id,
-                defaultVariant.value
-              )
-            }
-          />
-        </div>
+        {/* Ancla precio + CTA al fondo de la card, sin importar la altura
+            variable de lo que haya arriba (ej. badge de cuotas presente o
+            no): en una grilla con `items-stretch`, este bloque queda
+            siempre a la misma altura relativa al borde inferior en todas
+            las cards de una misma fila. */}
+        <div className="mt-auto">
+          <div className="mt-3 border-t border-beyonix-blue-light/12 pt-3">
+            <ProductCardPricing
+              price={defaultVariant.price}
+              originalPrice={
+                defaultVariant.originalPrice ||
+                undefined
+              }
+              discountPercentage={
+                discountPercentage
+              }
+              installmentLabel={
+                installmentLabel
+              }
+              quantity={quantity}
+              maxReached={
+                defaultVariant.stock < 1 ||
+                quantity >= MAX_CART_ITEM_QUANTITY
+              }
+              onAddToCart={
+                handleAddToCart
+              }
+              onIncrease={() =>
+                increaseQuantity(
+                  product.id,
+                  defaultVariant.value
+                )
+              }
+              onDecrease={() =>
+                decreaseQuantity(
+                  product.id,
+                  defaultVariant.value
+                )
+              }
+            />
+          </div>
 
-        <button
-          type="button"
-          aria-label={`Ver ${product.nombre}`}
-          onClick={(event) => {
-            event.stopPropagation()
-            onOpenPreview?.(product)
-          }}
-          className="mt-3 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/22 bg-black/28 text-13px font-semibold text-white/86 transition-all duration-200 hover:border-beyonix-sky/48 hover:bg-beyonix-blue/32 hover:text-white hover:shadow-[0_0_18px_rgba(30,140,255,0.16)]"
-        >
-          Ver producto
-          <ArrowRight className="size-3.5" />
-        </button>
+          <button
+            type="button"
+            aria-label={`Ver ${product.nombre}`}
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenPreview?.(product)
+            }}
+            className="mt-3 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/22 bg-black/28 text-13px font-semibold text-white/86 transition-all duration-200 hover:border-beyonix-sky/48 hover:bg-beyonix-blue/32 hover:text-white hover:shadow-[0_0_18px_rgba(30,140,255,0.16)]"
+          >
+            Ver producto
+            <ArrowRight className="size-3.5" />
+          </button>
+        </div>
       </div>
     </article>
   )

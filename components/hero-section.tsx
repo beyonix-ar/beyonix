@@ -16,7 +16,7 @@ import {
   BeyonixCard,
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
-import { getInstallmentPlanLabels } from "@/lib/products/installments"
+import { getMaxInstallmentPlanLabel } from "@/lib/products/installments"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
@@ -83,9 +83,9 @@ export function HeroSection({
     : 0
   const hasSale = discountPercentage > 0
   const { installmentsFinancing } = useSiteSettings()
-  const installmentsLabels = featuredProduct
-    ? getInstallmentPlanLabels(featuredProduct, finalPrice, installmentsFinancing)
-    : []
+  const installmentLabel = featuredProduct
+    ? getMaxInstallmentPlanLabel(featuredProduct, finalPrice, installmentsFinancing)
+    : null
 
   const openFeaturedProduct = () => {
     if (!featuredProduct) {
@@ -206,7 +206,7 @@ export function HeroSection({
                     </p>
                   )}
 
-                  {(hasSale || installmentsLabels.length > 0) && (
+                  {(hasSale || !!installmentLabel) && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {hasSale && (
                         <span className="inline-flex min-h-24px items-center rounded-full border border-green-500/25 bg-green-500/12 px-3 py-1.5 text-12px font-semibold leading-none text-green-400">
@@ -214,14 +214,11 @@ export function HeroSection({
                         </span>
                       )}
 
-                      {installmentsLabels.map((label) => (
-                        <span
-                          key={label}
-                          className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky"
-                        >
-                          {label}
+                      {!!installmentLabel && (
+                        <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
+                          {installmentLabel}
                         </span>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>

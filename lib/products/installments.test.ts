@@ -8,6 +8,7 @@ import {
   getEffectiveInstallmentPercent,
   getEligibleInstallmentCounts,
   getInstallmentPlanLabels,
+  getMaxInstallmentPlanLabel,
   roundUpToCommercialHundred,
   type InstallmentsFinancingConfig,
 } from "./installments.ts"
@@ -196,4 +197,69 @@ test("la etiqueta usa el precio efectivamente mostrado, no un precio de producto
   // Precio de una variante/condicionado distinto al del producto base.
   const labels = getInstallmentPlanLabels(producto, 50_000, REAL_CONFIG)
   assert.notDeepEqual(labels, getInstallmentPlanLabels(producto, 75_000, REAL_CONFIG))
+})
+
+test("getMaxInstallmentPlanLabel: muestra siempre la MAYOR modalidad habilitada, para superficies compactas (card/PDP)", () => {
+  const price = 75_000
+
+  // Sólo 2 -> "Hasta 2..."
+  assert.equal(
+    getMaxInstallmentPlanLabel(noFinancing({ cuotas_2_habilitadas: true }), price, REAL_CONFIG),
+    "Hasta 2 cuotas sin interés de $45.800",
+  )
+
+  // Sólo 3 -> "Hasta 3..."
+  assert.equal(
+    getMaxInstallmentPlanLabel(noFinancing({ cuotas_3_habilitadas: true }), price, REAL_CONFIG),
+    "Hasta 3 cuotas sin interés de $31.700",
+  )
+
+  // Sólo 6 -> "Hasta 6..."
+  assert.equal(
+    getMaxInstallmentPlanLabel(noFinancing({ cuotas_6_habilitadas: true }), price, REAL_CONFIG),
+    "Hasta 6 cuotas sin interés de $18.200",
+  )
+
+  // 2 + 3 -> "Hasta 3..."
+  assert.equal(
+    getMaxInstallmentPlanLabel(
+      noFinancing({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true }),
+      price,
+      REAL_CONFIG,
+    ),
+    "Hasta 3 cuotas sin interés de $31.700",
+  )
+
+  // 2 + 6 -> "Hasta 6..."
+  assert.equal(
+    getMaxInstallmentPlanLabel(
+      noFinancing({ cuotas_2_habilitadas: true, cuotas_6_habilitadas: true }),
+      price,
+      REAL_CONFIG,
+    ),
+    "Hasta 6 cuotas sin interés de $18.200",
+  )
+
+  // 3 + 6 -> "Hasta 6..."
+  assert.equal(
+    getMaxInstallmentPlanLabel(
+      noFinancing({ cuotas_3_habilitadas: true, cuotas_6_habilitadas: true }),
+      price,
+      REAL_CONFIG,
+    ),
+    "Hasta 6 cuotas sin interés de $18.200",
+  )
+
+  // 2 + 3 + 6 -> "Hasta 6..."
+  assert.equal(
+    getMaxInstallmentPlanLabel(
+      noFinancing({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true }),
+      price,
+      REAL_CONFIG,
+    ),
+    "Hasta 6 cuotas sin interés de $18.200",
+  )
+
+  // Ninguna -> null
+  assert.equal(getMaxInstallmentPlanLabel(noFinancing(), price, REAL_CONFIG), null)
 })

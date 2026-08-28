@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle2, CreditCard, ShieldCheck, Truck } from "lucide-react"
+import { CheckCircle2, ChevronDown, ShieldCheck, Truck } from "lucide-react"
 
 import { BeyonixButton } from "@/components/beyonix-ui"
 
@@ -11,6 +11,9 @@ import { getDiscountPercent } from "@/lib/products/product-variants"
 interface ProductPurchaseBoxProps {
   price: number
   originalPrice?: number
+  /** Mayor modalidad de cuotas habilitada, ya formateada (ver `getMaxInstallmentPlanLabel`). */
+  maxInstallmentLabel?: string | null
+  /** Todas las modalidades habilitadas, para el detalle desplegable "Ver opciones". */
   installmentsLabels?: string[]
   isInCart?: boolean
   cartQuantity?: number
@@ -32,6 +35,7 @@ function formatPrice(price: number) {
 export function ProductPurchaseBox({
   price,
   originalPrice,
+  maxInstallmentLabel = null,
   installmentsLabels = [],
   isInCart = false,
   cartQuantity = 0,
@@ -42,6 +46,7 @@ export function ProductPurchaseBox({
   onViewCart,
 }: ProductPurchaseBoxProps) {
   const [quantity, setQuantity] = useState(cartQuantity)
+  const [showInstallmentOptions, setShowInstallmentOptions] = useState(false)
 
   useEffect(() => {
     setQuantity(cartQuantity)
@@ -92,26 +97,47 @@ export function ProductPurchaseBox({
         )}
       </div>
 
-      <div className="mb-2.5 flex flex-wrap gap-2">
-        {installmentsLabels.map((label) => (
-          <span
-            key={label}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3 py-1.5 text-12px font-semibold text-white"
-          >
-            <CreditCard className="size-3.5 text-white" />
-            {label}
-          </span>
-        ))}
+      {!!maxInstallmentLabel && (
+        <div className="mb-3">
+          <p className="text-14px font-semibold text-white">
+            {maxInstallmentLabel}
+          </p>
 
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#21476B]/65 bg-[#0D2236] px-3 py-1.5 text-12px font-semibold text-white">
-          <ShieldCheck className="size-3.5 text-white" />
+          {installmentsLabels.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setShowInstallmentOptions((current) => !current)}
+              className="mt-1 inline-flex items-center gap-1 text-12px font-medium text-beyonix-sky/85 transition-colors hover:text-beyonix-sky"
+            >
+              Ver opciones de financiación
+              <ChevronDown
+                className={`size-3.5 transition-transform ${showInstallmentOptions ? "rotate-180" : ""}`}
+              />
+            </button>
+          )}
+
+          {showInstallmentOptions && installmentsLabels.length > 1 && (
+            <ul className="mt-2 space-y-1 border-l border-[#21476B]/65 pl-3">
+              {installmentsLabels.map((label) => (
+                <li key={label} className="text-12px font-medium text-white/70">
+                  {label}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-12px font-medium text-white/45">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <ShieldCheck className="size-3.5 shrink-0 text-white/45" />
           Garantía de 6 meses
         </span>
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center gap-1.5 text-12px font-medium text-white/45">
-        <Truck className="size-3.5 shrink-0 text-white/45" />
-        <span className="whitespace-nowrap">Envíos a todo el país</span>
+        <span aria-hidden="true">·</span>
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <Truck className="size-3.5 shrink-0 text-white/45" />
+          Envíos a todo el país
+        </span>
         <span aria-hidden="true">·</span>
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
           <CheckCircle2 className="size-3.5 shrink-0 text-white/45" />
