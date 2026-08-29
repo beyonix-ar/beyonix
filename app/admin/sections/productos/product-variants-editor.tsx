@@ -1226,7 +1226,7 @@ export function StockSummaryItem({
   value?: number
 }) {
   return (
-    <div className="product-editor-metric min-w-0 rounded-lg border border-white/9 px-2.5 py-2">
+    <div className="product-editor-metric min-w-0 rounded-lg border border-white/9 px-2 py-1.5">
       <p className="truncate text-xs font-bold leading-4 text-white">{label}</p>
       <p className="mt-0.5 text-xl font-black leading-none tabular-nums text-white">
         {value ?? "—"}

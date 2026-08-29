@@ -7794,6 +7794,42 @@ span.admin-claim-status-finalized,
   container-type: inline-size;
 }
 
+/* Card superior fusionada (Información + Estado comercial | Rentabilidad):
+   columna apilada por debajo del umbral (mobile/tablet, sin ancho real para
+   partir en dos sin comprimir los campos de precio); fila a partir de acá,
+   con Rentabilidad recibiendo el espacio sobrante (flex 1 1 auto) mientras
+   la columna izquierda queda fija en ~34% -- Rentabilidad concentra mucha
+   más información y necesita más ancho real (2-3 columnas de escenarios de
+   pago) que Información/Estado comercial (un solo campo por fila). El
+   divider cambia de horizontal (apilado) a vertical (fila) con el mismo
+   breakpoint. */
+.product-editor-screen .product-editor-identity {
+  flex-direction: column;
+}
+
+.product-editor-screen .product-editor-identity-left {
+  container-type: inline-size;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@container (min-width: 54rem) {
+  .product-editor-screen .product-editor-identity {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .product-editor-screen .product-editor-identity-left {
+    width: 34%;
+    flex: 0 0 34%;
+    border-bottom: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .product-editor-screen .product-editor-identity > .product-editor-rentabilidad {
+    flex: 1 1 auto;
+  }
+}
+
 /* Fila Stock + Financiación + Dimensiones y peso: 48/22/30 aprox. Por
    debajo del umbral, apila (mobile/tablet); nunca un estado intermedio de
    2 columnas acá porque las proporciones ya son muy dispares entre sí. */
@@ -7893,7 +7929,7 @@ span.admin-claim-status-finalized,
 
 .product-editor-screen .product-editor-panel-heading {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
 }
 
 .product-editor-screen .product-editor-panel-heading h2 {
@@ -7954,22 +7990,37 @@ span.admin-claim-status-finalized,
   background-color: rgba(52, 211, 153, 0.11) !important;
 }
 
-/* Selector de modo de precio (Precio manual / Margen objetivo): NO es un
-   toggle booleano on/off (por eso no usa el acento esmeralda de arriba) --
-   es una elección exclusiva entre dos modos, así que usa el acento de marca
-   BEYONIX para que el modo activo se distinga con claridad del inactivo. */
+/* Selector de modo de precio (Precio manual / Margen objetivo): control
+   segmentado de elección exclusiva -- usa el mismo acento esmeralda claro
+   que el resto del editor para que el modo activo sea inequívoco.
+   .admin-ds-button-secondary fuerza su propio border/background con
+   !important (ver arriba), así que el color real del estado activo/inactivo
+   tiene que fijarse acá con selectores de mayor especificidad, no alcanza
+   con las utilidades de Tailwind en el JSX. */
 .product-editor-screen .product-editor-pricing-mode-active {
   border-width: 1.5px !important;
+  border-color: rgba(110, 231, 183, 0.75) !important;
+  background-color: rgba(52, 211, 153, 0.14) !important;
 }
 
 .product-editor-screen .product-editor-pricing-mode-active:hover {
-  border-color: rgba(140, 200, 242, 0.85) !important;
-  background-color: rgba(30, 77, 123, 0.34) !important;
+  border-color: rgba(110, 231, 183, 0.9) !important;
+  background-color: rgba(52, 211, 153, 0.18) !important;
+}
+
+.product-editor-screen .product-editor-pricing-mode:not(.product-editor-pricing-mode-active) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(255, 255, 255, 0.02) !important;
 }
 
 .product-editor-screen .product-editor-pricing-mode:not(.product-editor-pricing-mode-active):hover {
   border-color: rgba(255, 255, 255, 0.2) !important;
   background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.product-editor-screen .product-editor-pricing-mode-active .product-editor-pricing-mode-icon {
+  color: rgb(110, 231, 183) !important;
+  stroke: rgb(110, 231, 183) !important;
 }
 
 .product-editor-screen :where(
@@ -7985,6 +8036,14 @@ span.admin-claim-status-finalized,
 .product-editor-screen .product-editor-inactive-icon {
   color: rgba(255, 255, 255, 0.42) !important;
   stroke: rgba(255, 255, 255, 0.42) !important;
+}
+
+/* AdminBadge tunea su color por tono (ver .admin-ds-tone-success/-danger) con
+   un verde/rojo pastel de baja lectura sobre su propio fondo -- acá el
+   porcentaje de rentabilidad necesita blanco puro para leerse de un vistazo. */
+.product-editor-screen .product-editor-rentabilidad-percent-badge {
+  color: #ffffff !important;
+  font-weight: 800 !important;
 }
 
 .product-editor-screen .product-editor-specifications {

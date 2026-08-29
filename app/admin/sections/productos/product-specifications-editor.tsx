@@ -454,14 +454,14 @@ export function ProductSpecificationsEditor({
 
   return (
     <section className="product-editor-panel product-editor-specifications min-w-0 overflow-visible rounded-xl border p-2.5">
-      <div className="product-editor-panel-heading mb-2.5">
+      <div className="product-editor-panel-heading mb-2">
         <h2 className="text-base font-black text-white">Especificaciones</h2>
         <p className="mt-0.5 text-10px leading-4 text-white">
           Características visibles en la tienda.
         </p>
       </div>
 
-      <div className="min-w-0 space-y-2.5">
+      <div className="min-w-0 space-y-2">
         <div className="min-w-0">
           <div className="mb-2">
             <h3 className="text-xs font-black text-white">

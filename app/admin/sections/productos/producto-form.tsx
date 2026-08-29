@@ -548,22 +548,26 @@ export function ProductoForm({
       >
         <div className="product-editor-workspace min-w-0 gap-2.5">
           {/*
-            Fila 1: identidad del producto + rentabilidad. Ambas son
-            información PRIMARIA (ver jerarquía); se ubican arriba y
-            comparten fila para que Rentabilidad reciba ancho real desde
-            el principio, en vez de heredar el ancho angosto de una
-            columna fija independiente.
+            Fila 1: identidad del producto + rentabilidad, fusionadas en UNA
+            sola card (antes eran 3 cards independientes con huecos entre
+            sí). Columna izquierda (Información + Estado comercial, apiladas
+            y separadas por un divider horizontal) vs Rentabilidad a la
+            derecha, separadas por un divider vertical -- flex-row/stretch
+            para que ambas columnas compartan el mismo borde de fondo como
+            un único bloque; column+divider horizontal por debajo del umbral
+            de container query (ver .product-editor-identity en globals.css)
+            porque ahí no hay ancho real para partir en dos.
           */}
-          <div className="grid min-w-0 gap-2.5 lg:grid-cols-2 lg:items-start xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-            <div className="product-editor-cell flex min-w-0 flex-col gap-2.5">
-              <AdminCard className="product-editor-panel space-y-2 p-2.5">
+          <AdminCard className="product-editor-panel product-editor-identity flex min-w-0 flex-col p-0">
+            <div className="product-editor-identity-left flex min-w-0 flex-col divide-y divide-white/8">
+              <div className="min-w-0 space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 id="product-information-title" className="text-base font-black text-white">
                     Información del producto
                   </h2>
                 </div>
 
-                <div className="grid min-w-0 gap-x-2.5 gap-y-2 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-x-2.5 gap-y-1.5 sm:grid-cols-2">
                   <AdminFormField
                     label="Nombre del producto"
                     labelClassName={productFieldLabelClassName}
@@ -602,7 +606,7 @@ export function ProductoForm({
                     labelClassName={productFieldLabelClassName}
                     help={
                       form.pricingMode === "target_margin"
-                        ? "Calculado automáticamente según tu margen objetivo (sección Rentabilidad)."
+                        ? "Calculado según el % de ganancia neta. Escribí acá para fijarlo manualmente."
                         : undefined
                     }
                   >
@@ -614,8 +618,10 @@ export function ProductoForm({
                         type="number"
                         value={form.precio}
                         placeholder="0"
-                        disabled={form.pricingMode === "target_margin"}
-                        onChange={(event) => setField("precio", event.target.value)}
+                        onChange={(event) => {
+                          setField("precio", event.target.value)
+                          setField("pricingMode", "manual")
+                        }}
                         className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                       />
                     </span>
@@ -636,6 +642,27 @@ export function ProductoForm({
                     </span>
                   </AdminFormField>
 
+                  <AdminFormField label="Porcentaje de ganancia neta" labelClassName={productFieldLabelClassName}>
+                    <span className="relative inline-flex">
+                      <input
+                        id="target_margin_percent"
+                        min="0"
+                        max="99"
+                        type="number"
+                        inputMode="numeric"
+                        value={form.targetMarginPercent}
+                        placeholder="40"
+                        disabled={knownUnitCost == null}
+                        onChange={(event) => {
+                          setField("targetMarginPercent", event.target.value)
+                          setField("pricingMode", "target_margin")
+                        }}
+                        className="admin-control-input admin-ds-control w-20 !pl-3 !pr-7 text-sm font-medium text-white outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      />
+                      <span className="pointer-events-none absolute right-2.5 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">%</span>
+                    </span>
+                  </AdminFormField>
+
                   <AdminFormField label="Categoría" labelClassName={productFieldLabelClassName}>
                     <AdminSelect title="Categoría" value={form.categoria_id} onChange={(value) => setField("categoria_id", value)}>
                       <option value="">Sin categoría</option>
@@ -646,13 +673,34 @@ export function ProductoForm({
                   </AdminFormField>
 
                 </div>
-              </AdminCard>
 
-              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2.5 p-3">
+                {knownUnitCost === undefined && (
+                  <p className="text-xs font-medium leading-5 text-white">Consultando costo cargado...</p>
+                )}
+
+                {knownUnitCost === null && (
+                  <AdminInfoBlock tone="warning">
+                    Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para poder usar el
+                    porcentaje de ganancia neta.
+                  </AdminInfoBlock>
+                )}
+
+                {form.pricingMode === "target_margin" &&
+                  knownUnitCost != null &&
+                  targetMarginPercentValue != null &&
+                  !targetMarginResult && (
+                    <AdminInfoBlock tone="danger">
+                      Ese margen no es alcanzable con el costo y la financiación configurada. Probá un porcentaje menor o
+                      revisá las cuotas habilitadas.
+                    </AdminInfoBlock>
+                  )}
+              </div>
+
+              <div className="min-w-0 space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 className="text-base font-black text-white">Estado comercial</h2>
                 </div>
-                <div className="product-editor-status-grid grid gap-2.5">
+                <div className="product-editor-status-grid grid gap-2">
                   {[
                     {
                       key: "activo" as const,
@@ -688,7 +736,7 @@ export function ProductoForm({
 
                         setField(toggle.key, !toggle.active)
                       }}
-                      className={`product-editor-toggle grid min-h-12 w-full grid-cols-[auto_minmax(0,1fr)_4.5rem] items-center gap-x-3 border px-3 py-2 text-left ${toggle.active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                      className={`product-editor-toggle grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_4.5rem] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${toggle.active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
                     >
                       {toggle.active ? (
                         <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
@@ -739,89 +787,23 @@ export function ProductoForm({
                     )}
                   </div>
                 )}
-              </AdminCard>
+              </div>
             </div>
 
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel product-editor-rentabilidad flex min-w-0 flex-col space-y-2.5 p-2.5">
+            <div className="product-editor-rentabilidad min-w-0 flex-1 space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
-                  <h2 className="text-base font-black text-white">Rentabilidad</h2>
-                  <p className="mt-0.5 text-xs leading-5 text-white">
-                    Ganancia estimada según el costo cargado en Compras. No se muestra al cliente.
-                  </p>
+                  <h2 className="text-xs font-black uppercase tracking-widest text-white">
+                    Rentabilidad estimada por medio de pago
+                  </h2>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(
-                    [
-                      { key: "manual" as const, label: "Precio manual" },
-                      { key: "target_margin" as const, label: "Margen objetivo" },
-                    ]
-                  ).map((mode) => {
-                    const active = form.pricingMode === mode.key
-                    const disabled = mode.key === "target_margin" && !currentProductoId
-
-                    return (
-                      <AdminSecondaryButton
-                        key={mode.key}
-                        aria-pressed={active}
-                        disabled={disabled}
-                        title={
-                          disabled
-                            ? "Guardá el producto primero para poder usar margen objetivo."
-                            : undefined
-                        }
-                        onClick={() => setField("pricingMode", mode.key)}
-                        className={`product-editor-toggle product-editor-pricing-mode min-h-11 justify-start gap-2 px-3 text-left text-sm font-black text-white ${
-                          active
-                            ? "product-editor-pricing-mode-active border-beyonix-sky/70 bg-beyonix-blue/28"
-                            : "border-white/8 bg-transparent"
-                        }`}
-                      >
-                        {active ? (
-                          <Check className="size-4 shrink-0 text-beyonix-sky" aria-hidden="true" />
-                        ) : (
-                          <span className="size-4 shrink-0" aria-hidden="true" />
-                        )}
-                        {mode.label}
-                      </AdminSecondaryButton>
-                    )
-                  })}
-                </div>
-                <p className="text-10px font-black uppercase tracking-[0.12em] text-white">
-                  Modo activo: {form.pricingMode === "manual" ? "Precio manual" : "Margen objetivo"}
-                </p>
-
-                {knownUnitCost === undefined && (
-                  <p className="text-xs font-medium leading-5 text-white">Consultando costo cargado...</p>
-                )}
-
-                {knownUnitCost === null && (
-                  <AdminInfoBlock tone="warning">
-                    Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para ver rentabilidad
-                    {form.pricingMode === "target_margin" ? " o usar margen objetivo" : ""}.
-                  </AdminInfoBlock>
-                )}
-
-                {form.pricingMode === "target_margin" && (
-                  <AdminFormField label="Margen neto objetivo" labelClassName={productFieldLabelClassName}>
-                    <span className="relative block">
-                      <input
-                        id="target_margin_percent"
-                        min="0"
-                        max="99"
-                        type="number"
-                        value={form.targetMarginPercent}
-                        placeholder="Ej.: 40"
-                        disabled={knownUnitCost == null}
-                        onChange={(event) => setField("targetMarginPercent", event.target.value)}
-                        className={`${inputCls} admin-product-price-input !pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      />
-                      <span className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-base font-black text-white">%</span>
-                    </span>
-                  </AdminFormField>
-                )}
-
+                {/*
+                  "Costo conocido"/"costo desconocido" y el estado no
+                  alcanzable ya se muestran junto al campo que los origina
+                  (Porcentaje de ganancia neta, columna izquierda) -- no se
+                  duplican acá. knownUnitCost, targetMarginResult y
+                  profitabilitySimulation siguen calculándose igual.
+                */}
                 {variantCostsDiffer && (
                   <div className="space-y-1 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] p-2.5">
                     <p className="text-10px font-black uppercase tracking-widest text-white">
@@ -843,128 +825,79 @@ export function ProductoForm({
                   </div>
                 )}
 
-                {/*
-                  "Costo conocido" ya NO se muestra acá (pedido explícito):
-                  el dato, su fetch (knownUnitCost) y todos los cálculos que
-                  dependen de él (variantCostsDiffer, targetMarginResult,
-                  profitabilitySimulation, disabled states) siguen intactos
-                  -- sólo se dejó de renderizar esta tarjeta puntual. Compras
-                  sigue siendo el lugar donde ese costo se ve.
-                */}
-                {form.pricingMode === "target_margin" && knownUnitCost != null && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {targetMarginPercentValue != null && (
-                      <div className="rounded-lg border border-white/8 bg-black/20 p-2">
-                        <p className="text-10px font-black uppercase tracking-widest text-white">
-                          Margen mínimo buscado
-                        </p>
-                        <p className="mt-0.5 text-base font-black text-white">
-                          {targetMarginPercentValue}%
-                        </p>
-                      </div>
-                    )}
-
-                    {targetMarginResult && (
-                      <div className="rounded-lg border border-beyonix-sky/25 bg-beyonix-blue/10 p-2">
-                        <p className="text-10px font-black uppercase tracking-widest text-white">
-                          Precio público calculado
-                        </p>
-                        <p className="mt-0.5 text-base font-black text-white">
-                          {productPriceFormatter.format(targetMarginResult.commercialPrice)}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {form.pricingMode === "target_margin" && targetMarginResult && (
-                  <p className="text-xs leading-5 text-white">
-                    El precio se calcula para mantener al menos un {targetMarginPercentValue}% de margen incluso
-                    utilizando el medio de pago habilitado con mayor costo ({targetMarginResult.worstCaseScenario.label}).
-                    El redondeo comercial puede hacer que el margen final sea ligeramente superior.
-                  </p>
-                )}
-
-                {form.pricingMode === "target_margin" &&
-                  knownUnitCost != null &&
-                  targetMarginPercentValue != null &&
-                  !targetMarginResult && (
-                    <AdminInfoBlock tone="danger">
-                      Ese margen no es alcanzable con el costo y la financiación configurada. Probá un margen menor o
-                      revisá las cuotas habilitadas.
-                    </AdminInfoBlock>
-                  )}
-
                 {profitabilitySimulation && (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-black uppercase tracking-widest text-white">
-                      Rentabilidad estimada por medio de pago
-                    </p>
-                    <div className="product-editor-rentabilidad-scenarios grid gap-1.5">
-                      {profitabilitySimulation.scenarios.map((scenario) => {
-                        const isWorstCase = scenario.id === profitabilitySimulation.worstCase.id
-                        const price = profitabilityPrice ?? 0
-                        const feeAmount = (price * scenario.ratePercent) / 100
-                        const chargedAmount = scenario.kind === "discount" ? price - feeAmount : price
+                  <div className="product-editor-rentabilidad-scenarios grid gap-1">
+                    {profitabilitySimulation.scenarios.map((scenario) => {
+                      const isWorstCase = scenario.id === profitabilitySimulation.worstCase.id
+                      const price = profitabilityPrice ?? 0
+                      const feeAmount = (price * scenario.ratePercent) / 100
+                      const chargedAmount = scenario.kind === "discount" ? price - feeAmount : price
 
-                        return (
-                          <div
-                            key={scenario.id}
-                            className={`min-w-0 rounded-lg border p-2 ${
-                              isWorstCase
-                                ? "border-beyonix-sky/30 bg-beyonix-blue/[0.08]"
-                                : "border-white/8 bg-black/20"
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-1.5">
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <span className="truncate text-sm font-black text-white">
-                                  {scenario.label}
-                                </span>
-                                {isWorstCase && (
-                                  <AdminBadge tone="info" className="!px-1.5 !py-0.5 !text-9px whitespace-nowrap">
-                                    Margen mínimo garantizado
-                                  </AdminBadge>
-                                )}
+                      return (
+                        <div
+                          key={scenario.id}
+                          className={`min-w-0 rounded-lg border p-2 ${
+                            isWorstCase
+                              ? "border-beyonix-sky/30 bg-beyonix-blue/[0.08]"
+                              : "border-white/8 bg-black/20"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate text-base font-black text-white">
+                                {scenario.label}
                               </span>
-                              <span className="flex shrink-0 items-center gap-2">
-                                <span
-                                  className={`text-sm font-black ${
-                                    scenario.marginPercent < 0 ? "text-red-300" : "text-white"
-                                  }`}
-                                >
-                                  {productPriceFormatter.format(scenario.profitAmount)}
-                                </span>
-                                <AdminBadge tone={scenario.marginPercent < 0 ? "danger" : "success"}>
-                                  {scenario.marginPercent.toFixed(1)}%
+                              {isWorstCase && (
+                                <AdminBadge tone="info" className="!px-1.5 !py-0.5 !text-9px whitespace-nowrap">
+                                  Margen mínimo garantizado
                                 </AdminBadge>
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs leading-5 text-white">
-                              {scenario.kind === "discount"
-                                ? `El cliente paga ${productPriceFormatter.format(chargedAmount)} (descuento del ${scenario.ratePercent}%). Ganancia sobre ese ingreso.`
-                                : `El cliente paga el precio de lista; Mercado Pago retiene ${productPriceFormatter.format(feeAmount)} (${scenario.ratePercent}%) de comisión.`}
+                              )}
+                            </span>
+                            <AdminBadge
+                              tone={scenario.marginPercent < 0 ? "danger" : "success"}
+                              className="product-editor-rentabilidad-percent-badge shrink-0"
+                            >
+                              {scenario.marginPercent.toFixed(1)}%
+                            </AdminBadge>
+                          </div>
+                          <div className="mt-1">
+                            <p className="text-10px font-black uppercase tracking-widest text-white">
+                              Ganancia estimada
+                            </p>
+                            <p
+                              className={`text-xl font-black leading-tight ${
+                                scenario.marginPercent < 0 ? "text-red-300" : "text-white"
+                              }`}
+                            >
+                              {productPriceFormatter.format(scenario.profitAmount)}
                             </p>
                           </div>
-                        )
-                      })}
-                    </div>
+                          <p className="mt-1 text-xs leading-5 text-white">
+                            {scenario.kind === "discount"
+                              ? `Cliente paga: ${productPriceFormatter.format(chargedAmount)}.`
+                              : `MP retiene: ${productPriceFormatter.format(feeAmount)} (${scenario.ratePercent}%).`}
+                          </p>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
-              </AdminCard>
             </div>
-          </div>
+          </AdminCard>
 
           {/*
             Fila 2: Stock + Financiación + Dimensiones y peso -- 48/22/30
             aprox (ver .product-editor-row-stock en globals.css, por
             container query sobre el ancho real del workspace). Estado
             comercial vive en la Fila 1 (columna izquierda, debajo de
-            Información del producto).
+            Información del producto, dentro de la card fusionada de
+            arriba). items-start (no stretch): Stock tiene
+            mucho menos contenido que sus vecinas -- estirarlo a la altura de
+            Financiación/Dimensiones deja una tarjeta con la mitad vacía.
           */}
-          <div className="product-editor-row-stock grid min-w-0 gap-2.5 items-stretch">
+          <div className="product-editor-row-stock grid min-w-0 gap-2.5 items-start">
             <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex h-full min-w-0 flex-col space-y-2 p-2.5">
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 id="product-variants-title" className="text-base font-black text-white">
                     Stock
@@ -984,11 +917,11 @@ export function ProductoForm({
             </div>
 
             <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex h-full min-w-0 flex-col space-y-2 p-2.5">
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 className="text-base font-black text-white">Financiación</h2>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   {(
                     [
                       { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
@@ -1047,7 +980,7 @@ export function ProductoForm({
             </div>
 
             <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex h-full min-w-0 flex-col space-y-2 p-2.5">
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 className="text-base font-black text-white">
                     Dimensiones y peso
