@@ -81,6 +81,7 @@ interface ProductVariantsEditorProps {
   ) => void
   persistedVariantStates?: Record<number, boolean>
   onPersistedVariantStatesChange?: (states: Record<number, boolean>) => void
+  onDistributionChange?: (distribution: ProductVariantDistribution | null) => void
 }
 
 const inputCls =
@@ -136,6 +137,7 @@ export function ProductVariantsEditor({
   onPersistedVariantsChange,
   persistedVariantStates = {},
   onPersistedVariantStatesChange,
+  onDistributionChange,
 }: ProductVariantsEditorProps) {
   const [variantes, setVariantes] =
     useState<SupabaseProductoVariante[]>([])
@@ -268,6 +270,15 @@ export function ProductVariantsEditor({
       onPersistedVariantsChange?.(variantes)
     }
   }, [loading, onPersistedVariantsChange, productoId, variantes])
+
+  // El resumen de Stock se renderiza en producto-form.tsx (comparte fila con
+  // Financiación/Dimensiones/Estado comercial) -- se levanta el mismo estado
+  // ya validado acá arriba (loadVariantes) en vez de volver a pedirlo, para
+  // no duplicar el fetch ni arriesgar que muestre un número distinto al que
+  // pasó el chequeo de integridad.
+  useEffect(() => {
+    onDistributionChange?.(distribution)
+  }, [distribution, onDistributionChange])
 
   useEffect(() => {
     if (!formOpen || !hasVariants) return
@@ -1017,60 +1028,29 @@ export function ProductVariantsEditor({
   )
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-      <AdminCard className="product-editor-panel min-w-0 space-y-2 p-2.5">
-        <div className="product-editor-panel-heading">
-          <h2 id="product-variants-title" className="text-base font-black text-white">
-            Stock
-          </h2>
-        </div>
-
-        <div
-          id="variant-stock-summary"
-          aria-label="Resumen del inventario"
-          className="grid grid-cols-2 gap-1.5 sm:grid-cols-3"
-        >
-          <StockSummaryItem
-            label="Stock físico"
-            value={distribution?.physicalStock}
-          />
-          <StockSummaryItem
-            label="Stock normal"
-            value={distribution?.normalStock}
-          />
-          <StockSummaryItem
-            label="Stock con descuento"
-            value={distribution?.discountedStock}
-          />
-          <StockSummaryItem
-            label="Fallado / no vendible"
-            value={distribution?.nonSellableStock}
-          />
-          <StockSummaryItem
-            label="Pendiente de revisión"
-            value={distribution?.pendingReviewStock}
-          />
-        </div>
-      </AdminCard>
-
+    <div className="flex w-full min-w-0 flex-col gap-2.5">
       {stockAdjustmentModal}
 
       {error && (
-        <div className="col-span-full">
-          <AdminInfoBlock role="alert" tone="danger">
-            {error}
-          </AdminInfoBlock>
-        </div>
+        <AdminInfoBlock role="alert" tone="danger">
+          {error}
+        </AdminInfoBlock>
       )}
 
       {successMessage && (
-        <div className="col-span-full">
-          <AdminInfoBlock role="status" tone="success">
-            {successMessage}
-          </AdminInfoBlock>
-        </div>
+        <AdminInfoBlock role="status" tone="success">
+          {successMessage}
+        </AdminInfoBlock>
       )}
 
+      {/*
+        Variantes a ancho completo: es un listado que crece con la cantidad
+        de variantes, así que no comparte fila con tarjetas de altura fija
+        (quedarían descalineadas apenas hubiera más de 1-2 variantes). El
+        resumen de Stock, antes acá al lado, ahora se renderiza en
+        producto-form.tsx junto a Financiación/Dimensiones/Estado comercial
+        (ver onDistributionChange más arriba).
+      */}
       <AdminCard className="product-editor-panel min-w-0 space-y-2 p-2.5">
         <div className="product-editor-panel-heading flex items-center justify-between gap-2">
           <h2 className="text-base font-black text-white">Variantes</h2>
@@ -1093,10 +1073,10 @@ export function ProductVariantsEditor({
           </div>
         ) : hasVariants ? (
           <div
-            className={`product-editor-variants-scroll min-w-0 space-y-1.5 pr-1 ${
+            className={`product-editor-scroll-panel min-w-0 space-y-1.5 pr-1 ${
               editingVariantKeys.size > 0
                 ? ""
-                : "max-h-[32rem] overflow-y-auto"
+                : "max-h-[36rem] overflow-y-auto"
             }`}
             aria-label="Variantes del producto"
           >
@@ -1115,7 +1095,7 @@ export function ProductVariantsEditor({
               <h2 className="text-base font-black text-white">
                 Nueva variante
               </h2>
-              <p className="mt-0.5 text-xs text-white/42">
+              <p className="mt-0.5 text-xs text-white">
                 Completá los datos básicos y agregá sus imágenes.
               </p>
             </div>
@@ -1134,9 +1114,9 @@ export function ProductVariantsEditor({
             <div className="space-y-2.5 border-t border-white/8 pt-2.5">
               <div className="grid min-w-0 gap-2.5 md:grid-cols-[minmax(180px,0.8fr)_minmax(0,2fr)]">
                 <div className="min-w-0 rounded-xl border border-white/8 bg-black/15 p-2.5">
-                  <p className="mb-2 text-xs font-black text-white/72">
+                  <p className="mb-2 text-xs font-black text-white">
                     Imágenes{" "}
-                    <span className="font-normal text-white/38">
+                    <span className="font-normal text-white">
                       ({variantImages.length}/{MAX_VARIANT_IMAGES})
                     </span>
                   </p>
@@ -1227,7 +1207,7 @@ export function ProductVariantsEditor({
           <p className="text-sm font-black text-white">
             {pendingDelete?.variant.nombre}
           </p>
-          <p className="mt-2 text-xs leading-5 text-white/55">
+          <p className="mt-2 text-xs leading-5 text-white">
             {pendingDelete?.kind === "persisted"
               ? "Si tiene compras, ventas o movimientos asociados, el sistema impedirá eliminarla para proteger el inventario."
               : "Esta variante todavía no fue guardada y se quitará del formulario."}
@@ -1238,7 +1218,7 @@ export function ProductVariantsEditor({
   )
 }
 
-function StockSummaryItem({
+export function StockSummaryItem({
   label,
   value,
 }: {
@@ -1247,8 +1227,8 @@ function StockSummaryItem({
 }) {
   return (
     <div className="product-editor-metric min-w-0 rounded-lg border border-white/9 px-2.5 py-2">
-      <p className="truncate text-10px font-bold leading-4 text-white/50">{label}</p>
-      <p className="mt-0.5 text-lg font-black leading-none tabular-nums text-white">
+      <p className="truncate text-xs font-bold leading-4 text-white">{label}</p>
+      <p className="mt-0.5 text-xl font-black leading-none tabular-nums text-white">
         {value ?? "—"}
       </p>
     </div>
@@ -1374,7 +1354,7 @@ function VariantCard({
   const stateTextClassName =
     commercialState === "active"
       ? "text-emerald-300"
-      : "text-white/55"
+      : "text-white"
   const stateDotClassName =
     commercialState === "active"
       ? "bg-emerald-300"
@@ -1404,7 +1384,7 @@ function VariantCard({
     return (
       <article
         data-variant-drop-key={dropKey}
-        className="product-editor-variant-card grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2.5 rounded-xl border border-white/10 bg-[#0c1219] p-3 sm:grid-cols-[auto_auto_minmax(0,1.3fr)_minmax(7rem,0.8fr)_minmax(6rem,0.65fr)_auto_auto]"
+        className="product-editor-variant-card grid min-w-0 justify-start grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 rounded-xl border border-white/10 bg-[#0c1219] p-3"
       >
         <span className="flex size-8 shrink-0 items-center justify-center" aria-hidden={!leadingAccessory}>
           {leadingAccessory}
@@ -1427,16 +1407,16 @@ function VariantCard({
           </p>
         </div>
 
-        <div className="hidden min-w-0 items-center gap-2 sm:flex">
+        <div className="product-editor-variant-color hidden min-w-0 items-center gap-2">
           <span
             className="size-3.5 shrink-0 rounded-full border border-white/25"
             style={{ backgroundColor: normalizeHex(colorHex) }}
           />
-          <span className="truncate text-xs font-bold text-white/62">{colorName}</span>
+          <span className="truncate text-xs font-bold text-white">{colorName}</span>
         </div>
 
-        <div className="hidden text-center sm:block">
-          <p className="text-10px font-bold text-white/38">Stock</p>
+        <div className="product-editor-variant-stock hidden text-center">
+          <p className="text-10px font-bold text-white">Stock</p>
           <button
             type="button"
             title={onAdjustStock ? `Ajustar stock de ${nombre}` : undefined}
@@ -1464,7 +1444,7 @@ function VariantCard({
             <span className={stateTextClassName}>{stateLabel}</span>
           </AdminSecondaryButton>
         ) : (
-          <span className="rounded-lg border border-white/10 px-2.5 py-1.5 text-center text-xs font-bold text-white/48">
+          <span className="rounded-lg border border-white/10 px-2.5 py-1.5 text-center text-xs font-bold text-white">
             {stateLabel}
           </span>
         )}
@@ -1495,7 +1475,7 @@ function VariantCard({
     <article className="product-editor-variant-card rounded-xl border border-white/10 bg-[#0c1219] p-3">
       <div className="mb-3 flex min-w-0 items-center justify-between gap-3 border-b border-white/8 pb-2.5">
         <div className="min-w-0 flex-1">
-          <p className="text-9px font-black uppercase tracking-widest text-beyonix-sky/70">
+          <p className="text-9px font-black uppercase tracking-widest text-beyonix-sky">
             Editando variante
           </p>
           <p className="mt-0.5 flex min-w-0 items-center gap-2 truncate text-sm font-black text-white" title={nombre}>
@@ -1506,7 +1486,7 @@ function VariantCard({
             />
             <span className="truncate">{displayName}</span>
           </p>
-          <p className="mt-0.5 text-10px text-white/42">
+          <p className="mt-0.5 text-10px text-white">
             {hasOwnImages
               ? ownImageCount > MAX_VARIANT_IMAGES
                 ? `${ownImageCount} imágenes existentes · máximo ${MAX_VARIANT_IMAGES}`
@@ -1531,7 +1511,7 @@ function VariantCard({
             <span className={stateTextClassName}>{stateLabel}</span>
           </AdminSecondaryButton>
         ) : (
-          <span className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-bold text-white/48">
+          <span className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-bold text-white">
             {stateLabel}
           </span>
         )}
@@ -1540,7 +1520,7 @@ function VariantCard({
       <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,15rem)_minmax(220px,1fr)] lg:justify-start">
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2">
-            <p className="text-xs font-black text-white/68">Imágenes</p>
+            <p className="text-xs font-black text-white">Imágenes</p>
           </div>
 
           <div className={`grid w-full max-w-60 grid-cols-3 gap-2 ${imagesBusy ? "pointer-events-none opacity-60" : ""}`}>
@@ -1602,7 +1582,7 @@ function VariantCard({
                     aria-label={`Abrir video de ${nombre}`}
                     className="flex aspect-square min-w-0 items-center justify-center rounded-lg border border-beyonix-sky/20 bg-beyonix-blue/20 transition hover:border-beyonix-sky/55"
                   >
-                    <span className="flex flex-col items-center gap-1 text-9px font-bold text-white/65">
+                    <span className="flex flex-col items-center gap-1 text-9px font-bold text-white">
                       <Play className="size-4 fill-white text-white" />
                       Video
                     </span>
@@ -1618,7 +1598,7 @@ function VariantCard({
                   onClick={() => imageInputRef.current?.click()}
                   disabled={imagesBusy}
                   aria-label={`Agregar la imagen principal de ${nombre}`}
-                  className="flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 bg-white/[0.02] text-9px font-bold text-white/48 transition hover:border-beyonix-sky/55 hover:text-white disabled:cursor-wait"
+                  className="flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 bg-white/[0.02] text-9px font-bold text-white transition hover:border-beyonix-sky/55 disabled:cursor-wait"
                 >
                   {uploadingImages
                     ? <Loader2 className="size-4 animate-spin text-white" />
@@ -1632,7 +1612,7 @@ function VariantCard({
                   aria-label={`Abrir video de ${nombre}`}
                   className="flex aspect-square min-w-0 items-center justify-center rounded-lg border border-beyonix-sky/20 bg-beyonix-blue/20"
                 >
-                  <span className="flex flex-col items-center gap-1 text-9px font-bold text-white/65">
+                  <span className="flex flex-col items-center gap-1 text-9px font-bold text-white">
                     <Play className="size-4 fill-white text-white" />
                     Video
                   </span>
@@ -1646,7 +1626,7 @@ function VariantCard({
                 onClick={() => imageInputRef.current?.click()}
                 disabled={imagesBusy}
                 aria-label={`Agregar imágenes a ${nombre}`}
-                className="flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 bg-white/[0.02] text-9px font-bold text-white/48 transition hover:border-beyonix-sky/55 hover:text-white disabled:cursor-wait"
+                className="flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 bg-white/[0.02] text-9px font-bold text-white transition hover:border-beyonix-sky/55 disabled:cursor-wait"
               >
                 {uploadingImages
                   ? <Loader2 className="size-4 animate-spin text-white" />
@@ -1658,7 +1638,7 @@ function VariantCard({
         </div>
 
         <div className="min-w-0 border-t border-white/8 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
-          <p className="mb-2 text-xs font-black text-white/68">Datos de la variante</p>
+          <p className="mb-2 text-xs font-black text-white">Datos de la variante</p>
           <VariantFields
             sku={localSku}
             colorHex={localColor}
@@ -1761,10 +1741,10 @@ function VariantFields({
   }
   const fieldClassName = twoColumn
     ? "block min-w-0"
-    : "grid min-w-0 grid-cols-[7rem_minmax(0,1fr)] items-center gap-3"
+    : "grid min-w-0 grid-cols-[7rem_minmax(0,22rem)] items-center gap-3"
   const fieldLabelClassName = twoColumn
-    ? "mb-1 block text-xs font-black text-white/62"
-    : "shrink-0 whitespace-nowrap text-xs font-black uppercase tracking-wide text-white/55"
+    ? "mb-1 block text-xs font-black text-white"
+    : "shrink-0 whitespace-nowrap text-xs font-black uppercase tracking-wide text-white"
 
   return (
     <div className={`grid gap-2 ${twoColumn ? "sm:grid-cols-2 sm:gap-2.5" : ""}`}>
@@ -1831,7 +1811,7 @@ function VariantFields({
           <span className={fieldLabelClassName}>Stock</span>
           <div className="flex min-w-0 items-center gap-2">
             <span className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-white/8 bg-black/15 px-3 text-sm font-black tabular-nums text-white">
-              {stock ?? 0} <span className="text-xs font-bold text-white/42">unidades</span>
+              {stock ?? 0} <span className="text-xs font-bold text-white">unidades</span>
             </span>
             <AdminSecondaryButton size="sm" onClick={onAdjustStock}>
               Ajustar stock

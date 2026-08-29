@@ -23,11 +23,34 @@ test("calculateMarginFromPrice: margen SOBRE VENTA, no markup sobre costo", () =
   assert.equal(marginPercent, 25)
 })
 
-test("calculateMarginFromPrice descuenta primero el costo variable del medio de pago", () => {
-  // Transferencia 10%: cobra 18.000 netos, menos costo 15.000 = 3.000 (15%).
-  const { profitAmount, marginPercent } = calculateMarginFromPrice(20_000, 15_000, 10)
+test("calculateMarginFromPrice (fee, ej. Mercado Pago): la tasa resta ganancia pero el margen se calcula sobre el precio público completo", () => {
+  // El cliente paga $20.000 igual; Mercado Pago se queda con 10% al cobrar.
+  // Ganancia = 20.000*0.9 - 15.000 = 3.000. Margen = 3.000 / 20.000 (precio
+  // público, que es lo que el cliente realmente pagó).
+  const { profitAmount, marginPercent } = calculateMarginFromPrice(20_000, 15_000, 10, "fee")
   assert.equal(profitAmount, 3_000)
   assert.equal(marginPercent, 15)
+})
+
+test("calculateMarginFromPrice (discount, ej. Transferencia): el margen se calcula sobre lo que el cliente REALMENTE pagó, no sobre el precio público", () => {
+  // El cliente paga $16.000 (20.000 con 20% de descuento), no $20.000.
+  // Ganancia = 16.000 - 8.000 = 8.000. Margen = 8.000 / 16.000 (el ingreso
+  // real de la operación), no 8.000 / 20.000.
+  const { profitAmount, marginPercent } = calculateMarginFromPrice(20_000, 8_000, 20, "discount")
+  assert.equal(profitAmount, 8_000)
+  assert.equal(marginPercent, 50)
+})
+
+test("AUDITORÍA: usar el precio público como base para Transferencia (como se hacía antes) infla/exprime el margen mostrado", () => {
+  // Mismo precio, mismo costo, misma tasa nominal -- sólo cambia si esa tasa
+  // es un descuento al cliente (revenue baja) o una comisión que absorbe
+  // BEYONIX (revenue no cambia). El resultado NO puede ser el mismo margen.
+  const asFee = calculateMarginFromPrice(20_000, 8_000, 20, "fee")
+  const asDiscount = calculateMarginFromPrice(20_000, 8_000, 20, "discount")
+  assert.equal(asFee.profitAmount, asDiscount.profitAmount) // la ganancia en pesos es idéntica...
+  assert.notEqual(asFee.marginPercent, asDiscount.marginPercent) // ...pero el margen NO, porque la base es distinta
+  assert.equal(asFee.marginPercent, 40) // 8000 / 20000
+  assert.equal(asDiscount.marginPercent, 50) // 8000 / 16000
 })
 
 test("calculateMarginFromPrice: margen negativo se devuelve tal cual, no null ni excepción", () => {
@@ -66,6 +89,23 @@ test("calculatePriceFromTargetMargin: costo inválido o margen+tasa imposibles d
   assert.equal(calculatePriceFromTargetMargin(15_000, -5, 0), null)
 })
 
+test("calculatePriceFromTargetMargin (discount): despeja sobre el neto que paga el cliente, no sobre el precio público", () => {
+  const price = calculatePriceFromTargetMargin(8_000, 50, 20, "discount")
+  // precio = costo / ((1-margen)*(1-tasa)) = 8000 / (0.5*0.8) = 20000
+  assert.equal(price, 20_000)
+
+  const { marginPercent } = calculateMarginFromPrice(price!, 8_000, 20, "discount")
+  assert.equal(marginPercent, 50)
+})
+
+test("AUDITORÍA: la misma tasa nominal exige precios distintos según sea descuento o comisión -- por eso no alcanza con comparar tasas para elegir el peor escenario", () => {
+  const asFeePrice = calculatePriceFromTargetMargin(8_000, 50, 20, "fee")
+  const asDiscountPrice = calculatePriceFromTargetMargin(8_000, 50, 20, "discount")
+  assert.equal(asFeePrice, 8_000 / 0.3) // 1 - 0.20 - 0.50
+  assert.equal(asDiscountPrice, 20_000)
+  assert.ok(asFeePrice! > asDiscountPrice!)
+})
+
 test("getPaymentScenarioRates: sin cuotas habilitadas, sólo transferencia y MP 1 pago", () => {
   const scenarios = getPaymentScenarioRates([], REAL_CONFIG)
   assert.deepEqual(
@@ -74,6 +114,8 @@ test("getPaymentScenarioRates: sin cuotas habilitadas, sólo transferencia y MP 
   )
   assert.equal(scenarios[0].ratePercent, 10)
   assert.equal(scenarios[1].ratePercent, 8) // ceil(6.42 * 1.21) = ceil(7.7682)
+  assert.equal(scenarios[0].kind, "discount") // transferencia: reduce lo que paga el cliente
+  assert.equal(scenarios[1].kind, "fee") // Mercado Pago: el cliente paga el precio público entero
 })
 
 test("getPaymentScenarioRates: agrega una entrada por cada cuota habilitada, en orden ascendente", () => {
@@ -85,6 +127,10 @@ test("getPaymentScenarioRates: agrega una entrada por cada cuota habilitada, en 
   assert.deepEqual(
     scenarios.map((scenario) => scenario.ratePercent),
     [10, 8, 18, 21, 31],
+  )
+  assert.deepEqual(
+    scenarios.map((scenario) => scenario.kind),
+    ["discount", "fee", "fee", "fee", "fee"],
   )
 })
 
@@ -100,8 +146,15 @@ test("simulateProductProfitability: costo desconocido devuelve null, nunca inven
   )
 })
 
-test("simulateProductProfitability: sin cuotas habilitadas, transferencia (10%) es el PEOR escenario, no MP 1 pago (8%)", () => {
-  // No asumir que transferencia es la modalidad más rentable: calcularlo.
+test("simulateProductProfitability: sin cuotas habilitadas, MP 1 pago (8%) es el PEOR escenario pese a tener MENOR tasa nominal que transferencia (10%)", () => {
+  // AUDITORÍA: antes de corregir la base del margen, este test esperaba
+  // "transferencia" acá -- pero eso era un artefacto de dividir siempre por
+  // el precio público. Transferencia reduce el ingreso real de la operación
+  // (revenue = precio*0.9), así que su margen correcto (ganancia/revenue) es
+  // MAYOR al que mostraba antes (ganancia/precio). MP 1 pago no le reduce el
+  // ingreso al cliente (paga el precio público entero), así que su margen se
+  // sigue calculando sobre el precio público -- y con la tasa nominal más
+  // baja (8% vs 10%) termina siendo, en los hechos, el escenario más ajustado.
   const result = simulateProductProfitability({
     price: 29_900,
     cost: 15_000,
@@ -109,7 +162,11 @@ test("simulateProductProfitability: sin cuotas habilitadas, transferencia (10%) 
     config: REAL_CONFIG,
   })
   assert.ok(result)
-  assert.equal(result!.worstCase.id, "transferencia")
+  assert.equal(result!.worstCase.id, "mp_unico")
+
+  const transferencia = result!.scenarios.find((scenario) => scenario.id === "transferencia")
+  const mpUnico = result!.scenarios.find((scenario) => scenario.id === "mp_unico")
+  assert.ok(transferencia!.marginPercent > mpUnico!.marginPercent)
 })
 
 test("simulateProductProfitability: con cuotas habilitadas, la modalidad de más cuotas pasa a ser el peor escenario", () => {
@@ -220,6 +277,61 @@ test("calculateTargetMarginPrice: costo inválido o margen objetivo inalcanzable
     }),
     null,
   )
+})
+
+test("calculateTargetMarginPrice: SIN CUOTAS, el peor escenario real es MP 1 pago, no transferencia -- elegir por tasa nominal rompía la garantía de margen", () => {
+  // BUG HISTÓRICO (server y cliente calculaban igual): al elegir el "peor
+  // escenario" comparando sólo `ratePercent`, transferencia (10%) le ganaba
+  // a MP 1 pago (8%) y el precio se resolvía SOLO para transferencia. Ese
+  // precio no garantizaba el margen objetivo en MP 1 pago, que es el
+  // escenario realmente más ajustado (ver test de simulateProductProfitability
+  // arriba). Esta prueba fija el comportamiento correcto: el precio se
+  // resuelve para el escenario que de verdad exige más.
+  const cost = 15_000
+  const targetMarginPercent = 40
+
+  const result = calculateTargetMarginPrice({
+    cost,
+    targetMarginPercent,
+    eligibleInstallmentCounts: [],
+    config: REAL_CONFIG,
+  })
+  assert.ok(result)
+  assert.equal(result!.worstCaseScenario.id, "mp_unico")
+
+  // El precio final debe garantizar >= 40% de margen en TODOS los escenarios
+  // habilitados, no sólo en el que fijó el precio.
+  const simulation = simulateProductProfitability({
+    price: result!.commercialPrice,
+    cost,
+    eligibleInstallmentCounts: [],
+    config: REAL_CONFIG,
+  })
+  assert.ok(simulation)
+  for (const scenario of simulation!.scenarios) {
+    assert.ok(
+      scenario.marginPercent >= targetMarginPercent - 0.01,
+      `${scenario.id} quedó en ${scenario.marginPercent}%, por debajo del 40% objetivo`,
+    )
+  }
+
+  // Regresión explícita del bug: el precio que hubiera salido de resolver
+  // SÓLO transferencia (el que elegía el código viejo) deja a MP 1 pago por
+  // debajo del margen objetivo.
+  const transferenciaOnlyPrice = calculatePriceFromTargetMargin(
+    cost,
+    targetMarginPercent,
+    10,
+    "discount",
+  )
+  assert.ok(transferenciaOnlyPrice)
+  const { marginPercent: mpUnicoMarginAtOldPrice } = calculateMarginFromPrice(
+    transferenciaOnlyPrice!,
+    cost,
+    8,
+    "fee",
+  )
+  assert.ok(mpUnicoMarginAtOldPrice < targetMarginPercent)
 })
 
 test("cambiar la configuración financiera cambia el precio calculado, sin nada hardcodeado", () => {

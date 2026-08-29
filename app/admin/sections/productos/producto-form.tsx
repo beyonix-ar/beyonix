@@ -7,6 +7,7 @@ import {
   Eye,
   Loader2,
   Play,
+  Save,
   ToggleLeft,
   ToggleRight,
   X,
@@ -29,7 +30,8 @@ import type {
   DraftProductoVariante,
 } from "./types"
 import { ProductSpecificationsEditor } from "./product-specifications-editor"
-import { ProductVariantsEditor } from "./product-variants-editor"
+import { ProductVariantsEditor, StockSummaryItem } from "./product-variants-editor"
+import type { ProductVariantDistribution } from "@/lib/supabase/queries/producto-variantes"
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { useProductoForm } from "./use-producto-form"
 import {
@@ -66,7 +68,7 @@ const inputCls =
   `${adminControlClassName} text-base`
 
 const productFieldLabelClassName =
-  "product-editor-field-label text-xs normal-case tracking-normal text-white/68"
+  "product-editor-field-label text-xs normal-case tracking-normal text-white"
 
 const productPriceFormatter = new Intl.NumberFormat("es-AR", {
   style: "currency",
@@ -103,6 +105,8 @@ export function ProductoForm({
   )
   const [previewProduct, setPreviewProduct] =
     useState<SupabaseProducto | null>(null)
+  const [variantDistribution, setVariantDistribution] =
+    useState<ProductVariantDistribution | null>(null)
   const previewObjectUrls = useRef<string[]>([])
   const leaveEditor = onCancel
   const finishProductSave = onSaved
@@ -161,26 +165,42 @@ export function ProductoForm({
     (category) => String(category.id) === form.categoria_id,
   )?.nombre
   const currentPrice = Number(form.precio)
-  const eligibleInstallmentCounts: InstallmentCount[] = [
-    ...(form.cuotas2 ? [2 as const] : []),
-    ...(form.cuotas3 ? [3 as const] : []),
-    ...(form.cuotas6 ? [6 as const] : []),
-  ]
+  const eligibleInstallmentCounts: InstallmentCount[] = useMemo(
+    () => [
+      ...(form.cuotas2 ? [2 as const] : []),
+      ...(form.cuotas3 ? [3 as const] : []),
+      ...(form.cuotas6 ? [6 as const] : []),
+    ],
+    [form.cuotas2, form.cuotas3, form.cuotas6],
+  )
   const targetMarginPercentValue = form.targetMarginPercent
     ? Number(form.targetMarginPercent)
     : null
-  const targetMarginResult =
-    form.pricingMode === "target_margin" &&
-    knownUnitCost != null &&
-    targetMarginPercentValue != null &&
-    Number.isFinite(targetMarginPercentValue)
-      ? calculateTargetMarginPrice({
-          cost: knownUnitCost,
-          targetMarginPercent: targetMarginPercentValue,
-          eligibleInstallmentCounts,
-          config: installmentsFinancing,
-        })
-      : null
+  // Memoizado: calculateTargetMarginPrice devuelve un objeto nuevo en cada
+  // llamada. Sin useMemo, el efecto de sincronización de abajo vería una
+  // dependencia "distinta" en cada render (aunque el precio calculado no
+  // cambie) y volvería a ejecutar setField -> nuevo render -> loop infinito.
+  const targetMarginResult = useMemo(
+    () =>
+      form.pricingMode === "target_margin" &&
+      knownUnitCost != null &&
+      targetMarginPercentValue != null &&
+      Number.isFinite(targetMarginPercentValue)
+        ? calculateTargetMarginPrice({
+            cost: knownUnitCost,
+            targetMarginPercent: targetMarginPercentValue,
+            eligibleInstallmentCounts,
+            config: installmentsFinancing,
+          })
+        : null,
+    [
+      form.pricingMode,
+      knownUnitCost,
+      targetMarginPercentValue,
+      eligibleInstallmentCounts,
+      installmentsFinancing,
+    ],
+  )
   // En modo margen objetivo, el precio público es SIEMPRE el que calcula el
   // servidor -- este sync sólo mantiene la UI (y el campo que se manda al
   // guardar) reflejando esa misma cuenta en vivo, para que el admin vea el
@@ -458,8 +478,8 @@ export function ProductoForm({
   }
 
   return (
-    <div className={`${adminPageClassName} product-editor-screen !space-y-2 !p-2.5 sm:!p-3 lg:!p-4`}>
-      <header className="product-editor-header flex min-w-0 items-center gap-3">
+    <div className={`${adminPageClassName} product-editor-screen !space-y-2.5 !p-2.5 sm:!p-3 lg:!p-4`}>
+      <header className="product-editor-header flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <AdminSecondaryButton
             size="icon"
@@ -470,18 +490,52 @@ export function ProductoForm({
             <ArrowLeft className="size-4 text-white" />
           </AdminSecondaryButton>
           <div className="min-w-0">
-            <p className="text-10px font-bold text-white/48 sm:text-xs">
+            <p className="text-10px font-bold text-white sm:text-xs">
               {producto ? "Editar producto" : "Crear producto"}
             </p>
             <h1 className="truncate text-xl font-black text-white sm:text-2xl">
               {form.nombre.trim() || "Producto sin nombre"}
             </h1>
             {productSubtitle.length > 0 && (
-              <p className="mt-0.5 truncate text-10px text-white/50 sm:text-xs">
+              <p className="mt-0.5 truncate text-10px text-white sm:text-xs">
                 {productSubtitle.join(" · ")}
               </p>
             )}
           </div>
+        </div>
+
+        <div className="product-editor-window-actions flex shrink-0 items-center gap-1.5">
+          <AdminSecondaryButton
+            size="icon"
+            title="Vista previa"
+            aria-label="Vista previa"
+            onClick={openProductPreview}
+            disabled={busy}
+          >
+            <Eye className="size-4 text-white" />
+          </AdminSecondaryButton>
+          <AdminPrimaryButton
+            size="icon"
+            title="Guardar cambios"
+            aria-label="Guardar cambios"
+            onClick={() => void saveProduct()}
+            disabled={busy}
+          >
+            {busy ? (
+              <Loader2 className="size-4 animate-spin text-white" />
+            ) : (
+              <Save className="size-4 text-white" />
+            )}
+          </AdminPrimaryButton>
+          <AdminSecondaryButton
+            size="icon"
+            title="Cancelar"
+            aria-label="Cancelar"
+            onClick={leaveEditor}
+            className="product-editor-close-button"
+          >
+            <X className="size-4 text-white" />
+          </AdminSecondaryButton>
         </div>
       </header>
 
@@ -490,515 +544,656 @@ export function ProductoForm({
           event.preventDefault()
           void saveProduct()
         }}
-        className="product-editor-form min-w-0 space-y-2"
+        className="product-editor-form min-w-0 space-y-2.5"
       >
-        <div className="product-editor-workspace min-w-0 items-start gap-2.5">
-          <section
-            aria-labelledby="product-information-title"
-            className="product-editor-primary-column min-w-0 space-y-2"
-          >
-            <AdminCard className="product-editor-panel space-y-2 p-2.5">
-              <div className="product-editor-panel-heading">
-                <h2 id="product-information-title" className="text-base font-black text-white">
-                  Información del producto
-                </h2>
-              </div>
+        <div className="product-editor-workspace min-w-0 gap-2.5">
+          {/*
+            Fila 1: identidad del producto + rentabilidad. Ambas son
+            información PRIMARIA (ver jerarquía); se ubican arriba y
+            comparten fila para que Rentabilidad reciba ancho real desde
+            el principio, en vez de heredar el ancho angosto de una
+            columna fija independiente.
+          */}
+          <div className="grid min-w-0 gap-2.5 lg:grid-cols-2 lg:items-start xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+            <div className="product-editor-cell flex min-w-0 flex-col gap-2.5">
+              <AdminCard className="product-editor-panel space-y-2 p-2.5">
+                <div className="product-editor-panel-heading">
+                  <h2 id="product-information-title" className="text-base font-black text-white">
+                    Información del producto
+                  </h2>
+                </div>
 
-              <div className="grid min-w-0 gap-x-2.5 gap-y-2 sm:grid-cols-2">
-                <AdminFormField
-                  label="Nombre del producto"
-                  labelClassName={productFieldLabelClassName}
-                  className="sm:col-span-2"
-                >
-                  <input
-                    id="nombre"
-                    type="text"
-                    value={form.nombre}
-                    placeholder="Ej.: Apoyabrazos de escritorio"
-                    onChange={(event) => handleNombreChange(event.target.value)}
-                    className={inputCls}
-                  />
-                </AdminFormField>
-
-                {!hasAnyVariants && (
+                <div className="grid min-w-0 gap-x-2.5 gap-y-2 sm:grid-cols-2">
                   <AdminFormField
-                    label="SKU"
+                    label="Nombre del producto"
                     labelClassName={productFieldLabelClassName}
                     className="sm:col-span-2"
                   >
                     <input
-                      id="sku"
+                      id="nombre"
                       type="text"
-                      maxLength={120}
-                      value={form.sku}
-                      placeholder="Ej.: AP-001"
-                      onChange={(event) => setField("sku", event.target.value.toUpperCase())}
+                      value={form.nombre}
+                      placeholder="Ej.: Apoyabrazos de escritorio"
+                      onChange={(event) => handleNombreChange(event.target.value)}
                       className={inputCls}
                     />
                   </AdminFormField>
-                )}
 
-                <AdminFormField
-                  label="Precio actual"
-                  labelClassName={productFieldLabelClassName}
-                  help={
-                    form.pricingMode === "target_margin"
-                      ? "Calculado automáticamente según tu margen objetivo (sección Rentabilidad)."
-                      : undefined
-                  }
-                >
-                  <span className="relative block">
-                    <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white/60">$</span>
-                    <input
-                      id="precio"
-                      min="0"
-                      type="number"
-                      value={form.precio}
-                      placeholder="0"
-                      disabled={form.pricingMode === "target_margin"}
-                      onChange={(event) => setField("precio", event.target.value)}
-                      className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                    />
-                  </span>
-                </AdminFormField>
+                  {!hasAnyVariants && (
+                    <AdminFormField
+                      label="SKU"
+                      labelClassName={productFieldLabelClassName}
+                      className="sm:col-span-2"
+                    >
+                      <input
+                        id="sku"
+                        type="text"
+                        maxLength={120}
+                        value={form.sku}
+                        placeholder="Ej.: AP-001"
+                        onChange={(event) => setField("sku", event.target.value.toUpperCase())}
+                        className={inputCls}
+                      />
+                    </AdminFormField>
+                  )}
 
-                <AdminFormField label="Precio anterior" labelClassName={productFieldLabelClassName}>
-                  <span className="relative block">
-                    <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white/60">$</span>
-                    <input
-                      id="precio_anterior"
-                      min="0"
-                      type="number"
-                      value={form.precio_anterior}
-                      placeholder="0"
-                      onChange={(event) => setField("precio_anterior", event.target.value)}
-                      className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                    />
-                  </span>
-                </AdminFormField>
+                  <AdminFormField
+                    label="Precio actual"
+                    labelClassName={productFieldLabelClassName}
+                    help={
+                      form.pricingMode === "target_margin"
+                        ? "Calculado automáticamente según tu margen objetivo (sección Rentabilidad)."
+                        : undefined
+                    }
+                  >
+                    <span className="relative block">
+                      <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">$</span>
+                      <input
+                        id="precio"
+                        min="0"
+                        type="number"
+                        value={form.precio}
+                        placeholder="0"
+                        disabled={form.pricingMode === "target_margin"}
+                        onChange={(event) => setField("precio", event.target.value)}
+                        className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                      />
+                    </span>
+                  </AdminFormField>
 
-                <AdminFormField label="Categoría" labelClassName={productFieldLabelClassName}>
-                  <AdminSelect title="Categoría" value={form.categoria_id} onChange={(value) => setField("categoria_id", value)}>
-                    <option value="">Sin categoría</option>
-                    {categorias.map((category) => (
-                      <option key={category.id} value={category.id}>{category.nombre}</option>
-                    ))}
-                  </AdminSelect>
-                </AdminFormField>
+                  <AdminFormField label="Precio anterior" labelClassName={productFieldLabelClassName}>
+                    <span className="relative block">
+                      <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">$</span>
+                      <input
+                        id="precio_anterior"
+                        min="0"
+                        type="number"
+                        value={form.precio_anterior}
+                        placeholder="0"
+                        onChange={(event) => setField("precio_anterior", event.target.value)}
+                        className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                      />
+                    </span>
+                  </AdminFormField>
 
-              </div>
-            </AdminCard>
+                  <AdminFormField label="Categoría" labelClassName={productFieldLabelClassName}>
+                    <AdminSelect title="Categoría" value={form.categoria_id} onChange={(value) => setField("categoria_id", value)}>
+                      <option value="">Sin categoría</option>
+                      {categorias.map((category) => (
+                        <option key={category.id} value={category.id}>{category.nombre}</option>
+                      ))}
+                    </AdminSelect>
+                  </AdminFormField>
 
-            <AdminCard className="product-editor-panel space-y-2 p-2.5">
-              <div className="product-editor-panel-heading">
-                <h2 className="text-base font-black text-white">Financiación</h2>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {(
-                  [
-                    { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
-                    { key: "cuotas3" as const, count: 3 as const, label: "3 cuotas" },
-                    { key: "cuotas6" as const, count: 6 as const, label: "6 cuotas" },
-                  ]
-                ).map((toggle) => {
-                  const active = form[toggle.key]
-                  const plan =
-                    active && Number.isFinite(currentPrice) && currentPrice > 0
-                      ? calculateInstallmentPlan(currentPrice, toggle.count, installmentsFinancing)
-                      : null
+                </div>
+              </AdminCard>
 
-                  return (
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2.5 p-3">
+                <div className="product-editor-panel-heading">
+                  <h2 className="text-base font-black text-white">Estado comercial</h2>
+                </div>
+                <div className="product-editor-status-grid grid gap-2.5">
+                  {[
+                    {
+                      key: "activo" as const,
+                      label: "Estado",
+                      value: form.activo ? "Activo" : "Inactivo",
+                      description: "Define si el producto puede mostrarse y venderse.",
+                      active: form.activo,
+                    },
+                    {
+                      key: "destacado" as const,
+                      label: "Destacado",
+                      value: form.destacado ? "Sí" : "No",
+                      description: "Visible en espacios promocionales.",
+                      active: form.destacado,
+                    },
+                  ].map((toggle) => (
                     <AdminSecondaryButton
                       key={toggle.key}
-                      title={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
-                      aria-label={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
-                      aria-pressed={active}
-                      onClick={() => setField(toggle.key, !active)}
-                      className={`product-editor-toggle grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                      title={`${toggle.label}: ${toggle.value}`}
+                      aria-label={`${toggle.label}: ${toggle.value}`}
+                      aria-pressed={toggle.active}
+                      onClick={() => {
+                        if (toggle.key === "activo" && toggle.active) {
+                          setPendingVariantStates(
+                            Object.fromEntries(
+                              persistedVariants.map((variant) => [
+                                variant.id,
+                                false,
+                              ]),
+                            ),
+                          )
+                        }
+
+                        setField(toggle.key, !toggle.active)
+                      }}
+                      className={`product-editor-toggle grid min-h-12 w-full grid-cols-[auto_minmax(0,1fr)_4.5rem] items-center gap-x-3 border px-3 py-2 text-left ${toggle.active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
                     >
-                      {active ? (
+                      {toggle.active ? (
                         <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
                       ) : (
                         <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
                       )}
                       <span className="min-w-0 self-center">
-                        <span className="block text-xs font-black text-white/82">
-                          {toggle.label} sin interés
-                        </span>
-                        <span className="mt-0.5 block text-10px font-medium leading-4 text-white/46">
-                          {plan
-                            ? `${productPriceFormatter.format(plan.installmentAmount)} por cuota`
-                            : "Deshabilitado"}
-                        </span>
+                        <span className="block text-sm font-black text-white">{toggle.label}</span>
+                        <span className="mt-0.5 block text-xs font-medium leading-5 text-white">{toggle.description}</span>
+                      </span>
+                      <span className={`w-full text-right text-sm font-black ${toggle.active ? "text-emerald-300" : "text-white"}`}>
+                        {toggle.value}
                       </span>
                     </AdminSecondaryButton>
-                  )
-                })}
-              </div>
-              {(form.cuotas2 || form.cuotas3 || form.cuotas6) && (
-                <p className="text-10px font-medium leading-4 text-white/38">
-                  Costo financiero configurado:{" "}
-                  {[
-                    form.cuotas2 && `2 cuotas ${getEffectiveInstallmentPercent(2, installmentsFinancing)}%`,
-                    form.cuotas3 && `3 cuotas ${getEffectiveInstallmentPercent(3, installmentsFinancing)}%`,
-                    form.cuotas6 && `6 cuotas ${getEffectiveInstallmentPercent(6, installmentsFinancing)}%`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  . Se aplica automáticamente según la configuración global (Admin &gt; Configuración).
-                </p>
-              )}
-            </AdminCard>
-
-            <AdminCard className="product-editor-panel space-y-2.5 p-2.5">
-              <div className="product-editor-panel-heading">
-                <h2 className="text-base font-black text-white">Rentabilidad</h2>
-                <p className="mt-0.5 text-10px leading-4 text-white/44">
-                  Ganancia estimada según el costo cargado en Compras. No se muestra al cliente.
-                </p>
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                <AdminSecondaryButton
-                  aria-pressed={form.pricingMode === "manual"}
-                  onClick={() => setField("pricingMode", "manual")}
-                  className={`min-h-11 justify-start px-3 text-left text-xs font-black ${form.pricingMode === "manual" ? "border-beyonix-sky/45 bg-beyonix-blue/18 text-white" : "text-white/68"}`}
-                >
-                  Precio manual
-                </AdminSecondaryButton>
-                <AdminSecondaryButton
-                  aria-pressed={form.pricingMode === "target_margin"}
-                  disabled={!currentProductoId}
-                  title={
-                    currentProductoId
-                      ? undefined
-                      : "Guardá el producto primero para poder usar margen objetivo."
-                  }
-                  onClick={() => setField("pricingMode", "target_margin")}
-                  className={`min-h-11 justify-start px-3 text-left text-xs font-black ${form.pricingMode === "target_margin" ? "border-beyonix-sky/45 bg-beyonix-blue/18 text-white" : "text-white/68"}`}
-                >
-                  Margen objetivo
-                </AdminSecondaryButton>
-              </div>
-
-              {knownUnitCost === undefined && (
-                <p className="text-10px font-medium leading-4 text-white/38">Consultando costo cargado...</p>
-              )}
-
-              {knownUnitCost === null && (
-                <AdminInfoBlock tone="warning">
-                  Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para ver rentabilidad
-                  {form.pricingMode === "target_margin" ? " o usar margen objetivo" : ""}.
-                </AdminInfoBlock>
-              )}
-
-              {form.pricingMode === "target_margin" && (
-                <AdminFormField label="Margen neto objetivo" labelClassName={productFieldLabelClassName}>
-                  <span className="relative block">
-                    <input
-                      id="target_margin_percent"
-                      min="0"
-                      max="99"
-                      type="number"
-                      value={form.targetMarginPercent}
-                      placeholder="Ej.: 40"
-                      disabled={knownUnitCost == null}
-                      onChange={(event) => setField("targetMarginPercent", event.target.value)}
-                      className={`${inputCls} admin-product-price-input !pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                    />
-                    <span className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white/60">%</span>
-                  </span>
-                </AdminFormField>
-              )}
-
-              {knownUnitCost != null && !variantCostsDiffer && (
-                <p className="text-10px font-medium leading-4 text-white/46">
-                  Costo conocido: {productPriceFormatter.format(knownUnitCost)}
-                </p>
-              )}
-
-              {variantCostsDiffer && (
-                <div className="space-y-1 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] p-2.5">
-                  <p className="text-10px font-black uppercase tracking-widest text-amber-300/85">
-                    Las variantes tienen costos distintos
-                  </p>
-                  {realVariantCosts.map((entry) => (
-                    <div key={entry.variantId} className="flex items-center justify-between text-11px">
-                      <span className="text-white/68">{entry.variantName ?? `Variante ${entry.variantId}`}</span>
-                      <span className="font-bold text-white/86">
-                        {entry.unitCost != null
-                          ? productPriceFormatter.format(entry.unitCost)
-                          : "Sin costo"}
-                      </span>
-                    </div>
                   ))}
-                  <p className="text-10px font-medium leading-4 text-white/46">
-                    La rentabilidad de abajo usa el mayor costo conocido ({productPriceFormatter.format(knownUnitCost ?? 0)}) para no arriesgar el margen en ninguna variante.
+                </div>
+                {producto && form.activo !== producto.activo && (
+                  <p className="rounded-lg border border-amber-300/18 bg-amber-300/7 px-3 py-2 text-xs font-semibold leading-5 text-white">
+                    El cambio de estado está pendiente. Se aplicará al guardar el producto.
+                  </p>
+                )}
+                {!activationStatus.ready && (
+                  <div className="rounded-lg border border-white/8 bg-black/18 px-2.5 py-2">
+                    <p className="text-10px font-black uppercase tracking-[0.12em] text-white">
+                      Requisitos para activar
+                    </p>
+                    <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1">
+                      {activationStatus.requirements.map((requirement) => (
+                        <span
+                          key={requirement.key}
+                          className={`flex min-w-0 items-center gap-1.5 text-10px font-semibold ${
+                            requirement.complete ? "text-emerald-300" : "text-white"
+                          }`}
+                        >
+                          {requirement.complete ? (
+                            <Check className="size-3 shrink-0 text-emerald-300" aria-hidden="true" />
+                          ) : (
+                            <X className="size-3 shrink-0 text-rose-300" aria-hidden="true" />
+                          )}
+                          <span className="truncate">{requirement.label}</span>
+                        </span>
+                      ))}
+                    </div>
+                    {activationStatus.firstError && (
+                      <p className="mt-1.5 text-10px font-semibold leading-4 text-white">
+                        {activationStatus.firstError}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </AdminCard>
+            </div>
+
+            <div className="product-editor-cell">
+              <AdminCard className="product-editor-panel product-editor-rentabilidad flex min-w-0 flex-col space-y-2.5 p-2.5">
+                <div className="product-editor-panel-heading">
+                  <h2 className="text-base font-black text-white">Rentabilidad</h2>
+                  <p className="mt-0.5 text-xs leading-5 text-white">
+                    Ganancia estimada según el costo cargado en Compras. No se muestra al cliente.
                   </p>
                 </div>
-              )}
 
-              {profitabilitySimulation && (
-                <div className="space-y-1.5 rounded-lg border border-white/8 bg-black/20 p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-11px font-black uppercase tracking-widest text-white/54">
-                      Piso garantizado ({profitabilitySimulation.worstCase.label})
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(
+                    [
+                      { key: "manual" as const, label: "Precio manual" },
+                      { key: "target_margin" as const, label: "Margen objetivo" },
+                    ]
+                  ).map((mode) => {
+                    const active = form.pricingMode === mode.key
+                    const disabled = mode.key === "target_margin" && !currentProductoId
+
+                    return (
+                      <AdminSecondaryButton
+                        key={mode.key}
+                        aria-pressed={active}
+                        disabled={disabled}
+                        title={
+                          disabled
+                            ? "Guardá el producto primero para poder usar margen objetivo."
+                            : undefined
+                        }
+                        onClick={() => setField("pricingMode", mode.key)}
+                        className={`product-editor-toggle product-editor-pricing-mode min-h-11 justify-start gap-2 px-3 text-left text-sm font-black text-white ${
+                          active
+                            ? "product-editor-pricing-mode-active border-beyonix-sky/70 bg-beyonix-blue/28"
+                            : "border-white/8 bg-transparent"
+                        }`}
+                      >
+                        {active ? (
+                          <Check className="size-4 shrink-0 text-beyonix-sky" aria-hidden="true" />
+                        ) : (
+                          <span className="size-4 shrink-0" aria-hidden="true" />
+                        )}
+                        {mode.label}
+                      </AdminSecondaryButton>
+                    )
+                  })}
+                </div>
+                <p className="text-10px font-black uppercase tracking-[0.12em] text-white">
+                  Modo activo: {form.pricingMode === "manual" ? "Precio manual" : "Margen objetivo"}
+                </p>
+
+                {knownUnitCost === undefined && (
+                  <p className="text-xs font-medium leading-5 text-white">Consultando costo cargado...</p>
+                )}
+
+                {knownUnitCost === null && (
+                  <AdminInfoBlock tone="warning">
+                    Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para ver rentabilidad
+                    {form.pricingMode === "target_margin" ? " o usar margen objetivo" : ""}.
+                  </AdminInfoBlock>
+                )}
+
+                {form.pricingMode === "target_margin" && (
+                  <AdminFormField label="Margen neto objetivo" labelClassName={productFieldLabelClassName}>
+                    <span className="relative block">
+                      <input
+                        id="target_margin_percent"
+                        min="0"
+                        max="99"
+                        type="number"
+                        value={form.targetMarginPercent}
+                        placeholder="Ej.: 40"
+                        disabled={knownUnitCost == null}
+                        onChange={(event) => setField("targetMarginPercent", event.target.value)}
+                        className={`${inputCls} admin-product-price-input !pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-base font-black text-white">%</span>
                     </span>
-                    <AdminBadge tone={profitabilitySimulation.worstCase.marginPercent < 0 ? "danger" : "success"}>
-                      {profitabilitySimulation.worstCase.marginPercent.toFixed(1)}%
-                    </AdminBadge>
-                  </div>
-                  <p className="text-sm font-black text-white">
-                    Ganancia: {productPriceFormatter.format(profitabilitySimulation.worstCase.profitAmount)}
-                  </p>
+                  </AdminFormField>
+                )}
 
-                  <div className="mt-1 space-y-1 border-t border-white/8 pt-1.5">
-                    {profitabilitySimulation.scenarios.map((scenario) => (
-                      <div key={scenario.id} className="flex items-center justify-between gap-2 text-11px">
-                        <span className="text-white/68">{scenario.label}</span>
-                        <span className="flex items-center gap-2 font-bold">
-                          <span className={scenario.marginPercent < 0 ? "text-red-300" : "text-white/86"}>
-                            {productPriceFormatter.format(scenario.profitAmount)}
-                          </span>
-                          <span className={scenario.marginPercent < 0 ? "text-red-300" : "text-emerald-300"}>
-                            {scenario.marginPercent.toFixed(1)}%
-                          </span>
+                {variantCostsDiffer && (
+                  <div className="space-y-1 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] p-2.5">
+                    <p className="text-10px font-black uppercase tracking-widest text-white">
+                      Las variantes tienen costos distintos
+                    </p>
+                    {realVariantCosts.map((entry) => (
+                      <div key={entry.variantId} className="flex items-center justify-between text-sm">
+                        <span className="text-white">{entry.variantName ?? `Variante ${entry.variantId}`}</span>
+                        <span className="font-bold text-white">
+                          {entry.unitCost != null
+                            ? productPriceFormatter.format(entry.unitCost)
+                            : "Sin costo"}
                         </span>
                       </div>
                     ))}
-                  </div>
-                </div>
-              )}
-            </AdminCard>
-
-            <AdminCard className="product-editor-panel space-y-2 p-2.5">
-              <div className="product-editor-panel-heading">
-                <h2 className="text-base font-black text-white">Contenido</h2>
-              </div>
-              <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
-                <input
-                  id="video_url"
-                  type="url"
-                  value={form.video_url}
-                  placeholder="https://..."
-                  onChange={(event) => setField("video_url", event.target.value)}
-                  className={inputCls}
-                />
-              </AdminFormField>
-
-              {canPreviewVideo ? (
-                <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
-                  <div className="relative aspect-video w-full sm:h-28 sm:aspect-auto">
-                    {videoSource.kind === "direct" ? (
-                      <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
-                    ) : (
-                      <iframe
-                        src={videoSource.embedUrl}
-                        title="Vista previa del video del producto"
-                        loading="lazy"
-                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowFullScreen
-                        referrerPolicy="strict-origin-when-cross-origin"
-                        className="size-full"
-                      />
-                    )}
-                  </div>
-                </div>
-              ) : form.video_url.trim() ? (
-                <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
-                  La URL es HTTPS, pero no corresponde a un video compatible.
-                </AdminInfoBlock>
-              ) : null}
-
-              <AdminFormField label="Descripción" labelClassName={productFieldLabelClassName}>
-                <textarea
-                  id="descripcion"
-                  value={form.descripcion}
-                  placeholder="Describí el producto y, si agregaste un video, su contenido."
-                  onChange={(event) => setField("descripcion", event.target.value)}
-                  className={`${inputCls} h-14 min-h-14 resize-y py-2 leading-5 sm:h-16 sm:min-h-16`}
-                />
-              </AdminFormField>
-            </AdminCard>
-
-            <AdminCard className="product-editor-panel space-y-2 p-2.5">
-              <div className="product-editor-panel-heading">
-                <h2 className="text-base font-black text-white">Estado comercial</h2>
-              </div>
-              <div className="grid gap-2">
-                {[
-                  {
-                    key: "activo" as const,
-                    label: "Estado",
-                    value: form.activo ? "Activo" : "Inactivo",
-                    description: "Define si el producto puede mostrarse y venderse.",
-                    active: form.activo,
-                  },
-                  {
-                    key: "destacado" as const,
-                    label: "Destacado",
-                    value: form.destacado ? "Sí" : "No",
-                    description: "Visible en espacios promocionales.",
-                    active: form.destacado,
-                  },
-                ].map((toggle) => (
-                  <AdminSecondaryButton
-                    key={toggle.key}
-                    title={`${toggle.label}: ${toggle.value}`}
-                    aria-label={`${toggle.label}: ${toggle.value}`}
-                    aria-pressed={toggle.active}
-                    onClick={() => {
-                      if (toggle.key === "activo" && toggle.active) {
-                        setPendingVariantStates(
-                          Object.fromEntries(
-                            persistedVariants.map((variant) => [
-                              variant.id,
-                              false,
-                            ]),
-                          ),
-                        )
-                      }
-
-                      setField(toggle.key, !toggle.active)
-                    }}
-                    className={`product-editor-toggle grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_4.5rem] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${toggle.active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
-                  >
-                    {toggle.active ? (
-                      <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
-                    ) : (
-                      <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
-                    )}
-                    <span className="min-w-0 self-center">
-                      <span className="block text-xs font-black text-white/82">{toggle.label}</span>
-                      <span className="mt-0.5 block text-10px font-medium leading-4 text-white/46">{toggle.description}</span>
-                    </span>
-                    <span className={`w-full text-right text-xs font-black ${toggle.active ? "text-emerald-300" : "text-white/52"}`}>
-                      {toggle.value}
-                    </span>
-                  </AdminSecondaryButton>
-                ))}
-              </div>
-              {producto && form.activo !== producto.activo && (
-                <p className="rounded-lg border border-amber-300/18 bg-amber-300/7 px-3 py-2 text-10px font-semibold leading-4 text-amber-100/80">
-                  El cambio de estado está pendiente. Se aplicará al guardar el producto.
-                </p>
-              )}
-              {!activationStatus.ready && (
-                <div className="rounded-lg border border-white/8 bg-black/18 px-2.5 py-2">
-                  <p className="text-10px font-black uppercase tracking-[0.12em] text-white/45">
-                    Requisitos para activar
-                  </p>
-                  <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1">
-                    {activationStatus.requirements.map((requirement) => (
-                      <span
-                        key={requirement.key}
-                        className={`flex min-w-0 items-center gap-1.5 text-10px font-semibold ${
-                          requirement.complete ? "text-emerald-200/75" : "text-white/48"
-                        }`}
-                      >
-                        {requirement.complete ? (
-                          <Check className="size-3 shrink-0 text-emerald-300" aria-hidden="true" />
-                        ) : (
-                          <X className="size-3 shrink-0 text-rose-300/80" aria-hidden="true" />
-                        )}
-                        <span className="truncate">{requirement.label}</span>
-                      </span>
-                    ))}
-                  </div>
-                  {activationStatus.firstError && (
-                    <p className="mt-1.5 text-10px font-semibold leading-4 text-amber-100/72">
-                      {activationStatus.firstError}
+                    <p className="text-xs font-medium leading-5 text-white">
+                      La rentabilidad de abajo usa el mayor costo conocido ({productPriceFormatter.format(knownUnitCost ?? 0)}) para no arriesgar el margen en ninguna variante.
                     </p>
+                  </div>
+                )}
+
+                {/*
+                  "Costo conocido" ya NO se muestra acá (pedido explícito):
+                  el dato, su fetch (knownUnitCost) y todos los cálculos que
+                  dependen de él (variantCostsDiffer, targetMarginResult,
+                  profitabilitySimulation, disabled states) siguen intactos
+                  -- sólo se dejó de renderizar esta tarjeta puntual. Compras
+                  sigue siendo el lugar donde ese costo se ve.
+                */}
+                {form.pricingMode === "target_margin" && knownUnitCost != null && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {targetMarginPercentValue != null && (
+                      <div className="rounded-lg border border-white/8 bg-black/20 p-2">
+                        <p className="text-10px font-black uppercase tracking-widest text-white">
+                          Margen mínimo buscado
+                        </p>
+                        <p className="mt-0.5 text-base font-black text-white">
+                          {targetMarginPercentValue}%
+                        </p>
+                      </div>
+                    )}
+
+                    {targetMarginResult && (
+                      <div className="rounded-lg border border-beyonix-sky/25 bg-beyonix-blue/10 p-2">
+                        <p className="text-10px font-black uppercase tracking-widest text-white">
+                          Precio público calculado
+                        </p>
+                        <p className="mt-0.5 text-base font-black text-white">
+                          {productPriceFormatter.format(targetMarginResult.commercialPrice)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {form.pricingMode === "target_margin" && targetMarginResult && (
+                  <p className="text-xs leading-5 text-white">
+                    El precio se calcula para mantener al menos un {targetMarginPercentValue}% de margen incluso
+                    utilizando el medio de pago habilitado con mayor costo ({targetMarginResult.worstCaseScenario.label}).
+                    El redondeo comercial puede hacer que el margen final sea ligeramente superior.
+                  </p>
+                )}
+
+                {form.pricingMode === "target_margin" &&
+                  knownUnitCost != null &&
+                  targetMarginPercentValue != null &&
+                  !targetMarginResult && (
+                    <AdminInfoBlock tone="danger">
+                      Ese margen no es alcanzable con el costo y la financiación configurada. Probá un margen menor o
+                      revisá las cuotas habilitadas.
+                    </AdminInfoBlock>
                   )}
+
+                {profitabilitySimulation && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-black uppercase tracking-widest text-white">
+                      Rentabilidad estimada por medio de pago
+                    </p>
+                    <div className="product-editor-rentabilidad-scenarios grid gap-1.5">
+                      {profitabilitySimulation.scenarios.map((scenario) => {
+                        const isWorstCase = scenario.id === profitabilitySimulation.worstCase.id
+                        const price = profitabilityPrice ?? 0
+                        const feeAmount = (price * scenario.ratePercent) / 100
+                        const chargedAmount = scenario.kind === "discount" ? price - feeAmount : price
+
+                        return (
+                          <div
+                            key={scenario.id}
+                            className={`min-w-0 rounded-lg border p-2 ${
+                              isWorstCase
+                                ? "border-beyonix-sky/30 bg-beyonix-blue/[0.08]"
+                                : "border-white/8 bg-black/20"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-1.5">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate text-sm font-black text-white">
+                                  {scenario.label}
+                                </span>
+                                {isWorstCase && (
+                                  <AdminBadge tone="info" className="!px-1.5 !py-0.5 !text-9px whitespace-nowrap">
+                                    Margen mínimo garantizado
+                                  </AdminBadge>
+                                )}
+                              </span>
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span
+                                  className={`text-sm font-black ${
+                                    scenario.marginPercent < 0 ? "text-red-300" : "text-white"
+                                  }`}
+                                >
+                                  {productPriceFormatter.format(scenario.profitAmount)}
+                                </span>
+                                <AdminBadge tone={scenario.marginPercent < 0 ? "danger" : "success"}>
+                                  {scenario.marginPercent.toFixed(1)}%
+                                </AdminBadge>
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-white">
+                              {scenario.kind === "discount"
+                                ? `El cliente paga ${productPriceFormatter.format(chargedAmount)} (descuento del ${scenario.ratePercent}%). Ganancia sobre ese ingreso.`
+                                : `El cliente paga el precio de lista; Mercado Pago retiene ${productPriceFormatter.format(feeAmount)} (${scenario.ratePercent}%) de comisión.`}
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </AdminCard>
+            </div>
+          </div>
+
+          {/*
+            Fila 2: Stock + Financiación + Dimensiones y peso -- 48/22/30
+            aprox (ver .product-editor-row-stock en globals.css, por
+            container query sobre el ancho real del workspace). Estado
+            comercial vive en la Fila 1 (columna izquierda, debajo de
+            Información del producto).
+          */}
+          <div className="product-editor-row-stock grid min-w-0 gap-2.5 items-stretch">
+            <div className="product-editor-cell">
+              <AdminCard className="product-editor-panel flex h-full min-w-0 flex-col space-y-2 p-2.5">
+                <div className="product-editor-panel-heading">
+                  <h2 id="product-variants-title" className="text-base font-black text-white">
+                    Stock
+                  </h2>
                 </div>
-              )}
-            </AdminCard>
+                <div
+                  aria-label="Resumen del inventario"
+                  className="product-editor-stock-grid grid gap-1.5"
+                >
+                  <StockSummaryItem label="Stock físico" value={variantDistribution?.physicalStock} />
+                  <StockSummaryItem label="Stock normal" value={variantDistribution?.normalStock} />
+                  <StockSummaryItem label="Stock con descuento" value={variantDistribution?.discountedStock} />
+                  <StockSummaryItem label="Fallado / no vendible" value={variantDistribution?.nonSellableStock} />
+                  <StockSummaryItem label="Pendiente de revisión" value={variantDistribution?.pendingReviewStock} />
+                </div>
+              </AdminCard>
+            </div>
 
-          </section>
+            <div className="product-editor-cell">
+              <AdminCard className="product-editor-panel flex h-full min-w-0 flex-col space-y-2 p-2.5">
+                <div className="product-editor-panel-heading">
+                  <h2 className="text-base font-black text-white">Financiación</h2>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
+                      { key: "cuotas3" as const, count: 3 as const, label: "3 cuotas" },
+                      { key: "cuotas6" as const, count: 6 as const, label: "6 cuotas" },
+                    ]
+                  ).map((toggle) => {
+                    const active = form[toggle.key]
+                    const plan =
+                      active && Number.isFinite(currentPrice) && currentPrice > 0
+                        ? calculateInstallmentPlan(currentPrice, toggle.count, installmentsFinancing)
+                        : null
 
-          <main className="product-editor-inventory-column min-w-0">
-            <ProductVariantsEditor
-              productoId={currentProductoId || undefined}
-              productName={form.nombre}
-              productActive={form.activo}
-              primarySku={form.sku}
-              videoUrl={form.video_url}
-              onPrimarySkuChange={(value) => setField("sku", value)}
-              fallbackImage={productFallbackImage}
-              draftVariants={draftVariants}
-              onDraftVariantsChange={setDraftVariants}
-              persistedVariantStates={pendingVariantStates}
-              onPersistedVariantStatesChange={setPendingVariantStates}
-              onPersistedVariantsChange={handlePersistedVariantsChange}
-            />
-          </main>
-
-          <aside className="product-editor-specifications-column min-w-0 space-y-2">
-            <ProductSpecificationsEditor
-              productoId={currentProductoId || undefined}
-              draftSpecifications={draftSpecifications}
-              onDraftSpecificationsChange={setDraftSpecifications}
-              onPersistedSpecificationsChange={setPersistedSpecifications}
-            />
-
-            <AdminCard className="product-editor-panel space-y-2 p-2.5">
-              <div className="product-editor-panel-heading">
-                <h2 className="text-base font-black text-white">
-                  Dimensiones y peso
-                </h2>
-                <p className="mt-0.5 text-10px leading-4 text-white/44">
-                  Obligatorios: Andreani los necesita para calcular el costo del paquete.
-                </p>
-              </div>
-              <div className="product-editor-logistics-grid grid gap-1.5">
-                {PRODUCT_LOGISTICS_FIELDS.map(({ key, unit }) => {
-                  const label = {
-                    peso_empaquetado_kg: "Peso",
-                    alto_paquete_cm: "Profundidad",
-                    ancho_paquete_cm: "Ancho",
-                    largo_paquete_cm: "Largo",
-                  }[key]
-                  const fieldError =
-                    logisticsFieldError?.field === key
-                      ? logisticsFieldError.message
-                      : undefined
-
-                  return (
-                    <AdminFormField
-                      key={key}
-                      label={`${label} *`}
-                      labelClassName={productFieldLabelClassName}
-                      error={fieldError}
-                    >
-                      <span className="relative block">
-                        <input
-                          id={key}
-                          type="text"
-                          inputMode="decimal"
-                          required
-                          value={form[key]}
-                          placeholder="Requerido"
-                          aria-label={`${label} en ${unit} (obligatorio)`}
-                          aria-required="true"
-                          aria-invalid={fieldError ? "true" : undefined}
-                          onChange={(event) =>
-                            setField(
-                              key,
-                              normalizeLogisticsDecimalInput(event.target.value),
-                            )
-                          }
-                          className={`${inputCls} !pr-9 ${fieldError ? "!border-red-400/60" : ""}`}
-                        />
-                        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-10px font-black text-white/50">
-                          {unit}
+                    return (
+                      <AdminSecondaryButton
+                        key={toggle.key}
+                        title={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
+                        aria-label={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
+                        aria-pressed={active}
+                        onClick={() => setField(toggle.key, !active)}
+                        className={`product-editor-toggle grid w-full min-h-11 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                      >
+                        {active ? (
+                          <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
+                        ) : (
+                          <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
+                        )}
+                        <span className="min-w-0 self-center">
+                          <span className="block text-sm font-black text-white">
+                            {toggle.label} sin interés
+                          </span>
+                          <span className="mt-0.5 block text-xs font-medium leading-5 text-white">
+                            {plan
+                              ? `${productPriceFormatter.format(plan.installmentAmount)} por cuota`
+                              : "Deshabilitado"}
+                          </span>
                         </span>
-                      </span>
-                    </AdminFormField>
-                  )
-                })}
-              </div>
-            </AdminCard>
-          </aside>
+                      </AdminSecondaryButton>
+                    )
+                  })}
+                </div>
+                {(form.cuotas2 || form.cuotas3 || form.cuotas6) && (
+                  <p className="text-xs font-medium leading-5 text-white">
+                    Costo financiero configurado:{" "}
+                    {[
+                      form.cuotas2 && `2 cuotas ${getEffectiveInstallmentPercent(2, installmentsFinancing)}%`,
+                      form.cuotas3 && `3 cuotas ${getEffectiveInstallmentPercent(3, installmentsFinancing)}%`,
+                      form.cuotas6 && `6 cuotas ${getEffectiveInstallmentPercent(6, installmentsFinancing)}%`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    . Se aplica automáticamente según la configuración global (Admin &gt; Configuración).
+                  </p>
+                )}
+              </AdminCard>
+            </div>
+
+            <div className="product-editor-cell">
+              <AdminCard className="product-editor-panel flex h-full min-w-0 flex-col space-y-2 p-2.5">
+                <div className="product-editor-panel-heading">
+                  <h2 className="text-base font-black text-white">
+                    Dimensiones y peso
+                  </h2>
+                  <p className="mt-0.5 text-xs leading-5 text-white">
+                    Obligatorios: Andreani los necesita para calcular el costo del paquete.
+                  </p>
+                </div>
+                <div className="product-editor-logistics-grid grid gap-1.5">
+                  {PRODUCT_LOGISTICS_FIELDS.map(({ key, unit }) => {
+                    const label = {
+                      peso_empaquetado_kg: "Peso",
+                      alto_paquete_cm: "Profundidad",
+                      ancho_paquete_cm: "Ancho",
+                      largo_paquete_cm: "Largo",
+                    }[key]
+                    const fieldError =
+                      logisticsFieldError?.field === key
+                        ? logisticsFieldError.message
+                        : undefined
+
+                    return (
+                      <AdminFormField
+                        key={key}
+                        label={`${label} *`}
+                        labelClassName={productFieldLabelClassName}
+                        error={fieldError}
+                      >
+                        <span className="relative block">
+                          <input
+                            id={key}
+                            type="text"
+                            inputMode="decimal"
+                            required
+                            value={form[key]}
+                            placeholder="Requerido"
+                            aria-label={`${label} en ${unit} (obligatorio)`}
+                            aria-required="true"
+                            aria-invalid={fieldError ? "true" : undefined}
+                            onChange={(event) =>
+                              setField(
+                                key,
+                                normalizeLogisticsDecimalInput(event.target.value),
+                              )
+                            }
+                            className={`${inputCls} !pr-9 ${fieldError ? "!border-red-400/60" : ""}`}
+                          />
+                          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-white">
+                            {unit}
+                          </span>
+                        </span>
+                      </AdminFormField>
+                    )
+                  })}
+                </div>
+              </AdminCard>
+            </div>
+          </div>
+
+          {/*
+            Fila 3: Variantes + Especificaciones + Contenido, las tres en la
+            misma fila (ver .product-editor-row-variants en globals.css, por
+            container query sobre el ancho real del workspace). Debajo de
+            ese umbral: 2 columnas con Contenido a ancho completo; debajo de
+            ambos: apila.
+          */}
+          <div className="product-editor-row-variants grid min-w-0 gap-2.5 items-start">
+            <div className="product-editor-cell min-w-0">
+              <ProductVariantsEditor
+                productoId={currentProductoId || undefined}
+                productName={form.nombre}
+                productActive={form.activo}
+                primarySku={form.sku}
+                videoUrl={form.video_url}
+                onPrimarySkuChange={(value) => setField("sku", value)}
+                fallbackImage={productFallbackImage}
+                draftVariants={draftVariants}
+                onDraftVariantsChange={setDraftVariants}
+                persistedVariantStates={pendingVariantStates}
+                onPersistedVariantStatesChange={setPendingVariantStates}
+                onPersistedVariantsChange={handlePersistedVariantsChange}
+                onDistributionChange={setVariantDistribution}
+              />
+            </div>
+
+            <div className="product-editor-cell">
+              <ProductSpecificationsEditor
+                productoId={currentProductoId || undefined}
+                draftSpecifications={draftSpecifications}
+                onDraftSpecificationsChange={setDraftSpecifications}
+                onPersistedSpecificationsChange={setPersistedSpecifications}
+              />
+            </div>
+
+            <div className="product-editor-cell product-editor-contenido-cell">
+              <AdminCard className="product-editor-panel space-y-2 p-2.5">
+                <div className="product-editor-panel-heading">
+                  <h2 className="text-base font-black text-white">Contenido</h2>
+                </div>
+                <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
+                  <input
+                    id="video_url"
+                    type="url"
+                    value={form.video_url}
+                    placeholder="https://..."
+                    onChange={(event) => setField("video_url", event.target.value)}
+                    className={inputCls}
+                  />
+                </AdminFormField>
+
+                {canPreviewVideo ? (
+                  <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
+                    <div className="relative aspect-video w-full">
+                      {videoSource.kind === "direct" ? (
+                        <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
+                      ) : (
+                        <iframe
+                          src={videoSource.embedUrl}
+                          title="Vista previa del video del producto"
+                          loading="lazy"
+                          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          className="size-full"
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : form.video_url.trim() ? (
+                  <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
+                    La URL es HTTPS, pero no corresponde a un video compatible.
+                  </AdminInfoBlock>
+                ) : null}
+
+                <AdminFormField label="Descripción" labelClassName={productFieldLabelClassName}>
+                  <textarea
+                    id="descripcion"
+                    value={form.descripcion}
+                    placeholder="Describí el producto y, si agregaste un video, su contenido."
+                    onChange={(event) => setField("descripcion", event.target.value)}
+                    className={`${inputCls} h-24 min-h-24 w-full resize-y py-2 leading-5`}
+                  />
+                </AdminFormField>
+              </AdminCard>
+            </div>
+          </div>
         </div>
 
         {(error || success) && (
@@ -1007,45 +1202,6 @@ export function ProductoForm({
             {success && <AdminInfoBlock tone="success">{success}</AdminInfoBlock>}
           </div>
         )}
-
-        <div className="product-editor-actions mx-auto flex w-full max-w-xl flex-col-reverse gap-2 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-center sm:gap-2.5">
-            <AdminSecondaryButton
-              title="Cancelar"
-              aria-label="Cancelar"
-              onClick={leaveEditor}
-              className="w-full sm:w-auto"
-            >
-              Cancelar
-            </AdminSecondaryButton>
-            <AdminSecondaryButton
-              title="Vista previa del producto"
-              aria-label="Vista previa del producto"
-              onClick={openProductPreview}
-              disabled={busy}
-              className="w-full sm:w-auto"
-            >
-              <Eye className="size-4 text-white" />
-              Vista previa
-            </AdminSecondaryButton>
-            <span className="hidden h-6 w-px bg-white/10 sm:block" aria-hidden="true" />
-            <AdminPrimaryButton
-              type="submit"
-              disabled={busy}
-              title="Guardar producto"
-              aria-label="Guardar producto"
-              className="w-full sm:min-w-40 sm:w-auto"
-            >
-              {busy ? (
-                <Loader2 className="size-4 animate-spin text-white" />
-              ) : producto ? (
-                "Guardar cambios"
-              ) : savedId ? (
-                "Finalizar producto"
-              ) : (
-                "Crear producto"
-              )}
-            </AdminPrimaryButton>
-        </div>
       </form>
 
       {previewProduct && (

@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -290,17 +291,20 @@ export function useProductoForm({
     }
   }, [producto?.id])
 
-  const setField = (
-    key: keyof typeof form,
-    value:
-      | string
-      | boolean
-  ) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: value,
-    }))
-  }
+  const setField = useCallback(
+    (
+      key: keyof ProductoFormState,
+      value:
+        | string
+        | boolean
+    ) => {
+      setForm((prev) => ({
+        ...prev,
+        [key]: value,
+      }))
+    },
+    [],
+  )
 
   const showError = (message: string) => {
     setSuccess("")

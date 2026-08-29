@@ -456,7 +456,7 @@ export function ProductSpecificationsEditor({
     <section className="product-editor-panel product-editor-specifications min-w-0 overflow-visible rounded-xl border p-2.5">
       <div className="product-editor-panel-heading mb-2.5">
         <h2 className="text-base font-black text-white">Especificaciones</h2>
-        <p className="mt-0.5 text-10px leading-4 text-white/44">
+        <p className="mt-0.5 text-10px leading-4 text-white">
           Características visibles en la tienda.
         </p>
       </div>
@@ -464,23 +464,23 @@ export function ProductSpecificationsEditor({
       <div className="min-w-0 space-y-2.5">
         <div className="min-w-0">
           <div className="mb-2">
-            <h3 className="text-xs font-black text-white/82">
+            <h3 className="text-xs font-black text-white">
               {editingSpecification
                 ? "Editar especificación"
                 : "Agregar especificación"}
             </h3>
           </div>
 
-          <div className="grid min-w-0 gap-2">
+          <div className="product-editor-spec-form-grid grid min-w-0 gap-2">
             <div className="min-w-0">
-              <p className="mb-1 text-10px font-black uppercase tracking-wide text-white/52">
+              <p className="mb-1 text-10px font-black uppercase tracking-wide text-white">
                 Ícono
               </p>
               <LucideIconPicker value={icono} onChange={setIcono} />
             </div>
 
             <label className="min-w-0">
-              <span className="mb-1 block text-10px font-black uppercase tracking-wide text-white/52">
+              <span className="mb-1 block text-10px font-black uppercase tracking-wide text-white">
                 Característica
               </span>
               <input
@@ -510,7 +510,7 @@ export function ProductSpecificationsEditor({
               )}
               <span
                 className={
-                  activo ? "text-xs text-emerald-300" : "text-xs text-white/60"
+                  activo ? "text-xs text-emerald-300" : "text-xs text-white"
                 }
               >
                 {activo ? "Activa" : "Inactiva"}
@@ -561,14 +561,14 @@ export function ProductSpecificationsEditor({
         <div className="min-w-0 border-t border-white/8 pt-2.5">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="text-xs font-black text-white/82">
+              <h3 className="text-xs font-black text-white">
                 Características cargadas
               </h3>
-              <p className="mt-0.5 text-10px leading-4 text-white/40">
+              <p className="mt-0.5 text-10px leading-4 text-white">
                 Arrastrá para reordenar.
               </p>
             </div>
-            <span className="inline-flex shrink-0 rounded-md border border-white/12 bg-black/20 px-2 py-0.5 text-10px font-black text-white/70">
+            <span className="inline-flex shrink-0 rounded-md border border-white/12 bg-black/20 px-2 py-0.5 text-10px font-black text-white">
               {visibleCount}
             </span>
           </div>
@@ -578,7 +578,7 @@ export function ProductSpecificationsEditor({
               <Loader2 className="size-5 animate-spin" />
             </div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="product-editor-scroll-panel max-h-[22rem] space-y-1.5 overflow-y-auto pr-1">
               {productoId ? (
                 visibleSpecifications.length ? (
                   visibleSpecifications.map((specification, index) => (
@@ -689,10 +689,10 @@ function reorderPersistedSpecifications(
 function EmptySpecifications() {
   return (
     <div className="product-editor-empty rounded-lg border border-dashed border-white/10 px-3 py-3.5 text-center">
-      <p className="text-xs font-bold text-white/58">
+      <p className="text-xs font-bold text-white">
         Todavía no hay especificaciones cargadas.
       </p>
-      <p className="mt-0.5 text-10px leading-4 text-white/38">
+      <p className="mt-0.5 text-10px leading-4 text-white">
         Agregá la primera desde el formulario.
       </p>
     </div>
@@ -765,7 +765,7 @@ function SpecificationRow({
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-10px font-black uppercase tracking-wide text-white/72">
+          <p className="truncate text-10px font-black uppercase tracking-wide text-white">
             {getFriendlyIconName(icono)}
           </p>
           <p
@@ -774,7 +774,7 @@ function SpecificationRow({
           >
             {texto}
           </p>
-          <p className="mt-0.5 text-10px text-white/38">Orden {orden}</p>
+          <p className="mt-0.5 text-10px text-white">Orden {orden}</p>
         </div>
 
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5">

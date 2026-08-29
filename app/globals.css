@@ -7760,77 +7760,112 @@ span.admin-claim-status-finalized,
   isolation: isolate;
 }
 
-/* Editor de producto: una única superficie de trabajo, compacta y responsive. */
+/* Editor de producto: una única superficie de trabajo, compacta y responsive.
+   Pantalla densa en controles -- a diferencia del resto del Admin, acá
+   usamos TODO el ancho disponible (sin el tope --beyonix-admin-content-max
+   compartido), y lo que evita el aspecto "estirado" es empaquetar más
+   tarjetas por fila (ver grillas de abajo) en vez de dejar franjas vacías
+   a los costados. Selector con más especificidad que
+   ":where(div,section)" (especificidad cero), así gana sin !important. */
 .beyonix-admin-main > .product-editor-screen {
-  max-width: none !important;
+  max-width: none;
 }
 
 .product-editor-screen {
   min-width: 0;
 }
 
+/*
+ * Arquitectura por FILAS, no por columnas independientes: cada fila agrupa
+ * tarjetas de altura comparable (ver product-editor-row-*). Una sola fila
+ * puede terminar antes que otra sin dejar un vacío que atraviese el resto de
+ * la pantalla, porque la fila siguiente vuelve a usar el ancho completo.
+ * Mismo modelo de scroll en todos los tamaños: la página entera scrollea
+ * (como el resto del Admin), sólo el header queda sticky.
+ */
 .product-editor-screen .product-editor-workspace {
-  display: grid;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  /* Container query en vez de viewport: cuándo cada fila reorganiza sus
+     columnas depende del ancho REAL del workspace (después del sidebar
+     administrativo), no del viewport crudo -- dos pantallas con el mismo
+     viewport pero sidebar colapsado/expandido tienen distinto ancho útil. */
+  container-type: inline-size;
+}
+
+/* Fila Stock + Financiación + Dimensiones y peso: 48/22/30 aprox. Por
+   debajo del umbral, apila (mobile/tablet); nunca un estado intermedio de
+   2 columnas acá porque las proporciones ya son muy dispares entre sí. */
+.product-editor-screen .product-editor-row-stock {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@media (min-width: 1024px) {
-  .product-editor-screen .product-editor-workspace {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .product-editor-screen .product-editor-specifications-column {
-    grid-column: 1 / -1;
+@container (min-width: 64rem) {
+  .product-editor-screen .product-editor-row-stock {
+    grid-template-columns: 48fr 22fr 30fr;
   }
 }
 
-@media (min-width: 1440px) {
-  .product-editor-screen .product-editor-workspace {
-    grid-template-columns: minmax(0, 30fr) minmax(0, 45fr) minmax(260px, 25fr);
+/* Los 5 indicadores de Stock SIEMPRE en una sola fila una vez que la
+   tarjeta tiene ancho real -- container query sobre la propia celda
+   (product-editor-cell), no sobre esta fila: así funciona igual de bien
+   cuando Stock es ancho por compartir fila de 3 en desktop grande, o
+   cuando Stock es ancho por estar apilado a ancho completo en notebook. */
+.product-editor-screen .product-editor-stock-grid {
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+}
+
+@container (min-width: 26rem) {
+  .product-editor-screen .product-editor-stock-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* Fila Variantes + Especificaciones + Contenido: apila -> 2 columnas
+   (Contenido pasa a fila propia a ancho completo) -> 3 columnas iguales,
+   siempre por container query sobre el ancho real del workspace. */
+.product-editor-screen .product-editor-row-variants {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 54rem) {
+  .product-editor-screen .product-editor-row-variants {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .product-editor-screen .product-editor-specifications-column {
-    grid-column: auto;
+  .product-editor-screen .product-editor-row-variants > .product-editor-contenido-cell {
+    grid-column: span 2 / span 2;
+  }
+}
+
+@container (min-width: 76rem) {
+  .product-editor-screen .product-editor-row-variants {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .product-editor-screen {
-    display: grid;
-    height: 100dvh;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 0.5rem;
-    overflow: hidden;
-  }
-
-  .product-editor-screen > * + *,
-  .product-editor-screen .product-editor-form > * + * {
-    margin-top: 0 !important;
-  }
-
-  .product-editor-screen .product-editor-form {
-    display: grid;
-    min-height: 0;
-    grid-template-rows: minmax(0, 1fr) auto auto;
-    gap: 0.5rem;
-    overflow: hidden;
-  }
-
-  .product-editor-screen .product-editor-workspace {
-    min-height: 0;
-    align-content: start;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding-right: 0.125rem;
-    scrollbar-color: rgba(89, 180, 255, 0.52) transparent;
-    scrollbar-width: thin;
+  .product-editor-screen .product-editor-row-variants > .product-editor-contenido-cell {
+    grid-column: span 1 / span 1;
   }
 }
 
 .product-editor-screen .product-editor-header {
+  position: sticky;
+  /* Debajo del header mobile (`admin-ds-mobile-header`, h-16, z-50) para no
+     quedar tapado por él al scrollear en mobile/tablet. */
+  top: 4rem;
+  z-index: 20;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 0.45rem;
+  background: #0a0f15;
 }
 
-.product-editor-screen .product-editor-actions,
+@media (min-width: 1024px) {
+  .product-editor-screen .product-editor-header {
+    top: 0;
+  }
+}
+
 .product-editor-screen .product-editor-panel {
   border-color: rgba(255, 255, 255, 0.12) !important;
   background: #0a0f15 !important;
@@ -7919,6 +7954,24 @@ span.admin-claim-status-finalized,
   background-color: rgba(52, 211, 153, 0.11) !important;
 }
 
+/* Selector de modo de precio (Precio manual / Margen objetivo): NO es un
+   toggle booleano on/off (por eso no usa el acento esmeralda de arriba) --
+   es una elección exclusiva entre dos modos, así que usa el acento de marca
+   BEYONIX para que el modo activo se distinga con claridad del inactivo. */
+.product-editor-screen .product-editor-pricing-mode-active {
+  border-width: 1.5px !important;
+}
+
+.product-editor-screen .product-editor-pricing-mode-active:hover {
+  border-color: rgba(140, 200, 242, 0.85) !important;
+  background-color: rgba(30, 77, 123, 0.34) !important;
+}
+
+.product-editor-screen .product-editor-pricing-mode:not(.product-editor-pricing-mode-active):hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
 .product-editor-screen :where(
     .product-editor-toggle-active,
     .product-editor-spec-toggle-active,
@@ -7938,10 +7991,17 @@ span.admin-claim-status-finalized,
   container-type: inline-size;
 }
 
-.product-editor-screen .product-editor-specifications-column {
+/* Celda de una fila de 2 tarjetas: min-width:0 para que el texto pueda
+   truncar/ajustar, y container-type para que las tarjetas de adentro puedan
+   reaccionar a su ancho REAL (después del sidebar y de compartir la fila),
+   no al viewport completo. */
+.product-editor-screen .product-editor-cell {
+  min-width: 0;
   container-type: inline-size;
 }
 
+/* Campos cortos (peso/medidas en cm): ancho tope propio, no 1fr -- que el
+   espacio sobrante de la tarjeta quede vacío en vez de estirar el input. */
 .product-editor-screen .product-editor-logistics-grid {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -7949,6 +8009,60 @@ span.admin-claim-status-finalized,
 @container (min-width: 15rem) {
   .product-editor-screen .product-editor-logistics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Estado comercial: los dos toggles pasan a 2 columnas según el ancho REAL
+   de la tarjeta (container query), no el viewport -- ahora que comparte
+   fila de a tres con Financiación y Dimensiones, su ancho cambia según el
+   breakpoint, y un "sm:grid-cols-2" fijo apretaba el texto en notebooks. */
+.product-editor-screen .product-editor-status-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 34rem) {
+  .product-editor-screen .product-editor-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Especificaciones comparte fila con Variantes y Contenido (ver
+   producto-form.tsx): ícono y característica pasan a compartir fila cuando
+   hay ancho real. El
+   selector de ícono no necesita la mitad de la tarjeta -- sólo muestra un
+   glyph + nombre corto -- así que su columna queda angosta y fija, y el
+   texto de la característica recibe el resto. */
+.product-editor-screen .product-editor-spec-form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 22rem) {
+  .product-editor-screen .product-editor-spec-form-grid {
+    grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+  }
+}
+
+/* Rentabilidad: la lista de modalidades de pago pasa de 1 a 2/3 columnas
+   según el ancho REAL de la tarjeta (comparte fila con Información del
+   producto, así que su ancho cambia con el breakpoint y con el propio
+   contenido de al lado -- por eso container query, no media query). */
+.product-editor-screen .product-editor-rentabilidad {
+  container-type: inline-size;
+}
+
+.product-editor-screen .product-editor-rentabilidad-scenarios {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 26rem) {
+  .product-editor-screen .product-editor-rentabilidad-scenarios {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 46rem) {
+  .product-editor-screen .product-editor-rentabilidad-scenarios {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -8116,35 +8230,60 @@ span.admin-claim-status-finalized,
 
 .product-editor-screen .product-editor-variant-card {
   transition: border-color 140ms ease;
+  grid-template-columns: auto auto minmax(0, 1fr);
 }
 
 .product-editor-screen .product-editor-variant-card:hover {
   border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
-.product-editor-screen .product-editor-variants-scroll {
+/* Color y Stock sólo se muestran cuando la fila de variante tiene ancho
+   real para mostrarlos sin desbordar -- container query sobre el ancho de
+   la TARJETA (ahora comparte fila con Especificaciones/Contenido y puede
+   ser bastante angosta), no sobre el viewport: un "sm:" fijo no se entera
+   de que la tarjeta se achicó aunque el viewport sea grande. 40rem porque
+   la fila completa (handle+imagen+SKU+color+stock+estado+acciones, cada
+   columna con su propio mínimo) necesita ~628px reales para no desbordar;
+   con un umbral más bajo la fila completa "entraba" pero se pisaba con la
+   tarjeta de al lado. */
+@container (min-width: 40rem) {
+  .product-editor-screen .product-editor-variant-card {
+    grid-template-columns:
+      auto auto minmax(6rem, 10rem) minmax(5.5rem, 7rem) minmax(4.5rem, 5.5rem) auto auto;
+  }
+
+  .product-editor-screen .product-editor-variant-color {
+    display: flex;
+  }
+
+  .product-editor-screen .product-editor-variant-stock {
+    display: block;
+  }
+}
+
+.product-editor-screen .product-editor-scroll-panel {
   scrollbar-color: rgba(89, 180, 255, 0.62) rgba(7, 17, 27, 0.92);
   scrollbar-gutter: stable;
   scrollbar-width: thin;
 }
 
-.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar {
+.product-editor-screen .product-editor-scroll-panel::-webkit-scrollbar {
   width: 7px;
 }
 
-.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar-track {
+.product-editor-screen .product-editor-scroll-panel::-webkit-scrollbar-track {
   border: 1px solid rgba(89, 180, 255, 0.12);
   border-radius: 999px;
   background: rgba(7, 17, 27, 0.92);
 }
 
-.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar-thumb {
+.product-editor-screen .product-editor-scroll-panel::-webkit-scrollbar-thumb {
   border: 2px solid rgba(7, 17, 27, 0.92);
   border-radius: 999px;
   background: rgba(89, 180, 255, 0.62);
 }
 
-.product-editor-screen .product-editor-variants-scroll::-webkit-scrollbar-thumb:hover {
+.product-editor-screen .product-editor-scroll-panel::-webkit-scrollbar-thumb:hover {
   background: rgba(140, 200, 242, 0.86);
 }
 
@@ -8166,25 +8305,15 @@ span.admin-claim-status-finalized,
   height: 2.4rem !important;
 }
 
-.product-editor-screen .product-editor-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-  border-color: rgba(140, 200, 242, 0.2) !important;
-  background: rgba(6, 14, 23, 0.98) !important;
-  backdrop-filter: blur(10px);
-  box-shadow:
-    0 -10px 24px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(140, 200, 242, 0.06) !important;
+.product-editor-screen .product-editor-close-button:hover {
+  background-color: rgba(127, 29, 29, 0.16) !important;
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  color: #fecaca !important;
 }
 
 @media (max-width: 639px) {
   .product-editor-screen .product-editor-header {
     align-items: stretch;
-  }
-
-  .product-editor-screen .product-editor-actions {
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 
   .product-editor-screen :where(.admin-control-input:not(textarea), .admin-control-select) {
