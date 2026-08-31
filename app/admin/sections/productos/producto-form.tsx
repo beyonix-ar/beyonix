@@ -33,11 +33,11 @@ import { ProductSpecificationsEditor } from "./product-specifications-editor"
 import { ProductVariantsEditor, StockSummaryItem } from "./product-variants-editor"
 import type { ProductVariantDistribution } from "@/lib/supabase/queries/producto-variantes"
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
+import { ProductPriceCard } from "./product-price-card"
 import { useProductoForm } from "./use-producto-form"
 import {
   adminControlClassName,
   adminPageClassName,
-  AdminBadge,
   AdminCard,
   AdminFormField,
   AdminInfoBlock,
@@ -224,6 +224,21 @@ export function ProductoForm({
           config: installmentsFinancing,
         })
       : null
+  // Regla de negocio puramente de UI: el precio anterior (el que se muestra
+  // tachado) nunca puede ser menor al precio actual, o el "descuento"
+  // mostrado en la tienda sería negativo. No hay CHECK constraint en DB para
+  // esto -- se valida acá y se bloquea el guardado antes de llamar a submit().
+  const precioAnteriorNumber = form.precio_anterior.trim()
+    ? Number(form.precio_anterior)
+    : null
+  const precioAnteriorBelowCurrent =
+    precioAnteriorNumber != null &&
+    Number.isFinite(precioAnteriorNumber) &&
+    Number.isFinite(currentPrice) &&
+    precioAnteriorNumber < currentPrice
+  const precioAnteriorError = precioAnteriorBelowCurrent
+    ? "El precio anterior no puede ser menor al precio actual."
+    : null
   // Costo distinto entre variantes reales (>1 fila con variantId no-null):
   // nunca se colapsa en un solo número, se muestra el detalle completo.
   const realVariantCosts = variantCosts.filter((entry) => entry.variantId != null)
@@ -321,6 +336,11 @@ export function ProductoForm({
   const busy = saving
 
   const saveProduct = async () => {
+    if (precioAnteriorBelowCurrent) {
+      showError(precioAnteriorError ?? "El precio anterior no puede ser menor al precio actual.")
+      return
+    }
+
     if (form.activo && !activationStatus.ready) {
       showError(activationStatus.firstError ?? "Revisá los requisitos para activar el producto.")
       return
@@ -548,19 +568,17 @@ export function ProductoForm({
       >
         <div className="product-editor-workspace min-w-0 gap-2.5">
           {/*
-            Fila 1: identidad del producto + rentabilidad, fusionadas en UNA
-            sola card (antes eran 3 cards independientes con huecos entre
-            sí). Columna izquierda (Información + Estado comercial, apiladas
-            y separadas por un divider horizontal) vs Rentabilidad a la
-            derecha, separadas por un divider vertical -- flex-row/stretch
-            para que ambas columnas compartan el mismo borde de fondo como
-            un único bloque; column+divider horizontal por debajo del umbral
-            de container query (ver .product-editor-identity en globals.css)
-            porque ahí no hay ancho real para partir en dos.
+            Fila 1: Información del producto (identidad) + Precio (modo $/%,
+            inputs compactos de ancho fijo, rentabilidad bajo demanda vía
+            Eye) + Financiación -- las tres juntas porque Financiación afecta
+            directamente cómo se calcula/vende el precio. Proporciones
+            ~27/25/48 por container query sobre el ancho real del workspace
+            (ver .product-editor-row-top en globals.css); 1 columna por
+            debajo del umbral.
           */}
-          <AdminCard className="product-editor-panel product-editor-identity flex min-w-0 flex-col p-0">
-            <div className="product-editor-identity-left flex min-w-0 flex-col divide-y divide-white/8">
-              <div className="min-w-0 space-y-2 p-2.5">
+          <div className="product-editor-row-top grid min-w-0 gap-2.5 items-start">
+            <div className="product-editor-cell">
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 id="product-information-title" className="text-base font-black text-white">
                     Información del producto
@@ -601,69 +619,7 @@ export function ProductoForm({
                     </AdminFormField>
                   )}
 
-                  <AdminFormField
-                    label="Precio actual"
-                    labelClassName={productFieldLabelClassName}
-                    help={
-                      form.pricingMode === "target_margin"
-                        ? "Calculado según el % de ganancia neta. Escribí acá para fijarlo manualmente."
-                        : undefined
-                    }
-                  >
-                    <span className="relative block">
-                      <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">$</span>
-                      <input
-                        id="precio"
-                        min="0"
-                        type="number"
-                        value={form.precio}
-                        placeholder="0"
-                        onChange={(event) => {
-                          setField("precio", event.target.value)
-                          setField("pricingMode", "manual")
-                        }}
-                        className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      />
-                    </span>
-                  </AdminFormField>
-
-                  <AdminFormField label="Precio anterior" labelClassName={productFieldLabelClassName}>
-                    <span className="relative block">
-                      <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">$</span>
-                      <input
-                        id="precio_anterior"
-                        min="0"
-                        type="number"
-                        value={form.precio_anterior}
-                        placeholder="0"
-                        onChange={(event) => setField("precio_anterior", event.target.value)}
-                        className={`${inputCls} admin-product-price-input !pl-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      />
-                    </span>
-                  </AdminFormField>
-
-                  <AdminFormField label="Porcentaje de ganancia neta" labelClassName={productFieldLabelClassName}>
-                    <span className="relative inline-flex">
-                      <input
-                        id="target_margin_percent"
-                        min="0"
-                        max="99"
-                        type="number"
-                        inputMode="numeric"
-                        value={form.targetMarginPercent}
-                        placeholder="40"
-                        disabled={knownUnitCost == null}
-                        onChange={(event) => {
-                          setField("targetMarginPercent", event.target.value)
-                          setField("pricingMode", "target_margin")
-                        }}
-                        className="admin-control-input admin-ds-control w-20 !pl-3 !pr-7 text-sm font-medium text-white outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                      />
-                      <span className="pointer-events-none absolute right-2.5 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">%</span>
-                    </span>
-                  </AdminFormField>
-
-                  <AdminFormField label="Categoría" labelClassName={productFieldLabelClassName}>
+                  <AdminFormField label="Categoría" labelClassName={productFieldLabelClassName} className="sm:col-span-2">
                     <AdminSelect title="Categoría" value={form.categoria_id} onChange={(value) => setField("categoria_id", value)}>
                       <option value="">Sin categoría</option>
                       {categorias.map((category) => (
@@ -671,32 +627,102 @@ export function ProductoForm({
                       ))}
                     </AdminSelect>
                   </AdminFormField>
-
                 </div>
+              </AdminCard>
+            </div>
 
-                {knownUnitCost === undefined && (
-                  <p className="text-xs font-medium leading-5 text-white">Consultando costo cargado...</p>
+            <div className="product-editor-cell">
+              <ProductPriceCard
+                pricingMode={form.pricingMode}
+                onPricingModeChange={(mode) => setField("pricingMode", mode)}
+                precio={form.precio}
+                onPrecioChange={(value) => setField("precio", value)}
+                precioAnterior={form.precio_anterior}
+                onPrecioAnteriorChange={(value) => setField("precio_anterior", value)}
+                precioAnteriorError={precioAnteriorError}
+                targetMarginPercent={form.targetMarginPercent}
+                onTargetMarginPercentChange={(value) => setField("targetMarginPercent", value)}
+                knownUnitCost={knownUnitCost}
+                targetMarginResult={targetMarginResult}
+                profitabilitySimulation={profitabilitySimulation}
+                profitabilityPrice={profitabilityPrice}
+                priceFormatter={productPriceFormatter}
+                variantCostsDiffer={variantCostsDiffer}
+                realVariantCosts={realVariantCosts}
+              />
+            </div>
+
+            <div className="product-editor-cell">
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
+                <div className="product-editor-panel-heading">
+                  <h2 className="text-base font-black text-white">Financiación</h2>
+                </div>
+                <div className="product-editor-financing-grid grid gap-1.5">
+                  {(
+                    [
+                      { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
+                      { key: "cuotas3" as const, count: 3 as const, label: "3 cuotas" },
+                      { key: "cuotas6" as const, count: 6 as const, label: "6 cuotas" },
+                    ]
+                  ).map((toggle) => {
+                    const active = form[toggle.key]
+                    const plan =
+                      active && Number.isFinite(currentPrice) && currentPrice > 0
+                        ? calculateInstallmentPlan(currentPrice, toggle.count, installmentsFinancing)
+                        : null
+
+                    return (
+                      <AdminSecondaryButton
+                        key={toggle.key}
+                        title={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
+                        aria-label={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
+                        aria-pressed={active}
+                        onClick={() => setField(toggle.key, !active)}
+                        className={`product-editor-toggle grid w-full min-h-10 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                      >
+                        {active ? (
+                          <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
+                        ) : (
+                          <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
+                        )}
+                        <span className="min-w-0 self-center">
+                          <span className="block text-sm font-black text-white">
+                            {toggle.label} sin interés
+                          </span>
+                          <span className="mt-0.5 block text-xs font-medium leading-5 text-white">
+                            {plan
+                              ? `${productPriceFormatter.format(plan.installmentAmount)} por cuota`
+                              : "Deshabilitado"}
+                          </span>
+                        </span>
+                      </AdminSecondaryButton>
+                    )
+                  })}
+                </div>
+                {(form.cuotas2 || form.cuotas3 || form.cuotas6) && (
+                  <p className="text-xs font-medium leading-5 text-white">
+                    {[
+                      form.cuotas2 && `2 cuotas · costo ${getEffectiveInstallmentPercent(2, installmentsFinancing)}%`,
+                      form.cuotas3 && `3 cuotas · costo ${getEffectiveInstallmentPercent(3, installmentsFinancing)}%`,
+                      form.cuotas6 && `6 cuotas · costo ${getEffectiveInstallmentPercent(6, installmentsFinancing)}%`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
                 )}
+              </AdminCard>
+            </div>
+          </div>
 
-                {knownUnitCost === null && (
-                  <AdminInfoBlock tone="warning">
-                    Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para poder usar el
-                    porcentaje de ganancia neta.
-                  </AdminInfoBlock>
-                )}
-
-                {form.pricingMode === "target_margin" &&
-                  knownUnitCost != null &&
-                  targetMarginPercentValue != null &&
-                  !targetMarginResult && (
-                    <AdminInfoBlock tone="danger">
-                      Ese margen no es alcanzable con el costo y la financiación configurada. Probá un porcentaje menor o
-                      revisá las cuotas habilitadas.
-                    </AdminInfoBlock>
-                  )}
-              </div>
-
-              <div className="min-w-0 space-y-2 p-2.5">
+          {/*
+            Fila 2: Estado comercial + Stock -- ~38/62 por container query
+            (ver .product-editor-row-commercial en globals.css). items-start
+            porque Estado comercial puede crecer (bloque de "Requisitos para
+            activar") mientras Stock es siempre la misma altura fija.
+          */}
+          <div className="product-editor-row-commercial grid min-w-0 gap-2.5 items-start">
+            <div className="product-editor-cell">
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 className="text-base font-black text-white">Estado comercial</h2>
                 </div>
@@ -787,115 +813,9 @@ export function ProductoForm({
                     )}
                   </div>
                 )}
-              </div>
+              </AdminCard>
             </div>
 
-            <div className="product-editor-rentabilidad min-w-0 flex-1 space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 className="text-xs font-black uppercase tracking-widest text-white">
-                    Rentabilidad estimada por medio de pago
-                  </h2>
-                </div>
-
-                {/*
-                  "Costo conocido"/"costo desconocido" y el estado no
-                  alcanzable ya se muestran junto al campo que los origina
-                  (Porcentaje de ganancia neta, columna izquierda) -- no se
-                  duplican acá. knownUnitCost, targetMarginResult y
-                  profitabilitySimulation siguen calculándose igual.
-                */}
-                {variantCostsDiffer && (
-                  <div className="space-y-1 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] p-2.5">
-                    <p className="text-10px font-black uppercase tracking-widest text-white">
-                      Las variantes tienen costos distintos
-                    </p>
-                    {realVariantCosts.map((entry) => (
-                      <div key={entry.variantId} className="flex items-center justify-between text-sm">
-                        <span className="text-white">{entry.variantName ?? `Variante ${entry.variantId}`}</span>
-                        <span className="font-bold text-white">
-                          {entry.unitCost != null
-                            ? productPriceFormatter.format(entry.unitCost)
-                            : "Sin costo"}
-                        </span>
-                      </div>
-                    ))}
-                    <p className="text-xs font-medium leading-5 text-white">
-                      La rentabilidad de abajo usa el mayor costo conocido ({productPriceFormatter.format(knownUnitCost ?? 0)}) para no arriesgar el margen en ninguna variante.
-                    </p>
-                  </div>
-                )}
-
-                {profitabilitySimulation && (
-                  <div className="product-editor-rentabilidad-scenarios grid gap-1">
-                    {profitabilitySimulation.scenarios.map((scenario) => {
-                      const isWorstCase = scenario.id === profitabilitySimulation.worstCase.id
-                      const price = profitabilityPrice ?? 0
-                      const feeAmount = (price * scenario.ratePercent) / 100
-                      const chargedAmount = scenario.kind === "discount" ? price - feeAmount : price
-
-                      return (
-                        <div
-                          key={scenario.id}
-                          className={`min-w-0 rounded-lg border p-2 ${
-                            isWorstCase
-                              ? "border-beyonix-sky/30 bg-beyonix-blue/[0.08]"
-                              : "border-white/8 bg-black/20"
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-1.5">
-                            <span className="flex min-w-0 items-center gap-1.5">
-                              <span className="truncate text-base font-black text-white">
-                                {scenario.label}
-                              </span>
-                              {isWorstCase && (
-                                <AdminBadge tone="info" className="!px-1.5 !py-0.5 !text-9px whitespace-nowrap">
-                                  Margen mínimo garantizado
-                                </AdminBadge>
-                              )}
-                            </span>
-                            <AdminBadge
-                              tone={scenario.marginPercent < 0 ? "danger" : "success"}
-                              className="product-editor-rentabilidad-percent-badge shrink-0"
-                            >
-                              {scenario.marginPercent.toFixed(1)}%
-                            </AdminBadge>
-                          </div>
-                          <div className="mt-1">
-                            <p className="text-10px font-black uppercase tracking-widest text-white">
-                              Ganancia estimada
-                            </p>
-                            <p
-                              className={`text-xl font-black leading-tight ${
-                                scenario.marginPercent < 0 ? "text-red-300" : "text-white"
-                              }`}
-                            >
-                              {productPriceFormatter.format(scenario.profitAmount)}
-                            </p>
-                          </div>
-                          <p className="mt-1 text-xs leading-5 text-white">
-                            {scenario.kind === "discount"
-                              ? `Cliente paga: ${productPriceFormatter.format(chargedAmount)}.`
-                              : `MP retiene: ${productPriceFormatter.format(feeAmount)} (${scenario.ratePercent}%).`}
-                          </p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-            </div>
-          </AdminCard>
-
-          {/*
-            Fila 2: Stock + Financiación + Dimensiones y peso -- 48/22/30
-            aprox (ver .product-editor-row-stock en globals.css, por
-            container query sobre el ancho real del workspace). Estado
-            comercial vive en la Fila 1 (columna izquierda, debajo de
-            Información del producto, dentro de la card fusionada de
-            arriba). items-start (no stretch): Stock tiene
-            mucho menos contenido que sus vecinas -- estirarlo a la altura de
-            Financiación/Dimensiones deja una tarjeta con la mitad vacía.
-          */}
-          <div className="product-editor-row-stock grid min-w-0 gap-2.5 items-start">
             <div className="product-editor-cell">
               <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
@@ -915,68 +835,31 @@ export function ProductoForm({
                 </div>
               </AdminCard>
             </div>
+          </div>
 
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 className="text-base font-black text-white">Financiación</h2>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(
-                    [
-                      { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
-                      { key: "cuotas3" as const, count: 3 as const, label: "3 cuotas" },
-                      { key: "cuotas6" as const, count: 6 as const, label: "6 cuotas" },
-                    ]
-                  ).map((toggle) => {
-                    const active = form[toggle.key]
-                    const plan =
-                      active && Number.isFinite(currentPrice) && currentPrice > 0
-                        ? calculateInstallmentPlan(currentPrice, toggle.count, installmentsFinancing)
-                        : null
-
-                    return (
-                      <AdminSecondaryButton
-                        key={toggle.key}
-                        title={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
-                        aria-label={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
-                        aria-pressed={active}
-                        onClick={() => setField(toggle.key, !active)}
-                        className={`product-editor-toggle grid w-full min-h-11 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
-                      >
-                        {active ? (
-                          <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
-                        ) : (
-                          <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
-                        )}
-                        <span className="min-w-0 self-center">
-                          <span className="block text-sm font-black text-white">
-                            {toggle.label} sin interés
-                          </span>
-                          <span className="mt-0.5 block text-xs font-medium leading-5 text-white">
-                            {plan
-                              ? `${productPriceFormatter.format(plan.installmentAmount)} por cuota`
-                              : "Deshabilitado"}
-                          </span>
-                        </span>
-                      </AdminSecondaryButton>
-                    )
-                  })}
-                </div>
-                {(form.cuotas2 || form.cuotas3 || form.cuotas6) && (
-                  <p className="text-xs font-medium leading-5 text-white">
-                    Costo financiero configurado:{" "}
-                    {[
-                      form.cuotas2 && `2 cuotas ${getEffectiveInstallmentPercent(2, installmentsFinancing)}%`,
-                      form.cuotas3 && `3 cuotas ${getEffectiveInstallmentPercent(3, installmentsFinancing)}%`,
-                      form.cuotas6 && `6 cuotas ${getEffectiveInstallmentPercent(6, installmentsFinancing)}%`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    . Se aplica automáticamente según la configuración global (Admin &gt; Configuración).
-                  </p>
-                )}
-              </AdminCard>
+          {/*
+            Fila 3: Variantes (ancha) + Dimensiones y peso (angosta) -- ~68/32
+            por container query (ver .product-editor-row-catalog en
+            globals.css). items-start: Dimensiones es una grilla 2x2 fija,
+            mucho más baja que la lista de variantes.
+          */}
+          <div className="product-editor-row-catalog grid min-w-0 gap-2.5 items-start">
+            <div className="product-editor-cell min-w-0">
+              <ProductVariantsEditor
+                productoId={currentProductoId || undefined}
+                productName={form.nombre}
+                productActive={form.activo}
+                primarySku={form.sku}
+                videoUrl={form.video_url}
+                onPrimarySkuChange={(value) => setField("sku", value)}
+                fallbackImage={productFallbackImage}
+                draftVariants={draftVariants}
+                onDraftVariantsChange={setDraftVariants}
+                persistedVariantStates={pendingVariantStates}
+                onPersistedVariantStatesChange={setPendingVariantStates}
+                onPersistedVariantsChange={handlePersistedVariantsChange}
+                onDistributionChange={setVariantDistribution}
+              />
             </div>
 
             <div className="product-editor-cell">
@@ -1041,31 +924,10 @@ export function ProductoForm({
           </div>
 
           {/*
-            Fila 3: Variantes + Especificaciones + Contenido, las tres en la
-            misma fila (ver .product-editor-row-variants en globals.css, por
-            container query sobre el ancho real del workspace). Debajo de
-            ese umbral: 2 columnas con Contenido a ancho completo; debajo de
-            ambos: apila.
+            Fila 4: Especificaciones + Contenido -- 50/50 por container query
+            (ver .product-editor-row-content en globals.css).
           */}
-          <div className="product-editor-row-variants grid min-w-0 gap-2.5 items-start">
-            <div className="product-editor-cell min-w-0">
-              <ProductVariantsEditor
-                productoId={currentProductoId || undefined}
-                productName={form.nombre}
-                productActive={form.activo}
-                primarySku={form.sku}
-                videoUrl={form.video_url}
-                onPrimarySkuChange={(value) => setField("sku", value)}
-                fallbackImage={productFallbackImage}
-                draftVariants={draftVariants}
-                onDraftVariantsChange={setDraftVariants}
-                persistedVariantStates={pendingVariantStates}
-                onPersistedVariantStatesChange={setPendingVariantStates}
-                onPersistedVariantsChange={handlePersistedVariantsChange}
-                onDistributionChange={setVariantDistribution}
-              />
-            </div>
-
+          <div className="product-editor-row-content grid min-w-0 gap-2.5 items-start">
             <div className="product-editor-cell">
               <ProductSpecificationsEditor
                 productoId={currentProductoId || undefined}
@@ -1075,7 +937,7 @@ export function ProductoForm({
               />
             </div>
 
-            <div className="product-editor-cell product-editor-contenido-cell">
+            <div className="product-editor-cell">
               <AdminCard className="product-editor-panel space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
                   <h2 className="text-base font-black text-white">Contenido</h2>

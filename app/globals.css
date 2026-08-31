@@ -7794,52 +7794,70 @@ span.admin-claim-status-finalized,
   container-type: inline-size;
 }
 
-/* Card superior fusionada (Información + Estado comercial | Rentabilidad):
-   columna apilada por debajo del umbral (mobile/tablet, sin ancho real para
-   partir en dos sin comprimir los campos de precio); fila a partir de acá,
-   con Rentabilidad recibiendo el espacio sobrante (flex 1 1 auto) mientras
-   la columna izquierda queda fija en ~34% -- Rentabilidad concentra mucha
-   más información y necesita más ancho real (2-3 columnas de escenarios de
-   pago) que Información/Estado comercial (un solo campo por fila). El
-   divider cambia de horizontal (apilado) a vertical (fila) con el mismo
-   breakpoint. */
-.product-editor-screen .product-editor-identity {
-  flex-direction: column;
-}
+/* Arquitectura definitiva en 4 filas (cada una, 1 columna por debajo de su
+   umbral -- mobile/notebook angosto -- y columnas reales por encima, según
+   el ancho REAL del workspace vía container query, no el viewport crudo).
 
-.product-editor-screen .product-editor-identity-left {
-  container-type: inline-size;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-@container (min-width: 54rem) {
-  .product-editor-screen .product-editor-identity {
-    flex-direction: row;
-    align-items: stretch;
-  }
-
-  .product-editor-screen .product-editor-identity-left {
-    width: 34%;
-    flex: 0 0 34%;
-    border-bottom: 0;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .product-editor-screen .product-editor-identity > .product-editor-rentabilidad {
-    flex: 1 1 auto;
-  }
-}
-
-/* Fila Stock + Financiación + Dimensiones y peso: 48/22/30 aprox. Por
-   debajo del umbral, apila (mobile/tablet); nunca un estado intermedio de
-   2 columnas acá porque las proporciones ya son muy dispares entre sí. */
-.product-editor-screen .product-editor-row-stock {
+   Fila 1 -- Información del producto | Precio | Financiación: Financiación
+   queda pegada a Precio porque lo afecta directamente. Precio usa inputs
+   compactos de ancho fijo (selector $/%, campos angostos, ojo de
+   rentabilidad), por lejos la columna con menos contenido real; el ancho
+   que le sobra se lo lleva Financiación, que ahora es la más ancha de las
+   tres para que sus 3 tarjetas de cuotas (2/3/6) entren siempre en una sola
+   fila sin sensación de compresión. Información es compacta por naturaleza
+   (pocos campos). */
+.product-editor-screen .product-editor-row-top {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container (min-width: 64rem) {
-  .product-editor-screen .product-editor-row-stock {
-    grid-template-columns: 48fr 22fr 30fr;
+@container (min-width: 60rem) {
+  .product-editor-screen .product-editor-row-top {
+    grid-template-columns: 27fr 25fr 48fr;
+  }
+}
+
+/* Toggles de cuotas (2/3/6) de Financiación: auto-fit en vez de un
+   grid-cols fijo, para que las 3 entren en una sola fila apenas el ancho
+   real de la tarjeta alcanza (columna grande en desktop, o tarjeta apilada
+   a ancho completo en notebook/mobile) y recién ahí -- sin dejar la 3ra
+   suelta en una fila aparte -- bajen a 2 o 1 columna si el ancho es chico. */
+.product-editor-screen .product-editor-financing-grid {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+/* Fila 2 -- Estado comercial | Stock: Estado comercial puede crecer (avisos
+   de requisitos pendientes), Stock es de altura fija -- items-start ya en
+   el JSX evita que Stock se estire para igualar esa altura variable. */
+.product-editor-screen .product-editor-row-commercial {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 54rem) {
+  .product-editor-screen .product-editor-row-commercial {
+    grid-template-columns: 38fr 62fr;
+  }
+}
+
+/* Fila 3 -- Variantes (ancha) | Dimensiones y peso (angosta, grilla 2x2
+   fija mucho más baja que la lista de variantes). */
+.product-editor-screen .product-editor-row-catalog {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 60rem) {
+  .product-editor-screen .product-editor-row-catalog {
+    grid-template-columns: 68fr 32fr;
+  }
+}
+
+/* Fila 4 -- Especificaciones | Contenido: alturas comparables, 50/50. */
+.product-editor-screen .product-editor-row-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 54rem) {
+  .product-editor-screen .product-editor-row-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -7855,33 +7873,6 @@ span.admin-claim-status-finalized,
 @container (min-width: 26rem) {
   .product-editor-screen .product-editor-stock-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-}
-
-/* Fila Variantes + Especificaciones + Contenido: apila -> 2 columnas
-   (Contenido pasa a fila propia a ancho completo) -> 3 columnas iguales,
-   siempre por container query sobre el ancho real del workspace. */
-.product-editor-screen .product-editor-row-variants {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-@container (min-width: 54rem) {
-  .product-editor-screen .product-editor-row-variants {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .product-editor-screen .product-editor-row-variants > .product-editor-contenido-cell {
-    grid-column: span 2 / span 2;
-  }
-}
-
-@container (min-width: 76rem) {
-  .product-editor-screen .product-editor-row-variants {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .product-editor-screen .product-editor-row-variants > .product-editor-contenido-cell {
-    grid-column: span 1 / span 1;
   }
 }
 
@@ -8038,14 +8029,6 @@ span.admin-claim-status-finalized,
   stroke: rgba(255, 255, 255, 0.42) !important;
 }
 
-/* AdminBadge tunea su color por tono (ver .admin-ds-tone-success/-danger) con
-   un verde/rojo pastel de baja lectura sobre su propio fondo -- acá el
-   porcentaje de rentabilidad necesita blanco puro para leerse de un vistazo. */
-.product-editor-screen .product-editor-rentabilidad-percent-badge {
-  color: #ffffff !important;
-  font-weight: 800 !important;
-}
-
 .product-editor-screen .product-editor-specifications {
   container-type: inline-size;
 }
@@ -8072,9 +8055,9 @@ span.admin-claim-status-finalized,
 }
 
 /* Estado comercial: los dos toggles pasan a 2 columnas según el ancho REAL
-   de la tarjeta (container query), no el viewport -- ahora que comparte
-   fila de a tres con Financiación y Dimensiones, su ancho cambia según el
-   breakpoint, y un "sm:grid-cols-2" fijo apretaba el texto en notebooks. */
+   de la tarjeta (container query), no el viewport -- comparte fila con
+   Stock, su ancho cambia según el breakpoint, y un "sm:grid-cols-2" fijo
+   apretaba el texto en notebooks. */
 .product-editor-screen .product-editor-status-grid {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -8085,9 +8068,8 @@ span.admin-claim-status-finalized,
   }
 }
 
-/* Especificaciones comparte fila con Variantes y Contenido (ver
-   producto-form.tsx): ícono y característica pasan a compartir fila cuando
-   hay ancho real. El
+/* Especificaciones comparte fila con Contenido (ver producto-form.tsx):
+   ícono y característica pasan a compartir fila cuando hay ancho real. El
    selector de ícono no necesita la mitad de la tarjeta -- sólo muestra un
    glyph + nombre corto -- así que su columna queda angosta y fija, y el
    texto de la característica recibe el resto. */
@@ -8101,29 +8083,12 @@ span.admin-claim-status-finalized,
   }
 }
 
-/* Rentabilidad: la lista de modalidades de pago pasa de 1 a 2/3 columnas
-   según el ancho REAL de la tarjeta (comparte fila con Información del
-   producto, así que su ancho cambia con el breakpoint y con el propio
-   contenido de al lado -- por eso container query, no media query). */
-.product-editor-screen .product-editor-rentabilidad {
-  container-type: inline-size;
-}
-
-.product-editor-screen .product-editor-rentabilidad-scenarios {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-@container (min-width: 26rem) {
-  .product-editor-screen .product-editor-rentabilidad-scenarios {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container (min-width: 46rem) {
-  .product-editor-screen .product-editor-rentabilidad-scenarios {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
+/* El panel flotante del ícono de ojo (product-profitability-popover.tsx) se
+   portalea a document.body -- queda FUERA del árbol de .product-editor-screen,
+   así que no puede depender de reglas acá (mismo motivo por el que
+   AdminRowMenu/AdminSelect en admin-controls.tsx estilan su menú portaleado
+   con utilidades Tailwind inline en vez de CSS scopeado). Su apariencia vive
+   como clases Tailwind directas en el propio componente. */
 
 .product-editor-screen .product-editor-specifications .admin-icon-picker-popover {
   max-width: min(22rem, calc(100vw - 2rem));
