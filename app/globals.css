@@ -308,8 +308,24 @@
   grid-template-columns: 100px 1.5fr 1fr 120px 140px 120px;
 }
 
+/* 8 columnas: Pedido, Fecha, Cliente, Estado, Despacho, Pago, Total,
+   Acciones -- Pedido/Total/Acciones se mantienen en 1fr (su ancho/posición
+   no cambia: la suma total sigue siendo 8fr, igual que antes). El resto
+   (Fecha/Cliente/Estado/Despacho) cede un poco de ancho, todo destinado a
+   Pago, para que "MÉTODO · ESTADO" (ej. "TRANSFERENCIA · CONFIRMADO") entre
+   sin truncar. Usado tanto por el header como por cada fila (misma clase
+   utilitaria en ambos), así que header y contenido comparten exactamente
+   la misma geometría de columnas sin necesidad de alinear nada a mano. */
 @utility grid-cols-admin-orders-pro {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 0.85fr)
+    minmax(0, 0.9fr)
+    minmax(0, 0.85fr)
+    minmax(0, 0.85fr)
+    minmax(0, 1.55fr)
+    minmax(0, 1fr)
+    minmax(0, 1fr);
 }
 
 @utility w-admin-order-status {
@@ -1708,13 +1724,20 @@
   max-height: none !important;
 }
 
+/* Mismo tratamiento que .admin-claim-help-resolved-card/-state/-note de acá
+   abajo (panel "Mensajería"): verde oscuro/sutil + texto blanco, sin el
+   glow/neón que tenía antes. El punto (bg-current) hereda color, así que
+   necesita su propio color explícito para seguir siendo verde mientras el
+   texto del badge pasa a blanco -- si no, heredaría el blanco del badge. */
 .admin-claim-help-resolved-badge {
-  border-color: rgba(134, 239, 172, 0.95) !important;
-  background: linear-gradient(135deg, #bbf7d0, #86efac) !important;
-  color: #052e16 !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 0 18px rgba(34, 197, 94, 0.32) !important;
+  border-color: rgba(74, 222, 128, 0.32) !important;
+  background: rgba(21, 128, 61, 0.22) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.admin-claim-help-resolved-badge span {
+  color: #4ade80 !important;
 }
 
 .admin-claim-status-finalized {
@@ -1728,24 +1751,28 @@
   box-shadow: none !important;
 }
 
+/* Verde oscuro/sutil sobre la base casi negra del admin (mismo hue que
+   .admin-claim-status-finalized más arriba: verde-700/verde-400), no el
+   verde pastel claro que tenía antes -- ese fondo claro + texto
+   #052e16 (verde muy oscuro) quedaba fuera de lugar en un admin
+   consistentemente oscuro y era difícil de leer en la práctica. Texto
+   blanco 100% (no opacity) en vez de verde oscuro sobre claro. */
 .admin-claim-help-resolved-card {
-  border-color: rgba(134, 239, 172, 0.8) !important;
+  border-color: rgba(74, 222, 128, 0.4) !important;
   background:
-    linear-gradient(145deg, rgba(187, 247, 208, 0.92), rgba(134, 239, 172, 0.82)) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 0 24px rgba(34, 197, 94, 0.24) !important;
+    linear-gradient(145deg, rgba(21, 128, 61, 0.28), rgba(8, 18, 29, 0.98)) !important;
+  box-shadow: none !important;
 }
 
 .admin-claim-help-resolved-card :where(h4, p) {
-  color: #052e16 !important;
+  color: #ffffff !important;
 }
 
 .admin-claim-help-resolved-state,
 .admin-claim-help-resolved-note {
-  border: 1px solid rgba(22, 101, 52, 0.25) !important;
-  background: rgba(240, 253, 244, 0.62) !important;
-  color: #052e16 !important;
+  border: 1px solid rgba(74, 222, 128, 0.32) !important;
+  background: rgba(21, 128, 61, 0.22) !important;
+  color: #ffffff !important;
 }
 
 .admin-claim-chat-bubble-customer {
@@ -7486,6 +7513,59 @@ div.claim-form-shell::after {
   color: rgba(226, 232, 240, 0.76) !important;
 }
 
+/* Badges nuevos de "Gestión de pedidos" (columnas Estado general y Pago,
+   ver getOrderGeneralStatus/getOrderPaymentDisplay en admin-pedidos.tsx):
+   clase propia, NO reutiliza .admin-order-tone-* -- ese sistema ya se usa
+   en 30+ lugares de este mismo archivo (otras pestañas del detalle del
+   pedido) con texto apenas tintado (no blanco 100%) y un glow sutil;
+   tocarlo hubiera afectado esos otros lugares. Estos dos badges son
+   contenido nuevo, así que arrancan directamente con el mismo criterio que
+   Atención al cliente: fondo oscuro/sutil, borde semántico, texto blanco
+   100%, sin glow. "returned" (violeta) es la variante para Devuelto/
+   Reembolsado, claramente distinguible de éxito/pendiente/error. */
+.admin-order-semantic-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 9999px;
+  border-width: 1px;
+  border-style: solid;
+  padding: 0.25rem 0.75rem;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.admin-order-semantic-badge--success {
+  border-color: rgba(52, 211, 153, 0.5);
+  background: rgba(6, 78, 59, 0.34);
+}
+
+.admin-order-semantic-badge--warning {
+  border-color: rgba(245, 158, 11, 0.54);
+  background: rgba(120, 53, 15, 0.32);
+}
+
+.admin-order-semantic-badge--danger {
+  border-color: rgba(248, 113, 113, 0.56);
+  background: rgba(127, 29, 29, 0.34);
+}
+
+.admin-order-semantic-badge--info {
+  border-color: rgba(96, 165, 250, 0.54);
+  background: rgba(30, 64, 175, 0.32);
+}
+
+.admin-order-semantic-badge--returned {
+  border-color: rgba(196, 181, 253, 0.55);
+  background: rgba(76, 29, 149, 0.34);
+}
+
 .beyonix-admin-main .admin-order-dispatch-badge.admin-order-dispatch-badge--delivered {
   background: #bbf7d0 !important;
   background-color: #bbf7d0 !important;
@@ -7794,26 +7874,53 @@ span.admin-claim-status-finalized,
   container-type: inline-size;
 }
 
-/* Arquitectura definitiva en 4 filas (cada una, 1 columna por debajo de su
+/* Arquitectura definitiva en 3 filas (cada una, 1 columna por debajo de su
    umbral -- mobile/notebook angosto -- y columnas reales por encima, según
    el ancho REAL del workspace vía container query, no el viewport crudo).
 
-   Fila 1 -- Información del producto | Precio | Financiación: Financiación
-   queda pegada a Precio porque lo afecta directamente. Precio usa inputs
-   compactos de ancho fijo (selector $/%, campos angostos, ojo de
-   rentabilidad), por lejos la columna con menos contenido real; el ancho
-   que le sobra se lo lleva Financiación, que ahora es la más ancha de las
-   tres para que sus 3 tarjetas de cuotas (2/3/6) entren siempre en una sola
-   fila sin sensación de compresión. Información es compacta por naturaleza
-   (pocos campos). */
+   Fila 1 -- Información del producto | Precio | Financiación: Precio tiene
+   un ancho FIJO en rem (25.5rem = exactamente lo que necesita su contenido:
+   ver .product-editor-price-grid más abajo, 3 columnas 7rem/8rem/8rem + 2
+   gaps de 0.625rem + padding de la card de 1.25rem), no `auto` ni `fr`.
+   CAUSA RAÍZ del bug anterior (campos de Precio saliéndose de la card,
+   invadiendo Financiación): un track `auto` que contiene una grilla ANIDADA
+   de columnas fijas depende de que el motor de layout calcule
+   correctamente el max-content de ese contenido anidado para poder crecer
+   hasta ahí en el paso de "maximize tracks" -- ese cálculo no es
+   determinístico entre casos/motores cuando hay `min-width:0` en varios
+   ancestros de la cadena (product-editor-cell, AdminCard), y terminaba
+   resolviendo un ancho menor al real. La grilla interna (7rem 8rem 8rem)
+   seguía renderizando a su ancho completo igual -- overflow visible, sin
+   que nada lo recorte -- de ahí que los campos "salieran" de una card más
+   angosta de lo que realmente necesitaban. Con un largo fijo no hay ningún
+   cálculo de por medio: la columna ES 25.5rem, punto, y el contenido que
+   pide exactamente 25.5rem entra siempre exacto, sin sobrar ni faltar.
+   Información e Financiación se reparten el resto vía fr (Información más
+   cómoda, ~27-29% del total; Financiación con margen de sobra sobre el
+   mínimo real de sus 3 tarjetas de cuotas, ~26.5rem). El umbral de 76rem es
+   el punto en el que las tres conviven cómodas: Precio (25.5rem fijos) +
+   Información (~21rem) + Financiación (~28rem) + gaps. */
 .product-editor-screen .product-editor-row-top {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container (min-width: 60rem) {
+@container (min-width: 76rem) {
   .product-editor-screen .product-editor-row-top {
-    grid-template-columns: 27fr 25fr 48fr;
+    grid-template-columns: 43fr 25.5rem 57fr;
   }
+}
+
+/* Precio: 3 columnas de ancho fijo (Ganancia neta 7rem | Precio calculado /
+   Precio actual 8rem | Precio anterior 8rem) compartidas entre el título
+   "Precio" (col-span-2) + el grupo de botones $/%/Eye (columna 3, así
+   queda alineado exactamente sobre "Precio anterior") y la fila de campos.
+   Anchos fijos a propósito, no fr/%: así el título/label/input de cada
+   columna quedan en la misma línea vertical, y la suma exacta de estas 3
+   columnas + gaps + padding de la card (25.5rem) es literalmente el ancho
+   fijo que le da product-editor-row-top a la columna de Precio -- no hay
+   ningún cálculo de auto-sizing de por medio, así que no puede desbordar. */
+.product-editor-screen .product-editor-price-grid {
+  grid-template-columns: 7rem 8rem 8rem;
 }
 
 /* Toggles de cuotas (2/3/6) de Financiación: auto-fit en vez de un
@@ -7825,54 +7932,85 @@ span.admin-claim-status-finalized,
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
 }
 
-/* Fila 2 -- Estado comercial | Stock: Estado comercial puede crecer (avisos
-   de requisitos pendientes), Stock es de altura fija -- items-start ya en
-   el JSX evita que Stock se estire para igualar esa altura variable. */
-.product-editor-screen .product-editor-row-commercial {
+/* Fila 2+3 -- bloque [Estado comercial+Stock]+Especificaciones (izquierda)
+   | bloque [Dimensiones+Contenido]+Variantes (derecha). CAUSA del hueco que
+   tenía el diseño anterior (una sola fila de grid con las 4 tarjetas +
+   Especificaciones/Variantes debajo): un grid-row SIEMPRE mide lo que mide
+   su integrante más alto -- items-start evita que Estado/Stock/Dimensiones
+   se ESTIREN para igualar a Contenido (que tiene textarea de descripción,
+   más preview de video si hay URL), pero NO evita que el CONTENEDOR de esa
+   fila mida la altura de Contenido igual. Como Especificaciones venía
+   después de esa fila en el flujo normal, arrancaba debajo de Contenido
+   (el más alto), no debajo de Estado+Stock (los más bajos) -- de ahí el
+   espacio negro. Value real: separar en dos bloques flex-col INDEPENDIENTES
+   (sin fila de grid compartida entre ellos) para que cada uno mida según su
+   propio contenido; Especificaciones/Variantes quedan así garantizados
+   pegados a su par de arriba con sólo el gap-2.5 normal, sin importar
+   cuánto crezca Contenido. Cada bloque es flex-col de ancho completo, así
+   que sus hijos (el par de arriba + la tarjeta de abajo) comparten el mismo
+   ancho automáticamente -- el borde izquierdo/derecho de Especificaciones
+   coincide con Estado+Stock, y el de Variantes con Dimensiones+Contenido,
+   sin ningún offset manual. 48fr/52fr = 15+33 (Estado+Stock) / 24+28
+   (Dimensiones+Contenido), mismas proporciones que tenían como columnas
+   de una sola fila. */
+.product-editor-screen .product-editor-commercial-catalog-row {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container (min-width: 54rem) {
-  .product-editor-screen .product-editor-row-commercial {
-    grid-template-columns: 38fr 62fr;
+@container (min-width: 64rem) {
+  .product-editor-screen .product-editor-commercial-catalog-row {
+    grid-template-columns: 48fr 52fr;
   }
 }
 
-/* Fila 3 -- Variantes (ancha) | Dimensiones y peso (angosta, grilla 2x2
-   fija mucho más baja que la lista de variantes). */
-.product-editor-screen .product-editor-row-catalog {
+/* Par Estado comercial + Stock: 15:33, mismo ratio que tenían como columnas
+   de la fila de 4. Un elemento no puede ser su propio contenedor de
+   container query -- por eso el container-type real vive en
+   .product-editor-commercial-catalog-block (el bloque padre, vía la clase
+   product-editor-cell agregada ahí en el JSX), no en el propio par. Así la
+   query mide el ancho del BLOQUE (100% del workspace apilado, ~48% en
+   desktop), no el ancho completo del workspace. */
+.product-editor-screen .product-editor-status-stock-pair {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container (min-width: 60rem) {
-  .product-editor-screen .product-editor-row-catalog {
-    grid-template-columns: 68fr 32fr;
+@container (min-width: 24rem) {
+  .product-editor-screen .product-editor-status-stock-pair {
+    grid-template-columns: 15fr 33fr;
   }
 }
 
-/* Fila 4 -- Especificaciones | Contenido: alturas comparables, 50/50. */
-.product-editor-screen .product-editor-row-content {
+/* Par Dimensiones y peso + Contenido: 24:28, mismo ratio que tenían como
+   columnas de la fila de 4. */
+.product-editor-screen .product-editor-dimensions-content-pair {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container (min-width: 54rem) {
-  .product-editor-screen .product-editor-row-content {
+@container (min-width: 32rem) {
+  .product-editor-screen .product-editor-dimensions-content-pair {
+    grid-template-columns: 24fr 28fr;
+  }
+}
+
+/* Los 5 indicadores de Stock en grilla 3x2 (3 columnas, 5 cards -- la 2da
+   fila queda con 2 y un hueco sin renderizar, no una 6ta card vacía).
+   Container query sobre la propia celda (product-editor-cell), no sobre
+   esta fila: la celda de Stock ahora es angosta (comparte fila con otras
+   3), así que el umbral para pasar de 1 a 2 a 3 columnas es más bajo que
+   cuando Stock ocupaba la mayoría de la Fila 2. */
+.product-editor-screen .product-editor-stock-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 11rem) {
+  .product-editor-screen .product-editor-stock-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* Los 5 indicadores de Stock SIEMPRE en una sola fila una vez que la
-   tarjeta tiene ancho real -- container query sobre la propia celda
-   (product-editor-cell), no sobre esta fila: así funciona igual de bien
-   cuando Stock es ancho por compartir fila de 3 en desktop grande, o
-   cuando Stock es ancho por estar apilado a ancho completo en notebook. */
-.product-editor-screen .product-editor-stock-grid {
-  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
-}
-
-@container (min-width: 26rem) {
+@container (min-width: 16rem) {
   .product-editor-screen .product-editor-stock-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -8029,6 +8167,16 @@ span.admin-claim-status-finalized,
   stroke: rgba(255, 255, 255, 0.42) !important;
 }
 
+.product-editor-screen .product-editor-panel .product-editor-status-toggle-icon-active {
+  color: rgb(110, 231, 183) !important;
+  stroke: rgb(110, 231, 183) !important;
+}
+
+.product-editor-screen .product-editor-panel .product-editor-status-toggle-icon-inactive {
+  color: rgb(100, 116, 139) !important;
+  stroke: rgb(100, 116, 139) !important;
+}
+
 .product-editor-screen .product-editor-specifications {
   container-type: inline-size;
 }
@@ -8054,45 +8202,33 @@ span.admin-claim-status-finalized,
   }
 }
 
-/* Estado comercial: los dos toggles pasan a 2 columnas según el ancho REAL
-   de la tarjeta (container query), no el viewport -- comparte fila con
-   Stock, su ancho cambia según el breakpoint, y un "sm:grid-cols-2" fijo
-   apretaba el texto en notebooks. */
-.product-editor-screen .product-editor-status-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-@container (min-width: 34rem) {
-  .product-editor-screen .product-editor-status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* Especificaciones comparte fila con Contenido (ver producto-form.tsx):
-   ícono y característica pasan a compartir fila cuando hay ancho real. El
-   selector de ícono no necesita la mitad de la tarjeta -- sólo muestra un
-   glyph + nombre corto -- así que su columna queda angosta y fija, y el
-   texto de la característica recibe el resto. */
+/* Especificaciones comparte fila con Variantes (ver producto-form.tsx):
+   ícono y característica pasan a compartir fila cuando hay ancho real, en
+   proporción ~40/60 -- minmax(9rem, 2fr) protege el trigger de "Elegir
+   ícono" (texto + ambos glyphs) de quedar comprimido en el piso del rango,
+   pero sin techo fijo: crece en proporción 2:3 con Característica en vez de
+   convergir a un ancho tope chico apenas la tarjeta tiene espacio real. */
 .product-editor-screen .product-editor-spec-form-grid {
   grid-template-columns: minmax(0, 1fr);
 }
 
 @container (min-width: 22rem) {
   .product-editor-screen .product-editor-spec-form-grid {
-    grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+    grid-template-columns: minmax(9rem, 2fr) minmax(0, 3fr);
   }
 }
 
-/* El panel flotante del ícono de ojo (product-profitability-popover.tsx) se
-   portalea a document.body -- queda FUERA del árbol de .product-editor-screen,
-   así que no puede depender de reglas acá (mismo motivo por el que
-   AdminRowMenu/AdminSelect en admin-controls.tsx estilan su menú portaleado
-   con utilidades Tailwind inline en vez de CSS scopeado). Su apariencia vive
-   como clases Tailwind directas en el propio componente. */
-
-.product-editor-screen .product-editor-specifications .admin-icon-picker-popover {
-  max-width: min(22rem, calc(100vw - 2rem));
-}
+/* El panel flotante del ícono de ojo (product-profitability-popover.tsx) y
+   el del selector de íconos (lucide-icon-picker.tsx) se portalean fuera de
+   su tarjeta -- el primero a document.body, el segundo a .product-editor-
+   screen (necesita seguir bajo ese selector para heredar el resto de reglas
+   .admin-icon-picker-* de acá abajo) -- así que ninguno puede depender de
+   reglas de ancho/posición scopeadas más abajo en el árbol (mismo motivo por
+   el que AdminRowMenu/AdminSelect en admin-controls.tsx estilan su menú
+   portaleado con utilidades Tailwind inline en vez de CSS scopeado). El
+   ancho real del popover de íconos lo calcula el propio componente por
+   getBoundingClientRect (mínimo 300px, clamp contra el viewport) para que
+   nombres largos como "Construcción reforzada" no queden cortados. */
 
 .product-editor-screen .product-editor-spec-drag {
   border-color: rgba(140, 200, 242, 0.2) !important;
@@ -8263,17 +8399,27 @@ span.admin-claim-status-finalized,
 
 /* Color y Stock sólo se muestran cuando la fila de variante tiene ancho
    real para mostrarlos sin desbordar -- container query sobre el ancho de
-   la TARJETA (ahora comparte fila con Especificaciones/Contenido y puede
-   ser bastante angosta), no sobre el viewport: un "sm:" fijo no se entera
-   de que la tarjeta se achicó aunque el viewport sea grande. 40rem porque
-   la fila completa (handle+imagen+SKU+color+stock+estado+acciones, cada
-   columna con su propio mínimo) necesita ~628px reales para no desbordar;
-   con un umbral más bajo la fila completa "entraba" pero se pisaba con la
-   tarjeta de al lado. */
+   la TARJETA (comparte fila con Especificaciones y puede ser bastante
+   angosta), no sobre el viewport: un "sm:" fijo no se entera de que la
+   tarjeta se achicó aunque el viewport sea grande. 40rem porque la fila
+   completa (handle+imagen+SKU+color+stock+estado+acciones, cada columna
+   con su propio mínimo) necesita ~628px reales para no desbordar; con un
+   umbral más bajo la fila completa "entraba" pero se pisaba con la tarjeta
+   de al lado.
+
+   SKU es la ÚNICA columna flexible (minmax(6rem, 1fr), sin techo): antes
+   tenía un techo de 10rem, así que cualquier ancho sobrante de la fila
+   quedaba sin usar al final (después de Acciones) en vez de dárselo al
+   SKU -- de ahí la sensación de espacio desperdiciado alrededor de imagen/
+   SKU y de Editar/Eliminar sin quedar realmente pegados al borde derecho.
+   Con el resto de columnas fijas/acotadas, el 1fr de SKU absorbe todo el
+   sobrante automáticamente y empuja Estado+Acciones hasta el extremo
+   derecho real de la fila -- sin position:absolute ni offsets, es
+   simplemente la única columna flexible del grid. */
 @container (min-width: 40rem) {
   .product-editor-screen .product-editor-variant-card {
     grid-template-columns:
-      auto auto minmax(6rem, 10rem) minmax(5.5rem, 7rem) minmax(4.5rem, 5.5rem) auto auto;
+      auto auto minmax(6rem, 1fr) minmax(5.5rem, 7rem) minmax(4.5rem, 5.5rem) auto auto;
   }
 
   .product-editor-screen .product-editor-variant-color {
@@ -8511,11 +8657,497 @@ span.admin-claim-status-finalized,
   }
 }
 
-/* Mantiene una lectura uniforme de las acciones del panel sin alterar los SVG de datos. */
-.beyonix-admin-shell svg.lucide {
+/* Mantiene una lectura uniforme de las acciones del panel sin alterar los SVG de datos.
+   Excluye los íconos de estado (verde/gris) de Estado comercial, que necesitan su propio color. */
+.beyonix-admin-shell svg.lucide:not(.product-editor-status-toggle-icon-active):not(.product-editor-status-toggle-icon-inactive) {
   color: #ffffff !important;
   stroke: #ffffff !important;
 }
 
 
 
+
+/* ============================================================
+   ADMIN — TEMA CLARO (light)
+   ============================================================
+   Todo lo de acá abajo está scopeado bajo html[data-admin-theme="light"]
+   .beyonix-admin-shell (o clases exclusivamente admin como .admin-ds-*,
+   .product-editor-*, .admin-order-*, .admin-claim-*, que no existen en la
+   tienda pública) -- el modo oscuro NO se toca, sigue siendo exactamente
+   el CSS de arriba, sin condición ninguna. El atributo data-admin-theme
+   vive en <html> (ver script en app/layout.tsx) para resolverse antes del
+   primer paint sin flash; el theme provider (context/admin-theme-context.tsx)
+   lo mantiene sincronizado al togglear.
+
+   Paleta clara: fondo general gris/blanco muy suave, cards blancas, bordes
+   gris azulados, texto principal azul oscuro/casi negro, texto secundario
+   gris oscuro -- nunca blanco puro en todo, nunca gris lavado.
+   ============================================================ */
+
+/* ---- 1. Tokens --admin-* (design system del contenido principal) ---- */
+html[data-admin-theme="light"] .beyonix-admin-main {
+  --admin-bg: #eef1f5;
+  --admin-panel: #ffffff;
+  --admin-panel-2: #f7f9fb;
+  --admin-panel-3: #eef1f5;
+  --admin-surface: var(--admin-panel);
+  --admin-surface-raised: var(--admin-panel-2);
+  --admin-surface-muted: var(--admin-panel-3);
+  --admin-control: #eef1f5;
+  --admin-brand: #112a43;
+  --admin-brand-hover: #183b5e;
+  --admin-border: rgba(30, 58, 95, 0.18);
+  --admin-border-soft: rgba(30, 58, 95, 0.1);
+  --admin-border-strong: rgba(30, 58, 95, 0.36);
+  --admin-text: #0f172a;
+  --admin-text-soft: rgba(15, 23, 42, 0.68);
+  --admin-text-muted: rgba(15, 23, 42, 0.46);
+  --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
+  background: #eef1f5 !important;
+}
+
+/* ---- 2. Tokens --beyonix-* usados por el sidebar/header (Tailwind
+   @theme inline): sólo los que el sidebar realmente consume y que
+   referencian una var() (por eso son redeclarables acá sin tocar :root
+   global, que sigue intacto para la tienda pública). ---- */
+html[data-admin-theme="light"] .beyonix-admin-shell {
+  --beyonix-page-background: #eef1f5;
+  --beyonix-surface-base: #ffffff;
+  --beyonix-surface-raised: #f7f9fb;
+  --beyonix-surface-interactive: #f1f4f8;
+  --beyonix-surface-muted: #eef1f5;
+  --beyonix-border-subtle: rgba(30, 58, 95, 0.1);
+  --beyonix-border-default: rgba(30, 58, 95, 0.18);
+  --beyonix-border-interactive: rgba(30, 58, 95, 0.34);
+  --beyonix-border-active: rgba(30, 58, 95, 0.5);
+  --beyonix-text-primary: #0f172a;
+  --beyonix-text-secondary: rgba(15, 23, 42, 0.66);
+  --beyonix-text-muted: rgba(15, 23, 42, 0.42);
+  --beyonix-brand-primary: #112a43;
+  --beyonix-brand-hover: #183b5e;
+  --beyonix-brand-active: #1e4d7b;
+}
+
+/* Utilidades beyonix-* cuyo valor en @theme inline es un literal hex fijo
+   (no un var()) -- no reaccionan a la redeclaración de arriba, así que se
+   sobreescribe la clase compilada directamente, mismo mecanismo que la
+   sección de utilidades text-white/N más abajo. */
+html[data-admin-theme="light"] .beyonix-admin-shell .text-beyonix-cyan {
+  color: #1e4d7b !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-shell .text-beyonix-sky {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-beyonix-sky {
+  background-color: #183b5e !important;
+}
+
+/* ---- 3. Cards / superficies genéricas (.admin-ds-surface, .admin-ds-card
+   y el patrón [rounded][border] que usan la mayoría de los paneles) ---- */
+html[data-admin-theme="light"] .admin-ds-surface,
+html[data-admin-theme="light"] .admin-ds-card,
+html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"] {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: var(--admin-glow) !important;
+}
+
+html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]
+  :where(section, article, aside, details, div, label)[class*="rounded"][class*="border"] {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border-soft) !important;
+  box-shadow: none !important;
+}
+
+/* ---- 4. Inputs / controles ---- */
+html[data-admin-theme="light"] .admin-ds-control,
+html[data-admin-theme="light"] .admin-control-select,
+html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  background-color: #eef1f5 !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+  color-scheme: light;
+  box-shadow: none !important;
+}
+
+html[data-admin-theme="light"] .admin-ds-control::placeholder,
+html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea)::placeholder {
+  color: rgba(15, 23, 42, 0.4) !important;
+}
+
+html[data-admin-theme="light"] .admin-ds-control:hover,
+html[data-admin-theme="light"] .admin-control-select:hover,
+html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):hover {
+  background-color: #e6eaf0 !important;
+  border-color: var(--admin-border-strong) !important;
+}
+
+html[data-admin-theme="light"] .admin-ds-control:focus,
+html[data-admin-theme="light"] .admin-ds-control:focus-visible,
+html[data-admin-theme="light"] .admin-control-select:focus,
+html[data-admin-theme="light"] .admin-control-select:focus-visible,
+html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus,
+html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus-visible {
+  border-color: var(--admin-border-strong) !important;
+  box-shadow: 0 0 0 2px rgba(30, 58, 95, 0.14) !important;
+}
+
+html[data-admin-theme="light"] .beyonix-admin-main :where(input, textarea, select):disabled {
+  background-color: #e6eaf0 !important;
+  color: rgba(15, 23, 42, 0.4) !important;
+}
+
+/* ---- 5. Botones ---- */
+html[data-admin-theme="light"] .admin-ds-button-primary {
+  background-color: var(--admin-brand) !important;
+  border-color: var(--admin-brand) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-ds-button-primary:hover {
+  background-color: var(--admin-brand-hover) !important;
+  border-color: var(--admin-brand-hover) !important;
+  color: #ffffff !important;
+}
+html[data-admin-theme="light"] .admin-ds-button-secondary,
+html[data-admin-theme="light"] .admin-ds-button-ghost {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-button-secondary:hover,
+html[data-admin-theme="light"] .admin-ds-button-ghost:hover {
+  background-color: #f1f4f8 !important;
+  border-color: var(--admin-border-strong) !important;
+}
+html[data-admin-theme="light"] .admin-ds-button-destructive {
+  background-color: #fef2f2 !important;
+  border-color: rgba(220, 38, 38, 0.4) !important;
+  color: #b91c1c !important;
+}
+html[data-admin-theme="light"] .admin-ds-button-destructive:hover {
+  background-color: #fee2e2 !important;
+  border-color: rgba(220, 38, 38, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-ds-icon-action {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-icon-action:hover {
+  background-color: #f1f4f8 !important;
+}
+
+/* ---- 6. Dropdowns / popovers / selects (selector de íconos, Eye de
+   rentabilidad, Requisitos, AdminSelect, etc.) ---- */
+html[data-admin-theme="light"] .admin-ds-select-menu,
+html[data-admin-theme="light"] .beyonix-admin-main :where([role="listbox"]) {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-menu-searchable {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.18) !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-search {
+  border-bottom-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-search-input {
+  background: #f1f4f8 !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-search-icon {
+  background: rgba(30, 58, 95, 0.1) !important;
+  color: #1e4d7b !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-search-clear {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-search-clear:hover {
+  background: rgba(30, 58, 95, 0.1) !important;
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-option,
+html[data-admin-theme="light"] .admin-ds-select-option-selected {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-option:hover,
+html[data-admin-theme="light"] .admin-ds-select-option-selected {
+  background: #eaf1fa !important;
+  border-color: rgba(30, 58, 95, 0.16) !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-icon-picker-trigger,
+html[data-admin-theme="light"] .admin-icon-picker-popover,
+html[data-admin-theme="light"] .admin-icon-picker-search,
+html[data-admin-theme="light"] .admin-icon-picker-option {
+  border-color: var(--admin-border) !important;
+  background: #ffffff !important;
+}
+html[data-admin-theme="light"] .admin-icon-picker-trigger:hover,
+html[data-admin-theme="light"] .admin-icon-picker-option:hover {
+  border-color: var(--admin-border-strong) !important;
+  background: #f1f4f8 !important;
+}
+html[data-admin-theme="light"] .admin-icon-picker-option-selected {
+  border-color: rgba(30, 58, 95, 0.4) !important;
+  background: #eaf1fa !important;
+}
+html[data-admin-theme="light"] input.admin-icon-picker-search-input {
+  color: var(--admin-text) !important;
+}
+
+/* ---- 7. Sidebar ---- */
+html[data-admin-theme="light"] .beyonix-admin-sidebar,
+html[data-admin-theme="light"] .admin-ds-sidebar {
+  background: #ffffff !important;
+  border-color: var(--beyonix-border-default) !important;
+}
+html[data-admin-theme="light"] .admin-ds-sidebar-card {
+  background: #f7f9fb !important;
+  border-color: var(--beyonix-border-default) !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-sidebar :where(.border) {
+  border-color: var(--beyonix-border-default) !important;
+}
+
+/* ---- 8. Header mobile ---- */
+html[data-admin-theme="light"] .admin-ds-mobile-header {
+  background: #ffffff !important;
+  border-color: var(--beyonix-border-default) !important;
+}
+
+/* ---- 9. Editar producto (.product-editor-*): sólo color, nada de grid/
+   tamaños/proporciones -- ver comentarios de cada regla original para el
+   detalle de layout, que no se toca acá. ---- */
+html[data-admin-theme="light"] .product-editor-panel {
+  background: #ffffff !important;
+}
+html[data-admin-theme="light"] .product-editor-screen :where(
+    .product-editor-metric,
+    .product-editor-subpanel,
+    .product-editor-spec-row,
+    .product-editor-icon-cell,
+    .product-editor-empty
+  ) {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .product-editor-screen .product-editor-spec-row-active {
+  background: #eaf1fa !important;
+  border-color: rgba(30, 58, 95, 0.4) !important;
+}
+html[data-admin-theme="light"] .product-editor-screen .product-editor-header {
+  background: #eef1f5 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope,
+html[data-admin-theme="light"] .stock-adjustment-modal {
+  background: #ffffff !important;
+}
+
+/* ---- 10. Pedidos: filas de la tabla + badges semánticos ---- */
+html[data-admin-theme="light"] .admin-orders-list-row {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-orders-table-header {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-order-semantic-badge {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-semantic-badge--success {
+  background: rgba(16, 185, 129, 0.12) !important;
+  border-color: rgba(5, 150, 105, 0.45) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-order-semantic-badge--warning {
+  background: rgba(245, 158, 11, 0.14) !important;
+  border-color: rgba(217, 119, 6, 0.5) !important;
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] .admin-order-semantic-badge--danger {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(220, 38, 38, 0.45) !important;
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] .admin-order-semantic-badge--info {
+  background: rgba(59, 130, 246, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.45) !important;
+  color: #1e40af !important;
+}
+html[data-admin-theme="light"] .admin-order-semantic-badge--returned {
+  background: rgba(139, 92, 246, 0.12) !important;
+  border-color: rgba(124, 58, 237, 0.45) !important;
+  color: #5b21b6 !important;
+}
+
+/* ---- 11. Atención al cliente (mensajería) ---- */
+html[data-admin-theme="light"] .admin-claim-card,
+html[data-admin-theme="light"] .admin-claim-note,
+html[data-admin-theme="light"] .admin-claim-file-row,
+html[data-admin-theme="light"] .admin-claim-chat-bubble {
+  background-color: #ffffff !important;
+}
+html[data-admin-theme="light"] .admin-claim-card {
+  background: #ffffff !important;
+}
+html[data-admin-theme="light"] .admin-claim-help-resolved-card {
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.14), rgba(16, 185, 129, 0.06)) !important;
+}
+html[data-admin-theme="light"] .admin-claim-help-resolved-card :where(h4, p) {
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-claim-help-resolved-state,
+html[data-admin-theme="light"] .admin-claim-help-resolved-note {
+  border-color: rgba(5, 150, 105, 0.32) !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-claim-help-resolved-badge {
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  background: rgba(16, 185, 129, 0.14) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-claim-help-resolved-badge span {
+  color: #059669 !important;
+}
+html[data-admin-theme="light"] .admin-claim-chat-bubble-customer {
+  background: #f1f4f8 !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-claim-chat-bubble-beyonix {
+  background: #eaf1fa !important;
+  border-color: rgba(30, 58, 95, 0.3) !important;
+}
+
+/* ---- 12. Fondos oscuros "genéricos" repetidos como hex arbitrario en JSX
+   (bg-[#...]): sólo las variantes de panel neutro más reutilizadas (no las
+   que son acento/marca -- #112a43, #183b5e, #1e4d7b, #2c6ca3, #77e6e2 se
+   dejan igual en ambos temas, son la identidad azul/cian que se debe
+   mantener). Cubre la mayoría real de ocurrencias por frecuencia; el resto
+   de valores hex puntuales (badges o hovers muy específicos, baja
+   frecuencia) queda pendiente de un ajuste dirigido si algún caso puntual
+   se ve mal -- ver resumen final. */
+html[data-admin-theme="light"] .beyonix-admin-shell :where(
+    .bg-\[\#07111b\],
+    .bg-\[\#07111B\],
+    .bg-\[\#0c1219\],
+    .bg-\[\#111827\],
+    .bg-\[\#101820\],
+    .bg-\[\#071018\],
+    .bg-\[\#141414\],
+    .bg-\[\#181818\],
+    .bg-\[\#111820\],
+    .bg-\[\#07111d\],
+    .bg-\[\#0d1117\],
+    .bg-\[\#15191f\],
+    .bg-\[\#16222d\],
+    .bg-\[\#141820\],
+    .bg-\[\#13263b\],
+    .bg-\[\#121b24\],
+    .bg-\[\#111b25\],
+    .bg-\[\#101923\],
+    .bg-\[\#151e28\],
+    .bg-\[\#151f2a\]
+  ) {
+  background-color: #f7f9fb !important;
+}
+/* --- text-white/N: mismo texto oscuro, misma opacidad relativa (preserva jerarquia) --- */
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/15 { color: color-mix(in oklab, var(--admin-text) 15%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/18 { color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/20 { color: color-mix(in oklab, var(--admin-text) 20%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/22 { color: color-mix(in oklab, var(--admin-text) 22%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/24 { color: color-mix(in oklab, var(--admin-text) 24%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/25 { color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/28 { color: color-mix(in oklab, var(--admin-text) 28%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/30 { color: color-mix(in oklab, var(--admin-text) 30%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/32 { color: color-mix(in oklab, var(--admin-text) 32%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/34 { color: color-mix(in oklab, var(--admin-text) 34%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/35 { color: color-mix(in oklab, var(--admin-text) 35%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/36 { color: color-mix(in oklab, var(--admin-text) 36%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/38 { color: color-mix(in oklab, var(--admin-text) 38%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/40 { color: color-mix(in oklab, var(--admin-text) 40%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/42 { color: color-mix(in oklab, var(--admin-text) 42%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/44 { color: color-mix(in oklab, var(--admin-text) 44%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/45 { color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/46 { color: color-mix(in oklab, var(--admin-text) 46%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/48 { color: color-mix(in oklab, var(--admin-text) 48%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/50 { color: color-mix(in oklab, var(--admin-text) 50%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/52 { color: color-mix(in oklab, var(--admin-text) 52%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/54 { color: color-mix(in oklab, var(--admin-text) 54%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/55 { color: color-mix(in oklab, var(--admin-text) 55%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/56 { color: color-mix(in oklab, var(--admin-text) 56%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/58 { color: color-mix(in oklab, var(--admin-text) 58%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/60 { color: color-mix(in oklab, var(--admin-text) 60%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/62 { color: color-mix(in oklab, var(--admin-text) 62%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/64 { color: color-mix(in oklab, var(--admin-text) 64%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/65 { color: color-mix(in oklab, var(--admin-text) 65%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/66 { color: color-mix(in oklab, var(--admin-text) 66%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/68 { color: color-mix(in oklab, var(--admin-text) 68%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/70 { color: color-mix(in oklab, var(--admin-text) 70%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/72 { color: color-mix(in oklab, var(--admin-text) 72%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/74 { color: color-mix(in oklab, var(--admin-text) 74%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/75 { color: color-mix(in oklab, var(--admin-text) 75%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/76 { color: color-mix(in oklab, var(--admin-text) 76%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/78 { color: color-mix(in oklab, var(--admin-text) 78%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/80 { color: color-mix(in oklab, var(--admin-text) 80%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/82 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/84 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/85 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/86 { color: color-mix(in oklab, var(--admin-text) 86%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/88 { color: color-mix(in oklab, var(--admin-text) 88%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/90 { color: color-mix(in oklab, var(--admin-text) 90%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/92 { color: color-mix(in oklab, var(--admin-text) 92%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/94 { color: color-mix(in oklab, var(--admin-text) 94%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/95 { color: color-mix(in oklab, var(--admin-text) 95%, transparent) !important; }
+
+/* --- border-white/N: base oscura en vez de blanca (borde gris azulado visible sobre fondo claro) --- */
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/5 { border-color: color-mix(in oklab, var(--admin-text) 5%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/6 { border-color: color-mix(in oklab, var(--admin-text) 6%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/7 { border-color: color-mix(in oklab, var(--admin-text) 7%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/8 { border-color: color-mix(in oklab, var(--admin-text) 8%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/9 { border-color: color-mix(in oklab, var(--admin-text) 9%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/10 { border-color: color-mix(in oklab, var(--admin-text) 10%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/12 { border-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/14 { border-color: color-mix(in oklab, var(--admin-text) 14%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/15 { border-color: color-mix(in oklab, var(--admin-text) 15%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/18 { border-color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/20 { border-color: color-mix(in oklab, var(--admin-text) 20%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/22 { border-color: color-mix(in oklab, var(--admin-text) 22%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/24 { border-color: color-mix(in oklab, var(--admin-text) 24%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/25 { border-color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/28 { border-color: color-mix(in oklab, var(--admin-text) 28%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/30 { border-color: color-mix(in oklab, var(--admin-text) 30%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/32 { border-color: color-mix(in oklab, var(--admin-text) 32%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/35 { border-color: color-mix(in oklab, var(--admin-text) 35%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/45 { border-color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
+
+/* --- bg-white/N: highlight sutil oscuro en vez de blanco (hover/active sobre fondo claro) --- */
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/2 { background-color: color-mix(in oklab, var(--admin-text) 2%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/3 { background-color: color-mix(in oklab, var(--admin-text) 3%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/4 { background-color: color-mix(in oklab, var(--admin-text) 4%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/5 { background-color: color-mix(in oklab, var(--admin-text) 5%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/6 { background-color: color-mix(in oklab, var(--admin-text) 6%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/7 { background-color: color-mix(in oklab, var(--admin-text) 7%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/8 { background-color: color-mix(in oklab, var(--admin-text) 8%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/10 { background-color: color-mix(in oklab, var(--admin-text) 10%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/12 { background-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/18 { background-color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/24 { background-color: color-mix(in oklab, var(--admin-text) 24%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/25 { background-color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/35 { background-color: color-mix(in oklab, var(--admin-text) 35%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/38 { background-color: color-mix(in oklab, var(--admin-text) 38%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/45 { background-color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/90 { background-color: color-mix(in oklab, var(--admin-text) 90%, transparent) !important; }
+
+/* --- variantes sin fraccion (opacidad 100%) --- */
+html[data-admin-theme="light"] .beyonix-admin-shell .text-white { color: var(--admin-text) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .border-white { border-color: var(--admin-text) !important; }
+html[data-admin-theme="light"] .beyonix-admin-shell .bg-white { background-color: var(--admin-text) !important; }

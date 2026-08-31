@@ -42,12 +42,11 @@ function clampDigitsOnly(rawValue: string, maxDigits: number): string {
   return rawValue.replace(/\D/g, "").slice(0, maxDigits)
 }
 
-// Ancho fijo compacto para los campos de precio ($/precio calculado/precio
-// anterior): visualmente alcanza justo para "$9.999.999" (7 dígitos +
-// separadores de miles) sin estirarse más que eso. Los inputs con prefijo
-// "$" además recortan el padding derecho heredado (que sólo tiene sentido
-// cuando hay un ícono a la derecha) para no desperdiciar espacio.
-const priceFieldWidthClassName = "w-32 shrink-0"
+// Los inputs con prefijo "$" recortan el padding derecho heredado (que sólo
+// tiene sentido cuando hay un ícono a la derecha) para no desperdiciar
+// espacio. El ancho de cada campo ya no lo fija esta clase -- lo fijan las
+// columnas de .product-editor-price-grid (8rem, alcanza justo para
+// "$9.999.999": 7 dígitos + separadores de miles).
 const priceInputTightPaddingClassName = "!pr-2"
 
 interface ProductPriceCardProps {
@@ -106,9 +105,23 @@ export function ProductPriceCard({
 
   return (
     <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-      <div className="product-editor-panel-heading flex items-center justify-between gap-2">
-        <h2 className="text-base font-black text-white">Precio</h2>
-        <div className="flex items-center gap-1.5">
+      {/*
+        Título + botones $/%/Eye y la fila de campos comparten la MISMA
+        grilla de 3 columnas de ancho fijo (7rem/8rem/8rem, ver
+        .product-editor-price-grid en globals.css) en dos contenedores grid
+        separados (no uno solo) para conservar product-editor-panel-heading
+        (línea divisoria + tipografía del título, igual que el resto de las
+        cards) -- dos grids con idéntico grid-template-columns alinean sus
+        columnas igual que uno solo. El grupo de botones cae en la columna 3,
+        así que queda siempre sobre "Precio anterior" en vez de flotar
+        contra el borde de la card. Anchos fijos (no flex-1/fr): la card
+        entera se dimensiona por este contenido -- no puede haber wrap.
+      */}
+      <div className="product-editor-panel-heading product-editor-price-grid grid min-w-0 items-center gap-x-2.5">
+        <h2 className="col-span-2 text-base font-black text-white">
+          Precio
+        </h2>
+        <div className="flex items-center justify-end gap-1.5">
           <div
             role="group"
             aria-label="Forma de cálculo del precio"
@@ -147,132 +160,131 @@ export function ProductPriceCard({
         </div>
       </div>
 
-      {isManual ? (
-        <div className="flex min-w-0 flex-wrap items-start gap-2.5">
-          <AdminFormField
-            label="Precio actual"
-            labelClassName={fieldLabelClassName}
-            className={priceFieldWidthClassName}
-          >
-            <span className="relative block">
-              <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
-                $
-              </span>
-              <input
-                id="precio"
-                min="0"
-                type="number"
-                value={precio}
-                placeholder="0"
-                onChange={(event) =>
-                  onPrecioChange(clampIntegerDigits(event.target.value, MAX_PRICE_INTEGER_DIGITS))
-                }
-                className={`${inputCls} admin-product-price-input !pl-8 ${priceInputTightPaddingClassName} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-              />
-            </span>
-          </AdminFormField>
+      <div className="product-editor-price-grid grid min-w-0 gap-x-2.5 gap-y-1.5">
+        {isManual ? (
+          <>
+            <div aria-hidden="true" />
 
-          <AdminFormField
-            label="Precio anterior"
-            labelClassName={fieldLabelClassName}
-            className={priceFieldWidthClassName}
-            error={precioAnteriorError}
-          >
-            <span className="relative block">
-              <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
-                $
+            <AdminFormField
+              label="Precio actual"
+              labelClassName={fieldLabelClassName}
+            >
+              <span className="relative block">
+                <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
+                  $
+                </span>
+                <input
+                  id="precio"
+                  min="0"
+                  type="number"
+                  value={precio}
+                  placeholder="0"
+                  onChange={(event) =>
+                    onPrecioChange(clampIntegerDigits(event.target.value, MAX_PRICE_INTEGER_DIGITS))
+                  }
+                  className={`${inputCls} admin-product-price-input !pl-8 ${priceInputTightPaddingClassName} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                />
               </span>
-              <input
-                id="precio_anterior"
-                min="0"
-                type="number"
-                value={precioAnterior}
-                placeholder="0"
-                onChange={(event) =>
-                  onPrecioAnteriorChange(
-                    clampIntegerDigits(event.target.value, MAX_PRICE_INTEGER_DIGITS),
-                  )
-                }
-                className={`${inputCls} admin-product-price-input !pl-8 ${priceInputTightPaddingClassName} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                  precioAnteriorError ? "!border-red-400/60" : ""
-                }`}
-              />
-            </span>
-          </AdminFormField>
-        </div>
-      ) : (
-        <div className="flex min-w-0 flex-wrap items-start gap-2.5">
-          <AdminFormField
-            label="Ganancia neta"
-            labelClassName={fieldLabelClassName}
-            className="w-28 shrink-0"
-          >
-            {/* Input compacto explícito en 5rem (idéntico al ancho anterior):
-                el wrapper de arriba es más ancho sólo para que el label
-                "Ganancia neta" quepa en una línea sin empujar este input
-                hacia abajo; el input en sí no cambia de tamaño. */}
-            <span className="relative inline-flex w-20">
-              <input
-                id="target_margin_percent"
-                min="0"
-                max="99"
-                type="number"
-                inputMode="numeric"
-                value={targetMarginPercent}
-                placeholder="40"
-                disabled={knownUnitCost == null}
-                onChange={(event) =>
-                  onTargetMarginPercentChange(
-                    clampDigitsOnly(event.target.value, MAX_TARGET_MARGIN_DIGITS),
-                  )
-                }
-                className="admin-control-input admin-ds-control w-full !pl-3 !pr-6 text-sm font-medium text-white outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-              <span className="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
-                %
-              </span>
-            </span>
-          </AdminFormField>
+            </AdminFormField>
 
-          <AdminFormField
-            label="Precio calculado"
-            labelClassName={fieldLabelClassName}
-            className={priceFieldWidthClassName}
-          >
-            <span className="admin-control-input admin-ds-control flex h-11 w-full items-center justify-end px-2 text-base font-black text-white opacity-90">
-              {computedPriceLabel}
-            </span>
-          </AdminFormField>
-
-          <AdminFormField
-            label="Precio anterior"
-            labelClassName={fieldLabelClassName}
-            className={priceFieldWidthClassName}
-            error={precioAnteriorError}
-          >
-            <span className="relative block">
-              <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
-                $
+            <AdminFormField
+              label="Precio anterior"
+              labelClassName={fieldLabelClassName}
+              error={precioAnteriorError}
+            >
+              <span className="relative block">
+                <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
+                  $
+                </span>
+                <input
+                  id="precio_anterior"
+                  min="0"
+                  type="number"
+                  value={precioAnterior}
+                  placeholder="0"
+                  onChange={(event) =>
+                    onPrecioAnteriorChange(
+                      clampIntegerDigits(event.target.value, MAX_PRICE_INTEGER_DIGITS),
+                    )
+                  }
+                  className={`${inputCls} admin-product-price-input !pl-8 ${priceInputTightPaddingClassName} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    precioAnteriorError ? "!border-red-400/60" : ""
+                  }`}
+                />
               </span>
-              <input
-                id="precio_anterior"
-                min="0"
-                type="number"
-                value={precioAnterior}
-                placeholder="0"
-                onChange={(event) =>
-                  onPrecioAnteriorChange(
-                    clampIntegerDigits(event.target.value, MAX_PRICE_INTEGER_DIGITS),
-                  )
-                }
-                className={`${inputCls} admin-product-price-input !pl-8 ${priceInputTightPaddingClassName} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                  precioAnteriorError ? "!border-red-400/60" : ""
-                }`}
-              />
-            </span>
-          </AdminFormField>
-        </div>
-      )}
+            </AdminFormField>
+          </>
+        ) : (
+          <>
+            <AdminFormField
+              label="Ganancia neta"
+              labelClassName={fieldLabelClassName}
+            >
+              {/* Input compacto explícito en 5rem (idéntico al ancho anterior):
+                  la columna de la grilla es más ancha sólo para que el label
+                  "Ganancia neta" quepa en una línea sin empujar este input
+                  hacia abajo; el input en sí no cambia de tamaño. */}
+              <span className="relative inline-flex w-20">
+                <input
+                  id="target_margin_percent"
+                  min="0"
+                  max="99"
+                  type="number"
+                  inputMode="numeric"
+                  value={targetMarginPercent}
+                  placeholder="40"
+                  disabled={knownUnitCost == null}
+                  onChange={(event) =>
+                    onTargetMarginPercentChange(
+                      clampDigitsOnly(event.target.value, MAX_TARGET_MARGIN_DIGITS),
+                    )
+                  }
+                  className="admin-control-input admin-ds-control w-full !pl-3 !pr-6 text-sm font-medium text-white outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <span className="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
+                  %
+                </span>
+              </span>
+            </AdminFormField>
+
+            <AdminFormField
+              label="Precio calculado"
+              labelClassName={fieldLabelClassName}
+            >
+              <span className="admin-control-input admin-ds-control flex h-11 w-full items-center justify-end px-2 text-base font-black text-white opacity-90">
+                {computedPriceLabel}
+              </span>
+            </AdminFormField>
+
+            <AdminFormField
+              label="Precio anterior"
+              labelClassName={fieldLabelClassName}
+              error={precioAnteriorError}
+            >
+              <span className="relative block">
+                <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
+                  $
+                </span>
+                <input
+                  id="precio_anterior"
+                  min="0"
+                  type="number"
+                  value={precioAnterior}
+                  placeholder="0"
+                  onChange={(event) =>
+                    onPrecioAnteriorChange(
+                      clampIntegerDigits(event.target.value, MAX_PRICE_INTEGER_DIGITS),
+                    )
+                  }
+                  className={`${inputCls} admin-product-price-input !pl-8 ${priceInputTightPaddingClassName} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    precioAnteriorError ? "!border-red-400/60" : ""
+                  }`}
+                />
+              </span>
+            </AdminFormField>
+          </>
+        )}
+      </div>
 
       {knownUnitCost === undefined && (
         <p className="text-xs font-medium leading-5 text-white">Consultando costo cargado...</p>

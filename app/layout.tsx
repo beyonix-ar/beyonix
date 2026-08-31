@@ -62,10 +62,32 @@ export default function RootLayout({
       lang="es"
       data-scroll-behavior="smooth"
       className={montserrat.variable}
+      suppressHydrationWarning
     >
       <body className="antialiased">
         <Script id="beyonix-scroll-restoration" strategy="beforeInteractive">
           {`if ("scrollRestoration" in history) history.scrollRestoration = "manual";`}
+        </Script>
+        {/*
+          Resuelve el tema del Admin ANTES del primer paint para evitar el
+          flash oscuro->claro (o viceversa) al cargar. Sólo lee/escribe un
+          atributo en <html>; las reglas CSS que reaccionan a él están
+          scopeadas bajo .beyonix-admin-shell (ver globals.css), así que no
+          afecta a la tienda pública aunque el atributo exista en cualquier
+          página. suppressHydrationWarning en <html> es necesario porque
+          este script corre fuera del árbol de React, antes de la
+          hidratación.
+        */}
+        <Script id="beyonix-admin-theme-init" strategy="beforeInteractive">
+          {`try {
+            var t = window.localStorage.getItem("beyonix-admin-theme");
+            document.documentElement.setAttribute(
+              "data-admin-theme",
+              t === "light" || t === "dark" ? t : "dark"
+            );
+          } catch (e) {
+            document.documentElement.setAttribute("data-admin-theme", "dark");
+          }`}
         </Script>
         <BrowserTabTitle />
         <BeyonixShootingStarsBackground />

@@ -1044,12 +1044,13 @@ export function ProductVariantsEditor({
       )}
 
       {/*
-        Variantes a ancho completo: es un listado que crece con la cantidad
-        de variantes, así que no comparte fila con tarjetas de altura fija
-        (quedarían descalineadas apenas hubiera más de 1-2 variantes). El
-        resumen de Stock, antes acá al lado, ahora se renderiza en
-        producto-form.tsx junto a Financiación/Dimensiones/Estado comercial
-        (ver onDistributionChange más arriba).
+        Variantes comparte fila 50/50 con Especificaciones (ver
+        producto-form.tsx). Es un listado que crece con la cantidad de
+        variantes -- por eso no usa items-stretch con la tarjeta vecina, cada
+        una mide según su propio contenido. El resumen de Stock, antes acá al
+        lado, se renderiza en producto-form.tsx junto a
+        Financiación/Dimensiones/Estado comercial (ver onDistributionChange
+        más arriba).
       */}
       <AdminCard className="product-editor-panel min-w-0 space-y-2 p-2.5">
         <div className="product-editor-panel-heading flex items-center justify-between gap-2">
@@ -1384,9 +1385,28 @@ function VariantCard({
     return (
       <article
         data-variant-drop-key={dropKey}
-        className="product-editor-variant-card grid min-w-0 justify-start grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 rounded-xl border border-white/10 bg-[#0c1219] p-3"
+        className="product-editor-variant-card grid min-w-0 justify-start grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2.5 rounded-xl border border-white/10 bg-[#0c1219] p-2.5"
       >
-        <span className="flex size-8 shrink-0 items-center justify-center" aria-hidden={!leadingAccessory}>
+        {/*
+          Columna del handle de arrastre: sólo existe cuando hay más de una
+          variante (ver renderVariantHandle, que devuelve null si no hay
+          nada para reordenar). Con size-8 fijo SIEMPRE, este span reservaba
+          2rem de ancho vacío -- toda la fila (imagen, SKU, el resto)
+          quedaba corrida a la derecha aunque no hubiera ningún handle que
+          mostrar. Sin size-8 en el caso vacío, la columna auto del grid
+          colapsa a su contenido real (nada) en vez de a un tamaño fijo, sin
+          tocar el conteo de columnas (así Color/Stock/Estado/Acciones, que
+          dependen de caer en su track fijo correspondiente, no se
+          desalinean).
+        */}
+        <span
+          className={
+            leadingAccessory
+              ? "flex size-8 shrink-0 items-center justify-center"
+              : "flex shrink-0 items-center justify-center"
+          }
+          aria-hidden={!leadingAccessory}
+        >
           {leadingAccessory}
         </span>
         <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#07111b]">
@@ -1449,7 +1469,7 @@ function VariantCard({
           </span>
         )}
 
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="ml-2 flex items-center justify-end gap-1.5">
           <AdminSecondaryButton
             size="icon"
             title={`Editar variante ${nombre}`}

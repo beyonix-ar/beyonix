@@ -1337,43 +1337,141 @@ function getDispatchAlert(pedido: SupabasePedido) {
   }
 }
 
-function EstadoBadge({ estado }: { estado: string }) {
-  const styles: Record<string, string> = {
-    pendiente: ADMIN_STATUS_BADGES.warning,
-    pagado: ADMIN_STATUS_BADGES.success,
-    enviado: ADMIN_STATUS_BADGES.info,
-    en_camino: ADMIN_STATUS_BADGES.info,
-    visita_fallida: ADMIN_STATUS_BADGES.warning,
-    en_sucursal: ADMIN_STATUS_BADGES.info,
-    retiro_pendiente: ADMIN_STATUS_BADGES.info,
-    retiro_vencido: ADMIN_STATUS_BADGES.warning,
-    en_devolucion: ADMIN_STATUS_BADGES.warning,
-    devuelto_beyonix: ADMIN_STATUS_BADGES.warning,
-    entregado: ADMIN_STATUS_BADGES.success,
-    cancelado: ADMIN_STATUS_BADGES.danger,
-    cancelado_refund_pending: ADMIN_STATUS_BADGES.danger,
-    cancelado_refunded: ADMIN_STATUS_BADGES.danger,
-    refund_pending: ADMIN_STATUS_BADGES.warning,
-    refunded: ADMIN_STATUS_BADGES.success,
-    rechazado: ADMIN_STATUS_BADGES.danger,
+type OrderGeneralStatus = "en_proceso" | "completado" | "cancelado" | "devuelto"
+
+/**
+ * Estado GENERAL del pedido para la columna "Estado" del listado --
+ * deliberadamente NO expone acá detalle logístico (eso es Despacho, ver
+ * getDispatchAlert más arriba) ni financiero puntual (eso es Pago, ver
+ * getOrderPaymentDisplay más abajo). Sólo 4 baldes, cada uno derivado de
+ * campos ya persistidos, sin inventar reglas nuevas:
+ *
+ * - "devuelto": return_status === "resuelta" es el único marcador explícito
+ *   y terminal que ya existe en el modelo para "la devolución se cerró".
+ *   Se chequea ANTES que cancelado porque un pedido puede llegar a
+ *   financial_status "refunded" por una devolución sin que el pedido en sí
+ *   se haya cancelado -- son conceptos distintos (ver isAdminCancelledOrder
+ *   más abajo, que trata cancelación y reintegro como una misma familia).
+ * - "cancelado": reutiliza isAdminCancelledOrder tal cual la usa el resto
+ *   del admin (estado === "cancelado" o financial_status en curso de
+ *   cancelación/reintegro) -- ningún criterio nuevo.
+ * - "completado": mismo criterio que ya usa getDispatchAlert para
+ *   "Entregado" (estado === "entregado" o delivered_at), y no cayó en
+ *   ninguno de los dos casos anteriores.
+ * - "en_proceso": todo lo demás -- pagado o no, preparando, despachado, en
+ *   tránsito, con o sin incidencia de entrega en curso. Adrede amplio: es
+ *   la simplificación que pide esta columna (el detalle vive en Despacho).
+ */
+function getOrderGeneralStatus(pedido: SupabasePedido): OrderGeneralStatus {
+  if (pedido.return_status === "resuelta") return "devuelto"
+  if (isAdminCancelledOrder(pedido)) return "cancelado"
+  if (pedido.estado === "entregado" || pedido.delivered_at) return "completado"
+  return "en_proceso"
+}
+
+type AdminOrderBadgeTone = "success" | "warning" | "danger" | "info" | "returned"
+
+const ORDER_GENERAL_STATUS_META: Record<
+  OrderGeneralStatus,
+  { label: string; tone: AdminOrderBadgeTone }
+> = {
+  en_proceso: { label: "En proceso", tone: "warning" },
+  completado: { label: "Completado", tone: "success" },
+  cancelado: { label: "Cancelado", tone: "danger" },
+  devuelto: { label: "Devuelto", tone: "returned" },
+}
+
+function EstadoBadge({ pedido }: { pedido: SupabasePedido }) {
+  const { label, tone } = ORDER_GENERAL_STATUS_META[getOrderGeneralStatus(pedido)]
+
+  return (
+    <span className={`admin-order-semantic-badge admin-order-semantic-badge--${tone}`}>
+      {label}
+    </span>
+  )
+}
+
+interface OrderPaymentDisplay {
+  method: string
+  statusLabel: string
+  tone: AdminOrderBadgeTone
+}
+
+/**
+ * Columna PAGO: método + estado de ESE pago puntual (no el estado general
+ * del pedido, ver getOrderGeneralStatus arriba). Reutiliza exactamente las
+ * mismas fuentes de verdad que ya usa el resto del admin para lo mismo, sin
+ * inventar estados nuevos -- sólo los prioriza y traduce a una etiqueta
+ * corta:
+ * - isOrderPaymentConfirmed (lib/orders/order-payment-status.ts): misma
+ *   autoridad que ya decide "¿está pagado?" en toda la app.
+ * - isRejectedPayment / isTransferOrder: ya existían en este archivo.
+ * - financial_status "refund_pending"/"refunded": pisa cualquier lectura
+ *   del payment_status crudo porque es la información más reciente/
+ *   relevante sobre el dinero (ej.: un pago que se había confirmado pero
+ *   ya se reintegró no puede seguir mostrando "Confirmado").
+ * Transferencia tiene su propio ciclo de revisión de comprobante
+ * (PAYMENT_STATUS_OPTIONS) y se respeta tal cual: un comprobante cargado
+ * pero no revisado nunca aparece como confirmado acá.
+ */
+function getOrderPaymentDisplay(pedido: SupabasePedido): OrderPaymentDisplay {
+  // Abreviatura sólo visual para esta columna -- getCompactPaymentMethodLabel
+  // sigue devolviendo "Mercado Pago" tal cual para cualquier otro uso; acá
+  // se remapea únicamente el string de salida, sin tocar la lógica que lo
+  // determina.
+  const rawMethod = getCompactPaymentMethodLabel(pedido)
+  const method = rawMethod === "Mercado Pago" ? "MP" : rawMethod
+
+  if (pedido.financial_status === "refunded") {
+    return { method, statusLabel: "Reembolsado", tone: "returned" }
   }
-  const labels: Record<string, string> = {
-    ...SHIPPING_STATUS_LABELS,
-    pagado: "Pago confirmado",
-    cancelado_refund_pending: "Cancelado · Reintegro pendiente",
-    cancelado_refunded: "Cancelado · Reintegrado",
-    refund_pending: "Reintegro pendiente",
-    refunded: "Reintegrado",
-    rechazado: "Comprobante rechazado",
+  if (pedido.financial_status === "refund_pending") {
+    return { method, statusLabel: "Reintegro pendiente", tone: "warning" }
   }
+
+  if (isTransferOrder(pedido)) {
+    if (pedido.payment_status === "vencido_falta_comprobante") {
+      return { method, statusLabel: "Cancelado sin comprobante", tone: "danger" }
+    }
+    if (isRejectedPayment(pedido.payment_status)) {
+      return { method, statusLabel: "Rechazado", tone: "danger" }
+    }
+    if (pedido.payment_status === "en_revision") {
+      return { method, statusLabel: "En revisión", tone: "info" }
+    }
+    if (pedido.payment_status === "confirmado" || pedido.payment_status === "approved") {
+      return { method, statusLabel: "Confirmado", tone: "success" }
+    }
+    return { method, statusLabel: "Pendiente", tone: "warning" }
+  }
+
+  if (pedido.payment_status === "charged_back") {
+    return { method, statusLabel: "Contracargo", tone: "danger" }
+  }
+  if (isRejectedPayment(pedido.payment_status)) {
+    return { method, statusLabel: "Rechazado", tone: "danger" }
+  }
+  if (isOrderPaymentConfirmed(pedido)) {
+    return { method, statusLabel: "Confirmado", tone: "success" }
+  }
+  if (pedido.payment_status === "in_process") {
+    return { method, statusLabel: "En proceso", tone: "info" }
+  }
+
+  return { method, statusLabel: "Pendiente", tone: "warning" }
+}
+
+function PagoBadge({ pedido }: { pedido: SupabasePedido }) {
+  const { method, statusLabel, tone } = getOrderPaymentDisplay(pedido)
 
   return (
     <span
-      className={`admin-order-state-badge inline-flex w-fit items-center rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${
-        styles[estado] ?? ADMIN_STATUS_BADGES.muted
-      }`}
+      className={`admin-order-semantic-badge admin-order-semantic-badge--${tone} max-w-full`}
+      title={`${method} · ${statusLabel}`}
     >
-      {labels[estado] ?? estado}
+      <span className="truncate">
+        {method} · {statusLabel}
+      </span>
     </span>
   )
 }
@@ -7538,7 +7636,7 @@ export function AdminPedidos({
                   "Cliente",
                   "Estado",
                   "Despacho",
-                  "Método de pago",
+                  "Pago",
                   "Total",
                   "Acciones",
                 ].map((label) => (
@@ -7562,7 +7660,6 @@ export function AdminPedidos({
                 const attentionTone = getOrderNotificationTone(pedido)
                 const showInvoiceReminder = needsInvoiceReminder(pedido)
                 const showShippingReminder = needsShippingReminder(pedido)
-                const paymentMethod = getCompactPaymentMethodLabel(pedido)
                 const orderDate = formatOrderDateParts(pedido.created_at)
                 const isNewOrder = newOrderIds.has(pedido.id)
                 return (
@@ -7604,7 +7701,7 @@ export function AdminPedidos({
                             )}
                             {showInvoiceReminder && <InvoiceReminderBell />}
                             {showShippingReminder && <ShippingReminderBadge />}
-                            <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
+                            <EstadoBadge pedido={pedido} />
                             {hasPendingClaim && <span className="admin-order-pending-claim-badge rounded-full border border-red-400/80 bg-red-950/75 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-100 shadow-[0_0_14px_rgba(248,113,113,0.22)]">Reclamo pendiente</span>}
                           </div>
                         </div>
@@ -7637,7 +7734,7 @@ export function AdminPedidos({
                       <div className="grid min-w-0 gap-4 border-y border-white/7 py-4 sm:grid-cols-3">
                         <MobileOrderField label="Estado">
                           <div className="flex min-w-0">
-                            <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
+                            <EstadoBadge pedido={pedido} />
                           </div>
                         </MobileOrderField>
                         <MobileOrderField label="Despacho">
@@ -7650,9 +7747,7 @@ export function AdminPedidos({
                           </div>
                         </MobileOrderField>
                         <MobileOrderField label="Pago">
-                          <span className="inline-flex max-w-full items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/78">
-                            <span className="truncate">{paymentMethod}</span>
-                          </span>
+                          <PagoBadge pedido={pedido} />
                         </MobileOrderField>
                       </div>
 
@@ -7717,7 +7812,7 @@ export function AdminPedidos({
 
                   <div className="text-center">
                     <div className="flex justify-center">
-                      <EstadoBadge estado={getDisplayedOrderStatus(pedido)} />
+                      <EstadoBadge pedido={pedido} />
                     </div>
                   </div>
 
@@ -7730,13 +7825,7 @@ export function AdminPedidos({
                   </div>
 
                   <div className="min-w-0 space-y-1 text-center">
-                    <span
-                      className="inline-flex max-w-full items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-10px font-black uppercase tracking-wide text-white/78"
-                    >
-                      <span className="truncate">
-                        {paymentMethod}
-                      </span>
-                    </span>
+                    <PagoBadge pedido={pedido} />
                   </div>
 
                   <div className="min-w-0 text-center">

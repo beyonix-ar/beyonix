@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowLeft,
-  Check,
   Eye,
   Loader2,
   Play,
@@ -34,6 +33,7 @@ import { ProductVariantsEditor, StockSummaryItem } from "./product-variants-edit
 import type { ProductVariantDistribution } from "@/lib/supabase/queries/producto-variantes"
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { ProductPriceCard } from "./product-price-card"
+import { ProductRequirementsPopover } from "./product-requirements-popover"
 import { useProductoForm } from "./use-producto-form"
 import {
   adminControlClassName,
@@ -534,6 +534,7 @@ export function ProductoForm({
           >
             <Eye className="size-4 text-white" />
           </AdminSecondaryButton>
+          <ProductRequirementsPopover status={activationStatus} />
           <AdminPrimaryButton
             size="icon"
             title="Guardar cambios"
@@ -715,278 +716,250 @@ export function ProductoForm({
           </div>
 
           {/*
-            Fila 2: Estado comercial + Stock -- ~38/62 por container query
-            (ver .product-editor-row-commercial en globals.css). items-start
-            porque Estado comercial puede crecer (bloque de "Requisitos para
-            activar") mientras Stock es siempre la misma altura fija.
+            Fila 2+3: bloque [Estado comercial+Stock] + Especificaciones
+            (izquierda) | bloque [Dimensiones+Contenido] + Variantes
+            (derecha) -- ver .product-editor-commercial-catalog-row en
+            globals.css. Cada bloque es su propio flex-col independiente, NO
+            una fila de grid compartida entre las 4 tarjetas de arriba: con
+            un grid de 4 columnas en una sola fila (diseño anterior),
+            Especificaciones/Variantes heredaban la altura del más alto de
+            los 4 (Contenido, que tiene textarea de descripción) sin
+            importar si venían de la columna corta o la larga -- items-start
+            evita que las tarjetas se estiren ENTRE SÍ, pero no puede evitar
+            que el contenedor de la fila completa mida lo que mide su
+            integrante más alto. Separar en dos bloques verticales
+            independientes es la única forma de que Especificaciones
+            arranque justo debajo de Estado+Stock (más bajos) sin esperar a
+            Contenido. Cada bloque, al ser flex-col de ancho completo,
+            alinea sus bordes izquierdo/derecho automáticamente con el par
+            de tarjetas de arriba -- no hace falta ningún offset manual.
+            "Requisitos para activar" vive en el ícono del header (ver
+            ProductRequirementsPopover) -- misma lógica de
+            getProductActivationStatus, sólo cambió la presentación.
           */}
-          <div className="product-editor-row-commercial grid min-w-0 gap-2.5 items-start">
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 className="text-base font-black text-white">Estado comercial</h2>
-                </div>
-                <div className="product-editor-status-grid grid gap-2">
-                  {[
-                    {
-                      key: "activo" as const,
-                      label: "Estado",
-                      value: form.activo ? "Activo" : "Inactivo",
-                      description: "Define si el producto puede mostrarse y venderse.",
-                      active: form.activo,
-                    },
-                    {
-                      key: "destacado" as const,
-                      label: "Destacado",
-                      value: form.destacado ? "Sí" : "No",
-                      description: "Visible en espacios promocionales.",
-                      active: form.destacado,
-                    },
-                  ].map((toggle) => (
-                    <AdminSecondaryButton
-                      key={toggle.key}
-                      title={`${toggle.label}: ${toggle.value}`}
-                      aria-label={`${toggle.label}: ${toggle.value}`}
-                      aria-pressed={toggle.active}
-                      onClick={() => {
-                        if (toggle.key === "activo" && toggle.active) {
-                          setPendingVariantStates(
-                            Object.fromEntries(
-                              persistedVariants.map((variant) => [
-                                variant.id,
-                                false,
-                              ]),
-                            ),
-                          )
-                        }
-
-                        setField(toggle.key, !toggle.active)
-                      }}
-                      className={`product-editor-toggle grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_4.5rem] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${toggle.active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
-                    >
-                      {toggle.active ? (
-                        <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
-                      ) : (
-                        <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
-                      )}
-                      <span className="min-w-0 self-center">
-                        <span className="block text-sm font-black text-white">{toggle.label}</span>
-                        <span className="mt-0.5 block text-xs font-medium leading-5 text-white">{toggle.description}</span>
-                      </span>
-                      <span className={`w-full text-right text-sm font-black ${toggle.active ? "text-emerald-300" : "text-white"}`}>
-                        {toggle.value}
-                      </span>
-                    </AdminSecondaryButton>
-                  ))}
-                </div>
-                {producto && form.activo !== producto.activo && (
-                  <p className="rounded-lg border border-amber-300/18 bg-amber-300/7 px-3 py-2 text-xs font-semibold leading-5 text-white">
-                    El cambio de estado está pendiente. Se aplicará al guardar el producto.
-                  </p>
-                )}
-                {!activationStatus.ready && (
-                  <div className="rounded-lg border border-white/8 bg-black/18 px-2.5 py-2">
-                    <p className="text-10px font-black uppercase tracking-[0.12em] text-white">
-                      Requisitos para activar
-                    </p>
-                    <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1">
-                      {activationStatus.requirements.map((requirement) => (
-                        <span
-                          key={requirement.key}
-                          className={`flex min-w-0 items-center gap-1.5 text-10px font-semibold ${
-                            requirement.complete ? "text-emerald-300" : "text-white"
-                          }`}
+          <div className="product-editor-commercial-catalog-row grid min-w-0 gap-2.5 items-start">
+            <div className="product-editor-cell product-editor-commercial-catalog-block flex min-w-0 flex-col gap-2.5">
+              <div className="product-editor-cell product-editor-status-stock-pair grid min-w-0 gap-2.5 items-start">
+                <div className="product-editor-cell product-editor-status-cell">
+                  <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
+                    <div className="product-editor-panel-heading">
+                      <h2 className="text-base font-black text-white">Estado comercial</h2>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-2">
+                      {[
+                        {
+                          key: "activo" as const,
+                          label: "Estado",
+                          value: form.activo ? "Activo" : "Inactivo",
+                          active: form.activo,
+                        },
+                        {
+                          key: "destacado" as const,
+                          label: "Destacado",
+                          value: form.destacado ? "Sí" : "No",
+                          active: form.destacado,
+                        },
+                      ].map((toggle) => (
+                        <div
+                          key={toggle.key}
+                          className="flex min-w-0 items-center justify-between gap-2"
                         >
-                          {requirement.complete ? (
-                            <Check className="size-3 shrink-0 text-emerald-300" aria-hidden="true" />
-                          ) : (
-                            <X className="size-3 shrink-0 text-rose-300" aria-hidden="true" />
-                          )}
-                          <span className="truncate">{requirement.label}</span>
-                        </span>
+                          <span className="text-sm font-black text-white">{toggle.label}</span>
+                          <button
+                            type="button"
+                            aria-pressed={toggle.active}
+                            aria-label={`${toggle.label}: ${toggle.value}`}
+                            onClick={() => {
+                              if (toggle.key === "activo" && toggle.active) {
+                                setPendingVariantStates(
+                                  Object.fromEntries(
+                                    persistedVariants.map((variant) => [
+                                      variant.id,
+                                      false,
+                                    ]),
+                                  ),
+                                )
+                              }
+
+                              setField(toggle.key, !toggle.active)
+                            }}
+                            className="shrink-0"
+                          >
+                            {toggle.active ? (
+                              <ToggleRight className="product-editor-status-toggle-icon-active size-7 shrink-0" />
+                            ) : (
+                              <ToggleLeft className="product-editor-status-toggle-icon-inactive size-7 shrink-0" />
+                            )}
+                          </button>
+                        </div>
                       ))}
                     </div>
-                    {activationStatus.firstError && (
-                      <p className="mt-1.5 text-10px font-semibold leading-4 text-white">
-                        {activationStatus.firstError}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </AdminCard>
-            </div>
-
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 id="product-variants-title" className="text-base font-black text-white">
-                    Stock
-                  </h2>
+                  </AdminCard>
                 </div>
-                <div
-                  aria-label="Resumen del inventario"
-                  className="product-editor-stock-grid grid gap-1.5"
-                >
-                  <StockSummaryItem label="Stock físico" value={variantDistribution?.physicalStock} />
-                  <StockSummaryItem label="Stock normal" value={variantDistribution?.normalStock} />
-                  <StockSummaryItem label="Stock con descuento" value={variantDistribution?.discountedStock} />
-                  <StockSummaryItem label="Fallado / no vendible" value={variantDistribution?.nonSellableStock} />
-                  <StockSummaryItem label="Pendiente de revisión" value={variantDistribution?.pendingReviewStock} />
-                </div>
-              </AdminCard>
-            </div>
-          </div>
 
-          {/*
-            Fila 3: Variantes (ancha) + Dimensiones y peso (angosta) -- ~68/32
-            por container query (ver .product-editor-row-catalog en
-            globals.css). items-start: Dimensiones es una grilla 2x2 fija,
-            mucho más baja que la lista de variantes.
-          */}
-          <div className="product-editor-row-catalog grid min-w-0 gap-2.5 items-start">
-            <div className="product-editor-cell min-w-0">
-              <ProductVariantsEditor
-                productoId={currentProductoId || undefined}
-                productName={form.nombre}
-                productActive={form.activo}
-                primarySku={form.sku}
-                videoUrl={form.video_url}
-                onPrimarySkuChange={(value) => setField("sku", value)}
-                fallbackImage={productFallbackImage}
-                draftVariants={draftVariants}
-                onDraftVariantsChange={setDraftVariants}
-                persistedVariantStates={pendingVariantStates}
-                onPersistedVariantStatesChange={setPendingVariantStates}
-                onPersistedVariantsChange={handlePersistedVariantsChange}
-                onDistributionChange={setVariantDistribution}
-              />
-            </div>
-
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 className="text-base font-black text-white">
-                    Dimensiones y peso
-                  </h2>
-                  <p className="mt-0.5 text-xs leading-5 text-white">
-                    Obligatorios: Andreani los necesita para calcular el costo del paquete.
-                  </p>
-                </div>
-                <div className="product-editor-logistics-grid grid gap-1.5">
-                  {PRODUCT_LOGISTICS_FIELDS.map(({ key, unit }) => {
-                    const label = {
-                      peso_empaquetado_kg: "Peso",
-                      alto_paquete_cm: "Profundidad",
-                      ancho_paquete_cm: "Ancho",
-                      largo_paquete_cm: "Largo",
-                    }[key]
-                    const fieldError =
-                      logisticsFieldError?.field === key
-                        ? logisticsFieldError.message
-                        : undefined
-
-                    return (
-                      <AdminFormField
-                        key={key}
-                        label={`${label} *`}
-                        labelClassName={productFieldLabelClassName}
-                        error={fieldError}
-                      >
-                        <span className="relative block">
-                          <input
-                            id={key}
-                            type="text"
-                            inputMode="decimal"
-                            required
-                            value={form[key]}
-                            placeholder="Requerido"
-                            aria-label={`${label} en ${unit} (obligatorio)`}
-                            aria-required="true"
-                            aria-invalid={fieldError ? "true" : undefined}
-                            onChange={(event) =>
-                              setField(
-                                key,
-                                normalizeLogisticsDecimalInput(event.target.value),
-                              )
-                            }
-                            className={`${inputCls} !pr-9 ${fieldError ? "!border-red-400/60" : ""}`}
-                          />
-                          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-white">
-                            {unit}
-                          </span>
-                        </span>
-                      </AdminFormField>
-                    )
-                  })}
-                </div>
-              </AdminCard>
-            </div>
-          </div>
-
-          {/*
-            Fila 4: Especificaciones + Contenido -- 50/50 por container query
-            (ver .product-editor-row-content en globals.css).
-          */}
-          <div className="product-editor-row-content grid min-w-0 gap-2.5 items-start">
-            <div className="product-editor-cell">
-              <ProductSpecificationsEditor
-                productoId={currentProductoId || undefined}
-                draftSpecifications={draftSpecifications}
-                onDraftSpecificationsChange={setDraftSpecifications}
-                onPersistedSpecificationsChange={setPersistedSpecifications}
-              />
-            </div>
-
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 className="text-base font-black text-white">Contenido</h2>
-                </div>
-                <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
-                  <input
-                    id="video_url"
-                    type="url"
-                    value={form.video_url}
-                    placeholder="https://..."
-                    onChange={(event) => setField("video_url", event.target.value)}
-                    className={inputCls}
-                  />
-                </AdminFormField>
-
-                {canPreviewVideo ? (
-                  <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
-                    <div className="relative aspect-video w-full">
-                      {videoSource.kind === "direct" ? (
-                        <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
-                      ) : (
-                        <iframe
-                          src={videoSource.embedUrl}
-                          title="Vista previa del video del producto"
-                          loading="lazy"
-                          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          className="size-full"
-                        />
-                      )}
+                <div className="product-editor-cell product-editor-stock-cell">
+                  <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
+                    <div className="product-editor-panel-heading">
+                      <h2 id="product-variants-title" className="text-base font-black text-white">
+                        Stock
+                      </h2>
                     </div>
-                  </div>
-                ) : form.video_url.trim() ? (
-                  <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
-                    La URL es HTTPS, pero no corresponde a un video compatible.
-                  </AdminInfoBlock>
-                ) : null}
+                    <div
+                      aria-label="Resumen del inventario"
+                      className="product-editor-stock-grid grid gap-1.5"
+                    >
+                      <StockSummaryItem label="Stock físico" value={variantDistribution?.physicalStock} />
+                      <StockSummaryItem label="Stock normal" value={variantDistribution?.normalStock} />
+                      <StockSummaryItem label="Stock con descuento" value={variantDistribution?.discountedStock} />
+                      <StockSummaryItem label="Fallado / no vendible" value={variantDistribution?.nonSellableStock} />
+                      <StockSummaryItem label="Pendiente de revisión" value={variantDistribution?.pendingReviewStock} />
+                    </div>
+                  </AdminCard>
+                </div>
+              </div>
 
-                <AdminFormField label="Descripción" labelClassName={productFieldLabelClassName}>
-                  <textarea
-                    id="descripcion"
-                    value={form.descripcion}
-                    placeholder="Describí el producto y, si agregaste un video, su contenido."
-                    onChange={(event) => setField("descripcion", event.target.value)}
-                    className={`${inputCls} h-24 min-h-24 w-full resize-y py-2 leading-5`}
-                  />
-                </AdminFormField>
-              </AdminCard>
+              <div className="product-editor-cell product-editor-specifications-cell">
+                <ProductSpecificationsEditor
+                  productoId={currentProductoId || undefined}
+                  draftSpecifications={draftSpecifications}
+                  onDraftSpecificationsChange={setDraftSpecifications}
+                  onPersistedSpecificationsChange={setPersistedSpecifications}
+                />
+              </div>
+            </div>
+
+            <div className="product-editor-cell product-editor-commercial-catalog-block flex min-w-0 flex-col gap-2.5">
+              <div className="product-editor-cell product-editor-dimensions-content-pair grid min-w-0 gap-2.5 items-start">
+                <div className="product-editor-cell product-editor-dimensions-cell">
+                  <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
+                    <div className="product-editor-panel-heading">
+                      <h2 className="text-base font-black text-white">
+                        Dimensiones y peso
+                      </h2>
+                      <p className="mt-0.5 text-xs leading-5 text-white">
+                        Obligatorios: Andreani los necesita para calcular el costo del paquete.
+                      </p>
+                    </div>
+                    <div className="product-editor-logistics-grid grid gap-1.5">
+                      {PRODUCT_LOGISTICS_FIELDS.map(({ key, unit }) => {
+                        const label = {
+                          peso_empaquetado_kg: "Peso",
+                          alto_paquete_cm: "Profundidad",
+                          ancho_paquete_cm: "Ancho",
+                          largo_paquete_cm: "Largo",
+                        }[key]
+                        const fieldError =
+                          logisticsFieldError?.field === key
+                            ? logisticsFieldError.message
+                            : undefined
+
+                        return (
+                          <AdminFormField
+                            key={key}
+                            label={`${label} *`}
+                            labelClassName={productFieldLabelClassName}
+                            error={fieldError}
+                          >
+                            <span className="relative block">
+                              <input
+                                id={key}
+                                type="text"
+                                inputMode="decimal"
+                                required
+                                value={form[key]}
+                                placeholder="Requerido"
+                                aria-label={`${label} en ${unit} (obligatorio)`}
+                                aria-required="true"
+                                aria-invalid={fieldError ? "true" : undefined}
+                                onChange={(event) =>
+                                  setField(
+                                    key,
+                                    normalizeLogisticsDecimalInput(event.target.value),
+                                  )
+                                }
+                                className={`${inputCls} !pr-9 ${fieldError ? "!border-red-400/60" : ""}`}
+                              />
+                              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-white">
+                                {unit}
+                              </span>
+                            </span>
+                          </AdminFormField>
+                        )
+                      })}
+                    </div>
+                  </AdminCard>
+                </div>
+
+                <div className="product-editor-cell product-editor-content-cell">
+                  <AdminCard className="product-editor-panel space-y-2 p-2.5">
+                    <div className="product-editor-panel-heading">
+                      <h2 className="text-base font-black text-white">Contenido</h2>
+                    </div>
+                    <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
+                      <input
+                        id="video_url"
+                        type="url"
+                        value={form.video_url}
+                        placeholder="https://..."
+                        onChange={(event) => setField("video_url", event.target.value)}
+                        className={inputCls}
+                      />
+                    </AdminFormField>
+
+                    {canPreviewVideo ? (
+                      <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
+                        <div className="relative aspect-video w-full">
+                          {videoSource.kind === "direct" ? (
+                            <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
+                          ) : (
+                            <iframe
+                              src={videoSource.embedUrl}
+                              title="Vista previa del video del producto"
+                              loading="lazy"
+                              allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              allowFullScreen
+                              referrerPolicy="strict-origin-when-cross-origin"
+                              className="size-full"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ) : form.video_url.trim() ? (
+                      <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
+                        La URL es HTTPS, pero no corresponde a un video compatible.
+                      </AdminInfoBlock>
+                    ) : null}
+
+                    <AdminFormField label="Descripción" labelClassName={productFieldLabelClassName}>
+                      <textarea
+                        id="descripcion"
+                        value={form.descripcion}
+                        placeholder="Describí el producto y, si agregaste un video, su contenido."
+                        onChange={(event) => setField("descripcion", event.target.value)}
+                        className={`${inputCls} h-24 min-h-24 w-full resize-y py-2 leading-5`}
+                      />
+                    </AdminFormField>
+                  </AdminCard>
+                </div>
+              </div>
+
+              <div className="product-editor-cell product-editor-variants-cell min-w-0">
+                <ProductVariantsEditor
+                  productoId={currentProductoId || undefined}
+                  productName={form.nombre}
+                  productActive={form.activo}
+                  primarySku={form.sku}
+                  videoUrl={form.video_url}
+                  onPrimarySkuChange={(value) => setField("sku", value)}
+                  fallbackImage={productFallbackImage}
+                  draftVariants={draftVariants}
+                  onDraftVariantsChange={setDraftVariants}
+                  persistedVariantStates={pendingVariantStates}
+                  onPersistedVariantStatesChange={setPendingVariantStates}
+                  onPersistedVariantsChange={handlePersistedVariantsChange}
+                  onDistributionChange={setVariantDistribution}
+                />
+              </div>
             </div>
           </div>
         </div>

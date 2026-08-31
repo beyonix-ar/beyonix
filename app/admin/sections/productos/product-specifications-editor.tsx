@@ -493,7 +493,7 @@ export function ProductSpecificationsEditor({
             </label>
           </div>
 
-          <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 border-t border-white/8 pt-2">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/8 pt-2">
             <AdminSecondaryButton
               size="sm"
               aria-label={
@@ -501,7 +501,7 @@ export function ProductSpecificationsEditor({
               }
               onClick={() => setActivo((current) => !current)}
               aria-pressed={activo}
-              className={`product-editor-spec-toggle min-w-0 justify-start px-2.5 ${activo ? "product-editor-spec-toggle-active" : ""}`}
+              className={`product-editor-spec-toggle min-w-0 shrink-0 justify-start px-2.5 ${activo ? "product-editor-spec-toggle-active" : ""}`}
             >
               {activo ? (
                 <ToggleRight className="product-editor-active-icon size-4 text-emerald-300" />
@@ -517,7 +517,7 @@ export function ProductSpecificationsEditor({
               </span>
             </AdminSecondaryButton>
 
-            <div className="flex min-w-0 justify-end gap-1.5">
+            <div className="flex min-w-0 shrink-0 items-center gap-1.5">
               <AdminPrimaryButton
                 size="sm"
                 aria-label={
@@ -527,7 +527,7 @@ export function ProductSpecificationsEditor({
                 }
                 onClick={saveSpecification}
                 disabled={saving}
-                className="min-w-0 flex-1 px-2.5"
+                className="shrink-0 px-2.5"
               >
                 {saving ? (
                   <Loader2 className="size-4 animate-spin" />

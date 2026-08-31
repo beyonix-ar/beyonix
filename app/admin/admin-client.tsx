@@ -25,6 +25,8 @@ import {
 import { useAuth } from "@/context/auth-context"
 import { useAdminNotifications } from "@/hooks/use-admin-notifications"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
+import { AdminThemeProvider } from "@/context/admin-theme-context"
+import { AdminThemeToggle } from "@/components/admin-theme-toggle"
 import { supabase } from "@/lib/supabase/client"
 import {
   type AdminNotificationTone,
@@ -509,16 +511,19 @@ export function AdminClient({ children }: { children: ReactNode }) {
             BEYONIX
           </h1>
         </Link>
-        <AdminNotificationsBell
-          count={notificationCount}
-          tone={notificationTone}
-          groups={notificationGroups}
-          notifications={notifications}
-          loading={notificationsLoading}
-          error={notificationsError}
-          onRetry={reloadNotifications}
-          align="start"
-        />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <AdminThemeToggle />
+          <AdminNotificationsBell
+            count={notificationCount}
+            tone={notificationTone}
+            groups={notificationGroups}
+            notifications={notifications}
+            loading={notificationsLoading}
+            error={notificationsError}
+            onRetry={reloadNotifications}
+            align="start"
+          />
+        </div>
       </div>
 
       <div className="border-b border-beyonix-blue-light/18 p-4">
@@ -606,57 +611,62 @@ export function AdminClient({ children }: { children: ReactNode }) {
   )
 
   return (
-    <div className="beyonix-admin-shell min-h-screen text-white lg:flex">
-      <div className="hidden lg:block">{sidebar}</div>
+    <AdminThemeProvider>
+      <div className="beyonix-admin-shell min-h-screen text-white lg:flex">
+        <div className="hidden lg:block">{sidebar}</div>
 
-      <header className="admin-ds-mobile-header sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 lg:hidden">
-        <button
-          type="button"
-          aria-label="Abrir navegación"
-          onClick={() => setMobileOpen(true)}
-          className="admin-ds-icon-action flex size-10 cursor-pointer items-center justify-center transition-colors"
-        >
-          <Menu className="size-5" />
-        </button>
-        <p className="text-sm font-black tracking-widest">BEYONIX ADMIN</p>
-        <AdminNotificationsBell
-          count={notificationCount}
-          tone={notificationTone}
-          groups={notificationGroups}
-          notifications={notifications}
-          loading={notificationsLoading}
-          error={notificationsError}
-          onRetry={reloadNotifications}
-        />
-      </header>
-
-      {mobileOpen && (
-        <div className="fixed inset-0 z-100 bg-black lg:hidden">
-          <div className="absolute right-4 top-4 z-10">
-            <button
-              type="button"
-              aria-label="Cerrar navegación"
-              onClick={() => setMobileOpen(false)}
-              className="admin-ds-icon-action flex size-10 cursor-pointer items-center justify-center transition-colors"
-            >
-              <X className="size-5" />
-            </button>
+        <header className="admin-ds-mobile-header sticky top-0 z-50 flex h-16 items-center justify-between border-b px-4 lg:hidden">
+          <button
+            type="button"
+            aria-label="Abrir navegación"
+            onClick={() => setMobileOpen(true)}
+            className="admin-ds-icon-action flex size-10 cursor-pointer items-center justify-center transition-colors"
+          >
+            <Menu className="size-5" />
+          </button>
+          <p className="text-sm font-black tracking-widest">BEYONIX ADMIN</p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <AdminThemeToggle />
+            <AdminNotificationsBell
+              count={notificationCount}
+              tone={notificationTone}
+              groups={notificationGroups}
+              notifications={notifications}
+              loading={notificationsLoading}
+              error={notificationsError}
+              onRetry={reloadNotifications}
+            />
           </div>
-          {sidebar}
-        </div>
-      )}
+        </header>
 
-      <main
-        className={`beyonix-admin-main min-w-0 flex-1 bg-beyonix-page ${
-          pathname === ADMIN_ROUTES.dashboard ? "" : "admin-solid-surface"
-        }`}
-      >
-        <AdminNotificationGroupsProvider groups={notificationGroups}>
-          {hasResolvedInternalAccess && !routeDenied
-            ? children
-            : <AdminSectionLoading />}
-        </AdminNotificationGroupsProvider>
-      </main>
-    </div>
+        {mobileOpen && (
+          <div className="fixed inset-0 z-100 bg-black lg:hidden">
+            <div className="absolute right-4 top-4 z-10">
+              <button
+                type="button"
+                aria-label="Cerrar navegación"
+                onClick={() => setMobileOpen(false)}
+                className="admin-ds-icon-action flex size-10 cursor-pointer items-center justify-center transition-colors"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            {sidebar}
+          </div>
+        )}
+
+        <main
+          className={`beyonix-admin-main min-w-0 flex-1 bg-beyonix-page ${
+            pathname === ADMIN_ROUTES.dashboard ? "" : "admin-solid-surface"
+          }`}
+        >
+          <AdminNotificationGroupsProvider groups={notificationGroups}>
+            {hasResolvedInternalAccess && !routeDenied
+              ? children
+              : <AdminSectionLoading />}
+          </AdminNotificationGroupsProvider>
+        </main>
+      </div>
+    </AdminThemeProvider>
   )
 }
