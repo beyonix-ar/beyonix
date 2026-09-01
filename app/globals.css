@@ -368,16 +368,8 @@
   grid-template-columns: minmax(250px, 31fr) minmax(205px, 24fr) minmax(150px, 15fr) minmax(136px, 13fr) minmax(176px, 17fr);
 }
 
-@utility grid-cols-admin-product-form {
-  grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
-}
-
 @utility grid-cols-admin-order-filters {
   grid-template-columns: minmax(300px, 1.3fr) minmax(220px, 0.8fr);
-}
-
-@utility grid-cols-admin-variant-row {
-  grid-template-columns: 1fr 120px 120px 120px;
 }
 
 @utility grid-cols-products-layout {
@@ -786,6 +778,19 @@
   border: 1px solid rgba(92, 159, 215, 0.18) !important;
   border-radius: 0.875rem !important;
   background-color: rgba(17, 42, 67, 0.08) !important;
+  outline: none;
+}
+
+/* El <Link> del ítem de sidebar nunca definía su propio manejo de foco --
+   sin esto, el navegador aplica su outline/anillo nativo en :focus, que
+   Next.js Link no limpia al navegar (SPA): el ítem clickeado último queda
+   con ese brillo pegado aunque ya no sea la página activa ni haya hover,
+   hasta que se hace foco en otra cosa. Se reemplaza por un anillo propio
+   sólo en :focus-visible (foco real por teclado), y se suprime el nativo
+   en :focus liso -- no afecta la apariencia normal/hover/activa de ningún
+   ítem en ningún tema, sólo evita el brillo fantasma post-click. */
+.admin-ds-nav-item:focus-visible {
+  box-shadow: 0 0 0 2px rgba(140, 200, 242, 0.65) !important;
 }
 
 .admin-ds-nav-item:hover {
@@ -915,17 +920,8 @@
 }
 
 .admin-ds-datepicker-popover {
-  background:
-    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
   border: 1px solid rgba(92, 159, 215, 0.28) !important;
   border-radius: 1rem !important;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.62) !important;
-}
-
-.admin-ds-datepicker-header {
-  background:
-    linear-gradient(135deg, rgba(17, 42, 67, 0.72), rgba(4, 10, 17, 0.95)) !important;
-  border-color: rgba(92, 159, 215, 0.18) !important;
 }
 
 .admin-ds-notification-card {
@@ -1608,21 +1604,11 @@
   min-height: 2rem !important;
 }
 
-.admin-claim-layout {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .admin-claim-workspace {
   align-items: start;
 }
 
-.admin-claim-definition-row {
-  grid-template-columns: 7rem minmax(0, 1fr);
-}
-
-.admin-claim-summary-card,
 .admin-claim-card,
-.admin-claim-note,
 .admin-claim-file-row,
 .admin-claim-chat-bubble {
   border-color: var(--admin-border-soft) !important;
@@ -1793,11 +1779,6 @@
     0 10px 22px rgba(0, 0, 0, 0.24) !important;
 }
 
-.admin-claim-file-action {
-  min-height: 1.75rem !important;
-  border-radius: 0.5rem !important;
-}
-
 .admin-claim-evidence-action {
   width: 1.65rem !important;
   height: 1.65rem !important;
@@ -1830,13 +1811,6 @@
   border-color: rgba(255, 255, 255, 0.28) !important;
   background: rgba(255, 255, 255, 0.07) !important;
   color: #ffffff !important;
-}
-
-@media (min-width: 1024px) {
-  .admin-claim-layout {
-    grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.25fr);
-  }
-
 }
 
 @media (min-width: 1280px) {
@@ -2145,18 +2119,6 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
 .admin-solid-surface :where(section, article, aside, div)[class*="rounded-"][class*="border"] :where(section, article, aside, div)[class*="rounded-"][class*="border"][class*="bg-white/"] {
   background-color: #101b27 !important;
   border-color: rgba(92, 159, 215, 0.16) !important;
-}
-
-.admin-solid-surface .admin-product-form {
-  background:
-    linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
-  border-color: rgba(92, 159, 215, 0.28) !important;
-}
-
-.admin-solid-surface section.admin-product-section {
-  background:
-    linear-gradient(145deg, rgba(11, 22, 34, 0.98), rgba(6, 13, 22, 0.98)) !important;
-  border-color: rgba(92, 159, 215, 0.18) !important;
 }
 
 .beyonix-login-input,
@@ -2534,47 +2496,9 @@ button.sales-ledger-product-trigger:hover {
   border-color: rgba(119, 230, 226, 0.62) !important;
 }
 
-.admin-order-client-panel {
-  background: #151515 !important;
-}
-
-.admin-order-payment-panel {
-  background: #151515 !important;
-}
-
-.admin-order-products-panel {
-  background: #151515 !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
-}
-
-.admin-order-shipping-panel {
-  background: #151515 !important;
-}
-
 .admin-order-invoice-panel {
   background: #151515 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
-}
-
-.admin-order-info-card {
-  background-color: #202020;
-}
-
-.admin-order-proof-card,
-.admin-order-item-card {
-  background-color: #202020;
-}
-
-.admin-order-proof-card {
-  background-color: #202020;
-}
-
-.admin-order-total-card {
-  background: #202020 !important;
-  border-color: rgba(110, 231, 183, 0.38) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 14px rgba(16, 185, 129, 0.1) !important;
 }
 
 .admin-order-detail-scope :is(section, article, div, label, input, textarea, select, p)[class*="bg-"] {
@@ -2587,23 +2511,8 @@ button.sales-ledger-product-trigger:hover {
   color: rgba(255, 255, 255, 0.92) !important;
 }
 
-.admin-order-detail-scope :is(.admin-order-data-panel, .admin-order-client-panel, .admin-order-payment-panel, .admin-order-products-panel, .admin-order-shipping-panel, .admin-order-invoice-panel) {
-  background: #151515 !important;
-  background-image: none !important;
-}
-
-.admin-order-detail-scope :is(.admin-order-info-card, .admin-order-proof-card, .admin-order-item-card, .admin-order-total-card) {
-  background: #202020 !important;
-  background-image: none !important;
-}
-
 .admin-order-detail-scope .admin-order-detail-content :is(article, div, label, p)[class*="rounded"][class*="border"] {
   background: #202020 !important;
-  background-image: none !important;
-}
-
-.admin-order-detail-scope .admin-order-summary-main-panel {
-  background: #112A43 !important;
   background-image: none !important;
 }
 
@@ -2613,8 +2522,7 @@ button.sales-ledger-product-trigger:hover {
 }
 
 .admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > div > section,
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > div > div > section,
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > section.admin-order-products-panel {
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content > div > div > section {
   background: #111111 !important;
   background-image: none !important;
 }
@@ -2624,8 +2532,7 @@ button.sales-ledger-product-trigger:hover {
   background-image: none !important;
 }
 
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content :is(article, div, label, p)[class*="rounded"][class*="border"],
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content :is(.admin-order-info-card, .admin-order-proof-card, .admin-order-item-card, .admin-order-total-card) {
+.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content :is(article, div, label, p)[class*="rounded"][class*="border"] {
   background: #202020 !important;
   background-image: none !important;
 }
@@ -2638,22 +2545,17 @@ button.sales-ledger-product-trigger:hover {
   color: rgba(255, 255, 255, 0.8) !important;
 }
 
-.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="tracking-widest"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="tracking-widest"] {
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="tracking-widest"] {
   color: rgba(255, 255, 255, 0.74) !important;
 }
 
-.admin-order-detail-scope .admin-order-summary-view :is(h3, p[class*="text-beyonix-cyan"], p[class*="text-beyonix-sky"]),
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p[class*="text-beyonix-cyan"], p[class*="text-beyonix-sky"]) {
+.admin-order-detail-scope .admin-order-summary-view :is(h3, p[class*="text-beyonix-cyan"], p[class*="text-beyonix-sky"]) {
   color: rgba(255, 255, 255, 0.96) !important;
 }
 
 .admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/82"],
 .admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/84"],
-.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/88"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/82"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/84"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/88"] {
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/88"] {
   color: rgba(255, 255, 255, 0.92) !important;
 }
 
@@ -2664,118 +2566,11 @@ button.sales-ledger-product-trigger:hover {
 .admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/58"],
 .admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/62"],
 .admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/72"],
-.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/76"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/42"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/48"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/54"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/55"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/58"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/62"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/72"],
-.admin-order-detail-scope .admin-order-summary-products-panel :is(p, span)[class*="text-white/76"] {
+.admin-order-detail-scope .admin-order-summary-view :is(p, span)[class*="text-white/76"] {
   color: rgba(255, 255, 255, 0.76) !important;
 }
 
-.admin-order-detail-scope .admin-order-payment-method-icon {
-  align-items: center;
-  background: #071527;
-  border: 1px solid rgba(110, 168, 255, 0.34);
-  border-radius: 9999px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 22px rgba(110, 168, 255, 0.12);
-  color: #fff;
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 58px;
-  justify-content: center;
-  width: 58px;
-}
-
-.admin-order-detail-scope .admin-order-payment-icon {
-  align-items: center;
-  border: 1px solid currentColor;
-  border-radius: 9999px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 36px;
-  justify-content: center;
-  width: 36px;
-}
-
-.admin-order-detail-scope .admin-order-payment-icon > svg {
-  height: 16px !important;
-  width: 16px !important;
-}
-
-.admin-order-detail-scope .admin-order-payment-icon--blue {
-  background: #071527;
-  border-color: rgba(110, 168, 255, 0.34);
-  color: #6ea8ff;
-}
-
-.admin-order-detail-scope .admin-order-payment-icon--green {
-  background: #06251b;
-  border-color: rgba(92, 255, 176, 0.34);
-  color: rgb(92, 255, 176);
-}
-
-.admin-order-detail-scope .admin-order-payment-icon--gray {
-  background: #1b1f24;
-  border-color: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.78);
-}
-
-.admin-order-detail-scope .admin-order-detail-content .admin-order-payment-panel div.admin-order-received-card,
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content div.admin-order-received-card.rounded-lg.border {
-  background-color: rgb(5, 64, 45) !important;
-  background-image: linear-gradient(135deg, rgb(5, 64, 45), rgb(7, 84, 59)) !important;
-  border-color: rgb(92, 255, 176) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 0 20px rgba(16, 185, 129, 0.18) !important;
-}
-
-.admin-order-detail-scope .admin-order-payment-panel :is(.admin-order-info-card, .admin-order-proof-card, .admin-order-payment-status-card, .admin-order-received-card) p[class*="tracking-widest"] {
-  color: rgba(255, 255, 255, 0.9) !important;
-}
-
-.admin-order-detail-scope .admin-order-received-card .admin-order-total-received-amount {
-  color: #fff !important;
-  font-size: 1.25rem;
-  line-height: 1.75rem;
-  text-shadow: 0 0 14px rgba(255, 255, 255, 0.12);
-}
-
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-payment-panel p[class*="tracking-widest"] {
-  color: rgba(255, 255, 255, 0.92) !important;
-}
-
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-payment-panel div.admin-order-received-card {
-  background-color: rgb(5, 64, 45) !important;
-  background-image: linear-gradient(135deg, rgb(5, 64, 45), rgb(7, 84, 59)) !important;
-  border-color: rgb(92, 255, 176) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.065),
-    0 0 20px rgba(16, 185, 129, 0.18) !important;
-}
-
-.admin-order-detail-scope .admin-order-summary-layout-bg .admin-order-detail-content .admin-order-payment-panel .admin-order-received-card .admin-order-total-received-amount {
-  color: #fff !important;
-  text-shadow: 0 0 14px rgba(255, 255, 255, 0.12);
-}
-
-.admin-order-detail-scope .admin-order-payment-note {
-  background:
-    linear-gradient(135deg, rgba(7, 48, 35, 0.42), rgba(13, 25, 35, 0.96)) !important;
-  border-color: rgba(92, 255, 176, 0.26) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 16px rgba(16, 185, 129, 0.07) !important;
-}
-
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]) {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]) {
   background: #112A43 !important;
   background-color: #112A43 !important;
   background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
@@ -2786,7 +2581,7 @@ button.sales-ledger-product-trigger:hover {
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]):hover {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):hover {
   background: #1E4D7B !important;
   background-color: #1E4D7B !important;
   background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
@@ -2800,8 +2595,8 @@ button.sales-ledger-product-trigger:hover {
    text-white/N y de svg.lucide a color oscuro (pensado para cards claras)
    los estaría oscureciendo también acá si no se reafirma el blanco con más
    especificidad. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]),
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]) svg.lucide,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]) svg.lucide,
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled),
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled) svg.lucide {
   color: #ffffff !important;
@@ -2866,7 +2661,7 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   width: 52px;
 }
 
-.admin-order-detail-scope .admin-order-cancellation-panel :is(.admin-order-cancellation-action-panel, .admin-order-cancellation-form-panel, .admin-order-cancellation-proof-panel) {
+.admin-order-detail-scope .admin-order-cancellation-panel :is(.admin-order-cancellation-action-panel, .admin-order-cancellation-form-panel) {
   background: var(--order-cancellation-panel-bg) !important;
   background-color: var(--order-cancellation-panel-bg) !important;
   background-image: none !important;
@@ -3016,93 +2811,6 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   color: rgba(255, 255, 255, 0.64) !important;
 }
 
-.admin-order-detail-scope section.admin-order-shipping-panel.admin-order-shipping-section {
-  --order-shipping-section-bg: #11161c;
-  --order-shipping-address-panel-bg: #171d24;
-  --order-shipping-ops-panel-bg: #151515;
-  --order-shipping-actions-panel-bg: #161b21;
-  --order-shipping-address-card-bg: #20262d;
-  --order-shipping-field-bg: #202a34;
-  --order-shipping-muted-card-bg: #1d1d1d;
-  background: var(--order-shipping-section-bg) !important;
-  background-color: var(--order-shipping-section-bg) !important;
-  background-image: none !important;
-  border-color: rgba(140, 200, 242, 0.28) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 18px 44px rgba(0, 0, 0, 0.22) !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-header {
-  align-items: center;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  padding-bottom: 0.875rem !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-main-icon {
-  align-items: center;
-  background: #202a34;
-  border: 1px solid rgba(140, 200, 242, 0.34);
-  border-radius: 9999px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 18px rgba(140, 200, 242, 0.08);
-  color: #ffffff;
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 52px;
-  justify-content: center;
-  width: 52px;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-panel {
-  background: #2b333c !important;
-  background-color: #2b333c !important;
-  background-image: linear-gradient(135deg, #303943, #252d35) !important;
-  border-color: rgba(215, 236, 255, 0.18) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 16px rgba(0, 0, 0, 0.12) !important;
-  padding: 0.875rem !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-panel > p {
-  color: #ffffff !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-panel {
-  background: var(--order-shipping-ops-panel-bg) !important;
-  background-color: var(--order-shipping-ops-panel-bg) !important;
-  background-image: linear-gradient(135deg, #151515, #111111) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 16px rgba(0, 0, 0, 0.12) !important;
-  padding: 0.875rem !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel {
-  background: var(--order-shipping-actions-panel-bg) !important;
-  background-color: var(--order-shipping-actions-panel-bg) !important;
-  background-image: linear-gradient(135deg, #161b21, #12171d) !important;
-  border-color: rgba(140, 200, 242, 0.2) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 16px rgba(0, 0, 0, 0.12) !important;
-  padding: 0.875rem !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-address-card {
-  background: #38424d !important;
-  background-color: #38424d !important;
-  background-image: linear-gradient(135deg, #3d4854, #303943) !important;
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 14px rgba(0, 0, 0, 0.12) !important;
-  padding: 0.875rem !important;
-}
-
 .admin-order-detail-scope .admin-order-dispatch-badge--delivered {
   background: #bbf7d0 !important;
   border-color: #86efac !important;
@@ -3110,87 +2818,6 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.42),
     0 0 18px rgba(134, 239, 172, 0.18) !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-card {
-  background: var(--order-shipping-muted-card-bg) !important;
-  background-color: var(--order-shipping-muted-card-bg) !important;
-  background-image: linear-gradient(135deg, #1f1f1f, #171717) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 12px rgba(0, 0, 0, 0.12) !important;
-  min-height: 66px;
-  padding: 0.625rem 0.75rem !important;
-}
-
-.admin-order-detail-scope section.admin-order-shipping-panel.admin-order-shipping-section .admin-order-shipping-ops-panel .admin-order-shipping-ops-grid > div.admin-order-shipping-mini-card.rounded-lg.border {
-  background: #1d1d1d !important;
-  background-color: #1d1d1d !important;
-  background-image: linear-gradient(135deg, #202020, #181818) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-mini-icon {
-  align-items: center;
-  background: #202a34;
-  border: 1px solid rgba(140, 200, 242, 0.26);
-  border-radius: 9999px;
-  color: #bfe4ff;
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 28px;
-  justify-content: center;
-  width: 28px;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-control-select {
-  height: 2.5rem;
-  max-width: none;
-  min-width: 15.5rem;
-  border-color: rgba(140, 200, 242, 0.26) !important;
-  background: var(--order-shipping-field-bg) !important;
-  background-color: var(--order-shipping-field-bg) !important;
-  background-image: linear-gradient(135deg, #202a34, #18212a) !important;
-  color: #fff !important;
-  font-size: 0.875rem !important;
-  font-weight: 800 !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 12px rgba(0, 0, 0, 0.08) !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-control-select span,
-.admin-order-detail-scope .admin-order-shipping-panel .admin-control-select svg {
-  color: #fff !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select {
-  min-width: 0;
-  width: 100% !important;
-  max-width: none;
-  font-size: 13px !important;
-  font-weight: 400 !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select span {
-  font-size: 13px !important;
-  font-weight: 400 !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select,
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select {
-  min-width: 0;
-  width: 100% !important;
-  max-width: none;
-  font-size: 13px !important;
-  font-weight: 400 !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select span,
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select span {
-  font-size: 13px !important;
-  font-weight: 400 !important;
 }
 
 body > div[role="listbox"][aria-label="Estado operativo del pedido"],
@@ -3248,17 +2875,6 @@ body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria
   font-weight: 500 !important;
 }
 
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select {
-  width: 100% !important;
-  font-size: 13px !important;
-  font-weight: 400 !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-modality-select span {
-  font-size: 13px !important;
-  font-weight: 400 !important;
-}
-
 body > div[role="listbox"][aria-label="Modalidad logística"] {
   border-color: rgba(140, 200, 242, 0.28) !important;
   background:
@@ -3293,56 +2909,9 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
   font-weight: 500 !important;
 }
 
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-other-modality {
-  background: #202a34 !important;
-  background-color: #202a34 !important;
-  background-image: linear-gradient(135deg, #202a34, #18212a) !important;
-  border-color: rgba(140, 200, 242, 0.28) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 12px rgba(0, 0, 0, 0.08) !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-ops-grid {
-  align-items: stretch;
-  gap: 0.625rem !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action,
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel a {
-  background: #252b33 !important;
-  background-color: #252b33 !important;
-  border-color: rgba(140, 200, 242, 0.22) !important;
-  color: rgba(255, 255, 255, 0.82) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action:hover,
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-actions-panel a:hover {
-  background: #183b5e !important;
-  border-color: rgba(140, 200, 242, 0.58) !important;
-  color: #D7ECFF !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action--primary {
-  background: #1e4d7b !important;
-  background-color: #1e4d7b !important;
-  border-color: rgba(140, 200, 242, 0.48) !important;
-  color: #ffffff !important;
-}
-
-.admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-action:disabled {
-  background: #171717 !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  color: rgba(255, 255, 255, 0.32) !important;
-}
-
 .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel {
   --order-billing-section-bg: #111111;
   --order-billing-panel-bg: #202020;
-  --order-billing-inner-card-bg: #262626;
-  --order-billing-credit-note-card-bg: #171717;
-  --order-billing-credit-note-card-bg-strong: #101010;
   background: var(--order-billing-section-bg) !important;
   background-color: var(--order-billing-section-bg) !important;
   background-image: none !important;
@@ -3360,51 +2929,12 @@ body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-select
   width: 100%;
 }
 
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-content {
-  align-items: end;
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: minmax(260px, 340px) max-content;
-  width: fit-content;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-content > * + * {
-  margin-top: 0 !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-card-slot {
-  max-width: none !important;
-  min-width: 260px;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-action {
-  align-self: end;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel div.admin-order-billing-card {
-  background: #202020 !important;
-  background-color: #202020 !important;
-  background-image: none !important;
-  border-color: rgba(74, 144, 184, 0.42) !important;
-}
-
 .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel {
   background: var(--order-billing-panel-bg) !important;
   background-color: var(--order-billing-panel-bg) !important;
   background-image: none !important;
   border-color: rgba(74, 144, 184, 0.42) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-danger-button {
-  background: #2a1117 !important;
-  border-color: rgba(191, 74, 91, 0.62) !important;
-  color: #fff !important;
-}
-
-.admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-danger-button:hover {
-  background: #3a151d !important;
-  border-color: rgba(255, 143, 160, 0.7) !important;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel p.admin-order-billing-pending-note {
@@ -3603,7 +3133,7 @@ body.product-modal-open .category-hero {
   z-index: 1;
 }
 
-/* ðŸ”µ Glow Beyonix barra progreso */
+/* Glow azul BEYONIX de la barra de progreso. */
 .beyonix-progress-bar {
   position: relative;
   border-radius: 9999px;
@@ -4232,52 +3762,17 @@ div.claim-form-shell::after {
   cursor: not-allowed;
 }
 
-.admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-invoice-mini-card {
-  background: var(--order-billing-inner-card-bg) !important;
-  background-color: var(--order-billing-inner-card-bg) !important;
-  background-image: none !important;
-  border-color: rgba(74, 144, 184, 0.42) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
-}
-
-@media (max-width: 767px) {
-  .admin-order-detail-scope .admin-order-shipping-panel .admin-order-shipping-status-select {
-    width: 100% !important;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-content {
-    grid-template-columns: 1fr;
-    width: 100%;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-card-slot,
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-action {
-    width: 100%;
-  }
-}
-
 @media (max-width: 639px) {
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header {
-    grid-template-columns: 1fr;
-  }
-
   .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-action {
     justify-self: stretch;
     width: 100%;
   }
 }
 
-.admin-orders-header-panel,
 .admin-orders-table-header,
 .admin-orders-list-row {
   border-color: rgba(110, 168, 255, 0.22);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
-}
-
-.admin-orders-header-panel {
-  background:
-    linear-gradient(135deg, rgba(7, 12, 20, 0.94), rgba(4, 7, 12, 0.94)),
-    #05070a;
 }
 
 .admin-orders-table-header {
@@ -4305,47 +3800,6 @@ div.claim-form-shell::after {
   border-color: rgba(110, 168, 255, 0.4);
   background: rgba(17, 42, 67, 0.42);
   color: rgba(215, 236, 255, 0.95);
-}
-
-.admin-orders-action-button-danger:hover {
-  border-color: rgba(248, 113, 113, 0.36);
-  background: rgba(127, 29, 29, 0.22);
-}
-
-.admin-orders-filter-shell {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background:
-    linear-gradient(135deg, rgba(7, 12, 20, 0.78), rgba(5, 8, 13, 0.82)),
-    #060a10;
-  border-color: rgba(110, 168, 255, 0.2);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 8px 18px rgba(0, 0, 0, 0.14);
-  transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    background-color 180ms ease;
-}
-
-.admin-orders-filter-shell::before {
-  display: none;
-}
-
-.admin-orders-filter-shell:hover {
-  border-color: rgba(110, 168, 255, 0.35);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 8px 18px rgba(0, 0, 0, 0.16);
-}
-
-.admin-orders-filter-shell:focus-within {
-  border-color: rgba(110, 168, 255, 0.45);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 0 0 1px rgba(110, 168, 255, 0.08),
-    0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
 .admin-orders-search-field label {
@@ -4416,12 +3870,6 @@ div.claim-form-shell::after {
     0 0 0 1px rgba(110, 168, 255, 0.1);
 }
 
-@media (max-width: 639px) {
-  .admin-orders-filter-shell {
-    border-radius: 1rem;
-  }
-}
-
 /* Flujo de Nota de Crédito: lenguaje visual BEYONIX */
 .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel.admin-credit-note-workflow {
   background:
@@ -4434,10 +3882,6 @@ div.claim-form-shell::after {
   container-type: inline-size;
   margin-top: 0.7rem !important;
   padding: 0.85rem !important;
-}
-
-.admin-order-detail-scope .admin-order-accounting-status-card > span[aria-hidden="true"] {
-  background: transparent !important;
 }
 
 .admin-order-detail-scope .admin-order-invoice-panel svg {
@@ -4462,22 +3906,6 @@ div.claim-form-shell::after {
   display: flex;
   gap: 0.75rem;
   min-width: 0;
-}
-
-.admin-credit-note-title-icon {
-  align-items: center;
-  background: #112a43;
-  border: 1px solid rgba(140, 200, 242, 0.38);
-  color: #bfe1fb;
-  display: inline-flex;
-  flex: 0 0 auto;
-  justify-content: center;
-}
-
-.admin-credit-note-title-icon {
-  border-radius: 0.75rem;
-  height: 2.75rem;
-  width: 2.75rem;
 }
 
 .admin-credit-note-balance {
@@ -4951,18 +4379,10 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-credit-note-resolution-panel textarea,
-.admin-order-detail-scope .admin-credit-note-resolution-panel input,
-.admin-credit-note-destination-select {
+.admin-order-detail-scope .admin-credit-note-resolution-panel input {
   background: #0d1721 !important;
   border-color: rgba(92, 159, 215, 0.3) !important;
   color: #fff !important;
-}
-
-.admin-credit-note-destination-help {
-  color: rgba(167, 243, 208, 0.56);
-  font-size: 0.58rem;
-  line-height: 1.4;
-  margin-top: 0.3rem;
 }
 
 .admin-order-detail-scope .admin-credit-note-resolution-panel textarea {
@@ -5005,51 +4425,8 @@ div.claim-form-shell::after {
 }
 
 .admin-order-detail-scope .admin-credit-note-resolution-panel textarea:hover,
-.admin-credit-note-destination-select:hover,
 .admin-credit-note-money-input:hover {
   border-color: rgba(140, 200, 242, 0.58) !important;
-}
-
-.admin-credit-note-destination-select {
-  background: rgba(5, 12, 20, 0.9) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: none !important;
-  height: 2.25rem !important;
-  padding-inline: 0.75rem !important;
-}
-
-.admin-credit-note-destination-select:hover,
-.admin-credit-note-destination-select:focus-visible {
-  background:
-    linear-gradient(135deg, rgba(31, 91, 137, 0.99), rgba(17, 53, 86, 0.99)) !important;
-  border-color: rgba(156, 222, 255, 0.9) !important;
-}
-
-.admin-ds-select-menu.admin-credit-note-destination-menu {
-  background: #070e16 !important;
-  border: 1px solid rgba(115, 191, 240, 0.58) !important;
-  box-shadow:
-    0 16px 38px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
-  padding: 0.4rem !important;
-}
-
-.admin-credit-note-destination-menu .admin-credit-note-destination-option {
-  background: #111a24 !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  color: rgba(255, 255, 255, 0.78) !important;
-}
-
-.admin-credit-note-destination-menu .admin-credit-note-destination-option:hover {
-  background: #17324a !important;
-  border-color: rgba(105, 190, 247, 0.42) !important;
-  color: #fff !important;
-}
-
-.admin-credit-note-destination-menu .admin-credit-note-destination-option.admin-ds-select-option-selected {
-  background: linear-gradient(135deg, #1a5682, #133b5d) !important;
-  border-color: rgba(151, 220, 255, 0.7) !important;
-  color: #fff !important;
 }
 
 .admin-credit-note-money-input {
@@ -5496,12 +4873,6 @@ div.claim-form-shell::after {
   color: #fff;
 }
 
-.admin-return-compact-fields {
-  display: grid;
-  gap: 0.5rem;
-  margin-top: 0.65rem;
-}
-
 .admin-return-check-row,
 .admin-return-exception-row {
   align-items: center;
@@ -5571,9 +4942,7 @@ div.claim-form-shell::after {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.admin-return-inline-fields input,
-.admin-return-compact-fields textarea,
-.admin-return-compact-fields > input {
+.admin-return-inline-fields input {
   background: rgba(3, 10, 17, 0.85);
   border: 1px solid rgba(140, 200, 242, 0.2);
   border-radius: 0.6rem;
@@ -5583,11 +4952,6 @@ div.claim-form-shell::after {
   min-width: 0;
   padding: 0.45rem 0.6rem;
   width: 100%;
-}
-
-.admin-return-compact-fields textarea {
-  min-height: 3.4rem;
-  resize: vertical;
 }
 
 .admin-return-closed-summary {
@@ -6095,8 +5459,7 @@ div.claim-form-shell::after {
     margin-top: 14px;
   }
 
-  .beyonix-admin-main .admin-products-table .admin-product-row-grid,
-  .beyonix-admin-main .admin-products-table .admin-product-variant-row {
+  .beyonix-admin-main .admin-products-table .admin-product-row-grid {
     min-width: 0 !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 10px !important;
@@ -6107,15 +5470,14 @@ div.claim-form-shell::after {
     padding: 10px !important;
   }
 
-  .beyonix-admin-main .admin-products-table .admin-product-row-grid > :first-child,
-  .beyonix-admin-main .admin-products-table .admin-product-variant-row > :first-child {
+  .beyonix-admin-main .admin-products-table .admin-product-row-grid > :first-child {
     grid-column: 1 / -1;
     padding-bottom: 12px;
     border-bottom: 1px solid rgba(140, 200, 242, 0.14);
   }
 
   .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
+    .admin-product-row-grid
     > [data-label] {
     position: relative;
     min-height: 50px;
@@ -6131,7 +5493,7 @@ div.claim-form-shell::after {
   }
 
   .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
+    .admin-product-row-grid
     > [data-label]::before {
     position: absolute;
     top: 8px;
@@ -6146,7 +5508,7 @@ div.claim-form-shell::after {
   }
 
   .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
+    .admin-product-row-grid
     > [data-label="Color"] {
     align-items: center;
   }
@@ -6165,7 +5527,7 @@ div.claim-form-shell::after {
   }
 
   .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
+    .admin-product-row-grid
     > :first-child > button {
     width: 44px !important;
     height: 44px !important;
@@ -6173,7 +5535,7 @@ div.claim-form-shell::after {
   }
 
   .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
+    .admin-product-row-grid
     > :first-child :where(p, span).truncate {
     overflow: visible;
     white-space: normal;
@@ -6182,8 +5544,7 @@ div.claim-form-shell::after {
 }
 
 @media (max-width: 479px) {
-  .beyonix-admin-main .admin-products-table .admin-product-row-grid,
-  .beyonix-admin-main .admin-products-table .admin-product-variant-row {
+  .beyonix-admin-main .admin-products-table .admin-product-row-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     padding: 12px !important;
   }
@@ -6230,14 +5591,6 @@ div.claim-form-shell::after {
   }
 }
 
-.admin-product-tabs {
-  scrollbar-width: none;
-}
-
-.admin-product-tabs::-webkit-scrollbar {
-  display: none;
-}
-
 @media (max-width: 599px) {
   .beyonix-admin-main .admin-variant-compact {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -6247,10 +5600,6 @@ div.claim-form-shell::after {
 @media (max-width: 420px) {
   .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel.admin-credit-note-workflow {
     padding: 0.75rem !important;
-  }
-
-  .admin-credit-note-title-icon {
-    display: none;
   }
 
   .admin-credit-note-balance {
@@ -6263,68 +5612,12 @@ div.claim-form-shell::after {
 }
 
 @media (min-width: 1100px) and (max-height: 1080px) {
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-icon {
-    height: 2.65rem;
-    width: 2.65rem;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header {
-    gap: 0.65rem;
-    padding-bottom: 0.55rem !important;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-copy {
-    gap: 0.65rem !important;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-copy h3 {
-    font-size: 0.9rem;
-    margin-top: 0.15rem !important;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-header-copy p:last-child {
-    font-size: 0.7rem;
-    line-height: 1.2rem;
-    margin-top: 0.15rem !important;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-alert {
-    margin-top: 0.55rem !important;
-    min-height: 2.8rem;
-    padding-block: 0.45rem !important;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-alert-icon {
-    height: 1.75rem;
-    width: 1.75rem;
-  }
-
-  .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-main-grid {
-    gap: 0.55rem !important;
-    margin-top: 0.55rem !important;
-  }
-
-  .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-invoice-data-card {
-    min-height: 2.35rem;
-    padding-block: 0.35rem !important;
-  }
-
-  .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-accounting-status-card {
-    min-height: 2rem;
-    padding-block: 0.15rem !important;
-  }
-
   .admin-order-detail-scope .admin-order-invoice-panel .admin-order-billing-credit-section {
     margin-top: 0.55rem !important;
   }
 
   .admin-order-detail-scope section.admin-order-data-panel.admin-order-invoice-panel div.admin-order-billing-panel.admin-credit-note-workflow {
     padding: 0.7rem !important;
-  }
-
-  .admin-credit-note-title-icon {
-    height: 2.25rem;
-    width: 2.25rem;
   }
 
   .admin-credit-note-title h3 {
@@ -6371,8 +5664,7 @@ div.claim-form-shell::after {
     padding-block: 0.45rem;
   }
 
-  .admin-credit-note-resolution-panel em,
-  .admin-credit-note-destination-help {
+  .admin-credit-note-resolution-panel em {
     margin-top: 0.15rem;
   }
 
@@ -6410,7 +5702,6 @@ div.claim-form-shell::after {
   --admin-level-1: rgba(5, 12, 20, 0.98);
   --admin-level-2: rgba(8, 18, 29, 0.98);
   --admin-level-3: rgba(13, 27, 42, 0.98);
-  --admin-highlight: rgba(17, 42, 67, 0.74);
   --admin-success-bg: rgba(3, 58, 41, 0.86);
   --admin-warning-bg: rgba(86, 52, 9, 0.86);
   --admin-danger-bg: rgba(89, 24, 34, 0.86);
@@ -6619,7 +5910,6 @@ div.claim-form-shell::after {
 .admin-order-detail-scope {
   --order-level-1: rgba(5, 12, 20, 0.98);
   --order-level-2: rgba(8, 18, 29, 0.98);
-  --order-level-3: rgba(13, 27, 42, 0.98);
 }
 
 .admin-order-detail-scope,
@@ -6629,7 +5919,7 @@ div.claim-form-shell::after {
     #02060A !important;
 }
 
-.admin-order-detail-scope :is(.admin-order-data-panel, .admin-order-client-panel, .admin-order-payment-panel, .admin-order-products-panel, .admin-order-shipping-panel, .admin-order-invoice-panel) {
+.admin-order-detail-scope :is(.admin-order-data-panel, .admin-order-invoice-panel) {
   background:
     linear-gradient(145deg, var(--order-level-1), rgba(3, 8, 14, 0.98)) !important;
   border-color: rgba(92, 159, 215, 0.18) !important;
@@ -6664,24 +5954,6 @@ div.claim-form-shell::after {
   background-color: rgba(89, 24, 34, 0.9) !important;
   border-color: rgba(248, 113, 113, 0.42) !important;
   color: #FFB4BD !important;
-}
-
-.admin-order-detail-scope .admin-order-info-card,
-.admin-order-detail-scope .admin-order-proof-card {
-  background:
-    linear-gradient(145deg, var(--order-level-2), rgba(6, 14, 23, 0.98)) !important;
-  border-color: rgba(92, 159, 215, 0.12) !important;
-  box-shadow: none !important;
-}
-
-.admin-order-detail-scope .admin-order-total-card,
-.admin-order-detail-scope .admin-order-received-card {
-  background:
-    linear-gradient(135deg, rgba(3, 58, 41, 0.96), rgba(5, 83, 58, 0.92)) !important;
-  border: 1px solid rgba(92, 255, 176, 0.42) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 24px rgba(16, 185, 129, 0.16) !important;
 }
 
 /* Resumen (admin-order-rs-*): scoped rewrite for the pedido summary tab.
@@ -7484,7 +6756,7 @@ div.claim-form-shell::after {
   color: rgba(255, 255, 255, 0.5) !important;
 }
 
-.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-danger,
+.beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-danger,
 .beyonix-admin-main .admin-order-tone-danger {
   border-color: rgba(248, 113, 113, 0.56) !important;
   background: rgba(127, 29, 29, 0.34) !important;
@@ -7493,7 +6765,7 @@ div.claim-form-shell::after {
   box-shadow: 0 0 14px rgba(248, 113, 113, 0.1) !important;
 }
 
-.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-success,
+.beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-success,
 .beyonix-admin-main .admin-order-tone-success {
   border-color: rgba(52, 211, 153, 0.5) !important;
   background: rgba(6, 78, 59, 0.34) !important;
@@ -7502,7 +6774,7 @@ div.claim-form-shell::after {
   box-shadow: 0 0 14px rgba(52, 211, 153, 0.1) !important;
 }
 
-.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-warning,
+.beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-warning,
 .beyonix-admin-main .admin-order-tone-warning {
   border-color: rgba(245, 158, 11, 0.54) !important;
   background: rgba(120, 53, 15, 0.32) !important;
@@ -7511,7 +6783,7 @@ div.claim-form-shell::after {
   box-shadow: 0 0 14px rgba(245, 158, 11, 0.1) !important;
 }
 
-.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-info,
+.beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-info,
 .beyonix-admin-main .admin-order-tone-info {
   border-color: rgba(96, 165, 250, 0.54) !important;
   background: rgba(30, 64, 175, 0.32) !important;
@@ -7520,7 +6792,7 @@ div.claim-form-shell::after {
   box-shadow: 0 0 14px rgba(96, 165, 250, 0.1) !important;
 }
 
-.beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-muted,
+.beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-muted,
 .beyonix-admin-main .admin-order-tone-muted {
   border-color: rgba(148, 163, 184, 0.32) !important;
   background: rgba(15, 23, 42, 0.42) !important;
@@ -8055,7 +7327,6 @@ span.admin-claim-status-finalized,
 
 .product-editor-screen :where(
     .product-editor-metric,
-    .product-editor-subpanel,
     .product-editor-spec-row,
     .product-editor-icon-cell,
     .product-editor-empty
@@ -8093,12 +7364,6 @@ span.admin-claim-status-finalized,
   line-height: 1rem;
 }
 
-.product-editor-screen .product-editor-subpanel label > span:first-child {
-  margin-bottom: 0.35rem !important;
-  font-size: 0.7rem !important;
-  line-height: 1rem;
-}
-
 .product-editor-screen :where(.admin-control-input:not(textarea), .admin-control-select) {
   height: 2.25rem !important;
   padding-inline: 0.75rem !important;
@@ -8112,10 +7377,6 @@ span.admin-claim-status-finalized,
 .product-editor-screen .admin-icon-picker-trigger {
   min-height: 2.25rem !important;
   padding-block: 0.3rem !important;
-}
-
-.product-editor-screen .admin-product-logistics-fields {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
 }
 
 .product-editor-screen .product-editor-toggle {
@@ -8322,30 +7583,6 @@ span.admin-claim-status-finalized,
   stroke: rgba(252, 165, 165, 0.9) !important;
 }
 
-.product-editor-screen .admin-variant-color-control {
-  border-radius: 0.65rem !important;
-  background: #0c1219 !important;
-}
-
-.product-editor-screen .admin-variant-color-control input[type="color"] {
-  min-height: 0 !important;
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.product-editor-screen input.admin-variant-hex-input,
-.product-editor-screen input.admin-variant-hex-input:hover,
-.product-editor-screen input.admin-variant-hex-input:focus,
-.product-editor-screen input.admin-variant-hex-input:focus-visible {
-  min-height: 0 !important;
-  height: 2.25rem !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
 .product-editor-screen input.admin-product-price-input {
   padding-left: 2rem !important;
   appearance: textfield;
@@ -8484,10 +7721,6 @@ span.admin-claim-status-finalized,
 .product-editor-screen .product-editor-variant-form .admin-ds-upload-zone-compact {
   min-height: 3.5rem !important;
   border-radius: 0.65rem !important;
-}
-
-.product-editor-screen .product-editor-variant-form .admin-variant-color-control {
-  height: 2.4rem !important;
 }
 
 .product-editor-screen .product-editor-close-button:hover {
@@ -8738,6 +7971,18 @@ html[data-admin-theme="light"] .beyonix-admin-shell .beyonix-admin-main {
   --admin-text-muted: rgba(15, 23, 42, 0.62);
   --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
   --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
+  --admin-success-bg: rgba(16, 185, 129, 0.1);
+  --admin-success-border: rgba(5, 150, 105, 0.4);
+  --admin-success-text: #065f46;
+  --admin-warning-bg: rgba(245, 158, 11, 0.12);
+  --admin-warning-border: rgba(217, 119, 6, 0.4);
+  --admin-warning-text: #92400e;
+  --admin-danger-bg: rgba(239, 68, 68, 0.1);
+  --admin-danger-border: rgba(220, 38, 38, 0.4);
+  --admin-danger-text: #991b1b;
+  --admin-info-bg: rgba(59, 130, 246, 0.1);
+  --admin-info-border: rgba(37, 99, 235, 0.4);
+  --admin-info-text: #1e40af;
   background: #eef1f5 !important;
 }
 
@@ -8792,6 +8037,18 @@ html[data-admin-theme="light"] .beyonix-admin-shell {
   --beyonix-brand-primary: #112a43;
   --beyonix-brand-hover: #183b5e;
   --beyonix-brand-active: #1e4d7b;
+  --admin-success-bg: rgba(16, 185, 129, 0.1);
+  --admin-success-border: rgba(5, 150, 105, 0.4);
+  --admin-success-text: #065f46;
+  --admin-warning-bg: rgba(245, 158, 11, 0.12);
+  --admin-warning-border: rgba(217, 119, 6, 0.4);
+  --admin-warning-text: #92400e;
+  --admin-danger-bg: rgba(239, 68, 68, 0.1);
+  --admin-danger-border: rgba(220, 38, 38, 0.4);
+  --admin-danger-text: #991b1b;
+  --admin-info-bg: rgba(59, 130, 246, 0.1);
+  --admin-info-border: rgba(37, 99, 235, 0.4);
+  --admin-info-text: #1e40af;
   background: #eef1f5 !important;
 }
 
@@ -8807,6 +8064,62 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .t
 }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-sky {
   background-color: #183b5e !important;
+}
+/* text-beyonix-sky|cyan CON fracción de opacidad (ej. text-beyonix-sky/75,
+   usado por el chevron de TODOS los AdminSelect del admin, y por decenas
+   de íconos/acentos secundarios): Tailwind precompila la fracción a un
+   valor estático a partir del hex crudo de dark (#8CC8F2, un celeste
+   pensado para leerse sobre fondo oscuro) -- sobre el trigger blanco de
+   light queda un celeste lavado, casi invisible. Sin esto, cada flechita
+   de cada select del admin desaparece en light. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-beyonix-sky/"] {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-beyonix-cyan/"] {
+  color: #1e4d7b !important;
+}
+/* Paleta beyonix-gray- y beyonix-blue-300/500/900 (también literales fijos
+   en @theme, no var()): usada casi exclusivamente en la pestaña Envío del
+   detalle de pedido (avatares de ícono, labels, proveedor de envío
+   personalizado) -- sin ningún override acá, y sin cubrir por el catch-all
+   genérico de "bg-" de .admin-order-detail-scope (ese catch-all NO tiene
+   versión light, ver comentario ahí). beyonix-blue-900/gray-900/gray-700
+   son paneles/avatares neutros oscuros -> claro, igual que el resto de
+   fondos neutros de este archivo. beyonix-blue-700 es el MISMO hex que la
+   marca (#112a43, ver exclusión de la sección 12) -> se preserva oscuro,
+   con texto/ícono blanco reforzado (mismo problema que .bg-beyonix-blue). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue-900,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-gray-900,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-gray-700 {
+  background-color: #f7f9fb !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-gray-300 {
+  color: rgba(15, 23, 42, 0.62) !important;
+}
+/* text-beyonix-status-{success,pending,danger}: var(--beyonix-success/
+   -warning/-danger), colores medio-saturados (#34d399/#f59e0b/#ef4444)
+   pensados como acento sobre fondo oscuro -- contraste pobre como texto
+   sobre blanco (el verde en particular, ~2:1). Usado como mensaje de
+   confirmación/error en Pedidos (ej. "Factura generada correctamente"). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-status-success {
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-status-pending {
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-status-danger {
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-focus {
+  color: #1d4ed8 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue-700.text-white,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-beyonix-blue-700.text-white:hover {
+  color: #ffffff !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue-700.bg-beyonix-blue-700 svg.lucide {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
 }
 
 /* ---- 2b. Portal scope: contenido montado con createPortal(..., document.body)
@@ -8852,6 +8165,18 @@ html[data-admin-theme="light"] .admin-portal-scope {
   --beyonix-brand-primary: #112a43;
   --beyonix-brand-hover: #183b5e;
   --beyonix-brand-active: #1e4d7b;
+  --admin-success-bg: rgba(16, 185, 129, 0.1);
+  --admin-success-border: rgba(5, 150, 105, 0.4);
+  --admin-success-text: #065f46;
+  --admin-warning-bg: rgba(245, 158, 11, 0.12);
+  --admin-warning-border: rgba(217, 119, 6, 0.4);
+  --admin-warning-text: #92400e;
+  --admin-danger-bg: rgba(239, 68, 68, 0.1);
+  --admin-danger-border: rgba(220, 38, 38, 0.4);
+  --admin-danger-text: #991b1b;
+  --admin-info-bg: rgba(59, 130, 246, 0.1);
+  --admin-info-border: rgba(37, 99, 235, 0.4);
+  --admin-info-text: #1e40af;
 }
 /* La raíz de un portal a veces lleva la clase de utilidad (bg-[#...],
    border-white/N) directamente encima, en el MISMO elemento que
@@ -8919,7 +8244,7 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, asid
 html[data-admin-theme="light"] .admin-ds-control,
 html[data-admin-theme="light"] .admin-control-select,
 html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
-  background-color: #eef1f5 !important;
+  background-color: #ffffff !important;
   border-color: var(--admin-border) !important;
   color: var(--admin-text) !important;
   color-scheme: light;
@@ -8928,13 +8253,13 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="check
 
 html[data-admin-theme="light"] .admin-ds-control::placeholder,
 html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea)::placeholder {
-  color: rgba(15, 23, 42, 0.4) !important;
+  color: rgba(15, 23, 42, 0.45) !important;
 }
 
 html[data-admin-theme="light"] .admin-ds-control:hover,
 html[data-admin-theme="light"] .admin-control-select:hover,
 html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):hover {
-  background-color: #e6eaf0 !important;
+  background-color: #f7f9fb !important;
   border-color: var(--admin-border-strong) !important;
 }
 
@@ -8950,7 +8275,18 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="check
 
 html[data-admin-theme="light"] .beyonix-admin-main :where(input, textarea, select):disabled {
   background-color: #e6eaf0 !important;
-  color: rgba(15, 23, 42, 0.4) !important;
+  color: rgba(15, 23, 42, 0.55) !important;
+  border-color: var(--admin-border-soft) !important;
+}
+
+/* Readonly no es disabled: el dato sigue siendo el foco de la pantalla
+   (sólo no se puede editar acá), así que el texto queda con contraste
+   completo -- únicamente el fondo cambia, un gris más suave que disabled,
+   para dar la señal visual de "no editable" sin que se lea "apagado". */
+html[data-admin-theme="light"] .beyonix-admin-main :where(input, textarea, select)[readonly]:not(:disabled) {
+  background-color: #f1f4f8 !important;
+  color: var(--admin-text) !important;
+  border-color: var(--admin-border) !important;
 }
 
 /* ---- 5. Botones ---- */
@@ -8985,11 +8321,230 @@ html[data-admin-theme="light"] .admin-ds-button-destructive:hover {
   background-color: #fee2e2 !important;
   border-color: rgba(220, 38, 38, 0.6) !important;
 }
+/* .admin-ds-icon-action en dark es fondo azul marino SÓLIDO (regla base,
+   línea ~995, sin scope de tema) -- sin pisar el background acá, el ícono
+   (forzado a --admin-text oscuro por la regla svg.lucide de más arriba)
+   queda oscuro sobre azul marino oscuro: el bug exacto de "ícono negro
+   sobre fondo azul oscuro" reportado en la auditoría. Botón hamburguesa/
+   cerrar del header mobile es el caso más visible. */
 html[data-admin-theme="light"] .admin-ds-icon-action {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border) !important;
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-ds-icon-action:hover {
   background-color: #f1f4f8 !important;
+  border-color: var(--admin-border-strong) !important;
+}
+/* Variante danger (botones "eliminar imagen" de Productos): mismo problema
+   de fondo rojo oscuro sólido heredado de dark + ícono forzado a
+   --admin-text -- acá además el ícono debe leer "peligro", no neutro, así
+   que se fuerza a rojo oscuro en vez de navy (selector con ambas clases del
+   propio botón para ganarle en especificidad a la regla genérica
+   svg.lucide de la sección 0). */
+html[data-admin-theme="light"] .admin-ds-icon-action-danger {
+  background-color: #fef2f2 !important;
+  border-color: rgba(220, 38, 38, 0.4) !important;
+  color: #b91c1c !important;
+}
+html[data-admin-theme="light"] .admin-ds-icon-action-danger:hover {
+  background-color: #fee2e2 !important;
+  border-color: rgba(220, 38, 38, 0.6) !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-ds-icon-action.admin-ds-icon-action-danger svg.lucide {
+  color: #b91c1c !important;
+  stroke: #b91c1c !important;
+}
+/* Ícono blanco preservado sobre fondos de marca sólidos: --beyonix-brand-*
+   se mantiene azul marino/celeste en AMBOS temas a propósito (identidad
+   visual, sección 2 de este archivo), así que cualquier ícono dentro de un
+   botón primario o un avatar/badge bg-beyonix-blue|sky sigue necesitando
+   texto claro -- pero la regla svg.lucide de la sección 0 fuerza TODO
+   ícono a --admin-text oscuro sin excepción, dejándolo negro sobre azul
+   marino ahí. Selector con clase duplicada a propósito para igualar la
+   especificidad de esa regla genérica y ganarle por orden de aparición
+   (ver comentario de esa sección para el detalle del cálculo). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-ds-button-primary.admin-ds-button-primary svg.lucide,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue.text-beyonix-sky,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue .text-beyonix-sky,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue.bg-beyonix-blue svg.lucide,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-sky.bg-beyonix-sky svg.lucide,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue.text-white,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="bg-beyonix-blue/"].text-white,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="bg-beyonix-blue/"].text-white svg.lucide {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+/* Trigger de selector de producto con variante (Compras > Nueva compra,
+   Ajuste de stock en Productos): panel con gradiente oscuro inline
+   (rgba(17,42,67,... / hover rgba(30,77,123,...)), no un hex simple -- no
+   lo agarra ningún catch-all de arriba. Se lleva a superficie clara
+   (blanco / hover gris-azulado suave), consistente con el resto de
+   triggers de select del admin, en vez de conservar el panel oscuro. Con
+   el fondo ya claro, el label ("text-white" exacto) y los íconos deben
+   volver a su oscurecido normal -- por eso este bloque YA NO fuerza blanco
+   ahí (a diferencia de una corrección anterior, que sólo tapaba el
+   síntoma manteniendo el panel oscuro). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="bg-[linear-gradient(135deg,rgba(17,42,67,"] {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="bg-[linear-gradient(135deg,rgba(17,42,67,"]:hover,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="bg-[linear-gradient(135deg,rgba(30,77,123,"] {
+  background: #f1f4f8 !important;
+  border-color: var(--admin-border-strong) !important;
+  box-shadow: none !important;
+}
+/* Opción seleccionada / "Crear artículo nuevo" del mismo selector: usa
+   bg-beyonix-blue/55 + text-white (navy al 55% + texto blanco) -- ya
+   legible por la regla genérica de arriba, pero el pedido puntual acá es
+   "seleccionado = azul muy suave + texto oscuro", no navy medio + blanco.
+   Sólo esta combinación exacta (única de este selector, verificado que no
+   se reutiliza en otro botón del admin) pasa a esa variante. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-blue\/55.bg-beyonix-blue\/55.text-white {
+  background-color: rgba(17, 42, 67, 0.1) !important;
+  color: #112a43 !important;
+}
+/* Punto de estado en la card de usuario del sidebar (badge de rol, ej.
+   "SUPER ADMIN"): pide verde semántico (estado activo) en vez del celeste
+   actual. Selector con las 3 clases del span exacto -- no toca ningún otro
+   uso de bg-beyonix-sky (fondo/texto del badge quedan igual, sólo el
+   punto). El badge en sí sigue navy sólido (color de marca preservado), el
+   punto verde se ve bien sobre eso sin necesitar box-shadow/glow. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .size-1\.5.rounded-full.bg-beyonix-sky {
+  background-color: #34d399 !important;
+}
+/* Menú lateral de Detalle de pedido (Resumen/Pago/Facturación/...): hover
+   de ítem inactivo y del botón colapsar usan hex "panel neutro" con
+   mayúscula (#15191F, #1B2028) -- distintos como clase compilada de sus
+   pares en minúscula que sí están en el catch-all de la sección 12, así
+   que quedaban afuera. Sin esto, "hover:text-beyonix-sky" del botón
+   colapsar queda azul oscuro sobre un fondo TAMBIÉN oscuro en hover. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#15191F\]:hover,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#1B2028\]:hover {
+  background-color: #f1f4f8 !important;
+}
+/* hover:text-white / group-hover:text-white: mismo problema estructural
+   que .text-white sin fracción (sección de utilidades más abajo), pero en
+   la variante hover -- Tailwind la compila a una clase DISTINTA
+   (.hover\:text-white:hover), así que la curva de esa sección nunca la
+   toca. Es el causante de la enorme mayoría de "hover ilegible" en botones
+   ghost/ícono de todo el admin: el texto pasa a blanco puro en hover
+   mientras el fondo se queda claro (o casi sin cambiar). Único caso donde
+   de verdad hace falta blanco en hover es sobre un fondo que en dark YA
+   era sólido y oscuro -- y ese fondo, si usa el mismo mecanismo de esta
+   sección (bg-beyonix-blue, bg-[hex] del catch-all, gradiente rgba(17,42,67,...)
+   preservado), ya tiene su propio override de blanco más específico arriba,
+   que gana por especificidad sobre esta regla genérica. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:text-white\/60:hover { color: color-mix(in oklab, var(--admin-text) 81%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:text-white\/70:hover { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:text-white\/75:hover { color: color-mix(in oklab, var(--admin-text) 88%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:text-white\/84:hover { color: color-mix(in oklab, var(--admin-text) 91%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:text-white:hover,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .group:hover .group-hover\:text-white,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .group\/nav:hover .group-hover\/nav\:text-white {
+  color: var(--admin-text) !important;
+}
+/* Selector de producto de Ventas externas (sales-ledger-product-trigger) y
+   sus opciones/menú de comisión: en hover pisan el trigger compartido con
+   un gradiente navy sólido + "color: #fff" propio en el <button> -- el
+   label hereda blanco y se lee bien, pero el chevron (ChevronDown con
+   text-beyonix-sky/N, ya remapeado a azul OSCURO por la regla de arriba)
+   NO hereda ese color porque trae el suyo propio: azul oscuro sobre navy
+   en hover, el bug exacto de "selector con fondo oscuro y contenido casi
+   invisible". Se resuelve llevando el hover a la MISMA superficie clara
+   que ya usa el resto de los triggers (consistencia), en vez de dejar una
+   isla oscura aislada sólo en este selector. */
+html[data-admin-theme="light"] button.sales-ledger-product-trigger:hover {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border-strong) !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-menu button.sales-ledger-product-option:hover {
+  background: #f1f4f8 !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-ds-select-menu button.sales-ledger-fee-option:hover {
+  background: #f1f4f8 !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .sales-ledger-scrollbar {
+  scrollbar-color: #9aa9bd #eef1f5;
+}
+html[data-admin-theme="light"] .sales-ledger-scrollbar::-webkit-scrollbar-track {
+  background: #eef1f5;
+  border-color: var(--admin-border);
+}
+html[data-admin-theme="light"] .sales-ledger-scrollbar::-webkit-scrollbar-thumb {
+  border-color: #eef1f5;
+  background: linear-gradient(90deg, #9aa9bd, #6b7d99, #9aa9bd);
+}
+html[data-admin-theme="light"] .sales-ledger-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #6b7d99, #183b5e, #6b7d99);
+}
+html[data-admin-theme="light"] .beyonix-product-picker-scroll {
+  scrollbar-color: #6b7d99 #eef1f5;
+}
+html[data-admin-theme="light"] .beyonix-product-picker-scroll::-webkit-scrollbar-track {
+  background: #eef1f5;
+  border-color: var(--admin-border);
+}
+html[data-admin-theme="light"] .beyonix-product-picker-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #183b5e, #112a43);
+  border-color: #eef1f5;
+}
+html[data-admin-theme="light"] .beyonix-product-picker-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #1e4d7b, #183b5e);
+}
+/* Botones de Facturación en Pedidos (Descargar factura/Nota de crédito,
+   Emitir factura): fondo hex de marca crudo (mismo #112a43 preservado),
+   pero acá "text-white" va como clase propia del botón (no heredada) --
+   la regla genérica .text-white (sección de utilidades text-white/N) lo
+   pisa a --admin-text oscuro igual que el ícono, texto Y ícono negros
+   sobre navy. Mismo truco de clase duplicada para la especificidad. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#112A43\].text-white {
+  color: #ffffff !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#112A43\].bg-\[\#112A43\] svg.lucide {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+/* Badge "Superadmin"/rol (admin-clientes.tsx): fondo navy al 70% de opacidad
+   (no cae en el catch-all de hex sólido, que sólo matchea la clase sin
+   modificador de opacidad) + texto azul oscuro (text-beyonix-sky, ya
+   remapeado) -- azul oscuro sobre navy al 70% sigue siendo demasiado
+   oscuro-sobre-oscuro. Se aclara el fondo a un tinte navy suave en vez de
+   tocar el texto, conserva la identidad del badge. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#112A43\]\/70 {
+  background-color: rgba(17, 42, 67, 0.12) !important;
+}
+/* ADMIN_SENSITIVE_DANGER (lib/admin/admin-sensitive-visuals.ts): paleta de
+   hex crudos para notificaciones de reclamo/cancelación (campanita, sidebar,
+   Atención al cliente/admin-claim-manager) -- fuera del sistema de colores
+   Tailwind estándar, así que ninguna de las curvas genéricas de arriba la
+   toca. bg-[#0D1117]/bg-[#111827] (panel/panelSoft) ya caen en el catch-all
+   de hex "panel neutro" y pasan a claro, pero bg-[#2a1117] (badge/action/
+   icon) quedaba afuera de esa lista -- y el texto rosa pálido (pensado para
+   leerse sobre esos fondos oscuros) queda ilegible en cuanto el fondo pasa
+   a claro. Se agrega el hex faltante a la familia "panel danger claro" y se
+   oscurece el texto a juego, consistente con el resto de los mapeos
+   semánticos rojo/danger de este archivo. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#2a1117\] {
+  background-color: #fef2f2 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#35151d\]:hover {
+  background-color: #fee2e2 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-\[\#ffc2c8\],
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-\[\#ffb4bd\] {
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-[#f4b8c0]/"] {
+  color: #991b1b !important;
 }
 
 /* ---- 6. Dropdowns / popovers / selects (selector de íconos, Eye de
@@ -9111,11 +8666,252 @@ html[data-admin-theme="light"] .admin-ds-nav-icon-active {
   background-color: rgba(17, 42, 67, 0.16) !important;
   color: #112a43 !important;
 }
+/* Badges de conteo del sidebar (.admin-ds-nav-badge-danger/-payment): sin
+   override de light en ningún lado del archivo -- se quedan con el fondo
+   translúcido oscuro (20-30% de opacidad) + texto pastel pensados para
+   dark. Sobre el sidebar blanco de light, esa opacidad baja deja un fondo
+   YA claro (rosa/verde muy pálido) debajo de un texto TAMBIÉN pastel del
+   mismo tono -- pastel sobre pastel, prácticamente ilegible (el contador de
+   reclamos/cancelaciones y el de cargas de saldo pendientes, ambos en el
+   sidebar, visibles en cualquier pantalla). El badge base .admin-ds-nav-badge
+   (sin -danger/-payment) no necesita esto: su opacidad de fondo es 90%, se
+   mantiene sólido y oscuro con texto claro encima -- combinación correcta,
+   no se toca. */
+html[data-admin-theme="light"] .admin-ds-nav-badge-danger {
+  border-color: rgba(220, 38, 38, 0.4) !important;
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-ds-nav-badge-payment {
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+  box-shadow: none !important;
+}
+/* El span del badge también trae "group-hover/nav:text-white" fijo (para
+   que el badge oscuro por defecto se vea bien al hacer hover del item) --
+   sin esto, pasar el mouse por el item vuelve blanco el texto recién
+   oscurecido arriba, texto blanco sobre fondo rosa/verde pastel. */
+html[data-admin-theme="light"] .group\/nav:hover .admin-ds-nav-badge-danger {
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] .group\/nav:hover .admin-ds-nav-badge-payment {
+  color: #065f46 !important;
+}
+/* Mismo problema para el badge de devolución MercadoLibre (ADMIN_ATTENTION_
+   WARNING.badge, sin clase propia -- se identifica por su borde ámbar, ya
+   detectado por el catch-all genérico de la sección 14). */
+html[data-admin-theme="light"] .group\/nav:hover [class*="border-amber"] {
+  color: #92400e !important;
+}
 
 /* ---- 8. Header mobile ---- */
 html[data-admin-theme="light"] .admin-ds-mobile-header {
   background: #ffffff !important;
   border-color: var(--beyonix-border-default) !important;
+}
+
+/* ---- 8b. Campanita de notificaciones: TODO el sistema (botón, popover,
+   header, cards, ícono vacío) no tenía NINGÚN override de light en el
+   archivo -- el popover es un gradiente casi negro sólido sin scope de
+   tema, y el texto de cada notificación (text-white/N, ya remapeado a
+   --admin-text oscuro por la curva genérica) queda oscuro sobre ese fondo
+   casi negro: ilegible por completo. Es el dropdown de notificaciones que
+   aparece en TODAS las pantallas del admin (campanita del sidebar y del
+   header mobile), así que es alta prioridad. ---- */
+html[data-admin-theme="light"] .admin-ds-notification-popover {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-ds-notification-header {
+  border-bottom-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-ds-notification-card {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-ds-notification-card:hover {
+  background-color: #f1f4f8 !important;
+  border-color: var(--admin-border-strong) !important;
+}
+html[data-admin-theme="light"] .admin-ds-notification-icon,
+html[data-admin-theme="light"] .admin-ds-empty-icon {
+  background-color: #eef1f5 !important;
+  border-color: var(--admin-border) !important;
+}
+/* Estado "hay una carga de saldo pendiente" del botón campanita: fondo
+   verde oscuro translúcido + texto blanco explícito (no pasa por la clase
+   text-white, así que la curva genérica no lo toca) -- sobre el header
+   claro queda un verde apenas visible con texto blanco encima, blanco
+   sobre pastel. */
+/* Causa exacta de la sombra permanente de la campana: la regla dark base
+   de arriba (línea ~866) define box-shadow: 0 10px 28px rgba(0,0,0,0.32)
+   en .admin-ds-bell-button/-idle/.admin-ds-notification-bell, sin ningún
+   scope de tema y sin que ningún estado (hover incluido) la reemplace --
+   se queda ahí siempre, en cualquier interacción. El botón de tema
+   (.admin-ds-icon-action) nunca tuvo box-shadow para empezar, por eso no
+   se nota ahí. No hay ningún :focus/:focus-visible ni ::before/::after
+   involucrado -- es literalmente el estado base. Se lleva la campana al
+   mismo tratamiento que ya tiene .admin-ds-icon-action en light (mismo
+   fondo, mismo borde, mismo hover, sombra removida). */
+html[data-admin-theme="light"] .admin-ds-bell-button,
+html[data-admin-theme="light"] .admin-ds-bell-button-idle,
+html[data-admin-theme="light"] .admin-ds-notification-bell {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-bell-button:hover,
+html[data-admin-theme="light"] .admin-ds-bell-button-idle:hover,
+html[data-admin-theme="light"] .admin-ds-notification-bell:hover {
+  background-color: #f1f4f8 !important;
+  border-color: var(--admin-border-strong) !important;
+}
+html[data-admin-theme="light"] .admin-ds-bell-button.admin-ds-bell-button-payment {
+  background-color: #d1fae5 !important;
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-ds-bell-button.admin-ds-bell-button-payment:hover {
+  background-color: #a7f3d0 !important;
+  border-color: rgba(5, 150, 105, 0.6) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-ds-bell-button-payment.admin-ds-bell-button-payment svg.lucide {
+  color: #065f46 !important;
+  stroke: #065f46 !important;
+}
+
+/* ---- 8c. Selector de fecha (admin-date-picker.tsx): mismo problema que la
+   campanita -- popover/header/celdas de día en gradiente casi negro sin
+   ningún override de light en el archivo. Usado en los filtros de rango de
+   fecha del Dashboard y Pedidos. ---- */
+html[data-admin-theme="light"] .admin-ds-datepicker-popover {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-header {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-heading-trigger {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-heading-trigger:hover,
+html[data-admin-theme="light"] .admin-ds-datepicker-heading-trigger[aria-expanded="true"] {
+  background-color: #eef1f5 !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-heading-menu {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.14) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-heading-option {
+  color: var(--admin-text-soft) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-heading-option:hover {
+  background-color: #f1f4f8 !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-heading-option.is-selected {
+  background: rgba(17, 42, 67, 0.1) !important;
+  color: #112a43 !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-nav {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-nav:hover {
+  background-color: #112a43 !important;
+  border-color: #112a43 !important;
+  color: #ffffff !important;
+}
+/* ---- 8d. Atención al cliente (admin-claim-manager.tsx): cards y el hilo
+   de chat siguen con fondo casi negro sin scope de tema -- el panel
+   contenedor (.admin-claim-manager, bg-[#0D1117]) ya está cubierto por el
+   catch-all de hex de la sección 12, pero estas cards internas usan sus
+   propias reglas con rgba/gradiente propio que ese catch-all no toca. ---- */
+html[data-admin-theme="light"] .admin-claim-card,
+html[data-admin-theme="light"] .admin-claim-file-row,
+html[data-admin-theme="light"] .admin-claim-chat-bubble {
+  border-color: var(--admin-border) !important;
+  background-color: #ffffff !important;
+}
+/* Zona de carga de imágenes (Productos/Banners) y tile de miniatura: mismo
+   patrón, gradiente/fondo casi negro sin scope de tema. */
+html[data-admin-theme="light"] .admin-ds-upload-zone {
+  background: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .admin-category-image-dropzone {
+  background-color: #f7f9fb !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-category-image-dropzone:hover {
+  border-color: var(--admin-border-strong) !important;
+}
+html[data-admin-theme="light"] .admin-ds-upload-zone:hover,
+html[data-admin-theme="light"] .admin-ds-upload-zone-active {
+  border-color: rgba(30, 58, 95, 0.4) !important;
+  background-color: #eef1f5 !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-ds-media-tile {
+  border-color: var(--admin-border) !important;
+  background-color: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .admin-ds-media-tile:hover {
+  border-color: var(--admin-border-strong) !important;
+}
+/* Trigger "Posición" del formulario de Categorías: mismo patrón. */
+html[data-admin-theme="light"] .admin-category-position-trigger {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-category-position-trigger:hover,
+html[data-admin-theme="light"] .admin-category-position-trigger:focus-visible {
+  background: #f1f4f8 !important;
+  border-color: var(--admin-border-strong) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-category-position-option:hover {
+  background-color: #f1f4f8 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-ds-datepicker-nav.admin-ds-datepicker-nav:hover svg.lucide {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-day {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border-soft) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-day-current:hover,
+html[data-admin-theme="light"] .admin-ds-datepicker-day-muted:hover {
+  background-color: #eef1f5 !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-day-muted {
+  color: rgba(15, 23, 42, 0.35) !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-day-today {
+  border-color: rgba(17, 42, 67, 0.4) !important;
+  background-color: rgba(17, 42, 67, 0.1) !important;
+  color: #112a43 !important;
+}
+html[data-admin-theme="light"] .admin-ds-datepicker-day-selected {
+  background: linear-gradient(135deg, #112a43, #1e4d7b) !important;
+  border-color: #112a43 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
 }
 
 /* ---- 9. Editar producto (.product-editor-*): sólo color, nada de grid/
@@ -9126,7 +8922,6 @@ html[data-admin-theme="light"] .product-editor-panel {
 }
 html[data-admin-theme="light"] .product-editor-screen :where(
     .product-editor-metric,
-    .product-editor-subpanel,
     .product-editor-spec-row,
     .product-editor-icon-cell,
     .product-editor-empty
@@ -9324,18 +9119,6 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-next-de
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-title {
   color: #0f172a !important;
 }
-html[data-admin-theme="light"] .admin-credit-note-balance span {
-  color: rgba(15, 23, 42, 0.48) !important;
-}
-html[data-admin-theme="light"] .admin-credit-note-balance strong {
-  color: #0f172a !important;
-}
-html[data-admin-theme="light"] .admin-credit-note-balance > div:last-child strong {
-  color: #1e40af !important;
-}
-html[data-admin-theme="light"] .admin-credit-note-header {
-  border-bottom-color: rgba(30, 58, 95, 0.16) !important;
-}
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel p.admin-order-billing-pending-note.admin-order-billing-pending-note.admin-order-billing-pending-note {
   background-color: rgba(245, 158, 11, 0.12) !important;
   background-image: none !important;
@@ -9350,16 +9133,457 @@ html[data-admin-theme="light"] .admin-claim-chat-thread {
    portados a document.body (no lucen la clase .admin-portal-scope -- son
    más viejos que ese mecanismo -- así que se cubren acá directo por
    atributo, igual que la versión dark). */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-shipping-panel .admin-control-select {
-  border-color: var(--admin-border) !important;
-  background: #eef1f5 !important;
-  background-image: none !important;
-  color: var(--admin-text) !important;
-  box-shadow: none !important;
+/* Panel de Facturación en Pedidos (contenedor .admin-order-data-panel +
+   .admin-order-invoice-panel, admin-pedidos.tsx:3128): fondo carbón
+   #151515 sin scope de tema -- único uso vivo de esta familia de clases
+   heredadas, el resto quedó sin JSX que las use (ver .admin-order-rs-* /
+   .admin-order-pg-* / .admin-order-bl-* más arriba, que sí son el sistema
+   vigente para el resto del detalle de pedido). */
+html[data-admin-theme="light"] .admin-order-data-panel,
+html[data-admin-theme="light"] .admin-order-invoice-panel {
+  background: #ffffff !important;
 }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-shipping-panel .admin-control-select span,
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-shipping-panel .admin-control-select svg {
+
+/* ---- 8e. Asistente de Nota de Crédito / Devolución (admin-credit-note-*,
+   admin-resolution-*, admin-return-*, admin-pedidos.tsx): flujo completo de
+   reintegro/devolución dentro del detalle de pedido, sin NINGÚN override de
+   light en todo el archivo -- fondos casi negros + texto blanco/pastel
+   literal (no son clases text-white/N, son propiedades color: fijas, así
+   que ninguna curva genérica de arriba las toca). Se cubre el panel
+   contenedor + encabezado + pasos + lista de productos acá; el resto del
+   asistente (selector de destino, contador de monto, resumen y revisión,
+   historial) se cubre en los bloques siguientes. ---- */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-step-card,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-review {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel .admin-credit-note-products-panel {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-header {
+  border-bottom-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-balance span {
+  color: rgba(15, 23, 42, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-balance strong {
   color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-balance > div:last-child strong {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-steps {
+  border-bottom-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-steps > button {
+  color: rgba(15, 23, 42, 0.42) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-steps b,
+html[data-admin-theme="light"] .admin-credit-note-step-heading > span {
+  background: #eef1f5 !important;
+  border-color: var(--admin-border) !important;
+  color: rgba(15, 23, 42, 0.62) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-steps > button.is-current,
+html[data-admin-theme="light"] .admin-credit-note-steps > button.is-complete {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-steps > button.is-current b,
+html[data-admin-theme="light"] .admin-credit-note-steps > button.is-complete b {
+  background: #112a43 !important;
+  border-color: #112a43 !important;
+  color: #fff !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-wizard-hint {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-wizard-next {
+  background: #112a43 !important;
+  border-color: #112a43 !important;
+  color: #fff !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-wizard-next:not(:disabled):hover {
+  background: #183b5e !important;
+  border-color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-wizard-next:disabled {
+  background: #eef1f5 !important;
+  border-color: var(--admin-border-soft) !important;
+  color: rgba(15, 23, 42, 0.4) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-wizard-back {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-wizard-back:hover {
+  background: #f1f4f8 !important;
+  border-color: var(--admin-border-strong) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-step-heading > span {
+  height: 1.65rem;
+  width: 1.65rem;
+}
+html[data-admin-theme="light"] .admin-credit-note-step-heading h4 {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-step-heading p {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product-head {
+  color: rgba(15, 23, 42, 0.45) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product {
+  border-top-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product:not(.is-disabled):hover {
+  background: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product.is-selected {
+  background: #eef1f5 !important;
+  box-shadow: inset 3px 0 0 #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product-available,
+html[data-admin-theme="light"] .admin-credit-note-product-price {
+  color: rgba(15, 23, 42, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product-total {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product-dash {
+  color: rgba(15, 23, 42, 0.3) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product-thumb {
+  background: #eef1f5 !important;
+  border: 1px solid var(--admin-border-soft);
+}
+html[data-admin-theme="light"] .admin-credit-note-product-copy h5 {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-product-copy p {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-counter {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-counter button {
+  background: #eef1f5 !important;
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-counter button:not(:disabled):hover {
+  background: #183b5e !important;
+  color: #fff !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-counter button:disabled {
+  background: #f7f9fb !important;
+  color: rgba(15, 23, 42, 0.3) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-counter strong {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-guidance {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-disclosure {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-disclosure:hover {
+  color: #112a43 !important;
+}
+html[data-admin-theme="light"] .admin-return-check-row-compact {
+  background: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-inspection-meta {
+  border-top-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-resolution-panel label > span,
+html[data-admin-theme="light"] .admin-credit-note-field > span {
+  color: rgba(15, 23, 42, 0.68) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-resolution-panel label > span small {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-credit-note-resolution-panel textarea,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-credit-note-resolution-panel input {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-credit-note-resolution-panel .admin-credit-note-reason input {
+  border-color: rgba(5, 150, 105, 0.4) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-credit-note-resolution-panel .admin-credit-note-reason input::placeholder {
+  color: rgba(15, 23, 42, 0.4) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-reason > span small {
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-credit-note-resolution-panel textarea:hover,
+html[data-admin-theme="light"] .admin-credit-note-money-input:hover {
+  border-color: var(--admin-border-strong) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-money-input {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-money-input:focus-within {
+  border-color: var(--admin-border-strong) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-money-input b {
+  border-right-color: var(--admin-border) !important;
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-resolution-panel em {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-resolution-panel .admin-credit-note-field > span small {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-resolution-context {
+  background: rgba(17, 42, 67, 0.06) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-context-label {
+  color: rgba(15, 23, 42, 0.62) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-context-value {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-context-code {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-resolution-context-meta {
+  color: rgba(15, 23, 42, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-decisions {
+  background: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .admin-resolution-decisions-extra {
+  border-top-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-question {
+  border-left-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-question-label {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-question:not(:first-child) .admin-resolution-question-label::before {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-resolution-segmented {
+  background: #eef1f5 !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-segment {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-segment:not(:disabled):hover {
+  background: #ffffff !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-segment.is-selected {
+  background: rgba(16, 185, 129, 0.12) !important;
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-resolution-segment.is-selected:not(:disabled):hover {
+  background: rgba(16, 185, 129, 0.2) !important;
+  border-color: rgba(5, 150, 105, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-required-field > span {
+  color: rgba(15, 23, 42, 0.68) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-compact-input {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-advanced-panel {
+  border-top-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-review dt {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-review dd {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-review .admin-credit-note-review-total {
+  border-top-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-review-total dt,
+html[data-admin-theme="light"] .admin-credit-note-review-total dd {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-submit {
+  background: #112a43 !important;
+  border-color: #112a43 !important;
+  color: #fff !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-submit:not(:disabled):hover {
+  background: #183b5e !important;
+  border-color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-submit:disabled {
+  background: #eef1f5 !important;
+  border-color: var(--admin-border-soft) !important;
+  color: rgba(15, 23, 42, 0.4) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-secure-copy {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-error {
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history {
+  background: rgba(16, 185, 129, 0.1) !important;
+  border-color: rgba(5, 150, 105, 0.35) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history > div:first-child {
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history p strong {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history p span {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history-list button {
+  background: #ffffff !important;
+  border-color: rgba(5, 150, 105, 0.3) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history-list button.is-settlement-retry {
+  background: #fffbeb !important;
+  border-color: rgba(217, 119, 6, 0.4) !important;
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history-list button:hover {
+  background: #d1fae5 !important;
+  border-color: rgba(5, 150, 105, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history-list button strong {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-check-row,
+html[data-admin-theme="light"] .admin-return-exception-row {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-return-check-row b,
+html[data-admin-theme="light"] .admin-return-exception-row span {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-check-row small,
+html[data-admin-theme="light"] .admin-return-exception-row small {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-return-exception-row {
+  background: rgba(245, 158, 11, 0.1) !important;
+  border-color: rgba(217, 119, 6, 0.35) !important;
+}
+html[data-admin-theme="light"] .admin-resolution-exception-icon {
+  color: #b45309 !important;
+}
+html[data-admin-theme="light"] .admin-return-inline-fields input {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-closed-summary {
+  background: rgba(16, 185, 129, 0.1) !important;
+  border-color: rgba(5, 150, 105, 0.35) !important;
+}
+html[data-admin-theme="light"] .admin-return-closed-summary > svg {
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-return-closed-summary p {
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-return-closed-summary h4 {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-closed-summary span {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-return-closed-summary button {
+  background: #112a43 !important;
+  border-color: #112a43 !important;
+  color: #fff !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline-events > div:not(:last-child)::after {
+  background: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline-events > div > span {
+  background: #10b981 !important;
+  border-color: #ffffff !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline-events strong {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline-events small {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline details {
+  border-top-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline summary {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline details p {
+  background: #eef1f5 !important;
+}
+html[data-admin-theme="light"] .admin-return-timeline details b,
+html[data-admin-theme="light"] .admin-return-timeline details code {
+  color: rgba(15, 23, 42, 0.62) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.2) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal header p {
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal header h3 {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal header button {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal dl {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal dt {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal dd {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal dl > .is-total {
+  border-top-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal .is-total dd {
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal footer button {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-return-confirm-modal footer .is-primary {
+  background: #112a43 !important;
+  border-color: #112a43 !important;
+  color: #fff !important;
 }
 html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"],
 html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad logística"] {
@@ -9387,7 +9611,7 @@ html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado ope
    el resto del admin siempre pinta como input claro. Selector idéntico al
    catch-all + .admin-control-select de más, para ganarle en especificidad
    sin tocar los botones de acción reales. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]) {
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]) {
   background: #eef1f5 !important;
   background-color: #eef1f5 !important;
   background-image: none !important;
@@ -9395,7 +9619,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-con
   color: var(--admin-text) !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]):hover {
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):hover {
   background: #e6eaf0 !important;
   background-color: #e6eaf0 !important;
   background-image: none !important;
@@ -9463,7 +9687,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-
 }
 
 /* Badges de tono (admin-order-tone-*): estado/despacho en varias pestañas */
-html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-danger,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-danger,
 html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-danger {
   border-color: rgba(220, 38, 38, 0.4) !important;
   background: rgba(239, 68, 68, 0.1) !important;
@@ -9471,7 +9695,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-danger {
   color: #991b1b !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-success,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-success,
 html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-success {
   border-color: rgba(5, 150, 105, 0.4) !important;
   background: rgba(16, 185, 129, 0.1) !important;
@@ -9479,7 +9703,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-success {
   color: #065f46 !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-warning,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-warning,
 html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-warning {
   border-color: rgba(217, 119, 6, 0.4) !important;
   background: rgba(245, 158, 11, 0.12) !important;
@@ -9487,7 +9711,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-warning {
   color: #92400e !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-info,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-info,
 html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-info {
   border-color: rgba(37, 99, 235, 0.4) !important;
   background: rgba(59, 130, 246, 0.1) !important;
@@ -9495,7 +9719,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-info {
   color: #1e40af !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-muted,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-muted,
 html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-muted {
   border-color: rgba(100, 116, 139, 0.32) !important;
   background: rgba(100, 116, 139, 0.1) !important;
@@ -9578,10 +9802,6 @@ html[data-admin-theme="light"] .admin-orders-action-button:hover {
   background: #e6eaf0 !important;
   color: var(--admin-text) !important;
 }
-html[data-admin-theme="light"] .admin-orders-action-button-danger:hover {
-  border-color: rgba(220, 38, 38, 0.4) !important;
-  background: rgba(239, 68, 68, 0.1) !important;
-}
 html[data-admin-theme="light"] .admin-orders-search-field input {
   border-color: var(--admin-border) !important;
   background: #eef1f5 !important;
@@ -9621,6 +9841,19 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(.admin-orders-table-he
 }
 html[data-admin-theme="light"] .beyonix-admin-main :where(tr:hover, .admin-orders-list-row:hover, details:hover) {
   background-color: #f1f4f8 !important;
+}
+/* Fila BASE (no hover) de tabla HTML real (<table><tbody><tr>): esta regla
+   nunca tuvo versión light -- sólo existía el override del estado :hover
+   (línea de arriba). La base (línea ~5783 de este archivo, sección dark)
+   pinta cada <tr> con rgba(8,18,29,0.72) sin scope de tema, sin importar
+   qué fondo tenga la sección que la contiene: el motivo real de "filas
+   casi negras" en Historial de compras/gastos y Detalle comercial (Ventas
+   externas) -- las únicas tablas del admin que usan <table> real en vez
+   del sistema de filas .admin-ds-table (div), que sí tenía su versión
+   light. No afecta a .admin-ds-table > div (cubierto aparte, arriba). */
+html[data-admin-theme="light"] .beyonix-admin-main :where(tbody tr, .admin-orders-list-row) {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border-soft) !important;
 }
 html[data-admin-theme="light"] .admin-products-table,
 html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table {
@@ -9663,13 +9896,13 @@ html[data-admin-theme="light"] .admin-ds-skeleton {
    valores oscuros fijos de siempre, sin condición de tema. */
 @media (max-width: 1535px) {
   html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
+    .admin-product-row-grid
     > [data-label] {
     border-color: rgba(30, 58, 95, 0.14) !important;
     background: #f7f9fb !important;
   }
   html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table
-    :where(.admin-product-row-grid, .admin-product-variant-row)
+    .admin-product-row-grid
     > [data-label]::before {
     color: rgba(15, 23, 42, 0.5) !important;
   }
@@ -9679,12 +9912,6 @@ html[data-admin-theme="light"] .admin-ds-skeleton {
 }
 
 /* ---- 11. Atención al cliente (mensajería) ---- */
-html[data-admin-theme="light"] .admin-claim-card,
-html[data-admin-theme="light"] .admin-claim-note,
-html[data-admin-theme="light"] .admin-claim-file-row,
-html[data-admin-theme="light"] .admin-claim-chat-bubble {
-  background-color: #ffffff !important;
-}
 html[data-admin-theme="light"] .admin-claim-card {
   background: #ffffff !important;
 }
@@ -9767,9 +9994,41 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) :w
     .bg-\[\#07111C\],
     .bg-\[\#07131F\],
     .bg-\[\#09131d\],
-    .bg-\[\#050B12\]
+    .bg-\[\#050B12\],
+    .bg-\[\#0d2236\],
+    .bg-\[\#444444\],
+    .bg-\[\#132B40\]
   ) {
   background-color: #f7f9fb !important;
+}
+/* Chip de selección de Acciones masivas (admin-acciones-masivas.tsx) y botón
+   "Ver comprobante" de Clientes: su estado hover trae un hex de marca
+   puntual (no capturado por el catch-all de arriba, que sólo matchea la
+   clase base sin pseudo-clase). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#12365a\]:hover,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#1A3B57\]:hover {
+  background-color: #eef1f5 !important;
+}
+/* Header "Cargas de saldo" (admin-clientes.tsx) con comprobantes pendientes:
+   fondo de énfasis verde puntual, no un panel neutro -- se mapea a un tinte
+   de éxito legible en vez del catch-all gris, para conservar la semántica
+   ("hay algo que atender") en vez de aplanarlo a un panel más. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#123B33\] {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+}
+/* Slider "ventana temporal" del Dashboard (admin-dashboard.tsx): riel y
+   grips de arrastre en hex puntual, fuera del sistema bg-white/N. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#070b10\] {
+  background-color: #e6eaf0 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#141b23\] {
+  background-color: #ffffff !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#202a35\]:hover {
+  background-color: #f1f4f8 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#273341\] {
+  background-color: #dbe7f5 !important;
 }
 /* --- text-white/N: NO preserva la opacidad literal de dark -- un 15-40% de
    blanco sobre negro se lee perfectamente porque el ojo es más tolerante al
@@ -9869,6 +10128,37 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .b
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/38 { background-color: color-mix(in oklab, var(--admin-text) 38%, transparent) !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/45 { background-color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/90 { background-color: color-mix(in oklab, var(--admin-text) 90%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/15 { background-color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/20 { background-color: color-mix(in oklab, var(--admin-text) 22%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/30 { background-color: color-mix(in oklab, var(--admin-text) 32%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/40 { background-color: color-mix(in oklab, var(--admin-text) 41%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/50 { background-color: color-mix(in oklab, var(--admin-text) 50%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/55 { background-color: color-mix(in oklab, var(--admin-text) 55%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/60 { background-color: color-mix(in oklab, var(--admin-text) 60%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/65 { background-color: color-mix(in oklab, var(--admin-text) 65%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/70 { background-color: color-mix(in oklab, var(--admin-text) 70%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/75 { background-color: color-mix(in oklab, var(--admin-text) 75%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/80 { background-color: color-mix(in oklab, var(--admin-text) 80%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/85 { background-color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/95 { background-color: color-mix(in oklab, var(--admin-text) 95%, transparent) !important; }
+
+/* --- bg-black/N (12-35): en dark es un panel "hundido" (más oscuro que su
+   contenedor, ya oscuro); en light la misma intención semántica es un panel
+   levemente más recesivo que su contenedor claro -- se mapea a un tinte
+   gris-azulado sutil, nunca a negro. NO se tocan fracciones altas (55+):
+   esas son scrims de modal (fondo atenuado detrás de un diálogo) o fondos
+   de overlay sobre imagen/código -- deben seguir oscuros en cualquier tema,
+   es el mismo patrón universal de "dimmed backdrop", no un bug de contraste. --- */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/12 { background-color: color-mix(in oklab, var(--admin-text) 6%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/15 { background-color: color-mix(in oklab, var(--admin-text) 7%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/18 { background-color: color-mix(in oklab, var(--admin-text) 8%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/20 { background-color: color-mix(in oklab, var(--admin-text) 9%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/24 { background-color: color-mix(in oklab, var(--admin-text) 10%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/25 { background-color: color-mix(in oklab, var(--admin-text) 10%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/28 { background-color: color-mix(in oklab, var(--admin-text) 11%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/30 { background-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/32 { background-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-black\/35 { background-color: color-mix(in oklab, var(--admin-text) 13%, transparent) !important; }
 
 /* --- variantes sin fraccion (opacidad 100%) --- */
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white { color: var(--admin-text) !important; }
@@ -9896,10 +10186,20 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .t
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-red-200 { color: #b91c1c !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-amber-200 { color: #b45309 !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-200 { color: #047857 !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-400 { color: #047857 !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-sky-200 { color: #0369a1 !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-cyan-200 { color: #0e7490 !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-fuchsia-200 { color: #a21caf !important; }
+/* Neutros "pastel" (slate/gray/zinc 300-400): usados en badges de estado
+   "deshabilitado"/"sin verificar" -- gris casi invisible sobre card clara
+   si no se oscurece igual que los colores semánticos de arriba. */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-slate-300 { color: #475569 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-slate-400 { color: #475569 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-gray-300 { color: #4b5563 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-gray-400 { color: #4b5563 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-zinc-300 { color: #52525b !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-zinc-400 { color: #52525b !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-slate-300/"] { color: #475569 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-slate-400/"] { color: #475569 !important; }
 /* text-{color}-{100,200,300}/N (modificador de opacidad arbitrario, ej.
    text-amber-100/72): Tailwind precompila esto a un oklab() estático, así
    que no hay token/variable que pisar -- se matchea por substring del

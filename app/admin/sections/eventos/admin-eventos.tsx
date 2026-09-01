@@ -2,20 +2,15 @@
 
 import { useEffect, useState } from "react"
 import {
-  BadgePercent,
   CalendarDays,
   Check,
-  CheckCircle2,
   Edit3,
-  Package,
   Pause,
   Play,
   RotateCcw,
   Save,
   Search,
   Trash2,
-  TrendingDown,
-  TrendingUp,
   X,
 } from "lucide-react"
 

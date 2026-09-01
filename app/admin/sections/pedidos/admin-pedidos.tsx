@@ -92,7 +92,6 @@ import {
   AdminSearchInput,
   AdminSelect,
   AdminSkeleton,
-  AdminTextInput,
 } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
@@ -588,20 +587,6 @@ function getDisplayedOrderStatus(pedido: SupabasePedido) {
   return "pendiente"
 }
 
-function getCurrentOrderStatusForHeader(pedido: SupabasePedido) {
-  if (pedido.estado === "cancelado" && pedido.financial_status === "refunded") {
-    return "cancelado_refunded"
-  }
-  if (
-    pedido.estado === "cancelado" &&
-    ["refund_pending", "cancellation_requested"].includes(pedido.financial_status ?? "")
-  ) {
-    return "cancelado_refund_pending"
-  }
-
-  return getDisplayedOrderStatus(pedido)
-}
-
 function isApprovedPayment(pedido: SupabasePedido) {
   return !isRejectedPayment(pedido.payment_status) && isOrderPaymentConfirmed(pedido)
 }
@@ -792,64 +777,12 @@ function getAdminOrderTabState(
     } satisfies Record<AdminOrderTabBadgeKey, AdminOrderTabBadgeState>,
   }
 }
-type SummaryBadge = {
-  label: string
-  value: string
-  className: string
-}
-
 type RecommendedAction = {
   title: string
   description: string
   target: AdminOrderDetailView
   buttonLabel: string | null
   tone: "urgent" | "warning" | "info" | "success"
-}
-
-function getShippingSummary(pedido: SupabasePedido) {
-  if (isAdminCancelledOrder(pedido)) return "Cancelado"
-  if (pedido.estado === "entregado" || pedido.delivered_at) return "Entregado"
-  if (SHIPPING_STATUS_LABELS[pedido.estado]) return SHIPPING_STATUS_LABELS[pedido.estado]
-
-  return "No despachado"
-}
-
-function getInvoiceSummary(pedido: SupabasePedido) {
-  if (needsCreditNoteReminder(pedido)) return "Falta nota de crédito"
-  if (pedido.invoice_status === "authorized" || pedido.invoice_cae) return "Factura emitida"
-  return "Falta factura"
-}
-
-function getClaimSummary(pedido: SupabasePedido) {
-  const claims = pedido.order_claims ?? []
-  if (!claims.length) return "Sin reclamos"
-  const openClaim = claims.find(
-    (claim) =>
-      claim.admin_needs_action ||
-      !["cerrado", "rechazado"].includes(claim.status ?? ""),
-  )
-  if (openClaim) {
-    return openClaim.failure_type === "consulta_pedido"
-      ? "Mensaje de ayuda"
-      : "Reclamo abierto"
-  }
-  if (claims.some((claim) => claim.failure_type === "consulta_pedido")) return "Ayuda cerrada"
-  return "Reclamo finalizado"
-}
-
-function getCancellationSummary(pedido: SupabasePedido) {
-  if (!isCancellationFlowOrder(pedido)) return "No aplica"
-  if (isRefundedOrder(pedido)) return "Reintegro completado"
-  if (isRefundPaymentAttentionOrder(pedido)) return "Reintegro pendiente"
-  if (pedido.financial_status === "cancellation_requested") return "Solicitada"
-  return "Cancelación cerrada"
-}
-
-function getPaymentSummary(pedido: SupabasePedido) {
-  if (isAdminCancelledOrder(pedido)) return "Cancelado"
-  if (isRejectedPayment(pedido.payment_status)) return "Rechazado"
-  if (isOrderPaymentConfirmed(pedido)) return "Confirmado"
-  return "Pendiente"
 }
 
 function getExecutiveOrderStatus(pedido: SupabasePedido) {
@@ -871,60 +804,6 @@ function getExecutiveOrderStatus(pedido: SupabasePedido) {
   if (needsInvoiceReminder(pedido)) return "Factura pendiente"
   if (needsShippingReminder(pedido)) return "Envío pendiente"
   return getDisplayedOrderStatus(pedido) === "pagado" ? "Pago confirmado" : getDisplayedOrderStatus(pedido)
-}
-
-function getSummaryBadgeClass(value: string) {
-  if (isAdminSensitiveStatus(value) || ["Cancelado", "Solicitada", "Cancelación cerrada"].includes(value)) {
-    return ADMIN_STATUS_BADGES.danger
-  }
-  if (
-    [
-      "Confirmado",
-      "Entregado",
-      "Factura emitida",
-      "Sin reclamos",
-      "Ayuda cerrada",
-      "Reclamo finalizado",
-      "Reintegrado",
-      "Reintegro completado",
-    ].includes(value)
-  ) {
-    return ADMIN_STATUS_BADGES.success
-  }
-  if (["Rechazado"].includes(value)) {
-    return ADMIN_STATUS_BADGES.danger
-  }
-  if (
-    ["Pendiente", "No despachado", "Falta factura", "Falta nota de crédito"].includes(value)
-  ) {
-    return ADMIN_STATUS_BADGES.warning
-  }
-  if (value === "Mensaje de ayuda") return ADMIN_STATUS_BADGES.info
-  if (["En camino", "Enviado"].includes(value)) return ADMIN_STATUS_BADGES.info
-  return ADMIN_STATUS_BADGES.muted
-}
-
-function getOrderSummaryBadges(pedido: SupabasePedido): SummaryBadge[] {
-  const claimSummary = getClaimSummary(pedido)
-  const badges = [
-    { label: "Pago", value: getPaymentSummary(pedido) },
-    { label: "Envío", value: getShippingSummary(pedido) },
-    { label: "Facturación", value: getInvoiceSummary(pedido) },
-    {
-      label: claimSummary === "Mensaje de ayuda" || claimSummary === "Ayuda cerrada"
-        ? "Mensajería"
-        : "Reclamos",
-      value: claimSummary,
-    },
-    ...(isCancellationFlowOrder(pedido)
-      ? [{ label: "Devolución", value: isRefundedOrder(pedido) ? "Reintegrado" : getCancellationSummary(pedido) }]
-      : []),
-  ]
-
-  return badges.map((badge) => ({
-    ...badge,
-    className: getSummaryBadgeClass(badge.value),
-  }))
 }
 
 function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
@@ -1089,10 +968,6 @@ function getOrderLatestActivity(pedido: SupabasePedido) {
   return candidates[0] ?? { at: pedido.created_at, label: "El cliente creó el pedido." }
 }
 
-function needsPaymentProof(status?: string | null) {
-  return status === "pendiente_comprobante"
-}
-
 const ORDER_SECTION_NOTIFICATION_DOT_STYLES: Record<
   OrderSectionNotificationType,
   string
@@ -1121,7 +996,7 @@ function OrderSectionNotificationDot({
   )
 }
 
-function getAdminOrderMenuStateClass(_state: AdminOrderTabBadgeState) {
+function getAdminOrderMenuStateClass() {
   return "border-transparent bg-transparent text-white/62 hover:border-beyonix-blue-light/30 hover:bg-[#15191F] hover:text-white"
 }
 
@@ -1476,50 +1351,6 @@ function PagoBadge({ pedido }: { pedido: SupabasePedido }) {
   )
 }
 
-function PaymentStatusBadge({ status }: { status?: string | null }) {
-  if (status === "vencido_falta_comprobante") {
-    return (
-      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-11px font-black uppercase tracking-wide text-red-300">
-        <span className="size-2 rounded-full bg-red-300/70" />
-        Cancelado por falta de pago
-      </span>
-    )
-  }
-
-  const value: PaymentStatusValue =
-    status === "confirmado" || status === "approved"
-      ? "confirmado"
-      : isRejectedPayment(status)
-        ? "rechazado"
-        : status === "en_revision"
-          ? "en_revision"
-          : "pendiente_comprobante"
-  const option = PAYMENT_STATUS_OPTIONS.find((item) => item.value === value)!
-  const label =
-    value === "confirmado"
-      ? "Pago confirmado"
-      : value === "en_revision"
-        ? "Comprobante en revisión"
-        : option.label
-
-  return (
-    <span
-      className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide ${
-        value === "confirmado"
-          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-          : value === "rechazado"
-            ? "border-red-500/20 bg-red-500/10 text-red-300"
-            : value === "en_revision"
-              ? "border-blue-400/25 bg-blue-500/10 text-blue-200"
-            : "border-amber-500/20 bg-amber-500/10 text-amber-300"
-      }`}
-    >
-      <span className={`size-2 rounded-full ${option.dot}`} />
-      {label}
-    </span>
-  )
-}
-
 function PaymentStatusDropdown({
   value,
   hasProof,
@@ -1671,21 +1502,6 @@ function PaymentStatusDropdown({
       )}
     </div>
   )
-}
-
-function getAdminDisplayName(value?: string | null) {
-  const candidate = value?.trim()
-  if (!candidate) return "Administrador"
-
-  const looksLikeUuid =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      candidate,
-    )
-  const looksLikeTechnicalId =
-    !candidate.includes("@") &&
-    /^[a-z0-9_-]{20,}$/i.test(candidate)
-
-  return looksLikeUuid || looksLikeTechnicalId ? "Administrador" : candidate
 }
 
 type OrderTimelineType = "success" | "pending" | "neutral" | "danger" | "info"
@@ -5326,7 +5142,7 @@ function PedidoDetailModal({
                       } ${
                         active
                           ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-[0_0_14px_rgba(17,42,67,0.32)]"
-                          : getAdminOrderMenuStateClass(badge)
+                          : getAdminOrderMenuStateClass()
                       }`}
                     >
                       <ViewIcon className={`size-3.5 shrink-0 ${detailMenuCollapsed ? "" : "mr-2"}`} />

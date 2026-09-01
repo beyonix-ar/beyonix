@@ -174,8 +174,8 @@ export function InventoryDiagnosticClient({ productId }: { productId: number | n
           <h2 className="flex items-center gap-2 font-black"><Wrench className="size-4" /> Reparación controlada</h2>
           <p className="mt-2 text-sm text-white/65">Sólo se reducirá la asignación duplicada. El movimiento y su historial permanecerán intactos. Escribí RECONCILIAR para confirmar.</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <input value={confirmation} onChange={(event) => setConfirmation(event.target.value.toUpperCase())} className="h-10 rounded-xl border border-white/15 bg-black/30 px-3 text-sm outline-none" />
-            <button type="button" disabled={repairing || confirmation !== "RECONCILIAR"} onClick={() => void repair()} className="h-10 rounded-xl bg-red-500/80 px-4 text-sm font-black disabled:opacity-40">
+            <input value={confirmation} onChange={(event) => setConfirmation(event.target.value.toUpperCase())} className="h-11 rounded-xl border border-white/15 bg-black/30 px-3 text-sm outline-none" />
+            <button type="button" disabled={repairing || confirmation !== "RECONCILIAR"} onClick={() => void repair()} className="h-11 rounded-xl bg-red-500/80 px-4 text-sm font-black disabled:opacity-40">
               {repairing ? "Reconciliando…" : "Confirmar reparación"}
             </button>
           </div>

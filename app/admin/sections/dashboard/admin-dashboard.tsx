@@ -473,9 +473,16 @@ function GlobalAdminSearch({
         <input
           ref={inputRef}
           type="search"
+          role="combobox"
           aria-label="Buscar en el panel administrativo"
           aria-expanded={showResults}
           aria-controls="dashboard-search-results"
+          aria-autocomplete="list"
+          aria-activedescendant={
+            results[activeIndex]
+              ? `dashboard-search-option-${results[activeIndex].id}`
+              : undefined
+          }
           autoComplete="off"
           value={query}
           onFocus={() => setOpen(true)}
@@ -525,6 +532,8 @@ function GlobalAdminSearch({
       {showResults && (
         <div
           id="dashboard-search-results"
+          role="listbox"
+          aria-label="Resultados de búsqueda"
           className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-beyonix-sky/24 bg-[#071018]/98 shadow-2xl shadow-black/65 backdrop-blur-xl"
         >
           {results.length ? (
@@ -540,7 +549,10 @@ function GlobalAdminSearch({
               {results.map((row, index) => (
                 <button
                   key={row.id}
+                  id={`dashboard-search-option-${row.id}`}
                   type="button"
+                  role="option"
+                  aria-selected={activeIndex === index}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => chooseResult(row)}
                   className={`flex w-full cursor-pointer items-center gap-3 border-b border-white/6 px-3 py-3 text-left transition last:border-b-0 ${
@@ -1087,6 +1099,9 @@ function EvolutionColorPicker({
               role="slider"
               tabIndex={0}
               aria-label="Saturación y luminosidad"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(hsv.v)}
               aria-valuetext={`Saturación ${Math.round(hsv.s)}%, luminosidad ${Math.round(hsv.v)}%`}
               onPointerDown={(event) => {
                 event.currentTarget.setPointerCapture(event.pointerId)
@@ -1413,6 +1428,7 @@ function TemporalBrush({
           aria-label="Mover ventana temporal"
           aria-valuemin={0}
           aria-valuemax={100}
+          aria-valuenow={Math.round((value.from + value.to) / 2)}
           aria-valuetext={label}
           onPointerDown={(event) => {
             event.stopPropagation()
@@ -1445,6 +1461,7 @@ function TemporalBrush({
 
           <button
             type="button"
+            role="slider"
             aria-label="Ajustar inicio de la ventana temporal"
             aria-valuemin={0}
             aria-valuemax={Math.max(0, value.to - 1)}
@@ -1477,6 +1494,7 @@ function TemporalBrush({
           />
           <button
             type="button"
+            role="slider"
             aria-label="Ajustar fin de la ventana temporal"
             aria-valuemin={Math.min(100, value.from + 1)}
             aria-valuemax={100}

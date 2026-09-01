@@ -353,7 +353,7 @@ function ProductSelect({
           setOpen((current) => !current)
           if (open) setSearch("")
         }}
-        className={`${inputClass} group flex cursor-pointer items-center justify-between gap-3 !border-beyonix-sky/48 !bg-[linear-gradient(135deg,rgba(17,42,67,0.72),rgba(7,17,27,0.98))] px-3 shadow-[inset_0_0_0_1px_rgba(140,200,242,0.08),0_0_18px_rgba(30,77,123,0.12)] hover:!border-beyonix-sky/75 hover:!bg-[linear-gradient(135deg,rgba(30,77,123,0.76),rgba(7,19,31,0.98))] focus:!border-beyonix-sky/80 ${open ? "ring-1 ring-beyonix-sky/45" : ""}`}
+        className={`${inputClass} group flex cursor-pointer items-center justify-between gap-3 border-beyonix-sky/48 bg-[linear-gradient(135deg,rgba(17,42,67,0.72),rgba(7,17,27,0.98))] px-3 shadow-[inset_0_0_0_1px_rgba(140,200,242,0.08),0_0_18px_rgba(30,77,123,0.12)] hover:border-beyonix-sky/75 hover:bg-[linear-gradient(135deg,rgba(30,77,123,0.76),rgba(7,19,31,0.98))] focus:border-beyonix-sky/80 ${open ? "ring-1 ring-beyonix-sky/45" : ""}`}
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-sky/35 bg-beyonix-blue/45 text-beyonix-sky shadow-[0_0_12px_rgba(140,200,242,0.12)] transition group-hover:border-beyonix-sky/60 group-hover:text-white">
           <Boxes className="size-4" />
