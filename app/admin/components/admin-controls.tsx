@@ -412,7 +412,7 @@ export function AdminSelect({
             role="listbox"
             aria-label={ariaLabel ?? title}
             className={cn(
-              "admin-ds-select-menu fixed z-100 max-h-[304px] overflow-hidden",
+              "admin-portal-scope admin-ds-select-menu fixed z-100 max-h-[304px] overflow-hidden",
               searchable ? "admin-ds-select-menu-searchable p-2" : "p-1",
               menuClassName
             )}
@@ -648,7 +648,7 @@ export function AdminRowMenu({
             ref={menuRef}
             role="menu"
             aria-label={ariaLabel}
-            className="fixed z-100 rounded-2xl border border-[rgba(92,159,215,0.28)] bg-[#07111b] p-1.5 shadow-[0_22px_52px_rgba(0,0,0,0.52)]"
+            className="admin-portal-scope fixed z-100 rounded-2xl border border-[rgba(92,159,215,0.28)] bg-[#07111b] p-1.5 shadow-[0_22px_52px_rgba(0,0,0,0.52)]"
             style={{
               left: menuPosition.left,
               top: menuPosition.top,
@@ -1120,7 +1120,7 @@ export function AdminModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/86 px-4 backdrop-blur-sm">
+    <div className="admin-portal-scope fixed inset-0 z-100 flex items-center justify-center bg-black/86 px-4 backdrop-blur-sm">
       <div
         className={cn(
           adminCardClassName,
@@ -1175,7 +1175,7 @@ export function AdminDrawer({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-100 bg-black/82 backdrop-blur-sm">
+    <div className="admin-portal-scope fixed inset-0 z-100 bg-black/82 backdrop-blur-sm">
       <aside
         className={cn(
           adminCardClassName,

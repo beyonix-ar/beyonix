@@ -2793,6 +2793,21 @@ button.sales-ledger-product-trigger:hover {
   border-color: rgba(110, 168, 255, 0.74) !important;
 }
 
+/* Light: estos botones se quedan con el fondo azul BEYONIX (acento, ver
+   sección 12 del bloque light más abajo) en los dos temas -- el texto/ícono
+   debe seguir blanco sobre ese fondo oscuro (excepción explícita: "texto
+   blanco permitido sobre botón azul"), pero el remapeo genérico de
+   text-white/N y de svg.lucide a color oscuro (pensado para cards claras)
+   los estaría oscureciendo también acá si no se reafirma el blanco con más
+   especificidad. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]) svg.lucide,
+html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled),
+html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled) svg.lucide {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
 button[aria-label^="Ver pedido"]:not(:disabled) {
   background: #112A43 !important;
   background-color: #112A43 !important;
@@ -8664,6 +8679,15 @@ span.admin-claim-status-finalized,
   stroke: #ffffff !important;
 }
 
+/* Misma regla, versión light: sin esto el forzado de color blanco de arriba
+   (mayor especificidad que cualquier .text-white/N suelto) deja cualquier
+   ícono lucide invisible sobre fondo claro, botón blanco incluido. También
+   cubre íconos dentro de portales (dropdowns/popovers/modales). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) svg.lucide:not(.product-editor-status-toggle-icon-active):not(.product-editor-status-toggle-icon-inactive) {
+  color: var(--admin-text) !important;
+  stroke: var(--admin-text) !important;
+}
+
 
 
 
@@ -8684,8 +8708,18 @@ span.admin-claim-status-finalized,
    gris oscuro -- nunca blanco puro en todo, nunca gris lavado.
    ============================================================ */
 
-/* ---- 1. Tokens --admin-* (design system del contenido principal) ---- */
-html[data-admin-theme="light"] .beyonix-admin-main {
+/* ---- 1. Tokens --admin-* (design system del contenido principal) ----
+   El selector lleva .beyonix-admin-shell de más (no sólo .beyonix-admin-main)
+   a propósito: una regla global de la tienda pública (`body > div.relative.z-10
+   main { background-color: transparent !important }`, pensada para dejar ver
+   el fondo animado detrás del <main>) matchea también este <main> del admin
+   por compartir la misma estructura body > div.relative.z-10 > ... > main, y
+   tiene más especificidad que `html[data-admin-theme="light"] .beyonix-admin-main`
+   sola -- sin el ancestro extra, el fondo claro pierde el cascade y se ve el
+   fondo oscuro del shell por transparencia (el bug de "contenedores negros"
+   detrás de cards blancas). No se toca la regla de la tienda -- se sube la
+   especificidad acá en vez. ---- */
+html[data-admin-theme="light"] .beyonix-admin-shell .beyonix-admin-main {
   --admin-bg: #eef1f5;
   --admin-panel: #ffffff;
   --admin-panel-2: #f7f9fb;
@@ -8696,51 +8730,144 @@ html[data-admin-theme="light"] .beyonix-admin-main {
   --admin-control: #eef1f5;
   --admin-brand: #112a43;
   --admin-brand-hover: #183b5e;
-  --admin-border: rgba(30, 58, 95, 0.18);
-  --admin-border-soft: rgba(30, 58, 95, 0.1);
+  --admin-border: rgba(30, 58, 95, 0.24);
+  --admin-border-soft: rgba(30, 58, 95, 0.15);
   --admin-border-strong: rgba(30, 58, 95, 0.36);
   --admin-text: #0f172a;
   --admin-text-soft: rgba(15, 23, 42, 0.68);
-  --admin-text-muted: rgba(15, 23, 42, 0.46);
+  --admin-text-muted: rgba(15, 23, 42, 0.62);
   --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
   --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
   background: #eef1f5 !important;
 }
 
-/* ---- 2. Tokens --beyonix-* usados por el sidebar/header (Tailwind
-   @theme inline): sólo los que el sidebar realmente consume y que
-   referencian una var() (por eso son redeclarables acá sin tocar :root
-   global, que sigue intacto para la tienda pública). ---- */
+/* ---- 2. Tokens --beyonix-* y --admin-* en .beyonix-admin-shell (Tailwind
+   @theme inline + design system del admin): el sidebar es HERMANO de
+   .beyonix-admin-main, no descendiente -- si --admin-* sólo se redeclara en
+   .beyonix-admin-main (sección 1), el sidebar nunca hereda esos valores y
+   cae al default oscuro de :root (--admin-text: #f8fafc, casi blanco),
+   produciendo texto blanco sobre card blanca ahí (el nombre de usuario,
+   items de nav, etc.). Se redeclaran acá también, a nivel shell, para que
+   todo lo que cuelga de .beyonix-admin-shell -- sidebar incluido -- reciba
+   el valor claro. ---- */
 html[data-admin-theme="light"] .beyonix-admin-shell {
+  /* El shell trae "text-white" fijo en su propio className (ver
+     admin-client.tsx) como color de texto DEFAULT para todo lo que cuelga
+     de él y no declara su propio color -- ej. un <p> con sólo "text-12px
+     leading-4", sin ninguna clase text-white/N que nuestras reglas puedan
+     interceptar. En dark hereda blanco (correcto); en light, sin esto,
+     sigue heredando ese mismo blanco fijo -- texto invisible sobre card
+     clara sin que ningún selector de arriba lo vea venir. */
+  color: var(--admin-text) !important;
+  --admin-bg: #eef1f5;
+  --admin-panel: #ffffff;
+  --admin-panel-2: #f7f9fb;
+  --admin-panel-3: #eef1f5;
+  --admin-surface: var(--admin-panel);
+  --admin-surface-raised: var(--admin-panel-2);
+  --admin-surface-muted: var(--admin-panel-3);
+  --admin-control: #eef1f5;
+  --admin-brand: #112a43;
+  --admin-brand-hover: #183b5e;
+  --admin-border: rgba(30, 58, 95, 0.24);
+  --admin-border-soft: rgba(30, 58, 95, 0.15);
+  --admin-border-strong: rgba(30, 58, 95, 0.36);
+  --admin-text: #0f172a;
+  --admin-text-soft: rgba(15, 23, 42, 0.68);
+  --admin-text-muted: rgba(15, 23, 42, 0.62);
+  --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
   --beyonix-page-background: #eef1f5;
   --beyonix-surface-base: #ffffff;
   --beyonix-surface-raised: #f7f9fb;
   --beyonix-surface-interactive: #f1f4f8;
   --beyonix-surface-muted: #eef1f5;
-  --beyonix-border-subtle: rgba(30, 58, 95, 0.1);
-  --beyonix-border-default: rgba(30, 58, 95, 0.18);
+  --beyonix-border-subtle: rgba(30, 58, 95, 0.15);
+  --beyonix-border-default: rgba(30, 58, 95, 0.24);
   --beyonix-border-interactive: rgba(30, 58, 95, 0.34);
   --beyonix-border-active: rgba(30, 58, 95, 0.5);
   --beyonix-text-primary: #0f172a;
   --beyonix-text-secondary: rgba(15, 23, 42, 0.66);
-  --beyonix-text-muted: rgba(15, 23, 42, 0.42);
+  --beyonix-text-muted: rgba(15, 23, 42, 0.6);
   --beyonix-brand-primary: #112a43;
   --beyonix-brand-hover: #183b5e;
   --beyonix-brand-active: #1e4d7b;
+  background: #eef1f5 !important;
 }
 
 /* Utilidades beyonix-* cuyo valor en @theme inline es un literal hex fijo
    (no un var()) -- no reaccionan a la redeclaración de arriba, así que se
    sobreescribe la clase compilada directamente, mismo mecanismo que la
    sección de utilidades text-white/N más abajo. */
-html[data-admin-theme="light"] .beyonix-admin-shell .text-beyonix-cyan {
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-cyan {
   color: #1e4d7b !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-beyonix-sky {
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-sky {
   color: #183b5e !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-beyonix-sky {
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-beyonix-sky {
   background-color: #183b5e !important;
+}
+
+/* ---- 2b. Portal scope: contenido montado con createPortal(..., document.body)
+   (dropdowns, popovers, AdminModal/AdminDrawer, date picker, selector de
+   íconos) vive fuera del DOM de .beyonix-admin-shell, así que no hereda sus
+   tokens ni matchea los selectores descendientes de arriba. Cada raíz de
+   portal debe llevar la clase .admin-portal-scope (ver componentes en
+   app/admin) -- de ahí en más, los mismos tokens y overrides de utilidades
+   blancas de abajo (:is(.beyonix-admin-shell, .admin-portal-scope)) aplican
+   igual que dentro del shell. */
+html[data-admin-theme="light"] .admin-portal-scope {
+  color: var(--admin-text);
+  --admin-bg: #eef1f5;
+  --admin-panel: #ffffff;
+  --admin-panel-2: #f7f9fb;
+  --admin-panel-3: #eef1f5;
+  --admin-surface: var(--admin-panel);
+  --admin-surface-raised: var(--admin-panel-2);
+  --admin-surface-muted: var(--admin-panel-3);
+  --admin-control: #eef1f5;
+  --admin-brand: #112a43;
+  --admin-brand-hover: #183b5e;
+  --admin-border: rgba(30, 58, 95, 0.24);
+  --admin-border-soft: rgba(30, 58, 95, 0.15);
+  --admin-border-strong: rgba(30, 58, 95, 0.36);
+  --admin-text: #0f172a;
+  --admin-text-soft: rgba(15, 23, 42, 0.68);
+  --admin-text-muted: rgba(15, 23, 42, 0.62);
+  --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
+  --beyonix-page-background: #eef1f5;
+  --beyonix-surface-base: #ffffff;
+  --beyonix-surface-raised: #f7f9fb;
+  --beyonix-surface-interactive: #f1f4f8;
+  --beyonix-surface-muted: #eef1f5;
+  --beyonix-border-subtle: rgba(30, 58, 95, 0.15);
+  --beyonix-border-default: rgba(30, 58, 95, 0.24);
+  --beyonix-border-interactive: rgba(30, 58, 95, 0.34);
+  --beyonix-border-active: rgba(30, 58, 95, 0.5);
+  --beyonix-text-primary: #0f172a;
+  --beyonix-text-secondary: rgba(15, 23, 42, 0.66);
+  --beyonix-text-muted: rgba(15, 23, 42, 0.6);
+  --beyonix-brand-primary: #112a43;
+  --beyonix-brand-hover: #183b5e;
+  --beyonix-brand-active: #1e4d7b;
+}
+/* La raíz de un portal a veces lleva la clase de utilidad (bg-[#...],
+   border-white/N) directamente encima, en el MISMO elemento que
+   .admin-portal-scope -- el resto de este archivo cubre eso con selectores
+   "ancestro .clase" (sección 12 más abajo), que NUNCA matchea cuando
+   ancestro y .clase son el mismo nodo (combinador descendiente = requiere
+   dos elementos distintos). Estos pocos casos puntuales (los paneles
+   flotantes que arrancan con "admin-portal-scope bg-[#...] ..." en su JSX)
+   se cubren acá aparte, sin combinador. */
+html[data-admin-theme="light"] .admin-portal-scope.bg-\[\#07111b\],
+html[data-admin-theme="light"] .admin-portal-scope.bg-\[\#080D14\],
+html[data-admin-theme="light"] .admin-portal-scope.bg-\[\#0a111a\] {
+  background-color: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .admin-portal-scope.border-white\/12 {
+  border-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important;
 }
 
 /* ---- 3. Cards / superficies genéricas (.admin-ds-surface, .admin-ds-card
@@ -8751,6 +8878,34 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, asid
   background: #ffffff !important;
   border-color: var(--admin-border) !important;
   box-shadow: var(--admin-glow) !important;
+}
+/* Los mismos "niveles de elevación" que dark (arriba, ~L6420): una card
+   anidada dentro de otra .admin-ds-surface/.admin-ds-card tiene 3 clases
+   de especificidad y le gana a la regla plana de arriba si no se iguala
+   acá -- se ve como un cuadro oscuro suelto dentro de una card blanca. */
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: var(--admin-glow) !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: var(--admin-glow) !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface .admin-ds-card,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card .admin-ds-card {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border-soft) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-stat-card {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: var(--admin-glow) !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-stat-card p:first-child {
+  color: rgba(15, 23, 42, 0.6) !important;
 }
 
 html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]
@@ -8914,6 +9069,48 @@ html[data-admin-theme="light"] .admin-ds-sidebar-card {
 html[data-admin-theme="light"] .beyonix-admin-sidebar :where(.border) {
   border-color: var(--beyonix-border-default) !important;
 }
+/* Items de nav inactivos: color hardcodeado (no usan clases text-white/N,
+   así que no los agarra la sección de utilidades más abajo) -- título e
+   ícono casi blancos sobre card clara si no se pisan acá. */
+html[data-admin-theme="light"] .admin-ds-nav-item-muted {
+  color: rgba(15, 23, 42, 0.62) !important;
+}
+html[data-admin-theme="light"] .admin-ds-nav-icon-muted {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-ds-nav-item:hover .admin-ds-nav-icon-muted {
+  border-color: rgba(30, 58, 95, 0.32) !important;
+  background-color: rgba(30, 58, 95, 0.1) !important;
+  color: #183b5e !important;
+}
+html[data-admin-theme="light"] .admin-ds-nav-item {
+  border-color: rgba(30, 58, 95, 0.12) !important;
+  background-color: rgba(30, 58, 95, 0.03) !important;
+}
+html[data-admin-theme="light"] .admin-ds-nav-item:hover {
+  border-color: rgba(30, 58, 95, 0.28) !important;
+  background-color: rgba(30, 58, 95, 0.06) !important;
+}
+html[data-admin-theme="light"] .admin-ds-nav-icon {
+  border-color: rgba(30, 58, 95, 0.16) !important;
+  background-color: rgba(30, 58, 95, 0.05) !important;
+}
+/* Item activo: nunca tuvo versión light -- heredaba el fondo #112A43 sólido
+   de dark parcialmente pisado por la regla genérica de arriba (que gana en
+   especificidad para background-color pero no toca color), dejando texto
+   blanco de dark sobre un fondo casi blanco. Debe notarse de inmediato sin
+   volverse una card blanca más (pedido explícito de la auditoría). */
+html[data-admin-theme="light"] .admin-ds-nav-item-active {
+  border-color: rgba(17, 42, 67, 0.5) !important;
+  background-color: rgba(17, 42, 67, 0.1) !important;
+  color: #0f172a !important;
+  box-shadow: inset 3px 0 0 #112a43, 0 4px 14px rgba(15, 23, 42, 0.07) !important;
+}
+html[data-admin-theme="light"] .admin-ds-nav-icon-active {
+  border-color: rgba(17, 42, 67, 0.4) !important;
+  background-color: rgba(17, 42, 67, 0.16) !important;
+  color: #112a43 !important;
+}
 
 /* ---- 8. Header mobile ---- */
 html[data-admin-theme="light"] .admin-ds-mobile-header {
@@ -8948,6 +9145,363 @@ html[data-admin-theme="light"] .admin-order-detail-scope,
 html[data-admin-theme="light"] .stock-adjustment-modal {
   background: #ffffff !important;
 }
+html[data-admin-theme="light"] .admin-order-detail-scope,
+html[data-admin-theme="light"] .admin-order-detail-scope .custom-scrollbar {
+  background: #eef1f5 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-panel {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-summary-layout-bg {
+  background: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope aside {
+  background: #ffffff !important;
+}
+
+/* Resumen (admin-order-rs-*): mismos selectores de 2-4 clases que la versión
+   dark (arriba, ~L6687) para igualar o superar su especificidad -- texto
+   blanco/rgba(255,255,255,N) -> tokens oscuros, fondos degradados oscuros ->
+   panel claro; los acentos semánticos (verde positivo, ámbar warning) se
+   oscurecen a una variante legible sobre blanco en vez de eliminarse. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-hero {
+  background: linear-gradient(120deg, #eaf1fa, #f7f9fb) !important;
+  border-color: rgba(30, 58, 95, 0.24) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-eyebrow {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-title {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-meta {
+  color: rgba(15, 23, 42, 0.58) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-meta-dot {
+  color: rgba(15, 23, 42, 0.3) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-action-title {
+  color: rgba(15, 23, 42, 0.86) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-rows-tight {
+  border-top-color: rgba(30, 58, 95, 0.14) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-row span:first-child {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-row span:last-child {
+  color: rgba(15, 23, 42, 0.9) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-positive {
+  color: #047857 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-warning {
+  color: #b45309 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-strong {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-hr {
+  background: repeating-linear-gradient(90deg, rgba(30, 58, 95, 0.18) 0 6px, transparent 6px 12px) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-label {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-positive .admin-order-rs-total-label {
+  color: #047857 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-amount {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-positive .admin-order-rs-total-amount {
+  color: #047857 !important;
+  text-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-context {
+  color: rgba(15, 23, 42, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-name {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-sub {
+  color: rgba(15, 23, 42, 0.62) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-faint {
+  color: rgba(15, 23, 42, 0.4) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-rs-products,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-rs-warranty {
+  border-color: rgba(30, 58, 95, 0.2) !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-row:not(:first-child),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-warranty-row:not(:first-child) {
+  border-top-color: rgba(30, 58, 95, 0.12) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-head {
+  color: rgba(15, 23, 42, 0.42) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-thumb {
+  background: #f1f4f8 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-name {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-color,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-qty {
+  color: rgba(15, 23, 42, 0.62) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-num {
+  color: rgba(15, 23, 42, 0.85) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-warranty-meta {
+  color: rgba(15, 23, 42, 0.6) !important;
+}
+
+/* Pago (admin-order-pg-*): mismo criterio que Resumen arriba. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-pg-panel {
+  background: #ffffff !important;
+  border-color: rgba(30, 58, 95, 0.2) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-eyebrow {
+  color: rgba(15, 23, 42, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-method-value {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-total-label {
+  color: #047857 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-total-amount {
+  color: #047857 !important;
+  text-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-meta {
+  border-top-color: rgba(30, 58, 95, 0.14) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-meta {
+  border-left-color: rgba(30, 58, 95, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-meta-label {
+  color: rgba(15, 23, 42, 0.48) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-meta-value {
+  color: rgba(15, 23, 42, 0.88) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-proof-button {
+  color: #1e40af !important;
+  background: rgba(59, 130, 246, 0.1) !important;
+  border-color: rgba(37, 99, 235, 0.32) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-proof-button:hover {
+  background: rgba(59, 130, 246, 0.18) !important;
+  border-color: rgba(37, 99, 235, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-verified {
+  color: #047857 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-pending {
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-rejected {
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-pg-next {
+  background: #f7f9fb !important;
+  border-color: rgba(30, 58, 95, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-next-title {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-next-desc {
+  color: rgba(15, 23, 42, 0.58) !important;
+}
+
+/* Facturación (admin-order-bl-*) */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-title {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-balance span {
+  color: rgba(15, 23, 42, 0.48) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-balance strong {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-balance > div:last-child strong {
+  color: #1e40af !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-header {
+  border-bottom-color: rgba(30, 58, 95, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel p.admin-order-billing-pending-note.admin-order-billing-pending-note.admin-order-billing-pending-note {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+  background-image: none !important;
+  border-color: rgba(217, 119, 6, 0.4) !important;
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] .admin-claim-chat-thread {
+  background: #eef1f5 !important;
+}
+
+/* Envío: selects de estado operativo / modalidad logística, y sus listbox
+   portados a document.body (no lucen la clase .admin-portal-scope -- son
+   más viejos que ese mecanismo -- así que se cubren acá directo por
+   atributo, igual que la versión dark). */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-shipping-panel .admin-control-select {
+  border-color: var(--admin-border) !important;
+  background: #eef1f5 !important;
+  background-image: none !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-shipping-panel .admin-control-select span,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-shipping-panel .admin-control-select svg {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"],
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad logística"] {
+  border-color: var(--admin-border) !important;
+  background: #ffffff !important;
+  color: var(--admin-text) !important;
+  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.16) !important;
+}
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"] button,
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad logística"] button,
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria-selected="true"],
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-selected="true"] {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"] button:hover,
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria-selected="true"] {
+  background: #eaf1fa !important;
+  border-color: rgba(30, 58, 95, 0.16) !important;
+  color: #0f172a !important;
+}
+/* .admin-control-select (un <button> que actúa de <select>) cae también
+   dentro del catch-all "todo botón de admin-order-detail-content es azul
+   BEYONIX" (ver sección "azul BEYONIX se mantiene" más arriba) -- correcto
+   para botones de acción tipo "Ver envío", incorrecto para un select, que
+   el resto del admin siempre pinta como input claro. Selector idéntico al
+   catch-all + .admin-control-select de más, para ganarle en especificidad
+   sin tocar los botones de acción reales. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]) {
+  background: #eef1f5 !important;
+  background-color: #eef1f5 !important;
+  background-image: none !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not(.admin-order-billing-danger-button):not([class*="danger"]):hover {
+  background: #e6eaf0 !important;
+  background-color: #e6eaf0 !important;
+  background-image: none !important;
+  border-color: var(--admin-border-strong) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select span,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select svg {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-badge {
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-subtitle {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel .admin-order-bl-alert {
+  border-top-color: rgba(220, 38, 38, 0.24) !important;
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-alert-title {
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-alert-desc {
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel .admin-order-bl-body {
+  border-top-color: rgba(30, 58, 95, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-list {
+  border-left-color: rgba(30, 58, 95, 0.16) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-meta-label {
+  color: rgba(15, 23, 42, 0.48) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-meta-value {
+  color: rgba(15, 23, 42, 0.88) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-title {
+  color: rgba(15, 23, 42, 0.82) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--green,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--green .admin-order-bl-status-badge {
+  color: #047857 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--amber,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--amber .admin-order-bl-status-badge {
+  color: #b45309 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--blue,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--blue .admin-order-bl-status-badge {
+  color: #1d4ed8 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--red,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--red .admin-order-bl-status-badge {
+  color: #b91c1c !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--gray,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--gray .admin-order-bl-status-badge {
+  color: rgba(15, 23, 42, 0.42) !important;
+}
+
+/* Badges de tono (admin-order-tone-*): estado/despacho en varias pestañas */
+html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-danger,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-danger {
+  border-color: rgba(220, 38, 38, 0.4) !important;
+  background: rgba(239, 68, 68, 0.1) !important;
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  color: #991b1b !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-success,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-success {
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+  background-color: rgba(16, 185, 129, 0.1) !important;
+  color: #065f46 !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-warning,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-warning {
+  border-color: rgba(217, 119, 6, 0.4) !important;
+  background: rgba(245, 158, 11, 0.12) !important;
+  background-color: rgba(245, 158, 11, 0.12) !important;
+  color: #92400e !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-info,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-info {
+  border-color: rgba(37, 99, 235, 0.4) !important;
+  background: rgba(59, 130, 246, 0.1) !important;
+  background-color: rgba(59, 130, 246, 0.1) !important;
+  color: #1e40af !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main :is(.admin-order-state-badge, .admin-order-dispatch-badge).admin-order-tone-muted,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-muted {
+  border-color: rgba(100, 116, 139, 0.32) !important;
+  background: rgba(100, 116, 139, 0.1) !important;
+  background-color: rgba(100, 116, 139, 0.1) !important;
+  color: rgba(15, 23, 42, 0.68) !important;
+}
 
 /* ---- 10. Pedidos: filas de la tabla + badges semánticos ---- */
 html[data-admin-theme="light"] .admin-orders-list-row {
@@ -8957,6 +9511,33 @@ html[data-admin-theme="light"] .admin-orders-list-row {
 html[data-admin-theme="light"] .admin-orders-table-header {
   background: #f7f9fb !important;
   border-color: var(--admin-border) !important;
+}
+/* Filas/"header" genéricos de AdminTable (admin-controls.tsx): cualquier div
+   hijo directo de .admin-ds-table SIN la clase semántica
+   .admin-ds-table-header (varias tablas, ej. Facturación, arman su fila de
+   encabezado a mano sin esa clase) cae en la regla de FILA de dark -- de ahí
+   la cabecera negra suelta encima de una tabla clara. */
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-table > :where(div, article):not(.admin-ds-table-header) {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-table > :where(div, article):not(.admin-ds-table-header):hover {
+  background-color: #f1f4f8 !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+/* La fila de encabezado real (primer hijo, uppercase + font-black, arma su
+   propio grid de columnas) se distingue con un gris muy sutil para que siga
+   leyéndose como header y no como una fila blanca más -- pedido explícito
+   de la auditoría ("Header de tabla: se diferencie claramente de las
+   filas"). */
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-table > :where(div, article):first-child.uppercase:not(.admin-ds-table-header) {
+  background-color: #f7f9fb !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-table > :where(div, article):first-child.uppercase:not(.admin-ds-table-header):hover {
+  background-color: #f7f9fb !important;
+  border-color: var(--admin-border-soft) !important;
+  box-shadow: none !important;
 }
 html[data-admin-theme="light"] .admin-order-semantic-badge {
   color: #0f172a !important;
@@ -8985,6 +9566,116 @@ html[data-admin-theme="light"] .admin-order-semantic-badge--returned {
   background: rgba(139, 92, 246, 0.12) !important;
   border-color: rgba(124, 58, 237, 0.45) !important;
   color: #5b21b6 !important;
+}
+
+html[data-admin-theme="light"] .admin-orders-action-button {
+  border-color: var(--admin-border) !important;
+  background: #f1f4f8 !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-orders-action-button:hover {
+  border-color: var(--admin-border-strong) !important;
+  background: #e6eaf0 !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-orders-action-button-danger:hover {
+  border-color: rgba(220, 38, 38, 0.4) !important;
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+html[data-admin-theme="light"] .admin-orders-search-field input {
+  border-color: var(--admin-border) !important;
+  background: #eef1f5 !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-orders-status-filter .admin-control-select {
+  border-color: var(--admin-border) !important;
+  background: #eef1f5 !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-orders-status-filter .admin-control-select:hover {
+  border-color: var(--admin-border-strong) !important;
+  background: #e6eaf0 !important;
+}
+html[data-admin-theme="light"] .admin-orders-status-filter .admin-control-select:focus {
+  border-color: var(--admin-border-strong) !important;
+  box-shadow: 0 0 0 2px rgba(30, 58, 95, 0.14) !important;
+}
+
+/* ---- 10b. Tabla de Productos (.admin-ds-table / .admin-products-table /
+   .admin-product-row): naming propio, distinto del de Pedidos (sección 10),
+   nunca tuvo cobertura en light -- quedaba renderizando su gradiente oscuro
+   sin condición. ---- */
+html[data-admin-theme="light"] .admin-ds-table,
+html[data-admin-theme="light"] .beyonix-admin-main :where(table),
+html[data-admin-theme="light"] .beyonix-admin-main :where(.admin-orders-table-header, .grid-cols-admin-products, .grid-cols-admin-product-summary, .grid-cols-admin-categories, .grid-cols-admin-clients) {
+  background-color: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-ds-table-header,
+html[data-admin-theme="light"] .beyonix-admin-main :where(thead, th),
+html[data-admin-theme="light"] .beyonix-admin-main :where(.admin-orders-table-header) {
+  background-color: #f7f9fb !important;
+  border-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main :where(tr:hover, .admin-orders-list-row:hover, details:hover) {
+  background-color: #f1f4f8 !important;
+}
+html[data-admin-theme="light"] .admin-products-table,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table {
+  background: #eef1f5 !important;
+}
+html[data-admin-theme="light"] .admin-products-table .admin-product-row,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table .admin-product-row {
+  background-color: #ffffff !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table .admin-product-group-even {
+  background: #ffffff !important;
+  box-shadow: inset 3px 0 0 rgba(30, 58, 95, 0.28);
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table .admin-product-group-odd {
+  background: #f7f9fb !important;
+  box-shadow: inset 3px 0 0 rgba(30, 58, 95, 0.14);
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table .admin-product-row:hover {
+  border-color: rgba(30, 58, 95, 0.34) !important;
+  background: #eaf1fa !important;
+  box-shadow:
+    inset 3px 0 0 rgba(30, 58, 95, 0.5),
+    inset 0 0 0 1px rgba(30, 58, 95, 0.08) !important;
+}
+html[data-admin-theme="light"] .admin-products-table .admin-product-row-grid::before,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table .admin-product-row:hover .admin-product-row-grid::before {
+  background: linear-gradient(90deg, rgba(30, 58, 95, 0.08), rgba(30, 58, 95, 0.02));
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table .admin-product-details,
+html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table .admin-product-row:hover .admin-product-details {
+  background: #f7f9fb !important;
+  border-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-ds-skeleton {
+  background: linear-gradient(90deg, rgba(30, 58, 95, 0.08), rgba(30, 58, 95, 0.16), rgba(30, 58, 95, 0.08)) !important;
+}
+/* Vista mobile/compacta de la tabla de productos: cada celda se vuelve un
+   "chip" con su label (SKU, CANTIDAD, COLOR, PRECIO) vía [data-label] +
+   ::before { content: attr(data-label) } -- chip y label venían con los
+   valores oscuros fijos de siempre, sin condición de tema. */
+@media (max-width: 1535px) {
+  html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table
+    :where(.admin-product-row-grid, .admin-product-variant-row)
+    > [data-label] {
+    border-color: rgba(30, 58, 95, 0.14) !important;
+    background: #f7f9fb !important;
+  }
+  html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table
+    :where(.admin-product-row-grid, .admin-product-variant-row)
+    > [data-label]::before {
+    color: rgba(15, 23, 42, 0.5) !important;
+  }
+  html[data-admin-theme="light"] .beyonix-admin-main .admin-variant-compact > [data-label]::before {
+    color: rgba(15, 23, 42, 0.42) !important;
+  }
 }
 
 /* ---- 11. Atención al cliente (mensajería) ---- */
@@ -9035,7 +9726,7 @@ html[data-admin-theme="light"] .admin-claim-chat-bubble-beyonix {
    de valores hex puntuales (badges o hovers muy específicos, baja
    frecuencia) queda pendiente de un ajuste dirigido si algún caso puntual
    se ve mal -- ver resumen final. */
-html[data-admin-theme="light"] .beyonix-admin-shell :where(
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) :where(
     .bg-\[\#07111b\],
     .bg-\[\#07111B\],
     .bg-\[\#0c1219\],
@@ -9055,99 +9746,305 @@ html[data-admin-theme="light"] .beyonix-admin-shell :where(
     .bg-\[\#111b25\],
     .bg-\[\#101923\],
     .bg-\[\#151e28\],
-    .bg-\[\#151f2a\]
+    .bg-\[\#151f2a\],
+    .bg-\[\#05070A\],
+    .bg-\[\#05070a\],
+    .bg-\[\#0B111A\],
+    .bg-\[\#0b111a\],
+    .bg-\[\#1B2028\],
+    .bg-\[\#1b2028\],
+    .bg-\[\#101010\],
+    .bg-\[\#111111\],
+    .bg-\[\#0A0F15\],
+    .bg-\[\#0D131A\],
+    .bg-\[\#0D1117\],
+    .bg-\[\#111923\],
+    .bg-\[\#111418\],
+    .bg-\[\#0A1724\],
+    .bg-\[\#08131E\],
+    .bg-\[\#0B1C2C\],
+    .bg-\[\#03070D\],
+    .bg-\[\#07111C\],
+    .bg-\[\#07131F\],
+    .bg-\[\#09131d\],
+    .bg-\[\#050B12\]
   ) {
   background-color: #f7f9fb !important;
 }
-/* --- text-white/N: mismo texto oscuro, misma opacidad relativa (preserva jerarquia) --- */
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/15 { color: color-mix(in oklab, var(--admin-text) 15%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/18 { color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/20 { color: color-mix(in oklab, var(--admin-text) 20%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/22 { color: color-mix(in oklab, var(--admin-text) 22%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/24 { color: color-mix(in oklab, var(--admin-text) 24%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/25 { color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/28 { color: color-mix(in oklab, var(--admin-text) 28%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/30 { color: color-mix(in oklab, var(--admin-text) 30%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/32 { color: color-mix(in oklab, var(--admin-text) 32%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/34 { color: color-mix(in oklab, var(--admin-text) 34%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/35 { color: color-mix(in oklab, var(--admin-text) 35%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/36 { color: color-mix(in oklab, var(--admin-text) 36%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/38 { color: color-mix(in oklab, var(--admin-text) 38%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/40 { color: color-mix(in oklab, var(--admin-text) 40%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/42 { color: color-mix(in oklab, var(--admin-text) 42%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/44 { color: color-mix(in oklab, var(--admin-text) 44%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/45 { color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/46 { color: color-mix(in oklab, var(--admin-text) 46%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/48 { color: color-mix(in oklab, var(--admin-text) 48%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/50 { color: color-mix(in oklab, var(--admin-text) 50%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/52 { color: color-mix(in oklab, var(--admin-text) 52%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/54 { color: color-mix(in oklab, var(--admin-text) 54%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/55 { color: color-mix(in oklab, var(--admin-text) 55%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/56 { color: color-mix(in oklab, var(--admin-text) 56%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/58 { color: color-mix(in oklab, var(--admin-text) 58%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/60 { color: color-mix(in oklab, var(--admin-text) 60%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/62 { color: color-mix(in oklab, var(--admin-text) 62%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/64 { color: color-mix(in oklab, var(--admin-text) 64%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/65 { color: color-mix(in oklab, var(--admin-text) 65%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/66 { color: color-mix(in oklab, var(--admin-text) 66%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/68 { color: color-mix(in oklab, var(--admin-text) 68%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/70 { color: color-mix(in oklab, var(--admin-text) 70%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/72 { color: color-mix(in oklab, var(--admin-text) 72%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/74 { color: color-mix(in oklab, var(--admin-text) 74%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/75 { color: color-mix(in oklab, var(--admin-text) 75%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/76 { color: color-mix(in oklab, var(--admin-text) 76%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/78 { color: color-mix(in oklab, var(--admin-text) 78%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/80 { color: color-mix(in oklab, var(--admin-text) 80%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/82 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/84 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/85 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/86 { color: color-mix(in oklab, var(--admin-text) 86%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/88 { color: color-mix(in oklab, var(--admin-text) 88%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/90 { color: color-mix(in oklab, var(--admin-text) 90%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/92 { color: color-mix(in oklab, var(--admin-text) 92%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/94 { color: color-mix(in oklab, var(--admin-text) 94%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white\/95 { color: color-mix(in oklab, var(--admin-text) 95%, transparent) !important; }
+/* --- text-white/N: NO preserva la opacidad literal de dark -- un 15-40% de
+   blanco sobre negro se lee perfectamente porque el ojo es más tolerante al
+   texto claro-sobre-oscuro que al oscuro-sobre-claro; la misma fracción de
+   --admin-text sobre blanco (ej. 34%) cae por debajo de ~3:1 de contraste y
+   se vuelve casi ilegible (el motivo real de "descripciones/labels casi
+   invisibles" en la auditoría). Curva con piso ~60% (single mínimo legible
+   para texto chico) y techo ~97%, monótona creciente para conservar el
+   orden/jerarquía relativo entre variantes. --- */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/15 { color: color-mix(in oklab, var(--admin-text) 60%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/18 { color: color-mix(in oklab, var(--admin-text) 61%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/20 { color: color-mix(in oklab, var(--admin-text) 62%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/22 { color: color-mix(in oklab, var(--admin-text) 63%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/24 { color: color-mix(in oklab, var(--admin-text) 64%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/25 { color: color-mix(in oklab, var(--admin-text) 65%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/28 { color: color-mix(in oklab, var(--admin-text) 66%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/30 { color: color-mix(in oklab, var(--admin-text) 67%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/32 { color: color-mix(in oklab, var(--admin-text) 68%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/34 { color: color-mix(in oklab, var(--admin-text) 69%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/35 { color: color-mix(in oklab, var(--admin-text) 69%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/36 { color: color-mix(in oklab, var(--admin-text) 70%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/38 { color: color-mix(in oklab, var(--admin-text) 70%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/40 { color: color-mix(in oklab, var(--admin-text) 71%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/42 { color: color-mix(in oklab, var(--admin-text) 72%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/44 { color: color-mix(in oklab, var(--admin-text) 73%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/45 { color: color-mix(in oklab, var(--admin-text) 74%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/46 { color: color-mix(in oklab, var(--admin-text) 74%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/48 { color: color-mix(in oklab, var(--admin-text) 75%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/50 { color: color-mix(in oklab, var(--admin-text) 76%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/52 { color: color-mix(in oklab, var(--admin-text) 77%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/54 { color: color-mix(in oklab, var(--admin-text) 78%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/55 { color: color-mix(in oklab, var(--admin-text) 78%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/56 { color: color-mix(in oklab, var(--admin-text) 79%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/58 { color: color-mix(in oklab, var(--admin-text) 80%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/60 { color: color-mix(in oklab, var(--admin-text) 81%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/62 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/64 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/65 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/66 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/68 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/70 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/72 { color: color-mix(in oklab, var(--admin-text) 86%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/74 { color: color-mix(in oklab, var(--admin-text) 87%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/75 { color: color-mix(in oklab, var(--admin-text) 88%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/76 { color: color-mix(in oklab, var(--admin-text) 88%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/78 { color: color-mix(in oklab, var(--admin-text) 89%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/80 { color: color-mix(in oklab, var(--admin-text) 90%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/82 { color: color-mix(in oklab, var(--admin-text) 91%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/84 { color: color-mix(in oklab, var(--admin-text) 92%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/85 { color: color-mix(in oklab, var(--admin-text) 92%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/86 { color: color-mix(in oklab, var(--admin-text) 93%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/88 { color: color-mix(in oklab, var(--admin-text) 93%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/90 { color: color-mix(in oklab, var(--admin-text) 94%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/92 { color: color-mix(in oklab, var(--admin-text) 95%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/94 { color: color-mix(in oklab, var(--admin-text) 96%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/95 { color: color-mix(in oklab, var(--admin-text) 97%, transparent) !important; }
 
-/* --- border-white/N: base oscura en vez de blanca (borde gris azulado visible sobre fondo claro) --- */
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/5 { border-color: color-mix(in oklab, var(--admin-text) 5%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/6 { border-color: color-mix(in oklab, var(--admin-text) 6%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/7 { border-color: color-mix(in oklab, var(--admin-text) 7%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/8 { border-color: color-mix(in oklab, var(--admin-text) 8%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/9 { border-color: color-mix(in oklab, var(--admin-text) 9%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/10 { border-color: color-mix(in oklab, var(--admin-text) 10%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/12 { border-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/14 { border-color: color-mix(in oklab, var(--admin-text) 14%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/15 { border-color: color-mix(in oklab, var(--admin-text) 15%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/18 { border-color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/20 { border-color: color-mix(in oklab, var(--admin-text) 20%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/22 { border-color: color-mix(in oklab, var(--admin-text) 22%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/24 { border-color: color-mix(in oklab, var(--admin-text) 24%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/25 { border-color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/28 { border-color: color-mix(in oklab, var(--admin-text) 28%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/30 { border-color: color-mix(in oklab, var(--admin-text) 30%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/32 { border-color: color-mix(in oklab, var(--admin-text) 32%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/35 { border-color: color-mix(in oklab, var(--admin-text) 35%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white\/45 { border-color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
+/* --- border-white/N: piso ~18% (por debajo, el borde se vuelve invisible
+   sobre blanco -- "bordes demasiado tenues" de la auditoría) --- */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/5 { border-color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/6 { border-color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/7 { border-color: color-mix(in oklab, var(--admin-text) 19%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/8 { border-color: color-mix(in oklab, var(--admin-text) 19%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/9 { border-color: color-mix(in oklab, var(--admin-text) 20%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/10 { border-color: color-mix(in oklab, var(--admin-text) 21%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/12 { border-color: color-mix(in oklab, var(--admin-text) 22%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/14 { border-color: color-mix(in oklab, var(--admin-text) 23%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/15 { border-color: color-mix(in oklab, var(--admin-text) 23%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/18 { border-color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/20 { border-color: color-mix(in oklab, var(--admin-text) 26%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/22 { border-color: color-mix(in oklab, var(--admin-text) 27%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/24 { border-color: color-mix(in oklab, var(--admin-text) 28%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/25 { border-color: color-mix(in oklab, var(--admin-text) 29%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/28 { border-color: color-mix(in oklab, var(--admin-text) 30%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/30 { border-color: color-mix(in oklab, var(--admin-text) 32%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/32 { border-color: color-mix(in oklab, var(--admin-text) 33%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/35 { border-color: color-mix(in oklab, var(--admin-text) 34%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white\/45 { border-color: color-mix(in oklab, var(--admin-text) 40%, transparent) !important; }
 
-/* --- bg-white/N: highlight sutil oscuro en vez de blanco (hover/active sobre fondo claro) --- */
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/2 { background-color: color-mix(in oklab, var(--admin-text) 2%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/3 { background-color: color-mix(in oklab, var(--admin-text) 3%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/4 { background-color: color-mix(in oklab, var(--admin-text) 4%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/5 { background-color: color-mix(in oklab, var(--admin-text) 5%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/6 { background-color: color-mix(in oklab, var(--admin-text) 6%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/7 { background-color: color-mix(in oklab, var(--admin-text) 7%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/8 { background-color: color-mix(in oklab, var(--admin-text) 8%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/10 { background-color: color-mix(in oklab, var(--admin-text) 10%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/12 { background-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/18 { background-color: color-mix(in oklab, var(--admin-text) 18%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/24 { background-color: color-mix(in oklab, var(--admin-text) 24%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/25 { background-color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/35 { background-color: color-mix(in oklab, var(--admin-text) 35%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/38 { background-color: color-mix(in oklab, var(--admin-text) 38%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/45 { background-color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white\/90 { background-color: color-mix(in oklab, var(--admin-text) 90%, transparent) !important; }
+/* --- bg-white/N: tinte de fondo (hover/active) -- no es texto, no necesita
+   piso de legibilidad; sólo se sube un poco el rango bajo (2-10%) para que
+   un hover realmente se note ("elementos interactivos que no parecen
+   interactivos"). El resto queda igual. --- */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/2 { background-color: color-mix(in oklab, var(--admin-text) 8%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/3 { background-color: color-mix(in oklab, var(--admin-text) 9%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/4 { background-color: color-mix(in oklab, var(--admin-text) 9%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/5 { background-color: color-mix(in oklab, var(--admin-text) 10%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/6 { background-color: color-mix(in oklab, var(--admin-text) 11%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/7 { background-color: color-mix(in oklab, var(--admin-text) 12%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/8 { background-color: color-mix(in oklab, var(--admin-text) 13%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/10 { background-color: color-mix(in oklab, var(--admin-text) 15%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/12 { background-color: color-mix(in oklab, var(--admin-text) 16%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/18 { background-color: color-mix(in oklab, var(--admin-text) 19%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/24 { background-color: color-mix(in oklab, var(--admin-text) 24%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/25 { background-color: color-mix(in oklab, var(--admin-text) 25%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/35 { background-color: color-mix(in oklab, var(--admin-text) 35%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/38 { background-color: color-mix(in oklab, var(--admin-text) 38%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/45 { background-color: color-mix(in oklab, var(--admin-text) 45%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white\/90 { background-color: color-mix(in oklab, var(--admin-text) 90%, transparent) !important; }
 
 /* --- variantes sin fraccion (opacidad 100%) --- */
-html[data-admin-theme="light"] .beyonix-admin-shell .text-white { color: var(--admin-text) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .border-white { border-color: var(--admin-text) !important; }
-html[data-admin-theme="light"] .beyonix-admin-shell .bg-white { background-color: var(--admin-text) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white { color: var(--admin-text) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-white { border-color: var(--admin-text) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-white { background-color: var(--admin-text) !important; }
+
+/* ---- 13. Colores semánticos "pastel" (text-{color}-300/400): usados por
+   todo el admin para íconos y texto de estado (éxito, error, pendiente,
+   info) sobre fondos oscuros -- en light quedan como texto pastel casi
+   invisible sobre card blanca (mismo problema que text-white, pero con
+   color). Se oscurecen a la variante ~700 de cada color, que es la que da
+   contraste legible sobre blanco manteniendo la semántica (verde=éxito,
+   ámbar=pendiente, rojo=error, azul/cian=info). ---- */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-red-300 { color: #b91c1c !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-red-400 { color: #b91c1c !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-rose-300 { color: #be123c !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-amber-300 { color: #b45309 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-amber-400 { color: #b45309 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-green-400 { color: #15803d !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-300 { color: #047857 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-400 { color: #047857 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-sky-300 { color: #0369a1 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-blue-300 { color: #1d4ed8 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-blue-200 { color: #1d4ed8 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-red-200 { color: #b91c1c !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-amber-200 { color: #b45309 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-200 { color: #047857 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-400 { color: #047857 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-sky-200 { color: #0369a1 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-cyan-200 { color: #0e7490 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-fuchsia-200 { color: #a21caf !important; }
+/* text-{color}-{100,200,300}/N (modificador de opacidad arbitrario, ej.
+   text-amber-100/72): Tailwind precompila esto a un oklab() estático, así
+   que no hay token/variable que pisar -- se matchea por substring del
+   nombre de clase completo (cualquier /N) y se fuerza el color oscuro
+   semántico correspondiente, ignorando la opacidad original (pensada para
+   texto pastel sobre fondo oscuro, no aplica en light). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-amber-100/"] { color: #92400e !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-amber-200/"] { color: #92400e !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-emerald-100/"] { color: #065f46 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-emerald-200/"] { color: #065f46 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-red-100/"] { color: #991b1b !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-red-200/"] { color: #991b1b !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-red-300/"] { color: #991b1b !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-sky-200/"] { color: #0369a1 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-cyan-100/"] { color: #0e7490 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-amber-100 { color: #92400e !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-red-100 { color: #991b1b !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-sky-100 { color: #0369a1 !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-100 { color: #065f46 !important; }
+
+/* ---- 14. Badges / pills genéricos detectados por forma de clase (no por
+   nombre de componente fijo): en dark, esta heurística ya pisa el color de
+   cualquier badge redondo con borde a un tono pastel único (#d7ecff, etc.)
+   sin importar si el borde es rojo/verde/ámbar -- se replica el mismo
+   comportamiento (un tono de texto uniforme, legible) acá, sólo que oscuro
+   en vez de pastel; no es una regresión de semántica nueva, ya se comporta
+   así en dark. ---- */
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, button):not([style*="background"])[class*="rounded-full"][class*="border"] {
+  border-color: var(--admin-border) !important;
+  background-color: #f1f4f8 !important;
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-ds-tone-neutral {
+  border-color: rgba(100, 116, 139, 0.28) !important;
+  background-color: rgba(100, 116, 139, 0.1) !important;
+  color: rgba(15, 23, 42, 0.68) !important;
+}
+html[data-admin-theme="light"] .admin-ds-tone-info,
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-beyonix-blue-light"],
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-sky"],
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-cyan"],
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-blue"] {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+  border-color: rgba(37, 99, 235, 0.4) !important;
+  color: #1e40af !important;
+}
+/* Tabs del detalle de pedido (Resumen/Pago/Facturación/...): el inactivo
+   lleva "border-transparent ... hover:border-beyonix-blue-light/30", y el
+   catch-all de arriba matchea por SUBSTRING de todo el atributo class --
+   "hover:border-beyonix-blue-light/30" contiene el substring
+   "border-beyonix-blue-light" aunque ese hover no esté activo, así que sin
+   esto el inactivo se pintaba igual que el activo (imposible diferenciarlos,
+   justo el bug que la auditoría pide evitar). Selectores por clase exacta
+   (no [class*=]) para no volver a pisar el hover. */
+html[data-admin-theme="light"] .admin-order-detail-scope nav button.bg-beyonix-blue {
+  background: rgba(17, 42, 67, 0.1) !important;
+  border-color: rgba(17, 42, 67, 0.5) !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope nav button.border-transparent {
+  border-color: transparent !important;
+  color: rgba(15, 23, 42, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope nav button.border-transparent:hover {
+  border-color: rgba(30, 58, 95, 0.28) !important;
+  background: rgba(30, 58, 95, 0.06) !important;
+  color: #0f172a !important;
+}
+/* Mismo problema de substring en los tabs del Dashboard (Centro operativo/
+   Análisis comercial/...): el inactivo tiene "border-transparent ...
+   hover:border-beyonix-blue-light/20". */
+html[data-admin-theme="light"] .admin-dashboard-tabs button.border-transparent {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: rgba(15, 23, 42, 0.6) !important;
+  box-shadow: none !important;
+}
+html[data-admin-theme="light"] .admin-dashboard-tabs button.border-transparent:hover {
+  border-color: rgba(30, 58, 95, 0.24) !important;
+  background: rgba(30, 58, 95, 0.06) !important;
+  color: #0f172a !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-violet"],
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-fuchsia"],
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-purple"] {
+  background-color: rgba(139, 92, 246, 0.1) !important;
+  border-color: rgba(124, 58, 237, 0.4) !important;
+  color: #5b21b6 !important;
+}
+html[data-admin-theme="light"] .admin-ds-tone-success,
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p)[class*="border-emerald"],
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p)[class*="border-green"] {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+  border-color: rgba(5, 150, 105, 0.4) !important;
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-ds-tone-warning,
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p)[class*="border-amber"] {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+  border-color: rgba(217, 119, 6, 0.4) !important;
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] .admin-ds-tone-danger,
+html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p)[class*="border-red"] {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  border-color: rgba(220, 38, 38, 0.4) !important;
+  color: #991b1b !important;
+}
+
+/* ---- 15. bg-black liso: patrón muy usado en todo el admin como fondo de
+   card/fila/subpanel (no como decoración intencional) -- la mayoría ya cae
+   en el catch-all "rounded+border" de la sección 3, pero filas de tabla u
+   otros contenedores con border sin "rounded" (headers, admin-product-row,
+   etc.) lo pasan por alto. Se excluye <video> a propósito: el letterbox del
+   reproductor debe seguir negro en cualquier tema. */
+html[data-admin-theme="light"] .beyonix-admin-main :where(div, section, article, details, label, form, button).bg-black,
+html[data-admin-theme="light"] .admin-portal-scope :where(div, section, article, details, label, form, button).bg-black {
+  background-color: #ffffff !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

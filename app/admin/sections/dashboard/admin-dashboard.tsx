@@ -1058,7 +1058,7 @@ function EvolutionColorPicker({
             ref={popoverRef}
             role="dialog"
             aria-label={`Cambiar color de ${label}`}
-            className="fixed z-110 max-h-[calc(100vh-16px)] overflow-y-auto rounded-2xl border border-white/12 bg-[#0a111a] p-3 shadow-2xl shadow-black/70"
+            className="admin-portal-scope fixed z-110 max-h-[calc(100vh-16px)] overflow-y-auto rounded-2xl border border-white/12 bg-[#0a111a] p-3 shadow-2xl shadow-black/70"
             style={position}
           >
             <div className="mb-3 flex items-center justify-between gap-3">

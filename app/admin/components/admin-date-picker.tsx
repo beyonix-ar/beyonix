@@ -398,7 +398,7 @@ export function AdminDatePicker({
         createPortal(
         <div
           ref={popoverRef}
-          className="admin-ds-datepicker-popover fixed z-100 w-80 overflow-hidden"
+          className="admin-portal-scope admin-ds-datepicker-popover fixed z-100 w-80 overflow-hidden"
           style={{
             left: popoverPosition.left,
             top: popoverPosition.top,

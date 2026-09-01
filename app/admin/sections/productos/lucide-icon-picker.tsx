@@ -498,7 +498,7 @@ export function LucideIconPicker({
             ref={menuRef}
             role="listbox"
             aria-label="Íconos disponibles"
-            className="admin-icon-picker-popover fixed z-100 space-y-2 rounded-2xl border p-2.5 shadow-beyonix-modal"
+            className="admin-portal-scope admin-icon-picker-popover fixed z-100 space-y-2 rounded-2xl border p-2.5 shadow-beyonix-modal"
             style={{ left: position.left, top: position.top, width: position.width }}
           >
             <div className="admin-icon-picker-search flex min-h-11 items-center gap-2 rounded-xl border px-3">

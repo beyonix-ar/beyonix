@@ -1634,7 +1634,7 @@ function PaymentStatusDropdown({
           ref={menuRef}
           role="listbox"
           aria-label="Estado del pago"
-          className="fixed z-100 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] p-1 shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
+          className="admin-portal-scope fixed z-100 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] p-1 shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
           style={{
             left: menuPosition.left,
             top: menuPosition.top,
