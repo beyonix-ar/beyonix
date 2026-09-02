@@ -98,7 +98,7 @@ function LegalSection({
   return (
     <article
       id={id}
-      className="scroll-mt-24 rounded-2xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(8,17,27,0.94),rgba(5,8,12,0.98))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_24px_60px_rgba(0,0,0,0.22)] sm:p-6 lg:p-7"
+      className="beyonix-modal-shell scroll-mt-24 rounded-2xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(8,17,27,0.94),rgba(5,8,12,0.98))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_24px_60px_rgba(0,0,0,0.22)] sm:p-6 lg:p-7"
     >
       <div className="flex items-start gap-3.5">
         <BeyonixIconBox size="lg" className="mt-0.5">
@@ -108,12 +108,12 @@ function LegalSection({
           <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan/80">
             {number} · {eyebrow}
           </p>
-          <h2 className="mt-1.5 text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h2 className="beyonix-modal-title mt-1.5 text-xl font-bold tracking-tight text-white sm:text-2xl">
             {title}
           </h2>
         </div>
       </div>
-      <div className="mt-5 space-y-4 text-sm leading-7 text-white/68 sm:text-[15px]">
+      <div className="beyonix-modal-body mt-5 space-y-4 text-sm leading-7 text-white/68 sm:text-[15px]">
         {children}
       </div>
     </article>
@@ -151,11 +151,11 @@ function KeyFact({
           <Icon className="size-4" />
         </BeyonixIconBox>
         <div>
-          <p className="text-9px font-semibold uppercase tracking-[0.16em] text-white/42">
+          <p className="beyonix-modal-muted text-9px font-semibold uppercase tracking-[0.16em] text-white/42">
             {label}
           </p>
-          <p className="mt-1 text-base font-bold text-white">{value}</p>
-          <p className="mt-1 text-xs leading-5 text-white/50">{detail}</p>
+          <p className="beyonix-modal-title mt-1 text-base font-bold text-white">{value}</p>
+          <p className="beyonix-modal-body mt-1 text-xs leading-5 text-white/50">{detail}</p>
         </div>
       </div>
     </BeyonixCard>
@@ -278,10 +278,10 @@ export default async function TerminosPage() {
               </nav>
             </BeyonixCard>
 
-            <div className="mt-3 rounded-xl border border-emerald-300/16 bg-emerald-400/7 p-4">
+            <div className="beyonix-success-note mt-3 rounded-xl border border-emerald-300/16 bg-emerald-400/7 p-4">
               <div className="flex items-start gap-2.5">
-                <Scale className="mt-0.5 size-4 shrink-0 text-emerald-200" />
-                <p className="text-xs font-medium leading-5 text-emerald-50/72">
+                <Scale className="beyonix-success-note-icon mt-0.5 size-4 shrink-0 text-emerald-200" />
+                <p className="beyonix-success-note-text text-xs font-medium leading-5 text-emerald-50/72">
                   Ninguna cláusula limita derechos reconocidos por normas de orden público o
                   de defensa del consumidor.
                 </p>

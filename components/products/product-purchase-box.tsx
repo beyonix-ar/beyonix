@@ -80,18 +80,18 @@ export function ProductPurchaseBox({
   return (
     <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
       <div className="mb-3 flex flex-wrap items-end gap-2.5">
-        <span className="text-[28px] font-black leading-none tracking-tight text-white md:text-[32px]">
+        <span className="beyonix-modal-title text-[28px] font-black leading-none tracking-tight text-white md:text-[32px]">
           {formatPrice(price)}
         </span>
 
         {discount && (
-          <span className="rounded-lg border border-emerald-300/30 bg-emerald-400/16 px-3 py-1.5 text-13px font-bold leading-none text-emerald-200">
+          <span className="beyonix-discount-badge rounded-lg border border-emerald-300/30 bg-emerald-400/16 px-3 py-1.5 text-13px font-bold leading-none text-emerald-200">
             -{discount}%
           </span>
         )}
 
         {originalPrice && originalPrice > price && (
-          <span className="pb-0.5 text-15px leading-none text-white/62 line-through">
+          <span className="beyonix-modal-body pb-0.5 text-15px leading-none text-white/62 line-through">
             {formatPrice(originalPrice)}
           </span>
         )}
@@ -99,7 +99,7 @@ export function ProductPurchaseBox({
 
       {!!maxInstallmentLabel && (
         <div className="mb-3">
-          <p className="text-14px font-semibold text-white">
+          <p className="beyonix-modal-title text-14px font-semibold text-white">
             {maxInstallmentLabel}
           </p>
 
@@ -119,7 +119,7 @@ export function ProductPurchaseBox({
           {showInstallmentOptions && installmentsLabels.length > 1 && (
             <ul className="mt-2 space-y-1 border-l border-[#21476B]/65 pl-3">
               {installmentsLabels.map((label) => (
-                <li key={label} className="text-12px font-medium text-white/70">
+                <li key={label} className="beyonix-modal-body text-12px font-medium text-white/70">
                   {label}
                 </li>
               ))}
@@ -128,19 +128,19 @@ export function ProductPurchaseBox({
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-12px font-medium text-white/45">
+      <div className="beyonix-modal-muted mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-12px font-medium text-white/45">
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
-          <ShieldCheck className="size-3.5 shrink-0 text-white/45" />
+          <ShieldCheck className="beyonix-modal-muted-icon size-3.5 shrink-0 text-white/45" />
           Garantía de 6 meses
         </span>
         <span aria-hidden="true">·</span>
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
-          <Truck className="size-3.5 shrink-0 text-white/45" />
+          <Truck className="beyonix-modal-muted-icon size-3.5 shrink-0 text-white/45" />
           Envíos a todo el país
         </span>
         <span aria-hidden="true">·</span>
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
-          <CheckCircle2 className="size-3.5 shrink-0 text-white/45" />
+          <CheckCircle2 className="beyonix-modal-muted-icon size-3.5 shrink-0 text-white/45" />
           Compra segura
         </span>
       </div>

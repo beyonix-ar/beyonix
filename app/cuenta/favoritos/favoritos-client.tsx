@@ -95,7 +95,7 @@ export function FavoritosClient() {
 
   if (isLoading || loading) {
     return (
-      <main className="min-h-screen bg-[var(--account-background)] pt-32 text-white">
+      <main className="min-h-screen bg-[var(--account-background)] pt-32 text-[var(--account-text-primary)]">
         <AccountPageContainer className="flex max-w-[1160px] items-center justify-center py-24">
           <Loader2 className="size-8 animate-spin text-beyonix-sky" />
         </AccountPageContainer>
@@ -105,10 +105,10 @@ export function FavoritosClient() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-[var(--account-background)] pt-32 text-white">
+      <main className="min-h-screen bg-[var(--account-background)] pt-32 text-[var(--account-text-primary)]">
         <AccountPageContainer className="max-w-[1160px]">
           <AccountEmptyState
-            icon={<Heart className="fill-white" />}
+            icon={<Heart className="fill-current" />}
             title="Favoritos"
             description="Iniciá sesión para guardar y ver tus productos favoritos."
             action={
@@ -125,7 +125,7 @@ export function FavoritosClient() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--account-background)] pb-16 pt-32 text-white">
+    <main className="min-h-screen bg-[var(--account-background)] pb-16 pt-32 text-[var(--account-text-primary)]">
       <AccountPageContainer asChild className="max-w-[1160px]">
       <section>
         <AccountPageHeader
@@ -162,7 +162,7 @@ export function FavoritosClient() {
           </div>
         ) : (
           <AccountEmptyState
-            icon={<Heart className="fill-white" />}
+            icon={<Heart className="fill-current" />}
             title="Todavía no agregaste productos a favoritos."
             description="Tocá el corazón en cualquier producto para guardarlo acá."
           />

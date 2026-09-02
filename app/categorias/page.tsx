@@ -40,18 +40,18 @@ export default async function CategoriasPage() {
   )
 
   return (
-    <main className="min-h-screen bg-black pt-24 text-white">
+    <main className="beyonix-categories-page-bg min-h-screen bg-black pt-24 text-white">
       <section className="container mx-auto px-4 pb-16 pt-12 lg:px-8 lg:pt-16">
         <div className="mb-10 max-w-3xl">
           <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             Categorias
           </p>
 
-          <h1 className="text-4xl font-bold tracking-tight lg:text-6xl">
+          <h1 className="beyonix-modal-title text-4xl font-bold tracking-tight lg:text-6xl">
             Explorá la tienda por categoría
           </h1>
 
-          <p className="mt-4 text-base leading-7 text-white/62 lg:text-lg">
+          <p className="beyonix-modal-body mt-4 text-base leading-7 text-white/62 lg:text-lg">
             Explorá nuestras líneas de productos y encontrá rápidamente lo que estás buscando.
           </p>
         </div>
@@ -88,12 +88,12 @@ export default async function CategoriasPage() {
                           <h2 className="truncate text-2xl font-semibold text-white">
                             {categoria.nombre}
                           </h2>
-                          <p className="mt-1 text-12px font-semibold uppercase tracking-widest text-beyonix-cyan/75">
+                          <p className="mt-1 text-12px font-semibold uppercase tracking-widest text-[#8CC8F2]/75">
                             {count} producto{count === 1 ? "" : "s"}
                           </p>
                         </div>
 
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/14 bg-black/45 text-beyonix-cyan transition-all group-hover:border-beyonix-blue-light/45 group-hover:bg-beyonix-blue/60">
+                        <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/14 bg-black/45 text-[#8CC8F2] transition-all group-hover:border-beyonix-blue-light/45 group-hover:bg-beyonix-blue/60">
                           <ArrowUpRight className="size-4" />
                         </span>
                       </div>
@@ -110,7 +110,7 @@ export default async function CategoriasPage() {
         ) : (
           <div className="rounded-3xl border border-white/8 bg-beyonix-surface px-6 py-14 text-center">
             <Boxes className="mx-auto mb-4 size-10 text-beyonix-cyan/45" />
-            <p className="text-sm text-white/58">
+            <p className="beyonix-modal-muted text-sm text-white/58">
               Todavia no hay categorias cargadas.
             </p>
           </div>

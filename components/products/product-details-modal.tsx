@@ -130,12 +130,12 @@ export function ProductDetailsModal({
         className="absolute inset-0 cursor-pointer"
       />
 
-      <div className="custom-scrollbar relative z-10 max-h-[calc(100vh-40px)] w-[min(1320px,calc(100vw-48px))] overflow-y-auto rounded-3xl border border-beyonix-blue-light/20 bg-[#080D13] shadow-[0_28px_90px_rgba(0,0,0,0.72),0_0_40px_rgba(30,140,255,0.055)] md:grid md:grid-cols-[58fr_42fr] md:items-start">
+      <div className="beyonix-modal-shell custom-scrollbar relative z-10 max-h-[calc(100vh-40px)] w-[min(1320px,calc(100vw-48px))] overflow-y-auto rounded-3xl border border-beyonix-blue-light/20 bg-[#080D13] shadow-[0_28px_90px_rgba(0,0,0,0.72),0_0_40px_rgba(30,140,255,0.055)] md:grid md:grid-cols-[58fr_42fr] md:items-start">
         <button
           type="button"
           aria-label="Cerrar detalle del producto"
           onClick={onClose}
-          className="absolute right-4 top-4 z-30 flex size-10 cursor-pointer items-center justify-center rounded-full border border-white/12 bg-[#0B131C]/92 text-white/82 shadow-lg shadow-black/35 backdrop-blur-md transition-all hover:border-beyonix-sky/45 hover:bg-[#112A43] hover:text-white active:scale-95"
+          className="beyonix-modal-close absolute right-4 top-4 z-30 flex size-10 cursor-pointer items-center justify-center rounded-full border border-white/12 bg-[#0B131C]/92 text-white/82 shadow-lg shadow-black/35 backdrop-blur-md transition-all hover:border-beyonix-sky/45 hover:bg-[#112A43] hover:text-white active:scale-95"
         >
           <X className="size-4" />
         </button>

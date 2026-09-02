@@ -93,7 +93,7 @@ export default function ArrepentimientoPage() {
         </div>
       </section>
 
-      <section className="bg-black/92">
+      <section id="contenido" className="beyonix-pdp-page bg-black/92">
         <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-16">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">

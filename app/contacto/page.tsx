@@ -45,7 +45,7 @@ export default function ContactoPage() {
       <section className="bg-beyonix-page">
         <div className="mx-auto max-w-5xl px-6 pt-20 pb-16 lg:px-8 lg:pt-24 lg:pb-20">
           <div className="max-w-3xl">
-            <h1 className="text-4xl font-bold tracking-tight lg:text-5xl">
+            <h1 className="beyonix-modal-title text-4xl font-bold tracking-tight lg:text-5xl">
               Contacto
             </h1>
 
@@ -55,7 +55,7 @@ export default function ContactoPage() {
 
             <div className="mt-6 h-px w-20 bg-beyonix-blue-light/70" />
 
-            <p className="mt-6 text-base leading-8 text-white/74">
+            <p className="beyonix-modal-body mt-6 text-base leading-8 text-white/74">
               Consultas sobre productos, compras, envíos, cambios o
               devoluciones a través de nuestros canales oficiales.
             </p>
@@ -77,7 +77,7 @@ export default function ContactoPage() {
                 <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                   INSTAGRAM
                 </p>
-                <p className="mt-1 text-sm font-medium text-white/80">
+                <p className="beyonix-modal-body mt-1 text-sm font-medium text-white/80">
                   beyonix.ar
                 </p>
                 <p className="mt-2 text-xs font-medium text-beyonix-cyan">
@@ -101,7 +101,7 @@ export default function ContactoPage() {
                 <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                   EMAIL
                 </p>
-                <p className="mt-1 truncate text-sm font-medium text-white/80">
+                <p className="beyonix-modal-body mt-1 truncate text-sm font-medium text-white/80">
                   {BEYONIX_EMAIL}
                 </p>
                 <p className="mt-2 text-xs font-medium text-beyonix-cyan">
@@ -123,11 +123,11 @@ export default function ContactoPage() {
                   <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                     {item.label}
                   </p>
-                  <p className="mt-1 text-sm font-medium text-white/80">
+                  <p className="beyonix-modal-body mt-1 text-sm font-medium text-white/80">
                     {item.value}
                   </p>
                   {item.subValue ? (
-                    <p className="mt-1 text-sm font-medium text-white/68">
+                    <p className="beyonix-modal-muted mt-1 text-sm font-medium text-white/68">
                       {item.subValue}
                     </p>
                   ) : null}
@@ -140,7 +140,7 @@ export default function ContactoPage() {
             <p className="text-center text-sm font-semibold text-beyonix-blue-light">
               Tecnología pensada para tu comodidad.
             </p>
-            <p className="mx-auto mt-2 max-w-3xl text-center text-base font-semibold leading-8 text-white/86">
+            <p className="beyonix-modal-body mx-auto mt-2 max-w-3xl text-center text-base font-semibold leading-8 text-white/86">
               Una experiencia simple, clara y confiable en cada etapa de tu
               compra.
             </p>
@@ -151,13 +151,13 @@ export default function ContactoPage() {
               ENVÍOS
             </p>
 
-            <p className="mt-4 max-w-3xl text-base leading-8 text-white/76">
+            <p className="beyonix-modal-body mt-4 max-w-3xl text-base leading-8 text-white/76">
               Realizamos envíos a todo el país a través de Andreani,
               permitiéndote recibir tu compra de forma segura y confiable estés
               donde estés.
             </p>
 
-            <p className="mt-3 max-w-3xl text-base leading-8 text-white/76">
+            <p className="beyonix-modal-body mt-3 max-w-3xl text-base leading-8 text-white/76">
               Una vez despachado el pedido, recibirás el número de seguimiento
               correspondiente para poder consultar el estado del envío en todo
               momento.

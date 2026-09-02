@@ -43,17 +43,17 @@ export function ProductsToolbar({
   }, [])
 
   return (
-    <div className="mb-4 flex flex-col gap-3 rounded-xl border border-beyonix-blue-light/18 bg-[#071018]/82 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] sm:flex-row sm:items-center sm:justify-between">
+    <div className="beyonix-toolbar-bar mb-4 flex flex-col gap-3 rounded-xl border border-beyonix-blue-light/18 bg-[#071018]/82 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] sm:flex-row sm:items-center sm:justify-between">
 
       {/* Contador */}
       <div className="flex items-baseline gap-1.5">
-        <span className="text-sm font-medium text-white/56">
+        <span className="beyonix-modal-muted text-sm font-medium text-white/56">
           Mostrando
         </span>
         <span className="text-lg font-bold tracking-tight text-beyonix-sky tabular-nums">
           {total}
         </span>
-        <span className="text-sm font-medium text-white/56">
+        <span className="beyonix-modal-muted text-sm font-medium text-white/56">
           {total === 1 ? "resultado" : "resultados"}
         </span>
       </div>
@@ -64,7 +64,7 @@ export function ProductsToolbar({
           type="button"
           aria-label="Ordenar productos"
           onClick={() => setOpen(!open)}
-          className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-sm transition-all duration-150 sm:w-auto ${
+          className={`beyonix-toolbar-select flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-sm transition-all duration-150 sm:w-auto ${
             open
               ? "border-[rgba(191,228,255,0.42)] bg-[rgba(17,42,67,0.45)] text-[#D7ECFF] shadow-[0_0_18px_rgba(96,165,250,0.18)]"
               : "border-[rgba(148,197,255,0.18)] bg-[#0B111A]/90 text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.45)] hover:text-[#D7ECFF]"
@@ -77,7 +77,7 @@ export function ProductsToolbar({
         </button>
 
         {open && (
-          <div className="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
+          <div className="beyonix-toolbar-dropdown absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
             {options.map((option, i) => (
               <button
                 key={option.value}
@@ -92,7 +92,7 @@ export function ProductsToolbar({
                 } ${
                   option.value === sortBy
                     ? "bg-[rgba(17,42,67,0.9)] text-[#D7ECFF]"
-                    : "text-[#F8FAFC] hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF]"
+                    : "beyonix-toolbar-dropdown-item text-[#F8FAFC] hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF]"
                 }`}
               >
                 {option.label}

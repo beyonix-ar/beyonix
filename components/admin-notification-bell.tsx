@@ -24,6 +24,18 @@ const ADMIN_NEUTRAL_BADGE_STYLE = "admin-ds-notification-count"
 const ADMIN_INCOMING_PAYMENT_BELL_STYLE = "admin-ds-bell-button-payment"
 const ADMIN_INCOMING_PAYMENT_BADGE_STYLE = "admin-ds-notification-count-payment"
 
+// Variante "storefront": este mismo componente se reutiliza fuera del panel
+// admin (SiteHeader, badge flotante de checkout) -- ahí NO está dentro de
+// .beyonix-admin-shell, así que las clases admin-ds-* (pensadas y sólo
+// themeadas para data-admin-theme) no tienen ningún override de light
+// disponible en ese contexto y quedan con su valor base fijo. La variante
+// "storefront" usa clases propias, themeadas con data-account-theme (el
+// mismo mecanismo que header/carrito/dropdown de usuario), dejando
+// admin-ds-* -- y por lo tanto el panel admin real -- completamente
+// intactos.
+const STOREFRONT_NEUTRAL_BELL_STYLE = "beyonix-header-notif-bell"
+const STOREFRONT_NEUTRAL_BADGE_STYLE = "beyonix-header-notif-badge"
+
 interface AdminNotificationBellProps {
   count: number
   tone: AdminNotificationTone
@@ -33,6 +45,7 @@ interface AdminNotificationBellProps {
   error?: string
   onRetry?: () => void
   align?: "start" | "end"
+  variant?: "admin" | "storefront"
 }
 
 export function AdminNotificationBell({
@@ -44,7 +57,9 @@ export function AdminNotificationBell({
   error = "",
   onRetry,
   align = "end",
+  variant = "admin",
 }: AdminNotificationBellProps) {
+  const isStorefront = variant === "storefront"
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -136,7 +151,10 @@ export function AdminNotificationBell({
         onClick={() => setOpen((current) => !current)}
         onFocus={openPopover}
         className={cn(
-          "admin-ds-bell-button relative flex size-11 cursor-pointer items-center justify-center rounded-full border text-white transition-all",
+          isStorefront ? "beyonix-header-notif-trigger" : "admin-ds-bell-button",
+          "relative flex size-11 cursor-pointer items-center justify-center rounded-full border transition-all",
+          !isStorefront && "text-white",
+          isStorefront && "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]",
           count > 0
             ? mercadoLibreReturnTone
               ? ADMIN_ATTENTION_WARNING.action
@@ -144,8 +162,12 @@ export function AdminNotificationBell({
                 ? ADMIN_SENSITIVE_DANGER.action
                 : incomingPaymentTone
                   ? ADMIN_INCOMING_PAYMENT_BELL_STYLE
-                  : ADMIN_NEUTRAL_BELL_STYLE
-            : "admin-ds-bell-button-idle",
+                  : isStorefront
+                    ? STOREFRONT_NEUTRAL_BELL_STYLE
+                    : ADMIN_NEUTRAL_BELL_STYLE
+            : isStorefront
+              ? STOREFRONT_NEUTRAL_BELL_STYLE
+              : "admin-ds-bell-button-idle",
         )}
       >
         <Bell className="size-4" />
@@ -159,7 +181,9 @@ export function AdminNotificationBell({
                   ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
                   : incomingPaymentTone
                     ? ADMIN_INCOMING_PAYMENT_BADGE_STYLE
-                    : ADMIN_NEUTRAL_BADGE_STYLE,
+                    : isStorefront
+                      ? STOREFRONT_NEUTRAL_BADGE_STYLE
+                      : ADMIN_NEUTRAL_BADGE_STYLE,
             )}
           >
             {count > 99 ? "99+" : count}
@@ -170,7 +194,8 @@ export function AdminNotificationBell({
       {open && (
         <div
           className={cn(
-            "admin-ds-popover-position absolute top-[52px] z-100 w-80 sm:w-96",
+            isStorefront ? "beyonix-header-notif-position" : "admin-ds-popover-position",
+            "absolute top-[52px] z-100 w-80 sm:w-96",
             align === "start" ? "left-0" : "right-0",
           )}
           onMouseEnter={openPopover}
@@ -181,6 +206,7 @@ export function AdminNotificationBell({
             loading={loading}
             error={error}
             onRetry={onRetry}
+            variant={variant}
             onNotificationClick={(notification) => {
               void handleNotificationClick(notification)
             }}

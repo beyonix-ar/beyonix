@@ -15,7 +15,7 @@ import {
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const REVIEW_ACTION_PLACEHOLDER_CLASS =
-  "h-8 w-40 shrink-0 animate-pulse rounded-lg bg-beyonix-gray-700"
+  "h-8 w-40 shrink-0 animate-pulse rounded-lg bg-[var(--account-surface-hover)]"
 
 function ReviewRatingSelector({
   label,
@@ -35,7 +35,7 @@ function ReviewRatingSelector({
       role="group"
       aria-label={label}
       onMouseLeave={() => onPreview(null)}
-      className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-beyonix-blue-500/45 bg-beyonix-gray-900 px-2"
+      className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] px-2"
     >
       {[1, 2, 3, 4, 5].map((rating) => {
         const active = rating <= visualRating
@@ -52,10 +52,10 @@ function ReviewRatingSelector({
             onBlur={() => onPreview(null)}
             onClick={() => onSelect(rating)}
             className={cn(
-              "grid size-6 cursor-pointer place-items-center focus:outline-none focus-visible:ring-1 focus-visible:ring-white",
+              "grid size-6 cursor-pointer place-items-center focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--account-accent-soft)]",
               active
-                ? "text-beyonix-sky"
-                : "text-beyonix-gray-500 hover:text-white",
+                ? "text-[var(--account-accent-soft)]"
+                : "text-[var(--account-text-muted)] hover:text-[var(--account-text-primary)]",
             )}
           >
             <Star
@@ -74,18 +74,18 @@ function ReviewRatingSelector({
 export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
   const steps = getOrderProgressSteps(order)
   const circleToneClassNames: Record<OrderProgressTone, string> = {
-    done: "border-beyonix-status-success/45 bg-beyonix-status-success/12 text-beyonix-status-success",
+    done: "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]",
     current: "border-beyonix-blue-300 bg-beyonix-blue-700 text-white",
-    pending: "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-500",
+    pending: "border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-muted)]",
     danger: "border-beyonix-status-danger/45 bg-beyonix-status-danger/10 text-beyonix-status-danger",
     warning: "border-beyonix-blue-300 bg-beyonix-blue-700 text-white",
   }
   const labelToneClassNames: Record<OrderProgressTone, string> = {
-    done: "text-white",
-    current: "text-white",
-    pending: "text-beyonix-gray-500",
-    danger: "text-white",
-    warning: "text-white",
+    done: "text-[var(--account-text-primary)]",
+    current: "text-[var(--account-text-primary)]",
+    pending: "text-[var(--account-text-muted)]",
+    danger: "text-[var(--account-text-primary)]",
+    warning: "text-[var(--account-text-primary)]",
   }
   const gridClassName =
     steps.length >= 6
@@ -97,8 +97,8 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
           : "md:grid-cols-5"
 
   return (
-    <section className="rounded-xl border border-beyonix-blue-500/60 bg-beyonix-gray-900 px-4 py-3">
-      <p className="text-10px font-black uppercase tracking-widest text-white">
+    <section className="rounded-xl border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] px-4 py-3">
+      <p className="text-10px font-black uppercase tracking-widest text-[var(--account-text-primary)]">
         Estado del pedido
       </p>
       <ol className={"mt-2 grid " + gridClassName}>
@@ -126,7 +126,7 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
                       ? "bg-transparent"
                       : previousCompleted
                         ? "bg-beyonix-status-success/65"
-                        : "bg-beyonix-gray-700"
+                        : "bg-[var(--account-border)]"
                   }`}
                 />
                 <span
@@ -144,7 +144,7 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
                     className={`w-px flex-1 md:hidden ${
                       currentCompleted
                         ? "bg-beyonix-status-success/65"
-                        : "bg-beyonix-gray-700"
+                        : "bg-[var(--account-border)]"
                     }`}
                   />
                 )}
@@ -155,7 +155,7 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
                       ? "bg-transparent"
                       : currentCompleted
                         ? "bg-beyonix-status-success/65"
-                        : "bg-beyonix-gray-700"
+                        : "bg-[var(--account-border)]"
                   }`}
                 />
               </div>
@@ -211,7 +211,7 @@ export function TrackingCopyButton({
       aria-label="Copiar número de seguimiento"
       title={copied ? "Copiado" : "Copiar seguimiento"}
       className={cn(
-        "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-white/45 transition-colors hover:text-white",
+        "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--account-text-muted)] transition-colors hover:text-[var(--account-text-primary)]",
         className,
       )}
     >
@@ -282,7 +282,7 @@ export function PaymentProofViewButton({
         {loading ? "Abriendo..." : "Ver comprobante"}
       </BeyonixButton>
       {error && (
-        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-red-300 sm:text-right">
+        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-[var(--account-danger-text)] sm:text-right">
           {error}
         </span>
       )}
@@ -370,16 +370,16 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   }
 
   return (
-    <section className="rounded-lg border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3">
+    <section className="rounded-lg border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] p-3">
       <header className="flex items-center gap-2.5">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/45 bg-beyonix-blue-900 text-white">
           <Package className="size-3.5" />
         </span>
         <div>
-          <p className="text-8px font-semibold uppercase tracking-widest text-beyonix-gray-300">
+          <p className="text-8px font-semibold uppercase tracking-widest text-[var(--account-text-secondary)]">
             Producto
           </p>
-          <h4 className="mt-0.5 text-sm font-bold text-white">
+          <h4 className="mt-0.5 text-sm font-bold text-[var(--account-text-primary)]">
             Reseña del producto
           </h4>
         </div>
@@ -395,11 +395,11 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
           return (
             <article
               key={item.id}
-              className="rounded-lg border border-beyonix-blue-500/35 bg-beyonix-blue-900 p-2.5"
+              className="rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] p-2.5"
             >
               <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-beyonix-gray-700 bg-white">
+                  <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--account-border)] bg-white">
                     {image ? (
                       <img
                         src={image}
@@ -411,10 +411,10 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
+                    <p className="text-8px font-medium uppercase tracking-widest text-[var(--account-text-secondary)]">
                       Tu compra
                     </p>
-                    <p className="mt-0.5 truncate text-xs font-semibold text-white">
+                    <p className="mt-0.5 truncate text-xs font-semibold text-[var(--account-text-primary)]">
                       {productName}
                     </p>
                   </div>
@@ -454,15 +454,15 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                 )}
               </div>
               {reviewsLoaded && activeProductId === productId && !submitted.has(productId) && (
-                <div className="mt-3 border-t border-beyonix-blue-500/30 pt-2.5">
+                <div className="mt-3 border-t border-[var(--account-border-subtle)] pt-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <label
                       htmlFor={`product-review-${order.id}-${productId}`}
-                      className="text-9px font-medium text-beyonix-gray-300"
+                      className="text-9px font-medium text-[var(--account-text-secondary)]"
                     >
                       Comentario opcional
                     </label>
-                    <span className="text-8px font-medium text-beyonix-gray-500">
+                    <span className="text-8px font-medium text-[var(--account-text-muted)]">
                       {(comments[productId] ?? "").length}/150
                     </span>
                   </div>
@@ -484,7 +484,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                         void submitReview(productId)
                       }}
                       placeholder="Escribí tu opinión"
-                      className="h-9 min-w-0 flex-1 rounded-lg border border-beyonix-blue-500/40 bg-beyonix-gray-900 px-3 text-11px font-normal text-white outline-none placeholder:text-beyonix-gray-500 focus:border-beyonix-blue-300"
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--account-border)] bg-[var(--account-input)] px-3 text-11px font-normal text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)] focus:border-[var(--account-border-strong)]"
                     />
                     <button
                       type="button"
@@ -504,7 +504,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
         })}
       </div>
       {feedbackMessage && (
-        <p role="status" className="mt-2 text-10px font-medium text-beyonix-gray-300">
+        <p role="status" className="mt-2 text-10px font-medium text-[var(--account-text-secondary)]">
           {feedbackMessage}
         </p>
       )}
@@ -630,16 +630,16 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
   const visualRating = hoverRating || rating
 
   return (
-    <section className="rounded-lg border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3">
+    <section className="rounded-lg border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] p-3">
       <header className="flex items-center gap-2.5">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/45 bg-beyonix-blue-900 text-white">
           <Sparkles className="size-3.5" />
         </span>
         <div>
-          <p className="text-8px font-semibold uppercase tracking-widest text-beyonix-gray-300">
+          <p className="text-8px font-semibold uppercase tracking-widest text-[var(--account-text-secondary)]">
             Servicio
           </p>
-          <h4 className="mt-0.5 text-sm font-bold text-white">
+          <h4 className="mt-0.5 text-sm font-bold text-[var(--account-text-primary)]">
             Experiencia en BEYONIX
           </h4>
         </div>
@@ -649,14 +649,14 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
         <article className="rounded-lg border border-beyonix-blue-500/35 bg-beyonix-blue-900 p-2.5">
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/45 bg-beyonix-gray-900 text-white">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-primary)]">
                 <Sparkles className="size-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
+                <p className="text-8px font-medium uppercase tracking-widest text-[var(--account-text-secondary)]">
                   Tu experiencia
                 </p>
-                <p className="mt-0.5 truncate text-xs font-semibold text-white">
+                <p className="mt-0.5 truncate text-xs font-semibold text-[var(--account-text-primary)]">
                   Compra, atención y navegación
                 </p>
               </div>
@@ -688,15 +688,15 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
           </div>
 
           {experienceLoaded && activeExperience && !submittedReview && (
-            <div className="mt-3 border-t border-beyonix-blue-500/30 pt-2.5">
+            <div className="mt-3 border-t border-[var(--account-border-subtle)] pt-2.5">
               <div className="flex items-center justify-between gap-3">
                 <label
                   htmlFor={`experience-review-${order.id}`}
-                  className="text-9px font-medium text-beyonix-gray-300"
+                  className="text-9px font-medium text-[var(--account-text-secondary)]"
                 >
                   Comentario opcional
                 </label>
-                <span className="text-8px font-medium text-beyonix-gray-500">
+                <span className="text-8px font-medium text-[var(--account-text-muted)]">
                   {comment.length}/150
                 </span>
               </div>
@@ -716,7 +716,7 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
                     void submitExperience()
                   }}
                   placeholder="Escribí tu opinión"
-                  className="h-9 min-w-0 flex-1 rounded-lg border border-beyonix-blue-500/40 bg-beyonix-gray-900 px-3 text-11px font-normal text-white outline-none placeholder:text-beyonix-gray-500 focus:border-beyonix-blue-300"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--account-border)] bg-[var(--account-input)] px-3 text-11px font-normal text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)] focus:border-[var(--account-border-strong)]"
                 />
                 <button
                   type="button"
@@ -735,7 +735,7 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
       </div>
 
       {feedbackMessage && (
-        <p role="status" className="mt-2 text-10px font-medium text-beyonix-gray-300">
+        <p role="status" className="mt-2 text-10px font-medium text-[var(--account-text-secondary)]">
           {feedbackMessage}
         </p>
       )}

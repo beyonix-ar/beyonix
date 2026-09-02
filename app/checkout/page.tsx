@@ -1604,7 +1604,7 @@ export default function CheckoutPage() {
   if (items.length === 0) {
     return (
       <>
-        <main className="min-h-screen bg-[#05070A] px-4 py-16 font-heading text-white lg:py-24">
+        <main className="checkout-page min-h-screen bg-[#05070A] px-4 py-16 font-heading text-white lg:py-24">
           <div className="mx-auto max-w-md rounded-xl border border-beyonix-blue-light/18 bg-[#0B1118] p-6 text-center shadow-2xl shadow-black/45">
             <h1 className="mb-3 text-2xl font-bold text-white">
               Tu carrito está vacío
@@ -1664,6 +1664,7 @@ export default function CheckoutPage() {
             <div className="relative flex min-w-20 justify-end gap-2">
               {isInternal && (
                 <AdminNotificationsBell
+                  variant="storefront"
                   count={adminNotifications.notificationCount}
                   tone={adminNotifications.notificationTone}
                   groups={adminNotifications.notificationGroups}

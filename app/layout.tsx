@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
 import { AuthProvider } from "@/context/auth-context"
 import { CustomerCreditProvider } from "@/context/customer-credit-context"
+import { AccountThemeProvider } from "@/context/account-theme-context"
 import { BrowserTabTitle } from "@/components/BrowserTabTitle"
 import { BeyonixShootingStarsBackground } from "@/components/backgrounds/beyonix-shooting-stars-background"
 import { LayoutShell } from "@/components/layout-shell"
@@ -89,17 +90,44 @@ export default function RootLayout({
             document.documentElement.setAttribute("data-admin-theme", "dark");
           }`}
         </Script>
+        {/*
+          Mismo mecanismo que beyonix-admin-theme-init de arriba, pero para
+          el theme claro/oscuro del storefront público + /cuenta (todo
+          excepto /admin, que tiene el suyo propio): las reglas CSS que
+          reaccionan a data-account-theme sólo aplican cuando <html> también
+          tiene data-account-scope (ver context/account-theme-context.tsx),
+          que este script calcula acá directamente desde location.pathname
+          -- sin esperar a que React hidrate -- para que no haya flash en la
+          carga inicial. No afecta al Admin.
+        */}
+        <Script id="beyonix-account-theme-init" strategy="beforeInteractive">
+          {`try {
+            var t = window.localStorage.getItem("beyonix-account-theme");
+            document.documentElement.setAttribute(
+              "data-account-theme",
+              t === "light" || t === "dark" ? t : "dark"
+            );
+            document.documentElement.toggleAttribute(
+              "data-account-scope",
+              window.location.pathname.indexOf("/admin") !== 0
+            );
+          } catch (e) {
+            document.documentElement.setAttribute("data-account-theme", "dark");
+          }`}
+        </Script>
         <BrowserTabTitle />
         <BeyonixShootingStarsBackground />
         <div className="relative z-10">
-          <AuthProvider>
-            <CustomerCreditProvider>
-              <CartProvider>
-                <LayoutShell>{children}</LayoutShell>
-                <CartWrapper />
-              </CartProvider>
-            </CustomerCreditProvider>
-          </AuthProvider>
+          <AccountThemeProvider>
+            <AuthProvider>
+              <CustomerCreditProvider>
+                <CartProvider>
+                  <LayoutShell>{children}</LayoutShell>
+                  <CartWrapper />
+                </CartProvider>
+              </CustomerCreditProvider>
+            </AuthProvider>
+          </AccountThemeProvider>
         </div>
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>

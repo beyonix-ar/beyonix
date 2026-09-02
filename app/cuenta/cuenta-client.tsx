@@ -154,20 +154,20 @@ function getCustomerClaimDetailStatus(claim?: SupabaseOrderClaim | null) {
   if (claim.status === "rechazado") {
     return {
       label: "Estado: Reclamo rechazado",
-      className: "border-red-300/25 bg-red-500/10 text-red-100",
+      className: "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]",
     }
   }
 
   if (claim.status === "cerrado") {
     return {
       label: "Estado: Reclamo solucionado",
-      className: "border-[#77E6E2]/35 bg-[#77E6E2]/12 text-[#D7FFFD]",
+      className: "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]",
     }
   }
 
   return {
     label: "Estado: En proceso de resolución",
-    className: "border-blue-300/35 bg-[#112A43] text-blue-50",
+    className: "border-[var(--account-info-border)] bg-[var(--account-info-bg)] text-[var(--account-info-text)]",
   }
 }
 
@@ -199,7 +199,7 @@ function OrderPageLoadingState({ variant = "detail" }: { variant?: "detail" | "c
       className={
         isClaim
           ? "min-h-screen px-3 pt-24 font-heading sm:px-5 lg:px-8"
-          : "min-h-screen bg-[#05070A] px-3 pt-20 font-heading sm:px-5 lg:px-8"
+          : "min-h-screen bg-[var(--account-background)] px-3 pt-20 font-heading sm:px-5 lg:px-8"
       }
     >
       <div
@@ -210,43 +210,43 @@ function OrderPageLoadingState({ variant = "detail" }: { variant?: "detail" | "c
         }
       >
         <div className={isClaim ? "mx-auto w-full max-w-[72rem]" : "w-full max-w-6xl 2xl:max-w-7xl"}>
-          <div className="h-10 w-44 rounded-full border border-white/10 bg-[#111418]" />
+          <div className="h-10 w-44 rounded-full border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)]" />
 
           {variant === "claim" ? (
-            <div className="claim-chat-shell mt-4 overflow-hidden rounded-2xl border border-[#21476B] bg-[#070C12]">
-              <div className="border-b border-[#18334D] bg-[#0B1724] px-5 py-4">
-                <div className="h-3 w-56 rounded bg-[#18334D]" />
-                <div className="mt-3 h-7 w-64 rounded bg-[#1B222B]" />
-                <div className="mt-3 h-4 max-w-2xl rounded bg-[#151B22]" />
+            <div className="claim-chat-shell mt-4 overflow-hidden rounded-2xl border border-[var(--account-border)] bg-[var(--account-surface)]">
+              <div className="border-b border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-5 py-4">
+                <div className="h-3 w-56 rounded bg-[var(--account-surface-hover)]" />
+                <div className="mt-3 h-7 w-64 rounded bg-[var(--account-surface-hover)]" />
+                <div className="mt-3 h-4 max-w-2xl rounded bg-[var(--account-surface-hover)]" />
               </div>
-              <div className="min-h-[22rem] bg-[#070C12] px-5 py-5">
+              <div className="min-h-[22rem] bg-[var(--account-surface)] px-5 py-5">
                 <div className="ml-auto h-28 max-w-3xl rounded-2xl rounded-br-md border border-[#2C6CA3]/35 bg-[#112A43]" />
               </div>
-              <div className="border-t border-[#18334D] bg-[#0B1724] px-5 py-4">
-                <div className="h-12 rounded-xl border border-[#21476B] bg-[#101820]" />
+              <div className="border-t border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-5 py-4">
+                <div className="h-12 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface)]" />
               </div>
             </div>
           ) : (
             <>
-              <div className="mt-4 rounded-2xl border border-[#18334D] bg-[#0B1118] p-4">
+              <div className="mt-4 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-2">
-                    <div className="h-3 w-36 rounded bg-[#15202B]" />
-                    <div className="h-7 w-52 rounded bg-[#1B222B]" />
-                    <div className="h-4 w-44 rounded bg-[#151B22]" />
+                    <div className="h-3 w-36 rounded bg-[var(--account-surface-hover)]" />
+                    <div className="h-7 w-52 rounded bg-[var(--account-surface-hover)]" />
+                    <div className="h-4 w-44 rounded bg-[var(--account-surface-hover)]" />
                   </div>
-                  <div className="h-16 w-full rounded-xl border border-emerald-300/20 bg-[#102A22] sm:w-48" />
+                  <div className="h-16 w-full rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] sm:w-48" />
                 </div>
               </div>
-              <div className="order-detail-components-shell mt-4 grid items-start gap-4 rounded-2xl border border-[#18334D] bg-[#111418] p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
+              <div className="order-detail-components-shell mt-4 grid items-start gap-4 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
                 <div className="space-y-4">
-                  <div className="h-44 rounded-2xl border border-[#18334D] bg-[#101923]" />
-                  <div className="h-32 rounded-2xl border border-[#18334D] bg-[#101923]" />
-                  <div className="h-32 rounded-2xl border border-[#18334D] bg-[#101923]" />
+                  <div className="h-44 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)]" />
+                  <div className="h-32 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)]" />
+                  <div className="h-32 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)]" />
                 </div>
                 <aside className="space-y-3.5">
-                  <div className="h-44 rounded-2xl border border-[#18334D] bg-[#101923]" />
-                  <div className="h-36 rounded-2xl border border-[#18334D] bg-[#101923]" />
+                  <div className="h-44 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)]" />
+                  <div className="h-36 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)]" />
                 </aside>
               </div>
             </>
@@ -271,7 +271,7 @@ function MiSaldo({
       <AccountBackButton
         onClick={onBack}
         label="Volver a mi cuenta"
-        className="h-10 rounded-full border-[#2A4B6C] bg-[#132033] px-4 text-xs font-medium text-white/82 shadow-sm shadow-black/25 hover:border-[#4B78A4] hover:bg-[#1A2C44] hover:text-white"
+        className="h-10 rounded-full border-[var(--account-border)] bg-[var(--account-surface-raised)] px-4 text-xs font-medium text-[var(--account-text-secondary)] shadow-sm shadow-black/25 hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
       />
 
       <AccountCard padding="lg" className="overflow-hidden">
@@ -294,7 +294,7 @@ function MiSaldo({
               {customerCredit.error ? (
                 <p className="mt-2 text-xs text-red-200">{customerCredit.error}</p>
               ) : (
-                <p className="mt-2 text-xs leading-5 text-white/55">
+                <p className="mt-2 text-xs leading-5 text-white/60">
                   Tu saldo se aplica directamente al momento de pagar.
                 </p>
               )}
@@ -310,11 +310,11 @@ function MiSaldo({
           </button>
         </div>
 
-        <section className="mt-4 overflow-hidden rounded-2xl border border-[var(--account-border)] bg-[linear-gradient(135deg,rgba(17,42,67,0.46),rgba(8,15,23,0.72))] px-4 py-4 sm:px-5">
-          <p className="text-sm font-semibold text-white">¿Cómo funciona?</p>
+        <section className="mt-4 overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-4 py-4 sm:px-5">
+          <p className="text-sm font-semibold text-[var(--account-text-primary)]">¿Cómo funciona?</p>
 
           <div className="relative mt-4 grid gap-5 sm:grid-cols-3 sm:gap-0">
-            <div className="pointer-events-none absolute left-[16.66%] right-[16.66%] top-6 hidden h-px bg-emerald-400/65 sm:block" />
+            <div className="pointer-events-none absolute left-[16.66%] right-[16.66%] top-6 hidden h-px bg-[var(--account-success)]/65 sm:block" />
             {[
               {
                 number: "01",
@@ -339,17 +339,17 @@ function MiSaldo({
                 key={step.number}
                 className="relative z-10 flex min-w-0 items-start gap-3.5 sm:flex-col sm:items-center sm:px-5 sm:text-center"
               >
-                <div className="flex size-12 shrink-0 items-center justify-center rounded-full border border-emerald-400/70 bg-[#10263A] text-white shadow-sm shadow-black/30">
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-full border border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)] shadow-sm shadow-black/10">
                   <step.icon className="size-5.5" strokeWidth={2.1} aria-hidden="true" />
                 </div>
                 <div className="min-w-0 sm:mt-2.5">
-                  <p className="text-xs font-bold tabular-nums tracking-[0.14em] text-emerald-300">
+                  <p className="text-xs font-bold tabular-nums tracking-[0.14em] text-[var(--account-success-text)]">
                     {step.number}
                   </p>
-                  <h2 className="mt-1 text-sm font-semibold text-white">
+                  <h2 className="mt-1 text-sm font-semibold text-[var(--account-text-primary)]">
                     {step.title}
                   </h2>
-                  <p className="mt-1.5 text-xs leading-5 text-white/62">
+                  <p className="mt-1.5 text-xs leading-5 text-[var(--account-text-secondary)]">
                     {step.description}
                   </p>
                 </div>
@@ -781,19 +781,19 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
         <AccountBackButton
           onClick={onBack}
           label="Volver a mi cuenta"
-          className="h-9 w-fit rounded-full border-[#2A4B6C] bg-[#112A43]/55 px-3.5 text-xs font-semibold text-white/82 shadow-sm shadow-black/25 transition hover:-translate-y-0.5 hover:border-[#4B78A4] hover:bg-[#112A43] hover:text-white sm:absolute sm:right-0 sm:top-0"
+          className="h-9 w-fit rounded-full border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3.5 text-xs font-semibold text-[var(--account-text-secondary)] shadow-sm shadow-black/25 transition hover:-translate-y-0.5 hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)] sm:absolute sm:right-0 sm:top-0"
         />
         <header className="px-1 pb-0.5 sm:pr-48">
-          <p className="text-9px font-bold uppercase tracking-[0.2em] text-beyonix-sky/70">
+          <p className="text-9px font-bold uppercase tracking-[0.2em] text-[var(--account-accent-soft)]">
             Saldo de tu cuenta
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h1 className="text-2xl font-black tracking-tight text-white">Cargar saldo</h1>
-            <span className="inline-flex h-7 items-center rounded-full border border-[#4F82A8]/45 bg-[#112A43]/55 px-3 text-xs font-bold text-white/82">
+            <h1 className="text-2xl font-black tracking-tight text-[var(--account-text-primary)]">Cargar saldo</h1>
+            <span className="inline-flex h-7 items-center rounded-full border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] px-3 text-xs font-bold text-[var(--account-text-secondary)]">
               Saldo actual: {formatARS(customerCreditBalance)}
             </span>
           </div>
-          <p className="mt-1 text-xs text-white/52">
+          <p className="mt-1 text-xs text-[var(--account-text-muted)]">
             Elegí cómo querés cargar saldo en tu cuenta.
           </p>
         </header>
@@ -804,10 +804,10 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
           className={cn(
             "rounded-xl border px-4 py-3 text-xs font-semibold",
             mercadoPagoReturnStatus === "success"
-              ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
+              ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]"
               : mercadoPagoReturnStatus === "pending"
-                ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
-                : "border-red-300/25 bg-red-400/10 text-red-100",
+                ? "border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-warning-text)]"
+                : "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]",
           )}
         >
           {mercadoPagoReconciliation === "checking"
@@ -826,7 +826,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
 
       <div className="customer-credit-master-surface space-y-4 rounded-3xl border border-[#203A50] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.48)] sm:p-5">
         <div
-          className="grid grid-cols-2 gap-2 rounded-2xl border border-white/8 bg-[#0D0E10] p-2"
+          className="grid grid-cols-2 gap-2 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-2"
           role="group"
           aria-label="Método para cargar saldo"
         >
@@ -840,16 +840,16 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
             className={cn(
               "flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
               paymentMethod === "transfer"
-                ? "border-beyonix-sky/70 bg-[#112A43] shadow-[0_0_20px_rgba(79,130,168,0.12)]"
-                : "border-transparent bg-white/[0.025] hover:border-white/12 hover:bg-white/[0.04]",
+                ? "border-[var(--account-border-highlight)] bg-[var(--account-surface-highlight)] shadow-[var(--account-glow-subtle)]"
+                : "border-transparent bg-[var(--account-surface-raised)] hover:border-[var(--account-border)] hover:bg-[var(--account-surface-hover)]",
             )}
           >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#173B5C] text-white">
               <Landmark className="size-4.5" />
             </span>
             <span>
-              <span className="block text-sm font-black text-white">Transferencia</span>
-              <span className="mt-0.5 block text-[13px] font-semibold text-emerald-300">
+              <span className="block text-sm font-black text-[var(--account-text-primary)]">Transferencia</span>
+              <span className="mt-0.5 block text-[13px] font-semibold text-[var(--account-success-text)]">
                 SIN RECARGO
               </span>
             </span>
@@ -864,16 +864,16 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
             className={cn(
               "flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
               paymentMethod === "mercadopago"
-                ? "border-[#49A9E8]/75 bg-[#0D2D43] shadow-[0_0_20px_rgba(73,169,232,0.13)]"
-                : "border-transparent bg-white/[0.025] hover:border-white/12 hover:bg-white/[0.04]",
+                ? "border-[var(--account-border-highlight)] bg-[var(--account-surface-highlight)] shadow-[var(--account-glow-subtle)]"
+                : "border-transparent bg-[var(--account-surface-raised)] hover:border-[var(--account-border)] hover:bg-[var(--account-surface-hover)]",
             )}
           >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#0E4D73] text-white">
               <CreditCard className="size-4.5" />
             </span>
             <span>
-              <span className="block text-sm font-black text-white">Mercado Pago</span>
-              <span className="mt-0.5 block text-xs font-semibold text-[#78C9F5]">
+              <span className="block text-sm font-black text-[var(--account-text-primary)]">Mercado Pago</span>
+              <span className="mt-0.5 block text-xs font-semibold text-[var(--account-accent-soft)]">
                 {mercadoPagoSurchargePercent}% de recargo
               </span>
             </span>
@@ -882,21 +882,21 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
 
         {paymentMethod === "transfer" ? (
           <>
-            <ol className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/7 bg-white/7 sm:grid-cols-4">
+            <ol className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-border-subtle)] sm:grid-cols-4">
               {timelineSteps.map((step) => {
                 const StepIcon = step.icon
                 const active = step.completed || step.current
                 return (
                   <li
                     key={step.title}
-                    className="flex min-h-12 items-center gap-2 bg-[#101114] px-3 py-2.5 sm:justify-center"
+                    className="flex min-h-12 items-center gap-2 bg-[var(--account-surface-raised)] px-3 py-2.5 sm:justify-center"
                   >
                     <span
                       className={cn(
                         "flex size-7 shrink-0 items-center justify-center rounded-full border",
                         active
-                          ? "border-[#4F82A8] bg-[#112A43] text-white"
-                          : "border-white/12 bg-[#141414] text-white/32",
+                          ? "border-[var(--account-border-highlight)] bg-[var(--account-accent)] text-white"
+                          : "border-[var(--account-border)] bg-[var(--account-surface)] text-[var(--account-text-muted)]",
                       )}
                     >
                       <StepIcon className="size-3.5" />
@@ -904,7 +904,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                     <span
                       className={cn(
                         "text-[11px] font-bold leading-4",
-                        active ? "text-white/82" : "text-white/38",
+                        active ? "text-[var(--account-text-primary)]" : "text-[var(--account-text-muted)]",
                       )}
                     >
                       {step.title}
@@ -914,20 +914,20 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
               })}
             </ol>
 
-            <div className="grid items-stretch overflow-hidden rounded-2xl border border-white/8 bg-[#101114] lg:grid-cols-2">
-              <section className="flex min-h-[280px] flex-col p-4 sm:p-5 lg:border-r lg:border-white/7">
+            <div className="grid items-stretch overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] lg:grid-cols-2">
+              <section className="flex min-h-[280px] flex-col p-4 sm:p-5 lg:border-r lg:border-[var(--account-border-subtle)]">
                 <div className="flex items-center gap-3">
                   <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white">
                     <Landmark className="size-4" />
                   </span>
                   <div>
-                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-beyonix-sky/65">
+                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
                       Transferencia
                     </p>
-                    <h2 className="mt-0.5 text-base font-bold text-white">Datos bancarios</h2>
+                    <h2 className="mt-0.5 text-base font-bold text-[var(--account-text-primary)]">Datos bancarios</h2>
                   </div>
                 </div>
-                <div className="mt-4 flex-1 overflow-hidden rounded-xl bg-[#141414] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
+                <div className="mt-4 flex-1 overflow-hidden rounded-xl bg-[var(--account-surface)] shadow-[inset_0_0_0_1px_var(--account-border-subtle)]">
                   {[
                     { label: "Alias", value: TRANSFER_ALIAS, field: "alias" as const },
                     { label: "CVU", value: TRANSFER_CVU, field: "cvu" as const },
@@ -936,15 +936,15 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                     <div
                       key={item.label}
                       className={cn(
-                        "group flex min-h-[58px] items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-white/[0.035]",
-                        index > 0 && "border-t border-white/6",
+                        "group flex min-h-[58px] items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-[var(--account-surface-hover)]",
+                        index > 0 && "border-t border-[var(--account-border-subtle)]",
                       )}
                     >
-                      <span className="text-xs font-semibold text-white/42">{item.label}</span>
+                      <span className="text-xs font-semibold text-[var(--account-text-muted)]">{item.label}</span>
                       <div className="flex min-w-0 items-center justify-end gap-3">
                         <span
                           className={cn(
-                            "truncate text-right text-sm font-semibold text-white/88",
+                            "truncate text-right text-sm font-semibold text-[var(--account-text-primary)]",
                             item.field === "cvu" && "tabular-nums",
                             item.label === "Titular" && "uppercase",
                           )}
@@ -955,7 +955,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                           <button
                             type="button"
                             onClick={() => void copyTransferValue(item.field, item.value)}
-                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-white/72 transition-all hover:border-[#4F82A8] hover:bg-[#112A43] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55"
+                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-secondary)] transition-all hover:border-[var(--account-border-strong)] hover:bg-[var(--account-accent)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--account-focus-ring)]"
                             aria-label={`Copiar ${item.label.toLowerCase()}`}
                             title={copiedTransferField === item.field ? "Copiado" : `Copiar ${item.label}`}
                           >
@@ -974,16 +974,16 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                 </div>
               </section>
 
-              <section className="flex min-h-[280px] flex-col border-t border-white/7 p-4 sm:p-5 lg:border-t-0">
+              <section className="flex min-h-[280px] flex-col border-t border-[var(--account-border-subtle)] p-4 sm:p-5 lg:border-t-0">
                 <div className="flex items-center gap-3">
                   <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white">
                     <UploadCloud className="size-4" />
                   </span>
                   <div>
-                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-beyonix-sky/65">
+                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
                       Comprobante
                     </p>
-                    <h2 className="mt-0.5 text-base font-bold text-white">Subí tu comprobante</h2>
+                    <h2 className="mt-0.5 text-base font-bold text-[var(--account-text-primary)]">Subí tu comprobante</h2>
                   </div>
                 </div>
                 <input
@@ -1018,13 +1018,13 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                     selectAndUploadProof(event.dataTransfer.files?.[0])
                   }}
                   className={cn(
-                    "group mt-4 flex min-h-36 w-full flex-1 flex-col items-center justify-center rounded-xl border border-dashed bg-[#141414] px-5 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/55 disabled:cursor-wait disabled:hover:translate-y-0",
+                    "group mt-4 flex min-h-36 w-full flex-1 flex-col items-center justify-center rounded-xl border border-dashed bg-[var(--account-surface)] px-5 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--account-focus-ring)] disabled:cursor-wait disabled:hover:translate-y-0",
                     isDraggingProof
-                      ? "border-beyonix-sky bg-[#112A43]/45 shadow-[0_0_28px_rgba(79,130,168,0.14)]"
-                      : "border-[#31506F] hover:border-beyonix-sky hover:bg-[#112A43]/22",
+                      ? "border-[var(--account-border-highlight)] bg-[var(--account-surface-highlight)] shadow-[var(--account-glow-subtle)]"
+                      : "border-[var(--account-border-strong)] hover:border-[var(--account-border-highlight)] hover:bg-[var(--account-surface-hover)]",
                   )}
                 >
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-[#112A43]/70 text-white transition-transform duration-200 group-hover:scale-105">
+                  <span className="flex size-10 items-center justify-center rounded-xl bg-[var(--account-accent)] text-white transition-transform duration-200 group-hover:scale-105">
                     {saving ? (
                       <Loader2 className="size-5 animate-spin" />
                     ) : lastSubmittedTopupId && proofFile ? (
@@ -1033,43 +1033,43 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                       <UploadCloud className="size-5" />
                     )}
                   </span>
-                  <span className="mt-2 max-w-full truncate text-sm font-bold text-white">
+                  <span className="mt-2 max-w-full truncate text-sm font-bold text-[var(--account-text-primary)]">
                     {saving
                       ? "Enviando comprobante..."
                       : proofFile?.name ?? "Arrastrá el archivo o hacé clic"}
                   </span>
-                  <span className="mt-1.5 text-xs text-white/48">
+                  <span className="mt-1.5 text-xs text-[var(--account-text-muted)]">
                     {lastSubmittedTopupId && proofFile && !saving
                       ? "Comprobante enviado correctamente"
                       : "Seleccioná tu comprobante de transferencia"}
                   </span>
                   {!lastSubmittedTopupId || !proofFile ? (
-                    <span className="mt-2 text-9px font-semibold uppercase tracking-[0.16em] text-white/28">
+                    <span className="mt-2 text-9px font-semibold uppercase tracking-[0.16em] text-[var(--account-text-muted)]">
                       JPG · PNG · PDF
                     </span>
                   ) : null}
                 </button>
                 {lastSubmittedTopupId && !saving ? (
                   <div className="mt-3 flex items-center justify-center gap-2 text-center">
-                    <span className="text-xs text-white/42">¿Archivo incorrecto?</span>
+                    <span className="text-xs text-[var(--account-text-muted)]">¿Archivo incorrecto?</span>
                     <button
                       type="button"
                       onClick={() => proofInputRef.current?.click()}
-                      className="text-xs font-bold text-beyonix-sky transition hover:text-white focus-visible:outline-none focus-visible:underline"
+                      className="text-xs font-bold text-[var(--account-accent-soft)] transition hover:text-[var(--account-text-primary)] focus-visible:outline-none focus-visible:underline"
                     >
                       Cambiarlo
                     </button>
                   </div>
                 ) : null}
                 {error ? (
-                  <p className="mt-3 text-center text-xs text-red-200/85">{error}</p>
+                  <p className="mt-3 text-center text-xs text-[var(--account-danger-text)]">{error}</p>
                 ) : null}
               </section>
             </div>
 
-            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl bg-[#112A43]/42 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(79,130,168,0.2)] sm:items-center">
-              <Clock3 className="mt-0.5 size-4.5 shrink-0 text-white sm:mt-0" />
-              <p className="text-xs leading-5 text-white/64">
+            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl px-4 py-3 sm:items-center">
+              <Clock3 className="mt-0.5 size-4.5 shrink-0 text-[var(--account-info-text)] sm:mt-0" />
+              <p className="text-xs leading-5 text-[var(--account-text-secondary)]">
                 Validamos transferencias de lunes a viernes, de 8:00 a 20:00 h.
                 Fuera de ese horario se procesan el próximo día hábil.
               </p>
@@ -1077,7 +1077,7 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
           </>
         ) : (
           <>
-            <ol className="grid gap-px overflow-hidden rounded-xl border border-white/7 bg-white/7 sm:grid-cols-3">
+            <ol className="grid gap-px overflow-hidden rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-border-subtle)] sm:grid-cols-3">
               {[
                 ["1", "Ingresá el saldo"],
                 ["2", "Pagá en Mercado Pago"],
@@ -1085,42 +1085,42 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
               ].map(([number, title]) => (
                 <li
                   key={number}
-                  className="flex min-h-12 items-center gap-2 bg-[#101114] px-3 py-2.5 sm:justify-center"
+                  className="flex min-h-12 items-center gap-2 bg-[var(--account-surface-raised)] px-3 py-2.5 sm:justify-center"
                 >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#4F9AC8] bg-[#103653] text-[11px] font-black text-white">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[var(--account-border-highlight)] bg-[var(--account-accent)] text-[11px] font-black text-white">
                     {number}
                   </span>
-                  <span className="text-[11px] font-bold leading-4 text-white/82">{title}</span>
+                  <span className="text-[11px] font-bold leading-4 text-[var(--account-text-primary)]">{title}</span>
                 </li>
               ))}
             </ol>
 
-            <div className="grid items-stretch overflow-hidden rounded-2xl border border-white/8 bg-[#101114] lg:grid-cols-2">
-              <section className="flex min-h-[300px] flex-col p-4 sm:p-5 lg:border-r lg:border-white/7">
+            <div className="grid items-stretch overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] lg:grid-cols-2">
+              <section className="flex min-h-[300px] flex-col p-4 sm:p-5 lg:border-r lg:border-[var(--account-border-subtle)]">
                 <div className="flex items-center gap-3">
                   <span className="flex size-9 items-center justify-center rounded-xl bg-[#0E4D73] text-white">
                     <CreditCard className="size-4.5" />
                   </span>
                   <div>
-                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[#78C9F5]">
+                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
                       Mercado Pago
                     </p>
-                    <h2 className="mt-0.5 text-base font-bold text-white">
+                    <h2 className="mt-0.5 text-base font-bold text-[var(--account-text-primary)]">
                       ¿Cuánto saldo querés cargar?
                     </h2>
                   </div>
                 </div>
                 <label
-                  className="mt-5 flex items-center justify-between gap-3 text-xs font-bold text-white/70"
+                  className="mt-5 flex items-center justify-between gap-3 text-xs font-bold text-[var(--account-text-secondary)]"
                   htmlFor="mercadopago-credit-amount"
                 >
                   <span>Saldo a acreditar</span>
-                  <span className="rounded-full border border-[#315A7A] bg-[#0B2233] px-2.5 py-1 text-10px font-black text-[#78C9F5]">
+                  <span className="rounded-full border border-[var(--account-border)] bg-[var(--account-surface)] px-2.5 py-1 text-10px font-black text-[var(--account-accent-soft)]">
                     Mínimo: {formatARS(mercadoPagoMinimumAmount)}
                   </span>
                 </label>
-                <div className="mt-2 flex h-12 items-center rounded-xl border border-[#315A7A] bg-[#0B151F] px-4 focus-within:border-[#69A5D0] focus-within:ring-2 focus-within:ring-[#49A9E8]/15">
-                  <span className="mr-2 text-sm font-bold text-[#78C9F5]">$</span>
+                <div className="mt-2 flex h-12 items-center rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-4 focus-within:border-[var(--account-border-strong)] focus-within:ring-2 focus-within:ring-[var(--account-focus-ring)]">
+                  <span className="mr-2 text-sm font-bold text-[var(--account-accent-soft)]">$</span>
                   <input
                     id="mercadopago-credit-amount"
                     value={mercadoPagoAmount}
@@ -1129,34 +1129,34 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
                     }
                     inputMode="decimal"
                     placeholder="100.000"
-                    className="min-w-0 flex-1 bg-transparent text-base font-bold text-white outline-none placeholder:text-white/25"
+                    className="min-w-0 flex-1 bg-transparent text-base font-bold text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)]"
                   />
                 </div>
                 {mercadoPagoCreditAmount > 0 &&
                 mercadoPagoCreditAmount < mercadoPagoMinimumAmount ? (
-                  <p className="mt-2 text-xs font-semibold text-amber-200">
+                  <p className="mt-2 text-xs font-semibold text-[var(--account-warning-text)]">
                     Ingresá al menos {formatARS(mercadoPagoMinimumAmount)} para continuar.
                   </p>
                 ) : null}
-                {error ? <p className="mt-3 text-xs text-red-200/85">{error}</p> : null}
+                {error ? <p className="mt-3 text-xs text-[var(--account-danger-text)]">{error}</p> : null}
               </section>
 
-              <section className="flex min-h-[300px] flex-col border-t border-white/7 bg-[#0B151F]/45 p-4 sm:p-5 lg:border-t-0">
-                <p className="text-10px font-black uppercase tracking-[0.18em] text-[#78C9F5]">
+              <section className="flex min-h-[300px] flex-col border-t border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-4 sm:p-5 lg:border-t-0">
+                <p className="text-10px font-black uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
                   Resumen
                 </p>
                 <dl className="mt-5 space-y-3 text-xs">
-                  <div className="flex items-center justify-between gap-4 text-white/58">
+                  <div className="flex items-center justify-between gap-4 text-[var(--account-text-secondary)]">
                     <dt>Saldo a acreditar</dt>
-                    <dd className="font-bold text-white">{formatARS(mercadoPagoCreditAmount)}</dd>
+                    <dd className="font-bold text-[var(--account-text-primary)]">{formatARS(mercadoPagoCreditAmount)}</dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4 text-white/58">
+                  <div className="flex items-center justify-between gap-4 text-[var(--account-text-secondary)]">
                     <dt>Comisión Mercado Pago ({mercadoPagoSurchargePercent}%)</dt>
-                    <dd className="font-bold text-white">{formatARS(mercadoPagoSurchargeAmount)}</dd>
+                    <dd className="font-bold text-[var(--account-text-primary)]">{formatARS(mercadoPagoSurchargeAmount)}</dd>
                   </div>
-                  <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-4">
-                    <dt className="font-bold text-white">Total a pagar</dt>
-                    <dd className="text-lg font-black text-[#78C9F5]">{formatARS(mercadoPagoTotal)}</dd>
+                  <div className="flex items-center justify-between gap-4 border-t border-[var(--account-border)] pt-4">
+                    <dt className="font-bold text-[var(--account-text-primary)]">Total a pagar</dt>
+                    <dd className="text-lg font-black text-[var(--account-accent-soft)]">{formatARS(mercadoPagoTotal)}</dd>
                   </div>
                 </dl>
                 <button
@@ -1178,9 +1178,9 @@ function CargarSaldo({ onBack }: { onBack: () => void }) {
               </section>
             </div>
 
-            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl bg-[#112A43]/42 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(79,130,168,0.2)] sm:items-center">
-              <CheckCircle2 className="mt-0.5 size-4.5 shrink-0 text-white sm:mt-0" />
-              <p className="text-xs leading-5 text-white/64">
+            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl px-4 py-3 sm:items-center">
+              <CheckCircle2 className="mt-0.5 size-4.5 shrink-0 text-[var(--account-info-text)] sm:mt-0" />
+              <p className="text-xs leading-5 text-[var(--account-text-secondary)]">
                 El saldo se acredita cuando Mercado Pago confirma el pago.
               </p>
             </div>
@@ -1289,12 +1289,12 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                 <span className="block text-10px font-semibold uppercase tracking-widest text-[var(--account-accent-soft)]">
                   Saldo disponible
                 </span>
-                <span className="mt-0.5 block text-lg font-black text-white">
+                <span className="mt-0.5 block text-lg font-black text-[var(--account-text-primary)]">
                   {formatARS(customerCredit.balance)}
                 </span>
               </span>
             </span>
-            <span className="inline-flex shrink-0 items-center gap-1 text-10px font-semibold text-beyonix-sky/75 transition group-hover:text-white">
+            <span className="inline-flex shrink-0 items-center gap-1 text-10px font-semibold text-[var(--account-accent-soft)] transition group-hover:text-[var(--account-text-primary)]">
               Cargar saldo
               <ChevronRight className="size-3.5" />
             </span>
@@ -1348,7 +1348,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                     dollarBadge={item.dollarBadge}
                     className={
                       item.danger
-                        ? "border-red-400/24 bg-red-500/10 text-red-300 group-hover:border-red-400/55 group-hover:text-red-400"
+                        ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)] group-hover:border-[var(--account-danger)] group-hover:text-[var(--account-danger)]"
                         : undefined
                     }
                   >
@@ -1362,7 +1362,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                     <p
                       className={cn(
                         "text-sm font-semibold text-[var(--account-text-primary)]",
-                        item.danger && "text-red-200 group-hover:text-red-300",
+                        item.danger && "text-[var(--account-danger-text)] group-hover:text-[var(--account-danger)]",
                       )}
                     >
                       {item.label}
@@ -1372,7 +1372,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
                   <ChevronRight
                     className={cn(
                       "size-4 shrink-0 text-[var(--account-text-muted)] transition-colors group-hover:text-[var(--account-text-primary)]",
-                      item.danger && "group-hover:text-red-300",
+                      item.danger && "group-hover:text-[var(--account-danger)]",
                     )}
                   />
                 </button>
@@ -1552,7 +1552,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   }
 
   if (!order || !hasCurrentOrder) {
-    return <main className="min-h-screen bg-[#05070A] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#0D1117] p-6 text-center"><p className="text-sm font-bold text-white">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a Mis compras</button></div></main>
+    return <main className="min-h-screen bg-[var(--account-background)] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] p-6 text-center"><p className="text-sm font-bold text-[var(--account-text-primary)]">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a Mis compras</button></div></main>
   }
 
   const items = order.orden_items ?? []
@@ -1833,16 +1833,16 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   }
 
   return (
-    <main className="customer-order-detail-page order-detail-solid-surface min-h-screen bg-[#05070A] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
+    <main className="customer-order-detail-page order-detail-solid-surface min-h-screen bg-[var(--account-background)] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
       <div className="customer-order-detail-container mx-auto max-w-[1200px]">
-        <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="customer-order-detail-back inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/12 bg-[#0D1117] px-4 text-sm font-bold text-white/80 transition-colors hover:border-blue-300/35 hover:text-white"><ChevronLeft className="size-4" />Volver a Mis compras</button>
+        <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="customer-order-detail-back inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-4 text-sm font-bold text-[var(--account-text-secondary)] transition-colors hover:border-[var(--account-border-strong)] hover:text-[var(--account-text-primary)]"><ChevronLeft className="size-4" />Volver a Mis compras</button>
 
-        <header className="customer-order-detail-header mt-4 rounded-2xl border border-[#18334D] bg-[#0B1118] p-3.5 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-4">
+        <header className="customer-order-detail-header mt-4 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-10px font-semibold uppercase tracking-[0.18em] text-blue-300">Detalle de compra</p>
+              <p className="text-10px font-semibold uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">Detalle de compra</p>
               <div className="mt-1 flex flex-wrap items-center gap-x-6 gap-y-3">
-                <h1 className="text-xl font-black text-white sm:text-2xl">Pedido #{formatPublicOrderId(order.id)}</h1>
+                <h1 className="text-xl font-black text-[var(--account-text-primary)] sm:text-2xl">Pedido #{formatPublicOrderId(order.id)}</h1>
                 {invoiceAvailable && (
                   <button
                     type="button"
@@ -1853,20 +1853,20 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   </button>
                 )}
               </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-white/58"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--account-text-secondary)]"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
             </div>
             <div className="flex flex-col gap-2 lg:items-end">
-              <div className="flex min-h-16 items-center justify-center rounded-xl border border-emerald-300/35 bg-[#102A22] px-5 py-3 text-center shadow-[0_14px_32px_rgba(16,185,129,0.1)] lg:min-w-48">
+              <div className="flex min-h-16 items-center justify-center rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-5 py-3 text-center shadow-[0_14px_32px_rgba(16,185,129,0.1)] lg:min-w-48">
                 <div>
-                  <p className="text-10px font-semibold uppercase tracking-[0.16em] text-emerald-200">Total pagado</p>
-                  <p className="mt-1.5 text-xl font-bold leading-none text-emerald-50">{formatCuentaPrice(Number(order.total))}</p>
+                  <p className="text-10px font-semibold uppercase tracking-[0.16em] text-[var(--account-success-text)]">Total pagado</p>
+                  <p className="mt-1.5 text-xl font-bold leading-none text-[var(--account-success-text)]">{formatCuentaPrice(Number(order.total))}</p>
                 </div>
               </div>
             </div>
           </div>
         </header>
 
-        {error && <p className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-200">{error}</p>}
+        {error && <p className="mt-3 rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-3 text-sm font-bold text-[var(--account-danger-text)]">{error}</p>}
 
         <div className="customer-order-detail-timeline mt-3">
           <OrderProgressTimeline order={order} />
@@ -1874,44 +1874,44 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 
         <div className="order-detail-components-shell mt-3 grid items-start gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1.62fr)_minmax(315px,0.78fr)]">
           <div className="customer-order-detail-main space-y-4">
-            <section className="customer-order-products rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-              <h2 className="text-sm font-bold text-white">Productos comprados</h2>
+            <section className="customer-order-products rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
+              <h2 className="text-sm font-bold text-[var(--account-text-primary)]">Productos comprados</h2>
               <div className="mt-3 space-y-2">
                 {items.map((item) => {
                   const quantity = Number(item.cantidad ?? 0)
                   const unitPrice = Number(item.precio ?? 0)
                   const name = item.productos?.nombre ?? `Producto #${item.producto_id}`
                   const image = getCuentaItemImage(item)
-                  return <div key={item.id} className="grid gap-3 rounded-xl border border-[#21476B] bg-[#13263B] px-3 py-2.5 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
-                    <div className="flex min-w-0 items-center gap-3"><div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{name}</p><p className="mt-0.5 text-xs font-normal text-white/55">{getCuentaItemColor(item)}</p></div></div>
-                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Cantidad</p><p className="mt-0.5 text-sm font-bold text-white">{quantity}</p></div>
-                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Precio unitario</p><p className="mt-0.5 text-sm font-bold text-white">{formatCuentaPrice(unitPrice)}</p></div>
-                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-white/40">Subtotal</p><p className="mt-0.5 text-sm font-bold text-white">{formatCuentaPrice(unitPrice * quantity)}</p></div>
+                  return <div key={item.id} className="grid gap-3 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface)] px-3 py-2.5 sm:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(90px,0.55fr))] sm:items-center">
+                    <div className="flex min-w-0 items-center gap-3"><div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">{image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold text-[var(--account-text-primary)]">{name}</p><p className="mt-0.5 text-xs font-normal text-[var(--account-text-secondary)]">{getCuentaItemColor(item)}</p></div></div>
+                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">Cantidad</p><p className="mt-0.5 text-sm font-bold text-[var(--account-text-primary)]">{quantity}</p></div>
+                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">Precio unitario</p><p className="mt-0.5 text-sm font-bold text-[var(--account-text-primary)]">{formatCuentaPrice(unitPrice)}</p></div>
+                    <div className="sm:text-center"><p className="text-9px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">Subtotal</p><p className="mt-0.5 text-sm font-bold text-[var(--account-text-primary)]">{formatCuentaPrice(unitPrice * quantity)}</p></div>
                   </div>
                 })}
               </div>
             </section>
 
             {order.shipping_type === "sucursal" && (
-              <section className="customer-order-branch-delivery rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-                <h2 className="text-sm font-bold text-white">
+              <section className="customer-order-branch-delivery rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-[var(--account-text-primary)]">
                   Entrega: Sucursal Andreani
                 </h2>
                 {order.andreani_sucursal_nombre ? (
                   <dl className="mt-3 space-y-2.5 text-xs">
                     <div>
-                      <dt className="text-9px font-semibold uppercase tracking-widest text-white/40">
+                      <dt className="text-9px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
                         Sucursal
                       </dt>
-                      <dd className="mt-0.5 text-sm font-semibold text-white">
+                      <dd className="mt-0.5 text-sm font-semibold text-[var(--account-text-primary)]">
                         {order.andreani_sucursal_nombre}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-9px font-semibold uppercase tracking-widest text-white/40">
+                      <dt className="text-9px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
                         Dirección
                       </dt>
-                      <dd className="mt-0.5 text-sm font-medium text-white/80">
+                      <dd className="mt-0.5 text-sm font-medium text-[var(--account-text-secondary)]">
                         {[
                           order.andreani_sucursal_direccion,
                           order.andreani_sucursal_localidad,
@@ -1926,7 +1926,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                     </div>
                   </dl>
                 ) : (
-                  <p className="mt-2 text-xs font-medium text-amber-200/85">
+                  <p className="mt-2 text-xs font-medium text-[var(--account-warning-text)]">
                     Falta seleccionar/persistir la sucursal Andreani de este
                     pedido. Escribinos si necesitás confirmar el punto de
                     retiro.
@@ -1936,8 +1936,8 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             )}
 
             {(showPaymentProofSection || !orderDelivered) && (
-              <section className="customer-order-management relative flex flex-col rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
-                <h2 className="text-sm font-bold text-white">
+              <section className="customer-order-management relative flex flex-col rounded-2xl border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-[var(--account-text-primary)]">
                   Gestión del pedido
                 </h2>
 
@@ -1945,7 +1945,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   className={cn(
                     "mt-3 grid flex-1 content-center gap-3",
                     showPaymentProofSection && !orderDelivered
-                      ? "sm:grid-cols-2 sm:divide-x sm:divide-beyonix-gray-700"
+                      ? "sm:grid-cols-2 sm:divide-x sm:divide-[var(--account-border-subtle)]"
                       : "grid-cols-1",
                   )}
                 >
@@ -1956,10 +1956,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                         !orderDelivered && "sm:pr-3",
                       )}
                     >
-                      <p className="text-xs font-bold text-white">
+                      <p className="text-xs font-bold text-[var(--account-text-primary)]">
                         Comprobante
                       </p>
-                      <p className="mt-0.5 text-xs font-medium text-beyonix-gray-500">
+                      <p className="mt-0.5 text-xs font-medium text-[var(--account-text-secondary)]">
                         {hasProof
                           ? "El comprobante ya fue cargado."
                           : "Pendiente de carga."}
@@ -2002,7 +2002,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                       className={cn(
                         "flex min-w-0 flex-col justify-center",
                         showPaymentProofSection &&
-                          "border-t border-beyonix-gray-700 pt-3 sm:border-t-0 sm:pt-0 sm:pl-3",
+                          "border-t border-[var(--account-border-subtle)] pt-3 sm:border-t-0 sm:pt-0 sm:pl-3",
                       )}
                     >
                       <div
@@ -2012,21 +2012,21 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                         )}
                       >
                         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                          <span className="text-xs font-normal text-white">
+                          <span className="text-xs font-normal text-[var(--account-text-primary)]">
                             Número de seguimiento:
                           </span>
                           {trackingNumber ? (
                             <span className="inline-flex items-center gap-1">
-                              <span className="break-all text-sm font-semibold text-white">
+                              <span className="break-all text-sm font-semibold text-[var(--account-text-primary)]">
                                 {trackingNumber}
                               </span>
                               <TrackingCopyButton
                                 trackingNumber={trackingNumber}
-                                className="text-white"
+                                className="text-[var(--account-text-primary)]"
                               />
                             </span>
                           ) : (
-                            <span className="text-sm font-semibold text-white">
+                            <span className="text-sm font-semibold text-[var(--account-text-primary)]">
                               Disponible después del despacho.
                             </span>
                           )}
@@ -2054,7 +2054,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             title="Seguimiento no disponible"
                             disabled
                             className={cn(
-                              "inline-flex h-9 shrink-0 cursor-not-allowed items-center justify-center self-center rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900 px-4 text-xs font-black text-beyonix-gray-500 opacity-75",
+                              "inline-flex h-9 shrink-0 cursor-not-allowed items-center justify-center self-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] px-4 text-xs font-black text-[var(--account-text-muted)] opacity-75",
                               !showPaymentProofSection &&
                                 "sm:absolute sm:inset-y-0 sm:right-4 sm:my-auto sm:self-auto",
                             )}
@@ -2070,13 +2070,13 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             )}
 
             {showPreDeliveryHelp && (
-              <section className="customer-order-help rounded-2xl border border-beyonix-blue-500/50 bg-beyonix-gray-900 p-3.5 sm:p-4">
+              <section className="customer-order-help rounded-2xl border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <h2 className="text-sm font-bold text-white">
+                    <h2 className="text-sm font-bold text-[var(--account-text-primary)]">
                       ¿Necesitás ayuda?
                     </h2>
-                    <p className="mt-1 text-xs font-medium leading-5 text-beyonix-gray-300">
+                    <p className="mt-1 text-xs font-medium leading-5 text-[var(--account-text-secondary)]">
                       {existingClaim
                         ? "Ya recibimos tu mensaje. Podés ver el seguimiento desde acá."
                         : "Si tuviste un problema con tu pedido, contactanos para que podamos ayudarte."}
@@ -2123,16 +2123,16 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
           </div>
 
           <aside className="customer-order-detail-aside space-y-3.5 lg:sticky lg:top-24">
-            <section className="customer-order-payment-summary rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-              <h2 className="text-sm font-bold text-white">Resumen de pago</h2>
-              <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-white/65"><dt>Productos</dt><dd className="font-semibold text-white">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-white/65"><dt>Envío</dt><dd className="font-semibold text-white">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}{creditBalanceUsed > 0 && <div className="flex justify-between gap-3 text-emerald-300"><dt>Saldo a favor</dt><dd className="font-semibold">− {formatCuentaPrice(creditBalanceUsed)}</dd></div>}{creditBalanceUsed > 0 && externalAmountDue > 0 && <div className="flex justify-between gap-3 text-white/65"><dt>Diferencia pagada</dt><dd className="font-semibold text-white">{formatCuentaPrice(externalAmountDue)}</dd></div>}</dl>
-              <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-emerald-400/35 bg-[#102A22] px-3.5 py-3"><span className="text-10px font-semibold uppercase tracking-widest text-emerald-100">Total pagado</span><strong className="text-base font-bold text-white">{formatCuentaPrice(Number(order.total))}</strong></div>
+            <section className="customer-order-payment-summary rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
+              <h2 className="text-sm font-bold text-[var(--account-text-primary)]">Resumen de pago</h2>
+              <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Productos</dt><dd className="font-semibold text-[var(--account-text-primary)]">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Envío</dt><dd className="font-semibold text-[var(--account-text-primary)]">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-[var(--account-success-text)]"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}{creditBalanceUsed > 0 && <div className="flex justify-between gap-3 text-[var(--account-success-text)]"><dt>Saldo a favor</dt><dd className="font-semibold">− {formatCuentaPrice(creditBalanceUsed)}</dd></div>}{creditBalanceUsed > 0 && externalAmountDue > 0 && <div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Diferencia pagada</dt><dd className="font-semibold text-[var(--account-text-primary)]">{formatCuentaPrice(externalAmountDue)}</dd></div>}</dl>
+              <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-3.5 py-3"><span className="text-10px font-semibold uppercase tracking-widest text-[var(--account-success-text)]">Total pagado</span><strong className="text-base font-bold text-[var(--account-text-primary)]">{formatCuentaPrice(Number(order.total))}</strong></div>
             </section>
 
             {showClaimHelp && (
-              <section className="rounded-2xl border border-[#18334D] bg-[#101923] p-3.5 sm:p-4">
-                <h2 className="text-sm font-bold text-white">Ayuda con tu compra</h2>
-                <p className="mt-2.5 rounded-xl border border-[#21476B] bg-[#13263B] px-3.5 py-2.5 text-xs font-medium leading-5 text-[#9EB4C8]">
+              <section className="rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
+                <h2 className="text-sm font-bold text-[var(--account-text-primary)]">Ayuda con tu compra</h2>
+                <p className="mt-2.5 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface)] px-3.5 py-2.5 text-xs font-medium leading-5 text-[var(--account-text-secondary)]">
                   {existingClaim
                     ? "Ya recibimos tu reclamo. Podés ver el seguimiento y la conversación desde acá."
                     : "¿Tuviste un problema con el pedido? Contactanos para que podamos ayudarte."}
@@ -2249,18 +2249,18 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
     (order.estado ?? "").toLowerCase() === "cancelado"
   ) {
     return (
-      <main className="flex min-h-screen items-start justify-center bg-[#05070A] px-4 pt-32 font-heading sm:pt-36">
+      <main className="flex min-h-screen items-start justify-center bg-[var(--account-background)] px-4 pt-32 font-heading sm:pt-36">
         <section
-          className="customer-cancellation-success-card relative z-20 w-full max-w-md rounded-xl border border-[#18334D] px-5 py-6 text-center shadow-[0_18px_50px_rgba(0,0,0,0.4)]"
+          className="customer-cancellation-success-card relative z-20 w-full max-w-md rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-5 py-6 text-center shadow-[0_18px_50px_rgba(0,0,0,0.4)]"
         >
-          <CheckCircle2 className="mx-auto size-8 text-emerald-300" />
-          <h1 className="mt-3 text-base font-medium text-white">
+          <CheckCircle2 className="mx-auto size-8 text-[var(--account-success)]" />
+          <h1 className="mt-3 text-base font-medium text-[var(--account-text-primary)]">
             Compra cancelada correctamente.
           </h1>
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="mt-5 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 px-4 text-xs font-normal text-emerald-50 transition-colors hover:border-emerald-300/45 hover:bg-emerald-400/15"
+            className="mt-5 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-4 text-xs font-normal text-[var(--account-success-text)] transition-colors hover:border-[var(--account-success)]"
           >
             Volver al inicio
           </button>
@@ -2277,7 +2277,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
             type="button"
             label="Volver a la compra"
             onClick={() => router.push(`/cuenta/compras/${order.id}`)}
-            className="border-[#31465B] bg-[#0D151E]/75 text-white/78 transition-all duration-200 hover:border-[#5CA9E6]/55 hover:bg-[#111D28] hover:text-white hover:[&_svg]:-translate-x-0.5 [&_svg]:text-white [&_svg]:transition-transform"
+            className="border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-secondary)] transition-all duration-200 hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)] hover:[&_svg]:-translate-x-0.5 [&_svg]:transition-transform"
           />
 
           <section className="customer-claim-experience mt-3">
@@ -2326,7 +2326,7 @@ export function CuentaClient() {
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--account-background)] pt-20">
-        <div className="size-8 rounded-full border-2 border-white/10 border-t-white/60 animate-spin" />
+        <div className="size-8 rounded-full border-2 border-[var(--account-border)] border-t-[var(--account-text-secondary)] animate-spin" />
       </main>
     )
   }
@@ -2334,7 +2334,7 @@ export function CuentaClient() {
   if (!user) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--account-background)] pt-20">
-        <div className="size-8 rounded-full border-2 border-white/10 border-t-white/60 animate-spin" />
+        <div className="size-8 rounded-full border-2 border-[var(--account-border)] border-t-[var(--account-text-secondary)] animate-spin" />
       </main>
     )
   }

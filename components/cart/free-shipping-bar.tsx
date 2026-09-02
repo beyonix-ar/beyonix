@@ -33,7 +33,7 @@ export function FreeShippingBar({
 }: Props) {
   if (coveredByBeyonix) {
     return (
-      <p className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
+      <p className="beyonix-success-text flex items-center gap-2 text-sm font-semibold text-emerald-400">
         <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
           <Truck className="size-3" aria-hidden="true" />
         </span>
@@ -72,8 +72,8 @@ export function FreeShippingBar({
       <p
         className={`flex items-center gap-2 transition-all duration-300 ${
           isComplete
-            ? "text-emerald-400 font-semibold text-sm tracking-wide"
-            : "text-muted-foreground text-xs"
+            ? "beyonix-success-text text-emerald-400 font-semibold text-sm tracking-wide"
+            : "beyonix-modal-muted text-muted-foreground text-xs"
         }`}
       >
         {isComplete ? (
@@ -81,7 +81,7 @@ export function FreeShippingBar({
             <span className="flex items-center justify-center size-20px rounded-full bg-emerald-500/10">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="size-12px text-emerald-400"
+                className="beyonix-success-text size-12px text-emerald-400"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -94,24 +94,24 @@ export function FreeShippingBar({
               </svg>
             </span>
 
-            <span className="beyonix-success-glow">
+            <span className="beyonix-success-glow beyonix-success-text">
               {bonusMessage}
             </span>
           </>
         ) : (
-          <span className="text-white/80 text-sm">
+          <span className="beyonix-modal-body text-white/80 text-sm">
             🚚 Te faltan{" "}
-            <span className="text-white font-semibold tracking-wide">
+            <span className="beyonix-modal-title text-white font-semibold tracking-wide">
               {formatPrice(remaining)}
             </span>{" "}
-            <span className="text-white/80 text-sm">
+            <span className="beyonix-modal-body text-white/80 text-sm">
               para conseguir envío bonificado.
             </span>
           </span>
         )}
       </p>
 
-      <div className="w-full h-1.5 bg-white/60 rounded-full overflow-hidden">
+      <div className="beyonix-progress-track w-full h-1.5 bg-white/60 rounded-full overflow-hidden">
         <div
           className={`h-full transition-all duration-300 ease-out ${
             isComplete

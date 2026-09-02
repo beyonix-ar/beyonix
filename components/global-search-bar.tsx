@@ -77,7 +77,7 @@ export function GlobalSearchBar({
   return (
     <div className={`relative w-full ${className}`}>
       <div
-        className={`flex overflow-hidden rounded-xl border bg-[#071018]/78 shadow-[0_0_30px_rgba(30,140,255,0.10),inset_0_1px_0_rgba(255,255,255,0.055)] backdrop-blur-md transition-all duration-200 ${
+        className={`beyonix-search-surface flex overflow-hidden rounded-xl border bg-[#071018]/78 shadow-[0_0_30px_rgba(30,140,255,0.10),inset_0_1px_0_rgba(255,255,255,0.055)] backdrop-blur-md transition-all duration-200 ${
           isFocused
             ? "border-beyonix-sky/55 shadow-[0_0_32px_rgba(30,140,255,0.24)]"
             : "border-beyonix-blue-light/24 hover:border-beyonix-sky/36"
@@ -156,7 +156,7 @@ export function GlobalSearchBar({
               )
             }
           }}
-          className={`w-full bg-transparent px-5 py-3.5 text-sm text-white outline-none placeholder:text-white/45 ${inputClassName}`}
+          className={`beyonix-search-input w-full bg-transparent px-5 py-3.5 text-sm text-white outline-none placeholder:text-white/45 ${inputClassName}`}
         />
 
         <button
@@ -167,7 +167,7 @@ export function GlobalSearchBar({
               search
             )
           }
-          className={`cursor-pointer border-l border-beyonix-blue-light/20 px-5 text-beyonix-sky/70 transition-colors hover:bg-beyonix-blue/20 hover:text-white ${buttonClassName}`}
+          className={`beyonix-search-button cursor-pointer border-l border-beyonix-blue-light/20 px-5 text-beyonix-sky/70 transition-colors hover:bg-beyonix-blue/20 hover:text-white ${buttonClassName}`}
         >
           <Search className="size-4" />
         </button>
@@ -176,7 +176,7 @@ export function GlobalSearchBar({
       {isFocused &&
         suggestions.length >
           0 && (
-          <div className="absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-beyonix-blue-light/24 bg-[#071018] shadow-2xl shadow-black/70">
+          <div className="beyonix-search-suggestions absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-beyonix-blue-light/24 bg-[#071018] shadow-2xl shadow-black/70">
             {suggestions.map(
               (
                 product,
@@ -209,10 +209,16 @@ export function GlobalSearchBar({
                     index ===
                     selectedIndex
                       ? "bg-beyonix-blue/60 text-white"
-                      : "text-white/70 hover:bg-white/4 hover:text-white"
+                      : "beyonix-search-suggestion-item text-white/70 hover:bg-white/4 hover:text-white"
                   }`}
                 >
-                  <Search className="size-3.5 shrink-0 text-white/25" />
+                  <Search
+                    className={`size-3.5 shrink-0 text-white/25 ${
+                      index === selectedIndex
+                        ? ""
+                        : "beyonix-search-suggestion-icon"
+                    }`}
+                  />
 
                   {
                     product.nombre

@@ -110,7 +110,7 @@ export default function PrivacidadPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+      <section id="contenido" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
         <div className="grid gap-4 lg:grid-cols-2">
           <PrivacySection icon={Eye} eyebrow="01 · Alcance" title="Responsable y origen de los datos">
             <p>

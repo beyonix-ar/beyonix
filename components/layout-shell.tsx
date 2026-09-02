@@ -21,6 +21,7 @@ function StandaloneAdminNotifications() {
   return (
     <div className="fixed right-4 top-4 z-100">
       <AdminNotificationsBell
+        variant="storefront"
         count={notifications.notificationCount}
         tone={notifications.notificationTone}
         groups={notifications.notificationGroups}

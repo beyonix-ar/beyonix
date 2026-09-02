@@ -269,7 +269,7 @@ export default function SharedProductCard({
 
       <div className="flex flex-1 flex-col p-4">
         <div className="flex min-h-18px w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <p className="min-w-0 truncate text-10px font-bold uppercase tracking-[0.16em] text-beyonix-sky/82">
+          <p className="beyonix-modal-action min-w-0 truncate text-10px font-bold uppercase tracking-[0.16em] text-beyonix-sky/82">
             {
               product.categorias
                 ?.nombre
@@ -282,13 +282,13 @@ export default function SharedProductCard({
               reviewsCount={product.reviews_count}
               className="text-10px"
               starClassName="size-3"
-              countClassName="text-white/48"
+              countClassName="beyonix-modal-muted text-white/48"
             />
           )}
         </div>
 
         <h3
-          className="mt-1.5 min-h-48px line-clamp-2 text-18px font-semibold leading-product-title tracking-tight text-white transition-colors group-hover:text-white sm:text-19px"
+          className="beyonix-modal-title mt-1.5 min-h-48px line-clamp-2 text-18px font-semibold leading-product-title tracking-tight text-white transition-colors group-hover:text-white sm:text-19px"
         >
           {product.nombre}
         </h3>
@@ -342,7 +342,7 @@ export default function SharedProductCard({
               event.stopPropagation()
               onOpenPreview?.(product)
             }}
-            className="mt-3 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/22 bg-black/28 text-13px font-semibold text-white/86 transition-all duration-200 hover:border-beyonix-sky/48 hover:bg-beyonix-blue/32 hover:text-white hover:shadow-[0_0_18px_rgba(30,140,255,0.16)]"
+            className="beyonix-product-card-cta mt-3 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/22 bg-black/28 text-13px font-semibold text-white/86 transition-all duration-200 hover:border-beyonix-sky/48 hover:bg-beyonix-blue/32 hover:text-white hover:shadow-[0_0_18px_rgba(30,140,255,0.16)]"
           >
             Ver producto
             <ArrowRight className="size-3.5" />

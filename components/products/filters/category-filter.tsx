@@ -33,7 +33,7 @@ export function CategoryFilter({
 
       <div className="space-y-2.5">
         {categories.length === 0 && (
-          <p className="text-sm text-white/45">
+          <p className="beyonix-modal-muted text-sm text-white/45">
             No hay categor&iacute;as disponibles.
           </p>
         )}
@@ -47,9 +47,9 @@ export function CategoryFilter({
             >
               {/* Checkbox personalizado */}
               <span
-                className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
+                className={`beyonix-checkbox-box relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
                   isChecked
-                    ? "border-beyonix-sky bg-beyonix-blue shadow-[0_0_10px_rgba(56,189,248,0.28)]"
+                    ? "beyonix-checkbox-box-checked border-beyonix-sky bg-beyonix-blue shadow-[0_0_10px_rgba(56,189,248,0.28)]"
                     : "border-beyonix-blue-light/35 bg-black/20 group-hover:border-beyonix-sky/60"
                 }`}
               >
@@ -57,7 +57,7 @@ export function CategoryFilter({
                   <svg
                     viewBox="0 0 10 8"
                     fill="none"
-                    className="h-2.5 w-2.5 text-beyonix-cyan"
+                    className="beyonix-checkbox-check h-2.5 w-2.5 text-beyonix-cyan"
                   >
                     <path
                       d="M1 4l2.5 2.5L9 1"
@@ -76,17 +76,17 @@ export function CategoryFilter({
                 />
               </span>
 
-              <Cpu className="size-3.5 shrink-0 text-beyonix-cyan/65" />
+              <Cpu className="beyonix-modal-muted-icon size-3.5 shrink-0 text-beyonix-cyan/65" />
 
               <span
-                className={`text-sm transition-colors duration-150 ${
+                className={`beyonix-checkbox-label text-sm transition-colors duration-150 ${
                   isChecked ? "text-white" : "text-white/66 group-hover:text-white/84"
                 }`}
               >
                 {nombre}
               </span>
 
-              <ChevronRight className="ml-auto size-3.5 text-beyonix-cyan/45" />
+              <ChevronRight className="beyonix-modal-muted-icon ml-auto size-3.5 text-beyonix-cyan/45" />
             </label>
           )
         })}

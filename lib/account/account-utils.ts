@@ -61,42 +61,42 @@ export function getClientOrderStatusBadge(order: OrderStatusFields) {
   if (status === "cancelado") {
     return {
       label: "Cancelado",
-      className: "border-zinc-500/30 bg-zinc-500/12 text-zinc-200",
+      className: "border-[var(--account-neutral-border)] bg-[var(--account-neutral-bg)] text-[var(--account-neutral-text)]",
     }
   }
 
   if (financialStatus === "refund_pending") {
     return {
       label: "Reintegro pendiente",
-      className: "border-amber-300/35 bg-amber-400/12 text-amber-200",
+      className: "border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-warning-text)]",
     }
   }
 
   if (financialStatus === "cancellation_requested") {
     return {
       label: "Cancelación en revisión",
-      className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
+      className: "border-[var(--account-info-border)] bg-[var(--account-info-bg)] text-[var(--account-info-text)]",
     }
   }
 
   if (financialStatus === "refunded") {
     return {
       label: "Dinero reintegrado",
-      className: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
+      className: "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]",
     }
   }
 
   if (paymentStatus === "vencido_falta_comprobante") {
     return {
       label: "Cancelado por falta de pago",
-      className: "border-red-400/35 bg-red-400/12 text-red-200",
+      className: "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]",
     }
   }
 
   if (paymentStatus === "rechazado") {
     return {
       label: "Comprobante rechazado",
-      className: "border-red-400/35 bg-red-400/12 text-red-200",
+      className: "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]",
     }
   }
 
@@ -108,35 +108,35 @@ export function getClientOrderStatusBadge(order: OrderStatusFields) {
   ) {
     return {
       label: "Pago confirmado",
-      className: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
+      className: "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]",
     }
   }
 
   if (status === "enviado" || status === "en_camino") {
     return {
       label: "En camino",
-      className: "border-beyonix-blue-light/35 bg-beyonix-blue/35 text-beyonix-sky",
+      className: "border-[var(--account-info-border)] bg-[var(--account-info-bg)] text-[var(--account-info-text)]",
     }
   }
 
   if (SHIPPING_INCIDENT_LABELS[status]) {
     return {
       label: SHIPPING_INCIDENT_LABELS[status],
-      className: "border-amber-300/35 bg-amber-400/12 text-amber-100",
+      className: "border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-warning-text)]",
     }
   }
 
   if (status === "entregado") {
     return {
       label: "Entregado",
-      className: "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
+      className: "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]",
     }
   }
 
   return {
     label: "Pedido registrado",
     className:
-      "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-300",
+      "border-[var(--account-neutral-border)] bg-[var(--account-neutral-bg)] text-[var(--account-neutral-text)]",
   }
 }
 

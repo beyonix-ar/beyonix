@@ -27,14 +27,14 @@ const formatPrice = (price: number) =>
 
 function getStockBadgeClassName(status: StockStatus) {
   if (status === "low") {
-    return "border-amber-300/20 bg-amber-400/10 text-amber-100"
+    return "beyonix-stock-badge-warning border-amber-300/20 bg-amber-400/10 text-amber-100"
   }
 
   if (status === "out") {
-    return "border-red-400/20 bg-red-500/10 text-red-100"
+    return "beyonix-stock-badge-danger border-red-400/20 bg-red-500/10 text-red-100"
   }
 
-  return "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+  return "beyonix-stock-badge-success border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
 }
 
 function getStockIcon(status: StockStatus) {
@@ -68,7 +68,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const StockIcon = getStockIcon(stockStatus)
 
   return (
-    <div className="relative flex gap-3 rounded-xl border border-white/10 bg-beyonix-surface-3 p-2 shadow-sm shadow-black/30">
+    <div className="beyonix-cart-item relative flex gap-3 rounded-xl border border-white/10 bg-beyonix-surface-3 p-2 shadow-sm shadow-black/30">
       <div className="relative size-20 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white p-1">
         <Image
           src={imageSrc}
@@ -82,7 +82,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
 
       <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
         <div className="pr-8">
-          <h4 className="line-clamp-2 text-sm font-bold leading-snug text-white">
+          <h4 className="beyonix-cart-item-title line-clamp-2 text-sm font-bold leading-snug text-white">
             {product.nombre}
           </h4>
 
@@ -96,13 +96,13 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                   className="size-3 rounded-full border border-white/20"
                 />
               )}
-              <span className="text-xs capitalize text-white/65">{colorName}</span>
+              <span className="beyonix-cart-item-meta text-xs capitalize text-white/65">{colorName}</span>
             </div>
           )}
 
           {conditionedStockId && (
             <p
-              className="mt-1 line-clamp-2 text-10px font-semibold leading-4 text-amber-200/80"
+              className="beyonix-stock-badge-warning-text mt-1 line-clamp-2 text-10px font-semibold leading-4 text-amber-200/80"
               title={discountReason || "Variante con descuento"}
             >
               Con descuento
@@ -120,13 +120,13 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
 
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-white/90">
+            <p className="beyonix-cart-item-title text-sm font-semibold text-white/90">
               {formatPrice(price)}
             </p>
 
             {discountPercent !== null && originalUnitPrice !== null && (
               <div className="mt-1 flex min-w-0 items-center gap-2">
-                <span className="truncate text-13px text-white/50 line-through tabular-nums">
+                <span className="beyonix-cart-item-meta truncate text-13px text-white/50 line-through tabular-nums">
                   {formatPrice(originalUnitPrice)}
                 </span>
 
@@ -138,14 +138,14 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
           </div>
 
           <div className="flex min-w-0 shrink-0 items-center gap-1.5">
-            <span className="text-11px font-medium text-white/60">Cant.</span>
+            <span className="beyonix-cart-item-meta text-11px font-medium text-white/60">Cant.</span>
 
-            <div className="inline-flex h-7 items-center overflow-hidden rounded-full border border-beyonix-blue-light/60 bg-black">
+            <div className="beyonix-cart-item-stepper inline-flex h-7 items-center overflow-hidden rounded-full border border-beyonix-blue-light/60 bg-black">
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-full w-7 rounded-none border-0 border-r border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
+                className="beyonix-cart-item-stepper-btn h-full w-7 rounded-none border-0 border-r border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
                 aria-label="Disminuir cantidad"
                 title="Disminuir cantidad"
                 onClick={() => onUpdateQuantity(product.id, color, quantity - 1)}
@@ -154,7 +154,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                 <Minus className="size-3" />
               </Button>
 
-              <span className="flex h-full min-w-8 items-center justify-center px-1.5 text-xs font-bold text-white">
+              <span className="beyonix-cart-item-title flex h-full min-w-8 items-center justify-center px-1.5 text-xs font-bold text-white">
                 {quantity}
               </span>
 
@@ -162,7 +162,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-full w-7 rounded-none border-0 border-l border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
+                className="beyonix-cart-item-stepper-btn h-full w-7 rounded-none border-0 border-l border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
                 aria-label="Aumentar cantidad"
                 title="Aumentar cantidad"
                 onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
@@ -179,7 +179,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
         type="button"
         variant="ghost"
         size="icon"
-        className="absolute right-2 top-2 size-8 cursor-pointer rounded-full border border-red-500/20 bg-red-950/20 text-red-400 transition-colors hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-300"
+        className="beyonix-cart-item-delete absolute right-2 top-2 size-8 cursor-pointer rounded-full border border-red-500/20 bg-red-950/20 text-red-400 transition-colors hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-300"
         aria-label="Eliminar producto"
         title="Eliminar producto"
         onClick={() => onRemove(product.id, color)}

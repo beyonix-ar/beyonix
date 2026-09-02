@@ -59,7 +59,7 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
   }
 
   return (
-    <main className="min-h-screen bg-black pt-24 text-white">
+    <main className="beyonix-pdp-page min-h-screen bg-black pt-24 text-white">
       <div className="grid lg:grid-cols-2">
         <ProductDetailsGallery
           images={images}

@@ -146,7 +146,7 @@ export function ProvinceSelect({
                   : "border-[rgba(148,197,255,0.18)] text-[#F8FAFC] hover:border-[rgba(191,228,255,0.28)] hover:bg-[rgba(17,42,67,0.35)] hover:text-[#D7ECFF]"
               }`
             : isLoginAppearance
-              ? `${compact ? "h-9" : "h-11"} rounded-xl bg-[#0b1118] px-3.5 font-heading ${
+              ? `login-select-trigger ${compact ? "h-9" : "h-11"} rounded-xl bg-[#0b1118] px-3.5 font-heading ${
                   open
                     ? "border-[rgba(191,228,255,0.42)] text-[#F8FAFC] shadow-[0_0_18px_rgba(96,165,250,0.12)]"
                     : "border-white/10 text-[#F8FAFC] hover:border-[rgba(140,200,242,0.45)] hover:bg-[#101923]"
@@ -156,13 +156,19 @@ export function ProvinceSelect({
                   ? "border-[var(--account-border-strong)] text-[var(--account-text-primary)]"
                   : "border-[var(--account-border)] text-[var(--account-text-primary)] hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)]"
               }`
-        } ${value ? "" : "text-white/35"}`}
+        } ${
+          value
+            ? ""
+            : isCheckoutAppearance || isLoginAppearance
+              ? "login-select-placeholder text-white/35"
+              : "text-[var(--account-text-muted)]"
+        }`}
       >
         <span className="min-w-0 truncate">{selectedLabel}</span>
         <ChevronDown
-          className={`size-4 shrink-0 text-white/45 transition-transform ${
-            open ? "rotate-180 text-beyonix-focus" : ""
-          }`}
+          className={`login-select-chevron size-4 shrink-0 transition-transform ${
+            isCheckoutAppearance || isLoginAppearance ? "text-white/45" : "text-[var(--account-text-muted)]"
+          } ${open ? "rotate-180 text-beyonix-focus" : ""}`}
         />
       </button>
 
@@ -174,7 +180,7 @@ export function ProvinceSelect({
             isCheckoutAppearance
               ? "top-[42px] rounded-lg border-[rgba(148,197,255,0.18)] bg-[#080D14] font-heading"
               : isLoginAppearance
-                ? `${compact ? "top-[38px]" : "top-[46px]"} rounded-xl border-white/10 bg-[#0b1118] font-heading`
+                ? `login-select-panel ${compact ? "top-[38px]" : "top-[46px]"} rounded-xl border-white/10 bg-[#0b1118] font-heading`
               : `${compact ? "top-11" : "top-12"} rounded-xl border-[var(--account-border)] bg-[var(--account-surface)] font-heading`
           }`}
         >
@@ -206,7 +212,7 @@ export function ProvinceSelect({
                   }`}
                 >
                   <span className="truncate">{label}</span>
-                  {selected && <Check className="size-3.5 text-beyonix-sky" />}
+                  {selected && <Check className="size-3.5 text-[var(--account-accent-soft)]" />}
                 </button>
               )
             })}

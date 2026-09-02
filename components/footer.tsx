@@ -61,10 +61,10 @@ const contactLinks = [
 ]
 
 const footerLinkClass =
-  "inline-flex rounded-md text-sm text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+  "beyonix-modal-body inline-flex rounded-md text-sm text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
 
 const withdrawalLinkClass =
-  "inline-flex rounded-md text-xs text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+  "beyonix-modal-body inline-flex rounded-md text-xs text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
 
 function FooterColumn({
   title,
@@ -131,7 +131,7 @@ export function Footer() {
             <BeyonixLogoLink />
             <div className="mt-2 h-px w-14 bg-beyonix-blue-light/60" />
 
-            <p className="mt-3 max-w-xs text-sm leading-relaxed text-white/62">
+            <p className="beyonix-modal-body mt-3 max-w-xs text-sm leading-relaxed text-white/62">
               Conectados con tu comodidad.
             </p>
 
@@ -241,7 +241,7 @@ export function Footer() {
               ))}
             </ul>
 
-            <div className="mt-4 space-y-1.5 border-l border-beyonix-blue-light/24 pl-4 text-sm leading-relaxed text-white/52">
+            <div className="beyonix-modal-body mt-4 space-y-1.5 border-l border-beyonix-blue-light/24 pl-4 text-sm leading-relaxed text-white/52">
               <p>Rosario, Santa Fe</p>
               <p>Envíos a todo el país</p>
             </div>
@@ -249,7 +249,7 @@ export function Footer() {
         </div>
 
         <div className="mt-7 border-t border-beyonix-blue-light/12 pt-5">
-          <p className="text-center text-xs text-white/40">
+          <p className="beyonix-modal-muted text-center text-xs text-white/40">
             © {currentYear} BEYONIX. Todos los derechos reservados.
           </p>
         </div>

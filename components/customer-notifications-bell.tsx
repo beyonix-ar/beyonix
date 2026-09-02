@@ -31,6 +31,10 @@ interface CustomerNotificationsBellProps {
   userId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  // Permite que un consumidor externo (ej. el item "Notificaciones" del
+  // menú de usuario) muestre el mismo contador sin duplicar la carga de
+  // datos -- este componente sigue siendo la única fuente de verdad.
+  onUnreadCountChange?: (count: number) => void
 }
 
 function getNotificationIcon(type: string) {
@@ -106,6 +110,7 @@ export function CustomerNotificationsBell({
   userId,
   open,
   onOpenChange,
+  onUnreadCountChange,
 }: CustomerNotificationsBellProps) {
   const router = useRouter()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -121,6 +126,10 @@ export function CustomerNotificationsBell({
     () => notifications.filter((notification) => !notification.is_read).length,
     [notifications],
   )
+
+  useEffect(() => {
+    onUnreadCountChange?.(unreadCount)
+  }, [onUnreadCountChange, unreadCount])
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -332,7 +341,7 @@ export function CustomerNotificationsBell({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         onFocus={openPopover}
-        className="relative flex size-11 cursor-pointer items-center justify-center rounded-full border border-[#303846] bg-[#0D1117] text-white/80 transition-all hover:border-beyonix-blue-light hover:bg-[#141820] hover:text-white hover:shadow-[0_0_18px_rgba(17,42,67,0.55)]"
+        className="beyonix-notifications-trigger relative flex size-11 cursor-pointer items-center justify-center rounded-full border border-[#303846] bg-[#0D1117] text-white/80 transition-all hover:border-beyonix-blue-light hover:bg-[#141820] hover:text-white hover:shadow-[0_0_18px_rgba(17,42,67,0.55)]"
       >
         <Bell className="size-4.5" />
 
@@ -349,12 +358,12 @@ export function CustomerNotificationsBell({
           onMouseEnter={openPopover}
           onMouseLeave={scheduleClosePopover}
         >
-        <div ref={panelRef} className="w-full overflow-hidden rounded-2xl border border-[#303846] bg-[#0D1117] font-heading shadow-2xl shadow-black/75">
-          <div className="flex items-center justify-between gap-3 border-b border-[#303846] px-4 py-3">
+        <div ref={panelRef} className="beyonix-notifications-panel w-full overflow-hidden rounded-2xl border border-[#303846] bg-[#0D1117] font-heading shadow-2xl shadow-black/75">
+          <div className="beyonix-notifications-panel-header flex items-center justify-between gap-3 border-b border-[#303846] px-4 py-3">
             <div>
-              <h2 className="text-sm font-bold text-white">Notificaciones</h2>
+              <h2 className="beyonix-notifications-panel-title text-sm font-bold text-white">Notificaciones</h2>
               {unreadCount > 0 && (
-                <p className="mt-0.5 text-10px text-[#9CA3AF]">
+                <p className="beyonix-notifications-panel-muted mt-0.5 text-10px text-[#9CA3AF]">
                   {unreadCount} sin leer
                 </p>
               )}
@@ -365,7 +374,7 @@ export function CustomerNotificationsBell({
                 type="button"
                 aria-label="Marcar todas las notificaciones como leídas"
                 onClick={() => void handleMarkAllRead()}
-                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-[#9CA3AF] transition-colors hover:bg-[#1B2028] hover:text-white"
+                className="beyonix-notifications-panel-muted flex size-8 cursor-pointer items-center justify-center rounded-lg text-[#9CA3AF] transition-colors hover:bg-[#1B2028] hover:text-white"
               >
                 <CheckCheck className="size-4" />
               </button>
@@ -378,7 +387,7 @@ export function CustomerNotificationsBell({
                 {[0, 1, 2].map((item) => (
                   <div
                     key={item}
-                    className="h-24 animate-pulse rounded-xl border border-[#303846] bg-[#141820]"
+                    className="beyonix-notifications-item h-24 animate-pulse rounded-xl border border-[#303846] bg-[#141820]"
                   />
                 ))}
               </div>
@@ -398,13 +407,13 @@ export function CustomerNotificationsBell({
               </div>
             ) : notifications.length === 0 ? (
               <div className="px-5 py-9 text-center">
-                <span className="mx-auto flex size-11 items-center justify-center rounded-full border border-[#303846] bg-[#141820] text-[#9CA3AF]">
+                <span className="beyonix-notifications-item mx-auto flex size-11 items-center justify-center rounded-full border border-[#303846] bg-[#141820] text-[#9CA3AF]">
                   <Bell className="size-5" />
                 </span>
                 <p className="mt-3 text-sm font-semibold text-white">
                   No tenés notificaciones por ahora
                 </p>
-                <p className="mt-1.5 text-xs leading-5 text-[#9CA3AF]">
+                <p className="beyonix-notifications-panel-muted mt-1.5 text-xs leading-5 text-[#9CA3AF]">
                   Te avisaremos acá cuando haya novedades sobre tus compras.
                 </p>
               </div>
@@ -418,7 +427,7 @@ export function CustomerNotificationsBell({
                       key={notification.id}
                       type="button"
                       onClick={() => void handleNotificationClick(notification)}
-                      className="group flex w-full cursor-pointer items-start gap-3 rounded-xl border border-[#303846] bg-[#141820] p-3 text-left transition-colors hover:bg-[#1B2028]"
+                      className="beyonix-notifications-item group flex w-full cursor-pointer items-start gap-3 rounded-xl border border-[#303846] bg-[#141820] p-3 text-left transition-colors hover:bg-[#1B2028]"
                     >
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
                         <NotificationIcon className="size-4" />
@@ -426,17 +435,17 @@ export function CustomerNotificationsBell({
 
                       <span className="min-w-0 flex-1">
                         <span className="flex items-start gap-2">
-                          <span className="min-w-0 flex-1 text-sm font-semibold leading-5 text-white">
+                          <span className="beyonix-notifications-item-title min-w-0 flex-1 text-sm font-semibold leading-5 text-white">
                             {notification.title}
                           </span>
                           {!notification.is_read && (
                             <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)]" />
                           )}
                         </span>
-                        <span className="mt-0.5 line-clamp-2 block text-xs leading-5 text-[#C8C8C8]">
+                        <span className="beyonix-notifications-item-body mt-0.5 line-clamp-2 block text-xs leading-5 text-[#C8C8C8]">
                           {notification.body}
                         </span>
-                        <span className="mt-1 block text-10px text-[#9CA3AF]">
+                        <span className="beyonix-notifications-panel-muted mt-1 block text-10px text-[#9CA3AF]">
                           {formatRelativeDate(notification.created_at)}
                         </span>
                         {notification.target_items?.length ? (

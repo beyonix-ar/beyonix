@@ -93,7 +93,7 @@ export function CategoriesSection() {
 
                       <BeyonixIconBox
                         size="md"
-                        className="rounded-full text-beyonix-sky opacity-84 group-hover:border-beyonix-blue-light/58 group-hover:text-white"
+                        className="rounded-full text-[#8CC8F2] opacity-84 group-hover:border-beyonix-blue-light/58 group-hover:text-white"
                       >
                         <ArrowUpRight className="size-4" />
                       </BeyonixIconBox>

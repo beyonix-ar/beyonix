@@ -23,6 +23,7 @@ import { AccountMenu, AccountMenuIcon } from "@/components/account-menu"
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { CustomerNotificationsBell } from "@/components/customer-notifications-bell"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
+import { AccountThemeToggle } from "@/components/account/account-theme-toggle"
 import { useCart } from "@/context/cart-context"
 import { useAuth } from "@/context/auth-context"
 import { useCustomerCredit } from "@/context/customer-credit-context"
@@ -45,6 +46,7 @@ export function SiteHeader() {
   const [userOpen, setUserOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
 
   const catRef = useRef<HTMLDivElement>(null)
 
@@ -53,7 +55,7 @@ export function SiteHeader() {
     user?.username?.trim() ||
     (isLoading ? "" : "Mi cuenta")
   const navLinkClass =
-    "relative -mx-2.5 inline-flex h-9 items-center justify-center rounded-md px-2.5 text-15px font-medium leading-none text-[#F8FAFC]/88 outline-none transition-colors duration-200 after:absolute after:bottom-1 after:left-1/2 after:h-px after:w-[calc(100%-1.25rem)] after:-translate-x-1/2 after:origin-center after:scale-x-0 after:bg-[rgba(125,204,255,0.72)] after:opacity-0 after:transition-all after:duration-300 after:ease-out hover:text-white hover:after:scale-x-100 hover:after:opacity-100 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+    "beyonix-site-header-nav-link relative -mx-2.5 inline-flex h-9 items-center justify-center rounded-md px-2.5 text-15px font-medium leading-none text-[#F8FAFC]/88 outline-none transition-colors duration-200 after:absolute after:bottom-1 after:left-1/2 after:h-px after:w-[calc(100%-1.25rem)] after:-translate-x-1/2 after:origin-center after:scale-x-0 after:bg-[rgba(125,204,255,0.72)] after:opacity-0 after:transition-all after:duration-300 after:ease-out hover:text-white hover:after:scale-x-100 hover:after:opacity-100 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
   const navLinkActiveClass =
     "text-white after:scale-x-100 after:opacity-100"
   useEffect(() => {
@@ -103,7 +105,7 @@ export function SiteHeader() {
   }, [user])
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-beyonix-blue-light/18 bg-black/78 shadow-[0_8px_30px_rgba(0,0,0,0.38)] backdrop-blur-xl">
+    <header className="beyonix-site-header fixed top-0 left-0 right-0 z-50 border-b border-beyonix-blue-light/18 bg-black/78 shadow-[0_8px_30px_rgba(0,0,0,0.38)] backdrop-blur-xl">
       <nav className="container mx-auto px-4 lg:px-8">
         <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto] items-center lg:h-18 lg:grid-cols-site-header">
           <BeyonixLogoLink />
@@ -154,13 +156,13 @@ export function SiteHeader() {
               </button>
 
               {catOpen && (
-                <div className="absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
+                <div className="beyonix-site-header-panel absolute left-0 z-50 mt-3 w-52 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
                   {categories.map((category, i) => (
                     <Link
                       key={category.id}
                       href={`/categorias/${category.slug}`}
                       onClick={() => setCatOpen(false)}
-                      className={`block px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)] ${
+                      className={`beyonix-site-header-panel-item block px-4 py-3 text-sm text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)] ${
                         i < categories.length - 1
                           ? "border-b border-white/8"
                           : ""
@@ -177,7 +179,7 @@ export function SiteHeader() {
                   <Link
                     href="/categorias"
                     onClick={() => setCatOpen(false)}
-                    className="flex items-center gap-2 border-t border-white/8 px-4 py-3 text-sm font-semibold text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
+                    className="beyonix-site-header-panel-item flex items-center gap-2 border-t border-white/8 px-4 py-3 text-sm font-semibold text-[#F8FAFC] transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)]"
                   >
                     Ver todas →
                   </Link>
@@ -200,6 +202,7 @@ export function SiteHeader() {
             {user &&
               (isInternal ? (
                 <AdminNotificationsBell
+                  variant="storefront"
                   count={adminNotifications.notificationCount}
                   tone={adminNotifications.notificationTone}
                   groups={adminNotifications.notificationGroups}
@@ -221,8 +224,11 @@ export function SiteHeader() {
                       setMobileOpen(false)
                     }
                   }}
+                  onUnreadCountChange={setUnreadNotifications}
                 />
               ))}
+
+            <AccountThemeToggle className="hidden lg:flex" />
 
             <div className="relative hidden lg:block">
               {user ? (
@@ -235,6 +241,16 @@ export function SiteHeader() {
                       setCatOpen(false)
                     }
                   }}
+                  onNotificationsClick={
+                    isInternal
+                      ? undefined
+                      : () => {
+                          setUserOpen(false)
+                          setCatOpen(false)
+                          setNotificationsOpen(true)
+                        }
+                  }
+                  unreadNotificationsCount={unreadNotifications}
                 />
               ) : (
                 <div className="flex items-center gap-2" aria-busy={isLoading}>
@@ -263,7 +279,7 @@ export function SiteHeader() {
               onClick={openCart}
               aria-label="Abrir carrito"
               className={cn(
-                "relative flex h-11 cursor-pointer items-center gap-2 rounded-full bg-beyonix-blue/10 px-3 text-white hover:bg-beyonix-blue/18",
+                "beyonix-site-header-cart-button relative flex h-11 cursor-pointer items-center gap-2 rounded-full bg-beyonix-blue/10 px-3 text-white hover:bg-beyonix-blue/18",
                 beyonixHoverBorder
               )}
             >
@@ -271,7 +287,7 @@ export function SiteHeader() {
                 <ShoppingBag className="size-3.5" />
               </span>
 
-              <span className="hidden max-w-24 truncate text-sm font-semibold tabular-nums text-white sm:block">
+              <span className="beyonix-site-header-cart-total hidden max-w-24 truncate text-sm font-semibold tabular-nums text-white sm:block">
                 {total.toLocaleString("es-AR", {
                   style: "currency",
                   currency: "ARS",

@@ -234,16 +234,16 @@ export function ProductDetailsPanel({
   const showDescriptionToggle = isDescriptionClamped || isDescriptionExpanded
 
   return (
-    <aside className="flex flex-col bg-[#080D13] text-white md:border-l md:border-white/7">
+    <aside className="beyonix-modal-shell flex flex-col bg-[#080D13] text-white md:border-l md:border-white/7">
       <div className="px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
         {product.categorias?.nombre && (
-          <span className="mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
-            <Sparkles className="size-3.5 text-white" />
+          <span className="beyonix-category-pill mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
+            <Sparkles className="beyonix-category-pill-icon size-3.5 text-white" />
             {product.categorias.nombre}
           </span>
         )}
 
-        <h2 className="text-[28px] font-bold leading-tight text-white md:text-[34px]">
+        <h2 className="beyonix-modal-title text-[28px] font-bold leading-tight text-white md:text-[34px]">
           {product.nombre}
         </h2>
 
@@ -254,7 +254,7 @@ export function ProductDetailsPanel({
               reviewsCount={product.reviews_count}
               className="text-sm"
               starClassName="size-4"
-              countClassName="text-white/55"
+              countClassName="beyonix-modal-body text-white/55"
             />
 
             <ProductReviewsDialog
@@ -267,7 +267,7 @@ export function ProductDetailsPanel({
         )}
       </div>
 
-      <div className="border-t border-white/7">
+      <div className="beyonix-modal-header border-t border-white/7">
         <ProductPurchaseBox
           price={selectedOption?.price ?? product.precio}
           originalPrice={
@@ -289,7 +289,7 @@ export function ProductDetailsPanel({
         />
       </div>
 
-      <div className="border-t border-white/7 px-5 py-5 md:px-7">
+      <div className="beyonix-modal-header border-t border-white/7 px-5 py-5 md:px-7">
         <div className="space-y-7">
           {limitedFeatures.length > 0 && (
             <section>
@@ -314,7 +314,7 @@ export function ProductDetailsPanel({
                         return (
                           <li
                             key={feature.text}
-                            className="flex items-center gap-2.5 text-14px leading-5 text-white/82"
+                            className="beyonix-modal-body flex items-center gap-2.5 text-14px leading-5 text-white/82"
                           >
                             <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-beyonix-sky/24 bg-[#0D1720]">
                               <Icon className="size-3.5 text-white" />
@@ -333,8 +333,8 @@ export function ProductDetailsPanel({
           {hasVariants && (
             <section>
               <p className="mb-3 text-14px">
-                <span className="text-white/55">Color: </span>
-                <span className="font-semibold text-white">
+                <span className="beyonix-modal-body text-white/55">Color: </span>
+                <span className="beyonix-modal-title font-semibold text-white">
                   {displayedColorName}
                 </span>
               </p>
@@ -360,7 +360,7 @@ export function ProductDetailsPanel({
               <p className="text-10px font-black uppercase tracking-widest text-amber-200">
                 Variante con descuento
               </p>
-              <p className="mt-1 text-sm font-semibold leading-5 text-white/72">
+              <p className="beyonix-modal-body mt-1 text-sm font-semibold leading-5 text-white/72">
                 {selectedOption.reason ||
                   "Esta unidad fue revisada y se vende separada del stock normal."}
               </p>
@@ -376,7 +376,7 @@ export function ProductDetailsPanel({
               <>
                 <p
                   ref={descriptionRef}
-                  className={`text-15px font-normal leading-7 text-white/80 ${
+                  className={`beyonix-modal-body text-15px font-normal leading-7 text-white/80 ${
                     isDescriptionExpanded ? "" : "line-clamp-4"
                   }`}
                 >
@@ -396,7 +396,7 @@ export function ProductDetailsPanel({
                 )}
               </>
             ) : (
-              <p className="text-15px leading-6 text-white/68">
+              <p className="beyonix-modal-body text-15px leading-6 text-white/68">
                 Producto seleccionado para una experiencia de compra simple y confiable.
               </p>
             )}

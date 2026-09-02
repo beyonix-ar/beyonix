@@ -42,6 +42,13 @@ const ADMIN_NEUTRAL_CARD_STYLE =
 const ADMIN_NEUTRAL_ICON_STYLE =
   "admin-ds-notification-icon"
 const ADMIN_NEUTRAL_DOT_STYLE = "admin-ds-notification-dot"
+// Ver comentario en admin-notification-bell.tsx: variante "storefront" para
+// cuando este popover se usa fuera de .beyonix-admin-shell (SiteHeader,
+// badge de checkout) -- clases propias themeadas con data-account-theme,
+// admin-ds-* queda intacto para el panel admin real.
+const STOREFRONT_CARD_STYLE = "beyonix-header-notif-card"
+const STOREFRONT_ICON_STYLE = "beyonix-header-notif-icon"
+const STOREFRONT_DOT_STYLE = "beyonix-header-notif-dot"
 const ADMIN_INCOMING_PAYMENT_STYLE = {
   card: "border-emerald-300/35 bg-emerald-400/[0.07] shadow-[0_0_18px_rgba(52,211,153,0.08)] hover:border-emerald-200/55 hover:bg-emerald-400/[0.12]",
   icon: "border-emerald-300/35 bg-emerald-400/10 text-white",
@@ -79,6 +86,7 @@ interface AdminNotificationsPopoverProps {
   error?: string
   onNotificationClick: (notification: AdminNotification) => void
   onRetry?: () => void
+  variant?: "admin" | "storefront"
 }
 
 export function AdminNotificationsPopover({
@@ -87,12 +95,27 @@ export function AdminNotificationsPopover({
   error = "",
   onNotificationClick,
   onRetry,
+  variant = "admin",
 }: AdminNotificationsPopoverProps) {
+  const isStorefront = variant === "storefront"
+
   return (
-    <div className="admin-ds-notification-popover w-full overflow-hidden font-heading">
-      <div className="admin-ds-notification-header px-4 py-3">
-        <p className="text-sm font-black text-white">Notificaciones admin</p>
-        <p className="mt-0.5 text-10px text-white/50">
+    <div
+      className={cn(
+        isStorefront ? "beyonix-header-notif-panel" : "admin-ds-notification-popover",
+        "w-full overflow-hidden font-heading",
+      )}
+    >
+      <div
+        className={cn(
+          isStorefront ? "beyonix-header-notif-panel-header" : "admin-ds-notification-header",
+          "px-4 py-3",
+        )}
+      >
+        <p className={cn("text-sm font-black", isStorefront ? "beyonix-header-notif-title" : "text-white")}>
+          {isStorefront ? "Notificaciones" : "Notificaciones admin"}
+        </p>
+        <p className={cn("mt-0.5 text-10px", isStorefront ? "beyonix-header-notif-muted" : "text-white/50")}>
           {notifications.length > 0
             ? `${notifications.length} pendientes`
             : "Todo está al día"}
@@ -105,33 +128,51 @@ export function AdminNotificationsPopover({
             {[0, 1, 2].map((item) => (
               <div
                 key={item}
-                className="admin-ds-skeleton h-24 animate-pulse"
+                className={cn(
+                  isStorefront ? "beyonix-header-notif-card" : "admin-ds-skeleton",
+                  "h-24 animate-pulse",
+                )}
               />
             ))}
           </div>
         ) : error ? (
           <div className="px-4 py-8 text-center">
-            <p className="text-sm font-semibold text-white">
+            <p className={cn("text-sm font-semibold", isStorefront ? "beyonix-header-notif-title" : "text-white")}>
               No pudimos cargar las notificaciones
             </p>
             {onRetry && (
               <button
                 type="button"
                 onClick={onRetry}
-                className="mt-3 cursor-pointer text-xs font-semibold text-beyonix-sky hover:text-white"
+                className={cn(
+                  "mt-3 cursor-pointer text-xs font-semibold",
+                  isStorefront
+                    ? "text-[var(--account-accent-soft)] hover:text-[var(--beyonix-text-primary)]"
+                    : "text-beyonix-sky hover:text-white",
+                )}
               >
                 Reintentar
               </button>
             )}
           </div>
         ) : notifications.length === 0 ? (
-          <div className="px-5 py-9 text-center">
-            <span className="admin-ds-empty-icon mx-auto flex size-11 items-center justify-center rounded-full border text-white/50">
+          <div className={cn("text-center", isStorefront ? "px-5 py-6" : "px-5 py-9")}>
+            <span
+              className={cn(
+                "mx-auto flex size-11 items-center justify-center rounded-full border",
+                isStorefront ? STOREFRONT_ICON_STYLE : "admin-ds-empty-icon text-white/50",
+              )}
+            >
               <Bell className="size-5" />
             </span>
-            <p className="mt-3 text-sm font-semibold text-white">
-              No hay alertas pendientes
+            <p className={cn("mt-3 text-sm font-semibold", isStorefront ? "beyonix-header-notif-title" : "text-white")}>
+              {isStorefront ? "No tenés notificaciones" : "No hay alertas pendientes"}
             </p>
+            {isStorefront && (
+              <p className="beyonix-header-notif-muted mt-1 text-xs leading-5">
+                Cuando haya novedades aparecerán acá.
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -159,7 +200,9 @@ export function AdminNotificationsPopover({
                         ? ADMIN_SENSITIVE_DANGER.card
                         : incomingPayment
                           ? ADMIN_INCOMING_PAYMENT_STYLE.card
-                          : ADMIN_NEUTRAL_CARD_STYLE,
+                          : isStorefront
+                            ? STOREFRONT_CARD_STYLE
+                            : ADMIN_NEUTRAL_CARD_STYLE,
                   )}
                 >
                   <span
@@ -171,7 +214,9 @@ export function AdminNotificationsPopover({
                           ? ADMIN_SENSITIVE_DANGER.icon
                           : incomingPayment
                             ? ADMIN_INCOMING_PAYMENT_STYLE.icon
-                            : ADMIN_NEUTRAL_ICON_STYLE,
+                            : isStorefront
+                              ? STOREFRONT_ICON_STYLE
+                              : ADMIN_NEUTRAL_ICON_STYLE,
                     )}
                   >
                     <Icon className="size-3.5" />
@@ -188,7 +233,9 @@ export function AdminNotificationsPopover({
                               ? ADMIN_SENSITIVE_DANGER.label
                               : incomingPayment
                                 ? ADMIN_INCOMING_PAYMENT_STYLE.label
-                                : "text-white/64",
+                                : isStorefront
+                                  ? "beyonix-header-notif-muted"
+                                  : "text-white/64",
                         )}
                       >
                         {typeLabel}
@@ -203,30 +250,35 @@ export function AdminNotificationsPopover({
                                 ? ADMIN_SENSITIVE_DANGER.dot
                                 : incomingPayment
                                   ? ADMIN_INCOMING_PAYMENT_STYLE.dot
-                                  : ADMIN_NEUTRAL_DOT_STYLE,
+                                  : isStorefront
+                                    ? STOREFRONT_DOT_STYLE
+                                    : ADMIN_NEUTRAL_DOT_STYLE,
                           )}
                         />
                       )}
                     </span>
-                    <span className="mt-0.5 block text-xs font-semibold leading-4 text-white">
+                    <span className={cn("mt-0.5 block text-xs font-semibold leading-4", isStorefront ? "beyonix-header-notif-title" : "text-white")}>
                       {notification.title}
                     </span>
-                    <span className="mt-0.5 line-clamp-2 block text-11px leading-4 text-white/65">
+                    <span className={cn("mt-0.5 line-clamp-2 block text-11px leading-4", isStorefront ? "beyonix-header-notif-body" : "text-white/65")}>
                       {notification.body}
                     </span>
-                    <span className="mt-1 flex flex-wrap items-center gap-2 text-11px leading-none text-white/42">
+                    <span className={cn("mt-1 flex flex-wrap items-center gap-2 text-11px leading-none", isStorefront ? "beyonix-header-notif-muted" : "text-white/42")}>
                       <span>{formatNotificationDate(notification.eventAt)}</span>
                       {notification.actionLabel && (
                         <span
                           className={cn(
-                            "font-black group-hover:text-white",
+                            "font-black",
+                            isStorefront ? "group-hover:text-[var(--beyonix-text-primary)]" : "group-hover:text-white",
                             mercadoLibreReturn
                               ? ADMIN_ATTENTION_WARNING.label
                               : sensitive
                                 ? ADMIN_SENSITIVE_DANGER.label
                                 : incomingPayment
                                   ? "text-emerald-300"
-                                  : "text-beyonix-sky",
+                                  : isStorefront
+                                    ? "text-[var(--account-accent-soft)]"
+                                    : "text-beyonix-sky",
                           )}
                         >
                           {notification.actionLabel}

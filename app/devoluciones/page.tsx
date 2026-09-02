@@ -145,7 +145,7 @@ export default function DevolucionesPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+      <section id="contenido" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
         <div className="grid gap-4 lg:grid-cols-2">
           <PolicyCard icon={RefreshCcw} title="Arrepentimiento de una compra a distancia">
             <p>
@@ -198,7 +198,7 @@ export default function DevolucionesPage() {
           </PolicyCard>
         </div>
 
-        <section className="mt-8 rounded-2xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(8,17,27,0.94),rgba(5,8,12,0.98))] p-5 sm:p-7">
+        <section className="beyonix-modal-shell mt-8 rounded-2xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(8,17,27,0.94),rgba(5,8,12,0.98))] p-5 sm:p-7">
           <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Cómo se gestiona</p>
           <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Un proceso trazable, de principio a fin</h2>
           <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -238,7 +238,7 @@ export default function DevolucionesPage() {
           </PolicyCard>
         </div>
 
-        <section className="mt-8 rounded-2xl border border-beyonix-blue-light/26 bg-[radial-gradient(circle_at_10%_0%,rgba(44,108,163,0.22),transparent_38%),linear-gradient(145deg,rgba(17,42,67,0.42),rgba(5,9,14,0.98))] p-6 sm:p-7">
+        <section className="beyonix-modal-shell mt-8 rounded-2xl border border-beyonix-blue-light/26 bg-[radial-gradient(circle_at_10%_0%,rgba(44,108,163,0.22),transparent_38%),linear-gradient(145deg,rgba(17,42,67,0.42),rgba(5,9,14,0.98))] p-6 sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-2xl">
               <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Canal de asistencia</p>

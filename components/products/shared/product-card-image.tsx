@@ -32,7 +32,7 @@ export function ProductCardImage({
   return (
     <div
       onClick={onOpenPreview}
-      className="relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden border-b border-beyonix-blue-light/12 bg-[#0B1118] p-3 sm:p-3.5"
+      className="beyonix-product-card-mat relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden border-b border-beyonix-blue-light/12 bg-[#0B1118] p-3 sm:p-3.5"
     >
       <div
         className="relative h-full w-full overflow-hidden rounded-lg border border-white/70 bg-[#F5F7FA]"

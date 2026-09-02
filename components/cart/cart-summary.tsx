@@ -78,28 +78,28 @@ export function CartSummary({
   }
 
   return (
-    <div className="space-y-2 border-t border-beyonix-blue-light/60 bg-beyonix-surface px-4 py-2.5">
+    <div className="beyonix-cart-summary space-y-2 border-t border-beyonix-blue-light/60 bg-beyonix-surface px-4 py-2.5">
       <FreeShippingBar
         subtotal={totals.productsTotal}
         coveredByBeyonix={shippingCoveredByBeyonix}
         settings={siteSettings.shipping}
       />
 
-      <div className="rounded-xl border border-beyonix-blue-light/60 bg-beyonix-surface-3 px-3 py-2.5">
-        <h3 className="mb-2 text-sm font-bold tracking-wide text-white">
+      <div className="beyonix-cart-summary-box rounded-xl border border-beyonix-blue-light/60 bg-beyonix-surface-3 px-3 py-2.5">
+        <h3 className="beyonix-cart-item-title mb-2 text-sm font-bold tracking-wide text-white">
           Resumen del pedido
         </h3>
 
         <div className="space-y-1.5">
           <div className="flex justify-between text-sm">
-            <span className="text-white/60">Subtotal</span>
-            <span className="text-white">{formatPrice(totals.subtotal)}</span>
+            <span className="beyonix-cart-item-meta text-white/60">Subtotal</span>
+            <span className="beyonix-cart-item-title text-white">{formatPrice(totals.subtotal)}</span>
           </div>
 
           {showCustomerCreditRow && (
             <div className="flex items-center justify-between text-sm">
               <span className="text-beyonix-sky">Saldo a favor</span>
-              <span className="font-semibold tracking-wide text-emerald-400">
+              <span className="font-semibold tracking-wide beyonix-success-text text-emerald-400">
                 -{formatPrice(creditApplication.appliedAmount)}
               </span>
             </div>
@@ -110,27 +110,27 @@ export function CartSummary({
               <span className="flex items-center gap-2 text-beyonix-sky">
                 Descuento
                 {ACTIVE_SALE_EVENT !== "none" && (
-                  <span className="text-9px tracking-wide text-emerald-400/80">
+                  <span className="text-9px tracking-wide beyonix-success-text text-emerald-400/80">
                     {ACTIVE_SALE_EVENT.toUpperCase()}
                   </span>
                 )}
               </span>
 
-              <span className="font-medium tracking-wide text-emerald-400">
+              <span className="font-medium tracking-wide beyonix-success-text text-emerald-400">
                 -{formatPrice(totals.discount)}
               </span>
             </div>
           )}
 
           <div className="flex justify-between text-sm">
-            <span className="text-white/60">Envío</span>
+            <span className="beyonix-cart-item-meta text-white/60">Envío</span>
             <span
               className={`${
                 shippingCoveredByBeyonix
-                  ? "font-bold text-emerald-400"
+                  ? "font-bold beyonix-success-text text-emerald-400"
                   : shippingHasBonus
-                  ? "beyonix-success-glow font-semibold text-emerald-400"
-                  : "text-white"
+                  ? "beyonix-success-glow font-semibold beyonix-success-text text-emerald-400"
+                  : "beyonix-cart-item-title text-white"
               }`}
             >
               {shippingCoveredByBeyonix
@@ -144,20 +144,20 @@ export function CartSummary({
           <Separator />
 
           <div className="flex justify-between text-base font-bold">
-            <span className="text-white">Total</span>
-            <span className="text-white">
+            <span className="beyonix-cart-item-title text-white">Total</span>
+            <span className="beyonix-cart-item-title text-white">
               {formatPrice(creditApplication.externalAmountDue)}
             </span>
           </div>
         </div>
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-black px-3 py-1.5 text-center font-heading">
-        <p className="text-sm font-bold tracking-widest text-white">
+      <div className="beyonix-cart-notice-info beyonix-cart-notice rounded-lg border border-white/10 bg-black px-3 py-1.5 text-center font-heading">
+        <p className="beyonix-cart-notice-info-text text-sm font-bold tracking-widest text-white">
           IMPORTANTE
         </p>
 
-        <p className="text-xs font-medium leading-snug text-white">
+        <p className="beyonix-cart-notice-info-text text-xs font-medium leading-snug text-white">
           Verificá variante y color antes de finalizar la compra
         </p>
       </div>
@@ -185,7 +185,7 @@ export function CartSummary({
         aria-label="Seguir comprando"
         title="Seguir comprando"
         size="lg"
-        className="h-9 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors"
+        className="beyonix-cart-secondary-btn h-9 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors"
         onMouseEnter={(event) => {
           event.currentTarget.style.backgroundColor = "#1E4A73"
         }}

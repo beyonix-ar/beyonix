@@ -110,7 +110,7 @@ export function CategoryPageLayout({
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-        <div className="relative mx-auto flex min-h-420px w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] sm:min-h-[520px] lg:min-h-[600px]">
+        <div className="beyonix-hero-banner relative mx-auto flex min-h-420px w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] sm:min-h-[520px] lg:min-h-[600px]">
           {image ? (
             <img
               src={image}
@@ -144,7 +144,7 @@ export function CategoryPageLayout({
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/24 bg-beyonix-blue/34 text-white shadow-[0_0_8px_rgba(30,140,255,0.08)]">
                     <Icon className="size-4" />
                   </span>
-                  <span className="text-13px font-semibold text-white/86">
+                  <span className="beyonix-modal-title text-13px font-semibold text-white/86">
                     {label}
                   </span>
                 </div>

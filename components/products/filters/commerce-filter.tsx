@@ -75,9 +75,9 @@ export function CommerceFilter({
               className="group flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 transition-colors hover:bg-beyonix-blue/12"
             >
               <span
-                className={`relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
+                className={`beyonix-checkbox-box relative flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
                   isChecked
-                    ? "border-beyonix-sky bg-beyonix-blue shadow-[0_0_10px_rgba(56,189,248,0.28)]"
+                    ? "beyonix-checkbox-box-checked border-beyonix-sky bg-beyonix-blue shadow-[0_0_10px_rgba(56,189,248,0.28)]"
                     : "border-beyonix-blue-light/35 bg-black/20 group-hover:border-beyonix-sky/60"
                 }`}
               >
@@ -85,7 +85,7 @@ export function CommerceFilter({
                   <svg
                     viewBox="0 0 10 8"
                     fill="none"
-                    className="h-2.5 w-2.5 text-beyonix-cyan"
+                    className="beyonix-checkbox-check h-2.5 w-2.5 text-beyonix-cyan"
                   >
                     <path
                       d="M1 4l2.5 2.5L9 1"
@@ -108,7 +108,7 @@ export function CommerceFilter({
               </span>
 
               <span
-                className={`text-sm transition-colors duration-150 ${
+                className={`beyonix-checkbox-label text-sm transition-colors duration-150 ${
                   isChecked
                     ? "text-white"
                     : "text-white/66 group-hover:text-white/84"

@@ -99,11 +99,11 @@ export function HeroSection({
     <section className="relative overflow-hidden pt-18 lg:pt-20">
       <div className="container relative mx-auto grid min-h-[clamp(620px,78vh,840px)] items-center gap-[clamp(2.5rem,4vw,4.5rem)] py-[clamp(3.75rem,5.5vw,5.5rem)] lg:grid-cols-hero-premium">
         <div className="max-w-3xl">
-          <h1 className="mb-5 max-w-3xl text-[clamp(2.4rem,4.3vw,4.65rem)] font-bold leading-1-1 tracking-tight text-white">
+          <h1 className="beyonix-modal-title mb-5 max-w-3xl text-[clamp(2.4rem,4.3vw,4.65rem)] font-bold leading-1-1 tracking-tight text-white">
             Tecnología para tu comodidad
           </h1>
 
-          <p className="mb-8 max-w-xl text-[clamp(1rem,1vw,1.15rem)] leading-1-8 text-white/68">
+          <p className="beyonix-modal-body mb-8 max-w-xl text-[clamp(1rem,1vw,1.15rem)] leading-1-8 text-white/68">
             Productos confiables, útiles y seleccionados para que tu vida se
             sienta más simple, segura y tranquila.
           </p>
@@ -136,10 +136,10 @@ export function HeroSection({
                   </BeyonixIconBox>
 
                   <div className="min-w-0">
-                    <span className="block text-sm font-semibold leading-5 text-white sm:text-base">
+                    <span className="beyonix-modal-title block text-sm font-semibold leading-5 text-white sm:text-base">
                       {item.title}
                     </span>
-                    <span className="mt-1 block text-11px leading-5 text-white/52">
+                    <span className="beyonix-modal-muted mt-1 block text-11px leading-5 text-white/52">
                       {item.sub}
                     </span>
                   </div>
@@ -158,7 +158,7 @@ export function HeroSection({
             <>
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+                  <p className="text-11px font-semibold uppercase tracking-widest text-[#4A90B8]">
                     Producto destacado
                   </p>
                   <h2 className="mt-2 line-clamp-2 text-2xl font-bold leading-tight text-white">
@@ -215,7 +215,7 @@ export function HeroSection({
                       )}
 
                       {!!installmentLabel && (
-                        <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
+                        <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-[#8CC8F2]">
                           {installmentLabel}
                         </span>
                       )}
@@ -240,7 +240,7 @@ export function HeroSection({
             </>
           ) : (
             <div className="flex min-h-360px flex-col items-center justify-center p-6 text-center">
-              <BeyonixIconBox size="lg" className="mb-4 text-beyonix-sky">
+              <BeyonixIconBox size="lg" className="mb-4 text-[#8CC8F2]">
                 <Sparkles className="size-5" />
               </BeyonixIconBox>
               <h2 className="text-2xl font-bold text-white">

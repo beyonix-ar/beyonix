@@ -201,7 +201,7 @@ export function ProductDetailsGallery({
   }
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
+    <div className="beyonix-modal-shell flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
       <div className="relative flex min-h-290px flex-1 items-center justify-center sm:min-h-380px md:min-h-0">
         <div className="flex h-full min-h-0 w-full items-center justify-center">
           <div
@@ -301,7 +301,7 @@ export function ProductDetailsGallery({
 
       {hasThumbnailRow && (
         <div className="flex h-34px shrink-0 items-end justify-center pt-2">
-          <span className="text-11px font-bold tabular-nums tracking-widest text-white/40">
+          <span className="beyonix-modal-muted text-11px font-bold tabular-nums tracking-widest text-white/40">
             {safeIndex + 1} / {mediaCount}
           </span>
         </div>
@@ -319,7 +319,7 @@ export function ProductDetailsGallery({
                 aria-label="Ver miniatura anterior"
                 title="Anterior"
                 onClick={handlePrev}
-                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/35 bg-[#07121E] text-white/80 transition hover:border-beyonix-sky hover:bg-[#112A43] hover:text-white active:scale-95 sm:size-9"
+                className="beyonix-modal-close flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/35 bg-[#07121E] text-white/80 transition hover:border-beyonix-sky hover:bg-[#112A43] hover:text-white active:scale-95 sm:size-9"
               >
                 <ChevronLeft className="size-4 stroke-[2.6]" />
               </button>
@@ -376,7 +376,7 @@ export function ProductDetailsGallery({
                 aria-label="Ver miniatura siguiente"
                 title="Siguiente"
                 onClick={handleNext}
-                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/35 bg-[#07121E] text-white/80 transition hover:border-beyonix-sky hover:bg-[#112A43] hover:text-white active:scale-95 sm:size-9"
+                className="beyonix-modal-close flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-beyonix-sky/35 bg-[#07121E] text-white/80 transition hover:border-beyonix-sky hover:bg-[#112A43] hover:text-white active:scale-95 sm:size-9"
               >
                 <ChevronRight className="size-4 stroke-[2.6]" />
               </button>

@@ -46,7 +46,7 @@ export function ProductCardPricing({
       <div className="mb-3 flex min-h-84px items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-20px font-bold tracking-tight text-white tabular-nums sm:text-21px">
+            <p className="beyonix-modal-title text-20px font-bold tracking-tight text-white tabular-nums sm:text-21px">
               {formatPrice(price)}
             </p>
           </div>
@@ -54,7 +54,7 @@ export function ProductCardPricing({
           {!!originalPrice &&
             originalPrice >
               price && (
-              <p className="mt-1 text-xs text-white/42 line-through tabular-nums">
+              <p className="beyonix-modal-muted mt-1 text-xs text-white/42 line-through tabular-nums">
                 {formatPrice(
                   originalPrice
                 )}
@@ -69,19 +69,19 @@ export function ProductCardPricing({
 
           <div className="mt-2 flex min-h-22px flex-wrap gap-1.5">
             {!!discountPercentage && (
-              <span className="inline-flex min-h-24px items-center rounded-full border border-green-500/25 bg-green-500/12 px-3 py-1.5 text-12px font-semibold leading-none text-green-400">
+              <span className="beyonix-offer-badge inline-flex min-h-24px items-center rounded-full border border-green-500/25 bg-green-500/12 px-3 py-1.5 text-12px font-semibold leading-none text-green-400">
                 En oferta
               </span>
             )}
 
             {!!installmentLabel && (
-              <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
+              <span className="beyonix-installment-badge inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
                 {installmentLabel}
               </span>
             )}
 
             {!discountPercentage && !installmentLabel && (
-              <span className="inline-flex rounded-full border border-beyonix-blue-light/16 bg-white/4 px-2 py-0.5 text-10px font-medium text-white/54">
+              <span className="beyonix-modal-muted inline-flex rounded-full border border-beyonix-blue-light/16 bg-white/4 px-2 py-0.5 text-10px font-medium text-white/54">
                 Stock disponible
               </span>
             )}

@@ -228,12 +228,12 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             return (
               <article
                 key={order.id}
-                className={`relative overflow-visible rounded-[18px] border border-white/10 shadow-[0_18px_46px_rgba(0,0,0,0.28),0_0_0_1px_rgba(17,42,67,0.18)] before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-[rgba(119,230,226,0.16)] before:content-[''] ${
-                  orderIndex % 2 === 0 ? "bg-[#0D1117]" : "bg-[#10151B]"
+                className={`relative overflow-visible rounded-[18px] border border-[var(--account-border)] shadow-[0_18px_46px_rgba(0,0,0,0.28),0_0_0_1px_rgba(17,42,67,0.18)] before:absolute before:inset-x-5 before:top-0 before:h-px before:bg-[rgba(119,230,226,0.16)] before:content-[''] ${
+                  orderIndex % 2 === 0 ? "bg-[var(--account-surface)]" : "bg-[var(--account-surface-raised)]"
                 }`}
               >
                 <div className="p-4 sm:p-5">
-                  <div className="flex flex-col gap-3 rounded-2xl border border-white/7 bg-[linear-gradient(135deg,rgba(255,255,255,0.045),rgba(17,42,67,0.12))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-3 rounded-2xl border border-[var(--account-border-subtle)] bg-[linear-gradient(135deg,rgba(255,255,255,0.045),rgba(17,42,67,0.12))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex min-w-0 items-center gap-4">
                       <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/8 bg-white">
                         {firstProductImage ? (
@@ -243,10 +243,10 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-base font-black text-white">
+                        <p className="text-base font-black text-[var(--account-text-primary)]">
                           Pedido #{formatPublicOrderId(order.id)}
                         </p>
-                        <p className="mt-1 text-sm text-[#A0A0A0]">
+                        <p className="mt-1 text-sm text-[var(--account-text-secondary)]">
                           {formatOrderCardDate(order.created_at)}
                         </p>
                         <span className={"mt-2 inline-flex w-fit rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide " + orderStatusBadge.className}>
@@ -254,42 +254,42 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                         </span>
                       </div>
                     </div>
-                    <div className="shrink-0 rounded-xl border border-emerald-300/20 bg-[#0E2B24] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.18)] sm:w-36">
-                      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-200/80">Total pagado</p>
-                      <p className="mt-1 text-lg font-black leading-none tracking-tight text-emerald-50">{formatCuentaPrice(Number(order.total ?? 0))}</p>
+                    <div className="shrink-0 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.18)] sm:w-36">
+                      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[var(--account-success-text)]">Total pagado</p>
+                      <p className="mt-1 text-lg font-black leading-none tracking-tight text-[var(--account-success-text)]">{formatCuentaPrice(Number(order.total ?? 0))}</p>
                     </div>
                   </div>
 
-                  <div className="mt-4 grid rounded-2xl border border-white/8 bg-[#090D12]/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] sm:grid-cols-[1fr_1.3fr_0.9fr]">
+                  <div className="mt-4 grid rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] sm:grid-cols-[1fr_1.3fr_0.9fr]">
                     <div className="flex items-center gap-3 py-2 sm:px-3 sm:py-0 sm:first:pl-0">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><CreditCard className="size-5 text-white" /></span>
-                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Pago</p><p className="mt-1 text-sm font-bold text-white">{paymentMethodLabel}</p><p className="mt-0.5 text-xs text-[#A0A0A0]">{getPaymentProgressLabel(order)}</p></div>
+                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--account-text-secondary)]">Pago</p><p className="mt-1 text-sm font-bold text-[var(--account-text-primary)]">{paymentMethodLabel}</p><p className="mt-0.5 text-xs text-[var(--account-text-secondary)]">{getPaymentProgressLabel(order)}</p></div>
                     </div>
-                    <div className="flex items-center gap-3 border-t border-white/8 py-3 sm:border-t-0 sm:border-l sm:border-white/12 sm:px-3 sm:py-0">
+                    <div className="flex items-center gap-3 border-t border-[var(--account-border-subtle)] py-3 sm:border-t-0 sm:border-l sm:px-3 sm:py-0">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Truck className="size-5 text-white" /></span>
                       <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Envío</p>
-                        <p className="mt-1 text-sm font-bold text-white">{shippingLabel}</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--account-text-secondary)]">Envío</p>
+                        <p className="mt-1 text-sm font-bold text-[var(--account-text-primary)]">{shippingLabel}</p>
                         {shippingDetail !== null ? (
-                          <p className="mt-0.5 text-xs text-[#A0A0A0]">{shippingDetail}</p>
+                          <p className="mt-0.5 text-xs text-[var(--account-text-secondary)]">{shippingDetail}</p>
                         ) : (
                           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs text-[#A0A0A0]">
+                            <span className="text-xs text-[var(--account-text-secondary)]">
                               {orderTracking.trackingNumber}
                             </span>
                             {orderTracking.trackingNumber && (
                               <TrackingCopyButton
                                 trackingNumber={orderTracking.trackingNumber}
-                                className="text-[#A0A0A0] hover:text-white"
+                                className="text-[var(--account-text-secondary)] hover:text-[var(--account-text-primary)]"
                               />
                             )}
                           </div>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 border-t border-white/8 pt-3 sm:border-t-0 sm:border-l sm:border-white/12 sm:px-3 sm:py-0 sm:last:pr-0">
+                    <div className="flex items-center gap-3 border-t border-[var(--account-border-subtle)] pt-3 sm:border-t-0 sm:border-l sm:px-3 sm:py-0 sm:last:pr-0">
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]"><Package className="size-5 text-white" /></span>
-                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[#A0A0A0]">Productos</p><p className="mt-1 text-sm font-bold text-white">{productCount} {productCount === 1 ? "producto" : "productos"}</p></div>
+                      <div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--account-text-secondary)]">Productos</p><p className="mt-1 text-sm font-bold text-[var(--account-text-primary)]">{productCount} {productCount === 1 ? "producto" : "productos"}</p></div>
                     </div>
                   </div>
 

@@ -35,7 +35,10 @@ export const beyonixButtonVariants = cva(
     variants: {
       variant: {
         primary:
-          "border-[var(--account-border-highlight)] bg-[var(--account-accent)] text-[var(--account-text-primary)] shadow-[0_0_14px_rgba(47,111,163,0.14)] hover:border-[var(--account-border-strong)] hover:bg-[var(--account-accent-hover)]",
+          // text-white fijo (no --account-text-primary): el fondo es el azul
+          // marino de marca, que se mantiene oscuro en ambos temas -- no es
+          // una superficie que se aclare en light.
+          "border-[var(--account-border-highlight)] bg-[var(--account-accent)] text-white shadow-[0_0_14px_rgba(47,111,163,0.14)] hover:border-[var(--account-border-strong)] hover:bg-[var(--account-accent-hover)]",
         secondary:
           "border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-primary)] hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)]",
         outline:
@@ -197,16 +200,19 @@ export function AccountPageHeader({
 }
 
 const iconContainerVariants = cva(
-  "relative inline-flex shrink-0 items-center justify-center border text-white transition-all duration-200",
+  "relative inline-flex shrink-0 items-center justify-center border transition-all duration-200",
   {
     variants: {
       tone: {
         default:
-          "border-[var(--account-border-highlight)] bg-[linear-gradient(135deg,rgba(17,42,67,0.96),rgba(7,18,31,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_0_18px_rgba(30,140,255,0.13)]",
+          // Chip de acento azul marino fijo (no la superficie de la página):
+          // el ícono se mantiene blanco en ambos temas porque el fondo del
+          // chip nunca se aclara.
+          "border-[var(--account-border-highlight)] bg-[linear-gradient(135deg,rgba(17,42,67,0.96),rgba(7,18,31,0.94))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_0_18px_rgba(30,140,255,0.13)]",
         subtle:
-          "border-[var(--account-border)] bg-[var(--account-surface-raised)]",
+          "border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-primary)]",
         highlight:
-          "border-[var(--account-border-strong)] bg-[var(--account-surface-highlight)] shadow-[var(--account-glow-subtle)]",
+          "border-[var(--account-border-strong)] bg-[var(--account-surface-highlight)] text-[var(--account-text-primary)] shadow-[var(--account-glow-subtle)]",
         success:
           "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]",
         danger:

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {
+  Bell,
   ChevronDown,
   CircleUserRound,
   Coins,
@@ -26,11 +27,13 @@ export function AccountMenuIcon({
   filled = false,
   dollarBadge = false,
   danger = false,
+  countBadge,
 }: {
   Icon: LucideIcon
   filled?: boolean
   dollarBadge?: boolean
   danger?: boolean
+  countBadge?: number
 }) {
   return (
     <span
@@ -48,6 +51,11 @@ export function AccountMenuIcon({
       {dollarBadge && (
         <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full border border-white/24 bg-white text-[9px] font-black leading-none text-[#07121E] shadow-[0_0_8px_rgba(255,255,255,0.14)]">
           $
+        </span>
+      )}
+      {Boolean(countBadge) && (
+        <span className="absolute -right-1.5 -top-1.5 flex min-w-3.5 h-3.5 items-center justify-center rounded-full border border-black bg-red-600 px-0.5 text-[9px] font-black leading-none text-white">
+          {countBadge && countBadge > 99 ? "99+" : countBadge}
         </span>
       )}
     </span>
@@ -69,12 +77,19 @@ export interface AccountMenuProps {
   // estado (uso simple, sin coordinación con hermanos).
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  // "Notificaciones" reutiliza el popover existente de la campana del
+  // header (CustomerNotificationsBell) -- no hay ruta ni fuente de datos
+  // propia. Si no se pasa, el item no se muestra.
+  onNotificationsClick?: () => void
+  unreadNotificationsCount?: number
 }
 
 export function AccountMenu({
   className,
   open: openProp,
   onOpenChange,
+  onNotificationsClick,
+  unreadNotificationsCount,
 }: AccountMenuProps) {
   const { user, isLoading, isInternal, logout } = useAuth()
   const customerCredit = useCustomerCredit()
@@ -113,7 +128,7 @@ export function AccountMenu({
         aria-label="Abrir menú de usuario"
         onClick={() => setOpen(!open)}
         className={cn(
-          "flex h-11 max-w-300px cursor-pointer items-center gap-2.5 rounded-full bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white hover:bg-beyonix-blue/18",
+          "beyonix-account-menu-trigger flex h-11 max-w-300px cursor-pointer items-center gap-2.5 rounded-full bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white hover:bg-beyonix-blue/18",
           beyonixHoverBorder,
           open && "border-beyonix-blue-light/70 ring-2 ring-beyonix-blue-light/18",
         )}
@@ -125,7 +140,7 @@ export function AccountMenu({
             <CircleUserRound className="size-5" />
           )}
         </span>
-        <span className="whitespace-nowrap text-sm font-medium uppercase text-white/86">
+        <span className="beyonix-account-menu-trigger-label whitespace-nowrap text-sm font-medium uppercase text-white/86">
           {userLabel.toUpperCase()}
         </span>
         <ChevronDown
@@ -136,7 +151,7 @@ export function AccountMenu({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
+        <div className="beyonix-account-menu-panel absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
           <Link
             href="/cuenta"
             onClick={() => setOpen(false)}
@@ -182,6 +197,20 @@ export function AccountMenu({
             <AccountMenuIcon Icon={Heart} filled />
             Favoritos
           </Link>
+          {onNotificationsClick && (
+            <button
+              type="button"
+              aria-label="Abrir notificaciones"
+              onClick={() => {
+                setOpen(false)
+                onNotificationsClick()
+              }}
+              className={cn(accountMenuItemClass, "w-full text-left")}
+            >
+              <AccountMenuIcon Icon={Bell} countBadge={unreadNotificationsCount} />
+              Notificaciones
+            </button>
+          )}
           <Link
             href="/cuenta?tab=seguridad"
             onClick={() => setOpen(false)}

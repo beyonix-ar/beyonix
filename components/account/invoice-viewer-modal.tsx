@@ -107,15 +107,15 @@ export function InvoiceViewerModal({
         className="absolute inset-0 cursor-pointer"
       />
 
-      <div className="relative z-10 flex h-[min(88vh,900px)] w-[min(920px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-beyonix-blue-500/40 bg-[#0B1118] shadow-[0_28px_90px_rgba(0,0,0,0.72)]">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
-          <h2 className="truncate text-sm font-bold text-white">{title}</h2>
+      <div className="beyonix-modal-shell relative z-10 flex h-[min(88vh,900px)] w-[min(920px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-beyonix-blue-500/40 bg-[#0B1118] shadow-[0_28px_90px_rgba(0,0,0,0.72)]">
+        <div className="beyonix-modal-header flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
+          <h2 className="beyonix-modal-title truncate text-sm font-bold text-white">{title}</h2>
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={handleDownload}
               disabled={status !== "ready" || !fileUrl}
-              className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-40"
+              className="beyonix-modal-action inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Download className="size-3.5" />
               Descargar factura
@@ -124,13 +124,16 @@ export function InvoiceViewerModal({
               type="button"
               aria-label="Cerrar"
               onClick={onClose}
-              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/8 hover:text-white"
+              className="beyonix-modal-close flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/8 hover:text-white"
             >
               <X className="size-4" />
             </button>
           </div>
         </div>
 
+        {/* El visor de PDF conserva su fondo oscuro fijo a propósito (es el
+            letterbox del documento final, no una superficie de la UI --
+            mismo criterio que el letterbox de video en el resto del sitio). */}
         <div className="relative min-h-0 flex-1 bg-[#1a1a1a]">
           {status === "loading" && (
             <div className="flex size-full flex-col items-center justify-center gap-2 text-white/60">

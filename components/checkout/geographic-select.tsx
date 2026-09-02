@@ -222,7 +222,7 @@ export function GeographicSelect({
   const dropdown = open && position && (
     <div
       ref={dropdownRef}
-      className="fixed z-[120] overflow-hidden rounded-lg border border-[rgba(148,197,255,0.24)] bg-[#080D14] font-heading shadow-[0_22px_60px_rgba(0,0,0,0.72)]"
+      className="beyonix-select-portal fixed z-[120] overflow-hidden rounded-lg border border-[rgba(148,197,255,0.24)] bg-[#080D14] font-heading shadow-[0_22px_60px_rgba(0,0,0,0.72)]"
       style={{
         left: position.left,
         top: position.top,

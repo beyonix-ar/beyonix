@@ -59,6 +59,9 @@
   --beyonix-text-primary: #f8fafc;
   --beyonix-text-secondary: rgba(248, 250, 252, 0.66);
   --beyonix-text-muted: rgba(248, 250, 252, 0.42);
+  --beyonix-cyan: #4A90B8;
+  --beyonix-sky: #8CC8F2;
+  --beyonix-blue-300: #7FA4C8;
   --beyonix-brand-primary: #112A43;
   --beyonix-brand-hover: #163552;
   --beyonix-brand-active: #1E4D7B;
@@ -166,7 +169,7 @@
   --color-beyonix-blue-900: #0B1B2B;
   --color-beyonix-blue-700: #112A43;
   --color-beyonix-blue-500: #1E4D7B;
-  --color-beyonix-blue-300: #7FA4C8;
+  --color-beyonix-blue-300: var(--beyonix-blue-300);
   --color-beyonix-gray-900: #101010;
   --color-beyonix-gray-700: #2A2A2A;
   --color-beyonix-gray-500: #737373;
@@ -174,8 +177,8 @@
   --color-beyonix-status-success: var(--beyonix-success);
   --color-beyonix-status-pending: var(--beyonix-warning);
   --color-beyonix-status-danger: var(--beyonix-danger);
-  --color-beyonix-cyan: #4A90B8;
-  --color-beyonix-sky: #8CC8F2;
+  --color-beyonix-cyan: var(--beyonix-cyan);
+  --color-beyonix-sky: var(--beyonix-sky);
   --color-beyonix-focus: #3b82f6;
   --color-beyonix-slider: #005E94;
   --color-beyonix-account: #0A1624;
@@ -208,6 +211,13 @@
   --account-danger-bg: rgba(239, 68, 68, 0.1);
   --account-danger-border: rgba(248, 113, 113, 0.28);
   --account-danger-text: #fecaca;
+  --account-info: #3b82f6;
+  --account-info-bg: rgba(59, 130, 246, 0.14);
+  --account-info-border: rgba(96, 165, 250, 0.35);
+  --account-info-text: #bfdbfe;
+  --account-neutral-bg: rgba(255, 255, 255, 0.06);
+  --account-neutral-border: rgba(255, 255, 255, 0.12);
+  --account-neutral-text: rgba(248, 250, 252, 0.7);
   --account-focus-ring: rgba(140, 200, 242, 0.26);
   --account-glow-subtle: 0 0 0 1px rgba(30, 111, 174, 0.28), 0 18px 46px rgba(0, 0, 0, 0.28);
   --color-whatsapp: #25D366;
@@ -581,6 +591,281 @@
   backdrop-filter: blur(12px);
 }
 
+/* =========================
+   BACKGROUNDS DECORATIVOS beyonix-* EN LIGHT (Home/Productos/Categorías)
+   =========================
+   Toda esta familia de @utility de arriba son glows/gradientes navy sobre
+   negro, pensados sólo para el storefront oscuro -- causa real de la
+   "mancha gris sucia" reportada en Light (no un efecto de compresión de
+   captura). Dark queda intacto (las reglas de arriba no se tocan); acá sólo
+   se resuelve la variante Light: fondos de página caen al token plano del
+   storefront, superficies/cards pasan a blanco con borde y sombra suaves. */
+html[data-account-theme="light"][data-account-scope] .beyonix-category-radial-bg,
+html[data-account-theme="light"][data-account-scope] .beyonix-category-page-bg,
+html[data-account-theme="light"][data-account-scope] .beyonix-store-page-bg,
+html[data-account-theme="light"][data-account-scope] .beyonix-categories-page-bg {
+  background: var(--account-background) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-hero-banner {
+  background: var(--account-background) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08) !important;
+}
+/* Envuelto en @layer utilities: el div de GlobalSearchBar recibe su fondo
+   oscuro vía prop `surfaceClassName` con el modificador `!` de Tailwind
+   (ej. `!bg-[#0A1420]/88`), que Tailwind v4 coloca en su layer "utilities".
+   Entre declaraciones !important, un !important SIN layer siempre pierde
+   contra uno CON layer (spec de cascade layers) sin importar especificidad
+   -- por eso esta regla debe vivir en el mismo layer "utilities" para
+   competir por especificidad normalmente. */
+@layer utilities {
+  html[data-account-theme="light"][data-account-scope] .beyonix-search-surface {
+    background: var(--account-input) !important;
+    border-color: var(--account-border) !important;
+  }
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-search-input {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-search-input::placeholder {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-search-button {
+  color: var(--account-accent) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-search-suggestions {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-search-suggestion-item {
+  color: var(--account-text-secondary) !important;
+  border-bottom-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-search-suggestion-item:hover {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-search-suggestion-icon {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-toolbar-bar {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-toolbar-select {
+  background: var(--account-input) !important;
+  border-color: var(--account-border) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-toolbar-dropdown {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-toolbar-dropdown-item {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-toolbar-dropdown-item:hover {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+
+/* =========================
+   CHECKOUT EN LIGHT
+   =========================
+   app/checkout/page.tsx concentra casi todo su estilo en un puñado de
+   constantes compartidas (checkoutPanelClassName, checkoutInputClassName,
+   etc., todas marcadas con checkout-panel/checkout-page/beyonix-checkout-input)
+   más cientos de utilidades Tailwind sueltas (text-white/NN, bg-[#0B1118],
+   bg-[#10151C], etc.) repetidas literal en cada línea de un archivo de
+   ~2700 líneas con lógica de pago intercalada. Editar cada línea sería alto
+   riesgo sobre esa lógica para un cambio puramente visual -- en cambio, se
+   mapean acá TODAS las variantes de opacidad/color realmente usadas en el
+   archivo, escapadas a selectores de atributo [class~="..."] y con el
+   scope acotado a .checkout-page (el <main> raíz del checkout). Dark queda
+   100% intacto (no se tocó una sola clase del archivo). Los acentos navy
+   fijos (#112A43, bg-beyonix-blue, "selected"/"active") se dejan igual que
+   el resto del sitio: son el mismo patrón de acento deliberado ya usado en
+   CTAs y tarjetas destacadas. */
+html[data-account-theme="light"][data-account-scope] .checkout-page {
+  background: var(--account-background) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-header {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#0B1118]"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#10151C]"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#070C12]"] {
+  background: var(--account-surface) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#111820]"] {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [class*="border-beyonix-blue-light"] {
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/75"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/78"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/82"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/88"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-foreground"] {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/55"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/56"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/58"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/60"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/62"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/65"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/68"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/70"] {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/36"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/40"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/44"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/45"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/46"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-white/50"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="text-muted-foreground"] {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-black/20"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-black/30"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-black/35"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-black/40"] {
+  background: rgba(15, 23, 42, 0.08) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input {
+  background: var(--account-input) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input::placeholder {
+  color: var(--account-text-muted) !important;
+}
+
+/* =========================
+   LOGIN / REGISTRO EN LIGHT
+   =========================
+   Mismo criterio que Checkout: app/login/page.tsx es una única "tarjeta"
+   dark con header propio. El panel decorativo IZQUIERDO (<aside>, sólo
+   marca/beneficios, sin datos que completar) se mantiene intencionalmente
+   oscuro -- mismo patrón que el hero de Home -- y por eso NUNCA recibe la
+   clase .login-light-scope. El header y el panel DERECHO (donde el usuario
+   realmente lee labels y completa el formulario) sí pasan a claro. */
+html[data-account-theme="light"][data-account-scope] .login-card {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope {
+  background: var(--account-surface) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope[class~="bg-black"] {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="bg-black/72"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="bg-black/24"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="bg-black/18"] {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class*="bg-white/["] {
+  background: var(--account-surface-raised) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class*="border-white/"] {
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/72"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/82"] {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/52"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/55"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/58"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/62"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/68"] {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/32"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/38"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/42"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/46"],
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/48"] {
+  color: var(--account-text-muted) !important;
+}
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-textarea {
+  color-scheme: dark;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-login-input,
+html[data-account-theme="light"][data-account-scope] .beyonix-login-input:focus,
+html[data-account-theme="light"][data-account-scope] .beyonix-login-textarea {
+  background: var(--account-input) !important;
+  background-color: var(--account-input) !important;
+  color: var(--account-text-primary) !important;
+  caret-color: var(--account-text-primary) !important;
+  color-scheme: light;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-login-input::placeholder,
+html[data-account-theme="light"][data-account-scope] .beyonix-login-textarea::placeholder {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-trigger {
+  background: var(--account-input) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-panel {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-placeholder {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-chevron {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-products-shell {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-filters-panel {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-product-card {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-benefit-item {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06) !important;
+  backdrop-filter: none !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-product-card-cta {
+  background: var(--account-surface-raised) !important;
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-product-card-cta:hover {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-product-card-mat {
+  background: var(--account-surface-raised) !important;
+  border-bottom-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-installment-badge {
+  background: var(--account-info-bg) !important;
+  border-color: var(--account-info-border) !important;
+  color: var(--account-info-text) !important;
+}
+
 @utility beyonix-metal-title {
   background:
     linear-gradient(180deg, #ffffff 0%, #dcecff 36%, #7b8795 76%, #ffffff 100%);
@@ -610,6 +895,13 @@
       rgba(0, 0, 0, 0) 74%
     ),
     #000000;
+}
+/* beyonix-home-bg en light: los glows navy + base #000000 de arriba están
+   pensados para el Home oscuro -- sobre el nuevo fondo claro se ven como
+   una mancha gris sucia (causa real reportada, no un efecto de compresión).
+   Se mantiene intacto en dark; en light cae al fondo plano del storefront. */
+html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
+  background: var(--account-background) !important;
 }
 
 @utility beyonix-category-banner-glass {
@@ -2121,8 +2413,14 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   border-color: rgba(92, 159, 215, 0.16) !important;
 }
 
-.beyonix-login-input,
-.beyonix-login-input:focus {
+/* Gateadas a html:not([data-account-theme="light"]...]): estas reglas viejas
+   forzaban el input siempre oscuro (autofill incluido) sin ningún scope de
+   tema -- con Light ya implementado en Login, cualquier override de esta
+   página necesitaba ganarles por especificidad en vez de reemplazarlas. Se
+   las acota a "no Light" (dark por default se comporta idéntico) y el bloque
+   Light real vive en la sección LOGIN EN LIGHT más abajo. */
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:focus {
   background: #0b1118 !important;
   background-color: #0b1118 !important;
   background-image: none !important;
@@ -2131,13 +2429,13 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   color-scheme: dark;
 }
 
-.beyonix-login-input:autofill,
-.beyonix-login-input:autofill:hover,
-.beyonix-login-input:autofill:focus,
-.beyonix-login-input:-webkit-autofill,
-.beyonix-login-input:-webkit-autofill:hover,
-.beyonix-login-input:-webkit-autofill:focus,
-.beyonix-login-input:-webkit-autofill:active {
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:autofill,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:autofill:hover,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:autofill:focus,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:-webkit-autofill,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:-webkit-autofill:hover,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:-webkit-autofill:focus,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:-webkit-autofill:active {
   background: #0b1118 !important;
   background-color: #0b1118 !important;
   background-image: none !important;
@@ -2169,8 +2467,11 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   }
 }
 
-.beyonix-checkout-input,
-.beyonix-checkout-input:focus {
+/* Gateadas a html:not([data-account-theme="light"]...]): ver comentario
+   arriba en .beyonix-login-input -- mismo problema, mismo fix. El bloque
+   Light real vive en la sección CHECKOUT EN LIGHT más abajo. */
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:focus {
   background: #10151C !important;
   background-color: #10151C !important;
   background-image: none !important;
@@ -2179,13 +2480,13 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   color-scheme: dark;
 }
 
-.beyonix-checkout-input:autofill,
-.beyonix-checkout-input:autofill:hover,
-.beyonix-checkout-input:autofill:focus,
-.beyonix-checkout-input:-webkit-autofill,
-.beyonix-checkout-input:-webkit-autofill:hover,
-.beyonix-checkout-input:-webkit-autofill:focus,
-.beyonix-checkout-input:-webkit-autofill:active {
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:autofill,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:autofill:hover,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:autofill:focus,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:-webkit-autofill,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:-webkit-autofill:hover,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:-webkit-autofill:focus,
+html:not([data-account-theme="light"][data-account-scope]) .beyonix-checkout-input:-webkit-autofill:active {
   background: #10151C !important;
   background-color: #10151C !important;
   background-image: none !important;
@@ -2197,15 +2498,15 @@ body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   transition: background-color 9999s ease-out 0s !important;
 }
 
-.checkout-panel {
+html:not([data-account-theme="light"][data-account-scope]) .checkout-panel {
   background: #0B1118 !important;
   background-color: #0B1118 !important;
   border-color: rgba(110, 168, 255, 0.18) !important;
   background-image: none !important;
 }
 
-body > div.relative.z-10 section.checkout-panel.checkout-form-panel,
-section.checkout-panel.checkout-form-panel {
+html:not([data-account-theme="light"][data-account-scope]) body > div.relative.z-10 section.checkout-panel.checkout-form-panel,
+html:not([data-account-theme="light"][data-account-scope]) section.checkout-panel.checkout-form-panel {
   background: #070c12 !important;
   background-color: #070c12 !important;
   background-image: none !important;
@@ -2245,8 +2546,14 @@ section.checkout-panel.checkout-form-panel::after {
 }
 
 
-.checkout-subpanel,
-.checkout-note {
+/* Gateadas a "no Light": igual que .checkout-panel más arriba, estos
+   fondos planos (sin !important) perdían contra Tailwind en dark por
+   especificidad de todos modos, pero en Light tapaban directamente el tinte
+   semántico rojo/ámbar de CheckoutNotice (bg-red-500/10, bg-amber-300/..)
+   con un navy sólido -- .checkout-page [class~="bg-[#10151C]"] ya cubre el
+   tono "info" (el único que realmente usa ese literal) en Light. */
+html:not([data-account-theme="light"][data-account-scope]) .checkout-subpanel,
+html:not([data-account-theme="light"][data-account-scope]) .checkout-note {
   background-color: #10151C;
   border-color: rgba(110, 168, 255, 0.16);
 }
@@ -3241,8 +3548,8 @@ body.product-modal-open .category-hero {
 }
 
 .customer-claim-followup-shell {
-  background: #070C12 !important;
-  background-color: #070C12 !important;
+  background: var(--account-surface) !important;
+  background-color: var(--account-surface) !important;
   background-image: none !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
@@ -3253,15 +3560,15 @@ body.product-modal-open .category-hero {
 }
 
 .customer-cancellation-success-card {
-  background: #001526 !important;
-  background-color: #001526 !important;
+  background: var(--account-surface-raised) !important;
+  background-color: var(--account-surface-raised) !important;
   background-image: none !important;
   opacity: 1 !important;
 }
 
 .customer-claim-followup-shell::before {
-  background: #070C12 !important;
-  background-color: #070C12 !important;
+  background: var(--account-surface) !important;
+  background-color: var(--account-surface) !important;
   background-image: none !important;
   border-radius: inherit;
   content: "";
@@ -3276,16 +3583,16 @@ body.product-modal-open .category-hero {
 .customer-claim-experience > div.claim-form-shell,
 section.claim-form-shell,
 div.claim-form-shell {
-  background: #0b1118 !important;
-  background-color: #0b1118 !important;
+  background: var(--account-surface) !important;
+  background-color: var(--account-surface) !important;
   background-image: none !important;
-  border: 1px solid #18334d !important;
+  border: 1px solid var(--account-border-subtle) !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   background-clip: border-box !important;
   box-sizing: border-box;
-  box-shadow: inset 0 0 0 9999px #0b1118 !important;
+  box-shadow: inset 0 0 0 9999px var(--account-surface) !important;
   isolation: isolate;
   overflow: hidden;
   position: relative;
@@ -3296,8 +3603,8 @@ div.claim-form-shell {
 }
 
 .customer-credit-master-surface {
-  background: #101010 !important;
-  background-color: #101010 !important;
+  background: var(--account-surface) !important;
+  background-color: var(--account-surface) !important;
   background-image: none !important;
   isolation: isolate;
 }
@@ -3309,31 +3616,31 @@ body > div.relative.z-10 section.customer-credit-topup-surface {
 }
 
 section.customer-credit-info-blue {
-  background: #142b3a !important;
-  background-color: #142b3a !important;
+  background: var(--account-info-bg) !important;
+  background-color: var(--account-info-bg) !important;
   background-image: none !important;
-  border: 1px solid rgba(89, 169, 222, 0.42) !important;
+  border: 1px solid var(--account-info-border) !important;
   box-shadow:
     inset 0 0 0 1px rgba(89, 169, 222, 0.06),
     0 0 18px rgba(34, 117, 171, 0.07) !important;
 }
 
 section.customer-credit-info-warning {
-  background: #292311 !important;
-  background-color: #292311 !important;
+  background: var(--account-warning-bg) !important;
+  background-color: var(--account-warning-bg) !important;
   background-image: none !important;
-  border: 1px solid rgba(224, 183, 63, 0.4) !important;
+  border: 1px solid var(--account-warning-border) !important;
   box-shadow:
     inset 0 0 0 1px rgba(224, 183, 63, 0.05),
     0 0 18px rgba(190, 139, 24, 0.06) !important;
 }
 
 section.customer-credit-info-blue > svg {
-  color: #8acdf5 !important;
+  color: var(--account-info-text) !important;
 }
 
 section.customer-credit-info-warning > svg {
-  color: #f0cd68 !important;
+  color: var(--account-warning-text) !important;
 }
 
 .customer-credit-timeline-title {
@@ -3374,8 +3681,8 @@ div.claim-form-shell::after {
 }
 
 .customer-claim-solid-form-panel {
-  background: #111820 !important;
-  background-color: #111820 !important;
+  background: var(--account-surface-raised) !important;
+  background-color: var(--account-surface-raised) !important;
   background-image: none !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
@@ -3571,25 +3878,25 @@ div.claim-form-shell::after {
 .order-detail-solid-surface > div > header,
 .order-detail-solid-surface > div > div.grid > div > section,
 .order-detail-solid-surface > div > div.grid > aside > section {
-  background: #0b1118 !important;
-  background-color: #0b1118 !important;
+  background: var(--account-surface-raised) !important;
+  background-color: var(--account-surface-raised) !important;
   background-image: none !important;
-  border-color: #18334d !important;
+  border-color: var(--account-border-subtle) !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  box-shadow: inset 0 0 0 9999px #0b1118;
+  box-shadow: inset 0 0 0 9999px var(--account-surface-raised);
 }
 
 .order-detail-components-shell {
-  background: #111418 !important;
-  background-color: #111418 !important;
+  background: var(--account-surface-raised) !important;
+  background-color: var(--account-surface-raised) !important;
   background-image: none !important;
-  border: 1px solid #18334d !important;
+  border: 1px solid var(--account-border-subtle) !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  box-shadow: inset 0 0 0 9999px #111418;
+  box-shadow: inset 0 0 0 9999px var(--account-surface-raised);
 }
 
 @media (min-width: 1024px) and (max-height: 1100px) {
@@ -10319,6 +10626,637 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p)[class*="
 html[data-admin-theme="light"] .beyonix-admin-main :where(div, section, article, details, label, form, button).bg-black,
 html[data-admin-theme="light"] .admin-portal-scope :where(div, section, article, details, label, form, button).bg-black {
   background-color: #ffffff !important;
+}
+
+/* =========================
+   PANEL CLIENTE (/cuenta) -- LIGHT MODE
+   =========================
+   Mismo mecanismo que el Admin: los tokens --account-* (declarados en
+   @theme inline, arriba, con valores oscuros por default) se redeclaran acá
+   con valores claros, pero sólo dentro de
+   html[data-account-theme="light"][data-account-scope]. data-account-scope
+   se activa vía JS (ver context/account-theme-context.tsx) sólo en rutas
+   /cuenta -- el resto de la tienda pública y el Admin no se ven afectados.
+   Al vivir en <html> (nunca en una clase de un <div> anidado), este scope
+   también alcanza correctamente contenido "portaled" a document.body
+   (drawer del carrito, modales), que de otro modo quedaría fuera de
+   cualquier wrapper del árbol de React. Todo el código de /cuenta -- y el
+   header/dropdown/notificaciones/carrito compartidos -- que ya consume
+   var(--account-*) resuelve automáticamente al valor claro. Paleta
+   alineada a la del Admin light (mismo azul marino, mismo gris azulado de
+   fondo, mismos semánticos success/warning/danger) para consistencia
+   visual entre paneles. */
+html[data-account-theme="light"][data-account-scope] body {
+  /* body trae bg-background (token shadcn oscuro, --background,
+     completamente ajeno al sistema --account-*) fijo vía @layer base --
+     sin esto, cualquier área de /cuenta que no declare su propio fondo
+     explícito (bg-[var(--account-*)]) queda negra debajo, aunque <html>
+     ya esté pintado claro. */
+  background: var(--account-background) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-shooting-stars-background {
+  /* Fondo decorativo fijo (estrellas + radial-gradients sobre negro,
+     position:fixed, z-index:0, cubre todo el viewport) pensado para el
+     storefront oscuro -- sin ocultarlo, se ve detrás de cualquier texto
+     de /cuenta que no tenga su propia superficie clara encima (ej. los
+     títulos de página), produciendo texto oscuro sobre fondo oscuro. */
+  opacity: 0 !important;
+}
+html[data-account-theme="light"][data-account-scope] {
+  /* Tokens --beyonix-* (storefront público: Home, Productos, Categorías,
+     PDP, Checkout) -- mismo mecanismo y mismos valores que ya usa el light
+     de Admin para estos mismos nombres (ver bloque .beyonix-admin-shell
+     más abajo), reutilizados acá para consistencia visual entre Admin y
+     storefront. Todo componente que ya consume estos tokens vía utilidades
+     Tailwind (bg-beyonix-surface, text-beyonix-cyan, border-beyonix-blue-
+     light, etc. -- ver components/beyonix-ui.tsx) se vuelve claro
+     automáticamente sin tocar su JSX; sólo los literales fijos (text-white,
+     text-white/NN, hex directos) necesitan conversión aparte, componente
+     por componente. */
+  --beyonix-page-background: #eef1f5;
+  --beyonix-surface-base: #ffffff;
+  --beyonix-surface-raised: #f7f9fb;
+  --beyonix-surface-interactive: #f1f4f8;
+  --beyonix-surface-muted: #eef1f5;
+  --beyonix-border-subtle: rgba(30, 58, 95, 0.15);
+  --beyonix-border-default: rgba(30, 58, 95, 0.24);
+  --beyonix-border-interactive: rgba(30, 58, 95, 0.34);
+  --beyonix-border-active: rgba(30, 58, 95, 0.5);
+  --beyonix-text-primary: #0f172a;
+  --beyonix-text-secondary: rgba(15, 23, 42, 0.66);
+  --beyonix-text-muted: rgba(15, 23, 42, 0.6);
+  /* text-beyonix-cyan/text-beyonix-sky compilaban a un literal fijo
+     (#4A90B8/#8CC8F2) porque @theme inline los declaraba sin indirección a
+     una variable de :root -- por eso nunca heredaban Light pese a que el
+     comentario de arriba asume que sí. Se agregó esa indirección
+     (--beyonix-cyan/--beyonix-sky en :root) y acá se sobreescribe con un
+     azul con contraste real sobre fondo claro (el "celeste casi invisible"
+     reportado en TECNOLOGÍA, FILTRAR PRODUCTOS, RANGO DE PRECIO, Mostrando
+     N resultados, Ver opciones de financiación, etc). */
+  --beyonix-cyan: #1E5F8C;
+  --beyonix-sky: #256A9E;
+  --beyonix-blue-300: #3E6E96;
+  --beyonix-brand-primary: #112a43;
+  --beyonix-brand-hover: #183b5e;
+  --beyonix-brand-active: #1e4d7b;
+  /* Tokens shadcn genéricos (--foreground, --muted-foreground) usados por
+     Button/Input/Separator y por texto suelto (text-foreground,
+     text-muted-foreground) fuera de los sistemas --account- y --beyonix- --
+     nunca tenían valor Light (quedaban oklch(0.98)/oklch(0.75), blanco casi
+     puro), causando texto invisible en checkout/carrito/footer. */
+  --foreground: #0f172a;
+  --muted-foreground: rgba(15, 23, 42, 0.6);
+  /* Mismo motivo que .beyonix-admin-shell (ver sección "Tokens --beyonix-*"
+     más arriba): el shell no fija color de texto por className propio, pero
+     los <main> internos sí traen "text-white" fijo -- se corrigen ahí (ver
+     favoritos-client.tsx / cuenta-client.tsx) y este color acá cubre
+     cualquier nodo sin clase de color propia. */
+  color: var(--account-text-primary);
+  --account-background: #eef1f5;
+  --account-surface: #ffffff;
+  --account-surface-raised: #f7f9fb;
+  --account-surface-hover: #eef3f8;
+  --account-surface-highlight: #e5f0fa;
+  --account-input: #ffffff;
+  --account-border: rgba(30, 58, 95, 0.22);
+  --account-border-subtle: rgba(30, 58, 95, 0.14);
+  --account-border-strong: rgba(30, 58, 95, 0.42);
+  --account-border-highlight: rgba(30, 77, 123, 0.55);
+  --account-text-primary: #0f172a;
+  --account-text-secondary: rgba(15, 23, 42, 0.66);
+  --account-text-muted: rgba(15, 23, 42, 0.55);
+  --account-accent: #112a43;
+  --account-accent-hover: #183b5e;
+  --account-accent-soft: #1e4d7b;
+  --account-success: #059669;
+  --account-success-bg: rgba(16, 185, 129, 0.12);
+  --account-success-border: rgba(5, 150, 105, 0.35);
+  --account-success-text: #065f46;
+  --account-warning: #b45309;
+  --account-warning-bg: rgba(245, 158, 11, 0.14);
+  --account-warning-border: rgba(217, 119, 6, 0.38);
+  --account-warning-text: #92400e;
+  --account-danger: #dc2626;
+  --account-danger-bg: rgba(239, 68, 68, 0.1);
+  --account-danger-border: rgba(220, 38, 38, 0.32);
+  --account-danger-text: #991b1b;
+  --account-info: #1e40af;
+  --account-info-bg: rgba(59, 130, 246, 0.1);
+  --account-info-border: rgba(37, 99, 235, 0.4);
+  --account-info-text: #1e40af;
+  --account-neutral-bg: rgba(30, 58, 95, 0.08);
+  --account-neutral-border: rgba(30, 58, 95, 0.24);
+  --account-neutral-text: rgba(15, 23, 42, 0.66);
+  --account-focus-ring: rgba(30, 77, 123, 0.28);
+  --account-glow-subtle: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
+  background: #eef1f5;
+}
+
+/* =========================
+   CHROME COMPARTIDO (header, dropdown de usuario, notificaciones, carrito)
+   =========================
+   Estos componentes se renderizan en TODAS las páginas (LayoutShell y
+   CartWrapper los montan como hermanos de {children}, y el drawer del
+   carrito además usa createPortal(..., document.body)) -- por eso su
+   scope depende de data-account-scope en <html> (ver
+   context/account-theme-context.tsx), no de un wrapper en el árbol de
+   React. Mismo mecanismo de !important que el resto de esta sección: las
+   clases de Tailwind quedan intactas en el JSX (dark sigue exactamente
+   igual en cualquier página fuera de /cuenta, o dentro de /cuenta en modo
+   oscuro), esto sólo pisa el color/fondo cuando estamos realmente en claro
+   Y en scope de cuenta. */
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border-subtle) !important;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-logo {
+  color: var(--account-accent) !important;
+  text-shadow: none !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-logo:hover {
+  color: var(--account-accent-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-nav-link {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-nav-link:hover,
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-nav-link.text-white {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-panel {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-panel-item {
+  color: var(--account-text-primary) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-panel-item:hover {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-cart-button {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-cart-total {
+  color: var(--account-text-primary) !important;
+}
+
+/* Menú de usuario (components/account-menu.tsx) */
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-trigger {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-trigger-label {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel a,
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel button {
+  color: var(--account-text-primary) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel a:hover,
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel button:hover {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel button[aria-label="Cerrar sesión"]:hover {
+  color: var(--account-danger) !important;
+}
+
+/* Notificaciones (components/customer-notifications-bell.tsx) */
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-trigger {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-panel {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-panel-header {
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-panel-title,
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-item-title {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-panel-muted,
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-item-body {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-item {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-item:hover {
+  background: var(--account-surface-hover) !important;
+}
+
+/* Carrito -- el drawer se porta a document.body, por eso depende
+   exclusivamente del atributo en <html>, nunca de un wrapper del árbol de
+   React (ver comentario en AccountThemeProvider). */
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer {
+  background: var(--account-surface) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-header {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-title {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-close {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-empty {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item {
+  background: var(--account-surface-raised) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-title {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-meta {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn:disabled {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-delete {
+  background: var(--account-danger-bg) !important;
+  border-color: var(--account-danger-border) !important;
+  color: var(--account-danger) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-delete:hover {
+  background: var(--account-danger-border) !important;
+  color: var(--account-danger-text) !important;
+}
+/* Badges de stock (carrito): mismo criterio semántico que el resto del
+   sitio (--account-warning/danger/success-*), reemplazando el ámbar/rojo/
+   verde translúcido de Tailwind que sobre fondo claro quedaba crema casi
+   invisible ("ÚLTIMAS UNIDADES"). */
+html[data-account-theme="light"][data-account-scope] .beyonix-stock-badge-warning,
+html[data-account-theme="light"][data-account-scope] .beyonix-stock-badge-warning-text {
+  background: var(--account-warning-bg) !important;
+  border-color: var(--account-warning-border) !important;
+  color: var(--account-warning-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-stock-badge-danger {
+  background: var(--account-danger-bg) !important;
+  border-color: var(--account-danger-border) !important;
+  color: var(--account-danger-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-stock-badge-success {
+  background: var(--account-success-bg) !important;
+  border-color: var(--account-success-border) !important;
+  color: var(--account-success-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-success-text {
+  color: var(--account-success-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-progress-track {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-muted-icon {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-category-pill {
+  background: var(--account-info-bg) !important;
+  color: var(--account-info-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-category-pill-icon {
+  color: var(--account-info-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-discount-badge,
+html[data-account-theme="light"][data-account-scope] .beyonix-offer-badge {
+  background: var(--account-success-bg) !important;
+  border-color: var(--account-success-border) !important;
+  color: var(--account-success-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-notice-info {
+  background: var(--account-info-bg) !important;
+  border-color: var(--account-info-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-notice-info-text {
+  color: var(--account-info-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-secondary-btn {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-secondary-btn:hover {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-summary {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-summary-box {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-notice {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border) !important;
+}
+
+/* =========================
+   CAMPANA DE NOTIFICACIONES DEL HEADER (variant="storefront" en
+   admin-notification-bell.tsx / admin-notifications-popover.tsx)
+   =========================
+   Este componente (AdminNotificationBell) se reutiliza fuera del panel
+   admin -- SiteHeader y el badge flotante de checkout -- para usuarios
+   internos. Su styling original (admin-ds-*) sólo tiene override de light
+   pensado para dentro de .beyonix-admin-shell/data-admin-theme; fuera de
+   ahí (acá) se queda con el valor base fijo sin importar el toggle del
+   sitio, y por eso quedaba roto en ambos temas ("blanco sobre blanco" en
+   light, "sigue con fondo claro" en dark porque nunca reaccionaba al
+   toggle real). Estas clases son independientes de admin-ds-*: el panel
+   admin real no se toca. Base = dark (comportamiento por default en
+   cualquier página); el override de abajo sólo activa en
+   data-account-theme="light" + data-account-scope, igual que el resto del
+   chrome (header/carrito/dropdown). */
+.beyonix-header-notif-trigger,
+.beyonix-header-notif-bell {
+  background-color: #0d1117;
+  border-color: #303846;
+  color: #ffffff;
+}
+.beyonix-header-notif-trigger:hover,
+.beyonix-header-notif-bell:hover {
+  background-color: #141820;
+  border-color: rgba(140, 200, 242, 0.55);
+}
+.beyonix-header-notif-badge {
+  background-color: #ef4444;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  color: #ffffff;
+}
+.beyonix-header-notif-position {
+  max-width: calc(100vw - 2rem);
+}
+.beyonix-header-notif-panel {
+  background: linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98));
+  border: 1px solid rgba(92, 159, 215, 0.28);
+  border-radius: 1rem;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.62);
+}
+.beyonix-header-notif-panel-header {
+  border-bottom: 1px solid rgba(92, 159, 215, 0.18);
+}
+.beyonix-header-notif-title {
+  color: #ffffff;
+}
+.beyonix-header-notif-body {
+  color: rgba(255, 255, 255, 0.65);
+}
+.beyonix-header-notif-muted {
+  color: rgba(255, 255, 255, 0.5);
+}
+.beyonix-header-notif-card {
+  background-color: rgba(11, 22, 34, 0.96);
+  border-color: rgba(92, 159, 215, 0.18);
+}
+.beyonix-header-notif-card:hover {
+  background-color: rgba(17, 42, 67, 0.28);
+  border-color: rgba(140, 200, 242, 0.42);
+}
+.beyonix-header-notif-icon {
+  background-color: rgba(17, 42, 67, 0.2);
+  border-color: rgba(92, 159, 215, 0.22);
+  color: rgba(255, 255, 255, 0.7);
+}
+.beyonix-header-notif-dot {
+  background-color: #8cc8f2;
+  box-shadow: 0 0 10px rgba(140, 200, 242, 0.38);
+}
+
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-trigger,
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-bell {
+  background-color: var(--account-surface-raised);
+  border-color: var(--account-border);
+  color: var(--account-text-primary);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-trigger:hover,
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-bell:hover {
+  background-color: var(--account-surface-hover);
+  border-color: var(--account-border-strong);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-badge {
+  background-color: #dc2626;
+  border-color: #ffffff;
+  color: #ffffff;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-panel {
+  background: var(--account-surface);
+  border: 1px solid var(--account-border);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-panel-header {
+  border-bottom-color: var(--account-border-subtle);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-title {
+  color: var(--account-text-primary);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-body {
+  color: var(--account-text-secondary);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-muted {
+  color: var(--account-text-secondary);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-card {
+  background-color: var(--account-surface-raised);
+  border-color: var(--account-border-subtle);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-card:hover {
+  background-color: var(--account-surface-hover);
+  border-color: var(--account-border-strong);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-icon {
+  background-color: var(--account-surface-hover);
+  border-color: var(--account-border);
+  color: var(--account-text-secondary);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-dot {
+  background-color: var(--account-accent-soft);
+  box-shadow: 0 0 8px rgba(30, 77, 123, 0.35);
+}
+
+/* =========================
+   MODALES PORTALED DEL STOREFRONT (Quick View, factura, stock insuficiente)
+   =========================
+   Todos usan createPortal(..., document.body) -- alcanzados correctamente
+   por data-account-scope en <html> (ver AccountThemeProvider). Clases
+   compartidas para no duplicar la misma regla por modal; el dark queda
+   con el hex original de cada JSX (sin cambios), esto sólo pisa en light. */
+/* Checkboxes personalizados de filtros (Estado comercial, Categorías): sin
+   estado light el box quedaba bg-black/20 casi invisible sobre blanco, y el
+   check era azul oscuro sobre azul oscuro (bajo contraste real entre sí). */
+html[data-account-theme="light"][data-account-scope] .beyonix-checkbox-box {
+  background: var(--account-input) !important;
+  border-color: var(--account-border-strong) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-checkbox-box-checked {
+  background: var(--account-accent) !important;
+  border-color: var(--account-accent) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-checkbox-check {
+  color: #ffffff !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-checkbox-label {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-color-swatch {
+  --tw-ring-offset-color: var(--account-surface) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-price-pill {
+  background: var(--account-surface-hover) !important;
+  border-color: var(--account-border) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-slider-track {
+  background: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-pdp-page {
+  background: var(--account-background) !important;
+}
+/* Legales (Términos/Privacidad/Arrepentimiento/Devoluciones): igual técnica
+   que Checkout -- cientos de text-white/NN sueltos en contenido legal largo,
+   arriesgado tocar línea por línea. Se escapan por nivel de opacidad,
+   acotado a #contenido (todo menos el hero, que se mantiene oscuro a
+   propósito como el resto de los heroes del sitio). */
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/72"] {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/58"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/60"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/62"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/64"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/66"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/68"] {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/42"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/44"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/46"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/48"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/50"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/52"] {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido [class*="bg-black/"] {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-success-note {
+  background: var(--account-success-bg) !important;
+  border-color: var(--account-success-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-success-note-icon {
+  color: var(--account-success) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-success-note-text {
+  color: var(--account-success-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-shell {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-header {
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-title {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-body {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-muted {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-action {
+  border-color: var(--account-border) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-action:hover {
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-close {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border) !important;
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-close:hover {
+  background: var(--account-surface-hover) !important;
+  border-color: var(--account-border-strong) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-list {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-modal-list > * + * {
+  border-color: var(--account-border-subtle) !important;
+}
+
+/* Select portaled de checkout (GeographicSelect -- provincia/localidad).
+   Sólo el panel portaled: el trigger (.beyonix-checkout-input) se comparte
+   con el resto de los inputs de checkout, fuera de alcance de esta pasada
+   -- ver informe. [role="option"]/input como hooks evita taguear cada
+   elemento a mano. */
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal > div {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal [role="option"] {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal [class*="101923"] {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal [class*="sticky"] {
+  background: var(--account-surface) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal input {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal input::placeholder {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal svg[class*="text-white"] {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal [role="option"]:hover,
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal [role="option"][aria-selected="true"] {
+  color: var(--account-text-primary) !important;
+  background: var(--account-surface-hover) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal input {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-select-portal input::placeholder {
+  color: var(--account-text-muted) !important;
 }
 
 

@@ -157,8 +157,8 @@ function TextareaField({
 
 function AuthTransitionScreen({ message }: { message: string }) {
   return (
-    <div className="flex min-h-screen flex-col text-white">
-      <header className="relative z-20 border-b border-beyonix-blue-light/16 bg-black/72 backdrop-blur-xl">
+    <div className="login-page flex min-h-screen flex-col text-white">
+      <header className="login-light-scope relative z-20 border-b border-beyonix-blue-light/16 bg-black/72 backdrop-blur-xl">
         <nav className="container mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-center lg:h-18">
             <BeyonixLogoLink />
@@ -167,7 +167,7 @@ function AuthTransitionScreen({ message }: { message: string }) {
       </header>
 
       <main className="relative flex flex-1 items-center justify-center px-4">
-        <div className="relative z-10 flex w-full max-w-sm flex-col items-center rounded-3xl border border-beyonix-blue-light/24 bg-[linear-gradient(145deg,rgba(12,19,28,0.96),rgba(7,12,18,0.98))] px-6 py-9 text-center shadow-[0_28px_80px_rgba(0,0,0,0.48)]">
+        <div className="login-light-scope login-card relative z-10 flex w-full max-w-sm flex-col items-center rounded-3xl border border-beyonix-blue-light/24 bg-[linear-gradient(145deg,rgba(12,19,28,0.96),rgba(7,12,18,0.98))] px-6 py-9 text-center shadow-[0_28px_80px_rgba(0,0,0,0.48)]">
           <span className="flex size-12 items-center justify-center rounded-2xl border border-beyonix-sky/24 bg-beyonix-blue/42 text-beyonix-sky">
             <Loader2 className="size-6 animate-spin" />
           </span>
@@ -739,8 +739,8 @@ function LoginContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col text-white">
-      <header className="relative z-20 border-b border-beyonix-blue-light/16 bg-black/72 backdrop-blur-xl">
+    <div className="login-page flex min-h-screen flex-col text-white">
+      <header className="login-light-scope relative z-20 border-b border-beyonix-blue-light/16 bg-black/72 backdrop-blur-xl">
         <nav className="container mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-between lg:h-18">
             <BeyonixLogoLink />
@@ -768,7 +768,7 @@ function LoginContent() {
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_24%,rgba(30,77,123,0.2),transparent_33%),radial-gradient(circle_at_84%_72%,rgba(74,144,184,0.08),transparent_28%)]"
         />
         {confirmationEmail ? (
-          <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-beyonix-blue-light/26 bg-[linear-gradient(145deg,rgba(12,22,33,0.98),rgba(5,10,16,0.98))] p-6 text-center shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:p-9">
+          <div className="login-light-scope login-card relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-beyonix-blue-light/26 bg-[linear-gradient(145deg,rgba(12,22,33,0.98),rgba(5,10,16,0.98))] p-6 text-center shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:p-9">
             <div className="pointer-events-none absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-beyonix-sky/70 to-transparent" />
             <div className="mx-auto flex size-16 items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-500/10 shadow-[0_0_28px_rgba(52,211,153,0.1)]">
               <CheckCircle2 className="size-10 text-emerald-400" strokeWidth={2.25} />
@@ -788,7 +788,7 @@ function LoginContent() {
 
             {!confirmationValidated && (
               <>
-                <p className="mt-2 rounded-xl border border-white/8 bg-black px-4 py-3 text-sm font-semibold text-white">
+                <p className="login-light-scope mt-2 rounded-xl border border-white/8 bg-black px-4 py-3 text-sm font-semibold text-white">
                   {confirmationEmail}
                 </p>
 
@@ -863,7 +863,7 @@ function LoginContent() {
           </div>
         ) : (
           <div
-            className={`relative z-10 grid min-w-0 w-full overflow-hidden rounded-3xl border border-beyonix-blue-light/28 bg-[#070c12]/96 shadow-[0_34px_100px_rgba(0,0,0,0.56)] backdrop-blur-xl ${
+            className={`login-card relative z-10 grid min-w-0 w-full overflow-hidden rounded-3xl border border-beyonix-blue-light/28 bg-[#070c12]/96 shadow-[0_34px_100px_rgba(0,0,0,0.56)] backdrop-blur-xl ${
               mode === "login"
                 ? "max-w-6xl lg:grid-cols-[minmax(20rem,0.9fr)_minmax(28rem,1.1fr)]"
                 : "max-w-6xl lg:grid-cols-[22rem_minmax(0,1fr)]"
@@ -965,7 +965,7 @@ function LoginContent() {
             </aside>
 
             <section
-              className={`relative min-w-0 bg-[linear-gradient(145deg,rgba(12,19,28,0.98),rgba(7,12,18,0.99))] ${
+              className={`login-light-scope relative min-w-0 bg-[linear-gradient(145deg,rgba(12,19,28,0.98),rgba(7,12,18,0.99))] ${
                 mode === "login"
                   ? "p-5 sm:p-8 lg:p-10 xl:p-12"
                   : "p-4 sm:p-5 lg:px-6 lg:py-4"

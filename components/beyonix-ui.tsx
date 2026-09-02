@@ -10,21 +10,23 @@ const beyonixButtonVariants = cva(
     variants: {
       variant: {
         primary:
+          // text-white fijo (no un token): el fondo es el azul de marca,
+          // que se mantiene oscuro en ambos temas.
           "border border-beyonix-blue-light/48 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 active:bg-beyonix-blue",
         secondary:
           "border border-beyonix-blue-light/24 bg-beyonix-blue/20 text-white hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/32 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
         outline: cn(
-          "bg-beyonix-surface text-white/84 hover:bg-beyonix-surface-2 hover:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
+          "bg-beyonix-surface text-[var(--beyonix-text-secondary)] hover:bg-beyonix-surface-2 hover:text-[var(--beyonix-text-primary)] focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
           beyonixInteractiveOutline
         ),
         ghost:
-          "border border-transparent bg-transparent text-white/72 hover:bg-white/6 hover:text-white focus-visible:border-beyonix-blue-light focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
+          "border border-transparent bg-transparent text-[var(--beyonix-text-secondary)] hover:bg-[var(--beyonix-surface-interactive)] hover:text-[var(--beyonix-text-primary)] focus-visible:border-beyonix-blue-light focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
         destructive:
           "border border-red-400/34 bg-red-500/12 text-red-200 hover:border-red-400/70 hover:bg-red-500/18 hover:text-red-100 focus-visible:ring-2 focus-visible:ring-red-400/25",
         success:
           "border border-emerald-400/34 bg-emerald-500/14 text-emerald-100 hover:border-emerald-300/60 hover:bg-emerald-500/22 focus-visible:ring-2 focus-visible:ring-emerald-300/25",
         icon: cn(
-          "bg-beyonix-blue/14 text-white/80 hover:bg-beyonix-blue/24 hover:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
+          "bg-beyonix-surface-2 text-[var(--beyonix-text-secondary)] hover:bg-beyonix-surface-3 hover:text-[var(--beyonix-text-primary)] focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
           beyonixInteractiveOutline
         ),
         link:
@@ -69,28 +71,31 @@ export function BeyonixButton({
 }
 
 const beyonixCardVariants = cva(
-  "rounded-2xl border text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_44px_rgba(0,0,0,0.22)]",
+  "rounded-2xl border shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_18px_44px_rgba(0,0,0,0.22)]",
   {
     variants: {
       variant: {
-        default: "border-beyonix-blue-light/18 bg-beyonix-surface",
+        default: "border-beyonix-blue-light/18 bg-beyonix-surface text-[var(--beyonix-text-primary)]",
         elevated:
-          "border-beyonix-blue-light/22 bg-beyonix-surface-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_24px_60px_rgba(0,0,0,0.32)]",
+          "border-beyonix-blue-light/22 bg-beyonix-surface-2 text-[var(--beyonix-text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_24px_60px_rgba(0,0,0,0.32)]",
         interactive: cn(
-          "bg-beyonix-surface hover:bg-beyonix-surface-2 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_22px_52px_rgba(0,0,0,0.34)]",
+          "bg-beyonix-surface text-[var(--beyonix-text-primary)] hover:bg-beyonix-surface-2 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_22px_52px_rgba(0,0,0,0.34)]",
           beyonixInteractiveOutline
         ),
+        // selected/highlighted usan fondo de acento azul marino fijo (no
+        // token) -- el texto blanco se mantiene fijo a propósito, el fondo
+        // no se aclara en light.
         selected:
-          "border-beyonix-blue-light/70 bg-beyonix-blue/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_0_1px_rgba(30,77,123,0.28),0_22px_52px_rgba(0,0,0,0.34)]",
+          "border-beyonix-blue-light/70 bg-beyonix-blue/28 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_0_1px_rgba(30,77,123,0.28),0_22px_52px_rgba(0,0,0,0.34)]",
         highlighted:
-          "border-beyonix-blue-light/36 bg-[linear-gradient(145deg,rgba(17,42,67,0.48),rgba(10,10,10,0.98))]",
-        muted: "border-white/8 bg-beyonix-surface/72",
-        "empty-state": "border-beyonix-blue-light/18 bg-beyonix-surface-2",
+          "border-beyonix-blue-light/36 bg-[linear-gradient(145deg,rgba(17,42,67,0.48),rgba(10,10,10,0.98))] text-white",
+        muted: "border-beyonix-blue-light/12 bg-beyonix-surface/72 text-[var(--beyonix-text-secondary)]",
+        "empty-state": "border-beyonix-blue-light/18 bg-beyonix-surface-2 text-[var(--beyonix-text-primary)]",
         product: cn(
-          "bg-beyonix-surface transition-transform duration-200 hover:-translate-y-0.5 hover:bg-beyonix-surface-2",
+          "bg-beyonix-surface text-[var(--beyonix-text-primary)] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-beyonix-surface-2",
           beyonixInteractiveOutline
         ),
-        information: "border-beyonix-blue-light/16 bg-beyonix-surface",
+        information: "border-beyonix-blue-light/16 bg-beyonix-surface text-[var(--beyonix-text-primary)]",
       },
     },
     defaultVariants: {
@@ -121,13 +126,15 @@ export function BeyonixCard({
 }
 
 const beyonixIconBoxVariants = cva(
-  "inline-flex shrink-0 items-center justify-center rounded-xl border text-white transition-colors duration-200",
+  "inline-flex shrink-0 items-center justify-center rounded-xl border transition-colors duration-200",
   {
     variants: {
       variant: {
-        default: "border-beyonix-blue-light/28 bg-beyonix-blue/26",
+        // bg fijo de acento azul marino (no token) -- texto blanco a
+        // propósito, no se aclara en light.
+        default: "border-beyonix-blue-light/28 bg-beyonix-blue text-white",
         strong: "border-beyonix-blue-light/42 bg-beyonix-blue text-white",
-        muted: "border-white/10 bg-white/5 text-white/76",
+        muted: "border-beyonix-blue-light/14 bg-beyonix-surface-2 text-[var(--beyonix-text-secondary)]",
         success: "border-emerald-400/30 bg-emerald-500/14 text-emerald-100",
         danger: "border-red-400/30 bg-red-500/12 text-red-100",
       },
@@ -188,17 +195,17 @@ export function BeyonixSectionHeader({
     >
       <div className={cn(align === "center" && "mx-auto")}>
         {eyebrow && (
-          <p className="mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+          <p className="beyonix-modal-action mb-2 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
             {eyebrow}
           </p>
         )}
-        <h2 className="max-w-3xl text-[clamp(1.85rem,2.8vw,3rem)] font-bold tracking-tight text-white">
+        <h2 className="beyonix-modal-title max-w-3xl text-[clamp(1.85rem,2.8vw,3rem)] font-bold tracking-tight text-white">
           {title}
         </h2>
         {description && (
           <p
             className={cn(
-              "mt-3 max-w-2xl text-sm leading-6 text-white/60",
+              "beyonix-modal-body mt-3 max-w-2xl text-sm leading-6 text-white/60",
               align === "center" && "mx-auto"
             )}
           >
@@ -238,9 +245,9 @@ export function BeyonixEmptyState({
           {icon}
         </BeyonixIconBox>
       )}
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
+      <h3 className="beyonix-modal-title text-lg font-semibold text-white">{title}</h3>
       {description && (
-        <p className="mt-2 max-w-md text-sm leading-6 text-white/58">
+        <p className="beyonix-modal-body mt-2 max-w-md text-sm leading-6 text-white/58">
           {description}
         </p>
       )}

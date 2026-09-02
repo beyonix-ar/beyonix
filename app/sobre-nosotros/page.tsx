@@ -37,7 +37,7 @@ const highlights = [
 export default function SobreNosotrosPage() {
   return (
     <main className="min-h-screen bg-black text-white">
-      <section className="relative overflow-hidden bg-beyonix-page">
+      <section id="contenido" className="relative overflow-hidden bg-beyonix-page">
         <div className="mx-auto max-w-6xl px-6 pt-20 pb-14 lg:px-8 lg:pt-24 lg:pb-20">
           <div className="grid gap-8 lg:grid-cols-[1.04fr_0.96fr] lg:items-end">
             <div>

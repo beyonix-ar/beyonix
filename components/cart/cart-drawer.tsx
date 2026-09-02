@@ -127,13 +127,13 @@ export function CartDrawer({
       <div
         ref={drawerRef}
         className={cn(
-          "absolute right-0 top-0 z-10 flex h-full w-[min(560px,100vw)] flex-col border-l border-beyonix-blue-light/60 bg-beyonix-surface font-heading shadow-xl shadow-beyonix-blue",
+          "beyonix-cart-drawer absolute right-0 top-0 z-10 flex h-full w-[min(560px,100vw)] flex-col border-l border-beyonix-blue-light/60 bg-beyonix-surface font-heading shadow-xl shadow-beyonix-blue",
           "animate-in slide-in-from-right duration-300"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 bg-black p-4">
-          <h2 className="text-18px font-semibold tracking-wide text-white">
+        <div className="beyonix-cart-drawer-header flex items-center justify-between border-b border-white/10 bg-black p-4">
+          <h2 className="beyonix-cart-drawer-title text-18px font-semibold tracking-wide text-white">
             Tu carrito ({items.length})
           </h2>
 
@@ -143,7 +143,7 @@ export function CartDrawer({
             title="Cerrar carrito"
             variant="ghost"
             size="icon"
-            className="rounded-full bg-black text-white hover:bg-neutral-900"
+            className="beyonix-cart-drawer-close rounded-full bg-black text-white hover:bg-neutral-900"
             onClick={onClose}
           >
             <X className="size-5" />
@@ -152,7 +152,7 @@ export function CartDrawer({
 
         {/* Empty */}
         {items.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center text-white/70">
+          <div className="beyonix-cart-drawer-empty flex flex-1 items-center justify-center text-white/70">
             Tu carrito está vacío
           </div>
         ) : (
