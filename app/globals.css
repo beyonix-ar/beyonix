@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -71,6 +71,15 @@
   --beyonix-danger: #ef4444;
   --beyonix-shadow-subtle: 0 18px 44px rgba(0, 0, 0, 0.22);
   --beyonix-glow-subtle: 0 0 0 1px rgba(30, 77, 123, 0.22);
+  /* Superficie propia del botón secundario (variant="outline" en
+     beyonix-ui.tsx) -- default = idéntico a --beyonix-surface-base (dark
+     no cambia), pisado sólo en el scope Light de storefront más abajo. Sin
+     esto, el botón reusaba directamente --beyonix-surface (blanco puro en
+     Light), perdiéndose contra fondos claros ("Ver categorías", "Ver
+     todas", etc). */
+  --beyonix-btn-secondary-bg: var(--beyonix-surface-base);
+  --beyonix-btn-secondary-bg-hover: var(--beyonix-surface-raised);
+  --beyonix-btn-secondary-bg-active: var(--beyonix-surface-interactive);
   --font-body: var(--font-montserrat), "Montserrat", sans-serif;
   --font-heading: var(--font-montserrat), "Montserrat", sans-serif;
 }
@@ -744,7 +753,86 @@ html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input {
   color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input::placeholder {
+  color: var(--account-text-placeholder) !important;
+}
+/* GeographicSelect (Provincia/Localidad/Código postal) es un <button>, no un
+   <input> -- no tiene ::placeholder real; el texto placeholder es su propio
+   contenido con la clase text-white/36 aplicada condicionalmente (ver
+   geographic-select.tsx). Selector más específico que
+   .checkout-page [class~="text-white/36"] (bucket general de "muted") para
+   que gane sobre esa regla y no quede tan claro como metadata/disabled. */
+html[data-account-theme="light"][data-account-scope] .checkout-page .beyonix-checkout-input[class~="text-white/36"] {
+  color: var(--account-text-placeholder) !important;
+}
+
+/* Stepper de Checkout (1 Quién recibe / 2 Envío / 3 Pago): en Dark los tres
+   estados ya se leen bien (fondos fijos + texto blanco nativo). En Light,
+   el remap genérico de arriba ([class~="text-white/NN"] por bucket de
+   opacidad) no sabe que "activo" vive sobre navy sólido fijo ni que
+   "completado"/"pendiente" necesitan su propia superficie clara -- termina
+   forzando texto navy sobre el mismo navy (activo) o un gris demasiado
+   claro (pendiente). Un solo bloque acá, por estado, en vez de tocar cada
+   paso -- Dark no se toca (cero reglas fuera de data-account-theme=light). */
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-step-active[class~="text-white"] {
+  color: #ffffff !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-step-complete {
+  background: #dbe1e8 !important;
+  border-color: var(--account-border) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-step-complete .checkout-step-icon {
+  background: var(--account-accent) !important;
+  border-color: var(--account-accent) !important;
+  color: #ffffff !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-step-pending[class~="text-white/44"] {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-step-pending .checkout-step-icon {
   color: var(--account-text-muted) !important;
+}
+
+/* Selectable cards de Checkout: checkoutOptionClassName/
+   checkoutOptionSelectedClassName (app/checkout/page.tsx) es la primitive
+   compartida entre método de envío ("Envío a domicilio"/"Retiro en
+   sucursal"), método de pago ("Mercado Pago"/"Transferencia") y el picker
+   de cuotas -- un solo fix acá cubre los tres, sin duplicar por sección.
+   .checkout-option-selected fija bg-[#112A43] (navy sólido fijo, no se
+   aclara en Light) pero el título/precio/ícono siguen siendo text-white
+   literal, que el remap general de arriba lee como "sobre fondo claro" y
+   fuerza a navy -- de ahí "navy sobre navy". Acá se restituye texto claro
+   sólo dentro de una card ya seleccionada. */
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-option-selected[class~="text-white"],
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-option-selected [class~="text-white"] {
+  color: #ffffff !important;
+}
+/* Descripción del método de pago ("Pagá con saldo en Mercado Pago...");
+   text-white/45 cae en el bucket "muted" (gris oscuro semitransparente,
+   pensado para fondo claro) -- sobre el navy sólido de la card
+   seleccionada queda casi invisible. Gris claro legible en su lugar. */
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-option-selected [class~="text-white/45"] {
+  color: rgba(248, 250, 252, 0.7) !important;
+}
+/* Ícono camión de "Envío a domicilio" (y el check de confirmación al lado)
+   cuando la opción está seleccionada: usan text-beyonix-sky, calibrado más
+   oscuro (#256A9E) para leerse sobre fondo claro -- pero acá el ícono vive
+   dentro de la card ya seleccionada (fondo navy sólido fijo), donde ese
+   azul oscurecido pierde contraste. Blanco puro, sólo dentro de
+   .checkout-option-selected -- unselected sigue exactamente igual que
+   "Entrega en sucursal" (texto/ícono oscuro sobre superficie clara, sin
+   tocar). */
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-option-selected [class~="text-beyonix-sky"] {
+  color: #ffffff !important;
+}
+/* Cards de Instagram/Email en "¿Necesitás ayuda con tu pago?": el hover
+   nativo (hover:bg-white/[0.05], pensado para Dark) es imperceptible sobre
+   el fondo ya claro de estas cards en Light -- mismo criterio que
+   .beyonix-cart-secondary-btn:hover más arriba (gris apenas marcado +
+   borde reforzado). */
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-help-link:hover {
+  background: var(--account-surface-hover) !important;
+  border-color: var(--account-border-strong) !important;
 }
 
 /* =========================
@@ -796,6 +884,51 @@ html[data-account-theme="light"][data-account-scope] .login-light-scope [class~=
 html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="text-white/48"] {
   color: var(--account-text-muted) !important;
 }
+/* Excepción: botón "Crear cuenta" en su estado emerald ("listo para
+   enviar") usa fondo sólido fijo (verde, no se aclara en Light) +
+   text-white -- la regla de arriba remapea ese text-white a navy por
+   defecto, dejando navy-sobre-emerald. El caso bg-beyonix-blue (pestañas
+   activas, botón "Ingresar") ya lo cubre la regla global
+   [class~="bg-beyonix-blue"][class~="text-white"] (ver sección "REGLA
+   GLOBAL NAVY + BLANCO" más abajo). */
+html[data-account-theme="light"][data-account-scope] .login-light-scope [class~="bg-emerald-600"][class~="text-white"] {
+  color: #ffffff !important;
+}
+
+/* "Experiencia BEYONIX" (aside decorativo, ver comentario de arriba: NUNCA
+   recibe .login-light-scope porque el fondo se mantiene oscuro a
+   propósito) -- text-beyonix-sky se recalibra oscuro para fondos claros en
+   Light (ver --beyonix-sky en :root), quedando de bajo contraste sobre este
+   panel que sigue oscuro. Blanco fijo; el ícono Sparkles no trae color
+   propio, hereda por currentColor. */
+html[data-account-theme="light"][data-account-scope] .beyonix-login-hero-badge {
+  color: #ffffff !important;
+}
+
+/* "Acceso seguro. Tus datos están protegidos." -- el bucket "muted"
+   genérico de .login-light-scope (--account-text-muted, ~55% negro) queda
+   más claro que el ~85% pedido para esta nota puntual. Selector repite
+   .login-light-scope para superar la especificidad de esa regla genérica;
+   el ícono ShieldCheck mantiene su propio text-beyonix-cyan, sin cambios. */
+html[data-account-theme="light"][data-account-scope] .login-light-scope .beyonix-login-secure-note {
+  color: #262626 !important;
+}
+
+/* "¿Olvidaste tu contraseña?" -- hover:text-white es un literal fijo
+   pensado para el fondo oscuro; ninguna regla genérica de .login-light-
+   scope lo alcanza porque el token de clase es "hover:text-white" (con
+   los dos puntos), un string distinto de "text-white" -- el selector de
+   atributo [class~="text-white"] exige coincidencia exacta de un token
+   completo y nunca matchea variantes con prefijo. Sobre el formulario ya
+   claro, quedaba blanco sobre blanco. Azul BEYONIX oscuro en su lugar; el
+   estado normal (text-beyonix-sky) ya tiene buen contraste en Light y no
+   se toca. */
+html[data-account-theme="light"][data-account-scope] .beyonix-login-forgot-link:hover,
+html[data-account-theme="light"][data-account-scope] .beyonix-login-forgot-link:focus-visible,
+html[data-account-theme="light"][data-account-scope] .beyonix-login-forgot-link:active {
+  color: #112a43 !important;
+}
+
 html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input,
 html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-textarea {
   color-scheme: dark;
@@ -811,7 +944,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-login-textarea {
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-login-input::placeholder,
 html[data-account-theme="light"][data-account-scope] .beyonix-login-textarea::placeholder {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-placeholder) !important;
 }
 html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-trigger {
   background: var(--account-input) !important;
@@ -822,7 +955,7 @@ html[data-account-theme="light"][data-account-scope] .login-light-scope .login-s
   border-color: var(--account-border) !important;
 }
 html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-placeholder {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-placeholder) !important;
 }
 html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-chevron {
   color: var(--account-text-muted) !important;
@@ -1627,7 +1760,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
     transform 100ms ease;
 }
 
-/* Los pasos −/+ igualan la altura del input de cantidad para que la fila quede alineada. */
+/* Los pasos -/+ igualan la altura del input de cantidad para que la fila quede alineada. */
 .stock-adjustment-modal .stock-adjustment-step-btn {
   height: 3rem !important;
   width: 3rem !important;
@@ -1669,7 +1802,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
   }
 }
 
-/* Cancelar y selector −/+: acciones secundarias con tinte celeste consistente. */
+/* Cancelar y selector -/+: acciones secundarias con tinte celeste consistente. */
 .stock-adjustment-modal .admin-ds-button-secondary {
   background-color: rgba(140, 200, 242, 0.1) !important;
   border: 1px solid rgba(140, 200, 242, 0.36) !important;
@@ -4884,7 +5017,7 @@ div.claim-form-shell::after {
 
 .admin-resolution-question:not(:first-child) .admin-resolution-question-label::before {
   color: rgba(140, 200, 242, 0.55);
-  content: "→ ";
+  content: "? ";
 }
 
 .admin-resolution-segmented {
@@ -8232,7 +8365,7 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) sv
 
 
 /* ============================================================
-   ADMIN — TEMA CLARO (light)
+   ADMIN  TEMA CLARO (light)
    ============================================================
    Todo lo de acá abajo está scopeado bajo html[data-admin-theme="light"]
    .beyonix-admin-shell (o clases exclusivamente admin como .admin-ds-*,
@@ -10683,7 +10816,10 @@ html[data-account-theme="light"][data-account-scope] {
   --beyonix-border-interactive: rgba(30, 58, 95, 0.34);
   --beyonix-border-active: rgba(30, 58, 95, 0.5);
   --beyonix-text-primary: #0f172a;
-  --beyonix-text-secondary: rgba(15, 23, 42, 0.66);
+  /* Segunda pasada visual (ver --muted-foreground más arriba, mismo
+     motivo): antes rgba(15,23,42,0.66) resolvía demasiado claro sobre
+     fondos claros/blancos. Sólido para no depender del fondo detrás. */
+  --beyonix-text-secondary: #3f4652;
   --beyonix-text-muted: rgba(15, 23, 42, 0.6);
   /* text-beyonix-cyan/text-beyonix-sky compilaban a un literal fijo
      (#4A90B8/#8CC8F2) porque @theme inline los declaraba sin indirección a
@@ -10699,13 +10835,41 @@ html[data-account-theme="light"][data-account-scope] {
   --beyonix-brand-primary: #112a43;
   --beyonix-brand-hover: #183b5e;
   --beyonix-brand-active: #1e4d7b;
+  /* --beyonix-success/warning/danger (usados por text-beyonix-status-*,
+     bg-beyonix-status-*, border-beyonix-status-*) nunca tenían override de
+     Light en el storefront -- sólo el admin lo tenía (ver
+     .beyonix-admin-shell .text-beyonix-status-success más abajo). El verde
+     esmeralda/ámbar/rojo pensados para fondo oscuro quedan demasiado claros
+     sobre superficies claras (TOTAL A TRANSFERIR, timeline de estado del
+     pedido, etc). Mismos valores ya calibrados que --account-success/
+     warning/danger para consistencia entre los dos sistemas semánticos. */
+  --beyonix-success: #059669;
+  --beyonix-warning: #b45309;
+  --beyonix-danger: #dc2626;
+  /* Botón secundario (BeyonixButton variant="outline"): gris 15-20%
+     (no blanco puro, no --beyonix-surface) para que "Ver categorías",
+     "Ver todas", "Ver todos los productos", etc. no se pierdan contra el
+     resto de superficies claras del sitio. */
+  --beyonix-btn-secondary-bg: #e6e8eb;
+  --beyonix-btn-secondary-bg-hover: #d7dbe0;
+  --beyonix-btn-secondary-bg-active: #c9ced5;
   /* Tokens shadcn genéricos (--foreground, --muted-foreground) usados por
      Button/Input/Separator y por texto suelto (text-foreground,
      text-muted-foreground) fuera de los sistemas --account- y --beyonix- --
      nunca tenían valor Light (quedaban oklch(0.98)/oklch(0.75), blanco casi
      puro), causando texto invisible en checkout/carrito/footer. */
   --foreground: #0f172a;
-  --muted-foreground: rgba(15, 23, 42, 0.6);
+  /* Antes rgba(15,23,42,0.6): sobre fondos claros (blanco/off-white) esa
+     alpha resolvía a un gris ~rgb(111,116,127), bastante más claro que el
+     "70-75% negro visual" pedido para texto descriptivo (subtítulo del
+     Hero, descripciones de secciones, cards, footer, etc. -- todo lo que
+     consume --beyonix-text-secondary/--account-text-secondary/
+     --muted-foreground vía beyonix-modal-body/beyonix-cart-item-meta/
+     text-muted-foreground). Un sólido evita además que el contraste varíe
+     según el fondo detrás (blanco de card vs. off-white de body vs. gris
+     de surface-hover). --beyonix-text-muted/--account-text-muted (tier de
+     metadata) quedan intactos a propósito. */
+  --muted-foreground: #3f4652;
   /* Mismo motivo que .beyonix-admin-shell (ver sección "Tokens --beyonix-*"
      más arriba): el shell no fija color de texto por className propio, pero
      los <main> internos sí traen "text-white" fijo -- se corrigen ahí (ver
@@ -10723,8 +10887,16 @@ html[data-account-theme="light"][data-account-scope] {
   --account-border-strong: rgba(30, 58, 95, 0.42);
   --account-border-highlight: rgba(30, 77, 123, 0.55);
   --account-text-primary: #0f172a;
-  --account-text-secondary: rgba(15, 23, 42, 0.66);
+  /* Mismo ajuste que --beyonix-text-secondary (ver comentario arriba). */
+  --account-text-secondary: #3f4652;
   --account-text-muted: rgba(15, 23, 42, 0.55);
+  /* Placeholder de inputs/selects de Checkout (Provincia/Localidad/Código
+     postal, y cualquier <input> con .beyonix-checkout-input): tono propio,
+     más oscuro que --account-text-muted (~52% negro, calibrado para
+     metadata/disabled) y más claro que --account-text-secondary -- el
+     placeholder necesita distinguirse de un valor ya seleccionado sin
+     confundirse con texto disabled. ~60% negro. */
+  --account-text-placeholder: #5b6472;
   --account-accent: #112a43;
   --account-accent-hover: #183b5e;
   --account-accent-soft: #1e4d7b;
@@ -10750,6 +10922,78 @@ html[data-account-theme="light"][data-account-scope] {
   --account-focus-ring: rgba(30, 77, 123, 0.28);
   --account-glow-subtle: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
   background: #eef1f5;
+}
+
+/* border-white/10 es el borde "sutil" por default de beyonixInteractiveOutline
+   (lib/utils.ts) y de decenas de componentes sueltos del storefront -- sobre
+   fondo oscuro es apenas visible a propósito, pero sobre las superficies
+   claras de Light queda directamente invisible (botones/cards que "flotan"
+   sin borde). Un solo catch-all acá evita tener que tocar cada componente. */
+html[data-account-theme="light"][data-account-scope] .border-white\/10 {
+  border-color: var(--account-border) !important;
+}
+
+/* =========================
+   REGLA GLOBAL: NAVY SÓLIDO + TEXTO BLANCO
+   =========================
+   Antes había 3 copias de esta misma excepción (#contenido, .checkout-page,
+   .login-light-scope) porque cada área del sitio remapea text-white a navy
+   por su cuenta (buckets de opacidad, ver esas secciones) para su propio
+   contenido de fondo claro -- pero ningún remap distinguía el caso real
+   "este texto blanco vive sobre un fondo navy sólido fijo (bg-beyonix-blue,
+   el mismo #112A43 en cualquier tema)", así que el botón/CTA terminaba
+   navy-sobre-navy (ej. "Registrarse" del mini-header de Checkout).
+   En vez de seguir agregando una excepción por página/scope nueva, la
+   regla vive acá una sola vez, sin acotar a ningún contenedor: cualquier
+   elemento en Light con bg-beyonix-blue (sólido, no /NN) + text-white
+   conserva texto blanco siempre, en cualquier página actual o futura.
+   bg-beyonix-blue-700 (usado en checkout-status-layout.tsx / Éxito-Falla-
+   Pendiente de compra) es el mismo #112A43 bajo otro nombre de token --
+   mismo problema, misma regla. */
+html[data-account-theme="light"][data-account-scope] [class~="bg-beyonix-blue"][class~="text-white"],
+html[data-account-theme="light"][data-account-scope] [class~="bg-beyonix-blue-700"][class~="text-white"] {
+  color: #ffffff !important;
+}
+/* Mismo caso, con un ícono en vez de texto: bg-beyonix-blue-700 (navy) +
+   text-beyonix-blue-300 -- ese azul está calibrado para leerse sobre fondo
+   CLARO (ver --beyonix-blue-300 más abajo en el scope Light), no sobre el
+   navy sólido de su propio contenedor. */
+html[data-account-theme="light"][data-account-scope] [class~="bg-beyonix-blue-700"][class~="text-beyonix-blue-300"] {
+  color: #ffffff !important;
+}
+
+/* Card "highlighted" (BeyonixCard variant="highlighted" en beyonix-ui.tsx):
+   Producto destacado del Hero y la reseña verificada de Experiencias. El
+   fondo navy casi negro fijo del dark queda ilegible en Light -- se
+   reemplaza por un gris ~15-30% negro (nunca blanco puro ni negro), y el
+   texto interno (que ya usa beyonix-modal-title/body/muted, ver esos
+   componentes) resuelve solo a los tokens --account-text-*. */
+html[data-account-theme="light"][data-account-scope] .beyonix-card-highlighted {
+  background: linear-gradient(135deg, #e2e4e8 0%, #c2c6cc 100%) !important;
+  border-color: var(--account-border) !important;
+  color: var(--account-text-primary) !important;
+}
+/* "Producto destacado" del Hero: misma clase .beyonix-card-highlighted de
+   arriba (compartida con la reseña verificada de Experiencias), pero acá
+   se pide puntualmente reemplazar el degradado por un gris plano sólido
+   (~15% negro). Clase propia sólo en esta instancia (hero-section.tsx) para
+   no tocar la reseña, que sigue usando el degradado de la regla de arriba
+   sin cambios. Misma especificidad que esa regla -- gana por ir después en
+   el archivo. La zona de la imagen (bg-[#f8fafc] fijo, sin token) no se ve
+   afectada por este selector, que sólo pisa el fondo del BeyonixCard
+   exterior. */
+html[data-account-theme="light"][data-account-scope] .beyonix-featured-product-card {
+  background: #e1e6eb !important;
+}
+/* Textarea de "dejá tu experiencia" (dentro de la misma card highlighted):
+   fondo negro fijo, se ve como un recorte oscuro sobre la nueva superficie
+   clara de la card. */
+html[data-account-theme="light"][data-account-scope] .beyonix-review-textarea {
+  background: var(--account-input) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-review-textarea::placeholder {
+  color: var(--account-text-muted) !important;
 }
 
 /* =========================
@@ -10827,6 +11071,20 @@ html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-panel button[aria-label="Cerrar sesión"]:hover {
   color: var(--account-danger) !important;
+}
+/* Ícono de cada ítem del menú de usuario (Mi cuenta/Mi saldo/Mis datos/Mis
+   compras/Favoritos/Seguridad/Panel administrador/Cerrar sesión) --
+   AccountMenuIcon, un solo componente compartido, se usa también en el menú
+   mobile del header (fuera de .beyonix-account-menu-panel), por eso el
+   selector no depende de ese panel. El fondo original es un degradado
+   navy-casi-negro translúcido (pensado para superponerse sobre el fondo
+   oscuro fijo del panel en Dark) -- compuesto sobre el panel claro de
+   Light da un navy apagado/sucio que le resta legibilidad al ícono blanco
+   (ya correcto, sin cambios acá). Un navy sólido y consistente en su
+   lugar. */
+html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-icon {
+  background: var(--account-accent) !important;
+  border-color: var(--account-accent) !important;
 }
 
 /* Notificaciones (components/customer-notifications-bell.tsx) */
@@ -10959,7 +11217,12 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-secondary-btn
   color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-cart-secondary-btn:hover {
-  background: var(--account-surface-hover) !important;
+  /* --account-surface-hover (usado en dropdowns/menus) es casi idéntico a
+     --account-surface-raised (reposo) -- el cambio pasaba desapercibido en
+     este botón ("no transmite interacción"). Un gris apenas más marcado +
+     borde reforzado, sin competir con "Finalizar compra". */
+  background: #e3e8ef !important;
+  border-color: var(--account-border-strong) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-cart-summary {
   background: var(--account-surface) !important;
@@ -11134,23 +11397,28 @@ html[data-account-theme="light"][data-account-scope] .beyonix-slider-track {
 html[data-account-theme="light"][data-account-scope] .beyonix-pdp-page {
   background: var(--account-background) !important;
 }
-/* Legales (Términos/Privacidad/Arrepentimiento/Devoluciones): igual técnica
-   que Checkout -- cientos de text-white/NN sueltos en contenido legal largo,
-   arriesgado tocar línea por línea. Se escapan por nivel de opacidad,
-   acotado a #contenido (todo menos el hero, que se mantiene oscuro a
-   propósito como el resto de los heroes del sitio). */
+/* Legales (Términos/Privacidad/Arrepentimiento/Devoluciones) + Sobre BEYONIX
+   (también usa id="contenido"): igual técnica que Checkout -- cientos de
+   text-white/NN sueltos en contenido largo, arriesgado tocar línea por
+   línea. Se escapan por nivel de opacidad, acotado a #contenido (todo menos
+   el hero, que se mantiene oscuro a propósito como el resto de los heroes
+   del sitio). */
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white"],
-html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/72"] {
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/72"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/74"] {
   color: var(--account-text-primary) !important;
 }
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/55"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/58"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/60"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/62"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/64"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/66"],
-html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/68"] {
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/68"],
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/78"] {
   color: var(--account-text-secondary) !important;
 }
+html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/24"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/42"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/44"],
 html[data-account-theme="light"][data-account-scope] #contenido [class~="text-white/46"],
@@ -11162,6 +11430,234 @@ html[data-account-theme="light"][data-account-scope] #contenido [class~="text-wh
 html[data-account-theme="light"][data-account-scope] #contenido [class*="bg-black/"] {
   background: var(--account-surface-hover) !important;
 }
+/* Excepciones dentro de #contenido: superficies intencionalmente oscuras
+   (Sobre BEYONIX tiene un bloque de texto con fondo navy casi negro fijo,
+   .beyonix-dark-card) y CTAs con fondo navy sólido fijo (bg-beyonix-blue
+   sin opacidad, "Ver productos") -- ninguna de las dos se aclara en Light,
+   por lo que el texto blanco de arriba NO debe remapearse a navy acá (si
+   lo hiciera, quedaría navy-sobre-navy/negro, tan invisible como el bug
+   original). Mayor especificidad que las reglas [class~="text-white..."]
+   de arriba, así gana pese a que ambas usan !important. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card[class~="text-white"],
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card [class~="text-white"] {
+  color: #f8fafc !important;
+}
+/* text-white/60 es un valor que en el resto de #contenido cae en el bucket
+   "secundario" (gris oscuro sobre fondo claro) -- pero acá, dentro de un
+   .beyonix-dark-card, el fondo sigue siendo oscuro, así que necesita
+   quedarse claro (gris claro legible, no gris oscuro). Mismo razonamiento
+   para text-beyonix-cyan: el token ya está calibrado más oscuro para leerse
+   sobre fondos claros (ver --beyonix-cyan en el scope Light más arriba),
+   lo que lo vuelve de bajo contraste sobre una superficie oscura fija como
+   esta -- se restituye el celeste original de dark. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card [class~="text-white/60"] {
+  color: rgba(248, 250, 252, 0.7) !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card [class~="text-beyonix-cyan"] {
+  color: #4a90b8 !important;
+}
+
+/* =========================
+   SOBRE BEYONIX -- pulido puntual (badge, bloque principal, eyebrow, card
+   "Cercanía real", CTA "Ver productos")
+   =========================
+   Clases dedicadas a esta página en vez de reusar .beyonix-dark-card /
+   selectores genéricos de #contenido: terminos/page.tsx también usa
+   .beyonix-dark-card (con el criterio opuesto -- se mantiene oscuro en
+   Light) y otras páginas legales comparten el mismo id="contenido", así
+   que cualquier ajuste acá queda acotado a Sobre BEYONIX sin tocarlas. */
+
+/* Badge "Nuestra historia": bg-beyonix-blue/18 sobre el fondo claro del
+   body resolvía a un tinte casi imperceptible. Gris medio sólido (ni
+   blanco puro ni gris oscuro pesado) + texto/ícono blanco, como pide el
+   punto 1 -- el celeste calibrado de Light pierde contraste acá porque el
+   fondo deja de ser oscuro. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-history-badge {
+  background: #6b7280 !important;
+  border-color: var(--account-border) !important;
+  color: #ffffff !important;
+}
+
+/* Bloque principal ("BEYONIX nace como..."): a diferencia de
+   .beyonix-dark-card (Términos), acá el pedido es lo opuesto -- superficie
+   clara (~10-15% negro) con texto oscuro, en vez de mantener el navy casi
+   negro fijo. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-story-card {
+  background: #e4e7eb !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-story-card [class~="text-white/76"] {
+  color: var(--account-text-secondary) !important;
+}
+/* El párrafo destacado final (text-white exacto, sin opacidad) ya cae en
+   la regla genérica #contenido [class~="text-white"] de arriba una vez que
+   este artículo deja de tener .beyonix-dark-card -- queda navy oscuro sin
+   necesidad de una regla propia acá. */
+
+/* Eyebrow "Lo que nos mueve": text-white/42 cae en el bucket "muted" de la
+   regla genérica de #contenido (gris ~55% negro) -- se pide acá negro/navy
+   fuerte en vez de ese gris, sin tocar el resto del bucket. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-eyebrow {
+  color: #0b1b2b !important;
+}
+
+/* Card "Cercanía real": mismo tratamiento visual que "Desde Rosario"
+   (border-beyonix-blue-light/18 + bg-beyonix-blue/18), calculado acá en
+   vez de copiar esas clases directo en el JSX -- así el ajuste queda
+   acotado a Light sin alterar el fondo bg-beyonix-surface que ya es
+   correcto en Dark. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-closeness-card {
+  background: rgba(17, 42, 67, 0.18) !important;
+  border-color: rgba(30, 77, 123, 0.18) !important;
+}
+
+/* CTA "Ver productos": bg-beyonix-blue (navy sólido) + text-white ya tiene
+   una excepción global (ver "REGLA GLOBAL: NAVY SÓLIDO + TEXTO BLANCO" más
+   arriba), pero #contenido [class~="text-white"] gana por especificidad
+   (trae #contenido, un id) y lo pisa a navy-sobre-navy. Se repite la
+   excepción acá, acotada a esta CTA puntual (no a todo #contenido, para no
+   afectar otros botones navy de otras páginas que compartan el mismo id). */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-cta[class~="text-white"] {
+  color: #ffffff !important;
+}
+
+/* Icon tiles de "Desde Rosario", "Cercanía real" y las 3 trust cards
+   (Elegimos con criterio/Comprás con tranquilidad/Pensamos en los
+   detalles): tratamiento unificado en Light -- fondo blanco 100%, borde
+   1px navy BEYONIX sólido (sin tinte/opacidad), ícono navy sólido. Antes
+   cada tile traía su propio fondo/borde tintado (bg-black/24,
+   bg-beyonix-blue/24, bg-beyonix-blue/30, distintas opacidades de borde) --
+   se pisan todos acá con el mismo valor sólido en vez de calibrar cada uno
+   por separado. El selector al svg cubre el ícono aunque traiga su propia
+   clase text-beyonix-cyan (que fija color directo en el elemento, sin
+   heredar del contenedor). */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-icon-tile {
+  background: #ffffff !important;
+  border-color: #112a43 !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-icon-tile,
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-icon-tile svg {
+  color: #112a43 !important;
+}
+
+/* Texto descriptivo de esas mismas cards (highlights de "Cercanía real" +
+   descripción de las 3 trust cards): el bucket "secundario" genérico de
+   #contenido (--account-text-secondary, ~70-75% negro) queda un escalón
+   más claro que el ~80-85% pedido para estas cards puntuales. Clase
+   compartida para no repetir el valor por card. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-card-text {
+  color: #374151 !important;
+}
+
+/* =========================
+   TÉRMINOS Y CONDICIONES -- pulido de contraste en Light
+   =========================
+   LegalSection/KeyFact/etc. (app/terminos/page.tsx) son componentes locales
+   de este archivo, no compartidos con otras páginas -- las clases de acá
+   quedan acotadas a Términos sin riesgo de afectar Privacidad/Devoluciones/
+   Contacto/Sobre BEYONIX, aunque compartan el mismo id="contenido". */
+
+/* Badge del hero ("Marco de compra BEYONIX"): el hero mantiene su fondo
+   oscuro fijo en ambos temas (gradiente radial con valores rgba directos,
+   no tokens), pero vive fuera de #contenido -- el token --beyonix-cyan sí
+   es global (se define en :root/html), así que en Light igual se recalibra
+   al azul oscuro pensado para fondos claros y queda ilegible sobre este
+   fondo que sigue oscuro a propósito. Se restituye el celeste original de
+   dark, mismo criterio que la excepción de .beyonix-dark-card más abajo. */
+html[data-account-theme="light"][data-account-scope] .beyonix-terms-hero-badge {
+  color: #4a90b8 !important;
+}
+
+/* Eyebrow "NN · ..." de cada una de las 14 secciones (LegalSection, un solo
+   componente reutilizado): traía /80 de opacidad sobre el celeste ya
+   calibrado de Light, quedando lavado. Un solo fix acá corrige las 14. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-eyebrow {
+  color: var(--beyonix-cyan) !important;
+}
+
+/* Índice lateral: hover:text-white (Tailwind, token distinto de text-white
+   sin variante) no lo alcanza la regla genérica de #contenido -- sobre el
+   hover:bg-beyonix-blue/22 (navy al 22% compuesto sobre la card blanca del
+   índice, resultando en un tinte claro) quedaba blanco sobre claro. El
+   número "01/02/..." tenía /55 de opacidad sobre el celeste calibrado,
+   quedando lavado igual que los eyebrows. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-index-link:hover {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-index-number {
+  color: var(--beyonix-cyan) !important;
+}
+
+/* Bloques destacados con acento azul ("Envío bonificado vigente", "Cargas
+   de saldo mediante Mercado Pago"): bg-beyonix-blue/10 y bg-[#0D2D43]/45
+   son navy tintado pensado para fondo oscuro -- sobre la superficie clara
+   de .beyonix-modal-shell quedan como un tinte apagado, "gris/azulado
+   demasiado fuerte" o demasiado apagado según el caso. Se reutiliza el
+   token semántico --account-info-* (ya calibrado para este mismo propósito
+   en el resto del sitio) en vez de un hex nuevo. El texto del cuerpo
+   (text-white/72, text-white/68) ya resuelve oscuro vía la regla genérica
+   de #contenido -- sólo el título en <strong> se refuerza a azul oscuro
+   BEYONIX explícito, como pide el punto 2. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-highlight {
+  background: var(--account-info-bg) !important;
+  border-color: var(--account-info-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-highlight strong {
+  color: var(--account-info-text) !important;
+}
+
+/* Cajas informativas neutras (tarjetas de contacto, métodos de pago,
+   avisos de arrepentimiento, links de normativa): todas comparten
+   bg-black/2X + border-white/8, un tinte oscuro pensado para el fondo
+   fijo-oscuro de estos bloques en dark -- sobre la superficie clara de
+   .beyonix-modal-shell se ve como un parche gris apagado ("disabled-
+   looking"). El texto interno ya resuelve oscuro vía la regla genérica de
+   #contenido (text-white exacto y los buckets /58, /62, /72), así que sólo
+   se corrige fondo/borde acá, reutilizando los tokens de superficie/borde
+   ya calibrados para el resto del sitio. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-neutral-box {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+/* El !important de arriba también taparía el hover:border-beyonix-blue-
+   light/NN que ya traía cada caja (mismo valor no-important, pierde contra
+   cualquier !important sin importar el estado) -- se restituye el hover
+   acá para no perder ese feedback existente. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-neutral-box:hover {
+  border-color: var(--account-border-strong) !important;
+}
+
+/* =========================
+   FOOTER -- contraste en Light (enlaces, headings, texto secundario)
+   =========================
+   footerLinkClass/withdrawalLinkClass (components/footer.tsx) usaban
+   .beyonix-modal-body, que en Light resuelve a --account-text-secondary
+   (~70-75% negro, pensado para texto descriptivo). Los enlaces piden un
+   escalón más oscuro (~85% negro) para diferenciarse de la descripción y
+   la dirección/envíos de al lado, que se quedan en un tier secundario
+   propio (ver .beyonix-footer-text más abajo) -- de ahí clases propias en
+   vez de tocar .beyonix-modal-body (compartida por modales/carrito/etc. en
+   todo el sitio). */
+html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-link {
+  color: rgba(15, 23, 42, 0.85) !important;
+}
+html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-link:hover,
+html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-link:focus-visible {
+  color: var(--account-text-primary) !important;
+}
+/* Títulos de columna (TIENDA/INFORMACIÓN/CONTACTO, FooterColumn): el
+   celeste calibrado de Light (--beyonix-cyan) queda legible pero no lo
+   suficientemente "fuerte" para un heading -- navy sólido en su lugar. */
+html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-heading {
+  color: #112a43 !important;
+}
+/* Descripción ("Conectados con tu comodidad") + ubicación/envíos: mismo
+   tier ~80% negro que .beyonix-about-card-text (Sobre BEYONIX), reutilizado
+   acá para consistencia entre ambas superficies. */
+html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-text {
+  color: #374151 !important;
+}
+
 html[data-account-theme="light"][data-account-scope] .beyonix-success-note {
   background: var(--account-success-bg) !important;
   border-color: var(--account-success-border) !important;
@@ -11258,31 +11754,3 @@ html[data-account-theme="light"][data-account-scope] .beyonix-select-portal inpu
 html[data-account-theme="light"][data-account-scope] .beyonix-select-portal input::placeholder {
   color: var(--account-text-muted) !important;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

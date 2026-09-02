@@ -1,8 +1,10 @@
 import * as React from "react"
+import Link from "next/link"
+import { User } from "lucide-react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { beyonixInteractiveOutline, cn } from "@/lib/utils"
+import { beyonixHoverBorder, beyonixInteractiveOutline, cn } from "@/lib/utils"
 
 const beyonixButtonVariants = cva(
   "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl font-heading text-sm font-semibold leading-none outline-none transition-all duration-200 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
@@ -16,7 +18,11 @@ const beyonixButtonVariants = cva(
         secondary:
           "border border-beyonix-blue-light/24 bg-beyonix-blue/20 text-white hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/32 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
         outline: cn(
-          "bg-beyonix-surface text-[var(--beyonix-text-secondary)] hover:bg-beyonix-surface-2 hover:text-[var(--beyonix-text-primary)] focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
+          // Superficie propia (--beyonix-btn-secondary-bg), no
+          // bg-beyonix-surface: ese token es blanco puro en Light y el
+          // botón se perdía contra el resto de superficies claras del
+          // sitio (Ver categorías, Ver todas, etc).
+          "bg-[var(--beyonix-btn-secondary-bg)] text-[var(--beyonix-text-secondary)] hover:bg-[var(--beyonix-btn-secondary-bg-hover)] hover:text-[var(--beyonix-text-primary)] active:bg-[var(--beyonix-btn-secondary-bg-active)] focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
           beyonixInteractiveOutline
         ),
         ghost:
@@ -88,7 +94,10 @@ const beyonixCardVariants = cva(
         selected:
           "border-beyonix-blue-light/70 bg-beyonix-blue/28 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_0_1px_rgba(30,77,123,0.28),0_22px_52px_rgba(0,0,0,0.34)]",
         highlighted:
-          "border-beyonix-blue-light/36 bg-[linear-gradient(145deg,rgba(17,42,67,0.48),rgba(10,10,10,0.98))] text-white",
+          // beyonix-card-highlighted: hook para el override de Light en
+          // globals.css (gradiente gris claro en vez del navy casi negro
+          // fijo de acá, que en Light quedaba ilegible).
+          "beyonix-card-highlighted border-beyonix-blue-light/36 bg-[linear-gradient(145deg,rgba(17,42,67,0.48),rgba(10,10,10,0.98))] text-white",
         muted: "border-beyonix-blue-light/12 bg-beyonix-surface/72 text-[var(--beyonix-text-secondary)]",
         "empty-state": "border-beyonix-blue-light/18 bg-beyonix-surface-2 text-[var(--beyonix-text-primary)]",
         product: cn(
@@ -253,6 +262,55 @@ export function BeyonixEmptyState({
       )}
       {action && <div className="mt-5">{action}</div>}
     </BeyonixCard>
+  )
+}
+
+// CTAs canónicos de "Iniciar sesión"/"Registrarse" para el header y
+// cualquier mini-header equivalente (ej. Checkout) -- fuente única para que
+// ambos lugares muestren exactamente el mismo componente en vez de cada
+// uno reimplementando las clases a mano (causa real de que "Registrarse"
+// se viera distinto entre Home y Checkout). No se usa en el menú mobile:
+// ahí el botón es un bloque full-width dentro de una lista apilada, una
+// forma distinta por motivos de layout, no el mismo componente visual.
+export function BeyonixHeaderLoginLink({
+  href,
+  className,
+}: {
+  href: string
+  className?: string
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "beyonix-modal-body flex h-11 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/78 hover:text-white",
+        beyonixHoverBorder,
+        className
+      )}
+    >
+      <User className="size-3.5" />
+      Iniciar sesión
+    </Link>
+  )
+}
+
+export function BeyonixHeaderRegisterLink({
+  href,
+  className,
+}: {
+  href: string
+  className?: string
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex h-11 cursor-pointer items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-sm font-semibold text-white transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover",
+        className
+      )}
+    >
+      Registrarse
+    </Link>
   )
 }
 

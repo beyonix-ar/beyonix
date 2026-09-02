@@ -16,7 +16,6 @@ import type { SupabasePedido } from "@/lib/supabase/types"
 
 interface PaymentProofUploaderProps {
   orderId: number
-  initialUploaded?: boolean
   compact?: boolean
   expand?: boolean
   onUploaded?: (order: SupabasePedido) => void
@@ -42,7 +41,6 @@ function formatFileSize(size: number) {
 
 export function PaymentProofUploader({
   orderId,
-  initialUploaded = false,
   compact = false,
   expand = false,
   onUploaded,
@@ -53,7 +51,6 @@ export function PaymentProofUploader({
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
-  const actionLabel = initialUploaded ? "Reemplazar comprobante" : "Comprobante de pago"
   const hasUploadedFeedback = Boolean(uploadedFileName)
 
   const uploadFile = async (nextFile: File | null) => {
@@ -122,12 +119,9 @@ export function PaymentProofUploader({
   }
 
   return (
-    <div className={`border ${expand ? "flex flex-1 flex-col" : ""} ${compact ? "rounded-xl border-beyonix-gray-700 bg-beyonix-gray-900 p-3 shadow-lg shadow-black/20" : "rounded-2xl border-beyonix-gray-700 bg-beyonix-gray-900 p-4 sm:p-5"}`}>
+    <div className={expand ? "flex flex-1 flex-col" : ""}>
       <div className={`${expand ? "flex flex-1 flex-col" : ""} ${compact ? "space-y-2" : "space-y-4"}`}>
         <div className={expand ? "flex flex-1 flex-col" : ""}>
-          <p className="text-11px font-black uppercase tracking-widest text-beyonix-gray-300">
-            {actionLabel}
-          </p>
           <input
             ref={inputRef}
             id={`payment-proof-${orderId}`}
@@ -169,22 +163,20 @@ export function PaymentProofUploader({
               }
             }}
             onDrop={handleDrop}
-            className={`${compact ? `mt-2 ${expand ? "min-h-28 flex-1" : "min-h-28"} px-3 py-2` : "mt-3 min-h-36 px-4 py-4"} flex flex-col items-center justify-center rounded-xl border border-dashed text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-beyonix-blue-500 ${
+            className={`${compact ? `mt-2 ${expand ? "min-h-28 flex-1" : "min-h-28"} px-3 py-2` : "mt-3 min-h-36 px-4 py-4"} flex flex-col items-center justify-center rounded-xl border border-dashed text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--account-accent-soft)] ${
               uploading
-                ? "cursor-wait border-beyonix-blue-500 bg-beyonix-blue-900"
+                ? "cursor-wait border-[var(--account-accent-soft)] bg-[var(--account-surface-hover)]"
                 : isDragging
-                  ? "border-beyonix-blue-300 bg-beyonix-blue-700/40 ring-2 ring-beyonix-blue-500/30"
+                  ? "border-[var(--account-accent-soft)] bg-[var(--account-surface-hover)] ring-2 ring-[var(--account-accent-soft)]/30"
                   : file || hasUploadedFeedback
-                    ? "border-beyonix-status-success/35 bg-beyonix-status-success/10"
-                    : compact
-                      ? "cursor-pointer border-beyonix-gray-700 bg-beyonix-gray-900 hover:border-beyonix-blue-500 hover:bg-beyonix-blue-900"
-                      : "cursor-pointer border-beyonix-gray-700 bg-beyonix-gray-900 hover:border-beyonix-blue-500 hover:bg-beyonix-blue-900"
+                    ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
+                    : "cursor-pointer border-[var(--account-border)] bg-[var(--account-surface-raised)] hover:border-[var(--account-accent-soft)] hover:bg-[var(--account-surface-hover)]"
             }`}
           >
             <span className={`flex items-center justify-center rounded-xl border ${compact ? "size-9" : "size-12"} ${
               file || hasUploadedFeedback
-                ? "border-beyonix-status-success/30 bg-beyonix-status-success/10 text-beyonix-status-success"
-                : "border-beyonix-blue-500/60 bg-beyonix-blue-900 text-beyonix-blue-300"
+                ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success)]"
+                : "border-[var(--account-border)] bg-[var(--account-surface)] text-[var(--account-accent)]"
             }`}>
               {file || hasUploadedFeedback ? (
                 <FileCheck2 className={compact ? "size-5" : "size-6"} />
@@ -195,40 +187,40 @@ export function PaymentProofUploader({
 
             {uploading ? (
               <>
-                <p className={`${compact ? "mt-1.5" : "mt-3"} max-w-full truncate text-sm font-semibold text-white`}>
+                <p className={`${compact ? "mt-1.5" : "mt-3"} max-w-full truncate text-sm font-semibold text-[var(--account-text-primary)]`}>
                   Subiendo comprobante
                 </p>
                 {file && (
-                  <div className="mt-1 max-w-full text-center text-xs text-beyonix-gray-300">
+                  <div className="mt-1 max-w-full text-center text-xs text-[var(--account-text-secondary)]">
                     <p className="truncate">{file.name}</p>
                     <p className="mt-0.5">{formatFileSize(file.size)}</p>
                   </div>
                 )}
                 <div className="mt-3 w-full max-w-xs">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-beyonix-gray-700">
-                    <div className="h-full w-2/3 animate-pulse rounded-full bg-beyonix-blue-500" />
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[var(--account-border)]">
+                    <div className="h-full w-2/3 animate-pulse rounded-full bg-[var(--account-accent)]" />
                   </div>
-                  <p className="mt-1.5 text-10px font-semibold uppercase tracking-wider text-beyonix-blue-300">
+                  <p className="mt-1.5 text-10px font-semibold uppercase tracking-wider text-[var(--account-text-secondary)]">
                     Subida en progreso
                   </p>
                 </div>
               </>
             ) : hasUploadedFeedback ? (
               <>
-                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-beyonix-status-success`}>
+                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-[var(--account-success)]`}>
                   Comprobante subido correctamente
                 </p>
-                <p className="mt-1 max-w-full truncate text-xs text-beyonix-gray-300">
+                <p className="mt-1 max-w-full truncate text-xs text-[var(--account-text-secondary)]">
                   {uploadedFileName} · Toca para reemplazar
                 </p>
               </>
             ) : file ? (
               <>
                 <div className={`${compact ? "mt-1.5" : "mt-3"} max-w-full text-center`}>
-                  <p className="truncate text-sm font-semibold text-white">
+                  <p className="truncate text-sm font-semibold text-[var(--account-text-primary)]">
                     {file.name}
                   </p>
-                  <p className="mt-1 text-xs text-beyonix-gray-300">
+                  <p className="mt-1 text-xs text-[var(--account-text-secondary)]">
                     {formatFileSize(file.size)}
                   </p>
                 </div>
@@ -237,7 +229,7 @@ export function PaymentProofUploader({
                   aria-label="Quitar archivo seleccionado"
                   title="Quitar archivo seleccionado"
                   onClick={clearSelectedFile}
-                  className="mt-2 inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-beyonix-status-danger/35 bg-beyonix-status-danger/10 px-3 text-xs font-semibold text-beyonix-status-danger transition-colors hover:border-beyonix-status-danger/60 hover:bg-beyonix-status-danger/20"
+                  className="mt-2 inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-3 text-xs font-semibold text-[var(--account-danger)] transition-colors hover:border-[var(--account-danger)]"
                 >
                   <X className="size-3.5" aria-hidden="true" />
                   Quitar
@@ -245,29 +237,29 @@ export function PaymentProofUploader({
               </>
             ) : (
               <>
-                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-white`}>
+                <p className={`${compact ? "mt-1.5" : "mt-3"} text-sm font-semibold text-[var(--account-text-primary)]`}>
                   Arrastrá el comprobante aquí
                 </p>
-                <p className="mt-1 text-xs text-beyonix-gray-300">
+                <p className="mt-1 text-xs text-[var(--account-text-secondary)]">
                   o toca para elegirlo desde tu dispositivo
                 </p>
               </>
             )}
 
             {!uploading && (
-              <span className={`${compact ? "mt-2 h-8 px-3" : "mt-3 h-9 px-4"} inline-flex items-center justify-center rounded-lg border border-beyonix-blue-500 bg-beyonix-blue-700 text-xs font-black text-white shadow-md shadow-black/20 transition-colors hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500`}>
+              <span className={`${compact ? "mt-2 h-8 px-3" : "mt-3 h-9 px-4"} inline-flex items-center justify-center rounded-lg bg-[var(--account-accent)] text-xs font-black text-white shadow-sm transition-colors hover:bg-[var(--account-accent-hover)]`}>
                 {file ? "Cambiar archivo" : "Seleccionar archivo"}
               </span>
             )}
           </div>
 
-          <p className={`${compact ? "mt-1.5 leading-4" : "mt-2 leading-5"} text-center text-xs text-beyonix-gray-500`}>
+          <p className={`${compact ? "mt-1.5 leading-4" : "mt-2 leading-5"} text-center text-xs text-[var(--account-text-secondary)]`}>
             JPG, JPEG, PNG o PDF · Máximo 5 MB
           </p>
         </div>
 
         {error && (
-          <div className="rounded-xl border border-beyonix-status-danger/30 bg-beyonix-status-danger/10 px-4 py-3 text-sm text-beyonix-status-danger">
+          <div className="rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-3 text-sm text-[var(--account-danger)]">
             {error}
           </div>
         )}
@@ -352,7 +344,7 @@ export function PaymentProofActionButton({
         {uploading ? "Subiendo..." : actionLabel}
       </button>
       {error && (
-        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-beyonix-status-danger sm:text-right">
+        <span className="max-w-52 text-left text-10px font-semibold leading-4 text-[var(--account-danger)] sm:text-right">
           {error}
         </span>
       )}

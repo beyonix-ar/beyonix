@@ -38,7 +38,7 @@ export function AccountMenuIcon({
   return (
     <span
       className={cn(
-        "relative flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/34 bg-[linear-gradient(135deg,rgba(17,42,67,0.86),rgba(7,18,31,0.9))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_rgba(30,140,255,0.1)] transition-all group-hover:border-beyonix-sky/58 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.11),0_0_16px_rgba(140,200,242,0.16)]",
+        "beyonix-account-menu-icon relative flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/34 bg-[linear-gradient(135deg,rgba(17,42,67,0.86),rgba(7,18,31,0.9))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_rgba(30,140,255,0.1)] transition-all group-hover:border-beyonix-sky/58 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.11),0_0_16px_rgba(140,200,242,0.16)]",
         danger &&
           "group-hover:border-red-500/70 group-hover:text-red-500 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_0_16px_rgba(239,68,68,0.22)] group-focus-visible:border-red-500/70 group-focus-visible:text-red-500",
       )}
@@ -144,7 +144,7 @@ export function AccountMenu({
           {userLabel.toUpperCase()}
         </span>
         <ChevronDown
-          className={`size-3 text-white/52 transition-transform duration-200 ${
+          className={`beyonix-modal-muted-icon size-3 text-white/52 transition-transform duration-200 ${
             open ? "rotate-180" : ""
           }`}
         />

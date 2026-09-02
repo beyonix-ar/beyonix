@@ -134,9 +134,9 @@ export default function DevolucionesPage() {
                 <div className="flex items-start gap-3">
                   <BeyonixIconBox size="sm"><fact.icon className="size-4" /></BeyonixIconBox>
                   <div>
-                    <p className="text-9px font-semibold uppercase tracking-[0.16em] text-white/42">{fact.label}</p>
-                    <p className="mt-1 text-lg font-bold text-white">{fact.value}</p>
-                    <p className="mt-1 text-xs leading-5 text-white/50">{fact.detail}</p>
+                    <p className="beyonix-modal-muted text-9px font-semibold uppercase tracking-[0.16em] text-white/42">{fact.label}</p>
+                    <p className="beyonix-modal-title mt-1 text-lg font-bold text-white">{fact.value}</p>
+                    <p className="beyonix-modal-body mt-1 text-xs leading-5 text-white/50">{fact.detail}</p>
                   </div>
                 </div>
               </BeyonixCard>

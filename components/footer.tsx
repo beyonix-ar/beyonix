@@ -61,10 +61,10 @@ const contactLinks = [
 ]
 
 const footerLinkClass =
-  "beyonix-modal-body inline-flex rounded-md text-sm text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+  "beyonix-footer-link inline-flex rounded-md text-sm text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
 
 const withdrawalLinkClass =
-  "beyonix-modal-body inline-flex rounded-md text-xs text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+  "beyonix-footer-link inline-flex rounded-md text-xs text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
 
 function FooterColumn({
   title,
@@ -77,7 +77,7 @@ function FooterColumn({
 }) {
   return (
     <BeyonixCard variant="information" className={cn("p-4", className)}>
-      <h3 className="mb-4 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+      <h3 className="beyonix-footer-heading mb-4 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
         {title}
       </h3>
       {children}
@@ -131,7 +131,7 @@ export function Footer() {
             <BeyonixLogoLink />
             <div className="mt-2 h-px w-14 bg-beyonix-blue-light/60" />
 
-            <p className="beyonix-modal-body mt-3 max-w-xs text-sm leading-relaxed text-white/62">
+            <p className="beyonix-modal-body beyonix-footer-text mt-3 max-w-xs text-sm leading-relaxed text-white/62">
               Conectados con tu comodidad.
             </p>
 
@@ -143,7 +143,7 @@ export function Footer() {
                 aria-label="Abrir Instagram de BEYONIX"
                 className="outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
               >
-                <BeyonixIconBox className="text-white hover:border-beyonix-blue-light/60">
+                <BeyonixIconBox className="beyonix-footer-social-icon text-white transition-[transform,background-color,border-color] duration-200 hover:-translate-y-[1px] hover:border-beyonix-blue-light/60 hover:brightness-110">
                   <Instagram className="size-4" />
                 </BeyonixIconBox>
               </a>
@@ -155,7 +155,7 @@ export function Footer() {
                 aria-label="Enviar email a BEYONIX"
                 className="outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
               >
-                <BeyonixIconBox className="text-white hover:border-beyonix-blue-light/60">
+                <BeyonixIconBox className="beyonix-footer-social-icon text-white transition-[transform,background-color,border-color] duration-200 hover:-translate-y-[1px] hover:border-beyonix-blue-light/60 hover:brightness-110">
                   <Mail className="size-4" />
                 </BeyonixIconBox>
               </a>
@@ -241,7 +241,7 @@ export function Footer() {
               ))}
             </ul>
 
-            <div className="beyonix-modal-body mt-4 space-y-1.5 border-l border-beyonix-blue-light/24 pl-4 text-sm leading-relaxed text-white/52">
+            <div className="beyonix-modal-body beyonix-footer-text mt-4 space-y-1.5 border-l border-beyonix-blue-light/24 pl-4 text-sm leading-relaxed text-white/52">
               <p>Rosario, Santa Fe</p>
               <p>Envíos a todo el país</p>
             </div>

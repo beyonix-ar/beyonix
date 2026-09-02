@@ -92,10 +92,10 @@ export function ColorSelector({
               onMouseLeave={() => onPreviewChange?.(null)}
               onFocus={() => onPreviewChange?.(color)}
               onBlur={() => onPreviewChange?.(null)}
-              className={`relative size-12 shrink-0 cursor-pointer overflow-hidden rounded-xl border bg-white transition-all duration-200 sm:size-14 ${
+              className={`relative size-12 shrink-0 cursor-pointer overflow-hidden rounded-xl bg-white transition-all duration-200 sm:size-14 ${
                 isSelected
-                  ? "border-beyonix-sky ring-2 ring-beyonix-sky/60 ring-offset-2 ring-offset-[#080D13]"
-                  : "border-white/12 opacity-82 hover:opacity-100 hover:border-beyonix-blue-light/55"
+                  ? "border-2 border-[#112A43]"
+                  : "border border-[#112A43]"
               }`}
             >
               <Image

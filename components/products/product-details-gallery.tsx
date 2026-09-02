@@ -458,8 +458,8 @@ function ProductMediaThumbnail({
       onClick={() => onSelectImage(index)}
       className={`group relative size-12 cursor-pointer overflow-hidden rounded-xl transition-all duration-200 sm:size-16 md:size-[72px] ${
         isActive
-          ? "scale-105 ring-2 ring-beyonix-sky ring-offset-2 ring-offset-[#080D13] shadow-[0_10px_24px_rgba(0,0,0,0.35)]"
-          : "opacity-78 ring-1 ring-white/10 hover:scale-105 hover:opacity-100 hover:ring-beyonix-blue-light/55"
+          ? "scale-105 border-2 border-[#112A43] shadow-[0_10px_24px_rgba(0,0,0,0.35)]"
+          : "border border-[#112A43] hover:scale-105"
       } ${isVideo ? "bg-black" : "bg-white"}`}
     >
       {isVideo ? (

@@ -879,7 +879,7 @@ function LoginContent() {
                 className="pointer-events-none absolute -left-14 top-24 size-48 rounded-full border border-beyonix-sky/10"
               />
               <div className="relative">
-                <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-beyonix-sky">
+                <span className="beyonix-login-hero-badge inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-beyonix-sky">
                   <Sparkles className="size-3.5" />
                   Experiencia BEYONIX
                 </span>
@@ -1153,7 +1153,7 @@ function LoginContent() {
                 type="button"
                 aria-label="Olvidé mi contraseña"
                 onClick={handleForgotPassword}
-                className="cursor-pointer text-sm font-semibold text-beyonix-sky transition-colors hover:text-white"
+                className="beyonix-login-forgot-link cursor-pointer text-sm font-semibold text-beyonix-sky transition-colors hover:text-white"
               >
                 ¿Olvidaste tu contraseña?
               </button>
@@ -1201,7 +1201,7 @@ function LoginContent() {
           </div>
                 </form>
                 {mode === "login" && (
-                  <div className="mt-6 flex items-center justify-center gap-2 border-t border-white/8 pt-5 text-xs text-white/38">
+                  <div className="beyonix-login-secure-note mt-6 flex items-center justify-center gap-2 border-t border-white/8 pt-5 text-xs text-white/38">
                     <ShieldCheck className="size-4 text-beyonix-cyan" />
                     Acceso seguro. Tus datos están protegidos.
                   </div>

@@ -9,6 +9,14 @@ import { cn } from "@/lib/utils"
 
 type CheckoutStatusTone = "success" | "pending" | "failure" | "info"
 
+// --account-* (ver app/globals.css): mismo sistema de tokens que el resto
+// del storefront (Checkout, Login, Cuenta) -- ya trae su propia variante
+// oscura (:root) y clara (html[data-account-theme="light"]), a diferencia
+// del sistema beyonix-gray-*/beyonix-blue-900 que usaba esta pantalla antes
+// (colores fijos pensados sólo para Dark, sin variante clara real). Al
+// consumir estos tokens en vez de esa paleta paralela, toda la pantalla de
+// estado (Éxito/Falla/Pendiente) queda theme-aware de raíz, sin necesitar
+// overrides puntuales por página.
 const statusToneStyles: Record<
   CheckoutStatusTone,
   {
@@ -19,22 +27,22 @@ const statusToneStyles: Record<
   success: {
     icon: "success",
     iconClassName:
-      "border-beyonix-status-success/30 bg-beyonix-status-success/10 text-beyonix-status-success",
+      "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success)]",
   },
   pending: {
     icon: "default",
     iconClassName:
-      "border-beyonix-status-pending/30 bg-beyonix-status-pending/10 text-beyonix-status-pending",
+      "border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-warning)]",
   },
   failure: {
     icon: "danger",
     iconClassName:
-      "border-beyonix-status-danger/30 bg-beyonix-status-danger/10 text-beyonix-status-danger",
+      "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger)]",
   },
   info: {
     icon: "default",
     iconClassName:
-      "border-beyonix-blue-500/50 bg-beyonix-blue-900 text-beyonix-blue-300",
+      "border-[var(--account-info-border)] bg-[var(--account-info-bg)] text-[var(--account-info)]",
   },
 }
 
@@ -45,7 +53,7 @@ export function CheckoutStatusShell({
 }) {
   return (
     <>
-      <main className="min-h-screen bg-beyonix-page px-4 py-3 font-heading text-white sm:py-4">
+      <main className="min-h-screen bg-[var(--account-background)] px-4 py-6 font-heading text-[var(--account-text-primary)] sm:py-8">
         <div className="mx-auto w-full max-w-5xl">{children}</div>
       </main>
       <Footer />
@@ -87,13 +95,16 @@ export function CheckoutStatusCard({
   return (
     <div
       className={cn(
-        "w-full min-w-0 overflow-hidden rounded-2xl border border-beyonix-gray-700 bg-beyonix-gray-900 shadow-2xl shadow-black/45",
+        "w-full min-w-0 overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] shadow-lg shadow-black/10",
         className,
       )}
     >
+      {/* Header: navy BEYONIX fijo (#112A43) en cualquier tema -- mismo
+          criterio que cualquier CTA/superficie navy del sitio, foreground
+          siempre blanco. */}
       <div
         className={cn(
-          "border-b border-beyonix-blue-500/35 px-4 py-4 text-center sm:px-6",
+          "bg-[var(--account-accent)] px-5 py-5 text-center sm:px-8 sm:py-6",
           headerClassName,
         )}
       >
@@ -105,39 +116,39 @@ export function CheckoutStatusCard({
           <Icon className="size-6" />
         </BeyonixIconBox>
 
-        <p
-          className={cn(
-            "text-10px font-semibold uppercase tracking-widest text-beyonix-blue-300",
-            compact ? "mt-2" : "mt-2.5",
-          )}
-        >
+        <p className="mt-2.5 text-10px font-semibold uppercase tracking-widest text-white/60">
           {eyebrow}
         </p>
 
         <h1
           className={cn(
             "mx-auto mt-1.5 max-w-2xl font-bold tracking-tight text-white",
-            compact ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl",
+            compact ? "text-2xl sm:text-[28px]" : "text-2xl sm:text-3xl",
           )}
         >
           {title}
         </h1>
 
         {description && (
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-beyonix-gray-300">
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/72">
             {description}
           </p>
         )}
 
         {Number.isFinite(orderId) && Number(orderId) > 0 && (
-          <p className="mt-1.5 text-xs font-semibold text-beyonix-gray-500">
+          <p className="mt-2 text-xs font-medium text-white/48">
             Pedido #{orderId}
           </p>
         )}
       </div>
 
       {children && (
-        <div className={cn("px-4 py-3 sm:px-5", bodyClassName)}>
+        <div
+          className={cn(
+            "bg-[var(--account-background)] px-4 py-4 sm:px-6 sm:py-5",
+            bodyClassName,
+          )}
+        >
           {children}
         </div>
       )}
@@ -145,7 +156,7 @@ export function CheckoutStatusCard({
       {footer && (
         <div
           className={cn(
-            "border-t border-beyonix-gray-700 px-4 py-3 sm:px-5",
+            "border-t border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-4 py-3.5 sm:px-6",
             footerClassName,
           )}
         >
@@ -173,13 +184,13 @@ export function CheckoutStatusPanel({
     <section
       id={id}
       className={cn(
-        "min-w-0 rounded-xl border border-beyonix-gray-700 bg-beyonix-gray-900 p-3.5 shadow-inner sm:p-4",
+        "min-w-0 rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-4 sm:p-5",
         className,
       )}
     >
       <h2
         className={cn(
-          "border-l-4 border-beyonix-blue-700 pl-3 text-lg font-bold text-white",
+          "text-base font-bold text-[var(--account-text-primary)]",
           titleClassName,
         )}
       >
@@ -204,12 +215,12 @@ export function CheckoutStatusNotice({
       className={cn(
         "rounded-xl border px-3.5 py-2.5 text-sm leading-5",
         tone === "failure"
-          ? "border-beyonix-status-danger/30 bg-beyonix-gray-900 text-beyonix-status-danger"
+          ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger)]"
           : tone === "pending"
-            ? "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-300"
+            ? "border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-text-primary)]"
             : tone === "success"
-              ? "border-beyonix-status-success/30 bg-beyonix-gray-900 text-white"
-              : "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-300",
+              ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success)]"
+              : "border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-secondary)]",
         className,
       )}
     >

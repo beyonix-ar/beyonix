@@ -57,11 +57,11 @@ export function BenefitsSection() {
                   <Icon className="size-5" />
                 </BeyonixIconBox>
 
-                <h3 className="mb-2 text-sm font-semibold text-white">
+                <h3 className="beyonix-modal-title mb-2 text-sm font-semibold text-white">
                   {benefit.title}
                 </h3>
 
-                <p className="text-sm leading-relaxed text-white/58">
+                <p className="beyonix-modal-body text-sm leading-relaxed text-white/58">
                   {benefit.description}
                 </p>
               </BeyonixCard>

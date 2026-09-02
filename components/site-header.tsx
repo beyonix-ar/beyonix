@@ -14,12 +14,12 @@ import {
   Menu,
   ShieldCheck,
   ShoppingBag,
-  User,
   WalletCards,
   X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { AccountMenu, AccountMenuIcon } from "@/components/account-menu"
+import { BeyonixHeaderLoginLink, BeyonixHeaderRegisterLink } from "@/components/beyonix-ui"
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { CustomerNotificationsBell } from "@/components/customer-notifications-bell"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
@@ -172,7 +172,7 @@ export function SiteHeader() {
                     </Link>
                   ))}
                   {!categories.length && (
-                    <p className="px-4 py-3 text-sm text-white/45">
+                    <p className="beyonix-modal-muted px-4 py-3 text-sm text-white/45">
                       No hay categor&iacute;as disponibles.
                     </p>
                   )}
@@ -254,22 +254,8 @@ export function SiteHeader() {
                 />
               ) : (
                 <div className="flex items-center gap-2" aria-busy={isLoading}>
-                  <Link
-                    href="/login"
-                    className={cn(
-                      "flex h-11 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/78 hover:text-white",
-                      beyonixHoverBorder
-                    )}
-                  >
-                    <User className="size-3.5" />
-                    Iniciar sesión
-                  </Link>
-                  <Link
-                    href="/login?mode=register"
-                    className="flex h-11 cursor-pointer items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-sm font-semibold text-white transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
-                  >
-                    Registrarse
-                  </Link>
+                  <BeyonixHeaderLoginLink href="/login" />
+                  <BeyonixHeaderRegisterLink href="/login?mode=register" />
                 </div>
               )}
             </div>
@@ -331,7 +317,7 @@ export function SiteHeader() {
                 href={link.href}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "relative block px-2 py-3 text-15px font-medium text-[#F8FAFC]/88 transition-colors duration-200 after:absolute after:bottom-1.5 after:left-2 after:h-px after:w-10 after:origin-left after:scale-x-0 after:bg-[rgba(125,204,255,0.72)] after:opacity-0 after:transition-all after:duration-300 after:ease-out hover:text-white hover:after:scale-x-100 hover:after:opacity-100",
+                  "beyonix-site-header-nav-link relative block px-2 py-3 text-15px font-medium text-[#F8FAFC]/88 transition-colors duration-200 after:absolute after:bottom-1.5 after:left-2 after:h-px after:w-10 after:origin-left after:scale-x-0 after:bg-[rgba(125,204,255,0.72)] after:opacity-0 after:transition-all after:duration-300 after:ease-out hover:text-white hover:after:scale-x-100 hover:after:opacity-100",
                   (link.href === "/"
                     ? pathname === "/"
                     : pathname.startsWith(link.href)) &&
@@ -349,7 +335,7 @@ export function SiteHeader() {
                     key={category.id}
                     href={`/categorias/${category.slug}`}
                     onClick={() => setMobileOpen(false)}
-                    className="block rounded-lg border border-transparent px-2 py-2.5 text-15px font-medium text-[#F8FAFC] transition-all duration-200 hover:border-[rgba(140,200,242,0.12)] hover:bg-[rgba(17,42,67,0.18)] hover:text-white hover:shadow-[0_0_8px_rgba(96,165,250,0.08)]"
+                    className="beyonix-site-header-nav-link block rounded-lg border border-transparent px-2 py-2.5 text-15px font-medium text-[#F8FAFC] transition-all duration-200 hover:border-[rgba(140,200,242,0.12)] hover:bg-[rgba(17,42,67,0.18)] hover:text-white hover:shadow-[0_0_8px_rgba(96,165,250,0.08)]"
                   >
                     {category.nombre}
                   </Link>
@@ -364,7 +350,7 @@ export function SiteHeader() {
                     href="/cuenta"
                     onClick={() => setMobileOpen(false)}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      "beyonix-modal-body group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
                       beyonixHoverBorder
                     )}
                   >
@@ -386,7 +372,7 @@ export function SiteHeader() {
                     href="/cuenta?tab=datos"
                     onClick={() => setMobileOpen(false)}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      "beyonix-modal-body group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
                       beyonixHoverBorder
                     )}
                   >
@@ -397,7 +383,7 @@ export function SiteHeader() {
                     href="/cuenta?tab=ordenes"
                     onClick={() => setMobileOpen(false)}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      "beyonix-modal-body group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
                       beyonixHoverBorder
                     )}
                   >
@@ -408,7 +394,7 @@ export function SiteHeader() {
                     href="/cuenta/favoritos"
                     onClick={() => setMobileOpen(false)}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      "beyonix-modal-body group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
                       beyonixHoverBorder
                     )}
                   >
@@ -419,7 +405,7 @@ export function SiteHeader() {
                     href="/cuenta?tab=seguridad"
                     onClick={() => setMobileOpen(false)}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
+                      "beyonix-modal-body group flex items-center gap-2.5 rounded-lg px-2 py-3 text-15px font-medium text-white/80 hover:bg-white/4 hover:text-white",
                       beyonixHoverBorder
                     )}
                   >
@@ -447,7 +433,7 @@ export function SiteHeader() {
                       setMobileOpen(false)
                     }}
                     className={cn(
-                      "group flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left text-15px font-medium text-white/80 hover:bg-white/4 hover:text-red-500",
+                      "beyonix-modal-body group flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left text-15px font-medium text-white/80 hover:bg-white/4 hover:text-red-500",
                       beyonixHoverBorder
                     )}
                   >
@@ -463,7 +449,7 @@ export function SiteHeader() {
                   <Link
                     href="/login"
                     onClick={() => setMobileOpen(false)}
-                    className="flex h-10 items-center justify-center rounded-lg border border-beyonix-blue-light/22 bg-white/4 text-sm font-semibold text-white/84 transition hover:border-beyonix-blue-light/45 hover:text-white"
+                    className="beyonix-modal-body flex h-10 items-center justify-center rounded-lg border border-beyonix-blue-light/22 bg-white/4 text-sm font-semibold text-white/84 transition hover:border-beyonix-blue-light/45 hover:text-white"
                   >
                     Iniciar sesión
                   </Link>

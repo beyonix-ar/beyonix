@@ -185,13 +185,7 @@ export function CartSummary({
         aria-label="Seguir comprando"
         title="Seguir comprando"
         size="lg"
-        className="beyonix-cart-secondary-btn h-9 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors"
-        onMouseEnter={(event) => {
-          event.currentTarget.style.backgroundColor = "#1E4A73"
-        }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.backgroundColor = "black"
-        }}
+        className="beyonix-cart-secondary-btn h-9 w-full border border-beyonix-blue-light bg-black text-sm font-medium text-white transition-colors duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#1E4A73]"
         onClick={onContinueShopping}
       >
         Seguir comprando

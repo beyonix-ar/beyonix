@@ -57,6 +57,7 @@ import {
   Label,
 } from "@/components/ui/label"
 import { AccountMenu } from "@/components/account-menu"
+import { BeyonixHeaderLoginLink, BeyonixHeaderRegisterLink } from "@/components/beyonix-ui"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
 import {
   InsufficientStockModal,
@@ -185,15 +186,21 @@ function getShippingOptionLabel(type: ShippingType) {
 }
 
 function getStockIndicatorClassName(status: StockStatus) {
+  // Tokens semánticos (--account-warning/danger/success-text) en vez de
+  // colores fijos de Tailwind: esos ya tienen su propia variante clara
+  // (ámbar/rojo/verde oscuro, legible sobre fondo claro) y oscura (pastel,
+  // legible sobre fondo oscuro) -- un color fijo de paleta como
+  // text-amber-200 no reacciona al theme y sobre el Resumen del pedido en
+  // Light quedaba prácticamente invisible.
   if (status === "low") {
-    return "text-amber-200/75"
+    return "text-[var(--account-warning-text)]"
   }
 
   if (status === "out") {
-    return "text-red-200/70"
+    return "text-[var(--account-danger-text)]"
   }
 
-  return "text-emerald-300/70"
+  return "text-[var(--account-success-text)]"
 }
 
 function getStockIndicatorSymbol(status: StockStatus) {
@@ -245,7 +252,7 @@ const checkoutOptionSelectedClassName =
   "checkout-option-selected border-beyonix-blue-light/70 bg-[#112A43] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_0_0_1px_rgba(79,131,173,0.18)]"
 
 const checkoutPrimaryButtonClassName =
-  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)]"
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-beyonix-blue font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)]"
 
 const checkoutSecondaryButtonClassName =
   "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/24 bg-[#10151C] font-bold text-white/78 transition-all duration-200 hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/42 hover:text-white"
@@ -1678,18 +1685,8 @@ export default function CheckoutPage() {
                 <AccountMenu />
               ) : (
                 <div className="hidden items-center gap-2 sm:flex">
-                  <Link
-                    href="/login?redirect=/checkout"
-                    className="flex h-9 items-center rounded-full border border-beyonix-blue-light/22 bg-white/4 px-3 text-sm font-semibold text-white/78 transition hover:border-beyonix-blue-light/45 hover:text-white"
-                  >
-                    Iniciar sesión
-                  </Link>
-                  <Link
-                    href="/login?mode=register&redirect=/checkout"
-                    className="flex h-9 items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-3 text-sm font-semibold text-white transition hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
-                  >
-                    Registrarse
-                  </Link>
+                  <BeyonixHeaderLoginLink href="/login?redirect=/checkout" />
+                  <BeyonixHeaderRegisterLink href="/login?mode=register&redirect=/checkout" />
                 </div>
               )}
             </div>
@@ -1727,15 +1724,15 @@ export default function CheckoutPage() {
                   className={cn(
                     "flex min-h-12 min-w-0 items-center gap-2 rounded-lg border px-3 py-2 text-left transition-all",
                     complete
-                      ? "border-beyonix-blue-light/38 bg-[#112A43]/55 text-white/88"
+                      ? "checkout-step-complete border-beyonix-blue-light/38 bg-beyonix-blue/55 text-white/88"
                       : active
-                        ? "border-beyonix-blue-light/70 bg-[#112A43] text-white shadow-[0_0_18px_rgba(47,111,163,0.16)]"
-                        : "border-beyonix-blue-light/12 bg-[#10151C] text-white/44"
+                        ? "checkout-step-active border-beyonix-blue-light/70 bg-beyonix-blue text-white shadow-[0_0_18px_rgba(47,111,163,0.16)]"
+                        : "checkout-step-pending border-beyonix-blue-light/12 bg-[#10151C] text-white/44"
                   )}
                 >
                   <span
                     className={cn(
-                      "flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
+                      "checkout-step-icon flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
                       complete
                         ? "border-beyonix-blue-light/36 bg-beyonix-blue/40 text-beyonix-sky"
                         : active
@@ -2322,7 +2319,7 @@ export default function CheckoutPage() {
                         href="https://instagram.com/beyonix.ar"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
+                        className="checkout-help-link group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors duration-200 hover:border-beyonix-blue-light/40 hover:bg-white/[0.05]"
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
                           <Instagram className="size-4" />
@@ -2337,7 +2334,7 @@ export default function CheckoutPage() {
                         href={CHECKOUT_EMAIL_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors hover:border-beyonix-blue-light/55 hover:bg-[#112A43]"
+                        className="checkout-help-link group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors duration-200 hover:border-beyonix-blue-light/40 hover:bg-white/[0.05]"
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
                           <Mail className="size-4" />

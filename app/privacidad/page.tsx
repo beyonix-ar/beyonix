@@ -102,8 +102,8 @@ export default function PrivacidadPage() {
             {dataGroups.map((group) => (
               <BeyonixCard key={group.title} variant="information" className="p-4">
                 <BeyonixIconBox size="sm"><group.icon className="size-4" /></BeyonixIconBox>
-                <h2 className="mt-3 text-sm font-bold text-white">{group.title}</h2>
-                <p className="mt-1.5 text-xs leading-5 text-white/50">{group.text}</p>
+                <h2 className="beyonix-modal-title mt-3 text-sm font-bold text-white">{group.title}</h2>
+                <p className="beyonix-modal-body mt-1.5 text-xs leading-5 text-white/50">{group.text}</p>
               </BeyonixCard>
             ))}
           </div>

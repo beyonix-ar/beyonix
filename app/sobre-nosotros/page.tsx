@@ -41,7 +41,7 @@ export default function SobreNosotrosPage() {
         <div className="mx-auto max-w-6xl px-6 pt-20 pb-14 lg:px-8 lg:pt-24 lg:pb-20">
           <div className="grid gap-8 lg:grid-cols-[1.04fr_0.96fr] lg:items-end">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-3 py-1.5 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
+              <div className="beyonix-history-badge inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-3 py-1.5 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                 <Sparkles className="size-3.5" />
                 Nuestra historia
               </div>
@@ -56,7 +56,7 @@ export default function SobreNosotrosPage() {
             </div>
 
             <div className="rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-surface/78 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_70px_rgba(0,0,0,0.32)]">
-              <p className="text-sm font-semibold uppercase tracking-widest text-white/42">
+              <p className="beyonix-about-eyebrow text-sm font-semibold uppercase tracking-widest text-white/42">
                 Lo que nos mueve
               </p>
               <p className="mt-3 text-lg leading-8 text-white/78">
@@ -66,7 +66,7 @@ export default function SobreNosotrosPage() {
           </div>
 
           <div className="mt-8 grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
-            <article className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(15,23,42,0.72),rgba(10,10,10,0.98))] p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10">
+            <article className="beyonix-about-story-card rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(15,23,42,0.72),rgba(10,10,10,0.98))] p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10">
               <div className="max-w-3xl space-y-5 text-base leading-8 text-white/76">
                 <p>
                   BEYONIX nace como una tienda online pensada para acercar productos útiles, modernos y funcionales a personas que valoran las soluciones simples.
@@ -89,7 +89,7 @@ export default function SobreNosotrosPage() {
             <aside className="grid gap-4">
               <div className="rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-blue/18 p-5">
                 <div className="flex items-center gap-3">
-                  <span className="flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/32 bg-black/24 text-beyonix-cyan">
+                  <span className="beyonix-about-icon-tile flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/32 bg-black/24 text-beyonix-cyan">
                     <MapPin className="size-5" />
                   </span>
                   <div>
@@ -102,15 +102,15 @@ export default function SobreNosotrosPage() {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/8 bg-beyonix-surface p-5">
+              <div className="beyonix-about-closeness-card rounded-2xl border border-white/8 bg-beyonix-surface p-5">
                 <div className="mb-4 flex items-center gap-3">
-                  <span className="flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/28 bg-beyonix-blue/24 text-beyonix-cyan">
+                  <span className="beyonix-about-icon-tile flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/28 bg-beyonix-blue/24 text-beyonix-cyan">
                     <HeartHandshake className="size-5" />
                   </span>
                   <p className="text-lg font-bold text-white">Cercanía real</p>
                 </div>
 
-                <ul className="space-y-3 text-sm text-white/64">
+                <ul className="beyonix-about-card-text space-y-3 text-sm text-white/64">
                   {highlights.map((highlight) => (
                     <li key={highlight} className="flex items-center gap-2">
                       <CheckCircle2 className="size-4 shrink-0 text-beyonix-cyan" />
@@ -122,7 +122,7 @@ export default function SobreNosotrosPage() {
 
               <Link
                 href="/productos"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/40 bg-beyonix-blue px-5 py-3 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:border-beyonix-blue-light/70 hover:bg-beyonix-blue-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+                className="beyonix-about-cta inline-flex items-center justify-center gap-2 rounded-xl border border-beyonix-blue-light/40 bg-beyonix-blue px-5 py-3 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:border-beyonix-blue-light/70 hover:bg-beyonix-blue-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
               >
                 Ver productos
                 <ArrowRight className="size-4" />
@@ -136,7 +136,7 @@ export default function SobreNosotrosPage() {
                 key={card.title}
                 className="rounded-2xl border border-white/8 bg-beyonix-surface p-5 shadow-xl shadow-black/20 transition-colors hover:border-beyonix-blue-light/24 hover:bg-beyonix-surface-2"
               >
-                <div className="mb-5 flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue/30">
+                <div className="beyonix-about-icon-tile mb-5 flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-light/30 bg-beyonix-blue/30">
                   <card.icon className="size-5 text-beyonix-cyan" />
                 </div>
 
@@ -144,7 +144,7 @@ export default function SobreNosotrosPage() {
                   {card.title}
                 </h2>
 
-                <p className="mt-3 text-sm leading-6 text-white/62">
+                <p className="beyonix-about-card-text mt-3 text-sm leading-6 text-white/62">
                   {card.text}
                 </p>
               </article>

@@ -152,22 +152,22 @@ export function HeroSection({
         <BeyonixCard
           variant="highlighted"
           onClick={openFeaturedProduct}
-          className="relative cursor-pointer overflow-hidden p-4 sm:p-5"
+          className="beyonix-featured-product-card relative cursor-pointer overflow-hidden p-4 sm:p-5"
         >
           {featuredProduct && productImage ? (
             <>
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-11px font-semibold uppercase tracking-widest text-[#4A90B8]">
+                  <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                     Producto destacado
                   </p>
-                  <h2 className="mt-2 line-clamp-2 text-2xl font-bold leading-tight text-white">
+                  <h2 className="beyonix-modal-title mt-2 line-clamp-2 text-2xl font-bold leading-tight text-white">
                     {featuredProduct.nombre}
                   </h2>
                 </div>
 
                 {hasSale && (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/24 bg-emerald-500/12 px-2.5 py-1 text-xs font-semibold text-emerald-200">
+                  <span className="beyonix-discount-badge inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/24 bg-emerald-500/12 px-2.5 py-1 text-xs font-semibold text-emerald-200">
                     <Tag className="size-3" />
                     -{discountPercentage}%
                   </span>
@@ -197,11 +197,11 @@ export function HeroSection({
 
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-2xl font-bold leading-none text-white">
+                  <p className="beyonix-modal-title text-2xl font-bold leading-none text-white">
                     {formatPrice(finalPrice)}
                   </p>
                   {hasSale && (
-                    <p className="mt-1 text-sm text-white/42 line-through">
+                    <p className="beyonix-modal-muted mt-1 text-sm text-white/42 line-through">
                       {formatPrice(originalPrice ?? featuredProduct.precio)}
                     </p>
                   )}
@@ -209,13 +209,13 @@ export function HeroSection({
                   {(hasSale || !!installmentLabel) && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {hasSale && (
-                        <span className="inline-flex min-h-24px items-center rounded-full border border-green-500/25 bg-green-500/12 px-3 py-1.5 text-12px font-semibold leading-none text-green-400">
+                        <span className="beyonix-offer-badge inline-flex min-h-24px items-center rounded-full border border-green-500/25 bg-green-500/12 px-3 py-1.5 text-12px font-semibold leading-none text-green-400">
                           En oferta
                         </span>
                       )}
 
                       {!!installmentLabel && (
-                        <span className="inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-[#8CC8F2]">
+                        <span className="beyonix-installment-badge inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
                           {installmentLabel}
                         </span>
                       )}
@@ -240,13 +240,13 @@ export function HeroSection({
             </>
           ) : (
             <div className="flex min-h-360px flex-col items-center justify-center p-6 text-center">
-              <BeyonixIconBox size="lg" className="mb-4 text-[#8CC8F2]">
+              <BeyonixIconBox size="lg" className="mb-4 text-beyonix-sky">
                 <Sparkles className="size-5" />
               </BeyonixIconBox>
-              <h2 className="text-2xl font-bold text-white">
+              <h2 className="beyonix-modal-title text-2xl font-bold text-white">
                 Catálogo BEYONIX
               </h2>
-              <p className="mt-3 max-w-sm text-sm leading-6 text-white/58">
+              <p className="beyonix-modal-body mt-3 max-w-sm text-sm leading-6 text-white/58">
                 Una selección de tecnología y accesorios pensados para comprar
                 con confianza.
               </p>

@@ -278,11 +278,11 @@ export function ReviewsSection() {
             className="mx-auto mb-12 max-w-xl space-y-4 p-6"
           >
             <div className="space-y-2">
-              <p className="flex items-center gap-2 text-sm font-semibold text-white">
+              <p className="beyonix-modal-title flex items-center gap-2 text-sm font-semibold text-white">
                 <ShieldCheck className="size-4 text-beyonix-sky" />
                 Compra verificada
               </p>
-              <p className="text-sm text-white/72">
+              <p className="beyonix-modal-body text-sm text-white/72">
                 {eligibleReview.nickname} · {eligibleReview.city} ·{" "}
                 {eligibleReview.province}
               </p>
@@ -318,7 +318,7 @@ export function ReviewsSection() {
               placeholder="Comentá tu experiencia en Beyonix (máx. 150 caracteres)"
               maxLength={150}
               rows={4}
-              className="h-28 resize-none border-beyonix-blue-light/30 bg-black/55 text-white focus-visible:border-beyonix-blue-light focus-visible:ring-beyonix-blue-light/25"
+              className="beyonix-review-textarea h-28 resize-none border-beyonix-blue-light/30 bg-black/55 text-white focus-visible:border-beyonix-blue-light focus-visible:ring-beyonix-blue-light/25"
               value={comment}
               onChange={(event) => setComment(event.target.value)}
             />

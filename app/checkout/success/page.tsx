@@ -148,7 +148,7 @@ function OrderProgress({ steps }: { steps: OrderStep[] }) {
   return (
     <nav
       aria-label="Progreso del pedido"
-      className="min-w-0 overflow-hidden px-2 py-2 sm:px-4"
+      className="min-w-0 overflow-hidden px-1 py-1"
     >
       <ol className="grid grid-cols-4">
         {steps.map((step, index) => {
@@ -170,20 +170,20 @@ function OrderProgress({ steps }: { steps: OrderStep[] }) {
                     index === 0
                       ? "bg-transparent"
                       : previousCompleted
-                        ? "bg-beyonix-status-success/70"
-                        : "bg-beyonix-gray-700"
+                        ? "bg-[var(--account-success)]/60"
+                        : "bg-[var(--account-border)]"
                   }`}
                 />
                 <span
-                  className={`flex size-8 shrink-0 items-center justify-center rounded-full border sm:size-9 ${
+                  className={`flex size-9 shrink-0 items-center justify-center rounded-full border sm:size-10 ${
                     step.state === "completed"
-                      ? "border-beyonix-status-success/45 bg-beyonix-status-success/15 text-beyonix-status-success"
+                      ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success)]"
                       : step.state === "active"
-                        ? "border-beyonix-blue-300 bg-beyonix-blue-700 text-white"
-                        : "border-beyonix-gray-700 bg-beyonix-gray-900 text-beyonix-gray-500"
+                        ? "border-[var(--account-accent)] bg-[var(--account-accent)] text-white ring-4 ring-[var(--account-accent)]/12"
+                        : "border-[var(--account-border)] bg-[var(--account-surface-hover)] text-[var(--account-text-secondary)]"
                   }`}
                 >
-                  <StepIcon className="size-3.5" aria-hidden="true" />
+                  <StepIcon className="size-4" aria-hidden="true" />
                 </span>
                 <span
                   aria-hidden="true"
@@ -191,18 +191,18 @@ function OrderProgress({ steps }: { steps: OrderStep[] }) {
                     index === steps.length - 1
                       ? "bg-transparent"
                       : nextCompleted
-                        ? "bg-beyonix-status-success/70"
-                        : "bg-beyonix-gray-700"
+                        ? "bg-[var(--account-success)]/60"
+                        : "bg-[var(--account-border)]"
                   }`}
                 />
               </div>
               <p
-                className={`mt-1.5 truncate text-center text-10px font-semibold sm:text-xs ${
+                className={`mt-2 truncate text-center text-10px font-semibold sm:text-xs ${
                   step.state === "completed"
-                    ? "text-beyonix-status-success"
+                    ? "text-[var(--account-success)]"
                     : step.state === "active"
-                      ? "text-white"
-                      : "text-beyonix-gray-500"
+                      ? "text-[var(--account-accent)]"
+                      : "text-[var(--account-text-secondary)]"
                 }`}
               >
                 {step.label}
@@ -227,31 +227,29 @@ function CopyablePaymentField({
   onCopy: () => void
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-beyonix-blue-500/25 py-2 last:border-b-0">
+    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--account-border-subtle)] py-3 last:border-b-0">
       <div className="min-w-0">
-        <p className="text-10px font-semibold uppercase tracking-wider text-beyonix-gray-300">
+        <p className="text-11px font-semibold uppercase tracking-wider text-[var(--account-text-secondary)]">
           {label}
         </p>
-        <p className="mt-1 break-all text-sm font-semibold tracking-normal text-white">
+        <p className="mt-1 break-all text-base font-bold tracking-normal text-[var(--account-text-primary)]">
           {value}
         </p>
       </div>
-      <BeyonixButton
+      <button
         type="button"
-        variant="secondary"
-        size="sm"
         aria-label={`Copiar ${label.toLowerCase()}`}
         title={`Copiar ${label.toLowerCase()}`}
         onClick={onCopy}
-        className="h-8 shrink-0 border-beyonix-blue-500/60 bg-beyonix-blue-700 px-2.5 text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500"
+        className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--account-accent)] px-3 text-xs font-semibold text-white transition-colors duration-200 hover:bg-[var(--account-accent-hover)]"
       >
         {copied ? (
-          <Check className="size-4 text-beyonix-status-success" aria-hidden="true" />
+          <Check className="size-4" aria-hidden="true" />
         ) : (
           <Copy className="size-4" aria-hidden="true" />
         )}
         <span className="hidden sm:inline">{copied ? "Copiado" : "Copiar"}</span>
-      </BeyonixButton>
+      </button>
     </div>
   )
 }
@@ -515,50 +513,35 @@ function CheckoutSuccessContent() {
           }
           orderId={orderId}
           compact
-          className="border-beyonix-gray-700 bg-beyonix-gray-900"
-          headerClassName="border-beyonix-blue-500/40 bg-beyonix-blue-900 py-3"
-          bodyClassName="bg-beyonix-page"
-          footerClassName="bg-beyonix-gray-900 py-2.5"
           footer={
             <div className="grid gap-2.5 sm:grid-cols-2">
-              <BeyonixButton
-                asChild
-                variant="secondary"
-                size="sm"
+              <Link
+                href="/productos"
                 aria-label="Ir a productos"
                 title="Ir a productos"
-                className="h-9 w-full border-beyonix-gray-500/50 bg-beyonix-gray-700 text-white hover:border-beyonix-gray-300 hover:bg-beyonix-gray-500"
+                onClick={(event) => {
+                  if (!isProofPending) return
+                  event.preventDefault()
+                  setPendingNavigationHref("/productos")
+                }}
+                className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] text-sm font-semibold text-[var(--account-text-primary)] transition-colors duration-200 hover:bg-[var(--account-surface-hover)]"
               >
-                <Link
-                  href="/productos"
-                  onClick={(event) => {
-                    if (!isProofPending) return
-                    event.preventDefault()
-                    setPendingNavigationHref("/productos")
-                  }}
-                >
-                  Seguir comprando
-                </Link>
-              </BeyonixButton>
+                Seguir comprando
+              </Link>
 
-              <BeyonixButton
-                asChild
-                size="sm"
+              <Link
+                href={orderStatusHref}
                 aria-label="Ver estado del pedido"
                 title="Ver estado del pedido"
-                className="h-9 w-full border-beyonix-blue-500 bg-beyonix-blue-700 text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500"
+                onClick={(event) => {
+                  if (!isProofPending) return
+                  event.preventDefault()
+                  setPendingNavigationHref(orderStatusHref)
+                }}
+                className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg bg-[var(--account-accent)] text-sm font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-[var(--account-accent-hover)]"
               >
-                <Link
-                  href={orderStatusHref}
-                  onClick={(event) => {
-                    if (!isProofPending) return
-                    event.preventDefault()
-                    setPendingNavigationHref(orderStatusHref)
-                  }}
-                >
-                  Ver estado del pedido
-                </Link>
-              </BeyonixButton>
+                Ver estado del pedido
+              </Link>
             </div>
           }
         >
@@ -566,9 +549,9 @@ function CheckoutSuccessContent() {
             <>
               <OrderProgress steps={orderSteps} />
 
-              <dl className="mb-3 grid grid-cols-2 border-y border-beyonix-gray-700 bg-beyonix-gray-900 sm:grid-cols-4">
-                <div className="px-3 py-1.5">
-                  <dt className="text-10px font-semibold uppercase tracking-wider text-beyonix-gray-500">
+              <dl className="mt-4 mb-4 grid grid-cols-2 gap-y-2 rounded-lg bg-[var(--account-accent)] px-3 py-3 sm:grid-cols-4 sm:px-4">
+                <div>
+                  <dt className="text-10px font-semibold uppercase tracking-wider text-white/55">
                     Pedido
                   </dt>
                   <dd className="mt-0.5 text-sm font-bold text-white">
@@ -577,24 +560,24 @@ function CheckoutSuccessContent() {
                       : "-"}
                   </dd>
                 </div>
-                <div className="px-3 py-1.5">
-                  <dt className="text-10px font-semibold uppercase tracking-wider text-beyonix-gray-500">
+                <div>
+                  <dt className="text-10px font-semibold uppercase tracking-wider text-white/55">
                     Fecha
                   </dt>
-                  <dd className="mt-0.5 text-sm font-semibold text-beyonix-gray-300">
+                  <dd className="mt-0.5 text-sm font-semibold text-white/85">
                     {orderLoading ? "Cargando..." : formatOrderDate(order?.created_at)}
                   </dd>
                 </div>
-                <div className="px-3 py-1.5">
-                  <dt className="text-10px font-semibold uppercase tracking-wider text-beyonix-gray-500">
+                <div>
+                  <dt className="text-10px font-semibold uppercase tracking-wider text-white/55">
                     Artículos
                   </dt>
-                  <dd className="mt-0.5 text-sm font-semibold text-beyonix-gray-300">
+                  <dd className="mt-0.5 text-sm font-semibold text-white/85">
                     {orderArticleCount ?? "-"}
                   </dd>
                 </div>
-                <div className="px-3 py-1.5">
-                  <dt className="text-10px font-semibold uppercase tracking-wider text-beyonix-gray-500">
+                <div>
+                  <dt className="text-10px font-semibold uppercase tracking-wider text-white/55">
                     Monto
                   </dt>
                   <dd className="mt-0.5 text-sm font-bold text-white">
@@ -607,99 +590,89 @@ function CheckoutSuccessContent() {
                 </div>
               </dl>
 
-              <div className="grid min-w-0 items-stretch gap-3 md:grid-cols-2">
-                <CheckoutStatusPanel
-                  title="Finalizá tu pago"
-                  className="border-beyonix-blue-500/45 bg-beyonix-blue-900 p-3"
-                  titleClassName="text-base"
-                >
-                  <div className="mt-2">
-                    <div className="flex items-center gap-2.5 border-b border-beyonix-blue-500/30 pb-2">
-                      <span className="flex size-8 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-700 text-beyonix-blue-300">
-                        <CreditCard className="size-4" aria-hidden="true" />
+              <div className="grid min-w-0 items-stretch gap-4 md:grid-cols-2">
+                <CheckoutStatusPanel title="Finalizá tu pago">
+                  <div className="mt-3 flex items-center gap-2.5">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[var(--account-accent)] text-white">
+                      <CreditCard className="size-4" aria-hidden="true" />
+                    </span>
+                    <p className="text-sm font-semibold text-[var(--account-text-secondary)]">
+                      Transferencia bancaria
+                    </p>
+                  </div>
+
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3 py-2.5">
+                    <Clock3 className="mt-0.5 size-4 shrink-0 text-[var(--account-accent)]" aria-hidden="true" />
+                    <p className="text-xs leading-5 text-[var(--account-text-secondary)]">
+                      Validamos comprobantes {BEYONIX_SUPPORT_HOURS_DETAIL.toLocaleLowerCase("es-AR")}
+                    </p>
+                  </div>
+
+                  <div className="mt-1">
+                    <CopyablePaymentField
+                      label="Alias"
+                      value={TRANSFER_ALIAS.toUpperCase()}
+                      copied={copiedField === "alias"}
+                      onCopy={() =>
+                        void handleCopyValue(
+                          "alias",
+                          TRANSFER_ALIAS.toUpperCase(),
+                        )
+                      }
+                    />
+                    <div className="border-b border-[var(--account-border-subtle)] py-3">
+                      <p className="text-11px font-semibold uppercase tracking-wider text-[var(--account-text-secondary)]">
+                        Titular
+                      </p>
+                      <p className="mt-1 text-base font-bold text-[var(--account-text-primary)]">
+                        {TRANSFER_ACCOUNT_HOLDER}
+                      </p>
+                    </div>
+                    <CopyablePaymentField
+                      label="CVU"
+                      value={TRANSFER_CVU}
+                      copied={copiedField === "cvu"}
+                      onCopy={() =>
+                        void handleCopyValue("cvu", TRANSFER_CVU)
+                      }
+                    />
+                  </div>
+
+                  <div className="mt-4 flex flex-col items-center gap-1 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-4 py-4 text-center">
+                    <p className="text-11px font-bold uppercase tracking-wider text-[var(--account-success)]">
+                      Total a transferir
+                    </p>
+                    <p className="flex items-baseline gap-1 text-[var(--account-success)]">
+                      <span className="text-xl font-bold">$</span>
+                      <span className="text-3xl font-extrabold tracking-tight tabular-nums">
+                        {orderLoading
+                          ? "..."
+                          : order
+                            ? formatPriceNumber(Number(order.total))
+                            : "-"}
                       </span>
-                      <p className="text-sm font-bold text-white">
-                        Transferencia bancaria
-                      </p>
-                    </div>
-
-                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-beyonix-blue-500/30 bg-beyonix-blue-700/30 px-2.5 py-2">
-                      <Clock3 className="mt-0.5 size-3.5 shrink-0 text-white" aria-hidden="true" />
-                      <p className="text-[11px] font-medium leading-4 text-beyonix-gray-300">
-                        Validamos comprobantes {BEYONIX_SUPPORT_HOURS_DETAIL.toLocaleLowerCase("es-AR")}
-                      </p>
-                    </div>
-
-                    <div className="mt-1">
-                      <CopyablePaymentField
-                        label="Alias"
-                        value={TRANSFER_ALIAS.toUpperCase()}
-                        copied={copiedField === "alias"}
-                        onCopy={() =>
-                          void handleCopyValue(
-                            "alias",
-                            TRANSFER_ALIAS.toUpperCase(),
-                          )
-                        }
-                      />
-                      <div className="border-b border-beyonix-blue-500/25 py-2">
-                        <p className="text-10px font-semibold uppercase tracking-wider text-beyonix-gray-300">
-                          Titular
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-white">
-                          {TRANSFER_ACCOUNT_HOLDER}
-                        </p>
-                      </div>
-                      <CopyablePaymentField
-                        label="CVU"
-                        value={TRANSFER_CVU}
-                        copied={copiedField === "cvu"}
-                        onCopy={() =>
-                          void handleCopyValue("cvu", TRANSFER_CVU)
-                        }
-                      />
-                      <div className="flex flex-col items-center pt-2 text-center">
-                        <p className="text-xs font-bold uppercase tracking-wider text-beyonix-status-success">
-                          Total a transferir
-                        </p>
-                        <p className="mt-1 inline-flex min-h-9 items-center gap-1 rounded-md border border-beyonix-status-success/35 bg-beyonix-status-success/12 px-3 py-1 text-lg font-bold tracking-normal text-beyonix-status-success">
-                          {orderLoading
-                            ? "Cargando..."
-                            : order
-                              ? (
-                                  <>
-                                    <span>$</span>
-                                    <span className="text-white">
-                                      {formatPriceNumber(Number(order.total))}
-                                    </span>
-                                  </>
-                                )
-                              : "-"}
-                        </p>
-                      </div>
-                    </div>
+                    </p>
                   </div>
                 </CheckoutStatusPanel>
 
                 {showProofPanel && (
                   <CheckoutStatusPanel
                     id="comprobante-pago"
-                    title="Comprobante"
-                    className="flex h-full flex-col border-beyonix-gray-700 bg-beyonix-gray-900 p-3"
-                    titleClassName="border-beyonix-gray-500 text-base"
+                    title="Comprobante de pago"
+                    className="flex h-full flex-col"
                   >
-                    <div className="mt-2 flex flex-1 flex-col">
+                    <div className="mt-3 flex flex-1 flex-col">
                       {orderLoading ? (
-                        <div className="h-40 animate-pulse rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900" />
+                        <div className="h-40 animate-pulse rounded-lg bg-[var(--account-surface-hover)]" />
                       ) : sessionExpired ? (
-                        <div className="flex flex-col items-center rounded-lg border border-beyonix-gray-700 bg-beyonix-gray-900 px-5 py-6 text-center shadow-lg shadow-black/20">
-                          <span className="flex size-11 items-center justify-center rounded-xl border border-beyonix-blue-500/50 bg-beyonix-blue-700 text-beyonix-blue-300">
+                        <div className="flex flex-col items-center rounded-lg bg-[var(--account-surface-raised)] px-5 py-6 text-center">
+                          <span className="flex size-11 items-center justify-center rounded-xl bg-[var(--account-accent)] text-white">
                             <LogIn className="size-5" aria-hidden="true" />
                           </span>
-                          <h3 className="mt-3 text-lg font-bold text-white">
+                          <h3 className="mt-3 text-lg font-bold text-[var(--account-text-primary)]">
                             Tu sesión expiró
                           </h3>
-                          <p className="mt-1.5 max-w-sm text-sm leading-5 text-beyonix-gray-300">
+                          <p className="mt-1.5 max-w-sm text-sm leading-5 text-[var(--account-text-secondary)]">
                             Para subir el comprobante de este pedido, iniciá sesión nuevamente.
                           </p>
                           <BeyonixButton
@@ -707,7 +680,7 @@ function CheckoutSuccessContent() {
                             size="sm"
                             aria-label="Iniciar sesión y continuar"
                             title="Iniciar sesión y continuar"
-                            className="mt-4 h-9 border-beyonix-blue-500 bg-beyonix-blue-700 px-4 text-xs hover:bg-beyonix-blue-500"
+                            className="mt-4 h-9 px-4 text-xs"
                           >
                             <Link href={loginHref}>
                               <LogIn className="size-4" aria-hidden="true" />
@@ -743,31 +716,31 @@ function CheckoutSuccessContent() {
               {showPaymentDeadline && (
                 <CheckoutStatusNotice
                   tone={deadlineExpired ? "failure" : "pending"}
-                  className="mt-3 flex flex-col items-center justify-center gap-1.5 py-2 text-center sm:flex-row sm:gap-3"
+                  className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <AlertTriangle
-                    className={`size-4 shrink-0 ${
-                      deadlineExpired
-                        ? "text-beyonix-status-danger"
-                        : "text-beyonix-status-pending"
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <div>
-                      <p className="font-semibold">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle
+                      className={`mt-0.5 size-4 shrink-0 ${
+                        deadlineExpired
+                          ? "text-[var(--account-danger)]"
+                          : "text-[var(--account-warning)]"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--account-text-primary)]">
                         {deadlineExpired
                           ? "Plazo de pago expirado"
                           : "Tiempo restante para enviar el comprobante"}
                       </p>
-                      <p className="mt-0.5 text-xs text-beyonix-gray-300">
+                      <p className="mt-0.5 text-xs text-[var(--account-text-secondary)]">
                         {deadlineExpired
                           ? "El pedido ya no admite comprobantes y será cancelado por falta de pago."
                           : "Al llegar a cero, el pedido se cancelará automáticamente."}
                       </p>
                     </div>
                   </div>
-                  <p className="shrink-0 text-lg font-bold tabular-nums text-white">
+                  <p className="shrink-0 text-2xl font-bold tabular-nums text-[var(--account-text-primary)] sm:text-right">
                     {deadlineExpired
                       ? "EXPIRADO"
                       : formatCountdown(remainingPaymentMs)}
@@ -776,7 +749,7 @@ function CheckoutSuccessContent() {
               )}
             </>
           ) : (
-            <p className="mx-auto max-w-md py-6 text-center text-sm leading-relaxed text-beyonix-gray-300">
+            <p className="mx-auto max-w-md py-6 text-center text-sm leading-relaxed text-[var(--account-text-secondary)]">
               Pago recibido. Estamos preparando tu pedido.
             </p>
           )}
@@ -784,28 +757,28 @@ function CheckoutSuccessContent() {
       </CheckoutStatusShell>
 
       {pendingNavigationHref && isProofPending && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center bg-beyonix-gray-900/95 px-4 font-heading">
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 px-4 font-heading">
           <div
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="comprobante-pendiente-titulo"
             aria-describedby="comprobante-pendiente-descripcion"
-            className="w-full max-w-md rounded-2xl border border-beyonix-gray-700 bg-beyonix-gray-900 p-5 shadow-2xl shadow-black/70"
+            className="w-full max-w-md rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-5 shadow-xl shadow-black/20"
           >
             <div className="flex items-start gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-beyonix-status-pending/35 bg-beyonix-status-pending/10 text-beyonix-status-pending">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--account-warning-bg)] text-[var(--account-warning)]">
                 <AlertTriangle className="size-4" aria-hidden="true" />
               </span>
               <div>
                 <h2
                   id="comprobante-pendiente-titulo"
-                  className="text-base font-bold text-white"
+                  className="text-base font-bold text-[var(--account-text-primary)]"
                 >
                   Todavía no subiste el comprobante de pago
                 </h2>
                 <p
                   id="comprobante-pendiente-descripcion"
-                  className="mt-1.5 text-sm leading-5 text-beyonix-gray-300"
+                  className="mt-1.5 text-sm leading-5 text-[var(--account-text-secondary)]"
                 >
                   Tu pedido quedará pendiente hasta que podamos validar la
                   transferencia.

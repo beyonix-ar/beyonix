@@ -449,16 +449,48 @@ export function AuthProvider({
         const request = (async () => {
         let profile: SupabaseProfile | undefined
 
-        try {
-          const response = await fetch("/api/auth/profile", {
+        const fetchProfile = (bearer: string) =>
+          fetch("/api/auth/profile", {
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              Authorization: `Bearer ${bearer}`,
             },
             cache: "no-store",
           })
-          const data = (await response.json()) as {
+
+        try {
+          let response = await fetchProfile(accessToken)
+          let data = (await response.json()) as {
             profile?: SupabaseProfile
             error?: string
+          }
+
+          // Un 401 acá ("Sesión inválida" en /api/auth/profile, ver esa
+          // ruta) no siempre significa que el usuario deslogueó -- justo
+          // después de un window.location.href (ej. volviendo del checkout
+          // por transferencia/Mercado Pago, ver app/checkout/page.tsx), el
+          // cliente recién se inicializa y getSession() puede haber
+          // devuelto, desde localStorage, un access_token a punto de
+          // vencer mientras el refresh automático en background todavía no
+          // terminó -- el server sí valida el JWT contra Supabase y lo
+          // rechaza aunque la sesión sea, en los hechos, válida. Un solo
+          // reintento con un getSession() fresco (dispara el refresh si
+          // hace falta) resuelve esa carrera puntual sin enmascarar un 401
+          // legítimo: si el token no cambió o el segundo intento también
+          // falla, cae exactamente al mismo log/fallback de siempre.
+          if (response.status === 401) {
+            const { data: { session: freshSession } } =
+              await supabase.auth.getSession()
+
+            if (
+              freshSession?.access_token &&
+              freshSession.access_token !== accessToken
+            ) {
+              response = await fetchProfile(freshSession.access_token)
+              data = (await response.json()) as {
+                profile?: SupabaseProfile
+                error?: string
+              }
+            }
           }
 
           if (!response.ok || !data.profile) {
