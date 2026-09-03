@@ -447,39 +447,46 @@ test("los tres medios conservan la misma base y sus diferencias reales", () => {
   )
 })
 
-test("buildCheckoutOrderBase persiste la modalidad de cuotas como snapshot histórico", () => {
+test("buildCheckoutOrderBase persiste la modalidad de cuotas como snapshot histórico -- precio público único, nunca recarga el total", () => {
   const customer = normalizeCheckoutOrderCustomer(validCustomer)
   const base = {
     userId: "user-1",
-    total: 84_300,
-    externalAmountDue: 84_300,
+    total: 75_000,
+    externalAmountDue: 75_000,
     creditBalanceUsed: 0,
     paymentMethodId: "mercadopago",
     storeBenefitDiscountAmount: 0,
     customer,
   }
 
+  // Bajo el modelo de precio público único, surchargeAmount es siempre 0 y
+  // productsBaseAmount coincide con el total real cobrado (75_000): elegir
+  // 3 cuotas no aumenta lo que paga el cliente, sólo queda registrado qué
+  // modalidad eligió y el costo interno de MP en ese momento (`percent`,
+  // puramente informativo/auditoría).
   const financed = buildCheckoutOrderBase({
     ...base,
     installments: {
       count: 3,
       percent: 21,
       productsBaseAmount: 75_000,
-      surchargeAmount: 9_300,
+      surchargeAmount: 0,
     },
   })
 
   assert.equal(financed.installments_count, 3)
   assert.equal(financed.installments_percent, 21)
   assert.equal(financed.installments_products_base_amount, 75_000)
-  assert.equal(financed.installments_surcharge_amount, 9_300)
+  assert.equal(financed.installments_surcharge_amount, 0)
+  assert.equal(financed.total, 75_000)
 
-  const singlePayment = buildCheckoutOrderBase({ ...base, total: 75_000, externalAmountDue: 75_000 })
+  const singlePayment = buildCheckoutOrderBase({ ...base, installments: null })
 
   assert.equal(singlePayment.installments_count, null)
   assert.equal(singlePayment.installments_percent, null)
   assert.equal(singlePayment.installments_products_base_amount, null)
   assert.equal(singlePayment.installments_surcharge_amount, null)
+  assert.equal(singlePayment.total, financed.total)
 })
 
 test("transferencia nunca recibe financiación: create-order no importa ni usa el módulo de cuotas", () => {
@@ -523,22 +530,72 @@ test("create-preference recalcula la modalidad server-side y nunca confía en el
     source,
     /normalizeRequestedInstallmentsModality\([\s\S]{0,30}payload\.installmentsModality/,
   )
+  // PRECIO PÚBLICO ÚNICO: el total nunca se recalcula por la modalidad de
+  // cuotas -- no debe existir ningún gross-up del monto financiable.
+  assert.doesNotMatch(source, /calculateInstallmentPlan/)
+  assert.doesNotMatch(source, /calculateFinancedTotal/)
+  assert.match(
+    source,
+    /totalAfterStoreBenefit\s*=\s*roundMoney\(financableBase\)/,
+  )
 })
 
-test("una modalidad pedida pero no habilitada en ningún producto del carrito nunca llega a calcular un plan", () => {
+test("una modalidad pedida pero no habilitada en ningún producto del carrito se rechaza ANTES de crear la orden", () => {
   const source = readFileSync(
     new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url),
     "utf8",
   )
 
-  // El rechazo (400) ocurre ANTES de tocar site_settings/calculateInstallmentPlan:
-  // nunca se calcula un monto financiado para una modalidad no habilitada.
+  // El rechazo (400) ocurre antes del insert de la orden: nunca se le crea
+  // un pedido -- ni se le cobra nada -- al cliente por una modalidad que
+  // ningún producto del carrito habilita.
   const eligibilityCheckIndex = source.indexOf(
     "getCartInstallmentEligibility(catalog.products)",
   )
-  const firstPlanCalculationIndex = source.indexOf("calculateInstallmentPlan(")
-  assert.ok(eligibilityCheckIndex >= 0 && firstPlanCalculationIndex >= 0)
-  assert.ok(eligibilityCheckIndex < firstPlanCalculationIndex)
+  const orderInsertIndex = source.indexOf(".insert(orderPayload")
+  assert.ok(eligibilityCheckIndex >= 0 && orderInsertIndex >= 0)
+  assert.ok(eligibilityCheckIndex < orderInsertIndex)
+})
+
+test("CASO C (precio único): el unit_price mandado a Mercado Pago es externalAmountDue -- el mismo monto sin importar la cuota elegida, nunca +recargo", () => {
+  const source = readFileSync(
+    new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  assert.match(source, /unit_price:\s*externalAmountDue/)
+  // externalAmountDue sale de customerCreditApplication, calculado a partir
+  // de totalAfterStoreBenefit = roundMoney(financableBase) -- no hay ningún
+  // punto intermedio que le sume un recargo por cuotas antes de enviarlo.
+  assert.doesNotMatch(source, /externalAmountDue\s*\+/)
+  assert.doesNotMatch(source, /unit_price:\s*[^,\n]*surcharge/i)
+})
+
+test("CASO D (precio único): en el Checkout, elegir 1/2/3/6 cuotas nunca recalcula subtotal ni total -- sólo el descuento de transferencia mueve el total", () => {
+  const page = readFileSync(
+    new URL("../../app/checkout/page.tsx", import.meta.url),
+    "utf8",
+  )
+
+  // No puede quedar ningún gross-up client-side.
+  assert.doesNotMatch(page, /calculateInstallmentPlan/)
+  assert.doesNotMatch(page, /calculateFinancedTotal/)
+  assert.doesNotMatch(page, /\.totalFinanced/)
+
+  // totalBeforeCustomerCredit (insumo directo de finalTotal, lo que
+  // efectivamente se cobra) sólo se ramifica por isTransferPayment --
+  // nunca por effectiveInstallmentsModality/installmentsModality.
+  assert.match(
+    page,
+    /const totalBeforeCustomerCredit = isTransferPayment[\s\S]{0,10}\? totalBeforeTransferDiscount - transferDiscountAmount[\s\S]{0,10}: totalBeforeTransferDiscount/,
+  )
+
+  // "Pagás N cuotas de $X" es puramente informativo: divide finalTotal, no
+  // lo reconstruye a partir de una cuota.
+  assert.match(
+    page,
+    /getPlainInstallmentAmount\(finalTotal, effectiveInstallmentsModality\)/,
+  )
 })
 
 test("getCheckoutOrderShippingFields persiste la sucursal verificada; domicilio y sucursal sin sucursal quedan en null", () => {

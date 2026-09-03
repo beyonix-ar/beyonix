@@ -10,14 +10,6 @@ export interface InstallmentsFinancingConfig {
   surchargePercentByCount: Record<InstallmentCount, number>
 }
 
-export interface InstallmentPlan {
-  count: InstallmentCount
-  /** % efectivo aplicado (base + costo de cuotas, con IVA, redondeado hacia arriba al entero como margen de seguridad). Nunca se le muestra al cliente. */
-  percent: number
-  installmentAmount: number
-  totalFinanced: number
-}
-
 interface EligibleInstallmentsProduct {
   cuotas_2_habilitadas?: boolean
   cuotas_3_habilitadas?: boolean
@@ -27,23 +19,14 @@ interface EligibleInstallmentsProduct {
 const ROUNDING_EPSILON = 1e-6
 
 /**
- * Redondea hacia arriba al próximo múltiplo de $100. Un valor ya exacto en
- * múltiplo de 100 no sube (usa un epsilon para no dispararse por arrastre
- * de punto flotante, ej. 28100.00000000003).
- */
-export function roundUpToCommercialHundred(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  // "|| 0" normaliza -0 (ej. cuando value es 0 y el epsilon lo empuja
-  // apenas debajo de cero antes del ceil) a 0 positivo.
-  return Math.ceil((value - ROUNDING_EPSILON) / 100) * 100 || 0
-}
-
-/**
  * Aplica IVA sobre un % crudo y redondea hacia arriba al entero como margen
  * de seguridad -- nunca se muestra este número al cliente. Compartido entre
- * `getEffectiveInstallmentPercent` (con recargo por cuotas) y
- * `getSinglePaymentEffectivePercent` (sin recargo, pago único) para no
- * duplicar la fórmula.
+ * `getEffectiveInstallmentPercent` y `getSinglePaymentEffectivePercent`.
+ * MODELO DE PRECIO ÚNICO: este % es exclusivamente el COSTO INTERNO que
+ * Mercado Pago le cobra a BEYONIX por ese medio de pago -- se usa para
+ * simular rentabilidad y calcular el precio objetivo en Admin (ver
+ * lib/pricing/product-pricing.ts), NUNCA para recalcular o "engordar" lo
+ * que paga el cliente al elegir cuotas (ver getPlainInstallmentAmount).
  */
 function ceilPercentWithIva(
   rawPercent: number,
@@ -54,11 +37,9 @@ function ceilPercentWithIva(
 }
 
 /**
- * % efectivo que hay que aplicar sobre el precio base para que, después de
- * que Mercado Pago cobre su costo real (procesamiento + costo por cuotas,
- * con IVA), BEYONIX preserve la base económica que pretendía cobrar.
- * Redondea hacia arriba al entero como margen de seguridad -- nunca se
- * muestra este número al cliente.
+ * % efectivo (costo interno de Mercado Pago para BEYONIX, con IVA incluido)
+ * de financiar en `count` cuotas. Insumo del precio objetivo / simulación de
+ * rentabilidad en Admin -- nunca se le suma al precio que ve el cliente.
  */
 export function getEffectiveInstallmentPercent(
   count: InstallmentCount,
@@ -78,38 +59,6 @@ export function getSinglePaymentEffectivePercent(
   config: InstallmentsFinancingConfig,
 ): number {
   return ceilPercentWithIva(config.baseProcessingPercent, config)
-}
-
-/**
- * precio_financiado = precio_base / (1 - porcentaje). Compensa el
- * porcentaje descontado en vez de simplemente sumarlo.
- */
-export function calculateFinancedTotal(
-  baseAmount: number,
-  percent: number,
-): number {
-  if (!Number.isFinite(baseAmount) || baseAmount <= 0) return 0
-  if (!Number.isFinite(percent) || percent <= 0 || percent >= 100) return baseAmount
-  return baseAmount / (1 - percent / 100)
-}
-
-/**
- * Cuota comercial: redondea la CUOTA hacia arriba a $100 y reconstruye el
- * total multiplicando por la cantidad de cuotas (nunca al revés).
- */
-export function calculateInstallmentPlan(
-  baseAmount: number,
-  count: InstallmentCount,
-  config: InstallmentsFinancingConfig,
-): InstallmentPlan | null {
-  if (!Number.isFinite(baseAmount) || baseAmount <= 0) return null
-
-  const percent = getEffectiveInstallmentPercent(count, config)
-  const financedTotalRaw = calculateFinancedTotal(baseAmount, percent)
-  const installmentAmount = roundUpToCommercialHundred(financedTotalRaw / count)
-  const totalFinanced = installmentAmount * count
-
-  return { count, percent, installmentAmount, totalFinanced }
 }
 
 export function getEligibleInstallmentCounts(
@@ -143,62 +92,85 @@ function formatCommercialPrice(value: number) {
 }
 
 /**
+ * PRECIO PÚBLICO ÚNICO: el total que paga el cliente es siempre `price`, sin
+ * importar cuántas cuotas elija -- elegir cuotas nunca recalcula ni "engorda"
+ * el total (eso vivía antes en calculateInstallmentPlan/calculateFinancedTotal,
+ * eliminados). Esta función es puramente informativa: `price / count`,
+ * redondeado al peso más cercano. La suma de las cuotas puede no coincidir
+ * centavo a centavo con `price` si no divide exacto -- es esperado, nunca se
+ * "corrige" ajustando el total real.
+ */
+export function getPlainInstallmentAmount(
+  price: number,
+  count: InstallmentCount,
+): number | null {
+  if (!Number.isFinite(price) || price <= 0) return null
+  return Math.round(price / count)
+}
+
+interface InstallmentDisplayPlan {
+  count: InstallmentCount
+  installmentAmount: number
+}
+
+/**
  * "Hasta N" y no "N" a secas: Checkout Pro configura `installments` como
  * TOPE ofrecido, no como cantidad obligatoria -- según el medio de pago,
  * Mercado Pago puede terminar ofreciéndole al comprador menos cuotas que N
- * (hasta 1 pago) por el mismo monto. "N cuotas de $X" sin matizar sería una
- * promesa que la propia preferencia de Mercado Pago no puede garantizar.
+ * (hasta 1 pago) por el mismo monto. Sin "sin interés": bajo el modelo
+ * viejo esa palabra describía un gross-up disfrazado; ahora que el total es
+ * literalmente el mismo elija lo que elija, copy neutral evita depender de
+ * esa idea para comunicar el punto (ver auditoría de precio único).
  */
-function formatInstallmentPlanLabel(plan: InstallmentPlan): string {
-  return `Hasta ${plan.count} cuotas sin interés de ${formatCommercialPrice(plan.installmentAmount)}`
+function formatInstallmentDisplayLabel(plan: InstallmentDisplayPlan): string {
+  return `Hasta ${plan.count} cuotas de ${formatCommercialPrice(plan.installmentAmount)}`
 }
 
 /**
  * Planes elegibles de cara al cliente, en orden ascendente de cuotas.
- * `price` es el precio efectivamente mostrado (puede diferir de
+ * `price` es el PRECIO PÚBLICO efectivamente mostrado (puede diferir de
  * `producto.precio` cuando hay variante/condicionado con su propio precio)
- * -- nunca se asume `producto.precio` acá.
+ * -- nunca se asume `producto.precio` acá. Puramente informativo: ver
+ * `getPlainInstallmentAmount`.
  */
-export function getEligibleInstallmentPlans(
+export function getEligibleInstallmentDisplayPlans(
   product: EligibleInstallmentsProduct,
   price: number,
-  config: InstallmentsFinancingConfig,
-): InstallmentPlan[] {
+): InstallmentDisplayPlan[] {
   return getEligibleInstallmentCounts(product)
-    .map((count) => calculateInstallmentPlan(price, count, config))
-    .filter((plan): plan is InstallmentPlan => plan !== null)
+    .map((count) => {
+      const installmentAmount = getPlainInstallmentAmount(price, count)
+      return installmentAmount === null ? null : { count, installmentAmount }
+    })
+    .filter((plan): plan is InstallmentDisplayPlan => plan !== null)
 }
 
 /**
- * Líneas de cara al cliente, ej. "Hasta 3 cuotas sin interés de $31.700".
- * Nunca incluye porcentaje, comisión ni "financiado" -- sólo cuenta de
- * cuotas y monto de cada una. Una línea por cada modalidad habilitada, en
- * orden ascendente de cuotas.
+ * Líneas de cara al cliente, ej. "Hasta 3 cuotas de $25.000". Una línea por
+ * cada modalidad habilitada, en orden ascendente de cuotas.
  */
 export function getInstallmentPlanLabels(
   product: EligibleInstallmentsProduct,
   price: number,
-  config: InstallmentsFinancingConfig,
 ): string[] {
-  return getEligibleInstallmentPlans(product, price, config).map(
-    formatInstallmentPlanLabel,
+  return getEligibleInstallmentDisplayPlans(product, price).map(
+    formatInstallmentDisplayLabel,
   )
 }
 
 /**
  * La MAYOR modalidad de cuotas habilitada para el producto, ya formateada
- * ("Hasta 6 cuotas sin interés de $X"). Pensada para superficies compactas
- * (ProductCard, PDP/Quick View) donde mostrar las 3 modalidades a la vez
- * sobrecarga la UI -- el checkout sigue mostrando todas las modalidades
- * reales vía `getInstallmentPlanLabels`/`getEligibleInstallmentCounts`.
- * `null` si el producto no tiene ninguna modalidad habilitada.
+ * ("Hasta 6 cuotas de $X"). Pensada para superficies compactas (ProductCard,
+ * PDP/Quick View) donde mostrar las 3 modalidades a la vez sobrecarga la UI
+ * -- el checkout sigue mostrando todas las modalidades reales vía
+ * `getInstallmentPlanLabels`/`getEligibleInstallmentCounts`. `null` si el
+ * producto no tiene ninguna modalidad habilitada.
  */
 export function getMaxInstallmentPlanLabel(
   product: EligibleInstallmentsProduct,
   price: number,
-  config: InstallmentsFinancingConfig,
 ): string | null {
-  const plans = getEligibleInstallmentPlans(product, price, config)
+  const plans = getEligibleInstallmentDisplayPlans(product, price)
   const maxPlan = plans[plans.length - 1]
-  return maxPlan ? formatInstallmentPlanLabel(maxPlan) : null
+  return maxPlan ? formatInstallmentDisplayLabel(maxPlan) : null
 }

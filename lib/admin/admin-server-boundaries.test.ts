@@ -44,3 +44,34 @@ test("admin_order_event_views existe con RLS y sin permisos de browser", () => {
   )
   assert.match(migration, /grant select, insert, update, delete[^;]+service_role/)
 })
+
+test("CASO G (precio único): en modo manual, el precio que manda el navegador se persiste tal cual -- Admin nunca lo recalcula automáticamente", () => {
+  const route = source("app/api/admin/products/[id]/catalog/route.ts")
+
+  // El bloque que sobreescribe catalogInput.precio SÓLO corre dentro del
+  // `if (pricingMode === "target_margin")`; en manual, catalogInput.precio
+  // nunca se toca -- pasa intacto a la RPC con el valor que mandó el admin.
+  const targetMarginBlockStart = route.indexOf('if (pricingMode === "target_margin")')
+  const priceOverwriteIndex = route.indexOf("catalogInput.precio = targetMarginResult.commercialPrice")
+  const rpcCallIndex = route.indexOf("update_product_commercial_configuration_atomic")
+
+  assert.ok(targetMarginBlockStart >= 0)
+  assert.ok(priceOverwriteIndex > targetMarginBlockStart)
+  assert.ok(priceOverwriteIndex < rpcCallIndex)
+  // Ningún otro lugar del archivo toca catalogInput.precio.
+  assert.equal(
+    (route.match(/catalogInput\.precio\s*=/g) ?? []).length,
+    1,
+  )
+})
+
+test("precio objetivo (margen): siempre recalculado server-side con la modalidad de cuotas HABILITADA real del catálogo, nunca confía en el precio del navegador", () => {
+  const route = source("app/api/admin/products/[id]/catalog/route.ts")
+
+  assert.match(route, /calculateTargetMarginPrice\(/)
+  assert.match(route, /eligibleInstallmentCounts,\s*\n\s*config: installmentsFinancing,/)
+  assert.match(
+    route,
+    /Autoritativo: el precio que haya mandado el navegador se ignora/,
+  )
+})

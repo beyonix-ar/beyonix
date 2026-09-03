@@ -17,7 +17,6 @@ import {
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
 import { getMaxInstallmentPlanLabel } from "@/lib/products/installments"
-import { useSiteSettings } from "@/hooks/use-site-settings"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
 import type { SupabaseProducto } from "@/lib/supabase/types"
@@ -82,9 +81,8 @@ export function HeroSection({
     ? Math.round((1 - finalPrice / originalPrice) * 100)
     : 0
   const hasSale = discountPercentage > 0
-  const { installmentsFinancing } = useSiteSettings()
   const installmentLabel = featuredProduct
-    ? getMaxInstallmentPlanLabel(featuredProduct, finalPrice, installmentsFinancing)
+    ? getMaxInstallmentPlanLabel(featuredProduct, finalPrice)
     : null
 
   const openFeaturedProduct = () => {
@@ -139,7 +137,7 @@ export function HeroSection({
                     <span className="beyonix-modal-title block text-sm font-semibold leading-5 text-white sm:text-base">
                       {item.title}
                     </span>
-                    <span className="beyonix-modal-muted mt-1 block text-11px leading-5 text-white/52">
+                    <span className="beyonix-hero-trust-sub mt-1 block text-11px leading-5 text-white/52">
                       {item.sub}
                     </span>
                   </div>

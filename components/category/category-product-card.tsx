@@ -15,7 +15,6 @@ import {
   getVariantOptionByValue,
 } from "@/lib/products/product-variants"
 import { getInstallmentPlanLabels } from "@/lib/products/installments"
-import { useSiteSettings } from "@/hooks/use-site-settings"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -62,11 +61,9 @@ export function CategoryProductCard({
   )
 
   const images = activeVariant.images
-  const { installmentsFinancing } = useSiteSettings()
   const installmentsLabels = getInstallmentPlanLabels(
     product,
     activeVariant.price,
-    installmentsFinancing,
   )
 
   const handleAddToCart = () => {

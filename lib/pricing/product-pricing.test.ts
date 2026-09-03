@@ -247,6 +247,32 @@ test("calculateTargetMarginPrice: con el mismo precio único, transferencia y MP
   assert.ok(transferencia!.marginPercent > 40)
 })
 
+test("CASO F (informe de precio único): sólo 3 cuotas máximo habilitadas -- el precio objetivo usa el costo de MP3 como peor escenario, no MP6 (no habilitado)", () => {
+  const result = calculateTargetMarginPrice({
+    cost: 15_000,
+    targetMarginPercent: 40,
+    eligibleInstallmentCounts: [3],
+    config: REAL_CONFIG,
+  })
+  assert.ok(result)
+  assert.equal(result!.worstCaseScenario.id, "mp_3")
+  // Matemático: 15000 / (1 - 0.21 - 0.40) = 15000 / 0.39 = 38461.53... -> comercial $38.900.
+  assert.equal(result!.commercialPrice, 38_900)
+  assert.ok(result!.resultingMarginPercent >= 40)
+
+  // Ese mismo precio único es el que se cobra sin importar la cuota elegida
+  // -- 1 pago, 2 (no habilitado acá) o 3 cuotas, siempre $38.900.
+  const simulation = simulateProductProfitability({
+    price: result!.commercialPrice,
+    cost: 15_000,
+    eligibleInstallmentCounts: [3],
+    config: REAL_CONFIG,
+  })
+  assert.ok(simulation)
+  assert.equal(simulation!.scenarios.length, 3) // transferencia + mp_unico + mp_3, nunca mp_6
+  assert.ok(simulation!.scenarios.every((scenario) => scenario.marginPercent >= 40 - 0.5))
+})
+
 test("calculateTargetMarginPrice: margen 0% como objetivo es válido", () => {
   const result = calculateTargetMarginPrice({
     cost: 15_000,

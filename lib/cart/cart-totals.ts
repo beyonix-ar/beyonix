@@ -1,4 +1,4 @@
-import { getProductDiscount, getShippingCost } from "@/lib/store-config"
+import { getProductDiscount, getShippingCost } from "../store-config.ts"
 
 interface CartTotalItem {
   product: {

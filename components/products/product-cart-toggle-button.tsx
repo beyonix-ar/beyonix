@@ -33,17 +33,17 @@ export function ProductCartToggleButton({
   }
 
   return (
-    <div className="grid h-12 w-full grid-cols-[48px_minmax(72px,1fr)_48px] overflow-hidden rounded-xl border border-beyonix-blue-light/24 bg-[#121820] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+    <div className="beyonix-qty-stepper grid h-12 w-full grid-cols-[48px_minmax(72px,1fr)_48px] overflow-hidden rounded-xl border border-beyonix-blue-light/24 bg-[#121820] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
       <button
         type="button"
         aria-label="Disminuir cantidad"
         onClick={onDecrease}
-        className="flex h-full cursor-pointer items-center justify-center border-r border-beyonix-blue-light/18 bg-[#112A43]/72 text-white/82 transition-colors hover:bg-[#183B5E] hover:text-white active:bg-[#1E4D7B]"
+        className="beyonix-qty-stepper-btn flex h-full cursor-pointer items-center justify-center border-r border-beyonix-blue-light/18 bg-[#112A43]/72 text-white/82 transition-colors hover:bg-[#183B5E] hover:text-white active:bg-[#1E4D7B]"
       >
         <MinusIcon className="size-3.5 stroke-2" />
       </button>
 
-      <div className="flex h-full items-center justify-center bg-[#191B1F] px-2 text-14px font-bold tabular-nums text-white">
+      <div className="beyonix-qty-stepper-value flex h-full items-center justify-center bg-[#191B1F] px-2 text-14px font-bold tabular-nums text-white">
         {quantity}
       </div>
 
@@ -52,7 +52,7 @@ export function ProductCartToggleButton({
         aria-label="Aumentar cantidad"
         onClick={onIncrease}
         disabled={maxReached}
-        className="flex h-full items-center justify-center border-l border-beyonix-blue-light/18 bg-[#112A43]/72 text-white/82 transition-colors enabled:cursor-pointer enabled:hover:bg-[#183B5E] enabled:hover:text-white enabled:active:bg-[#1E4D7B] disabled:cursor-not-allowed disabled:opacity-35"
+        className="beyonix-qty-stepper-btn flex h-full items-center justify-center border-l border-beyonix-blue-light/18 bg-[#112A43]/72 text-white/82 transition-colors enabled:cursor-pointer enabled:hover:bg-[#183B5E] enabled:hover:text-white enabled:active:bg-[#1E4D7B] disabled:cursor-not-allowed disabled:opacity-35"
       >
         <PlusIcon className="size-3.5 stroke-2" />
       </button>

@@ -1,4 +1,4 @@
-import { TRANSFER_DISCOUNT } from "@/lib/store-config"
+import { TRANSFER_DISCOUNT } from "../store-config.ts"
 
 export const TRANSFER_ALIAS = "BEYONIX"
 export const TRANSFER_ACCOUNT_HOLDER = "Lucas Espinosa"

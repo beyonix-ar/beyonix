@@ -81,8 +81,8 @@ import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
 import {
-  calculateInstallmentPlan,
   getCartInstallmentEligibility,
+  getPlainInstallmentAmount,
   type InstallmentCount,
 } from "@/lib/products/installments"
 import {
@@ -276,7 +276,7 @@ function CheckoutNotice({
         tone === "error"
           ? "border-red-400/24 bg-red-500/10 text-red-200"
           : tone === "warning"
-            ? "border-amber-300/22 bg-amber-300/[0.055] text-white/82"
+            ? "beyonix-checkout-notice-warning border-amber-300/22 bg-amber-300/[0.055] text-white/82"
             : "border-beyonix-blue-light/16 bg-[#10151C] text-white/68",
         className,
       )}
@@ -284,7 +284,7 @@ function CheckoutNotice({
       {tone === "error" ? (
         <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-300" />
       ) : tone === "warning" ? (
-        <Clock3 className="mt-0.5 size-4 shrink-0 text-amber-300" />
+        <Clock3 className="beyonix-checkout-notice-warning-icon mt-0.5 size-4 shrink-0 text-amber-300" />
       ) : null}
       <div className="min-w-0">{children}</div>
     </div>
@@ -718,14 +718,12 @@ export default function CheckoutPage() {
     cartInstallmentEligibility.includes(installmentsModality)
       ? installmentsModality
       : null
+  // PRECIO PÚBLICO ÚNICO: elegir cuotas nunca recalcula el total -- el
+  // total que paga el cliente es siempre totalBeforeTransferDiscount (menos
+  // el descuento por transferencia cuando corresponde), sin importar la
+  // modalidad de Mercado Pago elegida. Ver auditoría de precio único en
+  // lib/products/installments.ts.
   const totalBeforeTransferDiscount = productsTotalAfterStoreBenefit + totals.shipping
-  const installmentPlan = effectiveInstallmentsModality
-    ? calculateInstallmentPlan(
-        totalBeforeTransferDiscount,
-        effectiveInstallmentsModality,
-        siteSettings.installmentsFinancing,
-      )
-    : null
   const maxApplicableCustomerCredit = getMaxApplicableCustomerCredit(
     customerCredit.balance,
     totalBeforeTransferDiscount,
@@ -740,9 +738,7 @@ export default function CheckoutPage() {
     : 0
   const totalBeforeCustomerCredit = isTransferPayment
     ? totalBeforeTransferDiscount - transferDiscountAmount
-    : installmentPlan
-      ? installmentPlan.totalFinanced
-      : totalBeforeTransferDiscount
+    : totalBeforeTransferDiscount
   const customerCreditApplication = calculateCustomerCreditApplication({
     availableBalance: customerCredit.balance,
     eligibleTotal: totalBeforeCustomerCredit,
@@ -761,6 +757,12 @@ export default function CheckoutPage() {
   // proactiva de stock mientras el cliente completa el Checkout.
   const hasKnownStockConflict = insufficientStockItems.length > 0
   const finalTotal = customerCreditApplication.externalAmountDue
+  // Puramente informativo ("Pagás N cuotas de $X"): finalTotal (lo que
+  // realmente se envía a Mercado Pago) nunca cambia por la modalidad
+  // elegida -- sólo se divide para mostrar el valor de cada cuota.
+  const displayInstallmentAmount = effectiveInstallmentsModality
+    ? getPlainInstallmentAmount(finalTotal, effectiveInstallmentsModality)
+    : null
 
   useEffect(() => {
     if (customerCredit.loading) return
@@ -2229,7 +2231,7 @@ export default function CheckoutPage() {
                             </span>
                             <span className="mt-1 block text-sm text-white/45">
                               {bestCartInstallmentCount
-                                ? `Tarjeta o saldo en cuenta · Hasta ${bestCartInstallmentCount} cuotas sin interés`
+                                ? `Tarjeta o saldo en cuenta · Hasta ${bestCartInstallmentCount} cuotas`
                                 : method.description}
                             </span>
                           </span>
@@ -2262,12 +2264,11 @@ export default function CheckoutPage() {
                         </button>
 
                         {cartInstallmentEligibility.map((count) => {
-                          const plan = calculateInstallmentPlan(
+                          const installmentAmount = getPlainInstallmentAmount(
                             totalBeforeTransferDiscount,
                             count,
-                            siteSettings.installmentsFinancing,
                           )
-                          if (!plan) return null
+                          if (installmentAmount === null) return null
 
                           return (
                             <button
@@ -2283,10 +2284,10 @@ export default function CheckoutPage() {
                             >
                               <span className="min-w-0">
                                 <span className="block font-semibold text-white">
-                                  Hasta {count} cuotas sin interés
+                                  Hasta {count} cuotas
                                 </span>
                                 <span className="mt-1 block text-sm text-white/45">
-                                  {formatPrice(plan.installmentAmount)} por cuota
+                                  {formatPrice(installmentAmount)} por cuota
                                 </span>
                               </span>
                             </button>
@@ -2721,10 +2722,10 @@ export default function CheckoutPage() {
                     {formatPrice(finalTotal)}
                   </span>
                 </div>
-                {installmentPlan && effectiveInstallmentsModality && (
+                {displayInstallmentAmount !== null && effectiveInstallmentsModality && (
                   <p className="text-right text-11px font-semibold text-beyonix-sky">
                     Pagás {effectiveInstallmentsModality} cuotas de{" "}
-                    {formatPrice(installmentPlan.installmentAmount)}
+                    {formatPrice(displayInstallmentAmount)}
                   </p>
                 )}
               </div>

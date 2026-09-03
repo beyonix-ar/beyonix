@@ -49,8 +49,8 @@ import { getProductVideoSource } from "@/lib/products/product-video"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
 import {
-  calculateInstallmentPlan,
   getEffectiveInstallmentPercent,
+  getPlainInstallmentAmount,
 } from "@/lib/products/installments"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import {
@@ -667,16 +667,20 @@ export function ProductoForm({
                     ]
                   ).map((toggle) => {
                     const active = form[toggle.key]
-                    const plan =
+                    // Precio público único: la cuota que ve el cliente es
+                    // simplemente currentPrice / count, nunca un total
+                    // financiado distinto (ver auditoría de precio único en
+                    // lib/products/installments.ts).
+                    const installmentAmount =
                       active && Number.isFinite(currentPrice) && currentPrice > 0
-                        ? calculateInstallmentPlan(currentPrice, toggle.count, installmentsFinancing)
+                        ? getPlainInstallmentAmount(currentPrice, toggle.count)
                         : null
 
                     return (
                       <AdminSecondaryButton
                         key={toggle.key}
-                        title={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
-                        aria-label={`${toggle.label} sin interés: ${active ? "habilitado" : "deshabilitado"}`}
+                        title={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}`}
+                        aria-label={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}`}
                         aria-pressed={active}
                         onClick={() => setField(toggle.key, !active)}
                         className={`product-editor-toggle grid w-full min-h-10 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
@@ -688,11 +692,11 @@ export function ProductoForm({
                         )}
                         <span className="min-w-0 self-center">
                           <span className="block text-sm font-black text-white">
-                            {toggle.label} sin interés
+                            {toggle.label}
                           </span>
                           <span className="mt-0.5 block text-xs font-medium leading-5 text-white">
-                            {plan
-                              ? `${productPriceFormatter.format(plan.installmentAmount)} por cuota`
+                            {installmentAmount
+                              ? `${productPriceFormatter.format(installmentAmount)} por cuota`
                               : "Deshabilitado"}
                           </span>
                         </span>

@@ -17,8 +17,8 @@ import {
   type StockSettings,
 } from "@/lib/site-settings"
 import {
-  calculateInstallmentPlan,
   getEffectiveInstallmentPercent,
+  getPlainInstallmentAmount,
 } from "@/lib/products/installments"
 import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
 import {
@@ -659,21 +659,21 @@ export function AdminModificaciones() {
         </div>
 
         <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
-          Para un producto de ejemplo de {formatARS(installmentsPreviewAmount)}:{" "}
+          Precio público único: el total NO cambia según la cantidad de
+          cuotas. Para un producto de ejemplo de {formatARS(installmentsPreviewAmount)}:{" "}
           {([2, 3, 6] as const).map((count, index) => {
-            const plan = calculateInstallmentPlan(
+            const installmentAmount = getPlainInstallmentAmount(
               installmentsPreviewAmount,
               count,
-              previewInstallmentsFinancing,
             )
-            if (!plan) return null
+            if (installmentAmount === null) return null
             return (
               <span key={count}>
                 {index > 0 && " · "}
                 <strong className="text-beyonix-cyan">
-                  {count} cuotas de {formatARS(plan.installmentAmount)}
+                  {count} cuotas de {formatARS(installmentAmount)}
                 </strong>{" "}
-                (costo efectivo {getEffectiveInstallmentPercent(count, previewInstallmentsFinancing)}%)
+                (costo interno MP {getEffectiveInstallmentPercent(count, previewInstallmentsFinancing)}%)
               </span>
             )
           })}

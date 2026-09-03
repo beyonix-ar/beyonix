@@ -2,15 +2,14 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
-  calculateFinancedTotal,
-  calculateInstallmentPlan,
   getCartInstallmentEligibility,
   getEffectiveInstallmentPercent,
   getEligibleInstallmentCounts,
+  getEligibleInstallmentDisplayPlans,
   getInstallmentPlanLabels,
   getMaxInstallmentPlanLabel,
+  getPlainInstallmentAmount,
   getSinglePaymentEffectivePercent,
-  roundUpToCommercialHundred,
   type InstallmentsFinancingConfig,
 } from "./installments.ts"
 
@@ -29,7 +28,7 @@ function noFinancing(overrides: Partial<Record<"cuotas_2_habilitadas" | "cuotas_
   }
 }
 
-test("el % efectivo se deriva de costo base + costo por cuotas + IVA, nunca de una constante", () => {
+test("el % efectivo se deriva de costo base + costo por cuotas + IVA, nunca de una constante -- SOLO uso interno (Admin: rentabilidad/precio objetivo), nunca se le suma al precio del cliente", () => {
   // base 6.42 + adicional -> con IVA (x1.21) -> redondeo hacia arriba al entero
   assert.equal(getEffectiveInstallmentPercent(2, REAL_CONFIG), 18) // 14.21 * 1.21 = 17.1941
   assert.equal(getEffectiveInstallmentPercent(3, REAL_CONFIG), 21) // 16.91 * 1.21 = 20.4611
@@ -51,63 +50,42 @@ test("cambiar cualquiera de los 3 ingredientes recalcula el % efectivo sin tocar
   assert.equal(getEffectiveInstallmentPercent(3, higherBase), 23) // 18.49 * 1.21 = 22.3729
 })
 
-test("roundUpToCommercialHundred nunca redondea hacia abajo", () => {
-  assert.equal(roundUpToCommercialHundred(28089.89), 28100)
-  assert.equal(roundUpToCommercialHundred(15432.1), 15500)
+// ─────────────────────────────────────────────────────────────
+// CASO A (informe final #22): precio público $6.000, 2/3/6 habilitadas.
+// El total nunca cambia; sólo cambia cuánto vale cada cuota informativa.
+// ─────────────────────────────────────────────────────────────
+
+test("PRECIO PÚBLICO ÚNICO: getPlainInstallmentAmount nunca reconstruye un total distinto -- sólo divide", () => {
+  assert.equal(getPlainInstallmentAmount(6_000, 2), 3_000)
+  assert.equal(getPlainInstallmentAmount(6_000, 3), 2_000)
+  assert.equal(getPlainInstallmentAmount(6_000, 6), 1_000)
+
+  // El total sigue siendo $6.000 sin importar la cuota elegida: la prueba
+  // de que "no hay gross-up" es que count * installmentAmount == price
+  // cuando divide exacto (no un total mayor a medida que crecen las cuotas).
+  for (const count of [2, 3, 6] as const) {
+    const installmentAmount = getPlainInstallmentAmount(6_000, count)!
+    assert.equal(installmentAmount * count, 6_000)
+  }
 })
 
-test("roundUpToCommercialHundred: límites exactos de redondeo", () => {
-  // Múltiplo exacto: no debe subir al siguiente.
-  assert.equal(roundUpToCommercialHundred(28100), 28100)
-  assert.equal(roundUpToCommercialHundred(100), 100)
-  assert.equal(roundUpToCommercialHundred(0), 0)
-  // Un centavo por encima de un múltiplo exacto sí debe subir.
-  assert.equal(roundUpToCommercialHundred(28100.01), 28200)
-  // Un centavo por debajo también redondea al múltiplo de arriba (nunca abajo).
-  assert.equal(roundUpToCommercialHundred(28099.99), 28100)
-  // Arrastre de punto flotante sobre un múltiplo exacto no debe dispararlo.
-  assert.equal(roundUpToCommercialHundred(28100.000000003), 28100)
-  assert.equal(roundUpToCommercialHundred(15500 - 1e-9), 15500)
+test("getPlainInstallmentAmount: división monetaria correcta cuando no divide exacto (redondeo al peso, no se infla el total)", () => {
+  // 75.000 / 3 = 25.000 exacto.
+  assert.equal(getPlainInstallmentAmount(75_000, 3), 25_000)
+  // 75.000 / 6 = 12.500 exacto.
+  assert.equal(getPlainInstallmentAmount(75_000, 6), 12_500)
+  // 70.000 / 6 = 11.666.66... -> redondeo al peso más cercano, sin ajustar
+  // el total: 6 * 11.667 = 70.002 (unos centavos de diferencia informativa,
+  // nunca se "corrige" cobrando de más).
+  const installmentAmount = getPlainInstallmentAmount(70_000, 6)!
+  assert.equal(installmentAmount, 11_667)
+  assert.ok(Math.abs(installmentAmount * 6 - 70_000) < 10)
 })
 
-test("calculateFinancedTotal compensa el porcentaje, no lo suma ingenuamente", () => {
-  const financed = calculateFinancedTotal(75_000, 11)
-  // 75000 / 0.89 != 75000 * 1.11
-  assert.ok(Math.abs(financed - 84_269.66) < 0.01)
-  assert.notEqual(financed, 75_000 * 1.11)
-})
-
-test("plan de 3 cuotas para un producto de $75.000 con los costos reales de MP", () => {
-  const plan = calculateInstallmentPlan(75_000, 3, REAL_CONFIG)
-  assert.ok(plan)
-  assert.equal(plan!.percent, 21)
-  // 75000 / 0.79 = 94936.708... / 3 = 31645.57 -> redondeado a $100 hacia arriba
-  assert.equal(plan!.installmentAmount, 31_700)
-  assert.equal(plan!.totalFinanced, 31_700 * 3)
-})
-
-test("plan de 6 cuotas para un producto de $75.000 con los costos reales de MP", () => {
-  const plan = calculateInstallmentPlan(75_000, 6, REAL_CONFIG)
-  assert.ok(plan)
-  assert.equal(plan!.percent, 31)
-  // 75000 / 0.69 = 108695.65... / 6 = 18115.94 -> redondeado a $100 hacia arriba
-  assert.equal(plan!.installmentAmount, 18_200)
-  assert.equal(plan!.totalFinanced, 18_200 * 6)
-})
-
-test("plan de 2 cuotas para un producto de $75.000 con los costos reales de MP", () => {
-  const plan = calculateInstallmentPlan(75_000, 2, REAL_CONFIG)
-  assert.ok(plan)
-  assert.equal(plan!.percent, 18)
-  // 75000 / 0.82 = 91463.41... / 2 = 45731.71 -> redondeado a $100 hacia arriba
-  assert.equal(plan!.installmentAmount, 45_800)
-  assert.equal(plan!.totalFinanced, 45_800 * 2)
-})
-
-test("un monto base inválido o cero no genera plan", () => {
-  assert.equal(calculateInstallmentPlan(0, 3, REAL_CONFIG), null)
-  assert.equal(calculateInstallmentPlan(-100, 3, REAL_CONFIG), null)
-  assert.equal(calculateInstallmentPlan(Number.NaN, 3, REAL_CONFIG), null)
+test("un monto base inválido o cero no genera cuota", () => {
+  assert.equal(getPlainInstallmentAmount(0, 3), null)
+  assert.equal(getPlainInstallmentAmount(-100, 3), null)
+  assert.equal(getPlainInstallmentAmount(Number.NaN, 3), null)
 })
 
 test("elegibilidad por producto: ninguna, una, dos y las tres modalidades", () => {
@@ -149,83 +127,59 @@ test("pedir 6 cuotas en un carrito que sólo admite 3 queda fuera de lo elegible
   assert.equal(eligible.includes(6), false)
 })
 
-test("producto sin ninguna cuota habilitada nunca genera un plan financiado", () => {
+test("producto sin ninguna cuota habilitada nunca genera un plan de cara al cliente", () => {
   const producto = noFinancing()
   assert.deepEqual(getEligibleInstallmentCounts(producto), [])
-  // Ni siquiera pedirlo explícito a la función de cálculo debería usarse en
-  // la práctica -- create-preference nunca llega a llamarla porque valida
-  // elegibilidad antes -- pero si se llamara igual, el cálculo en sí no
-  // sabe "prohibir": la prohibición vive en la capa de elegibilidad, que ya
-  // devuelve [] acá.
+  assert.deepEqual(getEligibleInstallmentDisplayPlans(producto, 75_000), [])
 })
 
-test("envío efectivamente cobrado entra en la base financiable (no se financia sólo el producto)", () => {
-  // $75.000 en productos + $10.000 de envío pagado -> base $85.000, tal
-  // como arma create-preference (productsNet + shipping.shipping_cost_charged).
-  const conEnvioPagado = calculateInstallmentPlan(85_000, 3, REAL_CONFIG)
-  const sinEnvio = calculateInstallmentPlan(75_000, 3, REAL_CONFIG)
-
-  assert.ok(conEnvioPagado)
-  assert.ok(sinEnvio)
-  assert.equal(conEnvioPagado!.installmentAmount, 35_900)
-  assert.notEqual(conEnvioPagado!.installmentAmount, sinEnvio!.installmentAmount)
-})
-
-test("envío gratis (cliente paga $0) no agrega nada a la base financiable", () => {
-  // Mismo resultado que sin envío: la base es productsNet + 0.
-  const envioGratis = calculateInstallmentPlan(75_000 + 0, 3, REAL_CONFIG)
-  const sinEnvio = calculateInstallmentPlan(75_000, 3, REAL_CONFIG)
-
-  assert.deepEqual(envioGratis, sinEnvio)
-})
-
-test("las etiquetas de cara al cliente nunca mencionan porcentaje, comisión ni 'financiado'", () => {
+test("las etiquetas de cara al cliente nunca mencionan porcentaje, comisión, recargo ni 'financiado' -- y ya no dicen 'sin interés' (copy neutral, ver informe de precio único)", () => {
   const producto = noFinancing({ cuotas_3_habilitadas: true, cuotas_6_habilitadas: true })
-  const labels = getInstallmentPlanLabels(producto, 75_000, REAL_CONFIG)
+  const labels = getInstallmentPlanLabels(producto, 75_000)
 
   assert.deepEqual(labels, [
-    "Hasta 3 cuotas sin interés de $31.700",
-    "Hasta 6 cuotas sin interés de $18.200",
+    "Hasta 3 cuotas de $25.000",
+    "Hasta 6 cuotas de $12.500",
   ])
   for (const label of labels) {
-    assert.doesNotMatch(label, /%|financiad|comisi[oó]n|recargo/i)
+    assert.doesNotMatch(label, /%|financiad|comisi[oó]n|recargo|sin inter[eé]s/i)
     // Checkout Pro fija "installments" como TOPE ofrecido, no como cantidad
     // obligatoria: el texto nunca puede prometer "N cuotas" a secas, porque
     // Mercado Pago puede terminar ofreciendo menos según el medio de pago.
-    assert.match(label, /^Hasta \d+ cuotas sin interés de \$/)
+    assert.match(label, /^Hasta \d+ cuotas de \$/)
   }
 })
 
 test("un producto sin cuotas habilitadas no genera ninguna etiqueta", () => {
-  assert.deepEqual(getInstallmentPlanLabels(noFinancing(), 75_000, REAL_CONFIG), [])
+  assert.deepEqual(getInstallmentPlanLabels(noFinancing(), 75_000), [])
 })
 
 test("la etiqueta usa el precio efectivamente mostrado, no un precio de producto fijo", () => {
   const producto = noFinancing({ cuotas_3_habilitadas: true })
   // Precio de una variante/condicionado distinto al del producto base.
-  const labels = getInstallmentPlanLabels(producto, 50_000, REAL_CONFIG)
-  assert.notDeepEqual(labels, getInstallmentPlanLabels(producto, 75_000, REAL_CONFIG))
+  const labels = getInstallmentPlanLabels(producto, 50_000)
+  assert.notDeepEqual(labels, getInstallmentPlanLabels(producto, 75_000))
 })
 
 test("getMaxInstallmentPlanLabel: muestra siempre la MAYOR modalidad habilitada, para superficies compactas (card/PDP)", () => {
-  const price = 75_000
+  const price = 6_000
 
   // Sólo 2 -> "Hasta 2..."
   assert.equal(
-    getMaxInstallmentPlanLabel(noFinancing({ cuotas_2_habilitadas: true }), price, REAL_CONFIG),
-    "Hasta 2 cuotas sin interés de $45.800",
+    getMaxInstallmentPlanLabel(noFinancing({ cuotas_2_habilitadas: true }), price),
+    "Hasta 2 cuotas de $3.000",
   )
 
   // Sólo 3 -> "Hasta 3..."
   assert.equal(
-    getMaxInstallmentPlanLabel(noFinancing({ cuotas_3_habilitadas: true }), price, REAL_CONFIG),
-    "Hasta 3 cuotas sin interés de $31.700",
+    getMaxInstallmentPlanLabel(noFinancing({ cuotas_3_habilitadas: true }), price),
+    "Hasta 3 cuotas de $2.000",
   )
 
   // Sólo 6 -> "Hasta 6..."
   assert.equal(
-    getMaxInstallmentPlanLabel(noFinancing({ cuotas_6_habilitadas: true }), price, REAL_CONFIG),
-    "Hasta 6 cuotas sin interés de $18.200",
+    getMaxInstallmentPlanLabel(noFinancing({ cuotas_6_habilitadas: true }), price),
+    "Hasta 6 cuotas de $1.000",
   )
 
   // 2 + 3 -> "Hasta 3..."
@@ -233,9 +187,8 @@ test("getMaxInstallmentPlanLabel: muestra siempre la MAYOR modalidad habilitada,
     getMaxInstallmentPlanLabel(
       noFinancing({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true }),
       price,
-      REAL_CONFIG,
     ),
-    "Hasta 3 cuotas sin interés de $31.700",
+    "Hasta 3 cuotas de $2.000",
   )
 
   // 2 + 6 -> "Hasta 6..."
@@ -243,9 +196,8 @@ test("getMaxInstallmentPlanLabel: muestra siempre la MAYOR modalidad habilitada,
     getMaxInstallmentPlanLabel(
       noFinancing({ cuotas_2_habilitadas: true, cuotas_6_habilitadas: true }),
       price,
-      REAL_CONFIG,
     ),
-    "Hasta 6 cuotas sin interés de $18.200",
+    "Hasta 6 cuotas de $1.000",
   )
 
   // 3 + 6 -> "Hasta 6..."
@@ -253,21 +205,19 @@ test("getMaxInstallmentPlanLabel: muestra siempre la MAYOR modalidad habilitada,
     getMaxInstallmentPlanLabel(
       noFinancing({ cuotas_3_habilitadas: true, cuotas_6_habilitadas: true }),
       price,
-      REAL_CONFIG,
     ),
-    "Hasta 6 cuotas sin interés de $18.200",
+    "Hasta 6 cuotas de $1.000",
   )
 
-  // 2 + 3 + 6 -> "Hasta 6..."
+  // 2 + 3 + 6 -> "Hasta 6..." -- y el precio público sigue siendo $6.000 en los 4 casos (1 pago, 2, 3, 6).
   assert.equal(
     getMaxInstallmentPlanLabel(
       noFinancing({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true }),
       price,
-      REAL_CONFIG,
     ),
-    "Hasta 6 cuotas sin interés de $18.200",
+    "Hasta 6 cuotas de $1.000",
   )
 
   // Ninguna -> null
-  assert.equal(getMaxInstallmentPlanLabel(noFinancing(), price, REAL_CONFIG), null)
+  assert.equal(getMaxInstallmentPlanLabel(noFinancing(), price), null)
 })

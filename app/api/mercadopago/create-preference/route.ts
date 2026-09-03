@@ -34,8 +34,8 @@ import {
 } from "@/lib/orders/checkout-order-creation"
 import { deleteIncompleteCheckoutOrder } from "@/lib/orders/checkout-inventory"
 import {
-  calculateInstallmentPlan,
   getCartInstallmentEligibility,
+  getEffectiveInstallmentPercent,
 } from "@/lib/products/installments"
 import {
   MERCADOPAGO_MAX_ATTEMPTS_PER_DAY,
@@ -318,30 +318,13 @@ export async function POST(request: Request) {
     )
     const financableBase = productsNet + totals.shipping
 
-    // La modalidad ya se validó contra el catálogo real más arriba (antes
-    // del fingerprint). Acá sólo se calcula el plan con la base financiable
-    // definitiva (que recién queda resuelta después de conocer el envío y
-    // el descuento por beneficio de tienda).
-    let installmentPlan: ReturnType<typeof calculateInstallmentPlan> = null
-
-    if (requestedInstallmentsModality) {
-      installmentPlan = calculateInstallmentPlan(
-        financableBase,
-        requestedInstallmentsModality,
-        siteSettings.installmentsFinancing,
-      )
-
-      if (!installmentPlan) {
-        return NextResponse.json(
-          { error: "No pudimos calcular la financiación para tu carrito." },
-          { status: 400 },
-        )
-      }
-    }
-
-    const totalAfterStoreBenefit = roundMoney(
-      installmentPlan ? installmentPlan.totalFinanced : financableBase,
-    )
+    // PRECIO PÚBLICO ÚNICO: la modalidad de cuotas ya se validó contra el
+    // catálogo real más arriba (antes del fingerprint) y sólo determina
+    // `payment_methods.installments`/`default_installments` de la
+    // preferencia -- nunca recalcula el monto. El total que se cobra
+    // (financableBase) es el mismo elija el cliente pago único, 2, 3 o 6
+    // cuotas.
+    const totalAfterStoreBenefit = roundMoney(financableBase)
     const customerCreditApplication =
       requestedCredit > 0
         ? calculateCustomerCreditApplication({
@@ -392,14 +375,21 @@ export async function POST(request: Request) {
         storeBenefit,
         storeBenefitDiscountAmount,
         customer,
-        installments: installmentPlan
+        // Snapshot histórico bajo el modelo de precio público único: `count`
+        // conserva la modalidad elegida y `percent` el costo interno de MP
+        // en ese momento (ver getEffectiveInstallmentPercent) -- puramente
+        // informativo, ya NO se usa para aumentar el total. surchargeAmount
+        // es siempre 0 porque nunca se le cobra de más al cliente por elegir
+        // cuotas; productsBaseAmount == el mismo precio público del pedido.
+        installments: requestedInstallmentsModality
           ? {
-              count: installmentPlan.count,
-              percent: installmentPlan.percent,
-              productsBaseAmount: financableBase,
-              surchargeAmount: roundMoney(
-                installmentPlan.totalFinanced - financableBase,
+              count: requestedInstallmentsModality,
+              percent: getEffectiveInstallmentPercent(
+                requestedInstallmentsModality,
+                siteSettings.installmentsFinancing,
               ),
+              productsBaseAmount: financableBase,
+              surchargeAmount: 0,
             }
           : null,
       }),

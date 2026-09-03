@@ -85,10 +85,11 @@ export function calculateMarginFromPrice(
  *   fee:      margen = (1 - r) - costo/precio       => precio = costo / (1 - r - margen)
  *   discount: margen = 1 - costo/(precio*(1 - r))   => precio = costo / ((1 - margen) * (1 - r))
  *
- * Mismo patrón matemático que `calculateFinancedTotal` en
- * lib/products/installments.ts (gross-up para preservar una base neta),
- * generalizado para incluir el margen como otro componente a cubrir.
- * `null` si el costo no es válido o si el margen objetivo + la tasa
+ * Mismo patrón matemático de gross-up que usaba (hasta la corrección de
+ * precio público único) el checkout para el total financiado -- acá vive
+ * legítimamente porque este precio es interno de Admin (objetivo de
+ * rentabilidad), nunca un recargo que vea o pague el cliente por elegir
+ * cuotas. `null` si el costo no es válido o si el margen objetivo + la tasa
  * variable hacen la ecuación imposible (>=100% de la base).
  */
 export function calculatePriceFromTargetMargin(

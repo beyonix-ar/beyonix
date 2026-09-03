@@ -130,15 +130,17 @@ test("el webhook duplicado no crea stock ni factura como efecto lateral", () => 
   )
 })
 
-test("el webhook valida el pago contra el importe ya financiado, no recalcula porcentajes de cuotas", () => {
+test("CASO I (precio único): el webhook valida el pago contra external_amount_due/total (el precio público del pedido), nunca recalcula por cuotas/porcentajes", () => {
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
     "utf8",
   )
 
-  // El recargo por financiación ya quedó horneado en total/external_amount_due
-  // al crear la orden (antes de pagar): el webhook sigue comparando contra
-  // esos mismos campos, sin importarle nunca cuotas/porcentajes/config.
+  // Bajo el modelo de precio público único, total/external_amount_due YA SON
+  // el precio público (create-preference no le suma recargo por cuotas, ver
+  // lib/orders/checkout-order-creation.test.ts) -- el webhook simplemente
+  // compara el pago real contra esos campos, sin importarle nunca
+  // cuotas/porcentajes/config financiera.
   assert.doesNotMatch(webhook, /products\/installments/)
   assert.doesNotMatch(webhook, /installments_percent/)
   assert.match(webhook, /processApprovedMercadoPagoOrderPayment/)

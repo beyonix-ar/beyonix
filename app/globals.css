@@ -748,6 +748,21 @@ html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-
 html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-black/40"] {
   background: rgba(15, 23, 42, 0.08) !important;
 }
+/* Aviso "Horario de validación de comprobantes" (CheckoutNotice tone=
+   "warning"): en Dark usa un tinte ámbar translúcido (bg-amber-300/[0.055])
+   que sobre la superficie clara de Light queda casi invisible -- fondo/
+   borde gris neutro propios (no se reutiliza var(--account-*) porque debe
+   distinguirse tanto del blanco del checkout como del resto de cajas
+   informativas). El texto ya resuelve oscuro vía las reglas genéricas
+   .checkout-page [class~="text-white..."] de arriba; el reloj ámbar se
+   oscurece un tono (amber-300 queda pálido sobre gris claro). */
+html[data-account-theme="light"][data-account-scope] .beyonix-checkout-notice-warning {
+  background: #F2F3F4 !important;
+  border-color: #D5D9DE !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-checkout-notice-warning-icon {
+  color: #EAB308 !important;
+}
 html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input {
   background: var(--account-input) !important;
   color: var(--account-text-primary) !important;
@@ -11019,6 +11034,14 @@ html[data-account-theme="light"][data-account-scope] .beyonix-review-textarea {
 html[data-account-theme="light"][data-account-scope] .beyonix-review-textarea::placeholder {
   color: var(--account-text-muted) !important;
 }
+/* Subtítulos de las 3 cards de confianza del Hero ("Productos elegidos con
+   criterio", etc.): .beyonix-modal-muted (tier ~55% negro, pensado para
+   metadata/disabled) queda demasiado claro para este texto descriptivo --
+   clase propia, no se toca .beyonix-modal-muted porque es compartida por
+   modales/carrito/etc. en todo el sitio. */
+html[data-account-theme="light"][data-account-scope] .beyonix-hero-trust-sub {
+  color: #4B5563 !important;
+}
 
 /* =========================
    CHROME COMPARTIDO (header, dropdown de usuario, notificaciones, carrito)
@@ -11172,10 +11195,58 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper 
   border-color: var(--account-border) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn {
+  border-color: var(--account-border-subtle) !important;
   color: var(--account-text-primary) !important;
+}
+/* El hover/active de Dark (hover:bg-beyonix-blue/60, active:bg-beyonix-blue/..)
+   resuelve a navy sólido -- combinado con el texto oscuro que ya pisa la
+   regla de arriba, quedaba texto oscuro sobre navy oscuro. Se reemplaza por
+   los tokens de superficie ya calibrados para hover/active en Light. */
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn:not(:disabled):hover {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn:not(:disabled):active {
+  background: var(--account-surface-highlight) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn:disabled {
   color: var(--account-text-muted) !important;
+}
+/* Selector de cantidad +/- de producto (cards, quick view, PDP) --
+   ProductCartToggleButton (components/products/product-cart-toggle-button.tsx).
+   En Dark usa fondos navy/negro fijos (bg-[#121820], bg-[#112A43]/72,
+   bg-[#191B1F]) sin ningún override de Light, por lo que quedaba oscuro
+   sobre el resto de la tienda ya clara. Mismo criterio que el stepper del
+   carrito de arriba: contenedor blanco + borde azul BEYONIX, botones
+   blancos con texto oscuro, hover/active con los tokens de superficie de
+   Light (nunca fondo navy/negro sólido). */
+html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-btn {
+  background: var(--account-surface) !important;
+  border-color: var(--account-border-subtle) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-btn:enabled:hover {
+  background: var(--account-surface-hover) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-btn:enabled:active {
+  background: var(--account-surface-highlight) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-btn:disabled {
+  color: var(--account-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-value {
+  background: var(--account-surface) !important;
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-btn:focus-visible,
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn:focus-visible {
+  outline: 2px solid var(--account-accent) !important;
+  outline-offset: -2px !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-delete {
   background: var(--account-danger-bg) !important;
