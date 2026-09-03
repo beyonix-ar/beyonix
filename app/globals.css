@@ -3010,7 +3010,7 @@ button.sales-ledger-product-trigger:hover {
   color: rgba(255, 255, 255, 0.76) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]) {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]) {
   background: #112A43 !important;
   background-color: #112A43 !important;
   background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
@@ -3021,7 +3021,7 @@ button.sales-ledger-product-trigger:hover {
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):hover {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):hover {
   background: #1E4D7B !important;
   background-color: #1E4D7B !important;
   background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
@@ -3034,9 +3034,18 @@ button.sales-ledger-product-trigger:hover {
    blanco permitido sobre botón azul"), pero el remapeo genérico de
    text-white/N y de svg.lucide a color oscuro (pensado para cards claras)
    los estaría oscureciendo también acá si no se reafirma el blanco con más
-   especificidad. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]),
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]) svg.lucide,
+   especificidad.
+   Excepción a la excepción: el trigger "Estado del pago" (chip tipo
+   <select>, admin-pedidos.tsx) matchea este mismo selector genérico
+   :is(button, a) pero NO es un CTA de marca -- es un selector de estado con
+   fondo propio (bg-[#0B111A], ya cubierto por el catch-all de hex oscuros
+   de la sección 12) y tono semántico por dot, no por el texto. Forzarlo acá
+   a fondo navy + texto blanco reafirmado chocaba con el remapeo oscuro de
+   su span interno (text-white/82, pensado para fondo claro), dejando texto
+   casi negro sobre navy -- excluido para que caiga en el catch-all general
+   en vez de en este caso especial de "botón de marca". */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]) svg.lucide,
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled),
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled) svg.lucide {
   color: #ffffff !important;
@@ -10050,8 +10059,15 @@ html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado ope
    para botones de acción tipo "Ver envío", incorrecto para un select, que
    el resto del admin siempre pinta como input claro. Selector idéntico al
    catch-all + .admin-control-select de más, para ganarle en especificidad
-   sin tocar los botones de acción reales. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]) {
+   sin tocar los botones de acción reales.
+   Excluye .admin-order-shipping-status-select ("Estado operativo",
+   getOrderStatusSelectClassName): a diferencia de un select común, CADA
+   variante de estado fija su propio !bg-[#111827] + texto pastel semántico
+   (ámbar/esmeralda/cian/rojo) a propósito, igual en los dos temas -- es un
+   chip de estado, no un input. Sin excluirlo, el span interno quedaba
+   forzado a var(--admin-text) (oscuro) sobre ese fondo casi negro que el
+   propio !bg-[...] sí lograba conservar, dejando texto negro sobre negro. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not(.admin-order-shipping-status-select) {
   background: #eef1f5 !important;
   background-color: #eef1f5 !important;
   background-image: none !important;
@@ -10059,14 +10075,14 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-con
   color: var(--admin-text) !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):hover {
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not(.admin-order-shipping-status-select):hover {
   background: #e6eaf0 !important;
   background-color: #e6eaf0 !important;
   background-image: none !important;
   border-color: var(--admin-border-strong) !important;
 }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select span,
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select svg {
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(.admin-order-shipping-status-select) span,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(.admin-order-shipping-status-select) svg {
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-badge {
@@ -10693,8 +10709,16 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[
    "border-beyonix-blue-light" aunque ese hover no esté activo, así que sin
    esto el inactivo se pintaba igual que el activo (imposible diferenciarlos,
    justo el bug que la auditoría pide evitar). Selectores por clase exacta
-   (no [class*=]) para no volver a pisar el hover. */
-html[data-admin-theme="light"] .admin-order-detail-scope nav button.bg-beyonix-blue {
+   (no [class*=]) para no volver a pisar el hover.
+   Clase repetida (button.bg-beyonix-blue.bg-beyonix-blue) para igualar
+   la especificidad de ".bg-beyonix-blue.text-white" (sección 5, L8812):
+   ese catch-all tiene 4 selectores de clase (vía :is(.beyonix-admin-shell,
+   .admin-portal-scope)) contra los 3 de acá, así que sin este empate
+   ganaba SIEMPRE el catch-all pase lo que pase el orden en el archivo --
+   quedaba texto blanco (color:#fff) sobre el fondo casi transparente de
+   la pestaña activa, blanco sobre blanco. Mismo patrón ya usado en L8845
+   para el mismo tipo de conflicto. */
+html[data-admin-theme="light"] .admin-order-detail-scope nav button.bg-beyonix-blue.bg-beyonix-blue {
   background: rgba(17, 42, 67, 0.1) !important;
   border-color: rgba(17, 42, 67, 0.5) !important;
   color: #0f172a !important;
