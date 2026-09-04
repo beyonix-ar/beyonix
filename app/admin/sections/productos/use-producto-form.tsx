@@ -178,6 +178,17 @@ export function useProductoForm({
     useState<number | null | undefined>(undefined)
   const [variantCosts, setVariantCosts] =
     useState<ProductVariantCostInfo[]>([])
+  // Variantes vendibles sin costo: el margen objetivo se bloquea server-side,
+  // así que Admin tiene que enterarse antes de intentar guardar.
+  const [missingVariantCosts, setMissingVariantCosts] =
+    useState<ProductVariantCostInfo[]>([])
+  // El precio guardado quedó desactualizado respecto del margen objetivo
+  // (cambiaron tarifas de MP o el costo). `price` null = no se puede
+  // recalcular todavía y `blockedReason` explica por qué.
+  const [priceRecalculation, setPriceRecalculation] = useState<{
+    price: number | null
+    blockedReason: string | null
+  } | null>(null)
 
   const [saving, setSaving] =
     useState(false)
@@ -262,6 +273,8 @@ export function useProductoForm({
     if (!producto?.id) {
       setKnownUnitCost(null)
       setVariantCosts([])
+      setMissingVariantCosts([])
+      setPriceRecalculation(null)
       return
     }
 
@@ -272,6 +285,15 @@ export function useProductoForm({
         if (!active) return
         setKnownUnitCost(info.knownUnitCost)
         setVariantCosts(info.variantCosts)
+        setMissingVariantCosts(info.missingVariantCosts)
+        setPriceRecalculation(
+          info.requiresRecalculation
+            ? {
+                price: info.recalculatedPrice,
+                blockedReason: info.recalculationBlockedReason,
+              }
+            : null,
+        )
         setForm((prev) => ({
           ...prev,
           pricingMode: info.pricingMode,
@@ -283,6 +305,8 @@ export function useProductoForm({
         if (!active) return
         setKnownUnitCost(null)
         setVariantCosts([])
+        setMissingVariantCosts([])
+        setPriceRecalculation(null)
         console.error("Error cargando rentabilidad del producto:", err)
       })
 
@@ -730,6 +754,8 @@ export function useProductoForm({
     logisticsFieldError,
     knownUnitCost,
     variantCosts,
+    missingVariantCosts,
+    priceRecalculation,
 
     setField,
     showError,

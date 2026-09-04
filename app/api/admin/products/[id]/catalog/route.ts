@@ -3,9 +3,10 @@ import {
   parseRequiredProductLogistics,
   ProductLogisticsValidationError,
 } from "@/lib/shipping/logistics-validation"
-import { resolveProductKnownCost } from "@/lib/admin/product-known-cost"
-import { calculateTargetMarginPrice } from "@/lib/pricing/product-pricing"
-import { getSiteSettings } from "@/lib/site-settings"
+import {
+  resolveTargetMarginPrice,
+  type TargetMarginVariantState,
+} from "@/lib/pricing/product-target-margin"
 import type { InstallmentCount } from "@/lib/products/installments"
 
 function parseProductId(value: string) {
@@ -101,46 +102,36 @@ export async function PATCH(
       )
     }
 
-    let knownCost
-    try {
-      knownCost = await resolveProductKnownCost(auth.admin, productId)
-    } catch {
-      return Response.json(
-        { error: "No se pudo consultar el costo del producto." },
-        { status: 500 },
-      )
-    }
-    const knownUnitCost = knownCost.knownUnitCost
-
-    if (knownUnitCost == null) {
-      return Response.json(
-        {
-          error:
-            "Costo desconocido: cargá un costo de compra para este producto en Admin > Costos antes de usar margen objetivo.",
-        },
-        { status: 400 },
-      )
-    }
-
-    const { installmentsFinancing } = await getSiteSettings({ fresh: true })
     const eligibleInstallmentCounts: InstallmentCount[] = [
       ...(catalogInput.cuotas_2_habilitadas ? [2 as const] : []),
       ...(catalogInput.cuotas_3_habilitadas ? [3 as const] : []),
       ...(catalogInput.cuotas_6_habilitadas ? [6 as const] : []),
     ]
 
-    const targetMarginResult = calculateTargetMarginPrice({
-      cost: knownUnitCost,
-      targetMarginPercent,
-      eligibleInstallmentCounts,
-      config: installmentsFinancing,
-    })
+    let targetMarginResult
+    try {
+      targetMarginResult = await resolveTargetMarginPrice({
+        admin: auth.admin,
+        productId,
+        targetMarginPercent,
+        eligibleInstallmentCounts,
+        variantStates: variantStates as TargetMarginVariantState[],
+      })
+    } catch {
+      return Response.json(
+        { error: "No se pudo consultar el costo del producto." },
+        { status: 500 },
+      )
+    }
 
-    if (!targetMarginResult) {
+    // Se bloquea el cálculo automático (no se degrada silenciosamente a las
+    // variantes con costo conocido) cuando falta el costo de alguna variante
+    // vendible: el margen resultante no sería el prometido en esa variante.
+    if (!targetMarginResult.ok) {
       return Response.json(
         {
-          error:
-            "El margen objetivo no es alcanzable con el costo y la configuración financiera actual.",
+          error: targetMarginResult.message,
+          missingVariantCosts: targetMarginResult.missingVariantCosts,
         },
         { status: 400 },
       )
@@ -151,16 +142,46 @@ export async function PATCH(
     catalogInput.precio = targetMarginResult.commercialPrice
   }
 
-  const { data, error } = await auth.admin.rpc(
-    "update_product_commercial_configuration_atomic",
+  const resolvedTargetMarginPercent =
+    pricingMode === "target_margin" ? targetMarginPercent : null
+
+  // Precio público y método de precio se persisten en UNA sola transacción:
+  // un producto no puede quedar con `productos.precio` recalculado por margen
+  // objetivo y `product_pricing` en manual (o al revés). Mientras la
+  // migración nueva no esté aplicada se cae al camino anterior de dos
+  // escrituras -- es el comportamiento que ya existía, no una regresión.
+  let { data, error } = await auth.admin.rpc(
+    "update_product_commercial_configuration_with_pricing_atomic",
     {
       p_product_id: productId,
       p_catalog: { ...catalogInput, ...logistics },
       p_primary_sku: body.primarySku ?? null,
       p_variant_states: variantStates,
       p_actor_id: auth.user.id,
+      p_pricing_mode: pricingMode,
+      p_target_margin_percent: resolvedTargetMarginPercent,
     },
   )
+  let pricingPersistedAtomically = true
+
+  if (
+    error &&
+    /update_product_commercial_configuration_with_pricing_atomic|PGRST202|42883/i.test(
+      `${error.code ?? ""} ${error.message}`,
+    )
+  ) {
+    pricingPersistedAtomically = false
+    ;({ data, error } = await auth.admin.rpc(
+      "update_product_commercial_configuration_atomic",
+      {
+        p_product_id: productId,
+        p_catalog: { ...catalogInput, ...logistics },
+        p_primary_sku: body.primarySku ?? null,
+        p_variant_states: variantStates,
+        p_actor_id: auth.user.id,
+      },
+    ))
+  }
 
   if (error) {
     const missingMigration =
@@ -189,16 +210,32 @@ export async function PATCH(
     )
   }
 
-  // Escritura secundaria de metadata (método de precio), después de que el
-  // catálogo ya quedó confirmado por la RPC atómica -- el precio en sí ya es
-  // autoritativo en este punto, esto sólo registra cómo se llegó a él.
-  await auth.admin.from("product_pricing").upsert({
-    product_id: productId,
-    pricing_mode: pricingMode,
-    target_margin_percent: pricingMode === "target_margin" ? targetMarginPercent : null,
-    updated_at: new Date().toISOString(),
-    updated_by: auth.user.id,
-  })
+  if (!pricingPersistedAtomically) {
+    // Camino de compatibilidad (migración de guardado atómico todavía sin
+    // aplicar): escritura secundaria de la metadata de precio.
+    const { error: pricingError } = await auth.admin
+      .from("product_pricing")
+      .upsert({
+        product_id: productId,
+        pricing_mode: pricingMode,
+        target_margin_percent: resolvedTargetMarginPercent,
+        updated_at: new Date().toISOString(),
+        updated_by: auth.user.id,
+      })
+
+    if (pricingError) {
+      // El precio ya quedó guardado; avisar en vez de devolver un OK que
+      // oculta que el método de precio quedó desincronizado.
+      return Response.json(
+        {
+          product,
+          error:
+            "El precio se guardó, pero no se pudo registrar el método de precio. Volvé a guardar el producto.",
+        },
+        { status: 500 },
+      )
+    }
+  }
 
   return Response.json({
     product,

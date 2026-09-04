@@ -35,6 +35,10 @@ import {
   InsufficientStockError,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
+import {
+  MissingReservationSessionError,
+  normalizeReservationSessionId,
+} from "@/lib/orders/checkout-inventory"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
@@ -49,9 +53,21 @@ type CheckoutPayload = CheckoutOrderRequestPayload
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as CheckoutPayload
+    const checkoutSessionId = normalizeReservationSessionId(
+      payload.reservationSessionId,
+    )
     const items = normalizeCheckoutOrderItems(payload.items)
     const customer = normalizeCheckoutOrderCustomer(payload.customer)
     const customerError = getCheckoutOrderCustomerValidationError(customer)
+
+    // Sin sesión de carrito no se puede reservar stock, y sin reserva el
+    // pedido puede pisar unidades de otro checkout en curso.
+    if (!checkoutSessionId) {
+      return NextResponse.json(
+        { error: "La sesión del carrito venció. Actualizá la página." },
+        { status: 400 },
+      )
+    }
 
     if (!items.length) {
       return NextResponse.json({ error: "El carrito esta vacio." }, { status: 400 })
@@ -179,7 +195,7 @@ export async function POST(request: Request) {
         externalAmountDue: customerCreditApplication.externalAmountDue,
         creditBalanceUsed: customerCreditApplication.appliedAmount,
         paymentMethodId: "transferencia",
-        reservationSessionId: payload.reservationSessionId,
+        reservationSessionId: checkoutSessionId,
         storeBenefit,
         storeBenefitDiscountAmount,
         customer,
@@ -221,7 +237,7 @@ export async function POST(request: Request) {
       items,
       products: catalog.products,
       conditionedRows: catalog.conditionedRows,
-      reservationSessionId: payload.reservationSessionId,
+      reservationSessionId: checkoutSessionId,
       insertErrorMessage: "No se pudieron crear los items de la orden.",
     })
 
@@ -265,6 +281,10 @@ export async function POST(request: Request) {
         { code: "INSUFFICIENT_STOCK", items: error.items },
         { status: 409 },
       )
+    }
+
+    if (error instanceof MissingReservationSessionError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
     const stockConflict =

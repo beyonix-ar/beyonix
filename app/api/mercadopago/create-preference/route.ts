@@ -32,7 +32,10 @@ import {
   InsufficientStockError,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
-import { deleteIncompleteCheckoutOrder } from "@/lib/orders/checkout-inventory"
+import {
+  deleteIncompleteCheckoutOrder,
+  MissingReservationSessionError,
+} from "@/lib/orders/checkout-inventory"
 import {
   getCartInstallmentEligibility,
   getEffectiveInstallmentPercent,
@@ -58,6 +61,7 @@ import {
   markStoreBenefitAsUsed,
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
+import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
 
@@ -502,6 +506,10 @@ export async function POST(request: Request) {
       )
     }
 
+    if (error instanceof MissingReservationSessionError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
     const stockConflict =
       error instanceof Error && error.message === STOCK_CHANGED_MESSAGE
     const quoteConflict = error instanceof CheckoutShippingQuoteError
@@ -582,10 +590,14 @@ async function createAndPersistMercadoPagoPreference({
     throw new Error("El monto pendiente de la orden no es válido.")
   }
 
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    request.headers.get("origin") ||
-    "http://localhost:3000"
+  // back_urls y notification_url no pueden depender del header Origin: un
+  // Origin manipulado desviaría el webhook de confirmación de pago.
+  const siteUrl = resolveTrustedSiteUrl(request)
+  if (!siteUrl) {
+    throw new Error(
+      "La URL pública del sitio no está configurada; no se puede iniciar el pago.",
+    )
+  }
   const createdAt = new Date()
   const expiresAt = getMercadoPagoPreferenceExpiration(createdAt)
   const preference = new Preference(client)

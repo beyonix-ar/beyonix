@@ -66,6 +66,10 @@ interface ProductPriceCardProps {
   priceFormatter: Intl.NumberFormat
   variantCostsDiffer: boolean
   realVariantCosts: ProductVariantCostInfo[]
+  /** Variantes vendibles sin costo cargado: bloquean el margen objetivo server-side. */
+  missingVariantCosts: ProductVariantCostInfo[]
+  /** Precio guardado desactualizado respecto del margen objetivo vigente. */
+  priceRecalculation: { price: number | null; blockedReason: string | null } | null
 }
 
 /**
@@ -93,6 +97,8 @@ export function ProductPriceCard({
   priceFormatter,
   variantCostsDiffer,
   realVariantCosts,
+  missingVariantCosts,
+  priceRecalculation,
 }: ProductPriceCardProps) {
   const isManual = pricingMode === "manual"
   const currentPriceNumber = Number(precio)
@@ -294,6 +300,33 @@ export function ProductPriceCard({
         <AdminInfoBlock tone="warning">
           Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para poder usar el
           porcentaje de ganancia neta.
+        </AdminInfoBlock>
+      )}
+
+      {/*
+        Bloqueo explícito: con una variante vendible sin costo, calcular el
+        precio con el peor caso de las variantes CONOCIDAS garantizaría un
+        margen que en esa variante no existe. El guardado lo rechaza
+        server-side; esto lo anticipa acá.
+      */}
+      {!isManual && missingVariantCosts.length > 0 && (
+        <AdminInfoBlock tone="danger">
+          No se puede calcular el margen objetivo porque hay variantes vendibles sin costo conocido:{" "}
+          {missingVariantCosts
+            .map((entry) => entry.variantName ?? `Variante ${entry.variantId}`)
+            .join(", ")}
+          . Cargá su costo de compra en Admin &gt; Costos o usá precio manual.
+        </AdminInfoBlock>
+      )}
+
+      {priceRecalculation && (
+        <AdminInfoBlock tone="warning">
+          {priceRecalculation.blockedReason ??
+            `El precio guardado quedó desactualizado: con el costo y las tarifas de Mercado Pago actuales, este margen requiere ${
+              priceRecalculation.price != null
+                ? priceFormatter.format(priceRecalculation.price)
+                : "otro precio"
+            }. Guardá el producto para aplicarlo.`}
         </AdminInfoBlock>
       )}
 

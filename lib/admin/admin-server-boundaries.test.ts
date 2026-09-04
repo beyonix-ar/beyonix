@@ -67,11 +67,34 @@ test("CASO G (precio único): en modo manual, el precio que manda el navegador s
 
 test("precio objetivo (margen): siempre recalculado server-side con la modalidad de cuotas HABILITADA real del catálogo, nunca confía en el precio del navegador", () => {
   const route = source("app/api/admin/products/[id]/catalog/route.ts")
+  // El cálculo vive en un único módulo server-only compartido con el GET de
+  // pricing, para que guardar y detectar precio desactualizado no puedan
+  // calcular distinto entre sí.
+  const resolver = source("lib/pricing/product-target-margin.ts")
 
-  assert.match(route, /calculateTargetMarginPrice\(/)
-  assert.match(route, /eligibleInstallmentCounts,\s*\n\s*config: installmentsFinancing,/)
+  assert.match(route, /resolveTargetMarginPrice\(\{/)
+  assert.match(route, /eligibleInstallmentCounts,/)
+  assert.match(resolver, /calculateTargetMarginPrice\(\{/)
+  assert.match(resolver, /eligibleInstallmentCounts,\s*\n\s*config: installmentsFinancing,/)
   assert.match(
     route,
     /Autoritativo: el precio que haya mandado el navegador se ignora/,
   )
+})
+
+test("margen objetivo: el guardado bloquea si falta el costo de una variante vendible, nunca cae al peor caso conocido", () => {
+  const route = source("app/api/admin/products/[id]/catalog/route.ts")
+  const resolver = source("lib/pricing/product-target-margin.ts")
+
+  // El precio sólo se sobreescribe después de una resolución exitosa.
+  const blockIndex = route.indexOf("if (!targetMarginResult.ok)")
+  const priceOverwriteIndex = route.indexOf(
+    "catalogInput.precio = targetMarginResult.commercialPrice",
+  )
+  assert.ok(blockIndex >= 0)
+  assert.ok(priceOverwriteIndex > blockIndex)
+
+  // Y sólo se consideran las variantes que van a quedar vendibles.
+  assert.match(resolver, /selectRelevantVariantCosts\(/)
+  assert.match(resolver, /resolveTargetMarginCostBasis\(/)
 })

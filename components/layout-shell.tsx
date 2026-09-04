@@ -102,7 +102,20 @@ export function LayoutShell({
     )
   }
 
-  if (isPasswordReset || isAuthPage) {
+  // /reset-password se siente parte de BEYONIX desde el primer momento: usa
+  // el navbar canónico igual que el resto de la tienda. Sin Footer/cookie
+  // banner a propósito -- es una pantalla de una sola tarea (recuperar
+  // acceso), no una página de contenido general.
+  if (isPasswordReset) {
+    return (
+      <>
+        <SiteHeader />
+        {children}
+      </>
+    )
+  }
+
+  if (isAuthPage) {
     return children
   }
 

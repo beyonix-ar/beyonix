@@ -157,6 +157,32 @@ export async function PATCH(
       )
     }
 
+    // El guardián de inventario (trigger validate_inventory_order_confirmation)
+    // rechaza confirmar una orden como pagada si el stock derivado real ya no
+    // alcanza para sus ítems -- puede pasar si la reserva de checkout venció
+    // y otra compra se llevó las unidades antes de que se aprobara este
+    // comprobante. Se falla cerrado: la orden NO queda pagada, y el admin ve
+    // un motivo claro en vez del código técnico crudo del trigger.
+    if (/checkout_stock_insufficient/i.test(error?.message ?? "")) {
+      await appendOrderAuditEvent(auth.admin, {
+        orderId: pedidoId,
+        actorType: "admin",
+        actorId: auth.user.id,
+        action: "payment_confirmation_blocked_stock_conflict",
+        previousStatus: previousFinancialStatus,
+        newStatus: previousFinancialStatus,
+        metadata: { attemptedPaymentStatus: paymentStatus, observation: observation || null },
+      })
+
+      return NextResponse.json(
+        {
+          error:
+            "No se pudo confirmar el pago: el stock de uno o más productos de este pedido ya no alcanza. Revisá el inventario antes de reintentar.",
+        },
+        { status: 409 },
+      )
+    }
+
     return NextResponse.json(
       { error: error?.message || "No se pudo actualizar el estado de pago." },
       { status: 500 },

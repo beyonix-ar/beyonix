@@ -61,6 +61,8 @@ test("el costo histórico respeta fecha y variante sin usar costos futuros", () 
       variant_id: 10,
       purchase_date: "2026-01-01",
       quantity: 2,
+      received_quantity: 2,
+      reception_status: "recibida",
       total_cost: 20,
     },
     {
@@ -68,6 +70,8 @@ test("el costo histórico respeta fecha y variante sin usar costos futuros", () 
       variant_id: 10,
       purchase_date: "2026-02-01",
       quantity: 2,
+      received_quantity: 2,
+      reception_status: "recibida",
       total_cost: 60,
     },
     {
@@ -75,6 +79,8 @@ test("el costo histórico respeta fecha y variante sin usar costos futuros", () 
       variant_id: 11,
       purchase_date: "2026-01-01",
       quantity: 1,
+      received_quantity: 1,
+      reception_status: "recibida",
       total_cost: 100,
     },
   ])

@@ -18,7 +18,10 @@ import {
   STOCK_CHANGED_MESSAGE,
   assertCatalogStock,
 } from "@/lib/cart/stock-status"
-import { validateCheckoutInventory } from "@/lib/orders/checkout-inventory"
+import {
+  normalizeReservationSessionId,
+  validateCheckoutInventory,
+} from "@/lib/orders/checkout-inventory"
 
 interface CreateOrderItem {
   productId: number
@@ -297,6 +300,13 @@ async function insertOrder(
   throw new Error(lastError?.message || "No se pudo crear la orden")
 }
 
+/**
+ * Camino heredado de creación de orden (sin envío, saldo ni beneficios): el
+ * checkout real usa `app/api/mercadopago/create-preference` y
+ * `app/api/transferencia/create-order` sobre `checkout-order-creation.ts`.
+ * Se mantiene alineado con el contrato de reservas -- sin sesión de carrito
+ * no puede reservarse stock y por lo tanto no puede crearse la orden.
+ */
 export async function createOrder({
   items,
   reservationSessionId,
@@ -304,10 +314,15 @@ export async function createOrder({
 }: CreateOrderPayload) {
   const supabase = await createClient()
   const admin = createAdminClient()
+  const sessionId = normalizeReservationSessionId(reservationSessionId)
   let createdOrderId: number | null = null
   let hasActiveReservation = false
 
   try {
+    if (!sessionId) {
+      throw new Error("La sesión del carrito venció. Actualizá la página.")
+    }
+
     const normalizedItems = items
       .map(normalizeItem)
       .filter(
@@ -401,7 +416,7 @@ export async function createOrder({
 
     hasActiveReservation = await reserveOrderStock(
       supabase,
-      reservationSessionId,
+      sessionId,
       normalizedItems,
     )
 
@@ -456,7 +471,7 @@ export async function createOrder({
     await validateCheckoutInventory(
       admin,
       normalizedItems,
-      reservationSessionId,
+      sessionId,
       order.id,
     )
 
@@ -469,7 +484,7 @@ export async function createOrder({
     await deleteIncompleteOrder(supabase, createdOrderId)
 
     if (hasActiveReservation) {
-      await releaseOrderReservation(supabase, reservationSessionId)
+      await releaseOrderReservation(supabase, sessionId)
     }
 
     return {

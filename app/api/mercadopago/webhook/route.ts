@@ -7,7 +7,10 @@ import {
   processCustomerCreditTopupPayment,
 } from "@/lib/mercadopago/customer-credit-topups"
 import {
+  isInventoryConfirmationConflict,
   isMercadoPagoOrderAlreadyConfirmed,
+  MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS,
+  MercadoPagoInventoryConflictError,
   processApprovedMercadoPagoOrderPayment,
 } from "@/lib/mercadopago/order-payment"
 import {
@@ -181,7 +184,9 @@ async function handleWebhook(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    const paymentResult = await processApprovedMercadoPagoOrderPayment(
+    let paymentResult
+    try {
+      paymentResult = await processApprovedMercadoPagoOrderPayment(
       orderRow,
       payment,
       async (confirmedAmount) => {
@@ -216,10 +221,62 @@ async function handleWebhook(request: Request) {
           )
           .select("id")
 
-        if (updateError) throw updateError
+        if (updateError) {
+          // El pago YA ocurrió: si el guardián de inventario rechaza la
+          // confirmación (la reserva venció y otro checkout se llevó las
+          // unidades), reintentar no lo arregla. Se distingue del resto de
+          // los errores de base para marcarlo y frenar los reintentos de MP.
+          if (isInventoryConfirmationConflict(updateError)) {
+            throw new MercadoPagoInventoryConflictError(updateError)
+          }
+          throw updateError
+        }
         return updatedOrders?.length === 1
       },
-    )
+      )
+    } catch (confirmationError) {
+      if (!(confirmationError instanceof MercadoPagoInventoryConflictError)) {
+        throw confirmationError
+      }
+
+      await supabase
+        .from("ordenes")
+        .update({
+          ...paymentPayload,
+          payment_status: MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS,
+        } as never)
+        .eq("id", orderId)
+        .eq("estado", orderRow.estado)
+        .eq("financial_status", orderRow.financial_status ?? "pending_payment")
+
+      await appendOrderAuditEvent(supabase, {
+        orderId,
+        actorType: "system",
+        action: "payment_approved_stock_conflict",
+        previousStatus: orderRow.financial_status ?? "pending_payment",
+        newStatus: MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS,
+        metadata: {
+          provider: "mercadopago",
+          paymentId: payment.id,
+          paymentStatus: payment.status,
+          reason: "inventory_unavailable_at_confirmation",
+        },
+      })
+
+      console.error("MERCADOPAGO_APPROVED_PAYMENT_STOCK_CONFLICT", {
+        orderId,
+        paymentId: payment.id,
+      })
+
+      // 200 a propósito: el pago se registró y quedó marcado para resolución
+      // manual. Devolver 500 sólo haría que Mercado Pago reintente un webhook
+      // que nunca va a poder confirmarse.
+      return NextResponse.json({
+        ok: true,
+        paymentConfirmed: false,
+        reason: "stock_conflict",
+      })
+    }
 
     if (paymentResult.kind === "duplicate") {
       return NextResponse.json({ ok: true, duplicated: true })

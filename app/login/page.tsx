@@ -14,6 +14,7 @@ import {
   EyeOff,
   Loader2,
   LockKeyhole,
+  MailCheck,
   PackageCheck,
   RefreshCw,
   ShieldCheck,
@@ -30,6 +31,7 @@ import {
   EMAIL_CONFIRMATION_STORAGE_KEY,
   type EmailConfirmationEvent,
 } from "@/lib/auth/confirmation-events"
+import { FORGOT_PASSWORD_GENERIC_MESSAGE } from "@/lib/auth/forgot-password-messages"
 import { supabase } from "@/lib/supabase/client"
 import {
   FIELD_LIMITS,
@@ -211,6 +213,14 @@ function LoginContent() {
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false)
+  const [forgotPasswordCooldown, setForgotPasswordCooldown] = useState(0)
+  // Separado de `success` (que también sirve para "cuenta creada"/"email
+  // confirmado"/"contraseña actualizada"): esta respuesta es deliberadamente
+  // genérica por seguridad (nunca confirma que la cuenta existe), así que
+  // necesita su propio título neutro ("Revisá tu correo") en vez del banner
+  // de éxito compartido, que sonaría a confirmación de que se encontró la cuenta.
+  const [forgotPasswordMessage, setForgotPasswordMessage] = useState("")
   const [confirmationEmail, setConfirmationEmail] = useState("")
   const [confirmationUserId, setConfirmationUserId] = useState("")
   const [confirmationHandoff, setConfirmationHandoff] = useState("")
@@ -321,6 +331,16 @@ function LoginContent() {
 
     return () => window.clearTimeout(timeout)
   }, [resendCooldown])
+
+  useEffect(() => {
+    if (forgotPasswordCooldown <= 0) return
+
+    const timeout = window.setTimeout(() => {
+      setForgotPasswordCooldown((current) => Math.max(0, current - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timeout)
+  }, [forgotPasswordCooldown])
 
   useEffect(() => {
     if (
@@ -497,6 +517,7 @@ function LoginContent() {
     setMode(nextMode)
     setError("")
     setSuccess("")
+    setForgotPasswordMessage("")
     setConfirmationEmail("")
     setConfirmationUserId("")
     setConfirmationHandoff("")
@@ -576,6 +597,7 @@ function LoginContent() {
     e.preventDefault()
     setError("")
     setSuccess("")
+    setForgotPasswordMessage("")
     setLoading(true)
 
     if (mode === "login") {
@@ -682,31 +704,45 @@ function LoginContent() {
   }
 
   const handleForgotPassword = async () => {
-    const recoveryEmail = identifier.trim().toLowerCase()
+    const recoveryIdentifier = identifier.trim()
 
-    if (!recoveryEmail || !recoveryEmail.includes("@")) {
-      setError("Para recuperar la contraseña ingresá tu email.")
+    if (!recoveryIdentifier) {
+      setError("Ingresá tu usuario o email para recuperar la contraseña.")
       return
     }
+
+    if (forgotPasswordLoading || forgotPasswordCooldown > 0) return
 
     setError("")
     setSuccess("")
-    localStorage.setItem("beyonix-password-recovery", "true")
+    setForgotPasswordMessage("")
+    setForgotPasswordLoading(true)
 
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-      recoveryEmail,
-      {
-        redirectTo: `${window.location.origin}/reset-password`,
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: recoveryIdentifier }),
+      })
+      const data = (await response.json().catch(() => null)) as
+        | { message?: string; error?: string }
+        | null
+
+      // Sólo un formato de entrada inválido devuelve un error puntual acá
+      // (nunca "no existe"): el servidor responde siempre el mismo mensaje
+      // exista o no la cuenta -- ver lib/auth/forgot-password.ts.
+      if (!response.ok) {
+        setError(data?.error || FORGOT_PASSWORD_GENERIC_MESSAGE)
+        return
       }
-    )
 
-    if (resetError) {
-      localStorage.removeItem("beyonix-password-recovery")
-      setError("No se pudo enviar el email.")
-      return
+      setForgotPasswordMessage(data?.message || FORGOT_PASSWORD_GENERIC_MESSAGE)
+      setForgotPasswordCooldown(30)
+    } catch {
+      setError("No pudimos procesar la solicitud. Intentá nuevamente.")
+    } finally {
+      setForgotPasswordLoading(false)
     }
-
-    setSuccess("Si el email existe, te enviamos un enlace de recuperación.")
   }
 
   const handleResendConfirmation = async () => {
@@ -1153,22 +1189,50 @@ function LoginContent() {
                 type="button"
                 aria-label="Olvidé mi contraseña"
                 onClick={handleForgotPassword}
-                className="beyonix-login-forgot-link cursor-pointer text-sm font-semibold text-beyonix-sky transition-colors hover:text-white"
+                disabled={forgotPasswordLoading || forgotPasswordCooldown > 0}
+                className="beyonix-login-forgot-link cursor-pointer text-sm font-semibold text-beyonix-sky transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                ¿Olvidaste tu contraseña?
+                {forgotPasswordLoading
+                  ? "Enviando..."
+                  : forgotPasswordCooldown > 0
+                    ? `Reintentar en ${forgotPasswordCooldown}s`
+                    : "¿Olvidaste tu contraseña?"}
               </button>
             </div>
           )}
 
           {error && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400 md:col-span-2">
+            <div className="rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-3 text-sm font-medium text-[var(--account-danger-text)] md:col-span-2">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400 md:col-span-2">
+            <div className="rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-4 py-3 text-sm font-medium text-[var(--account-success-text)] md:col-span-2">
               {success}
+            </div>
+          )}
+
+          {/*
+            Respuesta de "olvidé mi contraseña": deliberadamente genérica
+            (nunca confirma que la cuenta existe -- ver
+            lib/auth/forgot-password.ts), así que usa un título neutro
+            ("Revisá tu correo") en vez del banner de éxito de arriba, que
+            sonaría a "encontramos tu cuenta". Mismos tokens semánticos
+            --account-success-* (ya con contraste correcto en ambos temas),
+            con más padding/jerarquía por el ícono + título.
+          */}
+          {forgotPasswordMessage && (
+            <div className="flex items-start gap-3 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-4 py-3.5 md:col-span-2">
+              <MailCheck className="mt-0.5 size-5 shrink-0 text-[var(--account-success-text)]" />
+              <div>
+                <p className="text-sm font-bold text-[var(--account-success-text)]">
+                  Revisá tu correo
+                </p>
+                <p className="mt-1 text-sm leading-5 text-[var(--account-success-text)]">
+                  {forgotPasswordMessage}
+                </p>
+              </div>
             </div>
           )}
 

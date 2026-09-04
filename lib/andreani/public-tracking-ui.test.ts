@@ -74,20 +74,27 @@ test("REGRESIÓN: OrderTrackingPanel y CustomerInvoiceBell (código muerto sin c
   assert.doesNotMatch(source, /DOWNLOADED_INVOICES_STORAGE_KEY/)
 })
 
-test("detalle del pedido: 'Número de seguimiento:' y el ícono de copiar son blancos, sin volverse negrita", () => {
+test("detalle del pedido: 'Número de seguimiento:' y el ícono de copiar usan el color de texto del tema, sin volverse negrita", () => {
   const source = readSource("../../app/cuenta/cuenta-client.tsx")
 
+  // Migración modo claro/oscuro: el color ya no es un `text-white` fijo,
+  // sino el token de tema `--account-text-primary` (blanco en oscuro, oscuro
+  // en claro). Lo que importa para esta regresión es que sigue siendo texto
+  // NORMAL (no negrita) y el mismo token en las tres piezas relacionadas.
   assert.match(
     source,
-    /<span className="text-xs font-normal text-white">\s*\n\s*Número de seguimiento:/,
+    /<span className="text-xs font-normal text-\[var\(--account-text-primary\)\]">\s*\n\s*Número de seguimiento:/,
   )
   assert.doesNotMatch(source, /text-beyonix-gray-500">\s*\n\s*Número de seguimiento:/)
   assert.match(
     source,
-    /<TrackingCopyButton\s+trackingNumber=\{trackingNumber\}\s+className="text-white"\s*\/>/,
+    /<TrackingCopyButton\s+trackingNumber=\{trackingNumber\}\s+className="text-\[var\(--account-text-primary\)\]"\s*\/>/,
   )
-  // El número en sí mantiene exactamente su estilo previo (blanco semibold).
-  assert.match(source, /className="break-all text-sm font-semibold text-white"/)
+  // El número en sí mantiene exactamente su estilo previo (semibold, mismo token).
+  assert.match(
+    source,
+    /className="break-all text-sm font-semibold text-\[var\(--account-text-primary\)\]"/,
+  )
 })
 
 test("detalle del pedido: 'Gestión del pedido' quedó compacta en una fila (número + copiar a la izquierda, botón a la derecha)", () => {

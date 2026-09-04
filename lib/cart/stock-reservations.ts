@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
+import { normalizeReservationSessionId } from "@/lib/orders/checkout-inventory"
 
 export interface StockReservationItem {
   productId: number
@@ -56,13 +57,25 @@ export type StockReservationFailureReason =
   | "unavailable"
   | "other"
 
+/**
+ * Reserva anticipada de stock para una sesión de carrito, ANTES de crear la
+ * orden (ver `reserve_cart_stock`, migración 20260903150000). Es idempotente
+ * por sesión: reemplaza íntegramente lo que esa sesión tenía reservado, así
+ * que reintentos y cambios de carrito no acumulan reservas.
+ *
+ * La reserva autoritativa que impide la sobreventa la crea de todos modos el
+ * cierre de la orden (`validateCheckoutInventory`), sobre la MISMA sesión y
+ * con la misma ventana: llamar a esta función sólo adelanta el gravamen, no
+ * lo duplica.
+ */
 export async function reserveCartStock({
   sessionId,
   items,
 }: ReserveCartStockPayload) {
   const normalizedItems = normalizeReservationItems(items)
+  const normalizedSessionId = normalizeReservationSessionId(sessionId)
 
-  if (!sessionId || normalizedItems.length === 0) {
+  if (!normalizedSessionId || normalizedItems.length === 0) {
     return {
       success: false,
       configured: true,
@@ -75,7 +88,7 @@ export async function reserveCartStock({
   const supabase = await createClient()
 
   const { data, error } = await supabase.rpc("reserve_cart_stock", {
-    p_session_id: sessionId,
+    p_session_id: normalizedSessionId,
     p_items: normalizedItems,
   })
 

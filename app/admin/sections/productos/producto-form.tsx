@@ -122,6 +122,8 @@ export function ProductoForm({
     logisticsFieldError,
     knownUnitCost,
     variantCosts,
+    missingVariantCosts,
+    priceRecalculation,
     setField,
     showError,
     submit,
@@ -650,6 +652,8 @@ export function ProductoForm({
                 priceFormatter={productPriceFormatter}
                 variantCostsDiffer={variantCostsDiffer}
                 realVariantCosts={realVariantCosts}
+                missingVariantCosts={missingVariantCosts}
+                priceRecalculation={priceRecalculation}
               />
             </div>
 

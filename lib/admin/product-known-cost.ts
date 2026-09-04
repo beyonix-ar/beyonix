@@ -12,6 +12,14 @@ import {
 export interface ProductKnownCost {
   knownUnitCost: number | null
   variantCosts: VariantCostResolution[]
+  /** Ids de las variantes que hoy están activas (vendibles) en la base. */
+  activeVariantIds: number[]
+}
+
+interface ProductVariantRow {
+  id: number
+  nombre: string | null
+  activo: boolean | null
 }
 
 /**
@@ -21,6 +29,11 @@ export interface ProductKnownCost {
  * de lectura (app/api/admin/products/[id]/pricing) y el de guardado
  * autoritativo (app/api/admin/products/[id]/catalog) -- nunca pueden
  * calcular el costo de forma distinta entre sí.
+ *
+ * Se traen `received_quantity` y `reception_status` porque una compra
+ * pendiente, parcial o anulada NO representa mercadería incorporada al
+ * inventario y no puede formar el costo con el que se fija precio (ver
+ * `getReceivedCostContribution`).
  */
 export async function resolveProductKnownCost(
   admin: ReturnType<typeof createAdminClient>,
@@ -29,11 +42,13 @@ export async function resolveProductKnownCost(
   const [variantsResult, costRowsResult] = await Promise.all([
     admin
       .from("producto_variantes")
-      .select("id, nombre")
+      .select("id, nombre, activo")
       .eq("producto_id", productId),
     admin
       .from("product_cost_entries")
-      .select("product_id, variant_id, purchase_date, quantity, total_cost")
+      .select(
+        "product_id, variant_id, purchase_date, quantity, received_quantity, reception_status, total_cost",
+      )
       .eq("product_id", productId),
   ])
 
@@ -44,15 +59,22 @@ export async function resolveProductKnownCost(
     throw new Error("No se pudo consultar el costo del producto.")
   }
 
+  const variants = (variantsResult.data ?? []) as ProductVariantRow[]
   const ledgers = buildProductCostLedgers(
     (costRowsResult.data ?? []) as ProductCostLedgerRow[],
   )
   const variantCosts = resolveProductVariantCosts(
     ledgers,
     productId,
-    variantsResult.data ?? [],
+    variants,
     new Date().toISOString(),
   )
 
-  return { knownUnitCost: getWorstCaseKnownCost(variantCosts), variantCosts }
+  return {
+    knownUnitCost: getWorstCaseKnownCost(variantCosts),
+    variantCosts,
+    activeVariantIds: variants
+      .filter((variant) => variant.activo !== false)
+      .map((variant) => variant.id),
+  }
 }

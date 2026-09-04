@@ -189,10 +189,17 @@ test("la card de Envío muestra sólo el número de tracking, sin prefijo 'Andre
   assert.doesNotMatch(list, /"Andreani" : "Seguimiento"/)
 })
 
-test("la card tiene divisor simétrico entre Pago|Envío y Envío|Productos (misma clase exacta en ambas columnas)", () => {
+test("la card tiene divisor simétrico entre Pago|Envío y Envío|Productos (mismo color de borde en ambas columnas)", () => {
   const list = source("components/account/account-orders.tsx")
-  const dividerClass = "sm:border-t-0 sm:border-l sm:border-white/12"
-  const matches = list.match(new RegExp(dividerClass.replace(/[/]/g, "\\/"), "g"))
+  // Migración modo claro/oscuro: el color del borde ya no es un
+  // `border-white/12` fijo, sino el token de tema `--account-border-subtle`
+  // (junto con el mismo par de utilidades `sm:border-t-0 sm:border-l` que
+  // convierte el divisor horizontal en vertical a partir de `sm:`). Lo que
+  // importa acá es que las DOS columnas comparten exactamente el mismo
+  // color de borde -- no que el color en sí sea blanco.
+  const dividerPattern =
+    /border-t border-\[var\(--account-border-subtle\)\][^"]*sm:border-t-0 sm:border-l/g
+  const matches = list.match(dividerPattern)
 
   assert.ok(matches, "no se encontró el patrón de divisor esperado")
   assert.equal(

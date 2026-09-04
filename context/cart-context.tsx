@@ -26,6 +26,7 @@ import {
   MAX_CART_ITEM_QUANTITY,
   getProductStock,
 } from "@/lib/cart/stock-status"
+import { createCartSessionId } from "@/lib/cart/cart-session-id"
 
 export interface CartItem {
   product: SupabaseProducto
@@ -68,14 +69,6 @@ const USER_CART_STORAGE_PREFIX = "beyonix-cart-user"
 
 function getUserCartStorageKey(userId: string) {
   return `${USER_CART_STORAGE_PREFIX}:${userId}`
-}
-
-function createCartSessionId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID()
-  }
-
-  return `cart-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function toFiniteNumber(value: unknown, fallback = 0) {

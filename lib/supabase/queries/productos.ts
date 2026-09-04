@@ -813,8 +813,19 @@ export interface ProductVariantCostInfo {
 export interface ProductPricingInfo {
   knownUnitCost: number | null
   variantCosts: ProductVariantCostInfo[]
+  /** Variantes VENDIBLES sin costo cargado: bloquean el margen objetivo. */
+  missingVariantCosts: ProductVariantCostInfo[]
   pricingMode: "manual" | "target_margin"
   targetMarginPercent: number | null
+  /**
+   * El precio guardado ya no coincide con el que hoy exige el margen objetivo
+   * (cambiaron las tarifas de Mercado Pago o el costo). Se recalcula al leer,
+   * así que nunca queda una marca vieja guardada en base.
+   */
+  requiresRecalculation: boolean
+  recalculatedPrice: number | null
+  /** Motivo por el que el recálculo no se puede hacer (ej. variante sin costo). */
+  recalculationBlockedReason: string | null
 }
 
 export async function getProductPricing(id: number): Promise<ProductPricingInfo> {
@@ -841,21 +852,30 @@ export async function getProductPricing(id: number): Promise<ProductPricingInfo>
     throw new Error(message || "No se pudo consultar la rentabilidad del producto.")
   }
 
-  const variantCostsRaw = Array.isArray(result.variantCosts) ? result.variantCosts : []
-
-  return {
-    knownUnitCost: typeof result.knownUnitCost === "number" ? result.knownUnitCost : null,
-    variantCosts: variantCostsRaw.map((entry) => {
+  const parseVariantCosts = (value: unknown): ProductVariantCostInfo[] =>
+    (Array.isArray(value) ? value : []).map((entry) => {
       const item = (entry ?? {}) as Record<string, unknown>
       return {
         variantId: typeof item.variantId === "number" ? item.variantId : null,
         variantName: typeof item.variantName === "string" ? item.variantName : null,
         unitCost: typeof item.unitCost === "number" ? item.unitCost : null,
       }
-    }),
+    })
+
+  return {
+    knownUnitCost: typeof result.knownUnitCost === "number" ? result.knownUnitCost : null,
+    variantCosts: parseVariantCosts(result.variantCosts),
+    missingVariantCosts: parseVariantCosts(result.missingVariantCosts),
     pricingMode: result.pricingMode === "target_margin" ? "target_margin" : "manual",
     targetMarginPercent:
       typeof result.targetMarginPercent === "number" ? result.targetMarginPercent : null,
+    requiresRecalculation: result.requiresRecalculation === true,
+    recalculatedPrice:
+      typeof result.recalculatedPrice === "number" ? result.recalculatedPrice : null,
+    recalculationBlockedReason:
+      typeof result.recalculationBlockedReason === "string"
+        ? result.recalculationBlockedReason
+        : null,
   }
 }
 

@@ -171,6 +171,14 @@ async function checkMercadoPago(): Promise<HealthResult> {
   }
 }
 
+/**
+ * A diferencia de Mercado Pago y ARCA, esta comprobación NO contacta a
+ * Andreani: sólo mira si las variables están presentes. Por eso `verified`
+ * es siempre false -- que existan credenciales no demuestra que Andreani
+ * acepte esa combinación de credenciales, contrato y sucursal. Declararlo
+ * "verificado" haría que el panel mostrara como operativa una integración
+ * que nunca se probó.
+ */
 function checkAndreani(): HealthResult {
   const integration = getAndreaniConfigurationStatus()
 
@@ -179,10 +187,10 @@ function checkAndreani(): HealthResult {
     label: "Andreani",
     status: integration.configured ? "warning" : "error",
     detail: integration.configured
-      ? "Andreani QA configurado; las operaciones automáticas siguen deshabilitadas."
+      ? "Variables configuradas. Sin verificar contra Andreani: la conectividad y la validez de credenciales/contrato requieren una prueba manual."
       : integration.message,
     latencyMs: null,
-    verified: integration.configured,
+    verified: false,
   })
 }
 

@@ -6,6 +6,7 @@ import { NextResponse } from "next/server"
 import { roundMoney } from "@/lib/customer-credit"
 import { getCustomerCreditTopupPreferenceIdempotencyKey } from "@/lib/mercadopago/customer-credit-topup-attempt"
 import { getSiteSettings } from "@/lib/site-settings"
+import { resolveTrustedSiteUrl } from "@/lib/site-url"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -120,22 +121,16 @@ export async function POST(request: Request) {
   }
   const surchargeAmount = roundMoney(amount * (surchargePercent / 100))
   const grossAmount = roundMoney(amount + surchargeAmount)
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  const fallbackSiteUrl = request.headers.get("origin") || "http://localhost:3000"
-  const parsedSiteUrl = new URL(configuredSiteUrl || fallbackSiteUrl)
+  // Ver lib/site-url.ts: en producción manda NEXT_PUBLIC_SITE_URL y nunca el
+  // header Origin, que elige quien hace la request.
+  const siteUrl = resolveTrustedSiteUrl(request)
 
-  if (
-    process.env.NODE_ENV === "production" &&
-    (parsedSiteUrl.protocol !== "https:" ||
-      ["localhost", "127.0.0.1"].includes(parsedSiteUrl.hostname))
-  ) {
+  if (!siteUrl) {
     return NextResponse.json(
       { error: "La URL pública de Mercado Pago no está configurada correctamente." },
       { status: 503 },
     )
   }
-
-  const siteUrl = parsedSiteUrl.origin
   const topupId = randomUUID()
   const externalReference = `credit-topup:${topupId}`
   const admin = createAdminClient()

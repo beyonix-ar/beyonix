@@ -40,6 +40,42 @@ const CONFIRMED_FINANCIAL_STATUSES = new Set([
   "refunded",
 ])
 
+/**
+ * Estado que queda en la orden cuando Mercado Pago aprobó el pago pero el
+ * inventario ya no permite confirmarla (la reserva venció y otra compra se
+ * quedó con las unidades). El dinero es real: la orden NO se confirma sola ni
+ * se cancela sola, queda marcada para resolución manual.
+ */
+export const MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS =
+  "approved_stock_conflict"
+
+/**
+ * Un pago aprobado que el guardián de inventario
+ * (`validate_inventory_order_confirmation`) rechaza. Se distingue de
+ * cualquier otro error de base para no reintentar eternamente algo que no se
+ * arregla reintentando.
+ */
+export class MercadoPagoInventoryConflictError extends Error {
+  readonly conflict: unknown
+
+  constructor(conflict?: unknown) {
+    super("El inventario ya no permite confirmar esta orden pagada.")
+    this.name = "MercadoPagoInventoryConflictError"
+    this.conflict = conflict
+  }
+}
+
+export function isInventoryConfirmationConflict(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : error && typeof error === "object" && "message" in error
+        ? String((error as { message: unknown }).message ?? "")
+        : ""
+
+  return /checkout_stock_insufficient|checkout_variant_required/i.test(message)
+}
+
 function moneyToCents(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return null

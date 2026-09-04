@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server"
 
+import { isCronRequestAuthorized } from "@/lib/auth/cron-auth"
 import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET
-  const authorization = request.headers.get("authorization")
-
-  if (cronSecret && authorization !== `Bearer ${cronSecret}`) {
+  // Falla cerrado: sin CRON_SECRET configurado este endpoint cancela órdenes
+  // de cualquiera que lo invoque.
+  if (
+    !isCronRequestAuthorized(
+      request.headers.get("authorization"),
+      process.env.CRON_SECRET,
+    )
+  ) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 })
   }
 
