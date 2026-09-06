@@ -67,7 +67,11 @@ export async function getMercadoPagoPayment(paymentId: string) {
 
   const response = await fetch(
     `https://api.mercadopago.com/v1/payments/${encodeURIComponent(normalizedPaymentId)}`,
-    { headers: mercadoPagoHeaders(), cache: "no-store" },
+    {
+      headers: mercadoPagoHeaders(),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    },
   )
 
   if (!response.ok) throw new Error(`Mercado Pago respondió ${response.status}`)
@@ -85,7 +89,11 @@ export async function findMercadoPagoPaymentByExternalReference(
   })
   const response = await fetch(
     `https://api.mercadopago.com/v1/payments/search?${params.toString()}`,
-    { headers: mercadoPagoHeaders(), cache: "no-store" },
+    {
+      headers: mercadoPagoHeaders(),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    },
   )
 
   if (!response.ok) throw new Error(`Mercado Pago respondió ${response.status}`)

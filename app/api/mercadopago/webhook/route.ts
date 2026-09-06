@@ -31,7 +31,19 @@ interface OrderRow {
   cliente_nombre: string | null
   financial_status?: string | null
   payment_method_id?: string | null
+  payment_id?: string | null
+  payment_status?: string | null
 }
+
+/**
+ * Estados que Mercado Pago notifica DESPUÉS de que un pago ya fue aprobado y
+ * confirmado -- nunca en la aprobación original. Sin esto, cualquier webhook
+ * posterior a la confirmación caía en el "ya confirmado -> duplicado" de
+ * abajo y una notificación real de reintegro/contracargo se descartaba en
+ * silencio (la UI de Admin ya tiene label/tono para "charged_back" -- nunca
+ * llegaba a setearse).
+ */
+const POST_CONFIRMATION_REVERSAL_STATUSES = new Set(["refunded", "charged_back"])
 
 function getPaymentId(url: URL, body: unknown) {
   const topic = url.searchParams.get("topic") || url.searchParams.get("type")
@@ -127,7 +139,7 @@ async function handleWebhook(request: Request) {
 
     const { data: order, error: orderError } = await supabase
       .from("ordenes")
-      .select("id, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id")
+      .select("id, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id, payment_id, payment_status")
       .eq("id", orderId)
       .single()
 
@@ -147,6 +159,58 @@ async function handleWebhook(request: Request) {
     }
 
     if (isMercadoPagoOrderAlreadyConfirmed(orderRow)) {
+      // La orden ya se confirmó -- pero un reintegro/contracargo NOTIFICADO
+      // por Mercado Pago sobre ESE MISMO pago tiene que quedar registrado
+      // igual: el dinero ya salió de la cuenta de BEYONIX aunque el pedido
+      // siga marcado como pagado. Nunca se toca stock/saldo/envío acá (eso
+      // requiere criterio humano, igual que approved_stock_conflict) -- sólo
+      // se deja visible y auditado para resolución manual.
+      if (
+        POST_CONFIRMATION_REVERSAL_STATUSES.has(payment.status) &&
+        orderRow.payment_id === String(payment.id) &&
+        orderRow.payment_status !== payment.status
+      ) {
+        const { data: reversalUpdated, error: reversalError } = await supabase
+          .from("ordenes")
+          .update({ payment_status: payment.status } as never)
+          .eq("id", orderId)
+          .eq("payment_id", String(payment.id))
+          .neq("payment_status", payment.status)
+          .select("id")
+          .maybeSingle()
+
+        if (reversalError) {
+          console.error("MERCADOPAGO_POST_CONFIRMATION_REVERSAL_PERSIST_ERROR", {
+            orderId,
+            paymentId: payment.id,
+            paymentStatus: payment.status,
+            message: reversalError.message,
+          })
+        } else if (reversalUpdated) {
+          await appendOrderAuditEvent(supabase, {
+            orderId,
+            actorType: "system",
+            action:
+              payment.status === "charged_back"
+                ? "payment_charged_back"
+                : "payment_refunded_by_provider",
+            previousStatus: orderRow.financial_status ?? "payment_confirmed",
+            newStatus: orderRow.financial_status ?? "payment_confirmed",
+            metadata: {
+              provider: "mercadopago",
+              paymentId: payment.id,
+              paymentStatus: payment.status,
+              reason: "post_confirmation_reversal_notified_by_provider",
+            },
+          })
+          console.error("MERCADOPAGO_POST_CONFIRMATION_REVERSAL", {
+            orderId,
+            paymentId: payment.id,
+            paymentStatus: payment.status,
+          })
+        }
+      }
+
       return NextResponse.json({ ok: true, duplicated: true })
     }
 
@@ -239,7 +303,11 @@ async function handleWebhook(request: Request) {
         throw confirmationError
       }
 
-      await supabase
+      // El dinero YA está aprobado: si esta escritura falla (por ejemplo, un
+      // constraint de la base que rechace el nuevo payment_status), no puede
+      // quedar en silencio -- perderíamos la única evidencia persistida de
+      // que hay un pago aprobado sin poder cumplirse.
+      const { error: stockConflictUpdateError } = await supabase
         .from("ordenes")
         .update({
           ...paymentPayload,
@@ -248,6 +316,15 @@ async function handleWebhook(request: Request) {
         .eq("id", orderId)
         .eq("estado", orderRow.estado)
         .eq("financial_status", orderRow.financial_status ?? "pending_payment")
+
+      if (stockConflictUpdateError) {
+        console.error("MERCADOPAGO_APPROVED_PAYMENT_STOCK_CONFLICT_PERSIST_ERROR", {
+          orderId,
+          paymentId: payment.id,
+          message: stockConflictUpdateError.message,
+        })
+        throw stockConflictUpdateError
+      }
 
       await appendOrderAuditEvent(supabase, {
         orderId,

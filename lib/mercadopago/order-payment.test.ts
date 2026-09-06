@@ -130,6 +130,78 @@ test("el webhook duplicado no crea stock ni factura como efecto lateral", () => 
   )
 })
 
+test("la persistencia de approved_stock_conflict revisa el error y nunca falla en silencio", () => {
+  const webhook = readFileSync(
+    new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  // BUG CONFIRMADO CONTRA LA BASE REAL: ordenes_admin_visibility_payment_check
+  // (20260815140000) rechazaba payment_status='approved_stock_conflict'
+  // porque nunca se actualizó junto con set_order_admin_visibility()
+  // (20260903160000) -- y esta escritura no revisaba el error, así que la
+  // falla era invisible. Corregido en ambos lados: constraint (ver
+  // supabase/migrations/20260906130000_...) y este chequeo de error.
+  assert.match(
+    webhook,
+    /stockConflictUpdateError[\s\S]{0,50}=\s*await supabase[\s\S]{0,400}payment_status: MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS/,
+  )
+  assert.match(
+    webhook,
+    /if \(stockConflictUpdateError\)\s*\{[\s\S]{0,300}throw stockConflictUpdateError/,
+  )
+})
+
+test("el constraint de admin_visible_at acepta los tres estados de conflicto post-aprobación", () => {
+  const migration = readFileSync(
+    "supabase/migrations/20260906130000_fix_admin_visibility_check_for_payment_conflicts.sql",
+    "utf8",
+  )
+
+  assert.match(migration, /drop constraint if exists ordenes_admin_visibility_payment_check/)
+  assert.match(
+    migration,
+    /payment_status in \(\s*\n\s*'approved_amount_mismatch',\s*\n\s*'approved_currency_mismatch',\s*\n\s*'approved_stock_conflict'\s*\n\s*\)\s*\n\s*and payment_id is not null/,
+  )
+})
+
+test("un reintegro/contracargo notificado DESPUÉS de confirmado no se descarta en silencio", () => {
+  const webhook = readFileSync(
+    new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  // El branch de reverso post-confirmación vive DENTRO del "ya confirmado",
+  // así que nunca puede faltar el chequeo de pertenencia contra el
+  // payment_id ya persistido -- sin él, un contracargo de un pago distinto
+  // que comparta external_reference podría marcar el pedido equivocado.
+  assert.match(
+    webhook,
+    /POST_CONFIRMATION_REVERSAL_STATUSES\.has\(payment\.status\)\s*&&\s*\n\s*orderRow\.payment_id === String\(payment\.id\)/,
+  )
+  // Idempotente: un mismo reverso notificado dos veces no debe volver a
+  // auditar ni a "actualizar" nada la segunda vez.
+  assert.match(webhook, /\.neq\("payment_status", payment\.status\)/)
+  // Nunca toca stock/saldo/envío automáticamente -- requiere resolución
+  // manual, igual que approved_stock_conflict.
+  assert.doesNotMatch(
+    webhook,
+    /POST_CONFIRMATION_REVERSAL_STATUSES[\s\S]{0,600}reverseCustomerCreditForOrder/,
+  )
+})
+
+test("refunded y charged_back quedan modelados como reversos post-confirmación, no como estados de pre-aprobación", () => {
+  const webhook = readFileSync(
+    new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  assert.match(
+    webhook,
+    /POST_CONFIRMATION_REVERSAL_STATUSES = new Set\(\["refunded", "charged_back"\]\)/,
+  )
+})
+
 test("CASO I (precio único): el webhook valida el pago contra external_amount_due/total (el precio público del pedido), nunca recalcula por cuotas/porcentajes", () => {
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),

@@ -212,7 +212,11 @@ export async function POST(request: Request) {
       ...shipping,
     }
 
-    const orderClient = user ? supabase : admin
+    // La escritura de `ordenes` es exclusiva de service_role (anon/authenticated
+    // sólo conservan SELECT desde la migración que revocó INSERT/UPDATE/DELETE
+    // directos -- ver 20260906120000_harden_andreani_commercial_and_order_writes.sql):
+    // usar el cliente de sesión del usuario acá fallaría con permission denied.
+    const orderClient = admin
 
     const { data: order, error: orderError } = await orderClient
       .from("ordenes")
