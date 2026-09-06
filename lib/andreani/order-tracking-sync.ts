@@ -90,12 +90,9 @@ export async function fetchAndreaniOrderTrackingSnapshot(
     ? await getTrackingPullV3(resolvedTracking, clientOptions)
     : { eventos: [] }
 
-  // Orden relativo entre eventos: comparar los strings de Fecha crudos (con
-  // o sin offset) preserva el orden real porque el desplazamiento faltante
-  // es el mismo para todos los eventos de esta respuesta -- sólo hace falta
-  // convertir a un instante absoluto correcto al persistir, no para ordenar.
+  // Fechas con y sin offset pueden convivir: comparar instantes absolutos.
   const sortedEvents = [...tracking.eventos].sort(
-    (left, right) => new Date(right.Fecha).getTime() - new Date(left.Fecha).getTime(),
+    (left, right) => Date.parse(parseAndreaniTimestamp(right.Fecha)) - Date.parse(parseAndreaniTimestamp(left.Fecha)),
   )
   const [latestEvent] = sortedEvents
   // Algunos eventos (p. ej. "OrdenDeEnvioCreada") no traen un Estado
@@ -154,8 +151,9 @@ export async function syncAndreaniOrderTracking(
   const snapshot = await fetchAndreaniOrderTrackingSnapshot(order, options.clientOptions)
   const checkedAt = new Date().toISOString()
 
-  const autoTransition = resolveAndreaniAutoOrderTransition(snapshot.eventos, order.estado)
+  const autoTransition = snapshot.rejectedAfterCreation ? null : resolveAndreaniAutoOrderTransition(snapshot.eventos, order.estado)
   const isRealTransition = Boolean(autoTransition && autoTransition !== order.estado)
+  const eventAt = snapshot.latestEvent ? parseAndreaniTimestamp(snapshot.latestEvent.Fecha) : null
 
   const updatePayload: Record<string, unknown> = {
     andreani_estado: snapshot.logisticsEstado,
@@ -163,7 +161,7 @@ export async function syncAndreaniOrderTracking(
     andreani_etiqueta_url: snapshot.etiquetaUrl,
     andreani_tracking_checked_at: checkedAt,
     ...(snapshot.latestEvent
-      ? { andreani_tracking_event_at: parseAndreaniTimestamp(snapshot.latestEvent.Fecha) }
+      ? { andreani_tracking_event_at: eventAt }
       : {}),
     ...(isRealTransition ? { estado: autoTransition } : {}),
     ...(isRealTransition && autoTransition === "entregado" && !order.delivered_at
@@ -171,13 +169,13 @@ export async function syncAndreaniOrderTracking(
       : {}),
   }
 
-  let query = admin.from("ordenes").update(updatePayload as never).eq("id", order.id)
-  if (isRealTransition) {
-    // Optimistic concurrency: sólo aplica el avance de estado si el pedido
-    // sigue en el mismo estado que se leyó -- si un admin lo cambió
-    // manualmente mientras tanto, la sincronización automática no lo pisa.
-    query = query.eq("estado", order.estado)
-  }
+  let query = admin.from("ordenes").update(updatePayload as never)
+    .eq("id", order.id).eq("estado", order.estado)
+  // La comparación ocurre en el UPDATE: una respuesta atrasada no puede
+  // reemplazar eventos más recientes persistidos por otro admin o el cron.
+  query = eventAt
+    ? query.or(`andreani_tracking_event_at.is.null,andreani_tracking_event_at.lte.${eventAt}`)
+    : query.is("andreani_tracking_event_at", null)
 
   const { data, error } = await query
     .select("id, estado, delivered_at, cliente_email, cliente_nombre, tracking_number, tracking_url")

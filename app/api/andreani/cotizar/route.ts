@@ -18,10 +18,18 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json()
     const quotedOptions = await quoteAndreaniCheckout(payload)
-    const options = quotedOptions.map((option) => ({
-      ...option,
-      quoteToken: createCheckoutShippingQuoteToken(payload, option),
-    }))
+    const options = quotedOptions.map((option) => {
+      const branches = option.type === "sucursal" ? option.branches?.map((branch) => ({
+        ...branch,
+        quoteToken: createCheckoutShippingQuoteToken({ ...payload, sucursalId: branch.id }, option),
+      })) : undefined
+      return {
+        ...option,
+        branches,
+        quoteToken: option.type === "sucursal" ? branches?.[0]?.quoteToken :
+          createCheckoutShippingQuoteToken({ ...payload, sucursalId: null }, option),
+      }
+    })
     const environment = resolveAndreaniReferenceEnvironment()
 
     return NextResponse.json(
@@ -34,7 +42,8 @@ export async function POST(request: Request) {
       safeError.code === "VALIDATION_ERROR"
         ? 400
         : safeError.code === "CONFIGURATION_ERROR" ||
-            safeError.code === "PRODUCTION_BLOCKED"
+            safeError.code === "PRODUCTION_BLOCKED" ||
+            safeError.code === "PROVIDER_DISABLED"
           ? 503
           : safeError.code === "TIMEOUT" || safeError.code === "SERVICE_UNAVAILABLE"
             ? 504
@@ -45,7 +54,8 @@ export async function POST(request: Request) {
         : safeError.code === "TIMEOUT"
           ? "La cotización tardó demasiado. Intentá nuevamente."
           : safeError.code === "CONFIGURATION_ERROR" ||
-              safeError.code === "PRODUCTION_BLOCKED"
+              safeError.code === "PRODUCTION_BLOCKED" ||
+              safeError.code === "PROVIDER_DISABLED"
             ? "El envío no está disponible temporalmente."
             : "No pudimos calcular el envío. Intentá nuevamente."
 

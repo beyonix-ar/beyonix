@@ -36,6 +36,34 @@ function jsonResponse(body: unknown) {
   return Response.json(body)
 }
 
+const mixedDateTrackingFetch = async (input: string | URL | Request) => {
+  const url = new URL(String(input))
+  if (url.pathname === "/login") return jsonResponse({ token: "token-prueba" })
+  if (url.pathname.endsWith("/trazas")) return jsonResponse({ eventos: [
+    { Fecha: "2026-08-26T16:00:00Z", Evento: "OrdenDeEnvioCreada", Estado: "Creada" },
+    { Fecha: "2026-08-26T14:00:00", Evento: "EnvioDespachado", Estado: "Despachado" },
+  ] })
+  return jsonResponse({ estado: "Creada", tipo: "B2C", bultos: [{ numeroDeBulto: "1", numeroDeEnvio: "360003080248490" }] })
+}
+
+test("tracking ordena correctamente eventos mezclados con offset y sin offset", async () => {
+  const snapshot = await fetchAndreaniOrderTrackingSnapshot(baseOrder(), { env: qaClientEnv, fetch: mixedDateTrackingFetch })
+  assert.equal(snapshot.latestEvent?.Evento, "EnvioDespachado")
+  assert.equal(snapshot.logisticsEstado, "Despachado")
+})
+
+test("tracking atrasado no pisa un evento más reciente persistido concurrentemente", async () => {
+  const row = { id: 2, estado: "pagado", delivered_at: null, andreani_tracking_event_at: "2026-08-26T18:00:00Z", andreani_estado: "En distribución" }
+  const { admin, auditEvents } = createFakeAdmin([row])
+  const result = await syncAndreaniOrderTracking(admin as never, baseOrder(), {
+    actorType: "system", actorId: null, clientOptions: { env: qaClientEnv, fetch: mixedDateTrackingFetch },
+  })
+  assert.equal(result.statusChanged, false)
+  assert.equal(row.andreani_estado, "En distribución")
+  assert.equal(row.andreani_tracking_event_at, "2026-08-26T18:00:00Z")
+  assert.equal(auditEvents.length, 0)
+})
+
 test("resolveAndreaniTrackingEnvironment usa el ambiente donde se creó el envío, nunca el configurado hoy", () => {
   assert.equal(resolveAndreaniTrackingEnvironment({ andreani_creation_environment: "PROD" }), "PROD")
   assert.equal(resolveAndreaniTrackingEnvironment({ andreani_creation_environment: "QA" }), "QA")
@@ -96,7 +124,18 @@ function createFakeAdmin(ordenes: FakeOrdenesRow[]) {
         return {
           update(payload: Record<string, unknown>) {
             const filters: Array<{ col: string; val: unknown }> = []
+            let eventPredicate: (row: Record<string, unknown>) => boolean = () => true
             const builder = {
+              or(expression: string) {
+                const timestamp = expression.split(".lte.")[1]
+                eventPredicate = (row) => row.andreani_tracking_event_at == null ||
+                  Date.parse(String(row.andreani_tracking_event_at)) <= Date.parse(timestamp)
+                return builder
+              },
+              is(col: string) {
+                eventPredicate = (row) => row[col] == null
+                return builder
+              },
               eq(col: string, val: unknown) {
                 filters.push({ col, val })
                 return builder
@@ -105,7 +144,7 @@ function createFakeAdmin(ordenes: FakeOrdenesRow[]) {
                 return {
                   async maybeSingle() {
                     const row = ordenes.find((candidate) =>
-                      filters.every((filter) => candidate[filter.col] === filter.val),
+                      filters.every((filter) => candidate[filter.col] === filter.val) && eventPredicate(candidate),
                     )
                     if (!row) return { data: null, error: null }
                     Object.assign(row, payload)

@@ -3,9 +3,20 @@ export type AndreaniEnvironment = "QA" | "PROD"
 export const ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE =
   "No encontramos envío disponible para este destino."
 
+/**
+ * Andreani ESTÁ configurado (credenciales, contratos) pero un admin lo
+ * desactivó comercialmente desde site_settings ("andreani_commercial"). Sólo
+ * bloquea cotizar y crear envíos NUEVOS -- nunca tracking/etiquetas de
+ * envíos ya creados, que siguen leyendo credenciales y ambiente histórico
+ * del pedido, no este flag.
+ */
+export const ANDREANI_PROVIDER_DISABLED_MESSAGE =
+  "El envío por Andreani no está disponible por el momento."
+
 export type AndreaniErrorCode =
   | "CONFIGURATION_ERROR"
   | "PRODUCTION_BLOCKED"
+  | "PROVIDER_DISABLED"
   | "VALIDATION_ERROR"
   | "AUTHENTICATION_FAILED"
   | "TIMEOUT"
@@ -115,6 +126,8 @@ export interface AndreaniCheckoutQuoteRequest {
 /** Sucursal Andreani real con la distancia aproximada (Haversine) al domicilio del cliente, cuando se pudo geocodificar. */
 export type AndreaniBranchWithDistance = AndreaniBranch & {
   distanciaKm?: number
+  /** Firma propia de este idgla, emitida por la API de cotización. */
+  quoteToken?: string
 }
 
 export interface AndreaniCheckoutQuoteOption {

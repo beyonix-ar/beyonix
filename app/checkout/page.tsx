@@ -977,6 +977,7 @@ export default function CheckoutPage() {
     cpDestino: formData.cpDestino.trim(),
     localidad: formData.localidad.trim(),
     provincia: formData.provincia.trim(),
+    direccion: formData.direccion,
     items: mapCartItemsToQuoteItems(items),
   }
   const shippingQuotePayload = buildShippingQuoteKey(shippingQuoteDestination)
@@ -1001,6 +1002,7 @@ export default function CheckoutPage() {
       cpDestino: string
       localidad: string
       provincia: string
+      direccion: string
       items: Array<{
         productId: number
         quantity: number
@@ -1423,7 +1425,9 @@ export default function CheckoutPage() {
           shipping: {
             provider: selectedShippingOption.provider,
             type: selectedShippingOption.type,
-            quoteToken: selectedShippingOption.quoteToken,
+            quoteToken: selectedShippingOption.type === "sucursal"
+              ? selectedShippingOption.branches?.find((branch) => branch.id === selectedSucursalId)?.quoteToken
+              : selectedShippingOption.quoteToken,
             sucursalId:
               selectedShippingOption.type === "sucursal"
                 ? selectedSucursalId

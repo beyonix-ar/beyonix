@@ -10,6 +10,7 @@ function statusForAndreaniError(error: AndreaniError) {
       return 400
     case "CONFIGURATION_ERROR":
     case "PRODUCTION_BLOCKED":
+    case "PROVIDER_DISABLED":
       return 503
     default:
       return 502
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
   let body: { pedidoId?: unknown }
   try {
     body = await request.json()
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("INVALID_BODY")
   } catch {
     return NextResponse.json({ ok: false, error: "Solicitud inválida." }, { status: 400 })
   }

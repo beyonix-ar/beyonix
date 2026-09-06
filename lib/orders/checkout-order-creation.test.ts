@@ -802,6 +802,7 @@ test("el helper común mantiene la validación del envío firmado", () => {
     localidad: "Paso de los Libres",
     provincia: "Corrientes",
     items,
+    direccion: validCustomer.direccion,
   }
   const quoteToken = createCheckoutShippingQuoteToken(
     binding,

@@ -47,7 +47,18 @@ function createFakeAdmin(seedOrders: FakeOrdenRow[]) {
       },
       update(payload: Record<string, unknown>) {
         const filters: Array<{ col: string; val: unknown }> = []
+            let eventPredicate: (row: Record<string, unknown>) => boolean = () => true
         const builder = {
+              or(expression: string) {
+                const timestamp = expression.split(".lte.")[1]
+                eventPredicate = (row) => row.andreani_tracking_event_at == null ||
+                  Date.parse(String(row.andreani_tracking_event_at)) <= Date.parse(timestamp)
+                return builder
+              },
+              is(col: string) {
+                eventPredicate = (row) => row[col] == null
+                return builder
+              },
           eq(col: string, val: unknown) {
             filters.push({ col, val })
             return builder
@@ -56,7 +67,7 @@ function createFakeAdmin(seedOrders: FakeOrdenRow[]) {
             return {
               async maybeSingle() {
                 const row = seedOrders.find((candidate) =>
-                  filters.every((filter) => candidate[filter.col] === filter.val),
+                  filters.every((filter) => candidate[filter.col] === filter.val) && eventPredicate(candidate),
                 )
                 if (!row) return { data: null, error: null }
                 Object.assign(row, payload)

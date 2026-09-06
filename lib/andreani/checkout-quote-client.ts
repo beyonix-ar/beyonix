@@ -43,6 +43,7 @@ export interface CheckoutQuoteDestinationInput {
   cpDestino: string
   localidad: string
   provincia: string
+  direccion?: string
   items: CheckoutQuoteItemInput[]
   /** Calle y altura del domicilio -- opcionales, sólo se envían para ordenar sucursales por cercanía. Nunca forman parte de la clave de caché: cambiarlas no dispara una cotización nueva. */
   calle?: string
@@ -235,6 +236,7 @@ export function buildShippingQuoteKey(
     cpDestino: input.cpDestino.trim().toUpperCase(),
     localidad: normalizeArgentineLocationKey(input.localidad),
     provincia: normalizeArgentineProvinceKey(input.provincia),
+    direccion: input.direccion?.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase() || "",
     items: canonicalizeCheckoutQuoteItems(input.items),
   })
 }
@@ -405,6 +407,7 @@ export function getShippingQuoteOptions(
             cpDestino: input.cpDestino.trim(),
             localidad: input.localidad.trim(),
             provincia: input.provincia.trim(),
+            direccion: input.direccion,
             items: input.items,
             calle: input.calle?.trim() || undefined,
             numero: input.numero?.trim() || undefined,

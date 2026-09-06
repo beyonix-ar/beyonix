@@ -33,6 +33,23 @@ import {
 } from "./client.ts"
 import { formatAndreaniBranchAddress } from "./branch-address.ts"
 
+test("el transporte no sigue redirects que puedan filtrar el token Andreani", async () => {
+  const client = new AndreaniClient({ env: qaEnvironment(), fetch: async (_url, options) => {
+    assert.equal(options?.redirect, "error")
+    assert.equal(options?.cache, "no-store")
+    return new Response(null, { status: 307, headers: { Location: "https://example.com/" } })
+  } })
+  await assert.rejects(() => client.getLocalidades({ codigosPostales: "3230" }), AndreaniError)
+})
+
+test("el cliente de bajo nivel bloquea POST PROD real durante tests", () => {
+  assert.throws(() => new AndreaniClient({
+    env: { NODE_ENV: "test", ANDREANI_ENV: "PROD", ANDREANI_PROD_API_URL: "https://apis.andreani.com",
+      ANDREANI_PROD_USERNAME: "test", ANDREANI_PROD_PASSWORD: "test" },
+    productionAccess: "shipment-creation",
+  }), (error: unknown) => error instanceof AndreaniError && error.code === "PRODUCTION_BLOCKED")
+})
+
 function qaEnvironment(
   overrides: Partial<NodeJS.ProcessEnv> = {},
 ): NodeJS.ProcessEnv {

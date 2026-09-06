@@ -19,17 +19,23 @@ import {
   type AggregatedAndreaniPackage,
   type LoadedCheckoutQuoteItem,
 } from "./checkout-quote.ts"
+import {
+  DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
+  getAndreaniCommercialSettings,
+  type AndreaniCommercialSettings,
+} from "../site-settings.ts"
 import type {
   AndreaniCreateShipmentInput,
   AndreaniCreateShipmentRequest,
   AndreaniCreateShipmentResponse,
   AndreaniEnvironment,
 } from "./types.ts"
+import { ANDREANI_PROVIDER_DISABLED_MESSAGE } from "./types.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
 const ORDER_SELECT =
-  "id, cliente_nombre, cliente_email, cliente_telefono, cliente_dni, cliente_direccion, cp_destino, localidad, provincia, shipping_type, andreani_sucursal_id, andreani_sucursal_codigo, andreani_sucursal_nombre, estado, payment_status, paid_at, payment_confirmed_amount, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_tracking, andreani_etiqueta_url, andreani_estado"
+  "id, cliente_nombre, cliente_email, cliente_telefono, cliente_dni, cliente_direccion, cp_destino, localidad, provincia, shipping_provider, envio_proveedor, shipping_type, andreani_sucursal_id, andreani_sucursal_codigo, andreani_sucursal_nombre, estado, payment_status, paid_at, payment_confirmed_amount, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_tracking, andreani_etiqueta_url, andreani_estado"
 const ORDER_ITEM_SELECT =
   "producto_id, variante_id, conditioned_stock_id, cantidad, precio"
 const PRODUCT_SELECT =
@@ -62,6 +68,8 @@ export interface AndreaniOrderRow {
   cp_destino: string | null
   localidad: string | null
   provincia: string | null
+  shipping_provider: string | null
+  envio_proveedor: string | null
   shipping_type: string | null
   andreani_sucursal_id: string | null
   andreani_sucursal_codigo: string | null
@@ -168,6 +176,8 @@ interface AndreaniShipmentCreationDependencies {
   now?: () => Date
   crearOrdenEnvio?: typeof crearOrdenEnvio
   logAttemptError?: (context: AndreaniShipmentAttemptErrorContext) => void
+  /** Sólo para tests: evita depender de site_settings real en la base. */
+  getAndreaniCommercialSettings?: () => Promise<AndreaniCommercialSettings>
 }
 
 function requiredText(value: string | undefined | null) {
@@ -417,6 +427,10 @@ export function resolveAndreaniShipmentCreationConfig(
 }
 
 function assertShipmentEligibleOrder(order: AndreaniOrderRow) {
+  if (!["pendiente", "pagado"].includes(order.estado ?? "") ||
+      (order.shipping_provider ?? order.envio_proveedor)?.toLowerCase() !== "andreani") {
+    throw new AndreaniError("VALIDATION_ERROR", "El pedido no es elegible para un envío Andreani nuevo.")
+  }
   if (
     order.estado === "cancelado" ||
     CANCELLED_FINANCIAL_STATUSES.includes(order.financial_status ?? "")
@@ -802,6 +816,19 @@ export async function createAndreaniShipmentForOrder(
       etiquetaUrl: order.andreani_etiqueta_url,
       estado: order.andreani_estado ?? "",
     }
+  }
+
+  // Sólo bloquea CREAR un envío nuevo -- un pedido que ya tiene
+  // andreani_envio_id se reutiliza arriba sin pasar por acá, y el tracking de
+  // ese envío (order-tracking-sync.ts) nunca consulta este flag.
+  const getCommercialSettings =
+    dependencies.getAndreaniCommercialSettings ??
+    getAndreaniCommercialSettings
+  const commercialSettings = await getCommercialSettings().catch(
+    () => DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
+  )
+  if (!commercialSettings.enabled) {
+    throw new AndreaniError("PROVIDER_DISABLED", ANDREANI_PROVIDER_DISABLED_MESSAGE)
   }
 
   assertShipmentEligibleOrder(order)

@@ -12,7 +12,7 @@ import {
   aggregateAndreaniPackage,
   matchAndreaniCheckoutProvince,
   normalizeCheckoutQuoteRequest,
-  quoteAndreaniCheckout,
+  quoteAndreaniCheckout as actualquoteAndreaniCheckout,
   resetAndreaniCheckoutQuoteStateForTests,
   resolveVerifiedAndreaniBranch,
   roundShippingCostToNearestThousand,
@@ -76,6 +76,10 @@ const officialBranchResponsePasoDeLosLibres = [
   },
 ]
 
+function quoteAndreaniCheckout(request: Parameters<typeof actualquoteAndreaniCheckout>[0], dependencies: Parameters<typeof actualquoteAndreaniCheckout>[1] = {}) {
+  return actualquoteAndreaniCheckout(request, { getAndreaniCommercialSettings: async () => ({ enabled: true }), ...dependencies })
+}
+
 function qaQuoteEnvironment(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "test",
@@ -88,6 +92,36 @@ function qaQuoteEnvironment(): NodeJS.ProcessEnv {
     ANDREANI_QA_ORIGIN_BRANCH: "RAC",
   }
 }
+
+test("un error de lectura comercial bloquea cotizaciones antes de contactar al proveedor", async () => {
+  await assert.rejects(() => quoteAndreaniCheckout({}, {
+    getAndreaniCommercialSettings: async () => { throw new Error("DB unavailable") },
+    quoteTariff: async () => { throw new Error("no debe cotizar") },
+  }), (error: unknown) => error instanceof AndreaniError && error.code === "PROVIDER_DISABLED")
+})
+
+test("la caché no reutiliza tarifas entre ambientes ni contratos", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  let calls = 0
+  const request = { cpDestino: "3230", localidad: "Paso de los Libres", provincia: "Corrientes", items: [{ productId: 10, quantity: 1 }] }
+  const dependencies = {
+    getLocalities: async () => officialLocalityResponse,
+    loadItems: async () => [{ product: completeProduct, variant: null, quantity: 1, discountPercent: 0 }],
+    quoteTariff: async () => {
+      calls++
+      return { pesoAforado: "1", tarifaSinIva: { seguroDistribucion: "0", distribucion: "1000", total: "1000" },
+        tarifaConIva: { seguroDistribucion: "0", distribucion: "1000", total: String(calls * 1000) } }
+    },
+  }
+  const qa = qaQuoteEnvironment()
+  const prod = { ...qa, ANDREANI_TARIFF_ENV: "PROD", ANDREANI_PROD_API_URL: "https://apis.andreani.com",
+    ANDREANI_PROD_USERNAME: "test", ANDREANI_PROD_PASSWORD: "test", ANDREANI_PROD_CLIENT: "prod-client",
+    ANDREANI_PROD_HOME_CONTRACT: "prod-contract", ANDREANI_PROD_ORIGIN_BRANCH: "RAC" }
+  assert.equal((await quoteAndreaniCheckout(request, { ...dependencies, env: qa }))[0].price, 1000)
+  assert.equal((await quoteAndreaniCheckout(request, { ...dependencies, env: prod }))[0].price, 2000)
+  assert.equal((await quoteAndreaniCheckout(request, { ...dependencies, env: { ...prod, ANDREANI_PROD_HOME_CONTRACT: "new-contract" } }))[0].price, 3000)
+  assert.equal(calls, 3)
+})
 
 test("redondea el costo de envío al millar usando $300 como punto de corte", () => {
   const cases: Array<[number, number]> = [
@@ -275,6 +309,42 @@ test("la cotización usa el paquete agregado, normalizando espacios de la locali
   assert.equal(receivedWeight, 2)
   assert.equal(receivedVolume, 12_000)
   assert.deepEqual(options, [{ type: "domicilio", price: 14_000 }])
+})
+
+test("Andreani desactivado comercialmente rechaza cotizar sin llegar a tocar catálogo/tarifa", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  let touchedNetwork = false
+
+  await assert.rejects(
+    () =>
+      quoteAndreaniCheckout(
+        {
+          cpDestino: "3230",
+          localidad: "Paso de los Libres",
+          provincia: "Corrientes",
+          items: [{ productId: 10, quantity: 2 }],
+        },
+        {
+          env: qaQuoteEnvironment(),
+          getAndreaniCommercialSettings: async () => ({ enabled: false }),
+          getLocalities: async () => {
+            touchedNetwork = true
+            return officialLocalityResponse
+          },
+          loadItems: async () => {
+            touchedNetwork = true
+            return []
+          },
+          quoteTariff: async () => {
+            touchedNetwork = true
+            throw new Error("no debería llamarse")
+          },
+        },
+      ),
+    (error) =>
+      error instanceof AndreaniError && error.code === "PROVIDER_DISABLED",
+  )
+  assert.equal(touchedNetwork, false)
 })
 
 test("el checkout usa catálogos públicos y tarifas en PROD sin depender de credenciales QA", async () => {

@@ -174,3 +174,19 @@ test("rechaza cotizaciones vencidas", () => {
     CheckoutShippingQuoteError,
   )
 })
+
+test("firma vinculada a dirección, sucursal idgla, variante, cantidad y vencimiento exacto", () => {
+  const bound = { ...binding, direccion: "San Martín 123", sucursalId: 10055 }
+  const quoteToken = createCheckoutShippingQuoteToken(bound, { type: "sucursal", price: 12000 }, { secret: TEST_SECRET, now: NOW })
+  const shipping = { type: "sucursal" as const, quoteToken }
+  assert.equal(normalizeCheckoutShipping(shipping, bound, 10000, { secret: TEST_SECRET, now: NOW }).costReal, 12000)
+  for (const changed of [
+    { ...bound, direccion: "San Martín 124" }, { ...bound, sucursalId: 10056 },
+    { ...bound, sucursalId: null }, { ...bound, provincia: "Santa Fe" },
+    { ...bound, items: [{ productId: 10, variantId: 5, quantity: 2 }] },
+    { ...bound, items: [{ productId: 10, variantId: 4, quantity: 3 }] },
+  ]) {
+    assert.throws(() => normalizeCheckoutShipping(shipping, changed, 10000, { secret: TEST_SECRET, now: NOW }), CheckoutShippingQuoteError)
+  }
+  assert.throws(() => normalizeCheckoutShipping(shipping, bound, 10000, { secret: TEST_SECRET, now: NOW + 30 * 60 * 1000 }), CheckoutShippingQuoteError)
+})

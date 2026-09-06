@@ -7,13 +7,17 @@ import type { AndreaniCreateShipmentInput, AndreaniCreateShipmentResponse } from
 import {
   assertAndreaniProdShipmentCreationAuthorized,
   buildAndreaniShipmentEnvio,
-  createAndreaniShipmentForOrder,
+  createAndreaniShipmentForOrder as actualcreateAndreaniShipmentForOrder,
   parseArgentineStreetAddress,
   resolveAndreaniShipmentCreationConfig,
   resolveAndreaniShipmentEnvironment,
   type AndreaniOrderRow,
   type AndreaniShipmentAttemptErrorContext,
 } from "./order-shipment.ts"
+
+function createAndreaniShipmentForOrder(admin: Parameters<typeof actualcreateAndreaniShipmentForOrder>[0], orderId: number, dependencies: Parameters<typeof actualcreateAndreaniShipmentForOrder>[2] = {}) {
+  return actualcreateAndreaniShipmentForOrder(admin, orderId, { getAndreaniCommercialSettings: async () => ({ enabled: true }), ...dependencies })
+}
 
 function qaEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
   return {
@@ -46,6 +50,8 @@ function baseOrder(overrides: Partial<AndreaniOrderRow> = {}): AndreaniOrderRow 
     cp_destino: "1292",
     localidad: "C.A.B.A.",
     provincia: "CABA",
+    shipping_provider: "andreani",
+    envio_proveedor: "andreani",
     shipping_type: "domicilio",
     andreani_sucursal_id: null,
     andreani_sucursal_codigo: null,
@@ -697,6 +703,38 @@ test("reutiliza el envío existente sin volver a llamar a Andreani", async () =>
   assert.equal(result.envioId, "API-EXISTENTE")
   assert.equal(creationCalls, 0)
   assert.equal(admin.claimCalls.length, 0)
+})
+
+test("Andreani desactivado comercialmente bloquea crear un envío nuevo sin consumir un claim", async () => {
+  const admin = createFakeAdmin(singleItemTables())
+
+  await assert.rejects(
+    () =>
+      createAndreaniShipmentForOrder(admin as never, 42, {
+        env: qaEnv(),
+        getAndreaniCommercialSettings: async () => ({ enabled: false }),
+        crearOrdenEnvio: async () => {
+          throw new Error("no debería llamarse")
+        },
+      }),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.code === "PROVIDER_DISABLED",
+  )
+  assert.equal(admin.claimCalls.length, 0)
+})
+
+test("Andreani desactivado comercialmente NO bloquea reutilizar un envío ya creado", async () => {
+  const admin = createFakeAdmin(
+    singleItemTables({ andreani_envio_id: "API-EXISTENTE", andreani_tracking: "TRK-1" }),
+  )
+
+  const result = await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: qaEnv(),
+    getAndreaniCommercialSettings: async () => ({ enabled: false }),
+  })
+
+  assert.equal(result.status, "reused")
+  assert.equal(result.envioId, "API-EXISTENTE")
 })
 
 test("crea el envío, consolida un único bulto y persiste la referencia", async () => {

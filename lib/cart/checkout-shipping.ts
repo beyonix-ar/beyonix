@@ -31,6 +31,8 @@ export interface CheckoutShippingQuoteBinding {
   cpDestino?: string | null
   localidad?: string | null
   provincia?: string | null
+  direccion?: string | null
+  sucursalId?: string | number | null
   items: CheckoutShippingQuoteItem[]
 }
 
@@ -51,6 +53,8 @@ interface CanonicalCheckoutShippingQuoteBinding {
   cpDestino: string
   localidad: string
   provincia: string
+  direccion: string
+  sucursalId: string | null
   items: Array<{
     productId: number
     quantity: number
@@ -132,6 +136,11 @@ function canonicalizeQuoteBinding(
   const cpDestino = binding.cpDestino?.trim().toUpperCase() ?? ""
   const localidad = normalizeArgentineLocationKey(binding.localidad ?? "")
   const provincia = normalizeArgentineProvinceKey(binding.provincia ?? "")
+  const direccion = (binding.direccion ?? "").split(/\.\s*Referencias:/i)[0]
+    .normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase()
+  const branchId = binding.sucursalId == null ? null : Number(binding.sucursalId)
+  if (direccion.length > 500 || (branchId !== null && (!Number.isSafeInteger(branchId) || branchId <= 0))) invalidQuote()
+  const sucursalId = branchId === null ? null : String(branchId)
 
   if (
     !/^\d{4}$/.test(cpDestino) ||
@@ -194,7 +203,7 @@ function canonicalizeQuoteBinding(
       ),
   )
 
-  return { cpDestino, localidad, provincia, items }
+  return { cpDestino, localidad, provincia, direccion, sucursalId, items }
 }
 
 function signQuotePayload(payload: string, secret: string) {
@@ -212,6 +221,7 @@ export function createCheckoutShippingQuoteToken(
   if (option.type !== "domicilio" && option.type !== "sucursal") {
     invalidQuote()
   }
+  if (option.type === "sucursal" && binding.sucursalId == null) invalidQuote()
 
   const now = options.now ?? Date.now()
   const ttlMs = options.ttlMs ?? CHECKOUT_SHIPPING_QUOTE_TTL_MS
@@ -282,7 +292,8 @@ function verifyCheckoutShippingQuote(
     shipping?.provider && shipping.provider !== claims.provider ||
     shipping?.type !== claims.type ||
     !Number.isSafeInteger(claims.expiresAt) ||
-    claims.expiresAt < now ||
+    claims.expiresAt <= now ||
+    (claims.type === "sucursal" && canonicalBinding.sucursalId === null) ||
     !Number.isSafeInteger(claims.costCents) ||
     claims.costCents <= 0 ||
     JSON.stringify(claims.binding) !== JSON.stringify(canonicalBinding)

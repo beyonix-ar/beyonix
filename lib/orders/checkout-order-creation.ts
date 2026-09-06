@@ -504,6 +504,8 @@ export function normalizeCheckoutOrderShipping({
       cpDestino: customer?.cpDestino,
       localidad: customer?.localidad,
       provincia: customer?.provincia,
+      direccion: customer?.direccion,
+      sucursalId: shipping?.type === "sucursal" ? shipping.sucursalId : null,
       items,
     },
     productsTotal,

@@ -25,6 +25,11 @@ import { formatAndreaniBranchAddress } from "./branch-address.ts"
 import { isCheckoutDestinationCached } from "./checkout-destinations.ts"
 import { sortAndreaniBranchesByDistance } from "./branch-distance.ts"
 import { geocodeCustomerAddress } from "../geocoding/nominatim.ts"
+import {
+  DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
+  getAndreaniCommercialSettings,
+  type AndreaniCommercialSettings,
+} from "../site-settings.ts"
 import type {
   AndreaniBranch,
   AndreaniBranchFilters,
@@ -36,7 +41,10 @@ import type {
   AndreaniTariffRequest,
   AndreaniTariffResponse,
 } from "./types.ts"
-import { ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE } from "./types.ts"
+import {
+  ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
+  ANDREANI_PROVIDER_DISABLED_MESSAGE,
+} from "./types.ts"
 
 const PRODUCT_SELECT =
   "id, nombre, sku, precio, peso_empaquetado_kg, alto_paquete_cm, ancho_paquete_cm, largo_paquete_cm"
@@ -105,6 +113,8 @@ interface CheckoutQuoteDependencies {
     >,
   ) => boolean
   clientOptions?: AndreaniClientOptions
+  /** Sólo para tests: evita depender de site_settings real en la base. */
+  getAndreaniCommercialSettings?: () => Promise<AndreaniCommercialSettings>
 }
 
 interface TimedCacheEntry<T> {
@@ -213,9 +223,10 @@ const NATIONAL_BRANCH_CATALOG_CACHE_KEY = "__NATIONAL_CATALOG__"
 
 function getAndreaniBranchCatalog(
   getBranches: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]>,
+  environment: CheckoutQuoteConfig["environment"],
 ): Promise<AndreaniBranch[]> {
   return getCachedReferenceData(
-    NATIONAL_BRANCH_CATALOG_CACHE_KEY,
+    `${environment}:${NATIONAL_BRANCH_CATALOG_CACHE_KEY}`,
     branchCache,
     branchRequests,
     () => getBranches({ canal: "B2C", seHaceAtencionAlCliente: true }),
@@ -312,8 +323,9 @@ function resolveAndreaniDestinationBranches(
 async function fetchAndreaniDestinationBranches(
   destination: { localidad: string; provincia: string; cpDestino?: string },
   getBranches: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]>,
+  environment: CheckoutQuoteConfig["environment"],
 ): Promise<AndreaniBranch[]> {
-  const catalog = await getAndreaniBranchCatalog(getBranches)
+  const catalog = await getAndreaniBranchCatalog(getBranches, environment)
   return resolveAndreaniDestinationBranches(catalog, destination)
 }
 
@@ -323,11 +335,10 @@ export function resolveAndreaniCheckoutConfig(
   const environment = resolveAndreaniReferenceEnvironment(env)
   const prefix = `ANDREANI_${environment}`
   const cliente =
-    requiredText(env[`${prefix}_CLIENT`]) || requiredText(env.ANDREANI_CLIENTE)
+    requiredText(env[`${prefix}_CLIENT`])
   const domicilioContrato =
     optionalText(env[`${prefix}_HOME_CONTRACT`]) ||
-    optionalText(env[`${prefix}_CONTRACT`]) ||
-    optionalText(env.ANDREANI_CONTRATO)
+    optionalText(env[`${prefix}_CONTRACT`])
   const sucursalContrato = optionalText(env[`${prefix}_BRANCH_CONTRACT`])
   const sucursalOrigen = requiredText(env[`${prefix}_ORIGIN_BRANCH`])
 
@@ -677,6 +688,16 @@ export async function quoteAndreaniCheckout(
   rawRequest: unknown,
   dependencies: CheckoutQuoteDependencies = {},
 ) {
+  const getCommercialSettings =
+    dependencies.getAndreaniCommercialSettings ??
+    getAndreaniCommercialSettings
+  const commercialSettings = await getCommercialSettings().catch(
+    () => DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
+  )
+  if (!commercialSettings.enabled) {
+    throw new AndreaniError("PROVIDER_DISABLED", ANDREANI_PROVIDER_DISABLED_MESSAGE)
+  }
+
   const request = normalizeCheckoutQuoteRequest(rawRequest)
   const env = dependencies.env ?? process.env
   const config = resolveAndreaniCheckoutConfig(env)
@@ -686,6 +707,7 @@ export async function quoteAndreaniCheckout(
   // sin ningún riesgo: dos carritos con las mismas líneas en distinto orden
   // son el mismo carrito y deben compartir cotización.
   const key = JSON.stringify({
+    config,
     ...request,
     items: canonicalizeCheckoutQuoteItems(request.items),
   })
@@ -719,7 +741,7 @@ export async function quoteAndreaniCheckout(
       dependencies.getLocalities ??
       ((filters: AndreaniLocalityFilters) =>
         getCachedReferenceData(
-          request.cpDestino,
+          `${config.environment}:${request.cpDestino}`,
           localityCache,
           localityRequests,
           () => referenceClient.getLocalidades(filters),
@@ -766,6 +788,7 @@ export async function quoteAndreaniCheckout(
         const result = await fetchAndreaniDestinationBranches(
           { localidad: request.localidad, provincia: request.provincia, cpDestino: request.cpDestino },
           getBranches,
+          config.environment,
         )
         mark("sucursales", branchesStart)
         return result
@@ -1000,6 +1023,7 @@ export async function resolveVerifiedAndreaniBranch(
   const branches = await fetchAndreaniDestinationBranches(
     { localidad, provincia, cpDestino },
     getBranches,
+    config.environment,
   )
 
   const branch = branches.find((item) => item.id === targetId)

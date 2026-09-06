@@ -1305,6 +1305,11 @@ export class AndreaniClient {
   constructor(options: AndreaniClientOptions = {}) {
     this.productionAccess = options.productionAccess
     this.config = resolveAndreaniConfig(options.env, this.productionAccess)
+    if (this.config.environment === "PROD" && this.productionAccess === "shipment-creation" &&
+        (process.env.NODE_TEST_CONTEXT || (options.env ?? process.env).NODE_ENV === "test") &&
+        !options.fetch) {
+      throw new AndreaniError("PRODUCTION_BLOCKED", "Los tests no pueden crear envíos PROD reales.")
+    }
     this.fetchImpl = options.fetch ?? fetch
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.now = options.now ?? Date.now
@@ -1395,6 +1400,7 @@ export class AndreaniClient {
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         signal: controller.signal,
         cache: "no-store",
+        redirect: "error",
       })
 
       if (this.developmentLogs) {

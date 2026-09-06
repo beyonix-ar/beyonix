@@ -28,6 +28,8 @@ export function AndreaniIntegrationCard() {
   )
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState("")
+  const [commercialEnabled, setCommercialEnabled] = useState<boolean | null>(null)
+  const [togglingCommercial, setTogglingCommercial] = useState(false)
   const requestInFlight = useRef(false)
 
   const loadStatus = useCallback(async () => {
@@ -38,21 +40,35 @@ export function AndreaniIntegrationCard() {
     }
 
     try {
-      const response = await fetch("/api/admin/integrations/andreani/test", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      })
-      const payload = (await response.json()) as
+      const [integrationResponse, settingsResponse] = await Promise.all([
+        fetch("/api/admin/integrations/andreani/test", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }),
+        fetch("/api/admin/settings", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }),
+      ])
+      const payload = (await integrationResponse.json()) as
         | AndreaniIntegrationStatus
         | { error?: string }
 
-      if (!response.ok || !("configured" in payload)) {
+      if (!integrationResponse.ok || !("configured" in payload)) {
         setError("No se pudo consultar el estado de Andreani.")
         return
       }
 
       setIntegration(payload)
       setError("")
+
+      if (settingsResponse.ok) {
+        const settingsPayload = (await settingsResponse.json()) as {
+          settings?: { andreaniCommercial?: { enabled?: boolean } }
+        }
+        const enabled = settingsPayload.settings?.andreaniCommercial?.enabled
+        if (typeof enabled === "boolean") setCommercialEnabled(enabled)
+      }
     } catch {
       setError("No se pudo consultar el estado de Andreani.")
     }
@@ -61,6 +77,41 @@ export function AndreaniIntegrationCard() {
   useEffect(() => {
     void loadStatus()
   }, [loadStatus])
+
+  const toggleCommercialEnabled = async () => {
+    if (togglingCommercial || commercialEnabled === null) return
+    setTogglingCommercial(true)
+    setError("")
+
+    try {
+      const token = await getAccessToken()
+      if (!token) {
+        setError("No se pudo validar la sesión administrativa.")
+        return
+      }
+
+      const nextEnabled = !commercialEnabled
+      const response = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ andreaniCommercial: { enabled: nextEnabled } }),
+      })
+
+      if (!response.ok) {
+        setError("No se pudo actualizar la disponibilidad comercial de Andreani.")
+        return
+      }
+
+      setCommercialEnabled(nextEnabled)
+    } catch {
+      setError("No se pudo actualizar la disponibilidad comercial de Andreani.")
+    } finally {
+      setTogglingCommercial(false)
+    }
+  }
 
   const testConnection = async () => {
     if (requestInFlight.current || testing) return
@@ -174,6 +225,43 @@ export function AndreaniIntegrationCard() {
           {integration.message}
         </AdminInfoBlock>
       ) : null}
+
+      <AdminInfoBlock
+        tone={commercialEnabled === false ? "warning" : "success"}
+        icon={
+          commercialEnabled === false ? (
+            <ShieldAlert className="size-3.5" />
+          ) : (
+            <CheckCircle2 className="size-3.5" />
+          )
+        }
+        className="mt-2 flex items-center justify-between gap-3 py-2 text-xs"
+      >
+        <div>
+          <p className="font-bold">
+            {commercialEnabled === false
+              ? "Andreani desactivado comercialmente"
+              : "Andreani activo comercialmente"}
+          </p>
+          <p className="mt-0.5 text-12px opacity-70">
+            {commercialEnabled === false
+              ? "No se cotiza ni se crean envíos nuevos. El tracking de envíos ya creados sigue funcionando igual."
+              : "Se cotiza y se pueden crear envíos nuevos con la configuración vigente."}
+          </p>
+        </div>
+        <AdminPrimaryButton
+          type="button"
+          size="sm"
+          onClick={() => void toggleCommercialEnabled()}
+          disabled={togglingCommercial || commercialEnabled === null}
+          className="shrink-0"
+        >
+          {togglingCommercial ? (
+            <LoaderCircle className="size-3.5 animate-spin" />
+          ) : null}
+          {commercialEnabled === false ? "Activar" : "Desactivar"}
+        </AdminPrimaryButton>
+      </AdminInfoBlock>
 
       {integration?.shipmentCreation ? (
         <AdminInfoBlock

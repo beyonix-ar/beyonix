@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   let body: { pedidoId?: unknown; formato?: unknown }
   try {
     body = await request.json()
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("INVALID_BODY")
   } catch {
     return NextResponse.json({ ok: false, error: "Solicitud inválida." }, { status: 400 })
   }
