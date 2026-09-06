@@ -15,6 +15,9 @@ import {
   prepareCheckoutOrderCatalogRows,
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
+  InvalidCheckoutItemsError,
+  MAX_CHECKOUT_ITEM_QUANTITY,
+  MAX_CHECKOUT_LINE_ITEMS,
   type CheckoutOrderProductRow,
   type CheckoutOrderVariantRow,
 } from "./checkout-order-creation.ts"
@@ -74,6 +77,44 @@ test("normaliza carrito y cliente una sola vez sin perder Unicode", () => {
     provincia: "Corrientes",
   })
   assert.equal(getCheckoutOrderCustomerValidationError(customer), "")
+})
+
+test("un carrito con más líneas que el tope se rechaza antes de tocar catálogo/base (DoS)", () => {
+  const items = Array.from({ length: MAX_CHECKOUT_LINE_ITEMS + 1 }, (_, index) => ({
+    productId: index + 1,
+    quantity: 1,
+  }))
+
+  assert.throws(
+    () => normalizeCheckoutOrderItems(items),
+    (error) => error instanceof InvalidCheckoutItemsError,
+  )
+})
+
+test("exactamente el tope de líneas sigue siendo válido (no es un off-by-one)", () => {
+  const items = Array.from({ length: MAX_CHECKOUT_LINE_ITEMS }, (_, index) => ({
+    productId: index + 1,
+    quantity: 1,
+  }))
+
+  assert.equal(normalizeCheckoutOrderItems(items).length, MAX_CHECKOUT_LINE_ITEMS)
+})
+
+test("una cantidad por línea que supera el tope se rechaza (cantidad enorme)", () => {
+  assert.throws(
+    () =>
+      normalizeCheckoutOrderItems([
+        { productId: 1, quantity: MAX_CHECKOUT_ITEM_QUANTITY + 1 },
+      ]),
+    (error) => error instanceof InvalidCheckoutItemsError,
+  )
+})
+
+test("exactamente el tope de cantidad por línea sigue siendo válido", () => {
+  const items = normalizeCheckoutOrderItems([
+    { productId: 1, quantity: MAX_CHECKOUT_ITEM_QUANTITY },
+  ])
+  assert.equal(items[0].quantity, MAX_CHECKOUT_ITEM_QUANTITY)
 })
 
 test("si falla la inserción de ítems se elimina la orden incompleta", () => {

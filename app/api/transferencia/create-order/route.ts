@@ -33,6 +33,7 @@ import {
   normalizeCheckoutOrderShipping,
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
+  InvalidCheckoutItemsError,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
 import {
@@ -284,6 +285,10 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof MissingReservationSessionError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (error instanceof InvalidCheckoutItemsError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 

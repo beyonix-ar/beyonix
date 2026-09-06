@@ -22,6 +22,10 @@ import {
   normalizeReservationSessionId,
   validateCheckoutInventory,
 } from "@/lib/orders/checkout-inventory"
+import {
+  MAX_CHECKOUT_ITEM_QUANTITY,
+  MAX_CHECKOUT_LINE_ITEMS,
+} from "@/lib/orders/checkout-order-creation"
 
 interface CreateOrderItem {
   productId: number
@@ -323,6 +327,10 @@ export async function createOrder({
       throw new Error("La sesión del carrito venció. Actualizá la página.")
     }
 
+    if (items.length > MAX_CHECKOUT_LINE_ITEMS) {
+      throw new Error("El carrito tiene demasiadas líneas de productos distintas.")
+    }
+
     const normalizedItems = items
       .map(normalizeItem)
       .filter(
@@ -334,6 +342,14 @@ export async function createOrder({
 
     if (normalizedItems.length === 0) {
       throw new Error("El carrito está vacío")
+    }
+
+    if (
+      normalizedItems.some((item) => item.quantity > MAX_CHECKOUT_ITEM_QUANTITY)
+    ) {
+      throw new Error(
+        "Alguna cantidad del carrito supera el máximo permitido por producto.",
+      )
     }
 
     const {

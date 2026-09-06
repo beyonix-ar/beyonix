@@ -61,6 +61,24 @@ export class InsufficientStockError extends Error {
   }
 }
 
+/**
+ * Topes defensivos independientes de la base: hoy el RPC remoto (mientras la
+ * migración 20260903150000 no esté aplicada) no limita ni cantidad de líneas
+ * ni cantidad por línea, así que un payload con miles de ítems o una cantidad
+ * absurda igual llegaría a disparar catálogo + inserts + N advisory locks por
+ * producto. Nunca decide sobreventa (eso lo sigue haciendo el stock real) --
+ * sólo evita procesar un carrito imposible antes de tocar la base.
+ */
+export const MAX_CHECKOUT_LINE_ITEMS = 50
+export const MAX_CHECKOUT_ITEM_QUANTITY = 999
+
+export class InvalidCheckoutItemsError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "InvalidCheckoutItemsError"
+  }
+}
+
 export interface CheckoutOrderItemInput {
   productId?: number
   quantity?: number
@@ -222,7 +240,13 @@ export function normalizeCheckoutOrderItems(
 ) {
   if (!Array.isArray(items)) return []
 
-  return items
+  if (items.length > MAX_CHECKOUT_LINE_ITEMS) {
+    throw new InvalidCheckoutItemsError(
+      "El carrito tiene demasiadas líneas de productos distintas.",
+    )
+  }
+
+  const normalized = items
     .map((item): NormalizedCheckoutOrderItem => {
       const conditionedStockId =
         normalizeConditionedStockId(item.conditionedStockId) ||
@@ -245,6 +269,14 @@ export function normalizeCheckoutOrderItems(
         Number.isFinite(item.quantity) &&
         item.quantity > 0,
     )
+
+  if (normalized.some((item) => item.quantity > MAX_CHECKOUT_ITEM_QUANTITY)) {
+    throw new InvalidCheckoutItemsError(
+      "Alguna cantidad del carrito supera el máximo permitido por producto.",
+    )
+  }
+
+  return normalized
 }
 
 export function normalizeCheckoutOrderCustomer(
