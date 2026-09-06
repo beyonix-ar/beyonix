@@ -72,7 +72,7 @@ export async function POST(
     })
     const completedAt = new Date().toISOString()
 
-    await auth.admin
+    const { error: settlementError } = await auth.admin
       .from("order_credit_notes")
       .update({
         management_status: "finalizada",
@@ -82,6 +82,7 @@ export async function POST(
         error: null,
       })
       .eq("id", noteId)
+    if (settlementError) throw new Error("No se pudo confirmar la acreditación registrada.")
 
     if (
       order.estado === "cancelado" ||
@@ -89,7 +90,7 @@ export async function POST(
         order.financial_status ?? "",
       )
     ) {
-      await auth.admin
+      const { error: orderError } = await auth.admin
         .from("ordenes")
         .update({
           financial_status: "refunded",
@@ -99,6 +100,7 @@ export async function POST(
           refunded_by: auth.user.id,
         })
         .eq("id", orderId)
+      if (orderError) throw new Error("No se pudo actualizar el resumen del reintegro.")
     }
 
     await appendOrderAuditEvent(auth.admin, {
@@ -142,6 +144,7 @@ export async function POST(
         updated_at: new Date().toISOString(),
       })
       .eq("id", noteId)
+      .neq("settlement_status", "completado")
     return NextResponse.json(
       { error: "La nota sigue autorizada, pero la acreditación continúa pendiente." },
       { status: 500 },

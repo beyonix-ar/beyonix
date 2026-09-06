@@ -18,6 +18,8 @@ async function setup() {
   try {
     await db.exec(migration)
     await db.exec(readFileSync(new URL("../../supabase/migrations/20260906090000_claim_case_type_transitions.sql", import.meta.url), "utf8"))
+    await db.exec(readFileSync(new URL("../../supabase/migrations/20260906100000_claims_final_security.sql", import.meta.url), "utf8"))
+    await db.exec(readFileSync(new URL("../../supabase/migrations/20260906110000_claim_credit_note_snapshot.sql", import.meta.url), "utf8"))
   } catch (error) {
     await db.close()
     throw new Error(error instanceof Error ? error.message : "Migration failed")
@@ -175,9 +177,11 @@ test("SQL: reintegro canónico atómico, idempotente y respaldado por nota autor
     const op=randomUUID(), path=admin+'/'+op+'/0.pdf'
     await db.query("select begin_order_claim_operation($1,$2,1,$3,$4,'payment-proofs')",[op,admin,'c'.repeat(64),[path]])
     await db.query("insert into storage.objects values('payment-proofs',$1)",[path])
-    const file=JSON.stringify({path,name:'comprobante.pdf',type:'application/pdf',size:20})
+    const noteId = randomUUID()
+    const file=JSON.stringify({path,name:'comprobante.pdf',type:'application/pdf',size:20,expected_note_ids:[noteId]})
     await assert.rejects(db.query("select commit_order_refund_proof($1,$2,$3)",[op,admin,file]),/CLAIM_REFUND_PENDING/)
-    await db.query("insert into order_credit_notes(order_id,claim_id,status,destination,total_amount,cae) values(1,$1,'authorized','external_refund',50,'test')",[claimId])
+    await db.query("insert into order_credit_notes(id,order_id,claim_id,status,destination,total_amount,cae) values($2,1,$1,'authorized','external_refund',50,'test')",[claimId,noteId])
+    await assert.rejects(db.query("select commit_order_refund_proof($1,$2,$3)", [op,admin,JSON.stringify({path,expected_note_ids:[randomUUID()]})]), /CLAIM_CONFLICT/)
     await db.exec("alter table order_audit_events add constraint test_refund_failure check(action<>'order_refunded')")
     await assert.rejects(db.query("select commit_order_refund_proof($1,$2,$3)",[op,admin,file]),/test_refund_failure/)
     assert.equal((await db.query("select * from order_refund_proofs")).rows.length,0)
@@ -200,6 +204,7 @@ test("SQL: no modifica cantidades procesadas o comprometidas por nota fiscal", a
     await db.query("insert into order_credit_notes(order_id,claim_id,status) values(1,$1,'processing')",[id])
     await assert.rejects(mutate(db,id,(await row(db,id)).version,{action:'affected_items',items:[{order_item_id:1,quantity:2}]}),/CLAIM_ITEMS_LOCKED/)
     await assert.rejects(db.query("select process_claim_return_inventory($1,1,1,0,0,'',$2)",[id,admin]),/CLAIM_INVALID_ITEMS/)
+    await assert.rejects(db.query("select process_claim_return_inventory($1,1,1,1,0,'',$2)",[id,admin]),/CLAIM_ITEMS_LOCKED/)
   } finally { await db.close() }
 })
 
@@ -246,4 +251,109 @@ test("SQL: PATCH genérico no cierra cancelaciones ni convierte consultas en ope
     await mutate(db,2,(await row(db,2)).version,{status:'cerrado',resolution:'otro'},operator)
     assert.equal((await row(db,2)).status,'cerrado')
   } finally {await db.close()}
+})
+
+test("SQL: RPC retirada deniega acceso incluso al servicio; recepción no opera terminales", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    for (const role of ["anon", "authenticated", "service_role"]) {
+      await db.exec(`set role ${role}`)
+      await assert.rejects(db.query("select approve_order_claim_product_change($1,$2)", [id, admin]), /permission denied/)
+      await db.exec("reset role")
+    }
+    await mutate(db, id, (await row(db, id)).version, { status: "cerrado", resolution: "otro" })
+    await assert.rejects(db.query("select process_claim_return_inventory($1,1,1,1,0,'',$2)", [id, admin]), /CLAIM_TERMINAL/)
+  } finally { await db.close() }
+})
+
+test("SQL: una nota comprometida bloquea cambiar resolución, rechazo y cierre prematuro", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "aprobado", resolution: "otro" })
+    await db.query("insert into order_credit_notes(order_id,claim_id,status) values(1,$1,'processing')", [id])
+    const version = (await row(db, id)).version
+    await assert.rejects(mutate(db, id, version, { resolution: "cambio_producto" }), /CLAIM_RESOLUTION_LOCKED/)
+    await assert.rejects(mutate(db, id, version, { status: "rechazado", resolution: "rechazado", rejection_reason: "No corresponde" }), /CLAIM_RESOLUTION_LOCKED/)
+    await assert.rejects(mutate(db, id, version, { status: "cerrado" }), /CLAIM_CREDIT_PENDING/)
+    assert.equal((await row(db, id)).version, version)
+  } finally { await db.close() }
+})
+
+test("SQL: la versión cambia aun dentro de la misma transacción y rechaza CAS anterior", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await db.exec("begin")
+    const version = (await row(db, id)).version
+    await mutate(db, id, version, { admin_response: "Respuesta concurrente", append_message: true })
+    const current = (await row(db, id)).version
+    assert.notEqual(current, version)
+    await assert.rejects(mutate(db, id, version, { admin_response: "Respuesta obsoleta" }), /CLAIM_CONFLICT/)
+    await db.exec("rollback")
+  } finally { await db.close() }
+})
+
+test("SQL: comprobante de otra nota no habilita cierre; otra emisión pendiente tampoco", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "reintegro_pendiente", resolution: "reintegro_total" })
+    await db.exec("update ordenes set financial_status='refunded' where id=1; insert into order_refund_proofs(order_id) values(1)")
+    await db.query("insert into order_credit_notes(order_id,claim_id,status,destination,cae,settlement_status) values(1,$1,'authorized','external_refund','test','completado')", [id])
+    await assert.rejects(mutate(db, id, (await row(db, id)).version, { action: "mark_refund_done" }), /CLAIM_REFUND_PENDING/)
+    await db.exec("update order_credit_notes set settlement_reference='1' where order_id=1")
+    await db.query("insert into order_credit_notes(order_id,claim_id,status) values(1,$1,'processing')", [id])
+    await assert.rejects(mutate(db, id, (await row(db, id)).version, { action: "mark_refund_done" }), /CLAIM_REFUND_PENDING/)
+  } finally { await db.close() }
+})
+
+test("SQL: operador no elude permisos cambiando una reposición a otra solución", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "aprobado", resolution: "cambio_producto" })
+    await assert.rejects(mutate(db, id, (await row(db, id)).version, { status: "cerrado", resolution: "otro" }, operator), /CLAIM_FORBIDDEN/)
+  } finally { await db.close() }
+})
+
+test("SQL: emisión fiscal en proceso no expira ni se libera al reservar otra nota", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await db.query("insert into order_credit_notes(order_id,claim_id,status) values(1,$1,'processing')", [id])
+    await assert.rejects(db.query("select begin_partial_credit_note(1,$1,'external_refund','Prueba aislada',10,0,10,1,1,$2,'[]','devolucion_parcial')", [id, admin]), /CREDIT_NOTE_PROCESSING_IN_PROGRESS/)
+    assert.equal((await db.query<{ status: string }>("select status from order_credit_notes where order_id=1")).rows[0].status, "processing")
+  } finally { await db.close() }
+})
+
+test("SQL: mensaje del cliente en aprobado conserva el badge de atención", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "aprobado", resolution: "otro", admin_response: "Revisamos tu caso", append_message: true })
+    assert.equal((await row(db, id)).admin_needs_action, false)
+    const operation = await begin(db)
+    await db.query("select commit_customer_order_claim($1,$2,$3,'[]')", [operation.id, customer, JSON.stringify({ claimId: id, expectedUpdatedAt: (await row(db, id)).version, message: "Tengo nueva información" })])
+    assert.equal((await row(db, id)).admin_needs_action, true)
+    await mutate(db, id, (await row(db, id)).version, { status: "cerrado" })
+    assert.equal((await row(db, id)).admin_needs_action, false)
+  } finally { await db.close() }
+})
+
+test("SQL: snapshot fiscal anterior no permite repetir una emisión parcial ya autorizada", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "reintegro_pendiente", resolution: "reintegro_parcial" })
+    await db.exec("update ordenes set invoice_status='authorized',invoice_cae='test',invoice_point=1,invoice_number=1 where id=1")
+    const reserve = "select begin_partial_credit_note(1,$1,'external_refund','Prueba aislada',0,10,10,1,1,$2,'[]','devolucion_parcial','{}'::uuid[])"
+    await db.query(reserve, [id, admin])
+    await db.exec("update order_credit_notes set status='authorized' where order_id=1")
+    await assert.rejects(db.query(reserve, [id, admin]), /CREDIT_NOTE_SNAPSHOT_CONFLICT/)
+    assert.equal((await db.query("select id from order_credit_notes where order_id=1")).rows.length, 1)
+    await db.exec("set role service_role")
+    await assert.rejects(db.query("select begin_partial_credit_note(1,$1,'external_refund','Prueba aislada',10,0,10,1,1,$2,'[]','devolucion_parcial')", [id, admin]), /permission denied/)
+  } finally { await db.close() }
 })

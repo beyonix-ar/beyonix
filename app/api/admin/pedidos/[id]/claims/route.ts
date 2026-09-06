@@ -1,49 +1,8 @@
 import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
-import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
-
-function stripClaimBucket(path: string) {
-  return path.startsWith(`${ORDER_CLAIM_BUCKET}/`)
-    ? path.slice(ORDER_CLAIM_BUCKET.length + 1)
-    : path
-}
-
-// Firma todos los archivos de todos los reclamos de este pedido en una sola
-// llamada a Storage en vez de una por archivo (evita el N+1 anterior).
-async function attachSignedUrls(admin: any, claims: any[]) {
-  const entries = claims.flatMap((claim) =>
-    (claim.order_claim_files ?? []).map((file: any) => ({
-      claimId: claim.id,
-      file,
-      path: stripClaimBucket(file.file_path),
-    })),
-  )
-  const signedUrlByPath = new Map<string, string | null>()
-  if (entries.length) {
-    const { data: signedUrls } = await admin.storage
-      .from(ORDER_CLAIM_BUCKET)
-      .createSignedUrls(
-        entries.map((entry) => entry.path),
-        300,
-      )
-    for (const signed of signedUrls ?? []) {
-      if (signed.path) signedUrlByPath.set(signed.path, signed.signedUrl ?? null)
-    }
-  }
-
-  const filesByClaimId = new Map<number, any[]>()
-  for (const entry of entries) {
-    const current = filesByClaimId.get(entry.claimId) ?? []
-    current.push({ ...entry.file, signedUrl: signedUrlByPath.get(entry.path) ?? null })
-    filesByClaimId.set(entry.claimId, current)
-  }
-
-  return claims.map((claim) => ({
-    ...claim,
-    order_claim_files: filesByClaimId.get(claim.id) ?? [],
-  }))
-}
+import { signClaims } from "@/lib/orders/claim-server"
+import type { SupabaseOrderClaim } from "@/lib/supabase/types"
 
 export async function GET(
   request: Request,
@@ -55,7 +14,7 @@ export async function GET(
   const { id } = await params
   const orderId = Number(id)
 
-  if (!Number.isFinite(orderId) || orderId <= 0) {
+  if (!Number.isSafeInteger(orderId) || orderId <= 0) {
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
   }
 
@@ -73,7 +32,7 @@ export async function GET(
     )
   }
 
-  const claims = await attachSignedUrls(auth.admin, data ?? [])
+  const claims = await signClaims(auth.admin, (data ?? []) as SupabaseOrderClaim[])
 
   return NextResponse.json({ claims })
 }

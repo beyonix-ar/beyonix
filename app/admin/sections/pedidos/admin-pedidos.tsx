@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
+import { getPendingRefundNotes } from "@/lib/order-claims"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
@@ -1988,11 +1989,7 @@ function RefundManagementPanel({
         ? "Cancelación pendiente"
         : "Cancelación cerrada"
   const authorizedExternalCredit = roundCreditMoney(
-    (pedido.order_credit_notes ?? [])
-      .filter(
-        (note) =>
-          note.status === "authorized" && note.destination === "external_refund",
-      )
+    getPendingRefundNotes(pedido.order_credit_notes)
       .reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0),
   )
   const authorizedBalanceCredit = roundCreditMoney(
@@ -2053,6 +2050,8 @@ function RefundManagementPanel({
       return
     }
 
+    if (!window.confirm(`Confirmá que ya reintegraste ${formatPrice(authorizedExternalCredit)} al cliente. Se registrará el comprobante y se completará esta gestión.`)) return
+
     setSaving(true)
     setMessage(null)
 
@@ -2068,6 +2067,7 @@ function RefundManagementPanel({
 
       const formData = new FormData()
       formData.set("file", file)
+      formData.set("expectedNoteIds", JSON.stringify(getPendingRefundNotes(pedido.order_credit_notes).map((note) => note.id)))
 
       const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
         method: "POST",
@@ -2422,6 +2422,7 @@ function BillingManagementPanel({
   const [conditionedDiscountPercent, setConditionedDiscountPercent] =
     useState("10")
   const [showCreditConfirmation, setShowCreditConfirmation] = useState(false)
+  const creditNoteSnapshotRef = useRef<string[] | null>(null)
   const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false)
   const [manualGestionOverride, setManualGestionOverride] = useState(false)
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
@@ -2825,6 +2826,7 @@ function BillingManagementPanel({
             }))
             .filter((item) => item.quantity > 0),
           claim_id: linkedClaim?.id ?? null,
+          expected_note_ids: creditNoteSnapshotRef.current,
           operation_type: operationType,
           reason_code: reasonCode,
           reason_detail: reasonDetail,
@@ -4035,7 +4037,10 @@ function BillingManagementPanel({
                         <button
                           type="button"
                           disabled={creditNoteProcessing || !canReviewAndEmit}
-                          onClick={() => setShowCreditConfirmation(true)}
+                          onClick={() => {
+                            creditNoteSnapshotRef.current = (pedido.order_credit_notes ?? []).filter((note) => ["processing", "authorized"].includes(note.status)).map((note) => note.id)
+                            setShowCreditConfirmation(true)
+                          }}
                           className="admin-credit-note-submit"
                         >
                           {creditNoteProcessing ? (

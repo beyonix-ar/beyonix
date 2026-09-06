@@ -2,9 +2,15 @@ import type {
   OrderClaimResolution,
   OrderClaimStatus,
   OrderClaimType,
+  SupabaseOrderCreditNote,
 } from "@/lib/supabase/types"
 
 export const ORDER_CLAIM_BUCKET = "order-claim-evidence"
+
+export function getPendingRefundNotes(notes: SupabaseOrderCreditNote[] = []) {
+  return notes.filter((note) => note.status === "authorized" && note.destination === "external_refund" && note.settlement_status !== "completado")
+    .sort((left, right) => left.id.localeCompare(right.id))
+}
 export const ORDER_CLAIM_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 export const ORDER_CLAIM_VIDEO_MAX_BYTES = 40 * 1024 * 1024
 export const ORDER_CLAIM_FILE_MAX_BYTES = 10 * 1024 * 1024

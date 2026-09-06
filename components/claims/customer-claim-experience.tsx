@@ -857,6 +857,10 @@ export function CustomerClaimExperience({
 
       if (!response.ok || !data.claim) {
         setError(data.error || "No se pudo enviar el mensaje.")
+        if (response.status === 409) {
+          await loadClaims()
+          replyVersionRef.current = null
+        }
         return
       }
 
@@ -904,6 +908,10 @@ export function CustomerClaimExperience({
 
       if (!response.ok || !data.claim) {
         setError(data.error || "No se pudieron enviar los datos del reintegro.")
+        if (response.status === 409) {
+          await loadClaims()
+          refundVersionRef.current = null
+        }
         return
       }
 

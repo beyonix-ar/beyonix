@@ -1,0 +1,563 @@
+{
+  "constraints": [
+    {
+      "conname": "order_claims_affected_items_is_array",
+      "convalidated": true,
+      "definition": "CHECK ((jsonb_typeof(affected_items) = 'array'::text))",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_affected_items_updated_by_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (affected_items_updated_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_claim_type_check",
+      "convalidated": true,
+      "definition": "CHECK ((claim_type = ANY (ARRAY['transporte_48hs'::text, 'garantia_beyonix'::text])))",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_customer_selected_resolution_check",
+      "convalidated": true,
+      "definition": "CHECK (((customer_selected_resolution IS NULL) OR (customer_selected_resolution = ANY (ARRAY['cambio_producto'::text, 'envio_unidad_faltante'::text, 'reintegro_total'::text, 'reintegro_parcial'::text, 'saldo_a_favor'::text, 'cupon_descuento'::text, 'otro'::text]))))",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_first_reviewed_by_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (first_reviewed_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_offered_resolutions_check",
+      "convalidated": true,
+      "definition": "CHECK ((offered_resolutions <@ ARRAY['cambio_producto'::text, 'envio_unidad_faltante'::text, 'reintegro_total'::text, 'reintegro_parcial'::text, 'saldo_a_favor'::text, 'cupon_descuento'::text, 'otro'::text]))",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_order_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (order_id) REFERENCES ordenes(id) ON DELETE CASCADE",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_pkey",
+      "convalidated": true,
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_refund_completed_by_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (refund_completed_by) REFERENCES auth.users(id)",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_resolution_check",
+      "convalidated": true,
+      "definition": "CHECK (((resolution IS NULL) OR (resolution = ANY (ARRAY['cambio_producto'::text, 'envio_unidad_faltante'::text, 'reintegro_total'::text, 'reintegro_parcial'::text, 'saldo_a_favor'::text, 'cupon_descuento'::text, 'rechazado'::text, 'otro'::text]))))",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_status_check",
+      "convalidated": true,
+      "definition": "CHECK ((status = ANY (ARRAY['recibido'::text, 'en_revision'::text, 'falta_informacion'::text, 'aprobado'::text, 'reintegro_pendiente'::text, 'cambio_pendiente'::text, 'cupon_pendiente'::text, 'reemplazo_enviado'::text, 'rechazado'::text, 'cerrado'::text])))",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claims_user_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+      "table_name": "order_claims"
+    },
+    {
+      "conname": "order_claim_messages_author_role_check",
+      "convalidated": true,
+      "definition": "CHECK ((author_role = ANY (ARRAY['cliente'::text, 'operador'::text, 'admin'::text, 'super_admin'::text])))",
+      "table_name": "order_claim_messages"
+    },
+    {
+      "conname": "order_claim_messages_author_user_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (author_user_id) REFERENCES auth.users(id) ON DELETE SET NULL",
+      "table_name": "order_claim_messages"
+    },
+    {
+      "conname": "order_claim_messages_claim_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (claim_id) REFERENCES order_claims(id) ON DELETE CASCADE",
+      "table_name": "order_claim_messages"
+    },
+    {
+      "conname": "order_claim_messages_pkey",
+      "convalidated": true,
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "order_claim_messages"
+    },
+    {
+      "conname": "order_claim_files_claim_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (claim_id) REFERENCES order_claims(id) ON DELETE CASCADE",
+      "table_name": "order_claim_files"
+    },
+    {
+      "conname": "order_claim_files_file_role_check",
+      "convalidated": true,
+      "definition": "CHECK ((file_role = ANY (ARRAY['embalaje_exterior'::text, 'producto_completo'::text, 'danio'::text, 'funcionamiento_foto'::text, 'video'::text, 'evidencia_inicial'::text, 'evidencia_adicional'::text, 'comprobante_devolucion'::text])))",
+      "table_name": "order_claim_files"
+    },
+    {
+      "conname": "order_claim_files_pkey",
+      "convalidated": true,
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "order_claim_files"
+    },
+    {
+      "conname": "order_claim_files_uploaded_by_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (uploaded_by) REFERENCES auth.users(id) ON DELETE SET NULL",
+      "table_name": "order_claim_files"
+    },
+    {
+      "conname": "order_claim_operations_actor_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (actor_id) REFERENCES auth.users(id)",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "conname": "order_claim_operations_actor_id_request_key_key",
+      "convalidated": true,
+      "definition": "UNIQUE (actor_id, request_key)",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "conname": "order_claim_operations_bucket_id_check",
+      "convalidated": true,
+      "definition": "CHECK ((bucket_id = ANY (ARRAY['order-claim-evidence'::text, 'payment-proofs'::text])))",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "conname": "order_claim_operations_claim_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (claim_id) REFERENCES order_claims(id)",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "conname": "order_claim_operations_order_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (order_id) REFERENCES ordenes(id)",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "conname": "order_claim_operations_pkey",
+      "convalidated": true,
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "conname": "order_claim_operations_request_key_check",
+      "convalidated": true,
+      "definition": "CHECK ((length(request_key) = 64))",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "conname": "order_claim_operations_status_check",
+      "convalidated": true,
+      "definition": "CHECK ((status = ANY (ARRAY['uploading'::text, 'committed'::text, 'failed'::text, 'cleaned'::text])))",
+      "table_name": "order_claim_operations"
+    }
+  ],
+  "counts": {
+    "claims": 1,
+    "files": 0,
+    "messages": 2,
+    "objects_without_metadata": 17
+  },
+  "grants": [
+    {
+      "grantee": "service_role",
+      "privileges": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE",
+      "table_name": "order_claim_files"
+    },
+    {
+      "grantee": "service_role",
+      "privileges": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE",
+      "table_name": "order_claim_messages"
+    },
+    {
+      "grantee": "service_role",
+      "privileges": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE",
+      "table_name": "order_claim_operations"
+    },
+    {
+      "grantee": "authenticated",
+      "privileges": "SELECT",
+      "table_name": "order_claims"
+    },
+    {
+      "grantee": "service_role",
+      "privileges": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE",
+      "table_name": "order_claims"
+    }
+  ],
+  "indexes": [
+    {
+      "indexdef": "CREATE UNIQUE INDEX order_claim_files_pkey ON public.order_claim_files USING btree (id)",
+      "indexname": "order_claim_files_pkey",
+      "tablename": "order_claim_files"
+    },
+    {
+      "indexdef": "CREATE INDEX order_claim_files_claim_id_idx ON public.order_claim_files USING btree (claim_id, created_at)",
+      "indexname": "order_claim_files_claim_id_idx",
+      "tablename": "order_claim_files"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX order_claim_messages_pkey ON public.order_claim_messages USING btree (id)",
+      "indexname": "order_claim_messages_pkey",
+      "tablename": "order_claim_messages"
+    },
+    {
+      "indexdef": "CREATE INDEX order_claim_messages_claim_id_idx ON public.order_claim_messages USING btree (claim_id, created_at)",
+      "indexname": "order_claim_messages_claim_id_idx",
+      "tablename": "order_claim_messages"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX order_claim_operations_pkey ON public.order_claim_operations USING btree (id)",
+      "indexname": "order_claim_operations_pkey",
+      "tablename": "order_claim_operations"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX order_claim_operations_actor_id_request_key_key ON public.order_claim_operations USING btree (actor_id, request_key)",
+      "indexname": "order_claim_operations_actor_id_request_key_key",
+      "tablename": "order_claim_operations"
+    },
+    {
+      "indexdef": "CREATE INDEX order_claim_operations_cleanup_idx ON public.order_claim_operations USING btree (expires_at) WHERE (status = ANY (ARRAY['uploading'::text, 'failed'::text]))",
+      "indexname": "order_claim_operations_cleanup_idx",
+      "tablename": "order_claim_operations"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX order_claims_pkey ON public.order_claims USING btree (id)",
+      "indexname": "order_claims_pkey",
+      "tablename": "order_claims"
+    },
+    {
+      "indexdef": "CREATE INDEX order_claims_order_id_idx ON public.order_claims USING btree (order_id, created_at DESC)",
+      "indexname": "order_claims_order_id_idx",
+      "tablename": "order_claims"
+    },
+    {
+      "indexdef": "CREATE INDEX order_claims_admin_needs_action_idx ON public.order_claims USING btree (admin_needs_action, order_id) WHERE (admin_needs_action = true)",
+      "indexname": "order_claims_admin_needs_action_idx",
+      "tablename": "order_claims"
+    },
+    {
+      "indexdef": "CREATE UNIQUE INDEX order_claims_one_active_per_order_idx ON public.order_claims USING btree (order_id) WHERE (status = ANY (ARRAY['recibido'::text, 'en_revision'::text, 'falta_informacion'::text, 'aprobado'::text, 'reintegro_pendiente'::text, 'cambio_pendiente'::text, 'cupon_pendiente'::text, 'reemplazo_enviado'::text]))",
+      "indexname": "order_claims_one_active_per_order_idx",
+      "tablename": "order_claims"
+    }
+  ],
+  "migrations": [
+    {
+      "name": "order_claims_row_level_security",
+      "version": "20260905130000"
+    },
+    {
+      "name": "order_claims_internal_read_policy",
+      "version": "20260905140000"
+    },
+    {
+      "name": "claims_atomic_operations",
+      "version": "20260905150000"
+    },
+    {
+      "name": "claim_case_type_transitions",
+      "version": "20260906090000"
+    },
+    {
+      "name": "claims_final_security",
+      "version": "20260906100000"
+    },
+    {
+      "name": "claim_credit_note_snapshot",
+      "version": "20260906110000"
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "policyname": "storage_public_read",
+      "qual": "(bucket_id = 'imagenes-productos'::text)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "policyname": "storage_admin_upload",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "objects",
+      "with_check": "((bucket_id = 'imagenes-productos'::text) AND (( SELECT profiles.rol\n   FROM profiles\n  WHERE (profiles.id = auth.uid())) = 'admin'::text))"
+    },
+    {
+      "cmd": "DELETE",
+      "policyname": "storage_admin_delete",
+      "qual": "((bucket_id = 'imagenes-productos'::text) AND (( SELECT profiles.rol\n   FROM profiles\n  WHERE (profiles.id = auth.uid())) = 'admin'::text))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "policyname": "storage_admin_update 1lb6ppj_0",
+      "qual": "((bucket_id = 'imagenes-productos'::text) AND (EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.rol = 'admin'::text)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "policyname": "storage_admin_update 1lb6ppj_1",
+      "qual": "((bucket_id = 'imagenes-productos'::text) AND (EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.rol = 'admin'::text)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "policyname": "Admins can upload product images",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": "((bucket_id = 'imagenes-productos'::text) AND (EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.rol = ANY (ARRAY['admin'::text, 'super_admin'::text]))))))"
+    },
+    {
+      "cmd": "UPDATE",
+      "policyname": "Admins can update product images",
+      "qual": "((bucket_id = 'imagenes-productos'::text) AND (EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.rol = ANY (ARRAY['admin'::text, 'super_admin'::text]))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": "((bucket_id = 'imagenes-productos'::text) AND (EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.rol = ANY (ARRAY['admin'::text, 'super_admin'::text]))))))"
+    },
+    {
+      "cmd": "DELETE",
+      "policyname": "Admins can delete product images",
+      "qual": "((bucket_id = 'imagenes-productos'::text) AND (EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.rol = ANY (ARRAY['admin'::text, 'super_admin'::text]))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "policyname": "Anyone can view product images",
+      "qual": "(bucket_id = 'imagenes-productos'::text)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "policyname": "Users can upload their own avatar",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": "((bucket_id = 'avatars'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))"
+    },
+    {
+      "cmd": "UPDATE",
+      "policyname": "Users can update their own avatar",
+      "qual": "((bucket_id = 'avatars'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": "((bucket_id = 'avatars'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))"
+    },
+    {
+      "cmd": "SELECT",
+      "policyname": "Public can read avatars",
+      "qual": "(bucket_id = 'avatars'::text)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "policyname": "Anyone can read site banner files",
+      "qual": "(bucket_id = 'site-banners'::text)",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "policyname": "Admins can upload site banner files",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": "((bucket_id = 'site-banners'::text) AND (current_user_role() = ANY (ARRAY['admin'::text, 'super_admin'::text])))"
+    },
+    {
+      "cmd": "UPDATE",
+      "policyname": "Admins can update site banner files",
+      "qual": "((bucket_id = 'site-banners'::text) AND (current_user_role() = ANY (ARRAY['admin'::text, 'super_admin'::text])))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": "((bucket_id = 'site-banners'::text) AND (current_user_role() = ANY (ARRAY['admin'::text, 'super_admin'::text])))"
+    },
+    {
+      "cmd": "DELETE",
+      "policyname": "Admins can delete site banner files",
+      "qual": "((bucket_id = 'site-banners'::text) AND (current_user_role() = ANY (ARRAY['admin'::text, 'super_admin'::text])))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "policyname": "Internal users can read order claims",
+      "qual": "is_current_user_internal()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "order_claims",
+      "with_check": null
+    }
+  ],
+  "result": "catalog_assertions_passed",
+  "triggers": [
+    {
+      "definition": "CREATE TRIGGER protect_primary_super_admin BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION protect_primary_super_admin()",
+      "table_name": "profiles",
+      "tgenabled": "O",
+      "tgname": "protect_primary_super_admin"
+    },
+    {
+      "definition": "CREATE TRIGGER protect_profile_role_changes BEFORE UPDATE OF rol ON public.profiles FOR EACH ROW EXECUTE FUNCTION protect_profile_role_changes()",
+      "table_name": "profiles",
+      "tgenabled": "O",
+      "tgname": "protect_profile_role_changes"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_guard_profile_privilege_assignment BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION guard_profile_privilege_assignment()",
+      "table_name": "profiles",
+      "tgenabled": "O",
+      "tgname": "zz_guard_profile_privilege_assignment"
+    },
+    {
+      "definition": "CREATE TRIGGER clear_resolved_order_claim_attention_trigger BEFORE INSERT OR UPDATE OF status ON public.order_claims FOR EACH ROW EXECUTE FUNCTION clear_resolved_order_claim_attention()",
+      "table_name": "order_claims",
+      "tgenabled": "O",
+      "tgname": "clear_resolved_order_claim_attention_trigger"
+    },
+    {
+      "definition": "CREATE TRIGGER touch_order_claim_updated_at_trigger BEFORE UPDATE ON public.order_claims FOR EACH ROW EXECUTE FUNCTION touch_order_claim_updated_at()",
+      "table_name": "order_claims",
+      "tgenabled": "O",
+      "tgname": "touch_order_claim_updated_at_trigger"
+    },
+    {
+      "definition": "CREATE TRIGGER notify_customer_claim_message_trigger AFTER INSERT ON public.order_claim_messages FOR EACH ROW EXECUTE FUNCTION notify_customer_claim_message()",
+      "table_name": "order_claim_messages",
+      "tgenabled": "O",
+      "tgname": "notify_customer_claim_message_trigger"
+    },
+    {
+      "definition": "CREATE TRIGGER sync_order_claim_admin_attention_trigger AFTER INSERT ON public.order_claim_messages FOR EACH ROW EXECUTE FUNCTION sync_order_claim_admin_attention()",
+      "table_name": "order_claim_messages",
+      "tgenabled": "O",
+      "tgname": "sync_order_claim_admin_attention_trigger"
+    }
+  ],
+  "function_verification": [
+    {
+      "function": "approve_order_claim_product_change",
+      "arguments": "p_claim_id bigint, p_admin_id uuid",
+      "body_matches_local": true,
+      "body_sha256": "f89fabfb5f2ce907718609f4afbd58ae2bd9a89cecd071cf93979dfbebd12283"
+    },
+    {
+      "function": "begin_partial_credit_note",
+      "arguments": "p_order_id bigint, p_claim_id bigint, p_destination text, p_reason text, p_items_amount numeric, p_manual_amount numeric, p_total_amount numeric, p_invoice_point integer, p_invoice_number bigint, p_created_by uuid, p_items jsonb, p_operation_type text",
+      "body_matches_local": true,
+      "body_sha256": "f3757e9ce3008eef53277fe54231b8eb6018c4c7d8aeb14eaa909f45332fc122"
+    },
+    {
+      "function": "begin_partial_credit_note",
+      "arguments": "p_order_id bigint, p_claim_id bigint, p_destination text, p_reason text, p_items_amount numeric, p_manual_amount numeric, p_total_amount numeric, p_invoice_point integer, p_invoice_number bigint, p_created_by uuid, p_items jsonb, p_operation_type text, p_expected_note_ids uuid[]",
+      "body_matches_local": true,
+      "body_sha256": "f10aa6e32dc2c4878c3c9b446141a29b5988a247067b7233608961ee45d8b9f8"
+    },
+    {
+      "function": "clear_resolved_order_claim_attention",
+      "arguments": "",
+      "body_matches_local": true,
+      "body_sha256": "2dffc6205e31ce7fb70ad7e3214116363985c4288eb432d633bd5428e3915910"
+    },
+    {
+      "function": "commit_order_refund_proof",
+      "arguments": "p_operation_id uuid, p_actor_id uuid, p_file jsonb",
+      "body_matches_local": true,
+      "body_sha256": "83f09372d951f3d16a7827b784eeddcb8cd2e7c2eb248e949ed3405ce295f5b0"
+    },
+    {
+      "function": "mutate_admin_order_claim",
+      "arguments": "p_claim_id bigint, p_actor_id uuid, p_expected_updated_at timestamp with time zone, p_patch jsonb",
+      "body_matches_local": true,
+      "body_sha256": "40c6a82626a9469cd1d68dd6ecb80c91ea505efda01e87cfae73e098113cf820"
+    },
+    {
+      "function": "notify_customer_claim_message",
+      "arguments": "",
+      "body_matches_local": true,
+      "body_sha256": "79410032e2020646b5b29021e30763aa4e882936508d101de23bd565f61d177a"
+    },
+    {
+      "function": "process_claim_return_inventory",
+      "arguments": "p_claim_id bigint, p_order_id bigint, p_order_item_id bigint, p_restocked_quantity integer, p_written_off_quantity integer, p_note text, p_processed_by uuid",
+      "body_matches_local": true,
+      "body_sha256": "58cd407d8802b1754d1a0ea8e7a4fbe8e621a7e34f766c9cdd538dfdc168e4a7"
+    },
+    {
+      "function": "touch_order_claim_updated_at",
+      "arguments": "",
+      "body_matches_local": true,
+      "body_sha256": "cae5d7c29b269fca23ab48f1d0b8b7213cdd439adfe67dca2ef63279a518395e"
+    }
+  ],
+  "checked_at": "2026-09-06T14:31:24.358Z"
+}

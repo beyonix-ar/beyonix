@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { createClient } from "@supabase/supabase-js"
+import { PDFDocument } from "pdf-lib"
 import { cleanClaimOperation, claimErrorResponse, prepareClaimUploads, submitCustomerClaim } from "./claim-server.ts"
 
 const actor="10000000-0000-4000-8000-000000000001"
@@ -42,7 +43,7 @@ function storageScenario(failure: "second-upload" | "commit" | "timeout-after-co
           status=body.status
           return reply({id:'operation'})
         }
-        return reply({status,file_paths:filePaths,bucket_id:'order-claim-evidence',claim_id:status==='committed'?1:null})
+        return reply({status,file_paths:filePaths,bucket_id:'order-claim-evidence',expires_at:'2026-09-06T12:00:00Z',claim_id:status==='committed'?1:null})
       }
       if(url.pathname.endsWith('/storage/v1/object/order-claim-evidence') && method==='DELETE') {
         if(failure==='cleanup') return reply({message:'cleanup unavailable',statusCode:500},500)
@@ -97,6 +98,34 @@ test("Storage: limpieza fallida queda pendiente; no se declara limpiada",async()
 test("archivos se validan completos antes de reservar o subir",async()=>{
   await assert.rejects(prepareClaimUploads([new File(['<html>falso</html>'],'fake.pdf',{type:'application/pdf'})]),/CLAIM_INVALID/)
   await assert.rejects(prepareClaimUploads([new File(['<svg onload=alert(1)>'],'fake.svg',{type:'image/svg+xml'})]),/CLAIM_INVALID/)
+})
+
+test("PDF parseable con JavaScript es rechazado; documento pasivo se conserva", async () => {
+  const document = await PDFDocument.create()
+  document.addPage()
+  const safe = await document.save()
+  assert.equal((await prepareClaimUploads([new File([new Uint8Array(safe)], "prueba.pdf", { type: "application/pdf" })])).length, 1)
+  document.addJavaScript("evidencia", "app.alert('malicioso')")
+  const active = await document.save()
+  await assert.rejects(prepareClaimUploads([new File([new Uint8Array(active)], "prueba.pdf", { type: "application/pdf" })]), /CLAIM_INVALID/)
+})
+
+test("Storage: un limpiador tardío no finaliza la limpieza de un intento reutilizado", async () => {
+  const expires = "2026-09-06T12:00:00Z"
+  let conditionalUpdate = false
+  const admin = createClient("https://claims.example.test", "test-key", {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: async (input, options) => {
+      const url = new URL(String(input))
+      if (options?.method === "PATCH") {
+        conditionalUpdate = url.searchParams.get("expires_at") === `eq.${expires}`
+        return new Response("null", { status: 200, headers: { "Content-Type": "application/json" } })
+      }
+      return Response.json({ status: "failed", file_paths: [], bucket_id: "order-claim-evidence", expires_at: expires })
+    } },
+  })
+  assert.equal(await cleanClaimOperation(admin, "operation"), false)
+  assert.equal(conditionalUpdate, true)
 })
 
 test("errores de SQL/Storage/stack no se exponen al navegador",async()=>{

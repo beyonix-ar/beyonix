@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 
 import { ORDER_CLAIM_MAX_FILES, CLAIM_TEXT_MAX_LENGTH, POST_DELIVERY_CLAIM_REASONS, getClaimEligibilityError } from "@/lib/order-claims"
 import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
-import { claimErrorResponse, prepareClaimUploads, signClaim, submitCustomerClaim } from "@/lib/orders/claim-server"
+import { claimErrorResponse, prepareClaimUploads, signClaims, submitCustomerClaim } from "@/lib/orders/claim-server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { PostDeliveryClaimReason } from "@/lib/order-claims"
@@ -29,7 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if ("response" in auth) return auth.response
     const { data, error } = await auth.admin.from("order_claims").select("*, order_claim_files(*), order_claim_messages(*)").eq("order_id", auth.order.id).order("created_at", { ascending: false })
     if (error) return claimErrorResponse(error)
-    return NextResponse.json({ claims: await Promise.all((data as SupabaseOrderClaim[]).map((claim) => signClaim(auth.admin, claim))) })
+    return NextResponse.json({ claims: await signClaims(auth.admin, data as SupabaseOrderClaim[]) })
   } catch (error) { return claimErrorResponse(error) }
 }
 

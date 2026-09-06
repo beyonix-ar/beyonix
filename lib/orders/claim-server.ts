@@ -10,7 +10,7 @@ import {
 import type { createAdminClient } from "../supabase/admin"
 import type { SupabaseOrderClaim } from "../supabase/types"
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
-import { PDFDocument } from "pdf-lib"
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib"
 
 type Admin = ReturnType<typeof createAdminClient>
 export type ClaimUpload = { name: string; type: string; size: number; bytes: Uint8Array }
@@ -57,6 +57,17 @@ export async function prepareClaimUploads(files: File[]): Promise<ClaimUpload[]>
       try {
         const document = await PDFDocument.load(bytes, { updateMetadata: false })
         if (!document.getPageCount()) throw new Error("Empty PDF")
+        // Se inspeccionan objetos descomprimidos y nombres decodificados, no texto crudo.
+        const activeNames = new Set(["JS", "JavaScript", "OpenAction", "AA", "Launch", "EmbeddedFiles", "EmbeddedFile", "RichMedia", "XFA", "SubmitForm", "ImportData"])
+        for (const [, object] of document.context.enumerateIndirectObjects()) {
+          const inspect = (value: unknown): void => {
+            if (value instanceof PDFName && activeNames.has(value.decodeText())) throw new Error("Active PDF")
+            if (value instanceof PDFDict) for (const [key, entry] of value.entries()) { inspect(key); inspect(entry) }
+            if (value instanceof PDFArray) for (const entry of value.asArray()) inspect(entry)
+            if (value instanceof PDFStream) inspect(value.dict)
+          }
+          inspect(object)
+        }
       } catch { throw new Error("CLAIM_INVALID") }
     }
     uploads.push({ name: file.name, type: file.type, size: file.size, bytes })
@@ -65,32 +76,39 @@ export async function prepareClaimUploads(files: File[]): Promise<ClaimUpload[]>
 }
 
 export async function signClaim(admin: Admin, claim: SupabaseOrderClaim) {
-  const files = claim.order_claim_files ?? []
+  return (await signClaims(admin, [claim]))[0]
+}
+
+export async function signClaims(admin: Admin, claims: SupabaseOrderClaim[]) {
+  const files = claims.flatMap((claim) => claim.order_claim_files ?? [])
   const paths = files.map((file) => file.file_path.replace(/^order-claim-evidence\//, ""))
   const { data } = paths.length
     ? await admin.storage.from(ORDER_CLAIM_BUCKET).createSignedUrls(paths, 300)
     : { data: [] }
   const urls = new Map((data ?? []).map((entry) => [entry.path, entry.signedUrl]))
-  return { ...claim, order_claim_files: files.map((file, index) => ({ ...file, signedUrl: urls.get(paths[index]) ?? null })) }
+  return claims.map((claim) => ({ ...claim, order_claim_files: (claim.order_claim_files ?? []).map((file) => ({
+    ...file, signedUrl: urls.get(file.file_path.replace(/^order-claim-evidence\//, "")) ?? null,
+  })) }))
 }
 
 export async function getClaimResult(admin: Admin, claimId: number) {
   const { data, error } = await admin.from("order_claims").select("*, order_claim_files(*), order_claim_messages(*)").eq("id", claimId).single()
-  if (error || !data) return claimErrorResponse(error)
+  if (error || !data) return claimErrorResponse(error?.code === "PGRST116" ? new Error("CLAIM_NOT_FOUND") : error)
   return NextResponse.json({ claim: await signClaim(admin, data as SupabaseOrderClaim) })
 }
 
 /** Sólo limpia intentos conocidos y fallidos; nunca borra metadata ni evidencia histórica. */
 export async function cleanClaimOperation(admin: Admin, operationId: string) {
-  const { data, error } = await admin.from("order_claim_operations").select("file_paths,status,bucket_id").eq("id", operationId).single()
+  const { data, error } = await admin.from("order_claim_operations").select("file_paths,status,bucket_id,expires_at").eq("id", operationId).single()
   if (error || !data || data.status !== "failed") return false
   const paths = data.file_paths as string[]
   if (paths.length) {
     const { error: storageError } = await admin.storage.from(data.bucket_id).remove(paths)
     if (storageError) return false
   }
-  const { error: updateError } = await admin.from("order_claim_operations").update({ status: "cleaned" }).eq("id", operationId).eq("status", "failed")
-  return !updateError
+  const { data: cleaned, error: updateError } = await admin.from("order_claim_operations").update({ status: "cleaned" })
+    .eq("id", operationId).eq("status", "failed").eq("expires_at", data.expires_at).select("id").maybeSingle()
+  return !updateError && Boolean(cleaned)
 }
 
 export async function submitCustomerClaim(admin: Admin, actorId: string, orderId: number, payload: Record<string, unknown>, uploads: ClaimUpload[]) {
@@ -127,7 +145,7 @@ export async function submitClaimUploadOperation(admin: Admin, actorId: string, 
     const fileMetadata = uploads.map(({ name, type, size }, index) => ({ name, type, size, path: paths[index] }))
     const { data: claimId, error } = kind === "claim" ? await admin.rpc("commit_customer_order_claim", {
       p_operation_id: operation.id, p_actor_id: actorId, p_payload: payload, p_files: fileMetadata,
-    }) : await admin.rpc("commit_order_refund_proof", { p_operation_id: operation.id, p_actor_id: actorId, p_file: fileMetadata[0] })
+    }) : await admin.rpc("commit_order_refund_proof", { p_operation_id: operation.id, p_actor_id: actorId, p_file: { ...fileMetadata[0], expected_note_ids: payload.expectedNoteIds } })
     if (error || !claimId) throw error ?? new Error("CLAIM_CONFLICT")
     if (kind === "refund" || !payload.claimId) {
       const { data: recipient } = await admin.from("ordenes").select("cliente_email").eq("id", orderId).single()

@@ -32,10 +32,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const orderId = Number((await params).id)
     if (!Number.isSafeInteger(orderId) || orderId <= 0) return claimErrorResponse(new Error("CLAIM_INVALID"))
     const form = await request.formData()
+    const expectedNoteIds: unknown = JSON.parse(String(form.get("expectedNoteIds") ?? "null"))
+    if (!Array.isArray(expectedNoteIds) || !expectedNoteIds.length || new Set(expectedNoteIds).size !== expectedNoteIds.length ||
+      expectedNoteIds.some((id) => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) return claimErrorResponse(new Error("CLAIM_CONFLICT"))
     const file = form.get("file")
     if (!(file instanceof File) || !["image/jpeg","application/pdf"].includes(file.type) || getPaymentProofValidationError(file)) return NextResponse.json({ error: "Subí un comprobante JPG, JPEG o PDF válido." }, { status: 400 })
     const { data: notes, error } = await auth.admin.from("order_credit_notes").select("id").eq("order_id", orderId).eq("status", "authorized").eq("destination", "external_refund").limit(1)
     if (error || !notes?.length) return claimErrorResponse(new Error("CLAIM_REFUND_PENDING"))
-    return await submitClaimUploadOperation(auth.admin, auth.user.id, orderId, {}, await prepareClaimUploads([file]), "refund")
-  } catch (error) { return claimErrorResponse(error) }
+    return await submitClaimUploadOperation(auth.admin, auth.user.id, orderId, { expectedNoteIds: expectedNoteIds.sort() }, await prepareClaimUploads([file]), "refund")
+  } catch (error) { return claimErrorResponse(error instanceof SyntaxError ? new Error("CLAIM_INVALID") : error) }
 }

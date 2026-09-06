@@ -32,7 +32,7 @@ import { useAuth } from "@/context/auth-context"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
 import { getCuentaItemImage } from "@/lib/account/account-utils"
-import { getOrderClaimResolutionLabel } from "@/lib/order-claims"
+import { getOrderClaimResolutionLabel, getPendingRefundNotes } from "@/lib/order-claims"
 import {
   isClaimVisibleForMode,
   shouldShowReturnInventoryPanel,
@@ -1425,7 +1425,8 @@ export function AdminClaimManager({
       const nextMessageCount = data.claim.order_claim_messages?.length ?? 0
       if (
         data.claim.updated_at !== claim.updated_at ||
-        nextMessageCount !== messageCount
+        nextMessageCount !== messageCount ||
+        (data.claim.order_claim_files ?? []).some((file, index) => file.signedUrl !== claim.order_claim_files?.[index]?.signedUrl)
       ) {
         onClaimChange(data.claim)
       }
@@ -1437,7 +1438,9 @@ export function AdminClaimManager({
     // intervalo corriendo en segundo plano para un caso ya terminado.
     const intervalId = shouldPollSingleClaim(claim.status)
       ? window.setInterval(() => void refreshClaim(), 20000)
-      : null
+      : (claim.order_claim_files?.length ?? 0) > 0
+        ? window.setInterval(() => void refreshClaim(), 240000)
+        : null
     window.addEventListener("focus", refreshClaim)
     return () => {
       active = false
@@ -1485,6 +1488,20 @@ export function AdminClaimManager({
 
       if (!request.ok || !data.claim) {
         setNotice(data.error || "No se pudo actualizar el caso.")
+        if (request.status === 409) {
+          const refreshed = await fetch(`/api/admin/order-claims/${claim.id}`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+          if (refreshed.ok) {
+            const current = await refreshed.json() as { claim?: SupabaseOrderClaim }
+            if (current.claim) onClaimChange(current.claim)
+            decisionVersionRef.current = null
+            responseVersionRef.current = null
+            setDecisionAction(null)
+            setPendingConfirmation(null)
+            setShowCloseConversationModal(false)
+          }
+        }
         return false
       }
 
@@ -1728,6 +1745,7 @@ export function AdminClaimManager({
 
       const formData = new FormData()
       formData.set("file", refundProofFile)
+      formData.set("expectedNoteIds", JSON.stringify(getPendingRefundNotes(pedido.order_credit_notes).map((note) => note.id)))
 
       const request = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
         method: "POST",
@@ -1760,14 +1778,12 @@ export function AdminClaimManager({
   const markRefundDone = async () => {
     if (!claim) return
 
-    const sent = await updateClaim(
+    await updateClaim(
       {
         action: "mark_refund_done",
       },
       "Reintegro marcado como realizado.",
     )
-    if (sent) {
-    }
   }
 
   const runDecisionAction = async () => {
@@ -1849,7 +1865,8 @@ export function AdminClaimManager({
         pedido.credit_note_status === "authorized" &&
         pedido.credit_note_cae,
     )
-  const canCloseClaim = !closed && !cancellation && !["cupon_descuento", "saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
+  const canCloseClaim = !closed && !cancellation && !["cupon_descuento", "saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "") &&
+    (isAdmin || !["cambio_producto", "envio_unidad_faltante"].includes(claim.resolution ?? ""))
   const canCloseConversation = helpMessage && !closed
   const helpResolved = helpMessage && claim.status === "cerrado"
   const finalizedStatus = !helpResolved && claim.status === "cerrado"
@@ -2250,7 +2267,7 @@ export function AdminClaimManager({
         <ReturnInventoryPanel
           pedido={pedido}
           claim={claim}
-          canManage={isAdmin}
+          canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
           onUpdated={onInventoryUpdated}
         />
       )}
@@ -2258,7 +2275,7 @@ export function AdminClaimManager({
       {notice && <p className={`mx-3 mb-3 rounded-lg border px-3 py-2 text-xs font-bold text-white sm:mx-4 sm:mb-4 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>{notice}</p>}
 
       {previewFile && (
-        <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+        <FilePreviewModal file={files.find((file) => file.id === previewFile.id) ?? previewFile} onClose={() => setPreviewFile(null)} />
       )}
 
       {showCloseConversationModal && (

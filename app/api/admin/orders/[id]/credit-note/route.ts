@@ -82,6 +82,7 @@ type CreditNoteRequest = {
   stock_destination?: unknown
   conditioned_discount_percent?: unknown
   claim_id?: unknown
+  expected_note_ids?: unknown
 }
 
 const OPERATION_TYPES = [
@@ -598,6 +599,10 @@ export async function POST(
       { status: 400 },
     )
   }
+  const expectedNoteIds = body.expected_note_ids
+  if (!Array.isArray(expectedNoteIds) || expectedNoteIds.some((id) => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
+    return NextResponse.json({ error: "Actualizá la gestión fiscal antes de emitir la nota." }, { status: 409 })
+  }
   const { data: reservedNote, error: reservationFailure } = await auth.admin
     .rpc("begin_partial_credit_note", {
       p_order_id: orderId,
@@ -612,12 +617,13 @@ export async function POST(
       p_created_by: auth.user.id,
       p_items: selectedItems,
       p_operation_type: operationType,
+      p_expected_note_ids: expectedNoteIds,
     })
     .maybeSingle()
 
   if (reservationFailure || !reservedNote) {
     return NextResponse.json(
-      { error: reservationError(reservationFailure?.message) },
+      { error: reservationFailure?.message === "CREDIT_NOTE_SNAPSHOT_CONFLICT" ? "La gestión fiscal cambió. Actualizá el pedido y revisá las notas emitidas antes de confirmar otra emisión." : reservationError(reservationFailure?.message) },
       { status: 409 },
     )
   }
@@ -741,6 +747,7 @@ export async function POST(
     )
   }
   let arcaAuthorizationPersisted = false
+  let arcaRequestStarted = false
   try {
     const pointOfSale = getPointOfSale()
     const lastNumber = await feCompUltimoAutorizado(
@@ -755,6 +762,12 @@ export async function POST(
     const issueDate = argentinaDate()
     validateIssueDateAfterLastAuthorized(issueDate.arca, lastVoucher?.voucherDate)
 
+    // Persistir el número intentado permite conciliar si la respuesta se pierde.
+    const { error: attemptError } = await auth.admin.from("order_credit_notes")
+      .update({ voucher_point: pointOfSale, voucher_number: lastNumber + 1 })
+      .eq("id", noteId).eq("status", "processing")
+    if (attemptError) throw new Error("No se pudo registrar el intento fiscal.")
+    arcaRequestStarted = true
     const authorization = await fecaeSolicitar({
       pointOfSale,
       voucherType: NOTA_CREDITO_C_TYPE,
@@ -803,6 +816,14 @@ export async function POST(
 
     const physicallyReceived = isPhysicallyReceivedStatus(receptionStatus)
     if (physicallyReceived && stockDestination !== "no_reingresar") {
+      // La reserva fiscal bloquea nuevas recepciones del reclamo. Releer evita
+      // duplicar una recepción canónica terminada antes de tomar esa reserva.
+      const { data: receivedItems, error: receivedItemsError } = await auth.admin
+        .from("orden_items").select("id,return_inventory_processed_at")
+        .eq("orden_id", orderId)
+      if (receivedItemsError) throw new Error("No se pudo verificar la recepción registrada.")
+      const previouslyReceived = new Set((receivedItems ?? [])
+        .filter((item) => item.return_inventory_processed_at).map((item) => Number(item.id)))
       const orderItemsById = new Map(
         items.map((item) => [Number(item.id), item]),
       )
@@ -842,7 +863,7 @@ export async function POST(
           const quantity = Number(
             creditItem.approved_quantity ?? creditItem.quantity ?? 0,
           )
-          if (!orderItem || quantity <= 0) return null
+          if (!orderItem || quantity <= 0 || previouslyReceived.has(Number(orderItem.id))) return null
 
           const product = productsById.get(Number(orderItem.producto_id))
           const variant =
@@ -1153,6 +1174,14 @@ export async function POST(
       )
     }
 
+    if (arcaRequestStarted) {
+      await auth.admin.from("order_credit_notes")
+        .update({ error: "Resultado fiscal pendiente de conciliación. No repetir la emisión.", updated_at: new Date().toISOString() })
+        .eq("id", noteId).eq("status", "processing")
+      console.error("CREDIT_NOTE_RECONCILIATION_REQUIRED", { orderId, noteId })
+      return NextResponse.json({ error: "El resultado de ARCA requiere conciliación. Revisá el comprobante intentado antes de volver a emitir." }, { status: 409 })
+    }
+
     await auth.admin
       .from("order_credit_notes")
       .update({ status: "error", error: message, updated_at: new Date().toISOString() })
@@ -1166,7 +1195,7 @@ export async function POST(
 
     console.error("Error al emitir Nota de Crédito C", { orderId, noteId, error: message })
     return NextResponse.json(
-      { error: message },
+      { error: "No se pudo emitir la nota de crédito. Revisá la gestión antes de reintentar." },
       { status: error instanceof ArcaWsError ? 502 : 500 },
     )
   }
