@@ -11525,58 +11525,42 @@ html[data-account-theme="light"][data-account-scope] #contenido [class~="text-wh
 html[data-account-theme="light"][data-account-scope] #contenido [class*="bg-black/"] {
   background: var(--account-surface-hover) !important;
 }
-/* Excepciones dentro de #contenido: superficies intencionalmente oscuras
-   (Sobre BEYONIX tiene un bloque de texto con fondo navy casi negro fijo,
-   .beyonix-dark-card) y CTAs con fondo navy sólido fijo (bg-beyonix-blue
-   sin opacidad, "Ver productos") -- ninguna de las dos se aclara en Light,
-   por lo que el texto blanco de arriba NO debe remapearse a navy acá (si
-   lo hiciera, quedaría navy-sobre-navy/negro, tan invisible como el bug
-   original). Mayor especificidad que las reglas [class~="text-white..."]
-   de arriba, así gana pese a que ambas usan !important. */
-html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card[class~="text-white"],
-html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card [class~="text-white"] {
-  color: #f8fafc !important;
-}
-/* text-white/60 es un valor que en el resto de #contenido cae en el bucket
-   "secundario" (gris oscuro sobre fondo claro) -- pero acá, dentro de un
-   .beyonix-dark-card, el fondo sigue siendo oscuro, así que necesita
-   quedarse claro (gris claro legible, no gris oscuro). Mismo razonamiento
-   para text-beyonix-cyan: el token ya está calibrado más oscuro para leerse
-   sobre fondos claros (ver --beyonix-cyan en el scope Light más arriba),
-   lo que lo vuelve de bajo contraste sobre una superficie oscura fija como
-   esta -- se restituye el celeste original de dark. */
-html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card [class~="text-white/60"] {
-  color: rgba(248, 250, 252, 0.7) !important;
-}
-html[data-account-theme="light"][data-account-scope] #contenido .beyonix-dark-card [class~="text-beyonix-cyan"] {
-  color: #4a90b8 !important;
+/* Excepción dentro de #contenido: CTA con fondo navy sólido fijo
+   (bg-beyonix-blue sin opacidad, "Ver productos" en Sobre BEYONIX y
+   "Contactar a BEYONIX" en el bloque final de Términos) -- no se aclara en
+   Light, por lo que el texto blanco de arriba NO debe remapearse a navy acá
+   (si lo hiciera, quedaría navy-sobre-navy). Mayor especificidad que las
+   reglas [class~="text-white..."] de arriba, así gana pese a que ambas
+   usan !important. Match por [class~="bg-beyonix-blue"] exacto (no
+   bg-beyonix-blue/NN) para no alcanzar el botón secundario del mismo
+   bloque, que sí debe aclararse. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-cta [class~="bg-beyonix-blue"][class~="text-white"] {
+  color: #ffffff !important;
 }
 
 /* =========================
    SOBRE BEYONIX -- pulido puntual (badge, bloque principal, eyebrow, card
    "Cercanía real", CTA "Ver productos")
    =========================
-   Clases dedicadas a esta página en vez de reusar .beyonix-dark-card /
-   selectores genéricos de #contenido: terminos/page.tsx también usa
-   .beyonix-dark-card (con el criterio opuesto -- se mantiene oscuro en
-   Light) y otras páginas legales comparten el mismo id="contenido", así
-   que cualquier ajuste acá queda acotado a Sobre BEYONIX sin tocarlas. */
+   Clases dedicadas a esta página en vez de selectores genéricos de
+   #contenido: Términos y otras páginas legales comparten el mismo
+   id="contenido", así que cualquier ajuste acá queda acotado a Sobre
+   BEYONIX sin tocarlas. */
 
-/* Badge "Nuestra historia": bg-beyonix-blue/18 sobre el fondo claro del
-   body resolvía a un tinte casi imperceptible. Gris medio sólido (ni
-   blanco puro ni gris oscuro pesado) + texto/ícono blanco, como pide el
-   punto 1 -- el celeste calibrado de Light pierde contraste acá porque el
-   fondo deja de ser oscuro. */
-html[data-account-theme="light"][data-account-scope] #contenido .beyonix-history-badge {
+/* Badge "Nuestra historia" (Sobre BEYONIX) y "Marco de compra BEYONIX"
+   (hero de Términos, fuera de #contenido -- por eso sin ese prefijo en el
+   selector): bg-beyonix-blue/18 sobre fondo claro resolvía a un tinte casi
+   imperceptible. Gris medio sólido (ni blanco puro ni gris oscuro pesado) +
+   texto/ícono blanco -- el celeste calibrado de Light pierde contraste acá
+   porque el fondo deja de ser oscuro. */
+html[data-account-theme="light"][data-account-scope] .beyonix-history-badge {
   background: #6b7280 !important;
   border-color: var(--account-border) !important;
   color: #ffffff !important;
 }
 
-/* Bloque principal ("BEYONIX nace como..."): a diferencia de
-   .beyonix-dark-card (Términos), acá el pedido es lo opuesto -- superficie
-   clara (~10-15% negro) con texto oscuro, en vez de mantener el navy casi
-   negro fijo. */
+/* Bloque principal ("BEYONIX nace como..."): superficie clara (~10-15%
+   negro) con texto oscuro, en vez de mantener el navy casi negro fijo. */
 html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-story-card {
   background: #e4e7eb !important;
   border-color: var(--account-border) !important;
@@ -11585,9 +11569,8 @@ html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-s
   color: var(--account-text-secondary) !important;
 }
 /* El párrafo destacado final (text-white exacto, sin opacidad) ya cae en
-   la regla genérica #contenido [class~="text-white"] de arriba una vez que
-   este artículo deja de tener .beyonix-dark-card -- queda navy oscuro sin
-   necesidad de una regla propia acá. */
+   la regla genérica #contenido [class~="text-white"] de arriba -- queda
+   navy oscuro sin necesidad de una regla propia acá. */
 
 /* Eyebrow "Lo que nos mueve": text-white/42 cae en el bucket "muted" de la
    regla genérica de #contenido (gris ~55% negro) -- se pide acá negro/navy
@@ -11645,23 +11628,78 @@ html[data-account-theme="light"][data-account-scope] #contenido .beyonix-about-c
 }
 
 /* =========================
-   TÉRMINOS Y CONDICIONES -- pulido de contraste en Light
+   PÁGINAS LEGALES (Términos/Privacidad/Devoluciones/Arrepentimiento) --
+   patrones compartidos en Light
    =========================
-   LegalSection/KeyFact/etc. (app/terminos/page.tsx) son componentes locales
-   de este archivo, no compartidos con otras páginas -- las clases de acá
-   quedan acotadas a Términos sin riesgo de afectar Privacidad/Devoluciones/
-   Contacto/Sobre BEYONIX, aunque compartan el mismo id="contenido". */
+   Las 4 páginas comparten el mismo lenguaje visual de Sobre BEYONIX pero
+   cada una mantiene su propia estructura/componentes locales (LegalSection,
+   PrivacySection, PolicyCard, etc. -- no se extrajo un componente React
+   compartido porque el contenido de cada una difiere demasiado; ver punto
+   13 del pedido). Lo que sí se comparte son estas clases CSS -- 3 patrones
+   visuales que se repiten en más de una página y no tienen equivalente
+   directo como utilidad de Tailwind (requieren la técnica de token custom
+   property + override en Light, igual que el resto de este archivo). */
 
-/* Badge del hero ("Marco de compra BEYONIX"): el hero mantiene su fondo
-   oscuro fijo en ambos temas (gradiente radial con valores rgba directos,
-   no tokens), pero vive fuera de #contenido -- el token --beyonix-cyan sí
-   es global (se define en :root/html), así que en Light igual se recalibra
-   al azul oscuro pensado para fondos claros y queda ilegible sobre este
-   fondo que sigue oscuro a propósito. Se restituye el celeste original de
-   dark, mismo criterio que la excepción de .beyonix-dark-card más abajo. */
-html[data-account-theme="light"][data-account-scope] .beyonix-terms-hero-badge {
-  color: #4a90b8 !important;
+/* Icon tiles (LegalSection/KeyFact en Términos, PrivacySection/dataGroups
+   en Privacidad, PolicyCard/facts en Devoluciones, fact tiles en
+   Arrepentimiento): mismo tratamiento que .beyonix-about-icon-tile (Sobre
+   BEYONIX) en vez del BeyonixIconBox navy-sólido-fijo por defecto (o del
+   bg-beyonix-blue/NN a mano en Arrepentimiento, que se lava igual que el
+   badge de abajo) -- fondo blanco, borde e ícono navy sólido, para que las
+   5 páginas compartan el mismo lenguaje de contenedores de icono en Light.
+   Sin prefijo #contenido: se usa tanto dentro de #contenido (LegalSection,
+   PrivacySection, PolicyCard) como en los heroes, que viven fuera de ese
+   id (KeyFact de Términos, facts de Devoluciones). */
+html[data-account-theme="light"][data-account-scope] .beyonix-legal-icon-tile {
+  background: #ffffff !important;
+  border-color: #112a43 !important;
 }
+html[data-account-theme="light"][data-account-scope] .beyonix-legal-icon-tile,
+html[data-account-theme="light"][data-account-scope] .beyonix-legal-icon-tile svg {
+  color: #112a43 !important;
+}
+
+/* Excepción dentro de #contenido: bloques finales de ayuda/contacto con un
+   botón primario de fondo navy sólido fijo (bg-beyonix-blue sin opacidad +
+   text-white, "Contactar a BEYONIX" en Términos, "Contactar" en
+   Devoluciones) -- no se aclara en Light, por lo que el texto blanco NO
+   debe remapearse a navy acá (si lo hiciera, quedaría navy-sobre-navy).
+   Mayor especificidad que las reglas [class~="text-white..."] genéricas de
+   #contenido, así gana pese a que ambas usan !important. Match por
+   [class~="bg-beyonix-blue"] exacto (no bg-beyonix-blue/NN) para no
+   alcanzar el botón secundario del mismo bloque, que sí debe aclararse. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-legal-cta [class~="bg-beyonix-blue"][class~="text-white"] {
+  color: #ffffff !important;
+}
+
+/* Cajas informativas neutras (tarjetas de contacto, métodos de pago,
+   avisos de arrepentimiento, links de normativa en Términos; pasos de
+   "Cómo se gestiona" en Devoluciones): todas comparten bg-black/2X +
+   border-white/8, un tinte oscuro pensado para el fondo fijo-oscuro de
+   estos bloques en dark -- sobre una superficie clara se ve como un parche
+   gris apagado ("disabled-looking"). El texto interno ya resuelve oscuro
+   vía la regla genérica de #contenido (text-white exacto y los buckets
+   /55, /58, /62, /72), así que sólo se corrige fondo/borde acá,
+   reutilizando los tokens de superficie/borde ya calibrados para el resto
+   del sitio. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-legal-neutral-box {
+  background: var(--account-surface-raised) !important;
+  border-color: var(--account-border-subtle) !important;
+}
+/* El !important de arriba también taparía el hover:border-beyonix-blue-
+   light/NN que ya traía cada caja (mismo valor no-important, pierde contra
+   cualquier !important sin importar el estado) -- se restituye el hover
+   acá para no perder ese feedback existente. */
+html[data-account-theme="light"][data-account-scope] #contenido .beyonix-legal-neutral-box:hover {
+  border-color: var(--account-border-strong) !important;
+}
+
+/* =========================
+   TÉRMINOS Y CONDICIONES -- pulido de contraste en Light (exclusivo)
+   =========================
+   LegalSection/etc. (app/terminos/page.tsx) son componentes locales de
+   esta página -- las clases de acá quedan acotadas a Términos porque
+   ninguna otra página legal tiene índice lateral ni bloques "highlight". */
 
 /* Eyebrow "NN · ..." de cada una de las 14 secciones (LegalSection, un solo
    componente reutilizado): traía /80 de opacidad sobre el celeste ya
@@ -11699,27 +11737,6 @@ html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-h
 }
 html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-highlight strong {
   color: var(--account-info-text) !important;
-}
-
-/* Cajas informativas neutras (tarjetas de contacto, métodos de pago,
-   avisos de arrepentimiento, links de normativa): todas comparten
-   bg-black/2X + border-white/8, un tinte oscuro pensado para el fondo
-   fijo-oscuro de estos bloques en dark -- sobre la superficie clara de
-   .beyonix-modal-shell se ve como un parche gris apagado ("disabled-
-   looking"). El texto interno ya resuelve oscuro vía la regla genérica de
-   #contenido (text-white exacto y los buckets /58, /62, /72), así que sólo
-   se corrige fondo/borde acá, reutilizando los tokens de superficie/borde
-   ya calibrados para el resto del sitio. */
-html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-neutral-box {
-  background: var(--account-surface-raised) !important;
-  border-color: var(--account-border-subtle) !important;
-}
-/* El !important de arriba también taparía el hover:border-beyonix-blue-
-   light/NN que ya traía cada caja (mismo valor no-important, pierde contra
-   cualquier !important sin importar el estado) -- se restituye el hover
-   acá para no perder ese feedback existente. */
-html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-neutral-box:hover {
-  border-color: var(--account-border-strong) !important;
 }
 
 /* =========================

@@ -66,8 +66,9 @@ export async function GET(
     .order("created_at", { ascending: false })
 
   if (error) {
+    console.error("GET /api/admin/pedidos/[id]/claims", orderId, error.message)
     return NextResponse.json(
-      { error: error.message || "No se pudieron cargar los mensajes." },
+      { error: "No se pudieron cargar los mensajes." },
       { status: 500 },
     )
   }

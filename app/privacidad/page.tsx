@@ -62,9 +62,9 @@ function PrivacySection({
   return (
     <BeyonixCard variant="information" className="p-5 sm:p-6 lg:p-7">
       <div className="flex items-start gap-3.5">
-        <BeyonixIconBox size="lg"><Icon className="size-5" /></BeyonixIconBox>
+        <BeyonixIconBox size="lg" className="beyonix-legal-icon-tile"><Icon className="size-5" /></BeyonixIconBox>
         <div className="min-w-0 flex-1">
-          <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan/80">{eyebrow}</p>
+          <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">{eyebrow}</p>
           <h2 className="mt-1.5 text-xl font-bold tracking-tight text-white sm:text-2xl">{title}</h2>
           <div className="mt-4 space-y-3 text-sm leading-7 text-white/66">{children}</div>
         </div>
@@ -84,16 +84,15 @@ function PrivacyItem({ children }: { children: React.ReactNode }) {
 
 export default function PrivacidadPage() {
   return (
-    <main className="min-h-screen bg-transparent text-white">
-      <section className="relative overflow-hidden border-b border-beyonix-blue-light/14">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_8%,rgba(30,77,123,0.34),transparent_34%),radial-gradient(circle_at_84%_44%,rgba(24,91,128,0.15),transparent_31%),linear-gradient(180deg,rgba(3,8,14,0.66),rgba(0,0,0,0.9))]" />
-        <div className="relative mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
+    <main className="min-h-screen bg-black text-white">
+      <section className="relative overflow-hidden bg-beyonix-page border-b border-beyonix-blue-light/14">
+        <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Datos personales</span>
-            <span className="rounded-full border border-white/8 bg-black/25 px-3 py-1 text-10px font-medium uppercase tracking-[0.14em] text-white/48">Actualizada el {LAST_UPDATED}</span>
+            <span className="beyonix-history-badge inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Datos personales</span>
+            <span className="rounded-full border border-beyonix-blue-light/18 bg-beyonix-surface px-3 py-1 text-10px font-medium uppercase tracking-[0.14em] text-[var(--beyonix-text-muted)]">Actualizada el {LAST_UPDATED}</span>
           </div>
-          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">Política de privacidad</h1>
-          <p className="mt-5 max-w-3xl text-base leading-7 text-white/66 sm:text-lg sm:leading-8">
+          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-[var(--beyonix-text-primary)] sm:text-5xl lg:text-6xl">Política de privacidad</h1>
+          <p className="mt-5 max-w-3xl text-base font-medium leading-7 text-beyonix-sky sm:text-lg sm:leading-8">
             Explicamos qué información utiliza BEYONIX, para qué la necesita, con quién puede
             compartirla y cómo protege los datos personales vinculados a la cuenta y las compras.
           </p>
@@ -101,7 +100,7 @@ export default function PrivacidadPage() {
           <div className="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {dataGroups.map((group) => (
               <BeyonixCard key={group.title} variant="information" className="p-4">
-                <BeyonixIconBox size="sm"><group.icon className="size-4" /></BeyonixIconBox>
+                <BeyonixIconBox size="sm" className="beyonix-legal-icon-tile"><group.icon className="size-4" /></BeyonixIconBox>
                 <h2 className="beyonix-modal-title mt-3 text-sm font-bold text-white">{group.title}</h2>
                 <p className="beyonix-modal-body mt-1.5 text-xs leading-5 text-white/50">{group.text}</p>
               </BeyonixCard>
@@ -110,7 +109,7 @@ export default function PrivacidadPage() {
         </div>
       </section>
 
-      <section id="contenido" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+      <section id="contenido" className="bg-beyonix-page mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
         <div className="grid gap-4 lg:grid-cols-2">
           <PrivacySection icon={Eye} eyebrow="01 · Alcance" title="Responsable y origen de los datos">
             <p>

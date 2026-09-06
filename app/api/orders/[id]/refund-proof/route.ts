@@ -27,7 +27,7 @@ export async function GET(
   const { id } = await params
   const orderId = Number(id)
 
-  if (!Number.isFinite(orderId) || orderId <= 0) {
+  if (!Number.isSafeInteger(orderId) || orderId <= 0) {
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
   }
 
@@ -42,7 +42,7 @@ export async function GET(
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
   }
 
-  if (!isCustomerOrderOwner(order, user)) {
+  if (!isCustomerOrderOwner(order, user) || !order.usuario_id && !user.email_confirmed_at) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 })
   }
 

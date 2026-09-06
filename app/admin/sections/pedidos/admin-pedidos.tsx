@@ -5346,6 +5346,7 @@ function PedidoDetailModal({
           <AdminClaimManager
             pedido={pedido}
             mode="all"
+            onOpenBilling={() => showDetailView("facturacion")}
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
             onInventoryUpdated={onWarrantyUpdated}
           />
@@ -7727,4 +7728,3 @@ export function AdminPedidos({
     </div>
   )
 }
-

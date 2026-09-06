@@ -9,6 +9,7 @@ import {
   Eye,
   FileText,
   MessageSquare,
+  Package,
   PackageCheck,
   Pencil,
   Play,
@@ -19,10 +20,18 @@ import {
   X,
 } from "lucide-react"
 
-import { AdminSelect, adminControlClassName } from "@/app/admin/components/admin-controls"
+import {
+  AdminButton,
+  AdminModal,
+  AdminSecondaryButton,
+  AdminSelect,
+  adminControlClassName,
+} from "@/app/admin/components/admin-controls"
+import { formatPrice } from "@/app/admin/sections/productos/helpers"
 import { useAuth } from "@/context/auth-context"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
+import { getCuentaItemImage } from "@/lib/account/account-utils"
 import { getOrderClaimResolutionLabel } from "@/lib/order-claims"
 import {
   isClaimVisibleForMode,
@@ -127,6 +136,17 @@ function formatFileSize(bytes?: number | null) {
   if (!bytes || bytes <= 0) return "Sin tamaño"
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Versión local y mínima del mismo mapeo que ya existe en
+// admin-pedidos.tsx (getCompactPaymentMethodLabel) -- no se importa desde
+// ahí porque ese archivo importa este componente (AdminClaimManager),
+// y hacerlo al revés generaría un import circular entre ambos módulos.
+function getClaimSummaryPaymentLabel(pedido: SupabasePedido) {
+  if (pedido.payment_method_id === "transferencia") return "Transferencia"
+  if (pedido.payment_method_id === "mercadopago" || pedido.payment_id) return "Mercado Pago"
+  if (pedido.payment_method_id === "customer_credit") return "Saldo a favor"
+  return "Medio de pago sin datos"
 }
 
 function sortUniqueMessages(messages: SupabaseOrderClaim["order_claim_messages"] = []) {
@@ -240,7 +260,7 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
   }
 
   if (["cambio_pendiente", "cupon_pendiente"].includes(claim.status)) {
-    return "Reclamo finalizado"
+    return "Solución en proceso"
   }
 
   if (["reemplazo_enviado"].includes(claim.status)) {
@@ -258,7 +278,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
       return "Unidad faltante despachada. El cliente puede consultar el seguimiento desde el chat."
     }
 
-    if (claim.status === "cambio_pendiente" || claim.status === "cerrado") {
+    if (claim.status === "cerrado") {
       return "Reposición de la unidad faltante registrada. El reclamo quedó finalizado en el historial."
     }
 
@@ -270,7 +290,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
       return "Reemplazo despachado. El cliente puede consultar el seguimiento desde el chat."
     }
 
-    if (claim.status === "cambio_pendiente" || claim.status === "cerrado") {
+    if (claim.status === "cerrado") {
       return "Cambio registrado. El reclamo quedó finalizado en el historial."
     }
 
@@ -278,7 +298,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
   }
 
   if (resolution === "cupon_descuento") {
-    if (claim.status === "cupon_pendiente" || claim.status === "cerrado") {
+    if (claim.status === "cerrado") {
       return "Nota de crédito registrada para el cliente. El reclamo quedó finalizado."
     }
 
@@ -292,7 +312,7 @@ function getResolutionNextStep(claim: SupabaseOrderClaim) {
         : "Esperando que el cliente complete los datos para el reintegro."
     }
 
-    return "Reintegro registrado para el cliente. El reclamo quedó finalizado."
+    return claim.status === "cerrado" ? "Reintegro registrado para el cliente. El reclamo quedó finalizado." : "Registrá la devolución desde la gestión de reintegros del pedido."
   }
 
   if (resolution === "rechazado") return "El cliente ve el motivo del rechazo."
@@ -404,6 +424,7 @@ function ReturnInventoryPanel({
     getClaimAffectedItems(claim, orderItems),
   )
   const [editingAffectedItems, setEditingAffectedItems] = useState(false)
+  const affectedVersionRef = useRef(claim.updated_at)
   const [savingAffectedItems, setSavingAffectedItems] = useState(false)
   const [affectedDrafts, setAffectedDrafts] = useState<Record<number, string>>(() =>
     Object.fromEntries(
@@ -524,7 +545,7 @@ function ReturnInventoryPanel({
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ items: normalizedItems }),
+        body: JSON.stringify({ items: normalizedItems, expectedUpdatedAt: affectedVersionRef.current }),
       })
       const data = (await response.json()) as {
         error?: string
@@ -757,7 +778,10 @@ function ReturnInventoryPanel({
             <button
               type="button"
               aria-expanded={editingAffectedItems}
-              onClick={() => setEditingAffectedItems((current) => !current)}
+              onClick={() => {
+                affectedVersionRef.current = claim.updated_at
+                setEditingAffectedItems((current) => !current)
+              }}
               className="admin-ds-button inline-flex h-9 min-w-max items-center justify-center gap-2 whitespace-nowrap px-3 text-10px font-black"
             >
               <Pencil className="size-3.5 shrink-0" />
@@ -1278,11 +1302,13 @@ export function AdminClaimManager({
   mode = "all",
   onClaimChange,
   onInventoryUpdated,
+  onOpenBilling,
 }: {
   pedido: SupabasePedido
   mode?: "all" | "messaging" | "claims"
   onClaimChange: (claim: SupabaseOrderClaim) => void
   onInventoryUpdated?: () => void | Promise<void>
+  onOpenBilling: () => void
 }) {
   const { isAdmin } = useAuth()
   const allClaims = pedido.order_claims ?? []
@@ -1297,13 +1323,18 @@ export function AdminClaimManager({
   const [decisionResolution, setDecisionResolution] = useState<Exclude<OrderClaimResolution, "rechazado">>("cambio_producto")
   const [decisionCreditNoteAmount, setDecisionCreditNoteAmount] = useState("")
   const [refundProofFile, setRefundProofFile] = useState<File | null>(null)
-  const [refundDate, setRefundDate] = useState("")
-  const [refundAmount, setRefundAmount] = useState("")
   const [previewFile, setPreviewFile] = useState<SupabaseOrderClaimFile | null>(null)
   const [showCloseConversationModal, setShowCloseConversationModal] = useState(false)
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    title: string
+    description: string
+    confirmLabel: string
+    run: () => void | Promise<void>
+  } | null>(null)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState("")
-  const [creditNoteIssuedLocally, setCreditNoteIssuedLocally] = useState(false)
+  const decisionVersionRef = useRef<string | null>(null)
+  const responseVersionRef = useRef<string | null>(null)
   const chatRef = useRef<HTMLDivElement>(null)
   const firstReviewAttemptedRef = useRef<Set<number>>(new Set())
   const loadedOrderClaimsRef = useRef<Set<number>>(new Set())
@@ -1371,16 +1402,12 @@ export function AdminClaimManager({
     setDecisionResolution(getDefaultDecisionResolution(claim))
     setDecisionCreditNoteAmount("")
     setRefundProofFile(null)
-    setRefundDate("")
-    setRefundAmount("")
     setPreviewFile(null)
     setResponse("")
     setNotice("")
+    decisionVersionRef.current = null
+    responseVersionRef.current = null
   }, [claim?.id])
-
-  useEffect(() => {
-    setCreditNoteIssuedLocally(false)
-  }, [pedido.id])
 
   useEffect(() => {
     if (!claim) return
@@ -1435,6 +1462,7 @@ export function AdminClaimManager({
       }
 
       const payload = {
+        expectedUpdatedAt: decisionVersionRef.current ?? responseVersionRef.current ?? claim.updated_at,
         status: claim.status,
         resolution: claim.resolution ?? null,
         offered_resolutions: [],
@@ -1461,6 +1489,8 @@ export function AdminClaimManager({
       }
 
       onClaimChange(data.claim)
+      decisionVersionRef.current = null
+      responseVersionRef.current = null
       setRejectionReason(data.claim.rejection_reason ?? "")
       setNotice(successMessage)
       notifyOrderNotificationsChanged()
@@ -1514,6 +1544,17 @@ export function AdminClaimManager({
     setDecisionMessage("")
     setDecisionReason(REJECTION_REASONS[0])
     setDecisionResolution(getDefaultDecisionResolution(claim))
+    decisionVersionRef.current = null
+  }
+
+  const openDecision = (action: ClaimAction) => {
+    decisionVersionRef.current = claim?.updated_at ?? null
+    setDecisionAction(action)
+  }
+
+  const openCloseConversation = () => {
+    decisionVersionRef.current = claim?.updated_at ?? null
+    setShowCloseConversationModal(true)
   }
 
   const approveCancellation = async () => {
@@ -1651,9 +1692,9 @@ export function AdminClaimManager({
 
   const markAcceptedSolutionDone = async () => {
     if (!claim) return
-    const nextStatus = claim.resolution === "cupon_descuento" ? "cupon_pendiente" : "cambio_pendiente"
+    const nextStatus = "cerrado"
     const sent = await updateClaim(
-      claim.resolution === "cupon_descuento"
+      ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "")
         ? {
             action: "mark_credit_note_issued",
           }
@@ -1661,80 +1702,13 @@ export function AdminClaimManager({
             status: nextStatus,
             resolution: claim.resolution ?? decisionResolution,
           },
-      claim.resolution === "cupon_descuento"
+      ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "")
         ? "Nota de crédito informada al cliente y reclamo finalizado."
         : "Reclamo finalizado.",
     )
     if (sent) closeDecision()
   }
 
-  const issueCreditNote = async () => {
-    if (!claim) return
-    setSaving(true)
-    setNotice("")
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        setNotice("La sesión administrativa venció.")
-        return
-      }
-
-      const request = await fetch(`/api/admin/orders/${pedido.id}/credit-note`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          items:
-            (claim.affected_items ?? []).length > 0
-              ? (claim.affected_items ?? []).map((item) => ({
-                  order_item_id: item.order_item_id,
-                  quantity: item.quantity,
-                }))
-              : (pedido.orden_items ?? []).map((item) => ({
-                  order_item_id: item.id,
-                  quantity: item.cantidad,
-                })),
-          manual_amount:
-            (claim.affected_items ?? []).length > 0
-              ? 0
-              : Number(pedido.shipping_cost_charged ?? 0),
-          destination:
-            claim.resolution === "saldo_a_favor" ||
-            claim.resolution === "cupon_descuento"
-              ? "customer_balance"
-              : "external_refund",
-          reason:
-            (
-              claim.description?.split("\n").find((line) => line.trim()) ||
-              "Resolución de reclamo de cliente"
-            )
-              .trim()
-              .slice(0, 50),
-          claim_id: claim.id,
-        }),
-      })
-      const data = (await request.json()) as {
-        error?: string
-      }
-
-      if (!request.ok) {
-        setNotice(data.error || "No se pudo emitir la nota de crédito.")
-        return
-      }
-
-      setNotice("Nota de crédito emitida por ARCA.")
-      setCreditNoteIssuedLocally(true)
-      notifyOrderNotificationsChanged()
-      await onInventoryUpdated?.()
-    } catch {
-      setNotice("No se pudo emitir la nota de crédito.")
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const uploadRefundProof = async () => {
     if (!claim || !refundProofFile) {
@@ -1753,11 +1727,10 @@ export function AdminClaimManager({
       }
 
       const formData = new FormData()
-      formData.set("action", "upload_refund_proof")
       formData.set("file", refundProofFile)
 
-      const request = await fetch(`/api/admin/order-claims/${claim.id}`, {
-        method: "PATCH",
+      const request = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
+        method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
@@ -1768,14 +1741,14 @@ export function AdminClaimManager({
         error?: string
       }
 
-      if (!request.ok || !data.claim) {
+      if (!request.ok) {
         setNotice(data.error || "No se pudo cargar el comprobante.")
         return
       }
 
-      onClaimChange(data.claim)
       setRefundProofFile(null)
       setNotice("Comprobante de reintegro cargado.")
+      await onInventoryUpdated?.()
       notifyOrderNotificationsChanged()
     } catch {
       setNotice("No se pudo cargar el comprobante.")
@@ -1786,23 +1759,14 @@ export function AdminClaimManager({
 
   const markRefundDone = async () => {
     if (!claim) return
-    if (!refundDate.trim() || !refundAmount.trim()) {
-      setNotice("Indicá la fecha y el monto reintegrado.")
-      return
-    }
 
     const sent = await updateClaim(
       {
-        status: "cambio_pendiente",
-        resolution: "reintegro_total",
-        admin_response: `Reintegro realizado el ${refundDate.trim()} por ${refundAmount.trim()}.`,
-        append_message: true,
+        action: "mark_refund_done",
       },
       "Reintegro marcado como realizado.",
     )
     if (sent) {
-      setRefundDate("")
-      setRefundAmount("")
     }
   }
 
@@ -1860,28 +1824,32 @@ export function AdminClaimManager({
   const refundProof = files.find((file) => file.file_role === "comprobante_devolucion")
   const evidenceFiles = files.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
   const closed = ["cerrado", "rechazado"].includes(claim.status)
-  const conversationLocked = claim.status === "rechazado"
+  const conversationLocked = closed
   const helpMessage = claim.failure_type === "consulta_pedido"
+  const summaryOrderItems = pedido.orden_items ?? []
+  const summaryAffectedSelections = getClaimAffectedItems(claim, summaryOrderItems)
+  const summaryAffectedItems = summaryAffectedSelections
+    .map((selection) => {
+      const item = summaryOrderItems.find((orderItem) => Number(orderItem.id) === selection.order_item_id)
+      return item ? { item, quantity: selection.quantity } : null
+    })
+    .filter((entry): entry is { item: SupabasePedidoItem; quantity: number } => entry !== null)
   const canReviewClaim = !closed && ["recibido", "en_revision", "falta_informacion"].includes(claim.status)
-  const canCompleteAcceptedSolution = !closed && claim.status === "aprobado"
+  const canCompleteAcceptedSolution = isAdmin && !closed && claim.status === "aprobado"
   const canCompleteReplacementSolution =
     canCompleteAcceptedSolution &&
     (claim.resolution === "cambio_producto" || claim.resolution === "envio_unidad_faltante")
-  const canManageRefund = !closed && claim.status === "reintegro_pendiente" && claim.resolution === "reintegro_total"
+  const canManageRefund = isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
   const canIssueCreditNote =
-    !closed &&
-    claim.resolution === "cupon_descuento" &&
-    !pedido.credit_note_issued &&
-    pedido.credit_note_status !== "authorized" &&
-    !pedido.credit_note_cae
+    isAdmin && !closed &&
+    ["cupon_descuento", "saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
   const creditNoteIssued =
-    creditNoteIssuedLocally ||
     Boolean(
       pedido.credit_note_issued &&
         pedido.credit_note_status === "authorized" &&
         pedido.credit_note_cae,
     )
-  const canCloseClaim = !closed && !cancellation
+  const canCloseClaim = !closed && !cancellation && !["cupon_descuento", "saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
   const canCloseConversation = helpMessage && !closed
   const helpResolved = helpMessage && claim.status === "cerrado"
   const finalizedStatus = !helpResolved && claim.status === "cerrado"
@@ -1932,6 +1900,62 @@ export function AdminClaimManager({
           </div>
         )}
       </header>
+
+      {!helpMessage && !cancellation && (
+        <div className="admin-claim-summary grid gap-3 border-b p-3 sm:p-4 md:grid-cols-3">
+          <section className="admin-claim-card rounded-xl border p-3">
+            <p className="text-10px font-black uppercase text-white/45">Pedido</p>
+            <p className="mt-1 text-xs font-bold text-white">{formatDate(pedido.created_at)}</p>
+            <p className="mt-1 text-xs font-semibold text-white/70">{pedido.estado}</p>
+            <p className="mt-1 text-xs font-semibold text-white/70">
+              {getClaimSummaryPaymentLabel(pedido)} · {pedido.shipping_type === "sucursal" ? "Retiro en sucursal" : "Envío a domicilio"}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-white/70">Total: {formatPrice(pedido.total)}</p>
+          </section>
+
+          <section className="admin-claim-card rounded-xl border p-3">
+            <p className="text-10px font-black uppercase text-white/45">Motivo del reclamo</p>
+            <p className="mt-1 text-xs font-bold text-white">{PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo"}</p>
+            <p className="mt-1 text-[11px] leading-4 text-white/60 line-clamp-3">{claim.description}</p>
+          </section>
+
+          <section className="admin-claim-card rounded-xl border p-3">
+            <p className="text-10px font-black uppercase text-white/45">Producto afectado</p>
+            {summaryAffectedItems.length === 0 ? (
+              <p className="mt-1.5 text-xs font-semibold text-white/70">Pedido completo</p>
+            ) : (
+              <ul className="mt-1.5 space-y-2">
+                {summaryAffectedItems.map(({ item, quantity }) => {
+                  const image = getCuentaItemImage(item)
+                  const variantName = item.conditioned_name || item.producto_variantes?.nombre
+                  const sku = item.conditioned_sku || item.producto_variantes?.sku
+                  return (
+                    <li key={item.id} className="flex items-center gap-2">
+                      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/10 bg-white">
+                        {image ? (
+                          <img src={image} alt="" className="size-full object-contain" />
+                        ) : (
+                          <Package className="size-4 text-black/40" />
+                        )}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-bold text-white">
+                          {item.productos?.nombre ?? `Producto #${item.producto_id}`}
+                        </span>
+                        <span className="block truncate text-10px text-white/55">
+                          {variantName ? `${variantName} · ` : ""}
+                          {sku ? `SKU ${sku} · ` : ""}
+                          {quantity} de {item.cantidad} reclamadas
+                        </span>
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
 
       <div className="admin-claim-workspace grid gap-3 p-3 sm:p-4">
         <main className="space-y-3">
@@ -1998,7 +2022,11 @@ export function AdminClaimManager({
             statusLabel={conversationStatus}
             customerMentionName={customerMentionName}
             canUseCustomerMention={isAdmin}
-            onResponseChange={setResponse}
+            onResponseChange={(value) => {
+              if (!responseVersionRef.current) responseVersionRef.current = claim.updated_at
+              if (!value) responseVersionRef.current = null
+              setResponse(value)
+            }}
             onSendResponse={() => void sendResponse()}
           />
         </main>
@@ -2019,7 +2047,7 @@ export function AdminClaimManager({
                   description="Finalizar este chat de ayuda y enviar el mail de contacto al cliente."
                   tone="primary"
                   disabled={saving}
-                  onClick={() => setShowCloseConversationModal(true)}
+                  onClick={openCloseConversation}
                 />
               </div>
             ) : (
@@ -2053,8 +2081,8 @@ export function AdminClaimManager({
                   title="Aprobar cancelación"
                   description="Aceptar solicitud"
                   tone="success"
-                  disabled={saving || closed || !cancellationCanBeApproved}
-                  onClick={() => setDecisionAction("approve_cancellation")}
+                  disabled={saving || closed || !isAdmin || !cancellationCanBeApproved}
+                  onClick={() => openDecision("approve_cancellation")}
                 />
                 <DecisionButton
                   icon={<XCircle className="size-4" />}
@@ -2062,7 +2090,7 @@ export function AdminClaimManager({
                   description="Requiere un motivo"
                   tone="danger"
                   disabled={saving || closed}
-                  onClick={() => setDecisionAction("reject_cancellation")}
+                  onClick={() => openDecision("reject_cancellation")}
                 />
               </div>
             ) : (
@@ -2074,8 +2102,8 @@ export function AdminClaimManager({
                       title="El reclamo es válido"
                       description="Registrar que BEYONIX acepta el reclamo."
                       tone="success"
-                      disabled={saving}
-                      onClick={() => setDecisionAction("approve")}
+                      disabled={saving || !isAdmin}
+                      onClick={() => openDecision("approve")}
                     />
                     <DecisionButton
                       icon={<XCircle className="size-4" />}
@@ -2083,7 +2111,7 @@ export function AdminClaimManager({
                       description="Informar al cliente el motivo del rechazo."
                       tone="danger"
                       disabled={saving}
-                      onClick={() => setDecisionAction("reject")}
+                      onClick={() => openDecision("reject")}
                     />
                   </>
                 )}
@@ -2094,20 +2122,27 @@ export function AdminClaimManager({
                     description={claim.resolution === "envio_unidad_faltante" ? "Confirmar que se envió o entregó la unidad faltante." : "Confirmar que se envió o entregó la nueva unidad."}
                     tone="success"
                     disabled={saving}
-                    onClick={() => void markAcceptedSolutionDone()}
+                    onClick={() =>
+                      setPendingConfirmation({
+                        title: claim.resolution === "envio_unidad_faltante" ? "Marcar unidad enviada" : "Marcar producto reemplazado",
+                        description: "Esto finaliza el reclamo y notifica al cliente que la gestión quedó completada. No se puede deshacer desde acá.",
+                        confirmLabel: "Confirmar y finalizar",
+                        run: markAcceptedSolutionDone,
+                      })
+                    }
                   />
                 )}
-                {canCompleteAcceptedSolution && claim.resolution === "cupon_descuento" && canIssueCreditNote && (
+                {canIssueCreditNote && (
                   <DecisionButton
                     icon={<CreditCard className="size-4" />}
-                    title="Emitir nota de crédito"
-                    description="Generarla por ARCA con el monto cargado."
+                    title="Gestionar nota de crédito"
+                    description="Revisar productos e importes en Facturación."
                     tone="success"
                     disabled={saving || !invoiced}
-                    onClick={() => void issueCreditNote()}
+                    onClick={onOpenBilling}
                   />
                 )}
-                {canCompleteAcceptedSolution && claim.resolution === "cupon_descuento" && (
+                {isAdmin && !closed && ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "") && (
                   <DecisionButton
                     icon={<CreditCard className="size-4" />}
                     title="Nota de crédito emitida"
@@ -2119,32 +2154,27 @@ export function AdminClaimManager({
                     tone="success"
                     disabled={saving || !creditNoteIssued}
                     mutedWhenDisabled
-                    onClick={() => void markAcceptedSolutionDone()}
+                    onClick={() =>
+                      setPendingConfirmation({
+                        title: "Confirmar nota de crédito emitida",
+                        description: "Esto finaliza el reclamo y le informa al cliente que ya puede usar el saldo a favor. No se puede deshacer desde acá.",
+                        confirmLabel: "Confirmar y finalizar",
+                        run: markAcceptedSolutionDone,
+                      })
+                    }
                   />
                 )}
                 {canManageRefund && (
                   <div className="rounded-lg border border-emerald-300/20 bg-emerald-950/20 p-2">
                     <p className="text-xs font-black text-white">Reembolso</p>
                     <div className="mt-2 grid gap-2">
-                      <input
-                        type="date"
-                        value={refundDate}
-                        onChange={(event) => setRefundDate(event.target.value)}
-                        className={`${adminControlClassName} h-8 min-h-8 px-2 text-xs`}
-                        aria-label="Fecha del reintegro"
-                      />
-                      <input
-                        value={refundAmount}
-                        onChange={(event) => setRefundAmount(event.target.value)}
-                        placeholder="Monto reintegrado"
-                        className={`${adminControlClassName} h-8 min-h-8 px-2 text-xs`}
-                      />
+                      <p className="text-xs text-white/70">El importe se toma de la nota de crédito autorizada. Registrá el comprobante únicamente después de devolver el dinero.</p>
                       <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-10px font-bold text-white/75 hover:border-emerald-300/35">
                         <Upload className="size-3.5" />
                         <span className="truncate">{refundProofFile?.name || refundProof?.file_name || "Subir comprobante"}</span>
                         <input
                           type="file"
-                          accept="image/*,application/pdf"
+                          accept=".jpg,.jpeg,.pdf"
                           className="sr-only"
                           onChange={(event) => setRefundProofFile(event.target.files?.[0] ?? null)}
                         />
@@ -2152,19 +2182,26 @@ export function AdminClaimManager({
                       <button
                         type="button"
                         disabled={saving || !refundProofFile}
-                        onClick={() => void uploadRefundProof()}
+                        onClick={() => setPendingConfirmation({ title: "Registrar reintegro", description: "Confirmá que ya devolviste el importe de la nota de crédito autorizada. Se registrará el reintegro financiero y su comprobante en el pedido.", confirmLabel: "Registrar reintegro", run: uploadRefundProof })}
                         className="admin-ds-button admin-ds-button-secondary h-8 px-3 text-10px font-black disabled:opacity-45"
                       >
                         Subir comprobante
                       </button>
-                      {refundProof && (
+                      {pedido.financial_status === "refunded" && (
                         <DecisionButton
                           icon={<CheckCircle2 className="size-4" />}
                           title="Marcar reintegro realizado"
                           description="Confirmar que el dinero fue devuelto al cliente."
                           tone="success"
                           disabled={saving}
-                          onClick={() => void markRefundDone()}
+                          onClick={() =>
+                            setPendingConfirmation({
+                              title: "Marcar reintegro realizado",
+                              description: "Esto confirma el reintegro registrado en el pedido y finaliza el reclamo. No se puede deshacer desde acá.",
+                              confirmLabel: "Confirmar reintegro",
+                              run: markRefundDone,
+                            })
+                          }
                         />
                       )}
                     </div>
@@ -2177,7 +2214,7 @@ export function AdminClaimManager({
                     description="Bloquear nuevas acciones y dejarlo visible en el historial."
                     tone="primary"
                     disabled={saving}
-                    onClick={() => setDecisionAction("close")}
+                    onClick={() => openDecision("close")}
                   />
                 )}
                 {closed && (
@@ -2200,7 +2237,7 @@ export function AdminClaimManager({
                   description="Finalizar este chat de ayuda y enviar el mail de contacto al cliente."
                   tone="primary"
                   disabled={saving}
-                  onClick={() => setShowCloseConversationModal(true)}
+                  onClick={openCloseConversation}
                 />
               </div>
             )}
@@ -2228,7 +2265,10 @@ export function AdminClaimManager({
         <CloseConversationModal
           saving={saving}
           onClose={() => {
-            if (!saving) setShowCloseConversationModal(false)
+            if (!saving) {
+              setShowCloseConversationModal(false)
+              decisionVersionRef.current = null
+            }
           }}
           onConfirm={() => void closeConversation()}
         />
@@ -2250,6 +2290,40 @@ export function AdminClaimManager({
           onClose={closeDecision}
           onConfirm={() => void runDecisionAction()}
         />
+      )}
+      {pendingConfirmation && (
+        <AdminModal
+          open
+          compact
+          eyebrow="Confirmación requerida"
+          title={pendingConfirmation.title}
+          description={pendingConfirmation.description}
+          onClose={() => {
+            if (!saving) setPendingConfirmation(null)
+          }}
+          footer={
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <AdminSecondaryButton
+                disabled={saving}
+                onClick={() => setPendingConfirmation(null)}
+              >
+                Cancelar
+              </AdminSecondaryButton>
+              <AdminButton
+                variant="primary"
+                disabled={saving}
+                onClick={async () => {
+                  await pendingConfirmation.run()
+                  setPendingConfirmation(null)
+                }}
+              >
+                {saving ? "Confirmando..." : pendingConfirmation.confirmLabel}
+              </AdminButton>
+            </div>
+          }
+        >
+          {null}
+        </AdminModal>
       )}
     </section>
   )

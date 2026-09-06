@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { claimErrorResponse } from "@/lib/orders/claim-server"
 import type { SupabasePedidoItem } from "@/lib/supabase/types"
 
 export async function PATCH(
@@ -105,7 +106,8 @@ export async function PATCH(
     )
   }
 
-  const { data, error } = await auth.admin.rpc("process_order_item_return_inventory", {
+  const { data, error } = await auth.admin.rpc("process_claim_return_inventory", {
+    p_claim_id: claimId,
     p_order_id: orderId,
     p_order_item_id: orderItemId,
     p_restocked_quantity: restockedQuantity,
@@ -115,10 +117,7 @@ export async function PATCH(
   })
 
   if (error || !data) {
-    return NextResponse.json(
-      { error: error?.message || "No se pudo registrar el destino del producto devuelto." },
-      { status: 409 },
-    )
+    return claimErrorResponse(error)
   }
 
   return NextResponse.json({ item: data as SupabasePedidoItem })

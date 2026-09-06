@@ -82,7 +82,7 @@ function PolicyCard({
   return (
     <BeyonixCard variant="information" className="p-5 sm:p-6">
       <div className="flex items-start gap-3.5">
-        <BeyonixIconBox size="lg">
+        <BeyonixIconBox size="lg" className="beyonix-legal-icon-tile">
           <Icon className="size-5" />
         </BeyonixIconBox>
         <div className="min-w-0">
@@ -96,17 +96,16 @@ function PolicyCard({
 
 export default function DevolucionesPage() {
   return (
-    <main className="min-h-screen bg-transparent text-white">
-      <section className="relative overflow-hidden border-b border-beyonix-blue-light/14">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_8%,rgba(30,77,123,0.34),transparent_34%),radial-gradient(circle_at_86%_42%,rgba(24,91,128,0.15),transparent_30%),linear-gradient(180deg,rgba(3,8,14,0.66),rgba(0,0,0,0.9))]" />
-        <div className="relative mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
-          <span className="rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">
+    <main className="min-h-screen bg-black text-white">
+      <section className="relative overflow-hidden bg-beyonix-page border-b border-beyonix-blue-light/14">
+        <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
+          <span className="beyonix-history-badge inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">
             Posventa BEYONIX
           </span>
-          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
+          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-[var(--beyonix-text-primary)] sm:text-5xl lg:text-6xl">
             Cambios, devoluciones y garantía
           </h1>
-          <p className="mt-5 max-w-3xl text-base leading-7 text-white/66 sm:text-lg sm:leading-8">
+          <p className="mt-5 max-w-3xl text-base font-medium leading-7 text-beyonix-sky sm:text-lg sm:leading-8">
             Cada situación tiene un circuito claro. Acá podés distinguir un arrepentimiento,
             un inconveniente con la entrega, una falla cubierta por garantía o un cambio voluntario.
           </p>
@@ -132,7 +131,7 @@ export default function DevolucionesPage() {
             {facts.map((fact) => (
               <BeyonixCard key={fact.label} variant="information" className="p-4">
                 <div className="flex items-start gap-3">
-                  <BeyonixIconBox size="sm"><fact.icon className="size-4" /></BeyonixIconBox>
+                  <BeyonixIconBox size="sm" className="beyonix-legal-icon-tile"><fact.icon className="size-4" /></BeyonixIconBox>
                   <div>
                     <p className="beyonix-modal-muted text-9px font-semibold uppercase tracking-[0.16em] text-white/42">{fact.label}</p>
                     <p className="beyonix-modal-title mt-1 text-lg font-bold text-white">{fact.value}</p>
@@ -145,7 +144,7 @@ export default function DevolucionesPage() {
         </div>
       </section>
 
-      <section id="contenido" className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+      <section id="contenido" className="bg-beyonix-page mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
         <div className="grid gap-4 lg:grid-cols-2">
           <PolicyCard icon={RefreshCcw} title="Arrepentimiento de una compra a distancia">
             <p>
@@ -203,7 +202,7 @@ export default function DevolucionesPage() {
           <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Un proceso trazable, de principio a fin</h2>
           <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {steps.map((step) => (
-              <div key={step.number} className="rounded-xl border border-white/8 bg-black/20 p-4">
+              <div key={step.number} className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/20 p-4">
                 <span className="text-10px font-bold tracking-[0.18em] text-beyonix-cyan">{step.number}</span>
                 <h3 className="mt-2 font-bold text-white">{step.title}</h3>
                 <p className="mt-2 text-xs leading-6 text-white/55">{step.description}</p>
@@ -238,7 +237,7 @@ export default function DevolucionesPage() {
           </PolicyCard>
         </div>
 
-        <section className="beyonix-modal-shell mt-8 rounded-2xl border border-beyonix-blue-light/26 bg-[radial-gradient(circle_at_10%_0%,rgba(44,108,163,0.22),transparent_38%),linear-gradient(145deg,rgba(17,42,67,0.42),rgba(5,9,14,0.98))] p-6 sm:p-7">
+        <section className="beyonix-legal-cta mt-8 rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-surface p-6 shadow-xl shadow-black/20 sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-2xl">
               <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Canal de asistencia</p>

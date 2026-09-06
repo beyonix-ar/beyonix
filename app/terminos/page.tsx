@@ -101,7 +101,7 @@ function LegalSection({
       className="beyonix-modal-shell scroll-mt-24 rounded-2xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(8,17,27,0.94),rgba(5,8,12,0.98))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_24px_60px_rgba(0,0,0,0.22)] sm:p-6 lg:p-7"
     >
       <div className="flex items-start gap-3.5">
-        <BeyonixIconBox size="lg" className="mt-0.5">
+        <BeyonixIconBox size="lg" className="beyonix-legal-icon-tile mt-0.5">
           <Icon className="size-5" />
         </BeyonixIconBox>
         <div className="min-w-0">
@@ -147,7 +147,7 @@ function KeyFact({
   return (
     <BeyonixCard variant="information" className="p-4">
       <div className="flex items-start gap-3">
-        <BeyonixIconBox size="sm" className="mt-0.5">
+        <BeyonixIconBox size="sm" className="beyonix-legal-icon-tile mt-0.5">
           <Icon className="size-4" />
         </BeyonixIconBox>
         <div>
@@ -175,24 +175,23 @@ export default async function TerminosPage() {
     : "Según promoción vigente"
 
   return (
-    <main className="min-h-screen bg-transparent text-white">
-      <section className="relative overflow-hidden border-b border-beyonix-blue-light/14">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_5%,rgba(30,77,123,0.34),transparent_34%),radial-gradient(circle_at_82%_38%,rgba(24,91,128,0.16),transparent_32%),linear-gradient(180deg,rgba(3,8,14,0.66),rgba(0,0,0,0.9))]" />
-        <div className="relative mx-auto max-w-7xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
+    <main className="min-h-screen bg-black text-white">
+      <section className="relative overflow-hidden bg-beyonix-page border-b border-beyonix-blue-light/14">
+        <div className="mx-auto max-w-7xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
           <div className="max-w-4xl">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="beyonix-terms-hero-badge rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">
+              <span className="beyonix-history-badge inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/18 px-3 py-1.5 text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                 Marco de compra BEYONIX
               </span>
-              <span className="rounded-full border border-white/8 bg-black/25 px-3 py-1 text-10px font-medium uppercase tracking-[0.14em] text-white/48">
+              <span className="rounded-full border border-beyonix-blue-light/18 bg-beyonix-surface px-3 py-1 text-10px font-medium uppercase tracking-[0.14em] text-[var(--beyonix-text-muted)]">
                 Actualizado el {LAST_UPDATED}
               </span>
             </div>
 
-            <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
+            <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-[var(--beyonix-text-primary)] sm:text-5xl lg:text-6xl">
               Términos y condiciones
             </h1>
-            <p className="mt-5 max-w-3xl text-base leading-7 text-white/66 sm:text-lg sm:leading-8">
+            <p className="mt-5 max-w-3xl text-base font-medium leading-7 text-beyonix-sky sm:text-lg sm:leading-8">
               Información clara sobre cómo funciona una compra en BEYONIX: precios, pagos,
               envíos, cancelaciones, devoluciones, reclamos, garantía, privacidad y derechos
               de las personas consumidoras.
@@ -250,7 +249,7 @@ export default async function TerminosPage() {
         </div>
       </section>
 
-      <section id="contenido" className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+      <section id="contenido" className="bg-beyonix-page mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
         <div className="grid items-start gap-7 lg:grid-cols-[17rem_minmax(0,1fr)] xl:gap-10">
           <aside className="lg:sticky lg:top-24">
             <BeyonixCard variant="information" className="overflow-hidden p-3">
@@ -331,7 +330,7 @@ export default async function TerminosPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <a
                   href={`mailto:${BEYONIX_EMAIL}`}
-                  className="beyonix-terms-neutral-box flex items-center gap-3 rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4 transition hover:border-beyonix-blue-light/42"
+                  className="beyonix-legal-neutral-box flex items-center gap-3 rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4 transition hover:border-beyonix-blue-light/42"
                 >
                   <Mail className="size-5 text-beyonix-cyan" />
                   <span><strong className="block text-sm text-white">Email</strong><span className="text-xs text-white/52">{BEYONIX_EMAIL}</span></span>
@@ -340,7 +339,7 @@ export default async function TerminosPage() {
                   href={BEYONIX_INSTAGRAM_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="beyonix-terms-neutral-box flex items-center gap-3 rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4 transition hover:border-beyonix-blue-light/42"
+                  className="beyonix-legal-neutral-box flex items-center gap-3 rounded-xl border border-beyonix-blue-light/16 bg-black/20 p-4 transition hover:border-beyonix-blue-light/42"
                 >
                   <Instagram className="size-5 text-beyonix-cyan" />
                   <span><strong className="block text-sm text-white">Instagram oficial</strong><span className="text-xs text-white/52">@beyonix.ar</span></span>
@@ -442,11 +441,11 @@ export default async function TerminosPage() {
               icon={CreditCard}
             >
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="beyonix-terms-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
+                <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><CreditCard className="size-4 text-beyonix-cyan" /><strong className="text-white">Mercado Pago</strong></div>
                   <p className="mt-2 text-xs leading-6 text-white/58">Permite pagar con saldo disponible o tarjeta. Mercado Pago y, cuando corresponda, la entidad emisora deciden la aprobación o el rechazo; BEYONIX no interviene en esa decisión ni almacena los datos completos de la tarjeta.</p>
                 </div>
-                <div className="beyonix-terms-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
+                <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><Landmark className="size-4 text-beyonix-cyan" /><strong className="text-white">Transferencia bancaria</strong></div>
                   <p className="mt-2 text-xs leading-6 text-white/58">Aplica un {TRANSFER_DISCOUNT_PERCENT}% de descuento sobre el importe de productos que efectivamente se pague por transferencia. El envío y otros conceptos se calculan por separado.</p>
                 </div>
@@ -538,7 +537,7 @@ export default async function TerminosPage() {
               title="Derecho de arrepentimiento y devoluciones"
               icon={RefreshCcw}
             >
-              <div className="beyonix-terms-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
+              <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                 <p className="text-sm font-semibold leading-7 text-white/72">
                   En compras online, el derecho de arrepentimiento puede ejercerse dentro de los 10 días corridos desde la entrega o la confirmación de la compra, lo que ocurra último, cuando resulte legalmente aplicable.
                 </p>
@@ -554,7 +553,7 @@ export default async function TerminosPage() {
                 </p>
               </div>
 
-              <div className="beyonix-terms-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
+              <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                 <div className="flex items-start gap-3">
                   <MessageCircleWarning className="mt-0.5 size-4 shrink-0 text-white/44" />
                   <div>
@@ -725,13 +724,13 @@ export default async function TerminosPage() {
                 salvo autorización expresa.
               </p>
               <div className="grid gap-2.5 sm:grid-cols-3">
-                <a href="https://www.argentina.gob.ar/normativa/nacional/638/actualizacion" target="_blank" rel="noopener noreferrer" className="beyonix-terms-neutral-box rounded-xl border border-white/8 bg-black/20 p-3 text-xs font-semibold leading-5 text-white/62 transition hover:border-beyonix-blue-light/38 hover:text-white"><FileText className="mb-2 size-4 text-beyonix-cyan" />Ley 24.240<br />Defensa del Consumidor</a>
-                <a href="https://www.argentina.gob.ar/normativa/nacional/disposici%C3%B3n-954-2025-417152/texto" target="_blank" rel="noopener noreferrer" className="beyonix-terms-neutral-box rounded-xl border border-white/8 bg-black/20 p-3 text-xs font-semibold leading-5 text-white/62 transition hover:border-beyonix-blue-light/38 hover:text-white"><RefreshCcw className="mb-2 size-4 text-beyonix-cyan" />Disposición 954/2025<br />Arrepentimiento</a>
-                <a href="https://www.argentina.gob.ar/normativa/nacional/64790/actualizacion" target="_blank" rel="noopener noreferrer" className="beyonix-terms-neutral-box rounded-xl border border-white/8 bg-black/20 p-3 text-xs font-semibold leading-5 text-white/62 transition hover:border-beyonix-blue-light/38 hover:text-white"><LockKeyhole className="mb-2 size-4 text-beyonix-cyan" />Ley 25.326<br />Datos personales</a>
+                <a href="https://www.argentina.gob.ar/normativa/nacional/638/actualizacion" target="_blank" rel="noopener noreferrer" className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/20 p-3 text-xs font-semibold leading-5 text-white/62 transition hover:border-beyonix-blue-light/38 hover:text-white"><FileText className="mb-2 size-4 text-beyonix-cyan" />Ley 24.240<br />Defensa del Consumidor</a>
+                <a href="https://www.argentina.gob.ar/normativa/nacional/disposici%C3%B3n-954-2025-417152/texto" target="_blank" rel="noopener noreferrer" className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/20 p-3 text-xs font-semibold leading-5 text-white/62 transition hover:border-beyonix-blue-light/38 hover:text-white"><RefreshCcw className="mb-2 size-4 text-beyonix-cyan" />Disposición 954/2025<br />Arrepentimiento</a>
+                <a href="https://www.argentina.gob.ar/normativa/nacional/64790/actualizacion" target="_blank" rel="noopener noreferrer" className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/20 p-3 text-xs font-semibold leading-5 text-white/62 transition hover:border-beyonix-blue-light/38 hover:text-white"><LockKeyhole className="mb-2 size-4 text-beyonix-cyan" />Ley 25.326<br />Datos personales</a>
               </div>
             </LegalSection>
 
-            <section className="beyonix-dark-card rounded-2xl border border-beyonix-blue-light/26 bg-[radial-gradient(circle_at_10%_0%,rgba(44,108,163,0.22),transparent_38%),linear-gradient(145deg,rgba(17,42,67,0.42),rgba(5,9,14,0.98))] p-6 sm:p-7">
+            <section className="beyonix-legal-cta rounded-2xl border border-beyonix-blue-light/18 bg-beyonix-surface p-6 shadow-xl shadow-black/20 sm:p-7">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="max-w-2xl">
                   <p className="text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">Ayuda y gestión</p>

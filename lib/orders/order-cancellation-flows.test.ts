@@ -41,18 +41,11 @@ test("la aprobación por reclamo delega la transición financiera atómica", () 
     ),
     "utf8",
   )
-  const approveBlock = routeSource.slice(
-    routeSource.indexOf('if (body.action === "approve_cancellation")'),
-    routeSource.indexOf('if (body.action === "reject_cancellation")'),
-  )
-
-  assert.match(approveBlock, /\.rpc\(\s*"approve_order_claim_cancellation"/)
-  assert.doesNotMatch(approveBlock, /\.from\("ordenes"\)\s*\.update\(/)
+  const mutationSource = readFileSync(new URL("../../supabase/migrations/20260905150000_claims_atomic_operations.sql", import.meta.url), "utf8")
+  assert.match(routeSource, /\.rpc\(\s*"mutate_admin_order_claim"/)
+  assert.match(mutationSource, /perform public\.approve_order_claim_cancellation\(v_claim\.id,p_actor_id,v_role,v_message\)/)
+  assert.doesNotMatch(routeSource, /\.from\("ordenes"\)\s*\.update\(/)
   assert.doesNotMatch(routeSource, /upsertCustomerCancelledOrderNotification/)
-  assert.equal(
-    approveBlock.match(/notifyCancellationResolution\(/g)?.length,
-    1,
-  )
 })
 
 test("la RPC serializa la cancelación y mantiene juntos sus efectos críticos", () => {

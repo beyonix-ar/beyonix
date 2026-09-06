@@ -54,19 +54,18 @@ const facts = [
 
 export default function ArrepentimientoPage() {
   return (
-    <main className="min-h-screen bg-transparent text-white">
-      <section className="relative overflow-hidden border-b border-beyonix-blue-light/14">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_8%,rgba(30,77,123,0.34),transparent_34%),radial-gradient(circle_at_86%_42%,rgba(24,91,128,0.15),transparent_30%),linear-gradient(180deg,rgba(3,8,14,0.66),rgba(0,0,0,0.9))]" />
-        <div className="relative mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
-          <span className="rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">
+    <main className="min-h-screen bg-black text-white">
+      <section className="relative overflow-hidden bg-beyonix-page border-b border-beyonix-blue-light/14">
+        <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
+          <span className="beyonix-history-badge inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">
             Compra online
           </span>
 
-          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-white sm:text-5xl lg:text-6xl">
+          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-[-0.035em] text-[var(--beyonix-text-primary)] sm:text-5xl lg:text-6xl">
             Botón de arrepentimiento
           </h1>
 
-          <p className="mt-5 max-w-3xl text-base leading-7 text-white/66 sm:text-lg sm:leading-8">
+          <p className="mt-5 max-w-3xl text-base font-medium leading-7 text-beyonix-sky sm:text-lg sm:leading-8">
             Este acceso sirve para pedir la cancelación de una compra realizada online dentro del
             plazo legal. No es un reclamo por falla ni un cambio por preferencia: es el derecho a
             revocar una compra cuando corresponde, sin iniciar sesión ni registrarte.
@@ -93,7 +92,7 @@ export default function ArrepentimientoPage() {
         </div>
       </section>
 
-      <section id="contenido" className="beyonix-pdp-page bg-black/92">
+      <section id="contenido" className="bg-beyonix-page">
         <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-16">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">
@@ -113,7 +112,7 @@ export default function ArrepentimientoPage() {
             <ul className="mt-6 space-y-3">
               {requirements.map((item) => (
                 <li key={item} className="flex gap-3 text-sm leading-6 text-white/74">
-                  <CheckCircle2 className="mt-1 size-4 shrink-0 text-emerald-200" />
+                  <CheckCircle2 className="mt-1 size-4 shrink-0 text-beyonix-cyan" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -131,7 +130,7 @@ export default function ArrepentimientoPage() {
                 className="rounded-xl border border-beyonix-blue-light/16 bg-beyonix-surface p-5"
               >
                 <div className="flex items-start gap-4">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/28 bg-beyonix-blue/18 text-white">
+                  <div className="beyonix-legal-icon-tile flex size-10 shrink-0 items-center justify-center rounded-xl border border-beyonix-blue-light/28 bg-beyonix-blue/18 text-white">
                     <fact.icon className="size-5" />
                   </div>
                   <div>

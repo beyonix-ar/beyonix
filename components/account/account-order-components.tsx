@@ -23,19 +23,28 @@ function ReviewRatingSelector({
   visualRating,
   onPreview,
   onSelect,
+  size = "sm",
+  readOnly = false,
 }: {
   label: string
   selectedRating: number
   visualRating: number
   onPreview: (rating: number | null) => void
   onSelect: (rating: number) => void
+  size?: "sm" | "lg"
+  readOnly?: boolean
 }) {
+  const isLarge = size === "lg"
+
   return (
     <div
       role="group"
       aria-label={label}
-      onMouseLeave={() => onPreview(null)}
-      className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] px-2"
+      onMouseLeave={readOnly ? undefined : () => onPreview(null)}
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-lg border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)]",
+        isLarge ? "h-12 gap-1.5 px-2.5" : "h-9 gap-1 px-2",
+      )}
     >
       {[1, 2, 3, 4, 5].map((rating) => {
         const active = rating <= visualRating
@@ -44,23 +53,29 @@ function ReviewRatingSelector({
           <button
             key={rating}
             type="button"
+            disabled={readOnly}
             aria-label={`${rating} ${rating === 1 ? "estrella" : "estrellas"}`}
-            title={`${rating} de 5 estrellas`}
+            title={readOnly ? undefined : `${rating} de 5 estrellas`}
             aria-pressed={selectedRating === rating}
-            onMouseEnter={() => onPreview(rating)}
-            onFocus={() => onPreview(rating)}
-            onBlur={() => onPreview(null)}
-            onClick={() => onSelect(rating)}
+            onMouseEnter={readOnly ? undefined : () => onPreview(rating)}
+            onFocus={readOnly ? undefined : () => onPreview(rating)}
+            onBlur={readOnly ? undefined : () => onPreview(null)}
+            onClick={readOnly ? undefined : () => onSelect(rating)}
             className={cn(
-              "grid size-6 cursor-pointer place-items-center focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--account-accent-soft)]",
+              "grid place-items-center rounded-md focus:outline-none",
+              isLarge ? "size-10" : "size-6",
+              readOnly
+                ? "cursor-default"
+                : "cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--account-accent-soft)]",
               active
                 ? "text-[var(--account-accent-soft)]"
-                : "text-[var(--account-text-muted)] hover:text-[var(--account-text-primary)]",
+                : "text-[var(--account-text-muted)]",
+              !readOnly && !active && "hover:text-[var(--account-text-primary)]",
             )}
           >
             <Star
               className={cn(
-                "size-3.5",
+                isLarge ? "size-6" : "size-3.5",
                 active ? "fill-current" : "fill-transparent",
               )}
             />
@@ -69,6 +84,14 @@ function ReviewRatingSelector({
       })}
     </div>
   )
+}
+
+const EXPERIENCE_RATING_LABELS: Record<number, string> = {
+  1: "Muy mala",
+  2: "Mala",
+  3: "Regular",
+  4: "Muy buena",
+  5: "Excelente",
 }
 
 export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
@@ -646,44 +669,63 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
       </header>
 
       <div className="mt-3">
-        <article className="rounded-lg border border-beyonix-blue-500/35 bg-beyonix-blue-900 p-2.5">
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-primary)]">
-                <Sparkles className="size-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-8px font-medium uppercase tracking-widest text-[var(--account-text-secondary)]">
-                  Tu experiencia
-                </p>
-                <p className="mt-0.5 truncate text-xs font-semibold text-[var(--account-text-primary)]">
-                  Compra, atención y navegación
-                </p>
-              </div>
+        <article className="rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] p-2.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[var(--account-border)] bg-white">
+              <Sparkles className="size-4 text-[var(--account-text-primary)]" />
             </div>
+            <div className="min-w-0">
+              <p className="text-8px font-medium uppercase tracking-widest text-[var(--account-text-secondary)]">
+                Tu experiencia
+              </p>
+              <p className="mt-0.5 truncate text-xs font-semibold text-[var(--account-text-primary)]">
+                ¿Cómo fue tu experiencia con la compra?
+              </p>
+            </div>
+          </div>
 
+          <div className="mt-3">
             {!experienceLoaded ? (
               <span
                 className={REVIEW_ACTION_PLACEHOLDER_CLASS}
                 aria-hidden="true"
               />
             ) : submittedReview ? (
-              <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-beyonix-status-success/35 bg-beyonix-status-success/10 px-2.5 text-10px font-semibold text-beyonix-status-success">
-                <Check className="size-3" />
-                Enviada · {rating}/5
-              </span>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <ReviewRatingSelector
+                  label={`Calificaste tu experiencia con ${submittedReview.rating} de 5 estrellas`}
+                  selectedRating={submittedReview.rating}
+                  visualRating={submittedReview.rating}
+                  onPreview={() => {}}
+                  onSelect={() => {}}
+                  size="lg"
+                  readOnly
+                />
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-beyonix-status-success/35 bg-beyonix-status-success/10 px-2.5 text-10px font-semibold text-beyonix-status-success">
+                  <Check className="size-3" />
+                  {EXPERIENCE_RATING_LABELS[submittedReview.rating]} · Enviada
+                </span>
+              </div>
             ) : (
-              <ReviewRatingSelector
-                label="Calificar experiencia en BEYONIX"
-                selectedRating={rating}
-                visualRating={visualRating}
-                onPreview={(value) => setHoverRating(value ?? 0)}
-                onSelect={(value) => {
-                  setRating(value)
-                  setActiveExperience(true)
-                  setFeedbackMessage("")
-                }}
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <ReviewRatingSelector
+                  label="Calificar experiencia en BEYONIX"
+                  selectedRating={rating}
+                  visualRating={visualRating}
+                  onPreview={(value) => setHoverRating(value ?? 0)}
+                  onSelect={(value) => {
+                    setRating(value)
+                    setActiveExperience(true)
+                    setFeedbackMessage("")
+                  }}
+                  size="lg"
+                />
+                {visualRating > 0 && (
+                  <span className="text-11px font-bold text-[var(--account-accent-soft)]">
+                    {EXPERIENCE_RATING_LABELS[visualRating]}
+                  </span>
+                )}
+              </div>
             )}
           </div>
 
